@@ -386,10 +386,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                     var (id, refused) = await _host.CreateAsync(user, name, Gate(generation, user, epoch, null, marker, null)).ConfigureAwait(false);
                     if (refused != null) return Refused(generation, user, epoch, refused, now);
                     if (!Still(generation, user, epoch) || id is not Guid madeId) return "changed";
+                    // Ownership comes only from JE's own create: the playlist Jellyfin reports for the create call, read as
+                    // stored right after it (nothing awaited in between) and found to be what the create makes (the person's,
+                    // private, the marker, no nonce, empty, made around the create). Its creation time is that playlist's
+                    // identity: the nonce is written only into a playlist with that creation time, so one the person put in
+                    // its place under the same id later is never stamped (the create is abandoned; the next look makes another).
+                    var fresh = _host.Get(madeId);
+                    var created = fresh?.Created.ToUnixTimeMilliseconds();
+                    if (fresh == null || created is not long at || !fresh.PrivateTo(user) || !fresh.HasMarker(marker) || fresh.Nonce != null
+                        || at < now.ToUnixTimeMilliseconds() - 5000 || at > _now().ToUnixTimeMilliseconds() + 5000 || _host.Entries(madeId).Count != 0) return "changed";
                     // The nonce goes into the playlist itself before it is bound: only a playlist carrying it is ever JE's.
-                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce)).ConfigureAwait(false);
+                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce, at)).ConfigureAwait(false);
                     if (stamped != null || !Still(generation, user, epoch)) return "changed";
                     made = _host.Get(madeId);
+                    if (made == null || Math.Abs(made.Created.ToUnixTimeMilliseconds() - at) > 1000) return "changed";
                 }
 
                 if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker) || !string.Equals(made.Nonce, nonce, StringComparison.Ordinal)) return "changed";
@@ -517,20 +527,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             };
 
         // The last check before JE writes its nonce into the playlist it has just made: the binding still names no playlist,
-        // this marker and this nonce, and the playlist as stored is the person's, private, carries the marker, carries no other
-        // nonce and was made within the create window.
-        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce)
+        // this marker and this nonce, and the playlist as stored is the person's, private, carries the marker, carries no nonce,
+        // is empty and is the very playlist read right after the create (its creation time; Jellyfin stores it to the second).
+        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce, long created)
             => stored =>
             {
                 if (_store.Generation != generation) return "changed";
                 if (!ReadyFlags.Playlist(_config())) return "off";
                 if (_store.Binding(_server, user) is not { OptedIn: true, State: ReadyState.Active, PlaylistId: null } now || now.Epoch != epoch
-                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal) || now.CreateAt is not long at) return "changed";
+                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal)) return "changed";
                 if (_view.Viewer(user) == null) return "no_user";
                 if (stored == null) return "missing";
-                if (!stored.PrivateTo(user) || !stored.HasMarker(marker) || (stored.Nonce != null && !string.Equals(stored.Nonce, nonce, StringComparison.Ordinal))) return "identity";
-                var created = stored.Created.ToUnixTimeMilliseconds();
-                return created < at - 5000 || created > at + (long)CreateWindow.TotalMilliseconds ? "identity" : null;
+                if (!stored.PrivateTo(user) || !stored.HasMarker(marker) || stored.Nonce != null) return "identity";
+                if (Math.Abs(stored.Created.ToUnixTimeMilliseconds() - created) > 1000 || _host.Entries(stored.Id).Count != 0) return "identity";
+                return null;
             };
 
         // A change the gate didn't let through: a missing playlist counts towards a deletion, a playlist that isn't JE's any

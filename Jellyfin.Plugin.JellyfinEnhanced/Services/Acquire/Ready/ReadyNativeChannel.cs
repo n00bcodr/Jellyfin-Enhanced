@@ -45,31 +45,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>True when the delivery already has an attempt (sent, unknown or claimed before a restart): never again.</summary>
         public bool Attempted(long deliveryId) => _store.AttemptState(deliveryId) != null;
 
-        /// <summary>
-        /// True when the recipient's Hidden Content hides the title or item (the library surface, as the Ready playlist), or
-        /// their rules can't be read now (an on-screen message fails closed).
-        /// </summary>
-        public bool Hidden(Guid user, string? titleKey, string? itemId)
-            => Hides(user, titleKey) is not { } hidden || hidden(Guid.TryParse(itemId, out var id) ? id : Guid.Empty);
+        /// <summary>The recipient's Hidden Content rules for the library surface as they are now, or null when they can't be read now.</summary>
+        public ReadyHides? Rules(Guid user) => _privacy.Load(user);
 
         /// <summary>
-        /// The recipient's Hidden Content as it is now, as a check of items of one title (the library surface): true when a rule
-        /// hides the title (any of its keys), the item or the item's series. Null when their rules can't be read now. Reads the
-        /// rules once; each check is synchronous.
+        /// Whether <paramref name="rules"/> hide an item of one title, for the whole title (D46, 4f round 3): a title-level rule
+        /// (a TMDB rule on any of its keys, or a movie's or series' own rule on ANY physical copy of it, in any library) hides
+        /// every item of it; otherwise a rule hides the item itself, its exact version or its series. <see cref="Guid.Empty"/>
+        /// asks about the title alone. Reads the title's copies once; each check is synchronous.
         /// </summary>
-        public Func<Guid, bool>? Hides(Guid user, string? titleKey)
+        public Func<Guid, bool> TitleCheck(StatusViewer viewer, ReadyHides rules, string? titleKey)
         {
-            var hides = _privacy.Load(user);
-            if (hides == null) return null;
+            if (ReferenceEquals(rules, ReadyHides.None)) return _ => false;
             var keys = new List<TitleKey>();
+            var copies = new List<(Guid ItemId, Guid? SeriesId)>();
             if (TitleKey.Parse(titleKey) is { } key)
             {
+                var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
                 keys.Add(key.Title);
-                keys.AddRange(_aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>());
+                keys.AddRange(aliases);
+                copies.AddRange(_view.Copies(key.Title, viewer, aliases).Select(c => (c.ItemId, (Guid?)null)));
             }
 
-            var viewer = _view.Viewer(user);
-            return item => hides.Hidden(keys, item, item != Guid.Empty && viewer != null ? _view.Resolve(item, viewer)?.SeriesId : null);
+            if (rules.TitleHidden(keys, copies)) return _ => true;
+            return item => item != Guid.Empty && rules.Hidden(keys, item, _view.Resolve(item, viewer)?.SeriesId);
         }
 
         /// <summary>

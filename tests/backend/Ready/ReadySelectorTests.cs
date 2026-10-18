@@ -374,4 +374,24 @@ public class ReadySelectorTests
         doc.Items["ep"] = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = hiddenCopy.ToString("N"), Type = "Episode" };
         Assert.Equal(new[] { otherCopy }, Select(w, emma, hides: JellyfinReadyPrivacy.From(doc)).Desired);
     }
+
+    // 4f round 2b (found live on 12.2): a series rule made on one physical copy (another library) hides the title, also for
+    // an episode only the other copy has, in the selection and at the last check before the membership write.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASeriesRuleOnAnotherCopyHidesEpisodesOnlyTheOtherCopyHas(bool atTheWrite)
+    {
+        using var w = new ReadyWorld();
+        var emma = w.User();
+        var copyA = w.Series(Firefly, Arrived);
+        var copyB = w.Series(Firefly, Arrived);
+        var e2 = w.View.AddEpisodeFile(copyB, Firefly, 1, 2, 1920, 1080, Arrived);
+        w.Interests.Add(emma.UserId, "w:f", ReadyInterestKind.Follow, Firefly);
+        var rule = new ReadyHides(new[] { copyA }, new[] { copyA }, Array.Empty<string>(), new[] { copyA });
+        var open = Select(w, emma);
+        Assert.Equal(new[] { e2 }, open.Desired);
+        if (atTheWrite) Assert.False(w.Selector.StillChosen(emma.UserId, rule, Assert.Single(open.Candidates)));
+        else Assert.Empty(Select(w, emma, hides: rule).Desired);
+    }
 }

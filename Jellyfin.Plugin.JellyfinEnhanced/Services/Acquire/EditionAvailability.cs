@@ -121,6 +121,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _copies = copies;
         }
 
+        /// <summary>Every Jellyfin copy of a title (any library; <see cref="JfCopy.Visible"/> says whether the viewer can open it).</summary>
+        /// <param name="viewer">The viewer.</param>
+        /// <param name="title">The title (a season or episode key counts as its title).</param>
+        /// <returns>The copies.</returns>
+        public IReadOnlyList<JfCopy> TitleCopies(StatusViewer viewer, TitleKey title) => _copies(title.Title, viewer);
+
         /// <summary>True for 4K video dimensions (the same rule as the browser's Get 4K check).</summary>
         /// <param name="width">Width, or null when unknown.</param>
         /// <param name="height">Height, or null when unknown.</param>

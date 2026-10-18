@@ -168,6 +168,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             foreach (var interest in interests.Where(i => i.UserId == viewer.UserId))
             {
                 var keys = Keys(interest.Title);
+                // Every physical copy of the title (any library): a title-level rule made on any of them hides the title, also
+                // for a part (an episode) that only another copy has (D46, 4f round 3).
+                List<(Guid ItemId, Guid? SeriesId)>? titleCopies = null;
                 foreach (var group in Hits(viewer, interest, scopes).GroupBy(h => ReadyCandidate.PartOf(h.Season, h.Episode)))
                 {
                     var part = group.Key;
@@ -194,13 +197,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                     }
 
                     // A title-level rule hides every copy; a rule on one copy leaves the others (as on library pages).
-                    if (hides.TitleHidden(keys, ordered.Select(h => (h.ItemId, h.SeriesId)))) continue;
+                    titleCopies ??= _editions.TitleCopies(viewer, interest.Title).Select(c => (c.ItemId, (Guid?)null)).ToList();
+                    var copies = ordered.Select(h => (h.ItemId, h.SeriesId)).Concat(titleCopies).Distinct().ToList();
+                    if (hides.TitleHidden(keys, copies)) continue;
                     var chosen = ordered.FirstOrDefault(h => !hides.CopyHidden(h.ItemId, h.PlayableItemId, h.SeriesId) && _library.Check(viewer.UserId, h.PlayableItemId) == ReadyVersionCheck.Ok);
                     if (chosen == null) continue;
                     rows.Add(new ReadyEntryRow(interest.Id, part, interest.Title.ToString(), interest.EditionName, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, readyAt, expiresAt, ReadyDisposition.Ready));
                     candidates.Add(new ReadyCandidate(interest, part, chosen.ItemId, chosen.SeriesId, chosen.PlayableItemId, chosen.Season, chosen.Episode, DateTimeOffset.FromUnixTimeMilliseconds(readyAt).UtcDateTime)
                     {
-                        Copies = ordered.Select(h => (h.ItemId, h.SeriesId)).Distinct().ToList(),
+                        Copies = copies,
                     });
                 }
             }

@@ -75,8 +75,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// instance and save it, leaving the cached one as it was. Its membership update saves the whole cached instance, so
     /// right before one the cached instance's metadata JE doesn't own (name, shares, privacy, owner and the rest the person
     /// may edit) is set from the stored one (heal-then-write, D49): a membership write never undoes the person's change.
-    /// After the heal the stored playlist is read again: when it is no longer the one the gate passed (another nonce,
-    /// creation time or owner: deleted and made again with the same id in between), nothing is written.
+    /// After the heal the latest stored playlist goes through the whole gate again: when it is no longer the one the gate passed
+    /// (another nonce, creation time or owner: deleted and made again with the same id in between), or its privacy, shares or
+    /// name changed in between, nothing is written.
     /// </summary>
     public sealed class JellyfinReadyPlaylistHost : IReadyPlaylistHost
     {
@@ -190,10 +191,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             return Task.FromResult<string?>(null);
         }
 
-        // The stored playlist through the gate, then the cached instance healed from it, then the stored playlist read again:
-        // it and the healed instance Jellyfin is about to save must still be the playlist the gate passed (its id, owner, JE's
-        // nonce and creation time). Nothing awaited in between, and the caller calls Jellyfin right after. Jellyfin has no
-        // conditional save: a native edit landing inside its own save is a Jellyfin limitation (D49).
+        // The stored playlist through the gate, then the cached instance healed from it, then the latest stored playlist through
+        // the WHOLE gate again (owner, privacy, shares, JE's nonce, creation time and the caller's own conditions): it and the
+        // healed instance Jellyfin is about to save must still be the playlist the gate passed, with the owner, privacy, shares
+        // and name the heal gave the instance (a change in between would be undone by the save: nothing is written, the next
+        // look sees it). Nothing awaited in between, and the caller calls Jellyfin right after. Jellyfin has no conditional
+        // save: a native edit landing inside its own save is a Jellyfin limitation (D49).
         private string? Checked(Guid playlistId, ReadyGate gate, out Playlist? cached)
         {
             cached = null;
@@ -203,15 +206,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             if (_library.GetItemById(playlistId) is not Playlist live || stored == null || passed == null) return "missing";
             Heal(stored, live);
             var again = Info(Stored(playlistId));
+            if (gate(again) is { } late) return late;
             if (again == null) return "missing";
-            if (!Same(passed, again) || !Same(passed, Info(live)!)) return "identity";
+            if (!SameItem(passed, again) || !SameItem(passed, Info(live)!)) return "identity";
+            if (!SameState(passed, again)) return "changed";
             cached = live;
             return null;
         }
 
-        private static bool Same(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
+        private static bool SameItem(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
             => a.Id == b.Id && a.OwnerId == b.OwnerId && string.Equals(a.Nonce, b.Nonce, StringComparison.Ordinal) && a.Created == b.Created
                && string.Equals(a.FolderName, b.FolderName, StringComparison.OrdinalIgnoreCase);
+
+        // What the heal copied that the person can change: an instance healed from an older read would undo it on save.
+        private static bool SameState(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
+            => a.OpenAccess == b.OpenAccess && a.ShareCount == b.ShareCount && string.Equals(a.Name, b.Name, StringComparison.Ordinal);
 
         private Playlist? Stored(Guid playlistId) => playlistId == Guid.Empty ? null : _library.RetrieveItem(playlistId) as Playlist;
 

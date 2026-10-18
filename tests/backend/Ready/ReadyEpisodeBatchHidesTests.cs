@@ -168,7 +168,10 @@ public class ReadyEpisodeBatchHidesTests
         b.Privacy.Rules[b.Rig.Emma.UserId] = null;
         await b.Dispatcher.RunOnceAsync(default);
         Assert.Empty(b.Sessions.Sent);
-        Assert.All(b.Deliveries(), d => Assert.Equal("suppressed", d.Status));
+        Assert.Empty(b.Rig.Pushes);
+        Assert.Empty(b.Rig.Mail.Sent);
+        // Round 3: the TV message is never held; the phone and e-mail wait until the rules can be read (never sent before).
+        Assert.Equal(new[] { (NotifyChannel.DisplayMessage, "suppressed"), (NotifyChannel.Ntfy, "pending"), (NotifyChannel.Email, "pending") }, b.Deliveries());
         Assert.Equal(JsonValueKind.Null, b.Bell().GetProperty("key").ValueKind);
     }
 

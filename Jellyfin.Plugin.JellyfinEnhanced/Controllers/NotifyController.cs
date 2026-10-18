@@ -185,8 +185,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Administrators' alerts (paths, instance names, queue titles) only while the caller is one.
             var admin = IsAdmin();
             var rows = Store.Inbox(user, before, take + 1, adminKinds: admin);
-            var view = _service.Status.View;
-            var viewer = view.Viewer(user);
+            var viewer = _service.Status.View.Viewer(user);
+            // The caller's Hidden Content is read once for the whole page.
+            var check = viewer == null ? null : _dispatcher.Check(user, viewer);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new
             {
@@ -194,18 +195,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 more = rows.Count > take,
                 items = rows.Take(take).Select(r =>
                 {
-                    // A batch of new episodes as the caller may still be told about it now: the episodes they can
-                    // open and haven't hidden (Hidden Content), counted and worded again (as every channel sends it).
+                    // A Ready or new-episodes row as the caller may be told about it now, decided as every channel sends it
+                    // (NotifyDispatcher.AlertCheck): a title they can open and haven't hidden, a batch narrowed to the episodes
+                    // they can open and haven't hidden, counted and worded again.
                     var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(r.Payload), StringComparer.Ordinal);
                     var itemId = r.ItemId;
-                    var noEpisodes = r.Kind == NotifyKind.Episodes && viewer != null && _dispatcher.NarrowEpisodes(user, viewer, r.Key, payload, ref itemId) != null;
+                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes && (check == null || check.Decide(r.Kind, r.Key, payload, ref itemId).Why != null);
                     // Episode file ids are retained only for server-side delivery checks.
                     var parameters = payload.Where(p => p.Key != "episodeItems").ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-                    // A Ready / new-episodes row for an item the caller can no longer open (or whose episodes they all hid),
-                    // or an ask waiting for an OK (or a reminder) whose title they can no longer see (library access or
-                    // parental limits changed since): kept, but without what names the title.
-                    var hidden = noEpisodes
-                        || (r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(itemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null))
+                    // Such a row (or one whose Hidden Content can't be read now), or an ask waiting for an OK (or a reminder)
+                    // whose title they can no longer see (library access or parental limits changed since): kept, but without
+                    // what names the title.
+                    var hidden = untold
                         || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters, _service.Ledger, r.EventKey));
                     return new InboxItem
                     {
