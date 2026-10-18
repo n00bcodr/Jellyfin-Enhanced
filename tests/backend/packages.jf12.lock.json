@@ -107,6 +107,12 @@
           "SQLitePCLRaw.provider.e_sqlite3": "2.1.12"
         }
       },
+      "System.Reflection.MetadataLoadContext": {
+        "type": "Direct",
+        "requested": "[8.0.0, )",
+        "resolved": "8.0.0",
+        "contentHash": "SZxrQ4sQYnIcdwiO3G/lHZopbPYQ2lW0ioT4JezgccWUrKaKbHLJbAGZaDfkYjWcta1pWssAo3MOXLsR0ie4tQ=="
+      },
       "xunit": {
         "type": "Direct",
         "requested": "[2.9.3, )",

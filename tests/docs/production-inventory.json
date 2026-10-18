@@ -499,6 +499,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/JellyfinUserActions.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/BridgePaths.cs",
       "category": "Services"
     },
@@ -9825,7 +9829,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 547,
+    "files": 548,
     "routes": 255,
     "configuration_properties": 595,
     "storage_references": 84,

@@ -144,6 +144,38 @@ internal sealed class WriteGateWalk
         return (tree, Model(tree));
     }
 
+    /// <summary>The semantic model of one of the plugin's trees.</summary>
+    internal SemanticModel ModelOf(SyntaxTree tree) => Model(tree);
+
+    private Dictionary<string, List<(SimpleNameSyntax Name, SyntaxTree Tree)>>? _names;
+
+    /// <summary>
+    /// Every place <paramref name="member"/> is named in the plugin (by symbol): the whole expression it is part of
+    /// (<c>a.B</c>, <c>a?.B</c>), or the call when it is called.
+    /// </summary>
+    internal IEnumerable<(SyntaxNode Use, SemanticModel Model)> References(ISymbol member)
+    {
+        _names ??= _compilation.SyntaxTrees.Where(t => t.FilePath != "ImplicitUsings.cs")
+            .SelectMany(t => t.GetRoot().DescendantNodes().OfType<SimpleNameSyntax>().Select(n => (Name: n, Tree: t)))
+            .GroupBy(n => n.Name.Identifier.ValueText, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        if (!_names.TryGetValue(member.Name, out var names)) yield break;
+        var target = member.OriginalDefinition;
+        foreach (var (name, tree) in names)
+        {
+            var model = Model(tree);
+            var info = model.GetSymbolInfo(name);
+            var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
+            if (symbol is IMethodSymbol { ReducedFrom: { } reduced }) symbol = reduced;
+            if (symbol == null || !SymbolEqualityComparer.Default.Equals(symbol.OriginalDefinition, target)) continue;
+            SyntaxNode use = name;
+            while (use.Parent is MemberAccessExpressionSyntax or MemberBindingExpressionSyntax && use.Parent is not InvocationExpressionSyntax) use = use.Parent;
+            if (use.Parent is InvocationExpressionSyntax invocation && invocation.Expression == use) use = invocation;
+            else if (use.Parent is ConditionalAccessExpressionSyntax { WhenNotNull: var whenNotNull } access && whenNotNull == use) use = access;
+            yield return (use, model);
+        }
+    }
+
     private SyntaxTree Tree(string relative)
     {
         var suffix = Path.DirectorySeparatorChar + relative.Replace('/', Path.DirectorySeparatorChar);
