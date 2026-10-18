@@ -33,9 +33,11 @@ public class ListsPlacementRecoveryTests
         h.Host.AfterAdd = _ =>
         {
             list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
-            list.Persist(); throw new IOException("lost completion");
+            list.Persist();
         };
+        var interrupted = InterruptAfterObservedSave(h);
         Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        h.Store.Awaited = null; interrupted.Dispose();
         h.Host.AfterAdd = null;
         var stamp = h.Host.GetStoredSaveStamp(list.Info.Id);
         var pending = Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
@@ -111,9 +113,11 @@ public class ListsPlacementRecoveryTests
                 list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(c, true), new RawEntry(b, true) });
             }
             list.Persist();
-            throw new IOException("completion failed after native membership landed");
+
         };
+        var interrupted = InterruptAfterObservedSave(h);
         Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        h.Store.Awaited = null; interrupted.Dispose();
         Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
         h.Host.BeforeAdd = null; h.Host.AfterAdd = null;
         if (scenario == "native")
@@ -161,6 +165,8 @@ public class ListsPlacementRecoveryTests
     [Theory]
     [InlineData(false, "hidden")]
     [InlineData(true, "hidden")]
+    [InlineData(false, "hidden-limit")]
+    [InlineData(true, "hidden-limit")]
     [InlineData(false, "legacy")]
     [InlineData(true, "legacy")]
     [InlineData(false, "anchor")]
@@ -175,11 +181,13 @@ public class ListsPlacementRecoveryTests
         h.Host.AfterAdd = _ =>
         {
             list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
-            throw new IOException("failed completion");
+            list.Persist();
         };
+        var interrupted = InterruptAfterObservedSave(h);
         Assert.Equal(500, (await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        h.Store.Awaited = null; interrupted.Dispose();
         h.Host.AfterAdd = null;
-        if (scenario == "hidden") h.Host.Hide(c, owner); // Native moves cannot reach the target.
+        if (scenario.StartsWith("hidden", StringComparison.Ordinal)) h.Host.Hide(c, owner); // Native moves cannot reach the target.
         if (scenario == "legacy")
         {
             var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
@@ -189,10 +197,21 @@ public class ListsPlacementRecoveryTests
         h.Store.InvalidateAll(); h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
         var recovered = h.Store.Load(access.ListIdN)!;
-        if (scenario == "hidden")
+        if (scenario.StartsWith("hidden", StringComparison.Ordinal))
         {
             Assert.Equal(1, Assert.Single(recovered.Intents).Attempts);
             Assert.Empty(recovered.AbandonedPlacements);
+            if (scenario == "hidden-limit")
+            {
+                // Repeated gate refusals start no native save and keep the last known successful proof.
+                await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+                await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+                var final = h.Store.Load(access.ListIdN)!; Assert.Empty(final.Intents);
+                Assert.Equal("placement_retry_limit", Assert.Single(final.AbandonedPlacements).AbandonedReason);
+                Assert.Equal(3, final.AbandonedPlacements[0].Attempts);
+                Assert.Equal(new[] { a, b, c }, h.Host.Resolved(list.Info.Id));
+                return;
+            }
             h.Host.HiddenFrom.Clear();
             await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
             Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
@@ -273,45 +292,38 @@ public class ListsPlacementRecoveryTests
     }
 
     [Fact]
-    public async Task PendingMoveIsEntryScopedAndThreeRecoveryFailuresAbandonItDurably()
+    public async Task UnknownFailedMoveRetiresConservativelyAndOtherEntriesContinue()
     {
-        using var h = new ListsHarness();
-        h.Host.SupportsPositionalInsert = false;
-        var owner = h.NewUser("owner"); var editor = h.NewUser("editor");
-        var list = h.Host.AddPlaylist(owner, false, new ListShare(editor.Id, true));
-        var access = h.AccessFor(list, owner);
+        using var h = new ListsHarness(); h.Host.SupportsPositionalInsert = false;
+        var owner = h.NewUser("owner"); var list = h.Host.AddPlaylist(owner); var access = h.AccessFor(list, owner);
         var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem(); var d = h.Host.AddItem();
         list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) });
         h.Host.FailMoves = 100;
-        Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
-        // First recovery fails, but the owner's unrelated append still succeeds.
+        Assert.Equal(500, (await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        Assert.Null(Assert.Single(h.Store.Load(access.ListIdN)!.Intents).StoredSaveStamp);
         Ok<ApplyResultDto>(await h.Service.ApplyAsync(access, new[] { new ApplyEntry(0, d, null) }, null, null, null, None));
-        Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
-        // A refused write anchored to C does not mutate the list or consume a recovery attempt.
-        Error(await h.Service.AddPlaceholdersAsync(access, new[] { Movie(9912) }, new PositionDto { AfterToken = E(c) }, null, null, None), 409, "placement_pending");
-        Assert.Equal(1, Assert.Single(h.Store.Load(access.ListIdN)!.Intents).Attempts);
-        // A different placeholder swaps at the end while that intent is still pending.
-        var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
-        var ph = Movie(9913); doc.Items.Add(ph); doc.Order.Add(P(ph.Id)); h.Store.Save(doc);
-        await h.Consent(access);
-        var arrived = h.Host.AddItem(tmdb: 9913);
-        h.Store.InvalidateAll();
+        var final = h.Store.Load(access.ListIdN)!; Assert.Empty(final.Intents);
+        Assert.Equal("placement_evidence_missing", Assert.Single(final.AbandonedPlacements).AbandonedReason);
+        Assert.Equal(new[] { a, b, c, d }, h.Host.Resolved(list.Info.Id));
+        var ph = Movie(9913); Ok<ApplyResultDto>(await h.Service.AddPlaceholdersAsync(access, new[] { ph }, null, null, null, None));
+        await h.Consent(access); var arrived = h.Host.AddItem(tmdb: 9913);
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Equal(2, Assert.Single(h.Store.Load(access.ListIdN)!.Intents).Attempts);
-        Assert.Empty(h.Store.Load(access.ListIdN)!.Items); // the other swap already completed while C waits
-        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
-        var final = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(final.Intents); Assert.Empty(final.Items);
-        Assert.Equal(new[] { a, b, c, d, arrived }, h.Host.Resolved(list.Info.Id));
-        var receipt = JsonSerializer.SerializeToElement(final).GetProperty("abandonedPlacements")[0];
-        Assert.Equal("placement_retry_limit", receipt.GetProperty("abandonedReason").GetString());
-        Assert.Equal(3, receipt.GetProperty("attempts").GetInt32());
-        var view = JsonSerializer.SerializeToElement(await h.Service.GetViewAsync(access, None));
-        Assert.Equal("abandoned", view.GetProperty("placements")[0].GetProperty("state").GetString());
+        Assert.Contains(arrived, h.Host.Resolved(list.Info.Id)); Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
         h.Host.FailMoves = 0; h.Host.Calls.Clear();
-        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Empty(h.Host.Calls);
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None); Assert.Empty(h.Host.Calls);
     }
+
+    // The native save was acknowledged and observed; only the outer JE continuation is interrupted. This is
+    // distinct from a failed/unknown native save, which now has no recovery proof (ListsSaveAttributionTests).
+    private static IDisposable InterruptAfterObservedSave(ListsHarness h)
+    {
+        h.Store.Awaited = site =>
+        {
+            if (site.StartsWith("ObserveSaveAsync:", StringComparison.Ordinal)) throw new IOException("JE continuation interrupted after observed successful save");
+        };
+        return new ListContinuation(h.Store, () => null);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -1368,9 +1368,14 @@ follows Jellyfin's own rights and the household's request rules:
   name still carries that create's marker. Interrupted playlist placement verifies its saved position on both Jellyfin
   versions and retries without inserting another copy. A later reorder through JE or Jellyfin supersedes the old
   placement: JE keeps the new order and records `superseded_by_reorder`, including a native move away and back.
-  A recovery move requires the list's stored save stamp to match JE's last write; any later save conservatively
+  A recovery move requires the list's stored save stamp to match JE's last successfully acknowledged write; any later save conservatively
   retires the plan. Missing anchors (`anchor_removed`) and older misplaced intents without a saved stamp
-  (`placement_evidence_missing`) also retire with a receipt. If its editor loses
+  (`placement_evidence_missing`) also retire with a receipt. Failed, cancelled or unknown-outcome saves (including a lost
+  acknowledgement after membership landed) clear that placement's proof and never advance another placement's
+  proof. A misplaced run then retires visibly instead of moving. Proof is read immediately after successful native
+  completion, before any other continuation. Jellyfin provides no atomic save-and-stamp read or versioned save,
+  and native writers do not take JE's list lock: a native save within that observation window cannot be excluded.
+  Queued native refreshes and other later whole-item saves can conservatively retire a plan too. If its editor loses
   access, is deleted or disabled, JE abandons that placement and keeps the landed entries where they are, with their
   provenance. Three recovery attempts also bound a repeatedly failing move. Other entries can still be added and
   swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. JE validates the

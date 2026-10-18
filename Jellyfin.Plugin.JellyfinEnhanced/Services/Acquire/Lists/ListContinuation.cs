@@ -143,12 +143,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="action">Starts the work.</param>
         /// <param name="member">Caller.</param>
         /// <param name="line">Caller line.</param>
+        /// <param name="observed">Optional synchronous native outcome observer, before continuation checks.</param>
         /// <returns>The work.</returns>
-        internal static Task Await(Func<Task> action, [CallerMemberName] string member = "", [CallerLineNumber] int line = 0) =>
+        internal static Task Await(Func<Task> action, [CallerMemberName] string member = "", [CallerLineNumber] int line = 0, Action<bool>? observed = null) =>
             Await(
                 async () =>
                 {
-                    await action().ConfigureAwait(false);
+                    try
+                    {
+                        await action().ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        observed?.Invoke(false);
+                        throw;
+                    }
+
+                    // Capture native-save evidence before Completed runs any continuation hook or access check.
+                    // Failure of the continuation cannot turn an unacknowledged native write into successful proof.
+                    observed?.Invoke(true);
                     return true;
                 },
                 member,

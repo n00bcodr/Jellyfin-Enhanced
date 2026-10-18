@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// The gate, asked right before each Jellyfin write (the insert, then every move that places it) for that write's
         /// grant; it throws when the write isn't allowed any more, which stops the placement there.
         /// </param>
-        /// <param name="saved">Observes the durable stamp immediately after each native write, including failed asynchronous saves.</param>
+        /// <param name="saved">Records the immediate durable stamp only after successful saves; a failed or unknown save supplies null.</param>
         /// <returns>The canonical order after the insert (desired, or Jellyfin's actual order reconciled).</returns>
         public static async Task<List<string>> PlaceAsync(
             IListHost host,
@@ -157,7 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="anchor">Real token the entries go after (null = start); must still exist.</param>
         /// <param name="tokens">The entries' real tokens, in order.</param>
         /// <param name="write">The gate, asked right before each move for its grant (throws when it isn't allowed).</param>
-        /// <param name="saved">Observes the durable stamp after each native write.</param>
+        /// <param name="saved">Records successful-save proof, or clears active evidence on a failed or unknown save.</param>
         /// <returns>Jellyfin's real tokens afterwards.</returns>
         public static async Task<List<string>> MoveAfterAnchorAsync(
             IListHost host,
@@ -227,29 +227,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return current;
         }
 
-        // Invoke before entering try: a synchronous gate refusal has made no native write, so it must not absorb
-        // a newer person's stamp. A crash before this observation leaves no new proof and recovery fails closed.
+        // A stamp is evidence only after an acknowledged successful native save. Capture it before the
+        // continuation hook/rights check or any other await; the host offers no atomic save+stamp observation.
+        // ListAccessLostException synchronously thrown here comes only from JE's gate/Spend, before native
+        // invocation (Jellyfin cannot throw this internal JE type). That known no-write refusal retains old proof.
         private static async Task ObserveSaveAsync(IListHost host, Guid listId, Func<Task> write, Action<DateTime?, DateTime?>? saved)
         {
             var before = host.GetStoredSaveStamp(listId);
-            var pending = write();
+            Task pending;
             try
             {
-                await ListContinuation.Await(() => pending).ConfigureAwait(false);
+                pending = write();
+            }
+            catch (ListAccessLostException)
+            {
+                throw; // A synchronous JE permission/lifecycle refusal started no native save.
+            }
+            catch
+            {
+                saved?.Invoke(before, null); // A synchronous native failure has an unknown outcome too.
+                throw;
+            }
+
+            var observed = false;
+            try
+            {
+                await ListContinuation.Await(() => pending, observed: success =>
+                {
+                    observed = true;
+                    saved?.Invoke(before, success ? host.GetStoredSaveStamp(listId) : null);
+                }).ConfigureAwait(false);
             }
             finally
             {
-                saved?.Invoke(before, host.GetStoredSaveStamp(listId));
+                // A lifecycle refusal can prevent observation of an already-started native task. Its outcome is
+                // unknown: invalidate the active proof without reading or propagating whatever stamp is there now.
+                if (!observed) saved?.Invoke(before, null);
             }
         }
 
-        // Other pending placements can outlive this JE insert. Advance only proof that matched immediately before
-        // our write; an intervening native save, an unstamped legacy plan and a superseded plan never gain new proof.
+        // Failed/cancelled/unknown saves never absorb a native writer's stamp or advance sibling proof. A lost
+        // acknowledgement may have changed membership: without proof, a later required move retires visibly.
         internal static void RecordSave(ListDoc doc, SwapIntent active, DateTime? before, DateTime? after)
         {
+            active.StoredSaveStamp = active.SupersededByReorder ? null : after;
+            if (!after.HasValue) return;
             foreach (var intent in doc.Intents)
             {
-                if (!intent.SupersededByReorder && (ReferenceEquals(intent, active) || (before.HasValue && intent.StoredSaveStamp == before)))
+                if (!intent.SupersededByReorder && before.HasValue && intent.StoredSaveStamp == before)
                     intent.StoredSaveStamp = after;
             }
         }

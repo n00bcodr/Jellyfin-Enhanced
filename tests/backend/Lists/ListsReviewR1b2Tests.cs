@@ -180,9 +180,9 @@ public class ListsReviewR1b2Tests
         Assert.Single(doc.Items.Single().Filled);
     }
 
-    // F8: a 10.11 move that throws once is retried, so the movie doesn't stay at the end.
+    // F8: an unknown failed native move clears proof; recovery keeps landed membership and retires visibly.
     [Fact]
-    public async Task AFailedTenElevenMoveKeepsItsIntentUntilPlacementSucceeds()
+    public async Task AnUnknownFailedTenElevenMoveRetiresWithoutAnotherInsert()
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -199,30 +199,15 @@ public class ListsReviewR1b2Tests
         h.Host.FailMoves = 1;
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
 
-        Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
+        Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
         var doc = h.Store.Load(access.ListIdN)!;
-        Assert.Empty(doc.Intents);
-        Assert.Empty(doc.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
-
-        // When the same-pass retry fails too, keep the intent and resume on the next pass (no loop).
-        var c = h.Host.AddItem();
-        playlist.Raw.Add(new RawEntry(c, true));
-        var second = Movie(806);
-        await Add(h, access, new PositionDto { AfterToken = E(a) }, second);
-        var arrived2 = h.Host.AddItem(tmdb: 806);
-        h.Host.FailMoves = 2;
+        Assert.Empty(doc.Intents); Assert.Empty(doc.Items);
+        Assert.Equal("placement_evidence_missing", Assert.Single(doc.AbandonedPlacements).AbandonedReason);
+        Assert.Equal(new[] { E(a), E(b), E(arrived) }, doc.Order);
         h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Equal(2, h.Host.Calls.Count(call => call.StartsWith("move:", StringComparison.Ordinal)));
-        Assert.Equal(new[] { a, arrived, b, c, arrived2 }, h.Host.Resolved(playlist.Info.Id));
-        var after = h.Store.Load(access.ListIdN)!;
-        Assert.Single(after.Intents);
-        Assert.Contains(after.Items, p => p.Id == second.Id);
-        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
-        Assert.Equal(new[] { a, arrived2, arrived, b, c }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
-        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+        Assert.Empty(h.Host.Calls);
+        Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
     }
 
     // F9: a crash right after Jellyfin's collection write: the persisted intent still makes the item sync-owned.

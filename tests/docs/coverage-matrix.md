@@ -182,3 +182,11 @@ already-settled placement, later JE/native reorder with durable abandonment and 
 revoked/deleted/disabled-actor matrix. Staged refusal and original-actor write-gate coverage remain required.
 
 Interrupted list placement recovery additionally covers native reorder-away-and-back, unchanged stored-save-stamp controls and unstamped legacy intents on both host capability settings and both targets. The production host test keeps repository save stamps separate from stale cached items.
+
+Playlist save attribution (`ListsSaveAttributionTests`): failed/cancelled unrelated inserts never advance sibling
+proof, failed landed appends clear active proof even after native away-and-back, and immediate swap settlement and
+restart recovery share the same evidence gate. Successful-save controls still correct JE-only displacement; proof
+capture precedes outer continuation hooks. Already-started tasks whose observation is refused clear proof too.
+Both positional-insert settings run on both targets. Unknown native failures retire visibly; gate refusals that start
+no native write preserve successful proof and remain bounded by three attempts. Live host save/stamp probes are
+separate evidence from the in-memory host model.

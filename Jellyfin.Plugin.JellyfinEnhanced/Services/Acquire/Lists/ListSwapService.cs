@@ -991,6 +991,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // A failed/forbidden move propagates to the caller, which MUST keep the durable intent.
         private async Task<List<string>> SettleLandedAsync(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
         {
+            // Both the immediate failed-insert path and restart recovery reach this boundary. Never move
+            // using a post-failure order snapshot whose stamp was not captured from a successful JE save.
+            var failure = PlacementOrderFailure(context, intent, landed);
+            if (failure != null)
+            {
+                AbandonPlacement(context, intent, failure);
+                return context.Doc.Order;
+            }
+
             var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
             var order = context.Doc.Order.Where(t => !tokens.Contains(t)).ToList();
             var anchor = intent.Anchor;
@@ -1508,7 +1517,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     try
                     {
                         context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent, landed)).ConfigureAwait(false);
-                        _logger.Info($"[Lists] placement_settled list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} attempts={intent.Attempts}; verified saved placement.");
+                        if (context.Doc.Intents.Contains(intent))
+                            _logger.Info($"[Lists] placement_settled list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} attempts={intent.Attempts}; verified saved placement.");
                     }
                     catch (Exception ex)
                     {

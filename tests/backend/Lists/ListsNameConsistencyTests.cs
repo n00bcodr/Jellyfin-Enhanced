@@ -89,7 +89,7 @@ public class ListsNameConsistencyTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FailedPlacementRetainsIntentUntilRetrySettlesWithoutAnotherInsert(bool swap)
+    public async Task UnknownFailedPlacementRetiresWithoutAnotherInsertAndPreservesNativeName(bool swap)
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -123,15 +123,12 @@ public class ListsNameConsistencyTests
         }
         await Mutate();
         Assert.Equal(new[] { first, second, arrived }, h.Host.Resolved(list.Info.Id));
-        Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
-        h.Store.InvalidateAll(); // recovery reads the durable intent
-        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
-        Assert.Single(h.Store.Load(access.ListIdN)!.Intents); // the second failed move cannot consume intent
-        if (swap) Assert.Contains(h.Store.Load(access.ListIdN)!.Items, p => p.Id == placeholder.Id);
+        h.Store.InvalidateAll(); // recovery reads the durable evidence; unknown save outcome cannot authorize a move
         h.Host.FailMoves = 0;
-        await Mutate();
-        Assert.Equal(new[] { first, arrived, second }, h.Host.Resolved(list.Info.Id));
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        Assert.Equal(new[] { first, second, arrived }, h.Host.Resolved(list.Info.Id));
         Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+        Assert.Equal("placement_evidence_missing", Assert.Single(h.Store.Load(access.ListIdN)!.AbandonedPlacements).AbandonedReason);
         Assert.Single(h.Host.Calls, c => c.StartsWith("add:", StringComparison.Ordinal));
         Assert.Equal(NativeName, list.SavedName);
     }

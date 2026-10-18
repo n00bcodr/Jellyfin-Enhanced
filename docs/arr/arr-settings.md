@@ -550,9 +550,15 @@ adding any of the request's real items or placeholders, or consuming a recovery 
 like missing anchors. Retry after settlement or abandonment preserves the requested position. The list API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
 Recovery verifies placement on both Jellyfin versions. A later JE or native reorder keeps the person's order and
 records `superseded_by_reorder`, including a native move away and back. A recovery move requires the unchanged
-stored save stamp from JE's last native write; any later save (including metadata or membership edits) conservatively
+stored save stamp from JE's last successfully acknowledged native write; any later save (including metadata or membership edits) conservatively
 retires the plan. Missing anchors record `anchor_removed`; older misplaced plans without a saved stamp record
 `placement_evidence_missing`.
+Failed, cancelled or unknown-outcome writes clear the active placement's proof and never advance other pending
+placements' proof. This includes writes that landed but lost their acknowledgement. A required move then retires with
+`placement_evidence_missing`; an already verified placement can settle without a move. Successful-save proof is read
+immediately, before another continuation. Jellyfin has no atomic save-and-stamp read or versioned save, and native
+writers do not take JE's lock, so native saves within that window remain a host limitation. A later queued forced
+refresh, scan or metadata save can also conservatively retire a misplaced plan.
 There is no new setting or automatic retry after abandonment.
 
 #### Household tab
