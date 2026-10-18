@@ -39,7 +39,7 @@ public class PrivacyTmdbAppendTests
         var raw = """{"cast":[{"id":42,"name":"Person","character":"Public role"}],"crew":[]}""";
         var standalone = JsonNode.Parse(policy.ProjectResource(raw,"tv:tmdb:51",envelope,"tv"))!;
         Assert.Equal("Public role",standalone["cast"]![0]!["character"]?.ToString());
-        var appended = policy.Project(new JsonObject { [envelope]=JsonNode.Parse(raw) }.ToJsonString(),"tv:tmdb:51",fallbackKind:"tv");
+        var appended = policy.ProjectResource(new JsonObject { [envelope]=JsonNode.Parse(raw) }.ToJsonString(),"tv:tmdb:51","title",fallbackKind:"tv");
         Assert.Equal("Public role",JsonNode.Parse(appended)![envelope]!["cast"]![0]!["character"]?.ToString());
     }
 
@@ -58,7 +58,7 @@ public class PrivacyTmdbAppendTests
         PrivacyProviderSchemaTests.Classify(JsonNode.Parse(body)!.AsObject(), schema, envelope);
         var seed = guardSeed ? "tv:tmdb:42" : "tv:tmdb:51";
         var raw = new JsonObject { [envelope] = JsonNode.Parse(body) }.ToJsonString();
-        var result = new SpoilerPresentationContext(state, config).Project(raw, seed);
+        var result = new SpoilerPresentationContext(state, config).ProjectResource(raw, seed, "title");
         Assert.DoesNotContain("secret", result);
         if (envelope is "recommendations" or "similar") Assert.Contains("public", result);
         if (envelope is "content_ratings" or "watch/providers" or "external_ids")

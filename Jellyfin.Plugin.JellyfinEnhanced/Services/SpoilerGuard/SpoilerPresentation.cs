@@ -146,7 +146,7 @@ public sealed class SpoilerPresentationContext
 
     /// <summary>Known provider subresources have distinct schemas and must not bypass the title strip.</summary>
     public string ProjectResource(string json, string? title, string resource, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
-        => ProviderPresentationSchema.Project(json, null, this, "discovery", title, resource, fallbackKind, scopeKind, season, episode);
+        => !_config.SpoilerBlurEnabled ? json : ProviderPresentationSchema.Project(json, null, this, "discovery", title, resource, fallbackKind, scopeKind, season, episode);
 
     /// <summary>Whether original artwork is protected. Movie posters follow the existing keep-posters option.</summary>
     public bool ProtectArtwork(string? title, string kind, string imageType, int season = 0)
@@ -158,15 +158,11 @@ public sealed class SpoilerPresentationContext
             || _config.SpoilerBlurArtwork && imageType is "Backdrop" or "Art" or "Logo";
     }
 
-    /// <summary>Projects known title/list schemas from a private fresh tree; raw shared source/cache bytes stay intact.</summary>
-    public string Project(string json, string? title = null, bool ratingsOnly = false, string? fallbackKind = null, string? scopeKind = null, int season = 0, int episode = 0)
-        => !_config.SpoilerBlurEnabled ? json : ProviderPresentationSchema.Project(json, null, this, "discovery", title, ratingsOnly ? "ratings" : "", fallbackKind, scopeKind, season, episode);
-
     /// <summary>Projects one title/card, its nested season/episode fields and safe effective flags.</summary>
     public void ProjectTitle(JsonObject row, string title, string kind, int season = 0, int episode = 0)
     {
         if (!_config.SpoilerBlurEnabled) { AddNavigationMetadata(row, title, kind, season, episode); return; }
-        var projected = JsonNode.Parse(ProviderPresentationSchema.Project(row.ToJsonString(), null, this, "discovery", title, "", kind, kind, season, episode))!.AsObject();
+        var projected = JsonNode.Parse(ProviderPresentationSchema.Project(row.ToJsonString(), null, this, "discovery", title, kind is "episode" or "season" ? kind : "title", kind, kind, season, episode))!.AsObject();
         row.Clear();
         foreach (var pair in projected.ToArray()) row[pair.Key] = pair.Value?.DeepClone();
     }

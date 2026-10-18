@@ -21,7 +21,7 @@ public class PrivacySpoilerPresentationTests
         var state = new UserSpoilerBlur { PendingTmdb = new() { ["tv:42"] = new() } };
         state.Prefs.HideAirDate = false;
         var raw = new JsonObject { [field] = JsonNode.Parse("""{"name":"secret","overview":"secret","voteAverage":9,"vote_average":9,"stillPath":"/secret.jpg","still_path":"/secret.jpg","air_date":"2030-01-01"}""") }.ToJsonString();
-        var row = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project(raw, "tv:tmdb:42"))![field]!;
+        var row = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).ProjectResource(raw, "tv:tmdb:42", "title"))![field]!;
         Assert.Equal("", row["name"]!.ToString());
         foreach (var name in new[] { "overview", "voteAverage", "vote_average", "stillPath", "still_path" }) Assert.Null(row[name]);
         Assert.Equal("2030-01-01", row["air_date"]!.ToString());
@@ -31,7 +31,7 @@ public class PrivacySpoilerPresentationTests
     public void SnakeCaseLastAirDateUsesDatePolicy()
     {
         var state = new UserSpoilerBlur { PendingTmdb = new() { ["tv:42"] = new() } };
-        Assert.Null(JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project("""{"last_air_date":"2030-01-01"}""", "tv:tmdb:42"))!["last_air_date"]);
+        Assert.Null(JsonNode.Parse(new SpoilerPresentationContext(state, Config()).ProjectResource("""{"last_air_date":"2030-01-01"}""", "tv:tmdb:42", "title"))!["last_air_date"]);
     }
 
     [Theory]
@@ -45,7 +45,7 @@ public class PrivacySpoilerPresentationTests
         var policy = new SpoilerPresentationContext(state, Config());
         var raw = new JsonObject { [array] = new JsonArray(new JsonObject { ["file_path"] = "/secret.jpg" }) }.ToJsonString();
         Assert.Empty((JsonArray)JsonNode.Parse(policy.ProjectResource(raw, title, "images", scopeKind: scope))![array]!);
-        var embedded = JsonNode.Parse(policy.Project("{\"images\":" + raw + "}", title, scopeKind: scope))!;
+        var embedded = JsonNode.Parse(policy.ProjectResource("{\"images\":" + raw + "}", title, "title", scopeKind: scope))!;
         Assert.Empty((JsonArray)embedded["images"]![array]!);
     }
 
@@ -59,7 +59,7 @@ public class PrivacySpoilerPresentationTests
                 ["posterPath"] = "/secret.jpg", ["backdropPath"] = "/backdrop.jpg", ["voteAverage"] = 9.1,
                 ["releaseDate"] = "2030-01-01", ["character"] = "secret role", ["tagline"] = "secret", ["reviews"] = "secret" },
             new JsonObject { ["id"] = 42, ["mediaType"] = "tv", ["name"] = "Other kind", ["overview"] = "public" }) }.ToJsonString();
-        var projected = JsonNode.Parse(new SpoilerPresentationContext(State(), Config()).Project(source))!;
+        var projected = JsonNode.Parse(new SpoilerPresentationContext(State(), Config()).ProjectResource(source, null, "page"))!;
         var guarded = projected[field]![0]!;
         foreach (var name in new[] { "overview", "posterPath", "backdropPath", "voteAverage", "releaseDate", "character", "tagline", "reviews" }) Assert.Null(guarded[name]);
         Assert.Equal("Entry point", guarded["title"]!.ToString());
@@ -67,7 +67,7 @@ public class PrivacySpoilerPresentationTests
         Assert.True(guarded["jeSpoiler"]!["guarded"]!.GetValue<bool>());
         Assert.False(projected[field]![1]!["jeSpoiler"]!["guarded"]!.GetValue<bool>());
         Assert.Contains("secret", source); Assert.DoesNotContain("secret", projected.ToJsonString());
-        var other = new SpoilerPresentationContext(new(), Config()).Project(source);
+        var other = new SpoilerPresentationContext(new(), Config()).ProjectResource(source, null, "page");
         Assert.Contains("secret", other);
     }
 
@@ -77,7 +77,7 @@ public class PrivacySpoilerPresentationTests
         var state = new UserSpoilerBlur { ProviderTitles = new() { ["tv:tmdb:42"] = new() } };
         var policy = new SpoilerPresentationContext(state, Config());
         var raw = """{"name":"Show","overview":"secret","seasons":[{"seasonNumber":1,"name":"S1","overview":"first","posterPath":"/s1.jpg"},{"seasonNumber":2,"overview":"later","posterPath":"/s2.jpg"}],"episodes":[{"seasonNumber":2,"episodeNumber":1,"name":"secret title","originalName":"secret alternative","overview":"secret","airDate":"2030-01-01","stillPath":"/still.jpg"}]}""";
-        var projected = JsonNode.Parse(policy.Project(raw, "tv:tmdb:42"))!;
+        var projected = JsonNode.Parse(policy.ProjectResource(raw, "tv:tmdb:42", "title"))!;
         Assert.Equal("first", projected["seasons"]![0]!["overview"]!.ToString());
         Assert.Null(projected["seasons"]![1]!["overview"]);Assert.Null(projected["seasons"]![1]!["posterPath"]);
         var episode = projected["episodes"]![0]!;Assert.Equal("",episode["name"]!.ToString());Assert.Null(episode["originalName"]);Assert.Null(episode["airDate"]);Assert.Null(episode["stillPath"]);
@@ -100,7 +100,7 @@ public class PrivacySpoilerPresentationTests
         Assert.False(kept.ProtectArtwork("movie:tmdb:42","movie","Primary"));Assert.False(kept.ProtectArtwork("movie:tmdb:42","movie","Backdrop"));Assert.NotEqual(guarded.Revision,kept.Revision);
         state.Prefs.HideRatings=false;var opted = new SpoilerPresentationContext(state,config);
         Assert.False(opted.HidesRatings("movie:tmdb:42"));
-        config.SpoilerBlurEnabled=false;Assert.Equal("{\"overview\":\"raw\"}",new SpoilerPresentationContext(state,config).Project("{\"overview\":\"raw\"}","movie:tmdb:42"));
+        config.SpoilerBlurEnabled=false;Assert.Equal("{\"overview\":\"raw\"}",new SpoilerPresentationContext(state,config).ProjectResource("{\"overview\":\"raw\"}","movie:tmdb:42", "title"));
     }
 
     [Theory]
@@ -109,7 +109,7 @@ public class PrivacySpoilerPresentationTests
     {
         var policy = new SpoilerPresentationContext(new UserSpoilerBlur { ProviderTitles = new() { [title] = new() } }, Config());
         Assert.True(policy.ProtectArtwork(title, kind, "Logo"));
-        var result = policy.Project("""{"logoPath":"/secret.png","logo_path":"/secret.png","logoUrl":"/secret.png","logo":"/secret.png"}""", title);
+        var result = policy.ProjectResource("""{"logoPath":"/secret.png","logo_path":"/secret.png","logoUrl":"/secret.png","logo":"/secret.png"}""", title, "title");
         Assert.DoesNotContain("secret", result);
     }
 
@@ -135,7 +135,7 @@ public class PrivacySpoilerPresentationTests
     public void CalendarMovieStripsEveryPreciseDateAlias()
     {
         var raw = """[{"source":"Radarr","type":"Movie","tmdbId":42,"releaseDateLocal":"2030-01-01","physicalRelease":"2030-01-01","digitalRelease":"2030-01-01","inCinemas":"2030-01-01","physical_release":"2030-01-01","digital_release":"2030-01-01","in_cinemas":"2030-01-01"}]""";
-        Assert.DoesNotContain("2030-01-01", new SpoilerPresentationContext(State(), Config()).Project(raw));
+        Assert.DoesNotContain("2030-01-01", new SpoilerPresentationContext(State(), Config()).ProjectResource(raw, null, "calendar"));
     }
 
     [Theory]
@@ -144,11 +144,11 @@ public class PrivacySpoilerPresentationTests
     {
         var raw = "{\"id\":51,\"name\":\"Public seed\",\"" + field + "\":{\"page\":1,\"results\":[{\"id\":42,\"overview\":\"secret\",\"backdrop_path\":\"/secret.jpg\"},{\"id\":43,\"overview\":\"public\"}]}}";
         var state = new UserSpoilerBlur { ProviderTitles = new() { ["tv:tmdb:42"] = new() } };
-        var result = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).Project(raw, "tv:tmdb:51"))!;
+        var result = JsonNode.Parse(new SpoilerPresentationContext(state, Config()).ProjectResource(raw, "tv:tmdb:51", "title"))!;
         Assert.DoesNotContain("secret", result.ToJsonString());
         Assert.Equal("public", result[field]!["results"]![1]!["overview"]!.ToString());
         var hidden = HiddenContentPolicy.Build(new UserHiddenContent { Settings = new() { FilterDiscovery=false, FilterRecommendations=true }, Items = new() { ["tv:tmdb:42"] = new() { Type="Series", TmdbId="42" } } }, true);
-        Assert.Single((JsonArray)JsonNode.Parse(TitleFeedProjection.Hidden(raw, hidden, "discovery", "tv"))![field]!["results"]!);
+        Assert.Single((JsonArray)JsonNode.Parse(TitleFeedProjection.Hidden(raw, hidden, "discovery", "tv", "title"))![field]!["results"]!);
     }
 
     [Fact]
@@ -169,12 +169,12 @@ public class PrivacySpoilerContextTests
         var state = new UserSpoilerBlur { PendingTmdb = new() { ["movie:42"] = new() } };
         var config = new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripCast = true, SpoilerStripCastMode = "GuestStars", SpoilerStripPremiereDate = true };
         var raw = """{"title":"Film","releaseDate":"2024-02-27","credits":{"cast":[{"name":"Regular"}],"guestStars":[{"name":"Secret"}]},"releases":{"results":[{"iso_3166_1":"US","release_dates":[{"release_date":"2024-02-27","certification":"PG-13"}]}]}}""";
-        var projected = JsonNode.Parse(new SpoilerPresentationContext(state,config).Project(raw,"movie:tmdb:42"))!;
+        var projected = JsonNode.Parse(new SpoilerPresentationContext(state,config).ProjectResource(raw,"movie:tmdb:42", "title"))!;
         Assert.Equal(2024,projected["year"]!.GetValue<int>());Assert.Null(projected["releaseDate"]);Assert.Null(projected["releases"]);
         Assert.Equal("PG-13",projected["contentRatings"]!["results"]![0]!["rating"]!.ToString());
         Assert.NotNull(projected["credits"]!["cast"]);Assert.Null(projected["credits"]!["guestStars"]);
         config.SpoilerStripCastMode="All";
-        Assert.Null(JsonNode.Parse(new SpoilerPresentationContext(state,config).Project(raw,"movie:tmdb:42"))!["credits"]);
+        Assert.Null(JsonNode.Parse(new SpoilerPresentationContext(state,config).ProjectResource(raw,"movie:tmdb:42", "title"))!["credits"]);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public class PrivacySpoilerContextTests
         var service=new SpoilerPresentation(fixture.Core.Manager,library.Object,users.Object,new Moq.Mock<MediaBrowser.Controller.Library.IUserDataManager>().Object);
         var http=new Microsoft.AspNetCore.Http.DefaultHttpContext();var context=service.Load(viewer,http);
         Assert.Same(context,service.Load(viewer,http));
-        for(var i=0;i<300;i++) Assert.DoesNotContain("secret",context.Project("{\"overview\":\"secret\"}","movie:tmdb:42"));
+        for(var i=0;i<300;i++) Assert.DoesNotContain("secret",context.ProjectResource("{\"overview\":\"secret\"}","movie:tmdb:42", "title"));
         Assert.Empty(library.Invocations);
     }
 }

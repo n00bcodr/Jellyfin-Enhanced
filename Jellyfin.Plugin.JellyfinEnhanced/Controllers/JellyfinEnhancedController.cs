@@ -807,14 +807,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     : apiPath.StartsWith("/api/v1/tv/", StringComparison.OrdinalIgnoreCase) || apiPath.Contains("/discover/tv", StringComparison.OrdinalIgnoreCase) ? "tv" : null;
                 // Both raw-cache hits and misses reach this caller boundary.
                 var projected = Services.TitleFeedProjection.Hidden(result.Body,
-                    Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind, apiPath.Split('?', 2)[0].Split('/').LastOrDefault() ?? "");
+                    Services.HiddenContentPolicy.Load(_userConfigurationManager, Guid.Parse(jellyfinUserId), HttpContext, _libraryManager), surface, kind, Services.ProviderPresentationSchema.ProviderResource(apiPath));
                 Response.Headers["Cache-Control"] = "private, no-store";
                 var segments = apiPath.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
                 var title = segments.Length >= 4 && segments[2] is "movie" or "tv"
                     ? Services.HiddenContentPolicy.TitleIdentity(segments[2], segments[3]) : null;
                 var seasonIndex = Array.IndexOf(segments, "season");
                 var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < segments.Length && int.TryParse(segments[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
-                projected = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext).ProjectResource(projected, title, segments.LastOrDefault() ?? "", kind,
+                projected = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext).ProjectResource(projected, title, Services.ProviderPresentationSchema.ProviderResource(apiPath), kind,
                     scopeKind: seasonIndex >= 0 ? "season" : null, season: seasonNumber) ?? projected;
                 return ProjectForCaller(projected);
             }
@@ -4486,7 +4486,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Services.HiddenContentPolicy.Load(_userConfigurationManager, UserHelper.GetCurrentUserId(User)!.Value, HttpContext, _libraryManager),
                         apiPath.StartsWith("search/", StringComparison.Ordinal) ? "search" : apiPath.Contains("/recommendations", StringComparison.Ordinal) || apiPath.Contains("/similar", StringComparison.Ordinal) ? "recommendations" : "discovery",
                         apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null,
-                        resource: Services.ProviderPresentationSchema.LookupResource(apiPath) ?? apiPath.Split('/').LastOrDefault() ?? "");
+                        resource: Services.ProviderPresentationSchema.ProviderResource(apiPath));
                     var pathParts = apiPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
                     var title = pathParts.Length >= 2 ? Services.HiddenContentPolicy.TitleIdentity(pathParts[0], pathParts[1]) : null;
                     var seasonIndex = Array.IndexOf(pathParts, "season");
@@ -4494,7 +4494,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < pathParts.Length && int.TryParse(pathParts[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
                     var episodeNumber = episodeIndex >= 0 && episodeIndex + 1 < pathParts.Length && int.TryParse(pathParts[episodeIndex + 1], out var episodeValue) ? episodeValue : 0;
                     projected = _presentation?.Load(UserHelper.GetCurrentUserId(User)!.Value, HttpContext).ProjectResource(projected, title,
-                        Services.ProviderPresentationSchema.LookupResource(apiPath) ?? pathParts.LastOrDefault() ?? "", apiPath == "discover/movie" ? "movie" : apiPath == "discover/tv" ? "tv" : null,
+                        Services.ProviderPresentationSchema.ProviderResource(apiPath), apiPath == "discover/movie" ? "movie" : apiPath == "discover/tv" ? "tv" : null,
                         scopeKind: episodeIndex >= 0 ? "episode" : seasonIndex >= 0 ? "season" : null, season: seasonNumber, episode: episodeNumber) ?? projected;
                     var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(projected))) + "\"";
                     Response.Headers["ETag"] = etag;
@@ -11185,7 +11185,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var requestBody = new { requests, totalPages, totalResults, canApproveRequests };
                 var spoiler = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext);
-                return spoiler == null ? Ok(requestBody) : Content(spoiler.Project(JsonSerializer.Serialize(requestBody)), "application/json");
+                return spoiler == null ? Ok(requestBody) : Content(spoiler.ProjectResource(JsonSerializer.Serialize(requestBody), null, "arr-requests"), "application/json");
             }
             catch (Exception ex)
             {
@@ -11652,7 +11652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (calendarPresentation != null)
             {
                 var json = JsonSerializer.Serialize(new { events, errors }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                return Content(calendarPresentation.Project(json), "application/json");
+                return Content(calendarPresentation.ProjectResource(json, null, "calendar"), "application/json");
             }
             return Ok(new { events, errors });
         }

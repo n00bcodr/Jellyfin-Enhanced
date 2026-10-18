@@ -96,7 +96,7 @@ public class PrivacyPresentationGateTests
         using var f=new ApiPluginFixture(); f.Plugin.Configuration.SpoilerBlurEnabled=true;f.Plugin.Configuration.SpoilerReplaceTitle=true;f.Plugin.Configuration.SpoilerStripOverview=true;
         var user=Guid.NewGuid(); f.Core.Manager.SaveUserConfiguration(user.ToString("N"),"spoilerblur.json",new UserSpoilerBlur { PendingTmdb=new() { ["tv:42"]=new() } });
         var service=new SpoilerPresentation(f.Core.Manager,Mock.Of<ILibraryManager>(),Mock.Of<IUserManager>(),Mock.Of<IUserDataManager>());
-        var json=TitlePresentationGate.Read(f.Core.Manager,service,user).Project("""{"rows":{"series":"tv:tmdb:42","episodes":[{"episode":1,"title":"secret","overview":"secret","still":"/secret.jpg"}]}}""","requests");
+        var json=TitlePresentationGate.Read(f.Core.Manager,service,user).Project("""{"rows":{"series":"tv:tmdb:42","episodes":[{"episode":1,"title":"secret","overview":"secret","still":"/secret.jpg"}]}}""","requests",null,"page");
         Assert.DoesNotContain("secret",json);
     }
 }

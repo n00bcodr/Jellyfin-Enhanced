@@ -624,7 +624,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             StatusBody Present(byte[] raw, bool insert)
             {
                 var final = presentation?.Invoke();
-                var bytes = final == null ? raw : System.Text.Encoding.UTF8.GetBytes(final.Project(System.Text.Encoding.UTF8.GetString(raw), "requests"));
+                var bytes = final == null ? raw : System.Text.Encoding.UTF8.GetBytes(final.Project(System.Text.Encoding.UTF8.GetString(raw), "requests", null, "requests-hub"));
                 // A snapshot captured before Gather/build cannot populate a cache after its policy changed.
                 return insert && (final == null || final.Revision == presentationRevision) ? Cache.Put(cacheKey, bytes)
                     : new StatusBody(bytes, ArrStatusCache.ETagFor(final == null || final.Revision == presentationRevision ? cacheKey : cacheKey + "|" + final.Revision, bytes));

@@ -247,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "approvals", certainty = "Succeeded", message = "Requests waiting for an OK", more, items }, Json);
             var json = System.Text.Encoding.UTF8.GetString(bytes);
-            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).Project(json) ?? json);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).ProjectResource(json, null, "approvals") ?? json);
             return Body(caller.UserId, viewer, "approvals", bytes);
         }
 
@@ -302,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             }).ToArray();
             var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "mine", certainty = "Succeeded", message = "Your requests", more, items }, Json);
             var json = System.Text.Encoding.UTF8.GetString(bytes);
-            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).Project(json) ?? json);
+            bytes = System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(caller.UserId).ProjectResource(json, null, "request-mine") ?? json);
             return Body(caller.UserId, viewer, "mine", bytes);
         }
 

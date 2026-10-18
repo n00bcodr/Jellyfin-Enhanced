@@ -1345,3 +1345,5 @@ asked from Seerr, so people who asked long ago aren't missed.
   Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.
 
 Hidden Content and Spoiler Guard also apply when a preference changes while a request is loading. Provider episode fields and artwork are projected before delivery, including cached answers. Hidden Content saves reject stale replacements so another tab’s newer rules survive. If Undo fails, its translated error and Undo button remain available for another attempt. More Like This uses the recommendations filter preference independently of the library preference.
+
+Spoiler Guard preserves request controls, quota warnings and parental-rating assessments. Calendar entries keep their source, season and episode numbers and availability state, so filtering to **Available** still works while episode names are protected. Precise dates follow your Spoiler Guard date preference.

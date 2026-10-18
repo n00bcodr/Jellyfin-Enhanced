@@ -82,7 +82,7 @@ public static class ProviderPresentationSchema
         Add("translation", Role.Metadata, "iso6391 iso31661 name englishName");
         Add("translation-data", Role.Text, "title name homepage runtime", "overview tagline");
         Add("ratings", Role.Ratings, "id found wins nominations confirmed fetchedAtUnixMs", "rt imdb tmdb metacritic rottenTomatoes ratings awards");
-        Add("score", Role.Ratings, "url title source fresh", "criticsScore criticsRating audienceScore audienceRating score rating voteCount votes value");
+        Add("score", Role.Ratings, "url title source fresh year", "criticsScore criticsScoreCount criticsRating audienceScore audienceRating score rating voteCount votes value");
         Add("award", Role.Ratings, "name result year recipients works");
         Add("rating-ids", Role.Metadata, "imdb tmdb trakt mal anilist tvdb letterboxd");
         Add("inbox", Role.Envelope, "unread more");
@@ -156,7 +156,7 @@ public static class ProviderPresentationSchema
         Children("translations", "translations", "translation"); Children("translation", "data", "translation-data");
         Children("ratings", "rt imdb tmdb metacritic rottenTomatoes ratings", "score", "ratings");
         Add("status", Role.Metadata, "key liveKey itemId openItemId kind versions stage attention quiet askedSeasons actions", "nextDate nextDay");
-        Add("reason", Role.Metadata, "code"); Add("reason-params", Role.Metadata, "date count hours title contact library variant");
+        Add("reason", Role.Metadata, "code"); Add("reason-params", Role.Metadata, "date count hours title contact library variant held sent since pct eta");
         Add("progress", Role.Metadata, "percent etaSeconds");
         Add("journey", Role.Metadata, "stage at state byYou");
         Add("status-summary", Role.Metadata, "aired ready downloading almostReady missing attention longMissing longMissingSince longMissingSent nextAirIsDay unknown nextSeason nextEpisode readySeasons", "nextAir");
@@ -226,6 +226,36 @@ public static class ProviderPresentationSchema
         Add("calendar-page", Role.Envelope, "");
         foreach (var field in schemas["page"].Fields) schemas["calendar-page"].Fields[field.Key] = field.Value;
         Children("calendar-page", "results items events", "calendar"); Children("calendar-page", "errors", "provider-error");
+        void Clone(string name, string source, Role? role = null)
+            => schemas[name] = new(role ?? schemas[source].Role, new(schemas[source].Fields, StringComparer.Ordinal));
+        Clone("approval-row", "title"); Clone("request-mine-row", "title");
+        Clone("hub-row", "title"); Clone("arr-request-row", "title");
+        Add("request-coordinate", Role.Metadata, "season episode");
+        Add("parental-assessment", Role.Metadata, "label within");
+        schemas["approval-row"].Fields["overquota"] = new(Disposition.Allow);
+        Children("approval-row", "rating", "parental-assessment");
+        foreach (var name in new[] { "approval-row", "request-mine-row", "hub-row" })
+        {
+            // Requested scope is operational data, not provider season/episode descriptions.
+            Children(name, "episodes", "request-coordinate");
+            Children(name, "seasons", "number");
+        }
+        schemas["request-mine-row"].Fields["status"] = new(Disposition.Allow);
+        schemas["arr-request-row"].Fields["requestedby"] = new(Disposition.Allow);
+        Clone("ledger-row", "request-mine-row");
+        schemas["ledger-row"].Fields["requesterid"] = new(Disposition.Allow);
+        Add("ledger-member", Role.Metadata, "id status reason");
+        Children("ledger-row", "jobs", "job"); Children("ledger-row", "members", "ledger-member");
+        Children("ledger-member", "jobs", "job");
+        foreach (var (name, row) in new[] { ("approvals", "approval-row"), ("request-mine", "request-mine-row"),
+            ("requests-hub", "hub-row"), ("arr-requests", "arr-request-row"), ("request-ledger", "ledger-row") })
+        {
+            Clone(name, "page");
+            Children(name, "items requests mine soon ready", row);
+        }
+        Clone("status-row", "status", Role.Title);
+        Children("status-row", "jeSpoiler", "flags");
+        Clone("status-page", "page"); Children("status-page", "items", "status-row");
         return schemas;
     }
 
@@ -260,14 +290,32 @@ public static class ProviderPresentationSchema
         return null;
     }
 
+    /// <summary>Maps a known provider route to its declared response resource, independent of payload fields.</summary>
+    internal static string ProviderResource(string path)
+    {
+        var p = path.Split('?', 2)[0].Trim('/').Split('/');
+        if (p.Length >= 2 && p[0] == "api" && p[1] == "v1") p = p.Skip(2).ToArray();
+        var lookup = LookupResource(string.Join('/', p));
+        if (lookup != null) return lookup;
+        if (p.Length >= 2 && p[^2] == "watch" && p[^1] == "providers") return "watch/providers";
+        var last = p.LastOrDefault() ?? "";
+        if (last is "credits" or "aggregate_credits" or "combined_credits" or "movie_credits" or "tv_credits"
+            or "ratings" or "ratingscombined" or "awards" or "images" or "videos" or "keywords" or "reviews"
+            or "content_ratings" or "external_ids" or "translations" or "release_dates" or "releases"
+            or "recommendations" or "similar" or "filmography") return last;
+        if (p.Length >= 2 && p[0] is "movie" or "tv" && int.TryParse(p[1], out _))
+            return p.Contains("episode") ? "episode" : p.Contains("season") ? "season" : "title";
+        return "page"; // Declared provider list routes (discover, search, watchlist and request).
+    }
+
     /// <summary>Projects a private tree with resource-selected roles. Unknown guarded fields are removed recursively.</summary>
     public static string Project(string json, HiddenContentPolicy? hidden, SpoilerPresentationContext? spoilers, string surface,
-        string? title=null, string resource="", string? kind=null, string? scope=null, int season=0, int episode=0)
+        string? title, string resource, string? kind=null, string? scope=null, int season=0, int episode=0)
     {
         var root=JsonNode.Parse(json);
         if (spoilers?.Enabled == false) spoilers = null;
         kind ??= title?.StartsWith("movie:", StringComparison.Ordinal) == true ? "movie" : title != null ? "tv" : null;
-        if (resource.Length == 0 && surface == "calendar") resource = "calendar";
+        ArgumentException.ThrowIfNullOrEmpty(resource);
         kind = resource switch { "movie_credits" => "movie", "tv_credits" => "tv", _ => kind };
         var schema=Resource(resource,root,title,scope);
         root=Walk(root,schema,title,kind,scope,season,episode,surface,hidden,spoilers,ownIdentity:false,filter:false,containsGuarded:out _);
@@ -285,7 +333,10 @@ public static class ProviderPresentationSchema
             "inbox" or "activity" or "activity-row" or "user-reviews" or "review-ratings" => resource,
             "person-search" or "named-search" or "named-lookup" or "named" => resource,
             "person"=>"person", "collection"=>"collection", "calendar"=>root is JsonArray ? "calendar" : "calendar-page",
-            _=> scope is "episode" or "season" ? scope : root is JsonArray ? "title" : title!=null ? "title" : "page"
+            "approvals" or "request-mine" or "requests-hub" or "arr-requests" or "request-ledger" or "status-page" => resource,
+            "title" => scope is "episode" or "season" ? scope : "title",
+            "episode" or "season" or "page" => resource,
+            _ => throw new ArgumentException("A declared presentation resource is required.", nameof(resource))
         };
 
     private static JsonNode? Walk(JsonNode? node,string schemaName,string? title,string? kind,string? scope,int season,int episode,
@@ -299,7 +350,7 @@ public static class ProviderPresentationSchema
         {
             for(var i=rows.Count-1;i>=0;i--)
             {
-                var projected=Walk(rows[i],schemaName,title,kind,scope,season,episode,surface,hidden,spoilers,ownIdentity || schemaName is "title" or "calendar" or "group",filter:true,containsGuarded:out var childGuarded);
+                var projected=Walk(rows[i],schemaName,title,kind,scope,season,episode,surface,hidden,spoilers,ownIdentity || OwnsTitle(schemaName),filter:true,containsGuarded:out var childGuarded);
                 containsGuarded |= childGuarded;
                 if(projected==null) rows.RemoveAt(i);
                 else if(!ReferenceEquals(projected,rows[i])) rows[i]=projected;
@@ -316,7 +367,7 @@ public static class ProviderPresentationSchema
             if(ownIdentity || title==null) title=TitleFeedProjection.Identity(row,kind);
             containsGuarded = spoilers?.Guarded(title) == true;
             if(schemaName=="group" && row["results"] is JsonArray { Count:0 }) return null;
-            if(filter && hidden!=null && Hidden(row,title,hidden,surface)) return null;
+            if(filter && schemaName != "status-row" && hidden!=null && Hidden(row,title,hidden,surface)) return null;
             kind=title?.StartsWith("movie:",StringComparison.Ordinal)==true?"movie":title!=null?"tv":kind;
         }
         if(schema.Role==Role.Notification) title=TitleFeedProjection.Identity(row);
@@ -365,7 +416,7 @@ public static class ProviderPresentationSchema
                 // Seerr uses direct arrays for keywords/videos as well as TMDB's resource envelopes.
                 var childSchema=pair.Value is JsonArray ? field.Child switch { "keywords"=>"named","videos"=>"video",_=>field.Child } : field.Child;
                 var childScope=childSchema is "episode" or "season"?childSchema:scope;
-                var own=childSchema is "title" or "group" || childSchema=="page" && field.Surface!=null;
+                var own=OwnsTitle(childSchema) || childSchema=="page" && field.Surface!=null;
                 // Related pages contain independent titles; person/metadata IDs never select a title policy.
                 var childTitle=field.Surface!=null?null:title;
                 var projected=Walk(pair.Value,childSchema,childTitle,field.Kind??kind,childScope,season,episode,field.Surface??surface,hidden,spoilers,own,false,out var childGuarded);
@@ -396,6 +447,9 @@ public static class ProviderPresentationSchema
         if(schemaName=="group" && row["results"] is JsonArray { Count:0 }) return null;
         return row;
     }
+
+    private static bool OwnsTitle(string schema)
+        => schema is "title" or "calendar" or "group" or "approval-row" or "request-mine-row" or "hub-row" or "arr-request-row" or "ledger-row" or "status-row";
 
     private static bool Suppress(string policy,SpoilerPresentationContext spoilers,string? title,string kind,int season)
         => policy switch {

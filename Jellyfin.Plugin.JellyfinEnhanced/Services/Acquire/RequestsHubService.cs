@@ -366,7 +366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     : null,
             };
             var json = JsonSerializer.Serialize(response, Json);
-            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).Project(json) ?? json);
+            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).ProjectResource(json, null, "requests-hub") ?? json);
         }
 
         /// <summary>One title's entry from the viewer's ledger requests for it and its scoped status, or null when it is no longer worth showing.</summary>
@@ -551,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     : null,
             };
             var json = JsonSerializer.Serialize(response, Json);
-            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).Project(json) ?? json);
+            return System.Text.Encoding.UTF8.GetBytes(_presentation?.Load(viewer.UserId).ProjectResource(json, null, "requests-hub") ?? json);
         }
 
         private static int GroupOrder(string group) => group switch

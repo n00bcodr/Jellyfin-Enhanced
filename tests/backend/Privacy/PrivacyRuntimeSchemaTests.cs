@@ -28,7 +28,7 @@ public class PrivacyRuntimeSchemaTests
         const string raw="""{"cast":[{"id":42,"name":"Person","character":"Public"}],"crew":[{"id":42,"name":"Crew"}]}""";
         var credits=JsonNode.Parse(Policy().Project(raw,"discovery","tv:tmdb:51",resource,"tv"))!;
         Assert.Single(credits["cast"]!.AsArray()); Assert.Single(credits["crew"]!.AsArray());
-        var filmography=JsonNode.Parse(Policy().Project("""{"cast":[{"id":42,"media_type":"tv"},{"id":51,"media_type":"tv"}]}""","discovery",resource:"combined_credits"))!;
+        var filmography=JsonNode.Parse(Policy().Project("""{"cast":[{"id":42,"media_type":"tv"},{"id":51,"media_type":"tv"}]}""","discovery",title:null,resource:"combined_credits"))!;
         Assert.Single(filmography["cast"]!.AsArray()); Assert.Equal(51,filmography["cast"]![0]!["id"]!.GetValue<int>());
     }
 
@@ -39,7 +39,7 @@ public class PrivacyRuntimeSchemaTests
         var policy=Policy(artwork:false);
         // Keep this title visible on calendar while exercising its guard.
         policy=policy with { Hidden=HiddenContentPolicy.Build(null) };
-        var result=JsonNode.Parse(policy.Project(raw,"calendar"))![0]!;
+        var result=JsonNode.Parse(policy.Project(raw,"calendar",null,"calendar"))![0]!;
         Assert.Equal("/safe.jpg",result["posterUrl"]?.ToString());
         Assert.Equal("/safe-backdrop.jpg",result["backdropUrl"]?.ToString());
         Assert.Equal("Series",result["title"]?.ToString()); Assert.Equal("S02E03",result["subtitle"]?.ToString());
@@ -106,7 +106,7 @@ public class PrivacyRuntimeSchemaTests
         var kind=name.Contains("movie",StringComparison.OrdinalIgnoreCase)?"movie":"tv";
         var collection=name.Contains("/collection/",StringComparison.Ordinal) || name=="CollectionJson";
         string? title=schema is "person" or "page" || collection ? null : $"{kind}:tmdb:42";
-        var resource=schema switch { "title"=>"", "person"=>"person", "page"=>name.Contains("combined_credits")?"combined_credits":"recommendations", "calendar"=>"calendar", "season" or "episode"=>"",_=>schema };
+        var resource=schema switch { "title"=>"title", "person"=>"person", "page"=>name.Contains("combined_credits")?"combined_credits":"recommendations", "calendar"=>"calendar", "season" or "episode"=>schema,_=>schema };
         if(collection) resource="collection";
         var node=schema=="calendar"?new JsonArray(input):input;
         var policy=new TitlePresentationPolicy(HiddenContentPolicy.Build(null),new SpoilerPresentationContext(state,new PluginConfiguration { SpoilerBlurEnabled=true }));
@@ -137,7 +137,7 @@ public class PrivacyRuntimeSchemaTests
     public void IndependentPublicSiblingKeepsUnknownFieldsUnderGuardedSeed()
     {
         const string raw="""{"recommendations":{"results":[{"id":42,"new_spoiler_field":"private","unknown_envelope":{"overview":"private"}},{"id":43,"new_spoiler_field":"public","unknown_envelope":{"overview":"public"}}]}}""";
-        var result=JsonNode.Parse(Policy().Project(raw,"recommendations","movie:tmdb:42",kind:"movie"))!;
+        var result=JsonNode.Parse(Policy().Project(raw,"recommendations","movie:tmdb:42","title",kind:"movie"))!;
         var rows=result["recommendations"]!["results"]!;
         Assert.DoesNotContain("private",rows[0]!.ToJsonString());
         Assert.Equal("public",rows[1]!["unknown_envelope"]!["overview"]?.ToString());
@@ -191,19 +191,19 @@ public class PrivacyRuntimeSchemaTests
     public void GuardedPageRowsProtectUnknownEnvelopeFieldsWithoutGuardingPublicSiblings()
     {
         const string raw="""{"new_spoiler_field":"secret","unknown_envelope":{"overview":"secret"},"results":[{"id":42,"new_spoiler_field":"secret"},{"id":43,"new_spoiler_field":"public","unknown_envelope":{"overview":"public"}}]}""";
-        var result=JsonNode.Parse(Policy().Project(raw,"recommendations",resource:"recommendations",kind:"movie"))!;
+        var result=JsonNode.Parse(Policy().Project(raw,"recommendations",title:null,resource:"recommendations",kind:"movie"))!;
         Assert.Null(result["new_spoiler_field"]);Assert.Null(result["unknown_envelope"]);
         Assert.Null(result["results"]![0]!["new_spoiler_field"]);
         Assert.Equal("public",result["results"]![1]!["unknown_envelope"]?["overview"]?.ToString());
-        Assert.Contains("secret",Policy(false).Project(raw,"recommendations",resource:"recommendations",kind:"movie"));
+        Assert.Contains("secret",Policy(false).Project(raw,"recommendations",title:null,resource:"recommendations",kind:"movie"));
     }
 
     [Fact]
     public void TypedResourceOwnerCannotBeReclassifiedAsPersonByPayloadDiscriminator()
     {
         const string raw="""{"id":42,"mediaType":"person","overview":"secret","new_spoiler_field":"secret"}""";
-        Assert.DoesNotContain("secret",Policy().Project(raw,"details","movie:tmdb:42",kind:"movie"));
-        Assert.Contains("secret",Policy(false).Project(raw,"details","movie:tmdb:42",kind:"movie"));
+        Assert.DoesNotContain("secret",Policy().Project(raw,"details","movie:tmdb:42","title",kind:"movie"));
+        Assert.Contains("secret",Policy(false).Project(raw,"details","movie:tmdb:42","title",kind:"movie"));
     }
 
     [Fact]
@@ -216,26 +216,26 @@ public class PrivacyRuntimeSchemaTests
         Assert.False(card["jeSpoiler"]!["guarded"]!.GetValue<bool>());
         Assert.Equal("public",card["new_spoiler_field"]?.ToString());
         const string raw="""{ "new_spoiler_field": "public" }""";
-        Assert.Equal(raw,policy.Project(raw,"movie:tmdb:42"));
+        Assert.Equal(raw,policy.ProjectResource(raw,"movie:tmdb:42","title"));
     }
 
     [Fact]
     public void UnknownFlagExtensionsSurviveOnlyWhenUnguarded()
     {
         const string raw="""{"jeSpoiler":{"guarded":true,"new_spoiler_field":"extension","unknown_envelope":{"value":"extension"}}}""";
-        var publicResult=JsonNode.Parse(Policy(false).Project(raw,"details","movie:tmdb:42"))!;
+        var publicResult=JsonNode.Parse(Policy(false).Project(raw,"details","movie:tmdb:42","title"))!;
         Assert.Equal("extension",publicResult["jeSpoiler"]?["new_spoiler_field"]?.ToString());
         Assert.Equal("extension",publicResult["jeSpoiler"]?["unknown_envelope"]?["value"]?.ToString());
         Assert.False(publicResult["jeSpoiler"]!["guarded"]!.GetValue<bool>());
-        Assert.DoesNotContain("extension",Policy().Project(raw,"details","movie:tmdb:42"));
+        Assert.DoesNotContain("extension",Policy().Project(raw,"details","movie:tmdb:42","title"));
     }
 
     [Fact]
     public void UnknownEnvelopeCannotBeStringifiedIntoSafeCertification()
     {
         const string raw="""{"releases":{"results":[{"iso_3166_1":"US","release_dates":[{"certification":{"new_spoiler_field":"secret"}}]}]}}""";
-        Assert.DoesNotContain("secret",Policy().Project(raw,"details","movie:tmdb:42"));
-        Assert.Contains("secret",Policy(false).Project(raw,"details","movie:tmdb:42"));
+        Assert.DoesNotContain("secret",Policy().Project(raw,"details","movie:tmdb:42","title"));
+        Assert.Contains("secret",Policy(false).Project(raw,"details","movie:tmdb:42","title"));
     }
 
     [Fact]
@@ -251,7 +251,7 @@ public class PrivacyRuntimeSchemaTests
     public void GuardedJeRequestCardPreservesDeclaredStatusAndRequestControls()
     {
         const string raw = """{"items":[{"key":"movie:tmdb:42","title":"Entry","canCancel":true,"cancelIds":["request1"],"status":{"stage":"looking","reason":{"code":"no_release_yet"},"progress":{"percent":25,"etaSeconds":60},"actions":["search"],"nextDate":"secret"},"new_spoiler_field":"secret"}]}""";
-        var result=JsonNode.Parse(Policy().Project(raw,"requests"))!["items"]![0]!;
+        var result=JsonNode.Parse(Policy().Project(raw,"requests",null,"page"))!["items"]![0]!;
         Assert.Equal("looking",result["status"]?["stage"]?.ToString());
         Assert.Equal("no_release_yet",result["status"]?["reason"]?["code"]?.ToString());
         Assert.Equal(25,result["status"]?["progress"]?["percent"]?.GetValue<int>());

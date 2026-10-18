@@ -28,14 +28,14 @@ public class PrivacyTitleFeedTests
         var raw = new JsonObject { ["totalPages"] = 12, [field] = new JsonArray(
             new JsonObject { ["id"] = 42, ["mediaType"] = "movie", ["title"] = "secret" },
             new JsonObject { ["id"] = 42, ["mediaType"] = "tv", ["name"] = "allowed" }) }.ToJsonString();
-        var projected = JsonNode.Parse(TitleFeedProjection.Hidden(raw, policy, "discovery"))!;
+        var projected = JsonNode.Parse(TitleFeedProjection.Hidden(raw, policy, "discovery", null, "page"))!;
         Assert.Equal("allowed", projected[field]![0]!["name"]!.ToString());
         Assert.Single((JsonArray)projected[field]!);
         Assert.Equal(12, projected["totalPages"]!.GetValue<int>());
         Assert.Contains("secret", raw);
         Assert.DoesNotContain("secret", projected.ToJsonString());
-        Assert.Equal(raw, TitleFeedProjection.Hidden(raw, policy, "search"));
-        Assert.Equal(raw, TitleFeedProjection.Hidden(raw, HiddenContentPolicy.Build(null), "discovery"));
+        Assert.Equal(raw, TitleFeedProjection.Hidden(raw, policy, "search", null, "page"));
+        Assert.Equal(raw, TitleFeedProjection.Hidden(raw, HiddenContentPolicy.Build(null), "discovery", null, "page"));
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class PrivacyTitleFeedTests
             ["tv:tmdb:42"] = new() { Type = "Series", TmdbId = "42" }
         }});
         var raw = """{"results":[{"id":42,"media":{"tmdbId":50,"mediaType":"tv"}},{"id":50,"media":{"tmdbId":42,"mediaType":"tv"}}],"groups":[{"key":"tv:tmdb:42","basedOn":"secret","results":[{"id":50,"mediaType":"tv"}]}]}""";
-        var answer = JsonNode.Parse(TitleFeedProjection.Hidden(raw, policy, "requests"))!;
+        var answer = JsonNode.Parse(TitleFeedProjection.Hidden(raw, policy, "requests", null, "page"))!;
         Assert.Equal(42, answer["results"]![0]!["id"]!.GetValue<int>());
         Assert.Single((JsonArray)answer["results"]!);
         Assert.Empty((JsonArray)answer["groups"]!);

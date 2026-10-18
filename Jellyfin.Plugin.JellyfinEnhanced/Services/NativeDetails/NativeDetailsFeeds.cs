@@ -284,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var media = ProviderMetadata.Obj(data, "mediaInfo");
             var listed = Listed(viewer, media, movie, tmdb);
             if (listed.Shown && MediaInfoFor(listed, media) is { } info) body["mediaInfo"] = info;
-            return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).Project(body.ToJsonString(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture)) ?? body.ToJsonString());
+            return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "title") ?? body.ToJsonString());
         }
 
         /// <summary>Cross-version public season metadata, under the series/season access and spoiler policy.</summary>
@@ -297,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (answer.Data is not { } data) return Failed(answer);
             var body = JsonNode.Parse(data.GetRawText())!.AsObject();
             body.Remove("mediaInfo");
-            return new(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).Project(body.ToJsonString(), "tv:tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), scopeKind: "season", season: season) ?? body.ToJsonString());
+            return new(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(body.ToJsonString(), "tv:tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "season", scopeKind: "season", season: season) ?? body.ToJsonString());
         }
 
         /// <summary>
@@ -315,7 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var access = await ViewerAsync(_policy.SeeDetailsAsync(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb), ct)).ConfigureAwait(false);
             if (access != FeedOutcome.Ok) return new FeedAnswer(access, null);
             var answer = await _source.RatingsAsync(movie, tmdb, viewer.Id, ct).ConfigureAwait(false);
-            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).Project(data.GetRawText(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), ratingsOnly: true) ?? data.GetRawText());
+            if (answer.Data is { } data) return new FeedAnswer(FeedOutcome.Ok, _spoilers?.Load(viewer.Id).ProjectResource(data.GetRawText(), (movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture), "ratings") ?? data.GetRawText());
             // The title itself was admitted above: the source's "not found" here means it has no ratings
             // (Seerr answers 404 when Rotten Tomatoes doesn't know a series), which is an answer, not an error.
             return answer.NotFound && !answer.Busy ? new FeedAnswer(FeedOutcome.Ok, "null") : Failed(answer);

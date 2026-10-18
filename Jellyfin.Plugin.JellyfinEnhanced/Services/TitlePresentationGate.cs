@@ -39,7 +39,7 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
     public string Revision => Hidden.Revision + "|" + Spoilers?.Revision;
 
     /// <summary>Known JSON schemas are projected from private bytes, including envelopes and seed headings.</summary>
-    public string Project(string json, string surface, string? title = null, string resource = "", string? kind = null, string? scope = null, int season = 0, int episode = 0)
+    public string Project(string json, string surface, string? title, string resource, string? kind = null, string? scope = null, int season = 0, int episode = 0)
     {
         return ProviderPresentationSchema.Project(json, Hidden, Spoilers, surface, title, resource, kind, scope, season, episode);
     }
@@ -183,7 +183,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         else if (result.Value is not BaseItemDto) result.Value = kept;
     }
 
-    private sealed record Schema(string Surface, string? Title = null, string Resource = "", string? Kind = null, string? Scope = null, int Season = 0, int Episode = 0);
+    private sealed record Schema(string Surface, string? Title, string Resource, string? Kind = null, string? Scope = null, int Season = 0, int Episode = 0);
 
     private static Schema? Route(HttpContext http, ControllerActionDescriptor? action)
     {
@@ -198,7 +198,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var season = seasonAt >= 0 && seasonAt + 1 < p.Length && int.TryParse(p[seasonAt + 1], out var sn) ? sn : 0;
         var episode = episodeAt >= 0 && episodeAt + 1 < p.Length && int.TryParse(p[episodeAt + 1], out var en) ? en : 0;
         var scope = episodeAt >= 0 ? "episode" : seasonAt >= 0 ? "season" : kind;
-        var resource = p.LastOrDefault() ?? "";
+        var resource = ProviderPresentationSchema.ProviderResource(string.Join('/', p.Skip(p[0] == "native-details" && p.Length > 1 && p[1] == "title" ? 2 : 1)));
         if (p.Length >= 2 && p[^2] == "watch" && p[^1] == "providers") resource = "watch/providers";
         resource = ProviderPresentationSchema.LookupResource(string.Join('/', p.Skip(1))) ?? resource;
         if (p[0] is "tmdb" or "jellyseerr" or "native-details")
@@ -209,13 +209,15 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         if (p[0] is "awards" or "mdblist-ratings") return new("details", title, p[0] == "awards" ? "awards" : "ratings", kind);
         if (p[0] == "reviews") return new("details", title, p.Length == 2 && p[1] == "ratings" ? "review-ratings" : "user-reviews", kind);
-        if (p[0] == "activity") return new("library", Resource: "activity");
-        if (p[0] == "arr" && p.Length == 2 && p[1] is "requests" or "calendar") return new(p[1], Resource: p[1]);
+        if (p[0] == "activity") return new("library", Title: null, Resource: "activity");
+        if (p[0] == "arr" && p.Length == 2 && p[1] is "requests" or "calendar") return new(p[1], Title: null, Resource: p[1] == "calendar" ? "calendar" : "arr-requests");
         if (p[0] != "acquire" || p.Length < 2) return null;
-        if (p[1] == "hub") return new("requests");
-        if (p[1] is "discover" or "search") return new(p[1] == "search" ? "search" : "discovery");
-        if (p[1] == "requests" && (p.Length == 2 || p[2] is "mine" or "season")) return http.Request.Query["view"] == "pending" ? null : new("requests", Resource: p.Length > 2 && p[2] == "season" ? "season-rows" : "");
-        if (p[1] == "notify" && p.Last() == "inbox") return new("requests", Resource: "inbox");
+        if (p[1] == "hub") return new("requests", Title: null, Resource: "requests-hub");
+        if (p[1] is "discover" or "search") return new(p[1] == "search" ? "search" : "discovery", Title: null, Resource: "page");
+        if (p[1] == "requests" && (p.Length == 2 || p[2] is "mine" or "season")) return http.Request.Query["view"] == "pending" ? null : new("requests", Title: null, Resource: p.Length > 2 && p[2] == "season" ? "season-rows" : p.Length > 2 && p[2] == "mine" ? "request-mine" : "request-ledger");
+        if (p[1] == "requests" && p.Length == 3 && p[2] == "approvals") return new("requests", Title: null, Resource: "approvals");
+        if (p[1] == "status" && (p.Length == 2 || p.Length == 4 && p[2] == "item")) return new("requests", Title: null, Resource: "status-page");
+        if (p[1] == "notify" && p.Last() == "inbox") return new("requests", Title: null, Resource: "inbox");
         return null;
     }
 

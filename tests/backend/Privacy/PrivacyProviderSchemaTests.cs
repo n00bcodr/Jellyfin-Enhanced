@@ -97,7 +97,7 @@ public class PrivacyProviderSchemaTests
     public void EveryKeyOfEveryProviderShapeHasAnEnforcedDisposition(string name, string schema, string title, string json)
     {
         var raw = JsonNode.Parse(json)!.AsObject(); Classify(raw, schema, name);
-        var projected = schema == "calendar" ? JsonNode.Parse(Policy().ProjectResource("["+json+"]", null, "calendar"))![0] : JsonNode.Parse(Policy().Project(json,title));
+        var projected = schema == "calendar" ? JsonNode.Parse(Policy().ProjectResource("["+json+"]", null, "calendar"))![0] : JsonNode.Parse(Policy().ProjectResource(json,title,"title"));
         Assert.DoesNotContain("secret", projected!.ToJsonString());
         foreach (var pair in raw)
             if (Disposition(schema,pair.Key) == "allowed" && pair.Value is JsonValue && pair.Key != "subtitle")

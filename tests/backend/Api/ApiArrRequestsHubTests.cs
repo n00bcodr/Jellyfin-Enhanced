@@ -214,6 +214,60 @@ public class ApiArrRequestsHubTests
         Assert.DoesNotContain("secret",Encoding.UTF8.GetString(hit.Json));Assert.Equal(stored,rig.Service.Cache.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GuardedHubBothProducersKeepOperationalStateAndRequestControls(bool ledger)
+    {
+        using var rig = new Rig();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(rig.Arr.Plugin, rig.Emma.UserId, "movie:tmdb:999");
+        var hub = rig.Hub;
+        using var requests = new IntegrationRequestLedgerTests.Rig();
+        if (ledger)
+        {
+            var config = rig.Arr.Plugin.Plugin.Configuration;
+            config.ArrPhase3Enabled = true;
+            config.ArrRequestBackend = "je";
+            requests.Policy.People[rig.Emma.UserId] = requests.Policy.People[requests.Kid] with { UserId = rig.Emma.UserId };
+            await requests.Create(rig.Emma.UserId, IntegrationRequestLedgerTests.Movie(999));
+            hub = new RequestsHubService(rig.Service, rig.Requests, () => config, requests.Ledger,
+                (_, _, _) => Task.FromResult(new Dictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.HubTitleMeta>
+                { ["movie:tmdb:999"] = new() { Title = "Waiting Film", Poster = "/secret.jpg" } }));
+        }
+        PrivacyOperationalProjectionTests.Inject(hub, "_presentation", spoilers);
+        Assert.True(await rig.Requests.RefreshAsync(default));
+        var body = await hub.ForViewerAsync(rig.Emma, default);
+        var result = PrivacyOperationalProjectionTests.Final(rig.Arr.Plugin, spoilers, rig.Emma.UserId, "acquire/hub",
+            new FileContentResult(body.Json, "application/json"));
+        var row = result["mine"]!.AsArray().Single(r => r?["key"]?.ToString() == "movie:tmdb:999")!;
+        Assert.Equal("pending", row["request"]?.ToString());
+        Assert.Equal("needsOk", row["group"]?.ToString());
+        Assert.Equal("asked", row["status"]?["stage"]?.ToString());
+        Assert.NotNull(row["askedAt"]);
+        Assert.NotNull(row["status"]?["reason"]?["code"]);
+        Assert.NotNull(row["status"]?["quiet"]);
+        Assert.Equal("Waiting Film", row["title"]?.ToString());
+        Assert.Null(row["poster"]);
+    }
+
+    [Fact]
+    public async Task StatusHubFinalCacheBoundaryKeepsNestedOperationalStateAndStripsSpoilers()
+    {
+        using var rig = new Rig();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(rig.Arr.Plugin, rig.Emma.UserId, "movie:tmdb:42");
+        var policy = TitlePresentationGate.Read(rig.Arr.Plugin.Core.Manager, spoilers, rig.Emma.UserId);
+        var raw = Encoding.UTF8.GetBytes("""{"mine":[{"key":"movie:tmdb:42","poster":"/secret.jpg","overview":"secret","request":"pending","status":{"key":"movie:tmdb:42","stage":"downloading","attention":true,"quiet":false,"askedSeasons":[2],"actions":["cancel"],"progress":{"percent":25,"etaSeconds":60},"summary":{"aired":3,"ready":2},"episodes":[{"key":"tv:tmdb:42:s2:e3","season":2,"episode":3,"row":"3","stage":"ready"}]}}]}""");
+        var body = await rig.Service.ForTitlesAsync(rig.Emma, new[] { TitleKey.Parse("movie:tmdb:42")! }, "hub", "operational", _ => raw,
+            default, presentation: () => policy, presentationRevision: policy.Revision);
+        var row = JsonNode.Parse(body.Json)!["mine"]![0]!;
+        Assert.Equal("pending", row["request"]?.ToString());
+        Assert.Equal("downloading", row["status"]?["stage"]?.ToString());
+        Assert.Equal(25, row["status"]?["progress"]?["percent"]?.GetValue<int>());
+        Assert.Equal(3, row["status"]?["episodes"]?[0]?["episode"]?.GetValue<int>());
+        Assert.Equal("cancel", row["status"]?["actions"]?[0]?.ToString());
+        Assert.DoesNotContain("secret", Encoding.UTF8.GetString(body.Json));
+    }
+
     [Fact]
     public async Task TheHubIsBehindItsSwitchesAndNeedsAUser()
     {

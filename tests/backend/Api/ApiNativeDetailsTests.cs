@@ -1237,6 +1237,48 @@ public class ApiNativeDetailsTests
         Assert.Equal(AbsentLookup.Refused, (await pages.ResolveAsync(viewer.Id, series, CancellationToken.None)).Outcome);
     }
 
+    [Theory]
+    [InlineData("title")]
+    [InlineData("season")]
+    [InlineData("ratings")]
+    public async Task GuardedNativeJsonProducersKeepTheirDeclaredOperationalShape(string resource)
+    {
+        using var rig = new Rig();
+        var viewer = rig.Person();
+        PrivacyOperationalProjectionTests.Guard(rig.Plugin, viewer.Id, resource == "title" ? "movie:tmdb:693134" : "tv:tmdb:83867");
+        rig.Source.KnownSeasons.Add(2);
+        var answer = resource switch
+        {
+            "title" => await rig.Feeds.TitleAsync(viewer, true, 693134, default),
+            "season" => await rig.Feeds.SeasonAsync(viewer, 83867, 2, default),
+            _ => await rig.Feeds.RatingsAsync(viewer, false, 83867, default)
+        };
+        Assert.Equal(FeedOutcome.Ok, answer.Outcome);
+        if (resource == "ratings") { Assert.Equal("null", answer.Json); return; }
+        var row = Body(answer);
+        Assert.True(row.GetProperty("jeSpoiler").GetProperty("guarded").GetBoolean());
+        if (resource == "title")
+        {
+            Assert.Equal(693134, row.GetProperty("id").GetInt32());
+            Assert.Equal(167, row.GetProperty("runtime").GetInt32());
+            Assert.Equal("Dune: Part Two", row.GetProperty("title").GetString());
+            Assert.False(row.TryGetProperty("overview", out _));
+            Assert.False(row.TryGetProperty("posterPath", out _));
+        }
+        else
+        {
+            Assert.Equal(2, row.GetProperty("seasonNumber").GetInt32());
+            Assert.Equal(3, row.GetProperty("episodes").GetArrayLength());
+            var episode = row.GetProperty("episodes")[0];
+            Assert.Equal(2, episode.GetProperty("seasonNumber").GetInt32());
+            Assert.Equal(1, episode.GetProperty("episodeNumber").GetInt32());
+            Assert.Equal(40, episode.GetProperty("runtime").GetInt32());
+            Assert.Equal("", episode.GetProperty("name").GetString());
+            Assert.False(episode.TryGetProperty("overview", out _));
+            Assert.False(episode.TryGetProperty("stillPath", out _));
+        }
+    }
+
     [Fact]
     public async Task PendingGuardProjectsRawPublicDetailsAndEachRelatedTitleIndependently()
     {

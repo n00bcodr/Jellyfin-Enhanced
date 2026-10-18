@@ -61,6 +61,35 @@ public class ApiSeerrTests
             new Claim("Jellyfin-UserId", user.ToString()), new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
         public void Dispose() { Transport.Dispose(); JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange(); Plugin.Dispose(); }
     }
+    [Fact]
+    public async Task GuardedLegacyRequestsKeepSeerrDecisionMetadataThroughFinalGate()
+    {
+        using var f = new SeerrFixture();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(f.Plugin, f.UserId, "movie:tmdb:42");
+        f.Plugin.Plugin.Configuration.DownloadsPageEnabled = true;
+        f.Plugin.Plugin.Configuration.DownloadsFilterByUserRequests = false;
+        f.Reply = request => IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/api/v1/request"
+            ? """{"pageInfo":{"results":1},"results":[{"id":99,"status":1,"type":"movie","createdAt":"2026-10-01T12:00:00Z","requestedBy":{"id":27,"displayName":"Requester","avatar":"/avatar.png"},"media":{"tmdbId":42,"mediaType":"movie","status":2,"title":"Entry","posterPath":"/secret.jpg"}}]}"""
+            : """{"title":"Entry","posterPath":"/secret.jpg","releaseDate":"2026-01-01"}""");
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(f.UserId)).Returns(new Jellyfin.Database.Implementations.Entities.User("viewer", "default", "default") { Id = f.UserId });
+        PrivacyOperationalProjectionTests.Inject(f.Controller, "_userManager", users.Object);
+        PrivacyOperationalProjectionTests.Inject(f.Controller, "_presentation", spoilers);
+        PrivacyOperationalProjectionTests.Inject(f.Controller, "_userConfigurationManager", f.Plugin.Core.Manager);
+        var result = PrivacyOperationalProjectionTests.Final(f.Plugin, spoilers, f.UserId, "arr/requests", await f.Controller.GetRequests());
+        var row = Assert.Single(result["requests"]!.AsArray())!;
+        Assert.Equal(99, row["id"]?.GetValue<int>());
+        Assert.Equal(1, row["requestStatus"]?.GetValue<int>());
+        Assert.Equal("Pending", row["mediaStatus"]?.ToString());
+        Assert.Equal("Requester", row["requestedBy"]?.ToString());
+        Assert.NotNull(row["requestedByAvatar"]);
+        Assert.NotNull(row["createdAt"]);
+        Assert.Equal(1, result["totalResults"]?.GetValue<int>());
+        Assert.NotNull(result["canApproveRequests"]);
+        Assert.Null(row["posterUrl"]);
+        Assert.DoesNotContain("secret", result.ToJsonString());
+    }
+
     private static JsonElement Body(string json) => JsonSerializer.Deserialize<JsonElement>(json);
 
     [Theory]

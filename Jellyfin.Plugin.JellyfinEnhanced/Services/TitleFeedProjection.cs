@@ -8,8 +8,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 public static class TitleFeedProjection
 {
     /// <summary>Projects a fresh JSON tree after raw caches and access checks, before limits or personalized caches.</summary>
-    public static string Hidden(string json, HiddenContentPolicy policy, string surface, string? fallbackKind = null, string resource = "")
-        => ProviderPresentationSchema.Project(json, policy, null, surface, resource: resource, kind: fallbackKind);
+    public static string Hidden(string json, HiddenContentPolicy policy, string surface, string? fallbackKind, string resource)
+        => ProviderPresentationSchema.Project(json, policy, null, surface, title: null, resource: resource, kind: fallbackKind);
 
     /// <summary>A row's semantic title key, independent of its request/list database id.</summary>
     public static string? Identity(JsonObject row, string? fallbackKind = null)
