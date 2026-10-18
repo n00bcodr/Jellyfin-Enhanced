@@ -5379,9 +5379,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
-                // replaces the whole file) keeps them as stored. Read, kept, compared and saved under the person's settings
-                // lock, so an overlapping save of the person's own can't be undone.
+                // Whole-document saves, including the person's own, cannot change consent. Cached older
+                // clients remain compatible, but must use the explicit consent operation to change it.
                 var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
                 var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
                 if (saved && changes.Count > 0)
@@ -5389,12 +5388,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
-                return Ok(new { success = true, file = "settings.json" });
+                return Ok(new { success = true, file = "settings.json", consents = new { userConfiguration.ListSwapIn } });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>An explicit personal consent change. A whole-document save never changes these fields.</summary>
+        public sealed class PersonalConsentChange
+        {
+            /// <summary>The exact consent field name (currently ListSwapIn).</summary>
+            public string? Field { get; set; }
+            /// <summary>The intended consent; missing or null is not an explicit choice.</summary>
+            public bool? Value { get; set; }
+        }
+
+        /// <summary>Sets one consent for the authenticated person themselves, never on behalf of another user.</summary>
+        [HttpPatch("user-settings/{userId}/consent")]
+        [Authorize]
+        [BodyLimit]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult SetUserSettingsConsent(string userId, [FromBody] PersonalConsentChange change)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId) return Forbid();
+            if (change?.Field == null || !change.Value.HasValue)
+                return BadRequest(new { code = "invalid_consent", message = "A consent field and boolean value are required." });
+            try
+            {
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value.Value);
+                return Ok(new { success = true, consents = new { settings.ListSwapIn } });
+            }
+            catch (ArgumentException)
+            {
+                return BadRequest(new { code = "invalid_consent", message = "Unknown personal consent field." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save personal consent for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save personal consent." });
             }
         }
 

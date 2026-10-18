@@ -15,7 +15,7 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
 function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
-  const writes = [], toasts = [];
+  const writes = [], toasts = [], panelCleanups = [];
   const h = createHarness({
     JE: {
       pluginConfig: { Shortcuts: [], ...config }, userConfig: { settings: { ...settings }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
@@ -35,8 +35,8 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
   h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
   const resets = [];
   h.JE.internals.arrStatusCards = { reset: () => resets.push(h.JE.currentSettings.acquisitionBadges) };
-  return { ...h, writes, toasts, resets,
-    wire() { h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} }); },
+  return { ...h, writes, toasts, resets, panelCleanups,
+    wire() { h.JE.internals.enhancedUi.wireSettingsListeners({ panelCleanups, createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} }); },
     async choose(id, value) {
       const select = h.document.getElementById(id);
       select.value = value;
@@ -351,3 +351,73 @@ test('session changes close the outgoing settings panel through its cleanup hand
   assert.equal(cleanups, 1);
   assert.equal(h.document.getElementById('jellyfin-enhanced-panel'), null);
 });
+
+// Review round 7: callbacks belong to the panel's opening identity, including unfinished gestures.
+for (const touch of [false, true]) for (const boundary of ['user switch', 'same-user new epoch', 'close']) {
+  test(`subtitle ${touch ? 'touchend' : 'mouseup'} cannot save after ${boundary}`, async t => {
+    const h = panel(t, { config: badges });
+    let epoch = 1, user = 'user-a';
+    h.window.ApiClient.getCurrentUserId = () => user;
+    h.JE.session = { getEpoch: () => epoch, getServerId: () => 'server-a', isCurrent: n => n === epoch };
+    h.load('enhanced/config.js');
+    h.wire();
+    const grid = h.document.getElementById('subtitlePositionGrid');
+    grid.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
+    const event = type => {
+      const ev = new h.window.MouseEvent(type, { clientX: 20, clientY: 30, bubbles: true });
+      if (touch) Object.defineProperty(ev, 'touches', { value: [{ clientX: 20, clientY: 30 }] });
+      return ev;
+    };
+    grid.dispatchEvent(event(touch ? 'touchstart' : 'mousedown'));
+    if (boundary === 'close') h.panelCleanups.forEach(cleanup => cleanup());
+    else {
+      epoch++;
+      if (boundary === 'user switch') user = 'user-b';
+      h.JE.userConfig.settings = { subtitleHorizontalPosition: 70, subtitleVerticalPosition: 80 };
+      h.JE.currentSettings = h.JE.loadSettings();
+    }
+    h.document.dispatchEvent(event(touch ? 'touchmove' : 'mousemove'));
+    h.document.dispatchEvent(event(touch ? 'touchend' : 'mouseup'));
+    await new Promise(done => setImmediate(done));
+    assert.equal(h.writes.length, 0, 'outgoing release must write neither identity');
+    if (boundary !== 'close') {
+      assert.equal(h.JE.currentSettings.subtitleHorizontalPosition, 70);
+      assert.equal(h.JE.currentSettings.subtitleVerticalPosition, 80);
+    }
+  });
+}
+
+test('closing removes every document gesture listener and stale callbacks cannot restart a gesture', async t => {
+  const h = panel(t, { config: badges });
+  const added = [], removed = [];
+  const add = h.document.addEventListener.bind(h.document), remove = h.document.removeEventListener.bind(h.document);
+  h.document.addEventListener = (type, fn, options) => { added.push([type, fn]); add(type, fn, options); };
+  h.document.removeEventListener = (type, fn, options) => { removed.push([type, fn]); remove(type, fn, options); };
+  h.wire();
+  h.panelCleanups.forEach(cleanup => cleanup());
+  for (const [type, fn] of added.filter(([type]) => /^(mouse|touch)/.test(type))) {
+    assert.ok(removed.some(([rType, rFn]) => rType === type && rFn === fn), `${type} leaked`);
+    fn(new h.window.MouseEvent(type, { clientX: 20, clientY: 30 }));
+  }
+  const grid = h.document.getElementById('subtitlePositionGrid');
+  grid.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
+  grid.dispatchEvent(new h.window.MouseEvent('mousedown', { clientX: 20, clientY: 30 }));
+  h.document.dispatchEvent(new h.window.MouseEvent('mouseup'));
+  await new Promise(done => setImmediate(done));
+  assert.equal(h.writes.length, 0);
+});
+
+for (const id of ['acquisitionBadgesSelect', 'subtitlePositionReset', 'pauseScreenDelayInput']) {
+  test(`detached ${id} handler cannot save in a later identity epoch`, async t => {
+    const h = panel(t, { config: badges });
+    let epoch = 1;
+    h.JE.session = { getEpoch: () => epoch, isCurrent: n => n === epoch };
+    h.wire();
+    epoch++;
+    const control = h.document.getElementById(id);
+    control.value = id === 'acquisitionBadgesSelect' ? 'off' : '12';
+    control.dispatchEvent(new h.window.Event(id === 'subtitlePositionReset' ? 'click' : 'change', { bubbles: true }));
+    await new Promise(done => setImmediate(done));
+    assert.equal(h.writes.length, 0);
+  });
+}

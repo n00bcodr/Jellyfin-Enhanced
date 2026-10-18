@@ -46,6 +46,8 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireSettingsListeners = function(ctx) {
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
         const { createToast, resetAutoCloseTimer } = ctx;
 
         const bindings = {
@@ -69,7 +71,8 @@
                 const value = JE.currentSettings[key];
                 if (control.type === 'checkbox') control.checked = !!value;
                 else if (key === 'acquisitionBadges' || key === 'nativeAcquisitionStamps') control.value = value === false ? 'off' : '';
-                else if (['autoSeasonRequests', 'autoMovieRequests', 'listPlaceholders', 'listStatus', 'listSwapIn'].includes(key)) {
+                else if (key === 'listSwapIn') control.value = value === true ? 'on' : '';
+                else if (['autoSeasonRequests', 'autoMovieRequests', 'listPlaceholders', 'listStatus'].includes(key)) {
                     control.value = value === true ? 'on' : value === false ? 'off' : '';
                 } else control.value = value ?? '';
             });
@@ -109,7 +112,7 @@
 
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).dataset.jeSetting = settingKey;
-            document.getElementById(id).addEventListener('change', (e) => {
+            listen(document.getElementById(id), 'change', (e) => {
                 JE.updateSettings({ [settingKey]: e.target.checked });
                 let toastMessage = createToast(featureKey, e.target.checked);
 
@@ -204,13 +207,13 @@
                 const modeSel = document.getElementById('watchProgressModeSelect');
                 const fmtSel = document.getElementById('watchProgressTimeFormatSelect');
                 if (modeSel) {
-                    modeSel.addEventListener('change', (e) => {
+                    listen(modeSel, 'change', (e) => {
                         JE.updateSettings({ watchProgressMode: e.target.value });
                         resetAutoCloseTimer();
                     });
                 }
                 if (fmtSel) {
-                    fmtSel.addEventListener('change', (e) => {
+                    listen(fmtSel, 'change', (e) => {
                         JE.updateSettings({ watchProgressTimeFormat: e.target.value });
                         resetAutoCloseTimer();
                     });
@@ -218,7 +221,7 @@
         addSettingToggleListener('showFileSizesToggle', 'showFileSizes', 'feature_file_size_display');
         addSettingToggleListener('showAudioLanguagesToggle', 'showAudioLanguages', 'feature_audio_language_display');
         addSettingToggleListener('removeContinueWatchingToggle', 'removeContinueWatchingEnabled', 'feature_remove_continue_watching');
-        document.getElementById('nativePosterTagsToggle')?.addEventListener('change', (event) => {
+        listen(document.getElementById('nativePosterTagsToggle'), 'change', (event) => {
             if (JE.pluginConfig?.NativePosterTagsEnabled !== true) return;
             const enabled = event.target.checked;
             JE.updateSettings({ useNativePosterTags: enabled });
@@ -227,7 +230,7 @@
         });
         // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit.
         for (const [id, key] of [['autoSeasonRequestsSelect', 'autoSeasonRequests'], ['autoMovieRequestsSelect', 'autoMovieRequests']]) {
-            document.getElementById(id)?.addEventListener('change', (event) => {
+            listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrAutomationEngineEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
                 JE.updateSettings({ [key]: value });
@@ -237,18 +240,20 @@
         }
         // Phase 4c1: list preferences per person ("" = null: follow the household; swap-in "" = no).
         for (const [id, key] of [['listPlaceholdersSelect', 'listPlaceholders'], ['listStatusSelect', 'listStatus'], ['listSwapInSelect', 'listSwapIn']]) {
-            document.getElementById(id)?.addEventListener('change', (event) => {
+            listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrListsEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
-                JE.updateSettings({ [key]: value });
-                JE.toast(JE.t('toast_list_settings_saved'));
+                const save = key === 'listSwapIn' ? JE.setPersonalConsent(key, value === true, { throwOnError: true })
+                    : JE.updateSettings({ [key]: value });
+                save.then(() => { if (scope.isCurrent()) JE.toast(JE.t('toast_list_settings_saved')); })
+                    .catch(err => { if (scope.isCurrent()) console.warn('🪼 Jellyfin Enhanced: list settings save failed', err); });
                 resetAutoCloseTimer();
             });
         }
         // Phase 4e: pure document views. Persistence and rollback belong only to config.js.
         const badgeControls = [['acquisitionBadgesSelect', 'acquisitionBadges'], ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps']];
         for (const [id, key] of badgeControls) {
-            document.getElementById(id)?.addEventListener('change', async (event) => {
+            listen(document.getElementById(id), 'change', async (event) => {
                 if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
                 const epoch = JE.session?.getEpoch?.();
@@ -271,7 +276,7 @@
         const qualitySubGroup = document.getElementById('qualityTagsSubToggles');
         const qualitySubExpander = document.getElementById('qualityTagsSubToggleExpander');
         if (qualityMasterToggle && qualitySubWrap) {
-            qualityMasterToggle.addEventListener('change', () => {
+            listen(qualityMasterToggle, 'change', () => {
                 qualitySubWrap.style.display = qualityMasterToggle.checked ? 'block' : 'none';
                 // Collapse the category list when the feature is turned off so it
                 // returns collapsed the next time the user enables it
@@ -284,7 +289,7 @@
         // Expand or collapse the 6 category rows when the user clicks the chevron.
         // The chevron rotation is driven by CSS via the aria-expanded attribute.
         if (qualitySubExpander && qualitySubGroup) {
-            qualitySubExpander.addEventListener('click', () => {
+            listen(qualitySubExpander, 'click', () => {
                 const expanded = qualitySubExpander.getAttribute('aria-expanded') === 'true';
                 qualitySubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
                 qualitySubGroup.style.display = expanded ? 'none' : 'block';
@@ -293,7 +298,7 @@
         // Wire the per-category sub-toggle controls via event delegation
         if (qualitySubGroup) {
             // Persist sub-toggle state and re-render existing cards with the new filter
-            qualitySubGroup.addEventListener('change', (e) => {
+            listen(qualitySubGroup, 'change', (e) => {
                 const target = e.target;
                 if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
                 const row = target.closest('.je-quality-cat-row');
@@ -307,7 +312,7 @@
                 resetAutoCloseTimer();
             });
             // Handle ↑/↓ stack reorder buttons
-            qualitySubGroup.addEventListener('click', (e) => {
+            listen(qualitySubGroup, 'click', (e) => {
                 const btn = e.target.closest('.je-cat-up, .je-cat-down');
                 if (!btn || btn.disabled) return;
                 const row = btn.closest('.je-quality-cat-row');
@@ -382,7 +387,7 @@
                 }
                 audioLangSelect.value = saved;
             })();
-            audioLangSelect.addEventListener('change', (e) => {
+            listen(audioLangSelect, 'change', (e) => {
                 JE.updateSettings({ qualityTagsPreferredAudioLanguage: e.target.value });
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
                     JE.reinitializeQualityTags();
@@ -422,8 +427,8 @@
             // Without this, digit keydowns bubble to the document and Jellyfin's
             // native player intercepts them as percent-seek shortcuts (0-9)
             // instead of letting them reach the input.
-            pauseScreenDelayInput.addEventListener('keydown', (e) => e.stopPropagation());
-            pauseScreenDelayInput.addEventListener('change', () => {
+            listen(pauseScreenDelayInput, 'keydown', (e) => e.stopPropagation());
+            listen(pauseScreenDelayInput, 'change', () => {
                 const val = Math.max(1, Math.min(60, parseInt(pauseScreenDelayInput.value, 10) || 5));
                 pauseScreenDelayInput.value = val;
                 JE.updateSettings({ pauseScreenDelaySeconds: val });
@@ -442,7 +447,7 @@
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
         const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
         if (hideOnHoverCheckbox) {
-            hideOnHoverCheckbox.addEventListener('change', () => {
+            listen(hideOnHoverCheckbox, 'change', () => {
                 document.body.classList.toggle('je-tags-hide-on-hover', hideOnHoverCheckbox.checked);
             });
         }
@@ -453,7 +458,7 @@
         const ratingSubGroup = document.getElementById('ratingTagsSubToggles');
         const ratingSubExpander = document.getElementById('ratingTagsSubToggleExpander');
         if (ratingMasterToggle && ratingSubWrap) {
-            ratingMasterToggle.addEventListener('change', () => {
+            listen(ratingMasterToggle, 'change', () => {
                 ratingSubWrap.style.display = ratingMasterToggle.checked ? 'block' : 'none';
                 if (!ratingMasterToggle.checked && ratingSubGroup && ratingSubExpander) {
                     ratingSubGroup.style.display = 'none';
@@ -462,14 +467,14 @@
             });
         }
         if (ratingSubExpander && ratingSubGroup) {
-            ratingSubExpander.addEventListener('click', () => {
+            listen(ratingSubExpander, 'click', () => {
                 const expanded = ratingSubExpander.getAttribute('aria-expanded') === 'true';
                 ratingSubExpander.setAttribute('aria-expanded', expanded ? 'false' : 'true');
                 ratingSubGroup.style.display = expanded ? 'none' : 'block';
             });
         }
         if (ratingSubGroup) {
-            ratingSubGroup.addEventListener('change', (e) => {
+            listen(ratingSubGroup, 'change', (e) => {
                 const target = e.target;
                 if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
                 const settingKey = target.closest('.je-quality-cat-row')?.dataset.catKey;
@@ -518,7 +523,7 @@
                     positionNote.style.display = (stylesEnabled() && !isCustom) ? 'flex' : 'none';
                 };
                 applyPositionNoteState();
-                if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyPositionNoteState);
+                if (disableStylesCheckbox) listen(disableStylesCheckbox, 'change', applyPositionNoteState);
             }
 
             // Bitmap/graphical subtitle formats (ASS/SSA, PGS, VobSub, DVB) never
@@ -549,7 +554,7 @@
                         formatWarning.style.display = (stylesEnabled() && isUnsupportedFormat) ? 'flex' : 'none';
                     };
                     applyFormatWarningState();
-                    if (disableStylesCheckbox) disableStylesCheckbox.addEventListener('change', applyFormatWarningState);
+                    if (disableStylesCheckbox) listen(disableStylesCheckbox, 'change', applyFormatWarningState);
                 })();
             }
         })();
@@ -601,10 +606,10 @@
             resetAutoCloseTimer();
         };
 
-        if (customTextColorPicker) customTextColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customTextAlpha) customTextAlpha.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgColorPicker) customBgColorPicker.addEventListener('input', updateCustomSubtitleColors);
-        if (customBgAlpha) customBgAlpha.addEventListener('input', updateCustomSubtitleColors);
+        if (customTextColorPicker) listen(customTextColorPicker, 'input', updateCustomSubtitleColors);
+        if (customTextAlpha) listen(customTextAlpha, 'input', updateCustomSubtitleColors);
+        if (customBgColorPicker) listen(customBgColorPicker, 'input', updateCustomSubtitleColors);
+        if (customBgAlpha) listen(customBgAlpha, 'input', updateCustomSubtitleColors);
 
         // --- Subtitle position drag grid ---
         const posGrid = document.getElementById('subtitlePositionGrid');
@@ -614,7 +619,7 @@
         if (posGrid) {
             let gesture;
             const commitPosition = () => {
-                if (!gesture) return;
+                if (!gesture || !scope.isCurrent()) { gesture = undefined; return; }
                 JE.updateSettings(gesture);
                 gesture = undefined;
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
@@ -641,42 +646,44 @@
             };
 
             let dragging = false;
+            scope.onCleanup(() => { dragging = false; gesture = undefined; });
+            listen(document, 'touchcancel', () => { dragging = false; gesture = undefined; });
 
-            posGrid.addEventListener('mousedown', (e) => {
+            listen(posGrid, 'mousedown', (e) => {
                 const { x, y } = getPctFromEvent(e);
                 updatePosition(x, y);
                 dragging = true;
                 e.preventDefault();
             });
 
-            document.addEventListener('mousemove', (e) => {
+            listen(document, 'mousemove', (e) => {
                 if (!dragging) return;
                 const { x, y } = getPctFromEvent(e);
                 updatePosition(x, y);
                 resetAutoCloseTimer();
             });
 
-            document.addEventListener('mouseup', () => {
+            listen(document, 'mouseup', () => {
                 if (!dragging) return;
                 dragging = false;
                 commitPosition();
             });
 
-            posGrid.addEventListener('touchstart', (e) => {
+            listen(posGrid, 'touchstart', (e) => {
                 const { x, y } = getPctFromEvent(e);
                 updatePosition(x, y);
                 dragging = true;
                 e.preventDefault();
             }, { passive: false });
 
-            document.addEventListener('touchmove', (e) => {
+            listen(document, 'touchmove', (e) => {
                 if (!dragging) return;
                 const { x, y } = getPctFromEvent(e);
                 updatePosition(x, y);
                 resetAutoCloseTimer();
             }, { passive: true });
 
-            document.addEventListener('touchend', () => {
+            listen(document, 'touchend', () => {
                 if (!dragging) return;
                 dragging = false;
                 commitPosition();
@@ -684,7 +691,7 @@
         }
 
         if (posResetBtn) {
-            posResetBtn.addEventListener('click', () => {
+            listen(posResetBtn, 'click', () => {
                 JE.updateSettings({ subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95 });
                 if (posPreview) { posPreview.style.left = '50%'; posPreview.style.top = 'auto'; posPreview.style.bottom = '5%'; }
                 if (typeof JE.applySubtitlePosition === 'function') JE.applySubtitlePosition();
@@ -699,10 +706,12 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireMiscSettingsControls = function(ctx) {
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
         const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
 
-        document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeMovies: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeShows: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        listen(document.getElementById('randomIncludeMovies'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeMovies: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        listen(document.getElementById('randomIncludeShows'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeShows: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
         // Random source picker: lists the user's playlists and collections; '' = whole library.
         const sourceSelect = document.getElementById('randomSourceSelect');
@@ -734,14 +743,14 @@
                     }
                 })
                 .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
-            sourceSelect.addEventListener('change', (e) => {
+            listen(sourceSelect, 'change', (e) => {
                 JE.updateSettings({ randomSourceId: e.target.value });
                 JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
                 resetAutoCloseTimer();
             });
         }
 
-        document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
+        listen(document.getElementById('releaseNotesBtn'), 'click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
 
         // --- Position Selectors ---
         const positionSelectors = help.querySelectorAll('.position-selector');
@@ -763,7 +772,7 @@
             JE.internals.observeSettingsDocument('panel-position-' + settingKey, updateHighlight);
 
             // Click handler
-            selector.addEventListener('click', (e) => {
+            listen(selector, 'click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
                 const cell = e.target.closest('[data-pos]');
@@ -805,7 +814,7 @@
             const container = document.getElementById(containerId);
             if (!container) return;
 
-            container.addEventListener('click', (e) => {
+            listen(container, 'click', (e) => {
                 const presetBox = e.target.closest(`.${type}-preset`);
                 if (!presetBox) return;
 

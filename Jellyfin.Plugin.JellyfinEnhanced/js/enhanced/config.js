@@ -29,6 +29,8 @@
     // The store belongs to the identity session, never to a panel or its settings objects.
     // Every file has exactly one persisted document, ordered pending documents and derived view.
     const documents = new Map();
+    const panelScopes = new Set();
+    const consentKeys = ['listSwapIn'];
     let identity;
     JE.internals = JE.internals || {};
 
@@ -42,8 +44,44 @@
     ]);
 
     /** Discard observers, deduplication and unsent work on logout, user or server change. */
-    const clearDocuments = () => { documents.clear(); identity = undefined; };
+    const clearDocuments = () => {
+        for (const scope of panelScopes) scope.close();
+        documents.clear(); identity = undefined;
+    };
     JE.session?.onUserChange?.('settings-store', clearDocuments);
+
+    /**
+     * Bind panel callbacks to their opening identity/epoch and lifetime. Closing cancels gestures
+     * and removes every registered listener, including document/window callbacks and detached controls.
+     * @param {object} ctx Panel context; panelCleanups is drained on every host close path.
+     * @returns {object} Shared lifetime, guarded listener registration and cleanup registration.
+     */
+    JE.internals.settingsPanelScope = ctx => {
+        if (ctx.settingsScope) return ctx.settingsScope;
+        settingsDocument('settings.json');
+        const captured = currentIdentity(), cleanups = [];
+        let closed = false;
+        const scope = {
+            isCurrent: () => !closed && currentIdentity() === captured,
+            onCleanup: cleanup => cleanups.push(cleanup),
+            close: () => {
+                if (closed) return;
+                closed = true;
+                while (cleanups.length) cleanups.pop()();
+                panelScopes.delete(scope);
+            },
+            listen: (target, type, handler, options) => {
+                if (!target) return;
+                const guarded = event => { if (scope.isCurrent()) return handler(event); };
+                target.addEventListener(type, guarded, options);
+                cleanups.push(() => target.removeEventListener(type, guarded, options));
+            }
+        };
+        panelScopes.add(scope);
+        (ctx.panelCleanups || (ctx.panelCleanups = [])).push(scope.close);
+        ctx.settingsScope = scope;
+        return scope;
+    };
 
     /** Get the active session's sole state for a file. Object replacement is just a new view. */
     const settingsDocument = fileName => {
@@ -73,7 +111,15 @@
     const publishDocument = (state, previousPersisted = state.persisted, reason = 'settled') => {
         if (!isActiveDocument(state)) return;
         const previousShown = state.shown;
-        state.shown = copyDocument(state.pending.at(-1)?.document || state.persisted);
+        state.shown = copyDocument(state.pending.filter(entry => !entry.consentKey).at(-1)?.document || state.persisted);
+        if (state.fileName === 'settings.json') {
+            // Whole documents never carry consent intent. Only explicit pending operations may override it.
+            for (const key of consentKeys) {
+                if (Object.hasOwn(state.persisted, key)) state.shown[key] = state.persisted[key];
+                else delete state.shown[key];
+            }
+            for (const entry of state.pending) if (entry.consentKey) state.shown[entry.consentKey] = entry.document[entry.consentKey];
+        }
         if (state.fileName === 'settings.json') {
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.settings = JE.userConfig.settings || {};
@@ -128,6 +174,12 @@
             useNativePosterTags: state.shown.useNativePosterTags ?? null, ...patch }, options);
     };
 
+    /** Queue one explicit personal-consent choice; no display document is sent to the server. */
+    JE.setPersonalConsent = (field, value, options = {}) => {
+        if (!consentKeys.includes(field) || typeof value !== 'boolean') return Promise.reject(new Error('Invalid personal consent'));
+        return JE.saveUserSettings('settings.json', { [field]: value }, { ...options, consentKey: field });
+    };
+
     /**
      * Queue a whole per-user document. Success advances persisted; failure drops only its entry.
      * The last pending document is the shown value, because each POST persists that entire snapshot.
@@ -146,20 +198,23 @@
             if (fileName === 'settings.json' && settings === JE.currentSettings && state.shown.useNativePosterTags == null) {
                 data = { ...settings, useNativePosterTags: null };
             }
-            const entry = { document: copyDocument(data) };
+            const entry = { document: copyDocument(data), consentKey: options.consentKey };
             const wire = (fileName === 'bookmark.json' || fileName === 'settings.json') && typeof JE.toPascalCase === 'function'
                 ? JE.toPascalCase(entry.document) : entry.document;
             const serialized = JSON.stringify(wire);
             const client = ApiClient;
-            const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`);
+            const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${entry.consentKey ? 'consent' : fileName}`);
             state.revision++;
             state.pending.push(entry);
             const save = state.chain.then(async () => {
                 // A queued old-session write must never run under incoming credentials.
                 if (!isActiveDocument(state)) throw new Error('Settings session changed');
-                if (state.serialized === serialized) return;
-                await client.ajax({ type: 'POST', url, data: serialized, contentType: 'application/json' });
-                if (isActiveDocument(state)) state.serialized = serialized;
+                if (!entry.consentKey && state.serialized === serialized) return;
+                const response = await client.ajax({ type: entry.consentKey ? 'PATCH' : 'POST', url, dataType: 'json',
+                    data: entry.consentKey ? JSON.stringify({ Field: entry.consentKey[0].toUpperCase() + entry.consentKey.slice(1), Value: entry.document[entry.consentKey] }) : serialized,
+                    contentType: 'application/json' });
+                entry.consents = response?.consents || response?.Consents;
+                if (isActiveDocument(state)) state.serialized = entry.consentKey ? undefined : serialized;
             });
             state.chain = save.catch(() => {});
             publishDocument(state, state.persisted, 'queued');
@@ -168,7 +223,18 @@
             finally {
                 state.pending.splice(state.pending.indexOf(entry), 1);
                 const previousPersisted = state.persisted;
-                if (succeeded) state.persisted = entry.document;
+                if (succeeded) {
+                    state.persisted = entry.consentKey ? { ...previousPersisted, [entry.consentKey]: entry.document[entry.consentKey] } : entry.document;
+                    for (const key of consentKeys) {
+                        const pascal = key[0].toUpperCase() + key.slice(1);
+                        const value = entry.consents && Object.hasOwn(entry.consents, pascal) ? entry.consents[pascal] : entry.consents?.[key];
+                        if (value !== undefined) state.persisted[key] = value;
+                        else if (!entry.consentKey) {
+                            if (Object.hasOwn(previousPersisted, key)) state.persisted[key] = previousPersisted[key];
+                            else delete state.persisted[key];
+                        }
+                    }
+                }
                 publishDocument(state, previousPersisted, succeeded ? 'saved' : 'failed');
             }
         } catch (error) {

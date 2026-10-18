@@ -574,3 +574,5 @@ never applied automatically. Managers can read the tab but not change it. The co
 *Request handling*, which a move from Seerr switches) as the server has them when it is saved, unless they were changed
 on that page: a page left open before a Household edit or a move doesn't put the older values back, even when the edit
 lands while the page is saving.
+
+Your list swap-in agreement changes only when you explicitly choose Yes or No in your own settings. Saving display preferences from another browser, administrator edits, and resetting display defaults preserve your current agreement. An older cached web client must reload to use the explicit agreement control.

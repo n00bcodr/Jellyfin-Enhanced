@@ -162,7 +162,9 @@ A non-admin user calling with someone else's `JELLYFIN_USER_ID` is rejected.
 
 `bookmark.json` is one of several per-user settings files served under `/user-settings/{userId}/{file}` (the same pattern covers `settings.json`, `shortcuts.json`, `elsewhere.json`, and `hidden-content.json`).
 
-A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (list swap-in) as they stored them; only the person changes those.
+A POST of `settings.json` replaces display preferences while preserving every stored personal consent, including when the person saves their own file. A stale browser cannot restore a revoked consent by saving another setting. Older cached clients can still save display preferences through this route; their whole-document saves cannot change consents. The response includes the stored `consents` for reconciliation.
+
+To change a consent, the signed-in person uses `PATCH /JellyfinEnhanced/user-settings/{userId}/consent` with `{"Field":"ListSwapIn","Value":true}` (or `false` to revoke). `ListSwapIn` is the only consent field in `settings.json` on this version. The server accepts only the named consent and an explicit boolean, checks that the caller is that person (administrators cannot consent for someone else), and reads and writes under the same user-file lock as display saves and resets. The response includes the stored `consents`. Malformed choices or unknown fields return 400; another person's consent returns 403.
 
 ???+ dev "Get Bookmarks"
 
@@ -641,7 +643,8 @@ Same `user-settings/{userId}/{file}` pattern as Bookmarks (see above) for every 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET / POST | `user-settings/{userId}/settings.json` | Enhanced panel settings |
+| GET / POST | `user-settings/{userId}/settings.json` | Enhanced panel display settings; POST preserves personal consents |
+| PATCH | `user-settings/{userId}/consent` | Explicit own-person consent field and boolean value |
 | GET / POST | `user-settings/{userId}/shortcuts.json` | Keyboard shortcut overrides |
 | GET / POST | `user-settings/{userId}/elsewhere.json` | Elsewhere (streaming provider) preferences |
 | GET / POST | `user-settings/{userId}/hidden-content.json` | Hidden Content list |

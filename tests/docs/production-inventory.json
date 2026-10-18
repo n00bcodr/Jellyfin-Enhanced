@@ -3766,6 +3766,17 @@
       ]
     },
     {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/consent",
+      "method": "SetUserSettingsConsent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/user-settings/{userId}/shortcuts.json",
       "method": "SaveUserSettingsShortcuts",
@@ -10219,7 +10230,7 @@
   "counts": {
     "build_targets": 2,
     "files": 573,
-    "routes": 270,
+    "routes": 271,
     "configuration_properties": 611,
     "storage_references": 86,
     "scheduled_tasks": 15,

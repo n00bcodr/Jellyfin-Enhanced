@@ -14,6 +14,8 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireLanguageControls = function(ctx) {
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
         const { resetAutoCloseTimer } = ctx;
 
         // --- Language Settings ---
@@ -120,7 +122,7 @@
             })();
 
             // Save language on change
-            displayLanguageSelect.addEventListener('change', async (e) => {
+            listen(displayLanguageSelect, 'change', async (e) => {
                 const newLang = e.target.value;
 
                 const normalizeLangCode = (code) => {
@@ -140,6 +142,8 @@
                 // Save to settings.json (use base language code)
                 await JE.updateSettings({ displayLanguage: newLang });
 
+                if (!scope.isCurrent()) return;
+
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {
                     localStorage.setItem(languageKey, fullCultureCode);
@@ -153,14 +157,14 @@
                 } else {
                     JE.toast(JE.t('toast_language_changed'));
                 }
-                setTimeout(() => window.location.reload(), 1500);
+                setTimeout(() => { if (scope.isCurrent()) window.location.reload(); }, 1500);
             });
         }
 
         // Clear translation cache button
         const clearTranslationCacheButton = document.getElementById('clearTranslationCacheButton');
         if (clearTranslationCacheButton) {
-            clearTranslationCacheButton.addEventListener('click', () => {
+            listen(clearTranslationCacheButton, 'click', () => {
                 const cacheKeys = [];
                 const CACHE_PREFIX = 'JE_translation_';
                 const CACHE_TIMESTAMP_PREFIX = 'JE_translation_ts_';

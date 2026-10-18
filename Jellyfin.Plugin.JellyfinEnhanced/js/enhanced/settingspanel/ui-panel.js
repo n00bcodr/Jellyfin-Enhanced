@@ -41,7 +41,7 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            existing.querySelector('#closeSettingsPanel')?.click();
             return;
         }
         // Get theme-appropriate styles
@@ -179,6 +179,7 @@
         // (ui-panel-template.js and the ui-panel-*.js wiring files).
         const ctx = {
             help,
+            panelCleanups: panelMediaCleanups,
             pluginShortcuts,
             resetAutoCloseTimer,
             panelBgColor,
@@ -194,6 +195,9 @@
             releaseNotesTextColor,
             logoUrl
         };
+
+        const scope = JE.internals.settingsPanelScope(ctx);
+        const { listen } = scope;
 
         help.innerHTML = internal.buildPanelHtml(ctx);
 
@@ -239,7 +243,7 @@
                 }
             };
             const handlePhoneMediaChange = () => syncLayerFocus(false);
-            phoneMedia.addEventListener('change', handlePhoneMediaChange);
+            listen(phoneMedia, 'change', handlePhoneMediaChange);
 
             const activate = (pane, persist) => {
                 panes.forEach(p => p.classList.toggle('active', p === pane));
@@ -247,7 +251,7 @@
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
-                    JE.updateSettings({ lastOpenedTab: pane.dataset.pane });
+                    if (scope.isCurrent()) JE.updateSettings({ lastOpenedTab: pane.dataset.pane });
                 }
                 resetAutoCloseTimer();
             };
@@ -268,7 +272,7 @@
                 } else {
                     button.textContent = label;
                 }
-                button.addEventListener('click', () => activate(pane, true));
+                listen(button, 'click', () => activate(pane, true));
                 navHost.appendChild(button);
                 items.push(button);
             });
@@ -276,7 +280,7 @@
             // Mobile back button returns to the section list.
             const backButton = help.querySelector('#jePanelBack');
             if (backButton) {
-                backButton.addEventListener('click', () => {
+                listen(backButton, 'click', () => {
                     body.classList.remove('je-pane-open');
                     syncLayerFocus(true);
                     resetAutoCloseTimer();
@@ -286,7 +290,7 @@
             // Search filters the section list by each pane's full text.
             const search = help.querySelector('#jePanelSearch');
             if (search) {
-                search.addEventListener('input', () => {
+                listen(search, 'input', () => {
                     const query = search.value.trim().toLowerCase();
                     items.forEach((button) => {
                         const pane = panes.find(p => p.dataset.pane === button.dataset.tab);
@@ -341,13 +345,23 @@
             }
         };
 
+        scope.onCleanup(() => {
+            isDragging = false;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            help.remove();
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            runPanelCleanups();
+            if (!JE.pluginConfig.DisableAllShortcuts) document.addEventListener('keydown', JE.keyListener, true);
+        });
+
         const createToast = (featureKey, isEnabled) => {
             const feature = JE.t(featureKey);
             const status = JE.t(isEnabled ? 'status_enabled' : 'status_disabled');
             return JE.t('toast_feature_status', { feature, status });
         };
-        document.addEventListener('keydown', closeHelp);
-        document.getElementById('closeSettingsPanel').addEventListener('click', closeHelp);
+        listen(document, 'keydown', closeHelp);
+        listen(document.getElementById('closeSettingsPanel'), 'click', closeHelp);
 
         if (!JE.pluginConfig.DisableAllShortcuts) {
             document.removeEventListener('keydown', JE.keyListener, true);

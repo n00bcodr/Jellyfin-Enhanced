@@ -350,6 +350,8 @@ Jellyfin Enhanced can only style subtitles that Jellyfin draws as text. These fo
 
 If styling does not apply, check which subtitle track is playing. Choosing a text-based track (for example SRT) restores full styling. The Enhanced panel shows a warning when the current video uses one of these formats.
 
+Panel edits belong to the current signed-in session. Closing the panel or switching users cancels an unfinished subtitle-position drag.
+
 **Turning it off**
 
 - **For yourself:** in the Enhanced panel → Settings, enable **Disable Custom Subtitle Styles**, then reload the page. Jellyfin Enhanced then leaves subtitles alone and your Jellyfin **User Preferences** → **Subtitles** settings apply unchanged. Jellyfin Enhanced never changes those saved settings. It only styles the subtitles while a video plays.

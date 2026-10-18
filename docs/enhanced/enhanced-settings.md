@@ -152,3 +152,5 @@ Configured under **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **E
 | **Use Plugin Pages** | Off | Adds a "Catch Up" sidebar link via [Plugin Pages](https://github.com/IAmParadox27/jellyfin-plugin-pages) (Jellyfin 12: user profile menu instead) |
 | **Use Custom Tabs** | Off | Adds a Home-page tab via [Custom Tabs](https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs) instead of the native one |
 | **Record Catch Up activity** | On | Logs who swiped what to `catchup-log.jsonl`; administrators read it in the page's Activity panel. Turn off to record nothing |
+
+Unfinished subtitle-position drags are cancelled when the panel closes or the signed-in session changes. Releasing an old mouse or touch gesture cannot save into the next session.
