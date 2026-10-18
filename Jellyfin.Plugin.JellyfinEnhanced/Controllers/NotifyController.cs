@@ -256,16 +256,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
             if (request.QuietFrom != null && !QuietHours.TryTime(request.QuietFrom, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.QuietTo != null && !QuietHours.TryTime(request.QuietTo, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.TimeZone != null && (request.TimeZone.Length > 64 || request.TimeZone.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '/' or '_' or '-' or '+')))) return BadRequest(new { code = "invalid_time_zone" });
-            if (request.Email == true && string.IsNullOrEmpty(prefs.EmailAddress)) return BadRequest(new { code = "email_not_verified" });
-            if (request.Ntfy == true && !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) return BadRequest(new { code = "ntfy_topic_missing" });
-            // Only the fields sent change, in one transaction: a change made meanwhile elsewhere (another tab, an
-            // administrator's topic, the Ready settings' native-message consent) is kept.
-            Store.UpdatePrefs(user, p =>
+            // Only the fields sent change, in one transaction, checked against the settings as they are in it: a change made
+            // meanwhile elsewhere (another tab, an administrator's topic, the Ready settings' native-message consent, an
+            // address removed) is kept, and e-mail or phone alerts never go on without a confirmed address or a topic.
+            var (_, error) = Store.TryUpdatePrefs(user, p =>
             {
+                if (request.Email == true && string.IsNullOrEmpty(p.EmailAddress)) return "email_not_verified";
+                if (request.Ntfy == true && !NotifyEndpoints.IsTopic(p.NtfyTopic)) return "ntfy_topic_missing";
                 p.Toasts = request.Toasts ?? p.Toasts;
                 p.Ready = request.Ready ?? p.Ready;
                 p.Episodes = request.Episodes ?? p.Episodes;
@@ -281,7 +281,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 p.QuietTo = request.QuietTo ?? p.QuietTo;
                 if (request.TimeZone != null) p.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
                 if (request.UtcOffsetMinutes.HasValue) p.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
+                return null;
             }, Now());
+            if (error != null) return BadRequest(new { code = error });
             return Ok(PrefsBody(user));
         }
 
@@ -294,24 +296,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            if (request.Generate)
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            var topic = request.Generate ? NotifyEndpoints.NewTopic() : string.IsNullOrEmpty(request.Topic) ? null : request.Topic;
+            // The topic fields only, in one transaction (a consent or address changed meanwhile stays).
+            Store.UpdatePrefs(user, p =>
             {
-                prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            }
-            else if (string.IsNullOrEmpty(request.Topic))
-            {
-                prefs.NtfyTopic = null;
-                prefs.Ntfy = false;
-            }
-            else
-            {
-                if (!NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
-                prefs.NtfyTopic = request.Topic;
-            }
-            prefs.NtfyTopicByAdmin = false;
-            if (prefs.NtfyTopic != null && request.Generate) prefs.Ntfy = true;
-            Store.SavePrefs(user, prefs, Now());
+                p.NtfyTopic = topic;
+                p.NtfyTopicByAdmin = false;
+                if (topic == null) p.Ntfy = false;
+                else if (request.Generate) p.Ntfy = true;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -363,10 +357,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "wrong_code" });
             }
             Store.ClearEmailCode(user);
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = address;
-            prefs.Email = true;
-            Store.SavePrefs(user, prefs, now);
+            // The address fields only, in one transaction.
+            Store.UpdatePrefs(user, p =>
+            {
+                p.EmailAddress = address;
+                p.Email = true;
+            }, now);
             return Ok(PrefsBody(user));
         }
 
@@ -377,10 +373,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (Gate() is { } denied) return denied;
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = null;
-            prefs.Email = false;
-            Store.SavePrefs(user, prefs, Now());
+            Store.UpdatePrefs(user, p =>
+            {
+                p.EmailAddress = null;
+                p.Email = false;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -524,14 +521,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!Store.Available) return StatusCode(503, new { code = "database_unavailable" });
             if (!Guid.TryParse(userId, out var target) || !_users.Exists(target)) return NotFound(new { code = "user_not_found" });
             if (request == null) return BadRequest(new { code = "invalid_request" });
-            var prefs = Store.Prefs(target);
-            if (request.Generate) prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            else if (string.IsNullOrEmpty(request.Topic)) prefs.NtfyTopic = null;
-            else if (NotifyEndpoints.IsTopic(request.Topic)) prefs.NtfyTopic = request.Topic;
-            else return BadRequest(new { code = "invalid_topic" });
-            prefs.NtfyTopicByAdmin = prefs.NtfyTopic != null;
-            prefs.Ntfy = prefs.NtfyTopic != null;
-            Store.SavePrefs(target, prefs, Now());
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            var topic = request.Generate ? NotifyEndpoints.NewTopic() : string.IsNullOrEmpty(request.Topic) ? null : request.Topic;
+            // The topic fields only, in one transaction: the person's consents, address and quiet hours stay as they are now.
+            var prefs = Store.UpdatePrefs(target, p =>
+            {
+                p.NtfyTopic = topic;
+                p.NtfyTopicByAdmin = topic != null;
+                p.Ntfy = topic != null;
+            }, Now());
             return Ok(new { id = NotifyValues.Id(target), topic = prefs.NtfyTopic, ntfy = prefs.Ntfy });
         }
 

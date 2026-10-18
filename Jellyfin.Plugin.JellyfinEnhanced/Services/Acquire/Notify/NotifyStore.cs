@@ -100,8 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public NotifyPrefs Prefs(Guid userId)
         {
             var json = _db.Read(c => Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId))) as string);
+            PrefsRead?.Invoke(userId);
             return Parse(json);
         }
+
+        /// <summary>Tests: runs right after a user's preferences were read (another writer's change lands in between).</summary>
+        internal Action<Guid>? PrefsRead { get; set; }
 
         /// <summary>Every user who stored preferences.</summary>
         public IReadOnlyDictionary<Guid, NotifyPrefs> AllPrefs() => _db.Read(c =>
@@ -116,8 +120,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return result;
         });
 
-        /// <summary>Stores a user's preferences.</summary>
-        public void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
+        /// <summary>
+        /// Stores a user's whole preferences document (tests and seeding only). Production code never calls it: a document
+        /// read earlier would undo a change made in between (a revoked consent, a confirmed address). Every production writer
+        /// uses <see cref="UpdatePrefs"/> or <see cref="TryUpdatePrefs"/> (a source walk checks it).
+        /// </summary>
+        internal void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
             c, t,
             "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
             ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now))));
@@ -126,13 +134,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// Changes a user's preferences in one transaction (read, change, write): a change made at the same time by another
         /// writer (the person in another tab, an administrator, a phase-4f consent) is never lost. Returns the stored result.
         /// </summary>
-        public NotifyPrefs UpdatePrefs(Guid userId, Action<NotifyPrefs> change, DateTimeOffset now) => Write((c, t) =>
+        public NotifyPrefs UpdatePrefs(Guid userId, Action<NotifyPrefs> change, DateTimeOffset now)
+            => TryUpdatePrefs(userId, p =>
+            {
+                change(p);
+                return null;
+            }, now).Prefs;
+
+        /// <summary>
+        /// Like <see cref="UpdatePrefs"/>, with the change's own checks made on the settings as they are inside the
+        /// transaction: <paramref name="change"/> returns null to store its change, or an error code to store nothing.
+        /// Returns the settings stored (or unchanged) and the error.
+        /// </summary>
+        public (NotifyPrefs Prefs, string? Error) TryUpdatePrefs(Guid userId, Func<NotifyPrefs, string?> change, DateTimeOffset now) => Write((c, t) =>
         {
             var prefs = Parse(Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId)), t) as string);
-            change(prefs);
+            if (change(prefs) is { } error) return (Parse(Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId)), t) as string), error);
             Exec(c, t, "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
                 ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now)));
-            return prefs;
+            return (prefs, (string?)null);
         });
 
         private static NotifyPrefs Parse(string? json)
