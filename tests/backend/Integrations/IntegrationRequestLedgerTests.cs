@@ -27,9 +27,16 @@ public class IntegrationRequestLedgerTests
         public bool DiskFacts { get; set; } = true;
         /// <summary>Non-null: the drive the request would land on is below the low-disk threshold.</summary>
         public RequestDiskFacts? Pause { get; set; }
-        public RequestDiskFacts? TitlePause(MutationInput input) => Pause;
+        /// <summary>Runs as a read returns (evaluate, title_pause, disk_known): a change made then is one the read missed.</summary>
+        public Action<string>? Reading { get; set; }
+        public RequestDiskFacts? TitlePause(MutationInput input) => Read("title_pause", Pause);
         // Like production: known when the guard is off or Seerr handles requests; else when the facts are in memory.
-        public bool DiskKnown(MutationInput input) => Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || DiskFacts;
+        public bool DiskKnown(MutationInput input) => Read("disk_known", Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || DiskFacts);
+        private T Read<T>(string what, T value)
+        {
+            Reading?.Invoke(what);
+            return value;
+        }
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>
@@ -42,7 +49,7 @@ public class IntegrationRequestLedgerTests
             var person = People.TryGetValue(user, out var known) ? known : new(user, "Watcher", false, false, false, false, "missing", "je", "r1", "g1", 7, 7, 0, "null", "user_required");
             person = person with { Backend = Configuration.ArrRequestBackend };
             if (!(Configuration.ArrIntegrationEnabled && Configuration.ArrPhase1Enabled && Configuration.ArrPhase3Enabled)) person = person with { Refusal = "feature_disabled" };
-            return Adjust?.Invoke(user, input, person) ?? person;
+            return Read("evaluate", Adjust?.Invoke(user, input, person) ?? person);
         }
         // Like production: the JE target doesn't depend on who handles requests now (Seerr-mode facts carry no instance).
         public (string InstanceId, string ConnectionGeneration) JeTarget(Guid user, MutationInput input)

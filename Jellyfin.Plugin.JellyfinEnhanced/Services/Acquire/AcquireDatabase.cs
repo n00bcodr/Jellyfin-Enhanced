@@ -41,6 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly SemaphoreSlim _writer = new(1, 1);
         private readonly ReaderWriterLockSlim _swap = new(LockRecursionPolicy.SupportsRecursion);
         private long _generation;
+        private long _automationRevision;
         private readonly Logger? _logger;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -344,6 +345,16 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// generation mean nothing under the next.
         /// </summary>
         public long Generation => Interlocked.Read(ref _generation);
+
+        /// <summary>
+        /// Moves on after each change to what the automatic-write gate reads from this database (budget admissions and
+        /// their settling, breakers, eligibility grants). The transport check compares it before and after it gathers
+        /// those facts: a fact read while another change landed is read again. Memory only, never waits.
+        /// </summary>
+        public long AutomationRevision => Interlocked.Read(ref _automationRevision);
+
+        /// <summary>Marks a change to the automation state (<see cref="AutomationRevision"/>), after it is committed.</summary>
+        internal void AutomationChanged() => Interlocked.Increment(ref _automationRevision);
 
         /// <summary>Runs a read (any number at once). Throws <see cref="InvalidOperationException"/> when unavailable.</summary>
         public T Read<T>(Func<SqliteConnection, T> read)

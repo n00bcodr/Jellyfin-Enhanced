@@ -589,7 +589,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         {
             NoteDeleted(userId);
             var id = Id(userId);
-            return _db.Write((c, t) =>
+            var purged = _db.Write((c, t) =>
             {
                 var removed = 0;
                 foreach (var table in UserTables)
@@ -600,6 +600,9 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
                 // longer written): the states stay, they tell what's new.
                 return removed + Exec(c, t, "UPDATE seerr_seen SET user_id=NULL WHERE user_id=$u", ("$u", id)) + Requests.RequestLedger.PurgeUser(c, t, userId);
             });
+            // Their automation eligibility grant went with them.
+            _db.AutomationChanged();
+            return purged;
         }
 
         /// <summary>

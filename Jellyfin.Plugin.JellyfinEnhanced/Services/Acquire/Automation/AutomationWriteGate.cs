@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 
@@ -109,13 +110,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// <summary>
     /// The one gate every automatic outbound write passes immediately before it leaves: each Sonarr/Radarr add, monitor
     /// change, search, tag and refresh of the Direct backend (after the wait for a connection slot), the Seerr backend's
-    /// POST, and the old recipes' own POST to Seerr at each address. It re-reads every gate from the live configuration
-    /// and state on every call, in <see cref="Gates"/> order, and returns the first hold (null: the write may go). Nothing
-    /// a write site decided before an await is trusted here. The last call is made inside the HTTP transport
-    /// (<see cref="AutomationTransportHandler"/>, D41): every write made in an automation context is checked there as it
-    /// is handed on, after its budgets are checked again with the limits as they are then. That is the guarantee; the
-    /// write sites' own calls (budgets admitted per write right after them, <see cref="ISendAdmission"/>) stay as defence
-    /// in depth. The preliminary budget check runs before any transport only. A read-back is never gated.
+    /// POST, and the old recipes' own POST to Seerr at each address. Nothing a write site decided before an await is
+    /// trusted here: every call reads it all again, in two steps. First the facts the gates read from storage are
+    /// gathered (breaker, budgets, eligibility grant and role, the person's consent, disk facts, whether Seerr's key is
+    /// stored); those reads may wait. Then the live configuration is read and every gate is judged on it and those facts,
+    /// in <see cref="Gates"/> order, with nothing that waits (no I/O, lock, wait or await) before the answer: the first
+    /// hold, or null when the write may go. Facts read earlier can go stale while a later one waits, so the decision is
+    /// only made when nothing they depend on moved in between (the configuration, the database generation and its
+    /// automation revision, the person's settings version); otherwise they are gathered again, a few times at most.
+    /// The last call is made inside the HTTP transport (<see cref="AutomationTransportHandler"/>, D41), with the job's
+    /// budget reservations among the facts and judged in the same decision: that is the guarantee. The write sites' own
+    /// calls (budgets admitted per write right after them, <see cref="ISendAdmission"/>) stay as defence in depth. The
+    /// preliminary budget check runs before any transport only. A read-back is never gated.
     /// </summary>
     public sealed class AutomationWriteGate
     {
@@ -124,6 +130,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>Hold reason for queued work: the integration, phase 1 or 3, the request backend or Seerr changed.</summary>
         public const string ConfigurationChanged = "configuration_changed";
+
+        /// <summary>How many times the facts are gathered when what they depend on keeps changing (then the write waits).</summary>
+        internal const int GatherRounds = 3;
 
         private readonly Func<PluginConfiguration?> _config;
         private readonly IRequestPolicy? _policy;
@@ -156,79 +165,219 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             _now = now ?? (() => DateTimeOffset.UtcNow);
         }
 
-        private delegate AutomationHold? GateCheck(AutomationWriteGate gate, AutomationWrite write, PluginConfiguration config);
+        /// <summary>
+        /// What the gates read from storage, gathered before the decision. Null: not gathered (not needed for this write,
+        /// or the service it is read from isn't there: the gate then holds the write as unchecked).
+        /// </summary>
+        internal sealed record Facts
+        {
+            /// <summary>The engine-only gates' facts were gathered (the engine was in effect for the write, or every gate was asked).</summary>
+            public bool EngineFacts { get; init; }
 
-        private sealed record Gate(string Id, GateCheck Run, bool EngineOnly = false);
+            /// <summary>A Seerr API key is stored (queued automatic work under Seerr handling).</summary>
+            public bool? SeerrKey { get; init; }
+
+            /// <summary>The person consents to the recipe asking for them.</summary>
+            public bool? Consented { get; init; }
+
+            /// <summary>The person may have automatic requests go ahead without an OK (their role and grant).</summary>
+            public bool? Eligible { get; init; }
+
+            /// <summary>The target's breaker.</summary>
+            public AutomationBreaker? Breaker { get; init; }
+
+            /// <summary>The drive it would land on is below the low-disk threshold.</summary>
+            public bool? LowDisk { get; init; }
+
+            /// <summary>The destination's free space is known.</summary>
+            public bool? DiskKnown { get; init; }
+
+            /// <summary>What the preliminary budget check counts.</summary>
+            public BudgetRows? Budget { get; init; }
+        }
+
+        // What the facts depend on, read without waiting: the configuration (the object, and what it holds, as a save may
+        // change it in place), the database's generation (a restore) and automation revision (budgets, breakers, grants),
+        // and the person's settings version (their consents).
+        private readonly record struct Stamp(PluginConfiguration Config, string Settings, long Generation, long Revision, long Person)
+        {
+            public bool Same(Stamp other) => ReferenceEquals(Config, other.Config) && Settings == other.Settings && Generation == other.Generation
+                && Revision == other.Revision && Person == other.Person;
+        }
+
+        private sealed record Gate(string Id, bool EngineOnly = false);
 
         // The gates in the order they are asked. The engine-only ones act only on automatic work while the engine is in
         // effect (with it off, the old recipes' queued work goes out as before).
         private static readonly Gate[] Ordered =
         {
-            new("legacy_switch", (_, w, c) => w.OriginKind == RequestOrigin.AutomationKind && !AutomationRecipes.SwitchedOn(c, w.Recipe)
-                ? Hold(w.Path == AutomationWritePath.LegacySeerr ? Disabled : AutomationHolds.RecipePaused, "The recipe is switched off: its request waits until it is on again.") : null),
-            new("shadow_override", (_, w, c) => w.Automatic && AutomationFlags.ShadowOverride(c)
-                ? Hold(AutomationHolds.ShadowOverride, "The rollout Shadow override is on: automatic requests are recorded, never sent.") : null),
-            new("requests", (_, w, c) => Requests(w, c)),
-            new("phase4", (_, w, c) => w.Phase4Only && !(w.Automatic ? AutomationFlags.Engine(c) : AutomationFlags.Phase4WithRequests(c))
-                ? Hold(AutomationHolds.Phase4Off, "Phase 4 (or its automation engine) is off: work it created waits.") : null),
-            new("engine_changed", (_, w, c) => w.BudgetedAtStart is bool started && w.Automatic && started != AutomationFlags.Engine(c)
-                ? Hold(AutomationHolds.EngineChanged, "The automation engine was turned on or off during the send: it starts again under the current rules.") : null),
-            new("kill_all", (_, _, c) => AutomationFlags.KilledAll(c) ? Killed() : null, EngineOnly: true),
-            new("kill_recipe", (_, w, c) => w.Recipe != null && AutomationModes.Killed(c, w.Recipe) ? Killed() : null, EngineOnly: true),
-            new("kill_target", (_, w, c) => AutomationFlags.KilledTarget(c, w.Target) ? Killed() : null, EngineOnly: true),
-            new("recipe_mode", (_, w, c) => (w.Recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(c, w.Recipe)) is var mode && mode is AutomationMode.Off or AutomationMode.Shadow
-                ? Hold(AutomationHolds.RecipePaused, "The recipe is now " + AutomationModes.Name(mode) + ": its queued request waits.") : null, EngineOnly: true),
-            // A recipe's ask: the person's consent as it is now. List sync asks run on the list link's own consent.
-            new("consent", (g, w, _) => w.OriginKind == RequestOrigin.AutomationKind && w.Recipe != null && !AutomationConsent.Allows(g._consents, w.Requester, w.Recipe)
-                ? Hold(AutomationHolds.UserOptedOut, "The person turned this automatic request off for themselves: it waits until they turn it back on.") : null, EngineOnly: true),
-            new("seerr_unsupported", (_, w, _) => w.Backend == "seerr" && AutomationRecipes.RequiresDirect(w.Recipe)
-                ? Park(AutomationHolds.SeerrUnsupported, "This recipe needs Sonarr/Radarr handling; Seerr handles requests now.") : null, EngineOnly: true),
-            new("approval", (g, w, c) => g.Approval(w, c), EngineOnly: true),
-            new("breaker", (g, w, _) => g.Breaker(w), EngineOnly: true),
-            // Seerr handling included: the policy measures the drive Seerr's default server would fill (as before).
-            new("low_disk", (g, w, _) => w.Input == null ? null : g._policy == null ? Unchecked() : g._policy.TitlePause(w.Input) != null
-                ? Hold(AutomationHolds.LowDisk, "The drive it would land on is below the low-disk threshold.") : null, EngineOnly: true),
-            new("disk_unknown", (g, w, c) => w.Backend != "je" || w.Input == null || c.ArrLowDiskPercent <= 0 ? null : g._policy == null ? Unchecked() : !g._policy.DiskKnown(w.Input)
-                ? Hold(AutomationHolds.DiskUnknown, "The destination's free space isn't known yet; automatic sends wait for it.") : null, EngineOnly: true),
-            new("budget", (g, w, _) => g.Budget(w), EngineOnly: true),
+            new("legacy_switch"),
+            new("shadow_override"),
+            new("requests"),
+            new("phase4"),
+            new("engine_changed"),
+            new("kill_all", EngineOnly: true),
+            new("kill_recipe", EngineOnly: true),
+            new("kill_target", EngineOnly: true),
+            new("recipe_mode", EngineOnly: true),
+            new("consent", EngineOnly: true),
+            new("seerr_unsupported", EngineOnly: true),
+            new("approval", EngineOnly: true),
+            new("breaker", EngineOnly: true),
+            new("low_disk", EngineOnly: true),
+            new("disk_unknown", EngineOnly: true),
+            new("budget", EngineOnly: true),
         };
 
         /// <summary>The gates, in the order they are asked.</summary>
         public static IReadOnlyList<string> Gates { get; } = Ordered.Select(g => g.Id).ToArray();
 
         /// <summary>
-        /// Why <paramref name="write"/> may not go now (null: it may). Re-reads every gate live; call it immediately before
-        /// the write leaves, after the last await.
+        /// Why <paramref name="write"/> may not go now (null: it may). Gathers the facts, then decides on the live
+        /// configuration; call it immediately before the write leaves, after the last await.
         /// </summary>
         /// <param name="write">The write (null: the gate doesn't apply, e.g. a person's own ask).</param>
-        public AutomationHold? Check(AutomationWrite? write)
+        public AutomationHold? Check(AutomationWrite? write) => Check(write, null);
+
+        /// <summary>
+        /// The transport's check (<see cref="AutomationTransportHandler"/>): <see cref="Check(AutomationWrite?)"/> with the
+        /// budget reservations <paramref name="admission"/> admitted and hasn't settled among the facts, judged against the
+        /// live limits in the same decision (each counting its own row once).
+        /// </summary>
+        /// <param name="write">The write (null: the gate doesn't apply).</param>
+        /// <param name="admission">The job's admission (null: not budgeted).</param>
+        internal AutomationHold? Check(AutomationWrite? write, ISendAdmission? admission)
         {
             if (write == null) return null;
-            var config = _config();
-            if (config == null)
-                return write.Path == AutomationWritePath.LegacySeerr ? Hold(Disabled, "The plugin configuration isn't loaded.") : Park(ConfigurationChanged, "The plugin configuration isn't loaded.");
-            var engine = write.Automatic && AutomationFlags.Engine(config);
+            for (var round = 1; ; round++)
+            {
+                var config = _config();
+                if (config == null) return Unloaded(write);
+                var before = StampOf(write, config);
+                // Facts first: each of these reads may wait (the database, during a restore too; a settings file; the policy).
+                var facts = Gather(write, config, every: false);
+                var rows = admission?.Rows();
+                if (Final(write, before, facts, rows, admission, round, out var hold)) return hold;
+            }
+        }
+
+        // The decision. Nothing here waits: the live configuration, the stamps, every gate and the budget judgement read
+        // memory only, and the transport hands the request on as soon as this answers. False: a fact may be stale (what it
+        // depends on moved while the facts were gathered), so they are gathered again.
+        private bool Final(AutomationWrite write, Stamp before, Facts facts, IReadOnlyList<BudgetRows>? rows, ISendAdmission? admission, int round, out AutomationHold? hold)
+        {
+            var live = _config();
+            if (live == null)
+            {
+                hold = Unloaded(write);
+                return true;
+            }
+            var after = StampOf(write, live);
+            if (after.Generation != before.Generation)
+            {
+                // A restore replaced the database: what was read (and the job's reservations) belong to the old one.
+                hold = Changed("The request database was restored while this automatic request was checked; it is checked again under the restored state.");
+                return true;
+            }
+            if (!after.Same(before) || (Engine(write, live) && !facts.EngineFacts))
+            {
+                hold = round >= GatherRounds ? Changed("The automation settings or state kept changing while this automatic request was checked; it is checked again shortly.") : null;
+                return round >= GatherRounds;
+            }
+            hold = Decide(write, live, facts, rows, admission);
+            return true;
+        }
+
+        // Every gate in order on the live configuration and the gathered facts, then the admitted writes' budgets.
+        private AutomationHold? Decide(AutomationWrite write, PluginConfiguration config, Facts facts, IReadOnlyList<BudgetRows>? rows, ISendAdmission? admission)
+        {
+            var engine = Engine(write, config);
             foreach (var gate in Ordered)
             {
                 if (gate.EngineOnly && !engine) continue;
-                if (gate.Run(this, write, config) is { } hold) return hold;
+                if (Run(gate.Id, write, config, facts) is { } hold) return hold;
             }
-            return null;
+            return rows != null && admission?.Recheck(rows, config) is { } limited ? new AutomationHold(limited.Reason, limited.Message, limited.Wait) : null;
         }
 
-        /// <summary>The result of one named gate alone for <paramref name="write"/> (tests and diagnostics).</summary>
+        /// <summary>The result of one named gate alone for <paramref name="write"/> (tests and diagnostics): its facts gathered, then judged.</summary>
         /// <param name="id">The gate's id (<see cref="Gates"/>).</param>
         /// <param name="write">The write.</param>
         internal AutomationHold? CheckOne(string id, AutomationWrite write)
         {
             var config = _config();
-            return config == null ? null : Ordered.Single(g => g.Id == id).Run(this, write, config);
+            if (config == null) return null;
+            var gate = Ordered.Single(g => g.Id == id).Id;
+            return Run(gate, write, config, Gather(write, config, every: true));
         }
+
+        private static bool Engine(AutomationWrite write, PluginConfiguration config) => write.Automatic && AutomationFlags.Engine(config);
+
+        private Stamp StampOf(AutomationWrite write, PluginConfiguration config)
+        {
+            var db = _store?.Database ?? _budgets?.Database;
+            return new(config, JsonSerializer.Serialize(config), db?.Generation ?? 0, db?.AutomationRevision ?? 0, _consents?.Version(write.Requester) ?? 0);
+        }
+
+        // The storage reads, each only where a gate needs it. The engine-only gates' facts are read while the engine is in
+        // effect (or for every gate, when one is asked alone).
+        private Facts Gather(AutomationWrite w, PluginConfiguration config, bool every)
+        {
+            var facts = new Facts
+            {
+                SeerrKey = w.Path == AutomationWritePath.Queued && w.Automatic && w.Backend == "seerr" ? !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()) : null,
+            };
+            if (!every && !Engine(w, config)) return facts;
+            facts = facts with { EngineFacts = true };
+            if (w.PreTransport && _budgets != null)
+                facts = facts with { Budget = w.Backend == "seerr" ? _budgets.Rows(BudgetCategories.SeerrPost, AutomationFlags.SeerrTarget) : _budgets.Rows(BudgetCategories.Search, w.Target ?? string.Empty) };
+            if (!string.IsNullOrEmpty(w.Target) && _store != null) facts = facts with { Breaker = _store.Breaker(w.Target) };
+            if (w.Approver == null && _policy != null && _eligibility != null && w.Input != null)
+                facts = facts with { Eligible = _eligibility.Eligible(w.Requester, _policy.Evaluate(w.Requester, w.Input).Role) };
+            if (w.OriginKind == RequestOrigin.AutomationKind && w.Recipe != null) facts = facts with { Consented = AutomationConsent.Allows(_consents, w.Requester, w.Recipe) };
+            // Memory reads (the policy's disk facts) last.
+            if (w.Input != null && _policy != null)
+                facts = facts with { LowDisk = _policy.TitlePause(w.Input) != null, DiskKnown = w.Backend == "je" ? _policy.DiskKnown(w.Input) : null };
+            return facts;
+        }
+
+        // One gate, on the configuration and facts given: memory only.
+        private AutomationHold? Run(string id, AutomationWrite w, PluginConfiguration c, Facts f) => id switch
+        {
+            "legacy_switch" => w.OriginKind == RequestOrigin.AutomationKind && !AutomationRecipes.SwitchedOn(c, w.Recipe)
+                ? Hold(w.Path == AutomationWritePath.LegacySeerr ? Disabled : AutomationHolds.RecipePaused, "The recipe is switched off: its request waits until it is on again.") : null,
+            "shadow_override" => w.Automatic && AutomationFlags.ShadowOverride(c)
+                ? Hold(AutomationHolds.ShadowOverride, "The rollout Shadow override is on: automatic requests are recorded, never sent.") : null,
+            "requests" => Requests(w, c, f),
+            "phase4" => w.Phase4Only && !(w.Automatic ? AutomationFlags.Engine(c) : AutomationFlags.Phase4WithRequests(c))
+                ? Hold(AutomationHolds.Phase4Off, "Phase 4 (or its automation engine) is off: work it created waits.") : null,
+            "engine_changed" => w.BudgetedAtStart is bool started && w.Automatic && started != AutomationFlags.Engine(c)
+                ? Hold(AutomationHolds.EngineChanged, "The automation engine was turned on or off during the send: it starts again under the current rules.") : null,
+            "kill_all" => AutomationFlags.KilledAll(c) ? Killed() : null,
+            "kill_recipe" => w.Recipe != null && AutomationModes.Killed(c, w.Recipe) ? Killed() : null,
+            "kill_target" => AutomationFlags.KilledTarget(c, w.Target) ? Killed() : null,
+            "recipe_mode" => (w.Recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(c, w.Recipe)) is var mode && mode is AutomationMode.Off or AutomationMode.Shadow
+                ? Hold(AutomationHolds.RecipePaused, "The recipe is now " + AutomationModes.Name(mode) + ": its queued request waits.") : null,
+            // A recipe's ask: the person's consent as it was read. List sync asks run on the list link's own consent.
+            "consent" => w.OriginKind == RequestOrigin.AutomationKind && w.Recipe != null && f.Consented != true
+                ? Hold(AutomationHolds.UserOptedOut, "The person turned this automatic request off for themselves: it waits until they turn it back on.") : null,
+            "seerr_unsupported" => w.Backend == "seerr" && AutomationRecipes.RequiresDirect(w.Recipe)
+                ? Park(AutomationHolds.SeerrUnsupported, "This recipe needs Sonarr/Radarr handling; Seerr handles requests now.") : null,
+            "approval" => Approval(w, c, f),
+            "breaker" => Breaker(w, f),
+            // Seerr handling included: the policy measures the drive Seerr's default server would fill (as before).
+            "low_disk" => w.Input == null ? null : _policy == null || f.LowDisk == null ? Unchecked() : f.LowDisk == true
+                ? Hold(AutomationHolds.LowDisk, "The drive it would land on is below the low-disk threshold.") : null,
+            "disk_unknown" => w.Backend != "je" || w.Input == null || c.ArrLowDiskPercent <= 0 ? null : _policy == null || f.DiskKnown == null ? Unchecked() : f.DiskKnown == false
+                ? Hold(AutomationHolds.DiskUnknown, "The destination's free space isn't known yet; automatic sends wait for it.") : null,
+            "budget" => Budget(w, c, f),
+            _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),
+        };
 
         // The integration and the request path the write was chosen under still apply. The old recipes' direct path stops
         // once phase 3 is on (the check starts again through the ledger) or Seerr is off; queued work waits for a person
         // when the integration, phase 1 or 3, the request backend, or Seerr (Seerr handling) changed.
-        private static AutomationHold? Requests(AutomationWrite w, PluginConfiguration c)
+        private static AutomationHold? Requests(AutomationWrite w, PluginConfiguration c, Facts f)
         {
             if (!w.Automatic) return null;
             if (w.Path == AutomationWritePath.LegacySeerr)
@@ -238,45 +387,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return c.JellyseerrEnabled ? null : Hold(Disabled, "Seerr is switched off.");
             }
             var on = c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true } && c.ArrRequestBackend is "je" or "seerr";
-            if (!on || c.ArrRequestBackend != w.Backend || (w.Backend == "seerr" && !SeerrRequestReadModel.IsActive(c)))
+            if (!on || c.ArrRequestBackend != w.Backend || (w.Backend == "seerr" && !SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)))
                 return Park(ConfigurationChanged, "Request handling changed after this automatic request was queued.");
             return null;
         }
 
         // Ask mode, or a person who isn't eligible (any more): an OK is required now.
-        private AutomationHold? Approval(AutomationWrite w, PluginConfiguration c)
+        private AutomationHold? Approval(AutomationWrite w, PluginConfiguration c, Facts f)
         {
             if (w.Approver != null) return null;
-            if (_policy == null || _eligibility == null || w.Input == null) return Unchecked();
+            if (_policy == null || _eligibility == null || w.Input == null || f.Eligible == null) return Unchecked();
             var mode = w.Recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(c, w.Recipe);
-            var role = _policy.Evaluate(w.Requester, w.Input).Role;
-            return mode == AutomationMode.Ask || !_eligibility.Eligible(w.Requester, role)
+            return mode == AutomationMode.Ask || f.Eligible == false
                 ? Park(AutomationHolds.ApprovalRequired, "An OK is required now (Ask mode, or the person isn't eligible for automatic requests).") : null;
         }
 
-        private AutomationHold? Breaker(AutomationWrite w)
+        private AutomationHold? Breaker(AutomationWrite w, Facts f)
         {
             if (string.IsNullOrEmpty(w.Target)) return null;
-            if (_store == null) return Unchecked();
+            if (_store == null || f.Breaker is not { } breaker) return Unchecked();
             var now = _now();
-            var breaker = _store.Breaker(w.Target);
             return breaker.Open(now)
                 ? new(AutomationHolds.BreakerOpen, "Automatic sends to this target failed " + breaker.Failures.ToString(CultureInfo.InvariantCulture) + " times in a row; paused until " + breaker.OpenUntil!.Value.ToString("u", CultureInfo.InvariantCulture) + ".", Until(breaker.OpenUntil!.Value, now))
                 : null;
         }
 
-        // The preliminary budget check before any transport; each write is then admitted on its own.
-        private AutomationHold? Budget(AutomationWrite w)
+        // The preliminary budget check before any transport; each write is then admitted on its own. A full budget waits
+        // for the latest next free slot among its full windows.
+        private AutomationHold? Budget(AutomationWrite w, PluginConfiguration c, Facts f)
         {
             if (!w.PreTransport) return null;
-            if (_budgets == null) return Unchecked();
-            var exhausted = w.Backend == "seerr"
-                ? _budgets.Exhausted(BudgetCategories.SeerrPost, AutomationFlags.SeerrTarget)
-                : _budgets.Exhausted(BudgetCategories.Search, w.Target ?? string.Empty);
-            if (exhausted == null) return null;
+            if (_budgets == null || f.Budget is not { } rows) return Unchecked();
             var now = _now();
-            return new(AutomationHolds.BudgetExhausted, "The " + exhausted.Category + " budget (" + AutomationBudgets.Label(exhausted.Window) + ") is used up.", Until(exhausted.NextSlotAt ?? now + exhausted.Window, now));
+            var judged = AutomationBudgets.Judge(rows, c, now);
+            if (judged.Admitted) return null;
+            if (judged.Reason != "budget_exhausted" || judged.Window is not { } window) return Unchecked();
+            return new(AutomationHolds.BudgetExhausted, "The " + rows.Category + " budget (" + AutomationBudgets.Label(window) + ") is used up.", Until(judged.RetryAt ?? now + window, now));
         }
+
+        private static AutomationHold Unloaded(AutomationWrite write)
+            => write.Path == AutomationWritePath.LegacySeerr ? Hold(Disabled, "The plugin configuration isn't loaded.") : Park(ConfigurationChanged, "The plugin configuration isn't loaded.");
+
+        // What the facts were read under moved (a restore, or changes landing faster than they can be read): nothing is
+        // sent now, and the request is checked again shortly under the current rules.
+        private static AutomationHold Changed(string message) => Hold(AutomationHolds.EngineChanged, message);
 
         private static AutomationHold Hold(string reason, string message) => new(reason, message, AutomationHolds.WaitFor(reason));
 

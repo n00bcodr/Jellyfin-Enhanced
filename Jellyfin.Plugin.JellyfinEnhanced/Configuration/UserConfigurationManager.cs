@@ -19,6 +19,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
+        // Per person (normalized id): moves on after each write of their settings.json (see SettingsVersion).
+        private static readonly ConcurrentDictionary<string, long> _settingsVersions = new ConcurrentDictionary<string, long>();
+
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
@@ -59,6 +62,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// (<see cref="GetUserFileLock"/> of <see cref="SettingsFileName"/>).
         /// </summary>
         public object UserSettingsLock(string userId) => GetUserFileLock(userId, SettingsFileName);
+
+        /// <summary>
+        /// Moves on after every write of the person's settings.json (each writer holds <see cref="UserSettingsLock"/>; the
+        /// version moves once the file is in place) and when their folder is removed. A reader that takes it before
+        /// reading the file and compares it later knows whether what it read is still what is stored. Memory only, never
+        /// waits, never takes the lock.
+        /// </summary>
+        public static long SettingsVersion(string userId)
+            => _settingsVersions.TryGetValue((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), out var version) ? version : 0;
+
+        private static void SettingsChanged(string userId)
+            => _settingsVersions.AddOrUpdate((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), 1, (_, version) => version + 1);
 
         /// <summary>Tests: runs at the start of every <see cref="SaveUserConfiguration"/> (normalized user id, file name).</summary>
         internal Action<string, string>? Saving { get; set; }
@@ -340,6 +355,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 File.WriteAllText(tempPath, jsonToSave);
                 File.Move(tempPath, configPath, overwrite: true);
+                if (string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SettingsChanged(userId);
+                }
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
@@ -615,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 if (!Directory.Exists(userDir)) return false;
                 Directory.Delete(userDir, recursive: true);
+                SettingsChanged(userId.ToString("N"));
                 return true;
             }
             catch (Exception ex)

@@ -26,8 +26,43 @@ public class IntegrationAutomationTests
 {
     internal sealed class Consents : IAutomationConsents
     {
-        public Dictionary<(Guid, string), bool?> Map { get; } = new();
-        public bool? Preference(Guid user, string recipe) => Map.TryGetValue((user, recipe), out var v) ? v : null;
+        public Preferences Map { get; } = new();
+
+        /// <summary>Runs as a preference read returns: a change made then is one the read missed.</summary>
+        public Action? Reading { get; set; }
+
+        public bool? Preference(Guid user, string recipe)
+        {
+            var preference = Map.TryGetValue((user, recipe), out var v) ? v : null;
+            Reading?.Invoke();
+            return preference;
+        }
+
+        // Like the settings file's version: moves on with every change.
+        public long Version(Guid user) => Map.Version;
+
+        internal sealed class Preferences : Dictionary<(Guid, string), bool?>
+        {
+            private long _version;
+
+            public long Version => Interlocked.Read(ref _version);
+
+            public new bool? this[(Guid, string) key]
+            {
+                get => base[key];
+                set
+                {
+                    base[key] = value;
+                    Interlocked.Increment(ref _version);
+                }
+            }
+
+            public new bool Remove((Guid, string) key)
+            {
+                Interlocked.Increment(ref _version);
+                return base.Remove(key);
+            }
+        }
     }
 
     internal sealed class Trust : IAutomationTrust

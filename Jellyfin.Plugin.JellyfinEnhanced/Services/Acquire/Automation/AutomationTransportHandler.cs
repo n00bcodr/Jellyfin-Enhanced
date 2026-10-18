@@ -66,10 +66,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// The guarantee for automatic writes (D41): on every HttpClient JE sends Sonarr/Radarr and Seerr requests with (the
     /// arr client, the Seerr client and the default one Seerr falls back to), each write (anything but GET, HEAD and
     /// OPTIONS: adds, edits, commands, Seerr's POST) made while <see cref="AutomationTransportContext.Current"/> is set is
-    /// checked here, synchronously, as the request is handed on. First the job's budget reservations are checked again
-    /// against the limits as they are now (that reads the database, so it may wait); then the
-    /// <see cref="AutomationWriteGate"/> reads every switch, kill, mode, consent, breaker and disk gate live. Nothing
-    /// awaits between that answer and the inner handler. Refused: the reservations this attempt made are released, and
+    /// checked here, synchronously, as the request is handed on: facts first, then one decision. Every fact read from
+    /// storage (the job's budget reservations, the breaker, the eligibility grant, the person's consent, disk facts) is
+    /// gathered first, and those reads may wait; then the <see cref="AutomationWriteGate"/> reads the live configuration
+    /// and judges every switch, kill, mode and gate on it and those facts, the budgets with their live limits, from memory
+    /// only. A fact that may have gone stale while a later one waited is read again first. Nothing waits between that
+    /// answer and the inner handler. Refused: the reservations this attempt made are released, and
     /// <see cref="AutomationTransportRefusedException"/> carries the hold to the write site. Reads (read-backs included)
     /// and a person's own writes pass untouched. The write sites' own earlier gate calls stay, as defence in depth.
     /// </summary>
@@ -97,13 +99,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             if (request.Method == HttpMethod.Get || request.Method == HttpMethod.Head || request.Method == HttpMethod.Options) return;
             if (AutomationTransportContext.Current is not { Write: { } write } context) return;
             request.Options.Set(Checked, true);
-            // The budgets first: they read the database (one writer at a time), so the gate is read after that wait.
-            var limited = context.Admission?.Recheck();
-            var hold = context.Gate.Check(write)
-                ?? (limited == null ? null : new AutomationHold(limited.Reason, limited.Message, limited.Wait));
-            if (hold == null) return;
-            context.Admission?.Release();
-            throw new AutomationTransportRefusedException(hold);
+            // Facts first (the reads that may wait), then one decision on the live settings; the request is handed on as
+            // soon as it answers.
+            var hold = context.Gate.Check(write, context.Admission);
+            if (hold != null)
+            {
+                context.Admission?.Release();
+                throw new AutomationTransportRefusedException(hold);
+            }
         }
     }
 }

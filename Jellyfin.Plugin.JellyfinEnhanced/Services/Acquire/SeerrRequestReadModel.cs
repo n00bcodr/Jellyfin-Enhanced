@@ -328,9 +328,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>True when the configuration has the read model reading Seerr (the integration, phase 1 and Seerr on).</summary>
         public static bool IsActive(PluginConfiguration? c)
+            => IsActive(c, c != null && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey()));
+
+        /// <summary>
+        /// <see cref="IsActive(PluginConfiguration?)"/> with whether an API key is stored already read (the key's read
+        /// can wait for the secrets store and its file: the automatic-write gate reads it before its decision).
+        /// </summary>
+        public static bool IsActive(PluginConfiguration? c, bool hasApiKey)
             => c is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, JellyseerrEnabled: true }
                && !string.IsNullOrWhiteSpace(c.JellyseerrUrls)
-               && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
+               && hasApiKey;
 
         /// <summary>The identity of the Seerr the current configuration points at (<see cref="SourceOf"/>), or null.</summary>
         internal string? CurrentSource => SourceOf(_config());

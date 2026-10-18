@@ -1129,7 +1129,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE state='retry' AND reason='seerr_user_unlinked' AND next_attempt>$at AND json_extract(authorization_context,'$.Requester')=$guid",
                 ("$at", Ms(now)), ("$guid", user.ToString())));
         /// <summary>Purges a deleted person's intent and all personal outbox contexts in one transaction.</summary>
-        public void PurgeUser(Guid user) => _db.Write((c, t) => PurgeUser(c, t, user));
+        public void PurgeUser(Guid user)
+        {
+            _db.Write((c, t) => PurgeUser(c, t, user));
+            // Their eligibility grant went with them.
+            _db.AutomationChanged();
+        }
         internal static int PurgeUser(SqliteConnection c, SqliteTransaction t, Guid user)
         {
             var id = Id(user);

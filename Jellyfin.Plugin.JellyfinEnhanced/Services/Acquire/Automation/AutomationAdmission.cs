@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
@@ -54,10 +55,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         SendRefusal? Admit(SendWriteKind kind, string detail);
 
         /// <summary>
-        /// Asked inside the transport (<see cref="AutomationTransportHandler"/>): the writes admitted and not settled yet,
-        /// checked again against each budget's limits as they are now, each counting its own row once (null: they still fit).
+        /// Read inside the transport (<see cref="AutomationTransportHandler"/>) with the other facts, before its decision
+        /// (these reads may wait): what each budget of the writes admitted and not settled yet counts now, without the
+        /// write's own row.
         /// </summary>
-        SendRefusal? Recheck();
+        IReadOnlyList<BudgetRows> Rows();
+
+        /// <summary>
+        /// The transport's decision on <paramref name="rows"/> (<see cref="Rows"/>) with the limits in
+        /// <paramref name="config"/>, memory only: null when every admitted write still fits (its own row counted once);
+        /// else the refusal that waits longest.
+        /// </summary>
+        /// <param name="rows">What <see cref="Rows"/> read.</param>
+        /// <param name="config">The configuration as it is now.</param>
+        SendRefusal? Recheck(IReadOnlyList<BudgetRows> rows, PluginConfiguration config);
 
         /// <summary>
         /// The transport refused the write: what this attempt reserved and hasn't settled is released (not sent). Rows
@@ -298,22 +309,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     return null;
                 }
 
-                return Refusal(category, admission);
+                return Refusal(category, admission, _now());
             }
 
-            public SendRefusal? Recheck()
+            public IReadOnlyList<BudgetRows> Rows() => _active.Values.Select(slot => _budgets.Rows(slot.Category, slot.Scope, slot.Id)).ToList();
+
+            public SendRefusal? Recheck(IReadOnlyList<BudgetRows> rows, PluginConfiguration config)
             {
-                foreach (var slot in _active.Values)
+                var now = _now();
+                SendRefusal? longest = null;
+                foreach (var slot in rows)
                 {
-                    var now = _budgets.Recheck(slot.Category, slot.Scope, slot.Id);
-                    if (!now.Admitted) return Refusal(slot.Category, now);
+                    var judged = AutomationBudgets.Judge(slot, config, now);
+                    if (judged.Admitted) continue;
+                    var refusal = Refusal(slot.Category, judged, now);
+                    if (longest == null || refusal.Wait > longest.Wait) longest = refusal;
                 }
-                return null;
+                return longest;
             }
 
-            private SendRefusal Refusal(string category, BudgetAdmission admission)
+            private static SendRefusal Refusal(string category, BudgetAdmission admission, DateTimeOffset now)
             {
-                var wait = admission.RetryAt is { } at ? at - _now() : AutomationHolds.WaitFor(admission.Reason ?? AutomationHolds.AccountingUnavailable);
+                var wait = admission.RetryAt is { } at ? at - now : AutomationHolds.WaitFor(admission.Reason ?? AutomationHolds.AccountingUnavailable);
                 if (wait < TimeSpan.FromSeconds(30)) wait = TimeSpan.FromSeconds(30);
                 return admission.Reason == "budget_exhausted"
                     ? new SendRefusal(AutomationHolds.BudgetExhausted, "The " + category + " budget is used up; the request waits for room.", wait)

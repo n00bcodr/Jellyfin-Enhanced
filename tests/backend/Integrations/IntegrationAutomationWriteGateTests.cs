@@ -832,6 +832,82 @@ public class IntegrationAutomationWriteGateTests
         ["direct_last_gate_removed"] = ("Services/Acquire/Requests/DirectArrBackend.cs", new[] { ("if ((refusal = run.Guard()) == null) return true;", "if (refusal == null) return true;") }, "a blocking wait (SemaphoreSlim.Wait)"),
     };
 
+    // ------------------------------------------------------------------ nothing waits after the final decision (round 7)
+
+    private const string GateFile = "Services/Acquire/Automation/AutomationWriteGate.cs";
+    private const string HandlerFile = "Services/Acquire/Automation/AutomationTransportHandler.cs";
+
+    /// <summary>
+    /// 4a-security-r7-1 (defence in depth for the facts-first check): from the read of the live configuration to the
+    /// gate's answer (every gate and the budget judgement in it), then from that answer to the hand-off to the inner
+    /// handler, nothing may wait, read or write the database, take a lock or touch a file (WriteGateWalk.AfterDecision).
+    /// </summary>
+    internal static List<string> AfterDecisions(WriteGateWalk walk)
+    {
+        var problems = new List<string>();
+        problems.AddRange(walk.AfterDecision(GateFile, "var live = _config();", included: true));
+        problems.AddRange(walk.AfterDecision(HandlerFile, "var hold = context.Gate.Check(write, context.Admission);", included: false));
+        problems.AddRange(walk.AfterDecision(HandlerFile, "protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)\n        {\n            Check(request);", included: false));
+        problems.AddRange(walk.AfterDecision(HandlerFile, "protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)\n        {\n            Check(request);", included: false));
+        return problems;
+    }
+
+    [Fact]
+    public void NothingThatCanWaitFollowsTheTransportChecksFinalDecision()
+    {
+        var walk = WriteGateWalk.Plugin;
+        Clean(walk.Errors());
+        Clean(AfterDecisions(walk));
+        // The gate gathers the facts (every storage read), then decides; the transport answers with that one check.
+        var gate = Source(GateFile);
+        var check = IntegrationAutoRequestLedgerTests.Body(gate, "internal AutomationHold? Check(AutomationWrite? write, ISendAdmission? admission)");
+        Assert.True(check.IndexOf("Gather(write, config, every: false)", StringComparison.Ordinal) is >= 0 and var gather
+            && gather < check.IndexOf("admission?.Rows()", StringComparison.Ordinal)
+            && check.IndexOf("admission?.Rows()", StringComparison.Ordinal) < check.IndexOf("Final(", StringComparison.Ordinal));
+        Assert.Contains("var hold = context.Gate.Check(write, context.Admission);", Source(HandlerFile), StringComparison.Ordinal);
+    }
+
+    // Each case plants something that can wait after the final decision (the copy must still compile), and the walk reports it.
+    private static readonly Dictionary<string, (string File, (string Text, string Planted)[] Changes, string Reported)> AfterDecisionBypasses = new(StringComparer.Ordinal)
+    {
+        ["breaker_read_after_the_live_config"] = (GateFile, new[] { ("var live = _config();", "var live = _config(); _store?.Breaker(write.Target ?? string.Empty);") }, "a database call (AcquireDatabase.Read)"),
+        ["lock_in_the_decision"] = (GateFile, new[] { ("var engine = Engine(write, config);", "var engine = Engine(write, config); lock (Ordered) { }") }, "a lock at"),
+        ["monitor_in_a_gate"] = (GateFile, new[] { ("\"kill_all\" => AutomationFlags.KilledAll(c)", "\"kill_all\" => System.Threading.Monitor.TryEnter(Ordered) && AutomationFlags.KilledAll(c)") }, "a lock (Monitor.TryEnter)"),
+        ["file_in_a_gate"] = (GateFile, new[] { ("\"kill_target\" => AutomationFlags.KilledTarget(c, w.Target)", "\"kill_target\" => File.Exists(c.JellyseerrUrls) || AutomationFlags.KilledTarget(c, w.Target)") }, "file I/O (File.Exists)"),
+        ["consent_read_in_the_decision"] = (GateFile, new[] { ("w.Recipe != null && f.Consented != true", "w.Recipe != null && !AutomationConsent.Allows(_consents, w.Requester, w.Recipe)") }, "file I/O (File."),
+        ["seerr_key_read_in_the_decision"] = (GateFile, new[] { ("SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)", "SeerrRequestReadModel.IsActive(c)") }, "a lock at"),
+        ["sleep_in_the_decision"] = (GateFile, new[] { ("hold = Decide(write, live, facts, rows, admission);", "Thread.Sleep(1); hold = Decide(write, live, facts, rows, admission);") }, "a blocking wait (Thread.Sleep)"),
+        ["budget_read_in_the_judgement"] = ("Services/Acquire/Automation/AutomationAdmission.cs", new[] { ("var judged = AutomationBudgets.Judge(slot, config, now);", "var judged = _budgets.Recheck(slot.Category, slot.Scope, slot.Own!);") }, "a database call (AcquireDatabase.Read)"),
+        ["sleep_in_the_budget_judgement"] = ("Services/Acquire/Automation/AutomationBudgets.cs", new[] { ("var windows = Windows(rows.Category, config);", "Thread.Sleep(1); var windows = Windows(rows.Category, config);") }, "a blocking wait (Thread.Sleep)"),
+        ["budget_rows_read_before_the_hand_off"] = (HandlerFile, new[] { ("                throw new AutomationTransportRefusedException(hold);\n            }\n", "                throw new AutomationTransportRefusedException(hold);\n            }\n            context.Admission?.Rows();\n") }, "a database call (AcquireDatabase.Read)"),
+        ["release_before_the_hand_off"] = (HandlerFile, new[] { ("            if (hold != null)\n            {\n                context.Admission?.Release();", "            context.Admission?.Release();\n            if (hold != null)\n            {") }, "a database call (AcquireDatabase.Write)"),
+        ["sleep_before_the_inner_handler"] = (HandlerFile, new[] { ("            return base.SendAsync(request, cancellationToken);", "            Thread.Sleep(1);\n            return base.SendAsync(request, cancellationToken);") }, "a blocking wait (Thread.Sleep)"),
+        ["lock_before_the_synchronous_send"] = (HandlerFile, new[] { ("            return base.Send(request, cancellationToken);", "            lock (Checked.Key) { }\n            return base.Send(request, cancellationToken);") }, "a lock at"),
+    };
+
+    public static IEnumerable<object[]> AfterDecisionBypassCases() => AfterDecisionBypasses.Keys.Select(k => new object[] { k });
+
+    [Theory]
+    [MemberData(nameof(AfterDecisionBypassCases))]
+    public void TheWalkReportsAnythingThatCanWaitPlantedAfterTheFinalDecision(string bypass)
+    {
+        var (file, changes, reported) = AfterDecisionBypasses[bypass];
+        var planted = WriteGateWalk.Plugin.With(file, source =>
+        {
+            foreach (var (text, replacement) in changes)
+            {
+                var at = source.IndexOf(text, StringComparison.Ordinal);
+                Assert.True(at >= 0 && source.IndexOf(text, at + 1, StringComparison.Ordinal) < 0, bypass + ": \"" + text + "\" must be there once");
+                source = source[..at] + replacement + source[(at + text.Length)..];
+            }
+
+            return source;
+        });
+        Clean(planted.Errors(file));
+        var problems = AfterDecisions(planted);
+        Assert.Contains(problems, p => p.Contains(reported, StringComparison.Ordinal));
+    }
+
     // None, or every one in the failure message, one per line (Assert.Empty shows a cut-down list).
     private static void Clean(List<string> problems)
     {

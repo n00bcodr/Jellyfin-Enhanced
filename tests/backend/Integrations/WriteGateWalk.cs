@@ -24,6 +24,11 @@ namespace JE.Tests;
 /// runs up to its first await: that part is walked. A call through a delegate can't be followed: it is reported
 /// anywhere on the way, unless it is one of <see cref="KnownDelegates"/>, and for those every value the field is given
 /// (its initialiser, each assignment, and for a constructor parameter what each creation passes) is walked.
+///
+/// 4a review round 7: <see cref="AfterDecision"/> walks what follows the transport check's final decision (from it to the
+/// hand-off to the inner handler, and the decision itself) in a strict mode: besides the waits above, any database call
+/// (AcquireDatabase, SQLite), lock statement, Monitor call or file I/O there is reported too. Facts are gathered before
+/// that decision; nothing that can wait may follow it.
 /// </summary>
 internal sealed class WriteGateWalk
 {
@@ -32,6 +37,7 @@ internal sealed class WriteGateWalk
     {
         ["_http"] = "the HTTP client factory (IHttpClientFactory.CreateClient)",
         ["_now"] = "the clock",
+        ["_config"] = "the live configuration (an administrator's save replaces it)",
     };
 
     private static readonly Lazy<WriteGateWalk> _plugin = new(() => new WriteGateWalk(Load()));
@@ -43,8 +49,13 @@ internal sealed class WriteGateWalk
     private readonly Dictionary<SyntaxTree, SemanticModel> _models = new();
     private readonly Dictionary<ISymbol, bool> _leads = new(SymbolEqualityComparer.Default);
     private List<INamedTypeSymbol>? _types;
+    private readonly bool _strict;
 
-    private WriteGateWalk(CSharpCompilation compilation) => _compilation = compilation;
+    private WriteGateWalk(CSharpCompilation compilation, bool strict = false)
+    {
+        _compilation = compilation;
+        _strict = strict;
+    }
 
     private static CSharpCompilation Load()
     {
@@ -166,6 +177,30 @@ internal sealed class WriteGateWalk
             if (Asked(body, gate, target, problems) is { } asked)
                 Between(model, body, asked.Span.End, target, Where(asked) + " → " + Where(target) + " (back to the send)", problems);
         return problems;
+    }
+
+    /// <summary>
+    /// After a final decision (round 7): from the statement holding the end of <paramref name="at"/> (text there, once in
+    /// the file; itself included when <paramref name="included"/>, else from the statement after it) to the end of its function,
+    /// and everything the plugin code called there runs, nothing may wait, read or write the database, take a lock or
+    /// touch a file. A refusal (a throw, or a block ending in one) never hands the request on: it isn't walked.
+    /// </summary>
+    internal List<string> AfterDecision(string relative, string at, bool included)
+    {
+        var problems = new List<string>();
+        var strict = new WriteGateWalk(_compilation, strict: true);
+        var tree = strict.Tree(relative);
+        var model = strict.Model(tree);
+        var statement = tree.GetRoot().FindToken(Unique(relative, at) + at.Length - 1).Parent!.FirstAncestorOrSelf<StatementSyntax>()!;
+        if (Function(statement) is not { } body) { problems.Add(relative + ": " + at + " isn't inside a method"); return problems; }
+        var start = included ? statement.SpanStart : statement.Span.End;
+        var path = Where(statement) + " (after the final decision)";
+        var seen = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        foreach (var node in body.DescendantNodes(n => !Refusal(n) && !Skip(n, null)).Where(n => n.SpanStart >= start && !Refusal(n) && !Skip(n, null)))
+            strict.Visit(model, node, path, problems, seen);
+        return problems;
+
+        static bool Refusal(SyntaxNode n) => n is ThrowStatementSyntax or ThrowExpressionSyntax || n is BlockSyntax { Statements: [.., ThrowStatementSyntax] };
     }
 
     private int Unique(string relative, string text)
@@ -338,7 +373,11 @@ internal sealed class WriteGateWalk
             return;
         }
 
-        foreach (var member in Implementations(used))
+        // A base call runs the base member itself, never an override (framework code has none to walk).
+        var members = node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Expression: BaseExpressionSyntax } }
+            ? (used.DeclaringSyntaxReferences.Length > 0 ? new[] { used.OriginalDefinition } : Array.Empty<ISymbol>())
+            : Implementations(used);
+        foreach (var member in members)
         {
             if (!seen.Add(member)) continue;
             // A record's primary constructor is declared by the whole type: only its parameters run.
@@ -378,10 +417,11 @@ internal sealed class WriteGateWalk
         }
     }
 
-    private static string? Waits(SemanticModel model, SyntaxNode node)
+    private string? Waits(SemanticModel model, SyntaxNode node)
     {
         switch (node)
         {
+            case LockStatementSyntax when _strict: return "a lock";
             case AwaitExpressionSyntax: return "an await";
             case UsingStatementSyntax u when u.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword): return "an await using";
             case LocalDeclarationStatementSyntax l when l.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword): return "an await using";
@@ -392,9 +432,11 @@ internal sealed class WriteGateWalk
         {
             InvocationExpressionSyntax i => model.GetSymbolInfo(i).Symbol,
             MemberAccessExpressionSyntax { Name.Identifier.Text: "Result" } m => model.GetSymbolInfo(m).Symbol,
+            BaseObjectCreationExpressionSyntax c when _strict => model.GetSymbolInfo(c).Symbol,
             _ => null,
         };
         if (symbol == null) return null;
+        if (_strict && Blocks(symbol) is { } blocks) return blocks;
         if (symbol.ContainingType?.OriginalDefinition.ToDisplayString() == "System.Collections.Concurrent.BlockingCollection<T>"
             && symbol.Name is "Add" or "Take" or "TryAdd" or "TryTake" or "GetConsumingEnumerable")
             return "a blocking wait (BlockingCollection." + symbol.Name + ")";
@@ -404,6 +446,20 @@ internal sealed class WriteGateWalk
                 or "EnterReadLock" or "EnterWriteLock" or "EnterUpgradeableReadLock" or "TryEnterReadLock" or "TryEnterWriteLock" or "TryEnterUpgradeableReadLock"
             ? "a blocking wait (" + symbol.ContainingType!.Name + "." + symbol.Name + ")"
             : null;
+    }
+
+    // Strict (after a final decision): database calls, Monitor and file I/O, besides the waits.
+    private static string? Blocks(ISymbol symbol)
+    {
+        var type = symbol.ContainingType?.ToDisplayString() ?? string.Empty;
+        var space = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        if (type == "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.AcquireDatabase" && symbol.Name is "Read" or "Write" or "WriteIf" or "Snapshot" or "ReplaceWith")
+            return "a database call (AcquireDatabase." + symbol.Name + ")";
+        if (space.StartsWith("Microsoft.Data.Sqlite", StringComparison.Ordinal)) return "a database call (" + symbol.ContainingType!.Name + "." + symbol.Name + ")";
+        if (type == "System.Threading.Monitor" && symbol.Name is not ("Exit" or "Pulse" or "PulseAll" or "IsEntered")) return "a lock (Monitor." + symbol.Name + ")";
+        if (space == "System.IO" && symbol.ContainingType!.Name is "File" or "Directory" or "FileInfo" or "DirectoryInfo" or "FileSystemInfo" or "FileStream" or "StreamReader" or "StreamWriter" or "DriveInfo" or "RandomAccess")
+            return "file I/O (" + symbol.ContainingType.Name + "." + symbol.Name + ")";
+        return null;
     }
 
     // Does this call send an HTTP request, itself or through the plugin methods it calls?
