@@ -14,8 +14,8 @@ namespace JE.Tests;
 /// production policy (no stub). A Seerr-mode request with an administrator's Seerr choice lands in the root folder chosen
 /// on the Seerr server chosen, whatever the title's ordinary arr folder is: a Manager who can't open that folder's library
 /// can't see the request there, so can't decline or approve it and doesn't get it listed. Table: where it goes (a Seerr
-/// folder resolved through the default instance, a Seerr folder on the instance linked to that Seerr server, the same with
-/// a stale options stamp, an arr folder in Jellyfin Enhanced handling) × who looks (blocked from that library, every
+/// folder on a verified linked instance, an unlinked or ambiguous server, a repointed server, a stale options stamp,
+/// an arr folder in Jellyfin Enhanced handling) × who looks (blocked from that library, every
 /// library, only the libraries they were given) × what they do. The title's ordinary folder is one every one of them sees.
 /// </summary>
 [Collection("Plugin singleton")]
@@ -26,8 +26,14 @@ public class IntegrationRequestDestinationSightTableTests
     /// <summary>Where the request goes.</summary>
     public enum Where
     {
-        /// <summary>Seerr's server 1, folder /kids; no Jellyfin Enhanced instance is linked to that server (the default Radarr's mappings resolve it).</summary>
+        /// <summary>Seerr's server 1, folder /kids; the default Radarr is explicitly linked and its connection verified.</summary>
         SeerrDefault,
+        /// <summary>No link for server 1; another server maps the same /kids root to ordinary movies.</summary>
+        SeerrUnlinked,
+        /// <summary>Two instances claim server 1 with different /kids mappings.</summary>
+        SeerrAmbiguous,
+        /// <summary>A stale imported id points to a different connection now.</summary>
+        SeerrRepointed,
         /// <summary>Seerr's server 1, folder /kids, on the instance linked to that Seerr server (its own mapping: /kids is /media/kids).</summary>
         SeerrLinked,
         /// <summary>As <see cref="SeerrDefault"/>, and Seerr's servers changed since (the choice's stamp is stale).</summary>
@@ -80,7 +86,8 @@ public class IntegrationRequestDestinationSightTableTests
 
             // Jellyfin's libraries: the ordinary movies and the hidden one (where Seerr's /kids lands).
             var movies = rig.Access.AddLibrary("Movies", "movies", "/data/movies");
-            var hidden = rig.Access.AddLibrary("Hidden", "movies", where == Where.SeerrLinked ? "/media/kids" : "/kids");
+            var hidden = rig.Access.AddLibrary("Hidden", "movies", where is Where.SeerrLinked or Where.SeerrUnlinked or Where.SeerrAmbiguous or Where.SeerrRepointed ? "/media/kids" : "/kids");
+            rig.Access.AddLibrary("Other", "movies", "/other");
             var blind = (User)People[Sight.Blind].Handle!;
             blind.SetPreference(PreferenceKind.BlockedMediaFolders, new[] { hidden.Id });
             var entitled = (User)People[Sight.Entitled].Handle!;
@@ -93,8 +100,17 @@ public class IntegrationRequestDestinationSightTableTests
             arr.Radarr.RootFolders.Add(new JsonObject { ["path"] = "/kids", ["freeSpace"] = 1_000_000_000_000L, ["accessible"] = true });
             var mappings = new JsonArray(new JsonObject { ["ArrPath"] = "/data/movies", ["JellyfinPath"] = "/data/movies" });
             if (where != Where.SeerrLinked) mappings.Add(new JsonObject { ["ArrPath"] = "/kids", ["JellyfinPath"] = "/kids" });
-            arr.Edit("Radarr", row => row["PathMappings"] = mappings);
-            if (where == Where.SeerrLinked)
+            arr.Edit("Radarr", row =>
+            {
+                row["PathMappings"] = mappings;
+                if (where is Where.SeerrDefault or Where.SeerrStale or Where.SeerrAmbiguous or Where.SeerrRepointed) row["SeerrServerId"] = 1;
+                if (where is Where.SeerrUnlinked or Where.SeerrRepointed)
+                {
+                    row["SeerrServerId"] = where == Where.SeerrRepointed ? 1 : 0;
+                    row["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = "/kids", ["JellyfinPath"] = "/data/movies" });
+                }
+            });
+            if (where is Where.SeerrLinked or Where.SeerrAmbiguous)
             {
                 // Another instance is the arr behind Seerr's server 1 (imported from Seerr): /kids there is /media/kids.
                 arr.Edit("Radarr 4K", row =>
@@ -102,6 +118,14 @@ public class IntegrationRequestDestinationSightTableTests
                     row["SeerrServerId"] = 1;
                     row["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = "/kids", ["JellyfinPath"] = "/media/kids" });
                 });
+            }
+            // The linked server's connection is known, not merely a coincidentally equal numeric id.
+            if (where is not (Where.SeerrUnlinked or Where.SeerrRepointed))
+            {
+                var through = arr.Instance(where == Where.SeerrLinked ? "Radarr 4K" : "Radarr");
+                var uri = new Uri(through.Url);
+                rig.Fake.Connections["radarr/1"] = new JsonObject { ["hostname"] = uri.Host, ["port"] = uri.Port,
+                    ["useSsl"] = false, ["baseUrl"] = uri.AbsolutePath.TrimEnd('/'), ["apiKey"] = arr.Arr.Registry.ResolveApiKey(through) };
             }
             Assert.True((await arr.Store.RefreshLibraryNowAsync(arr.Instance("Radarr"), default)).Ok);
             if (arr.Store.WarmSystem(arr.Instance("Radarr")) is { } system) await system;
@@ -133,7 +157,10 @@ public class IntegrationRequestDestinationSightTableTests
         using var s = new Setup();
         await s.Build(where);
         var who = s.People[sight].UserId;
-        var sees = sight != Sight.Blind;
+        // A synchronous list starts no reads. Once the connection facts expire, only every-library callers see it
+        // until async preparation refreshes them; a stale options stamp alone still never blocks a withdrawal.
+        var unknown = where is Where.SeerrUnlinked or Where.SeerrAmbiguous or Where.SeerrRepointed || where == Where.SeerrStale && act == "list";
+        var sees = sight != Sight.Blind && (sight == Sight.Sighted || !unknown);
         var rig = s.Rig;
         switch (act)
         {

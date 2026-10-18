@@ -362,6 +362,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return list;
         }
 
+        /// <inheritdoc />
+        public bool RepresentsSeerrServer(MutationInput input, string url, string apiKey)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (source == null || TitleKey.Parse(input.Key) is not { } key || input.SeerrServerId is not int id
+                || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(apiKey)) return false;
+            var kind = key.IsMovie ? "radarr" : "sonarr";
+            if (!_serverLists.TryGetValue(source + "|" + kind, out var list) || _now() - list.At >= ServersFor) return false;
+            var server = list.Servers.SingleOrDefault(s => s.Id == id);
+            var connection = MutationInput.Hash(JsonSerializer.Serialize(new object?[]
+            {
+                uri.Host.Trim().ToLowerInvariant(), uri.Port, uri.Scheme == Uri.UriSchemeHttps,
+                uri.AbsolutePath.TrimEnd('/'), MutationInput.Hash(apiKey),
+            }));
+            return server != null && string.Equals(server.Connection, connection, StringComparison.Ordinal);
+        }
+
         // One server's quality profiles and root folders (GET /api/v1/service/{kind}/{id}), cached like the list.
         private async Task<ServerDetails?> ServerDetailsAsync(PluginConfiguration config, string source, string kind, int server, bool fresh, CancellationToken ct, string? only = null)
         {

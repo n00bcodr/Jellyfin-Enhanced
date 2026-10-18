@@ -57,6 +57,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <inheritdoc />
         public bool? FourKServer(bool movie) => Current?.FourKServer(movie);
+
+        /// <inheritdoc />
+        public bool RepresentsSeerrServer(MutationInput input, string url, string apiKey) => _seerr.RepresentsSeerrServer(input, url, apiKey);
     }
 
     /// <summary>

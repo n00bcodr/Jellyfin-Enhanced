@@ -317,8 +317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// round 5, security-r5-1): where it ACTUALLY goes, never only where the title usually is.
         /// <list type="bullet">
         /// <item>An administrator's Seerr choice: the root folder chosen on the Seerr server chosen, resolved through the
-        /// instance linked to that Seerr server (imported from Seerr; same kind), else through the instance the title's kind
-        /// and edition go to. Seerr adds a title it doesn't have yet there, so the title's own folder doesn't count.</item>
+        /// unique usable instance linked to that Seerr server (imported from Seerr; same kind). Unknown or ambiguous
+        /// links need access to every library (administrators always qualify). Seerr adds a title it doesn't have yet there, so the title's own folder doesn't count.</item>
         /// <item>An arr folder named (administrators): that folder on the instance.</item>
         /// <item>Otherwise the title's own folder on the instance (the default root for a title it doesn't have).</item>
         /// </list>
@@ -332,9 +332,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (input.HasSeerrOptions && input.SeerrRootFolder is { } seerrFolder)
             {
                 var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
-                var linked = input.SeerrServerId is int server ? _store.Registry.All().Where(i => i.Kind == kind && i.SeerrServerId == server).OrderByDescending(i => i.Usable).FirstOrDefault() : null;
-                var through = linked ?? instance;
-                return through == null ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance) : _libraries.Resolve(through, seerrFolder);
+                var linked = _store.Registry.All().Where(i => i.Kind == kind && input.SeerrServerId is int server && i.SeerrServerId == server).ToList();
+                // A root path is local to its server. Neither the default instance nor an arbitrary matching link proves
+                // where this server's folder lands; an unresolved target makes CanOpen require every library.
+                return linked.Count != 1 || !linked[0].Usable || !_backend.RepresentsSeerrServer(input, linked[0].Url, _store.Registry.ResolveApiKey(linked[0]))
+                    ? new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance)
+                    : _libraries.Resolve(linked[0], seerrFolder);
             }
             if (instance == null) return new ArrLibraryTarget(null, null, ArrLibraryProblem.NoInstance);
             return input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
