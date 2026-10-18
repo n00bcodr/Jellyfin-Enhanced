@@ -254,6 +254,8 @@
     "arr/notify/notify-bell.js",
     "arr/notify/notify-panel.js",
     "arr/notify/notify-styles.js",
+    "// Phase 4f: the Ready to watch section of the panel (its own module; shown with notifications off too).",
+    "arr/ready/ready-settings.js",
     "// asking for titles (Requests & downloads, phase 3) — ask-core.js first (JE.arrAsk);",
     "// ask-styles.js last (JE.initializeArrAsk, started by JE.initializeArrStatus).",
     "arr/ask/ask-core.js",

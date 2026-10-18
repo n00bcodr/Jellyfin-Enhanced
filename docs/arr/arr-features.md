@@ -1581,6 +1581,40 @@ own poster address, so one person's badge never shows on another's screen, and a
 
 Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin Enhanced panel (*Poster badges*).
 
+### Ready playlist and TV messages (phase 4)
+
+**Ready playlist.** With *Ready playlist* on (under phase 4 and *Ask for it*; notifications aren't needed), each person
+can turn on *Keep a private "Ready to watch" playlist* in the Jellyfin Enhanced panel (*Ready to watch*). Jellyfin
+Enhanced then keeps one playlist of theirs, private and shared with nobody, that works in every Jellyfin app:
+
+- **What goes in.** Their own requests (also those made from a list or an import, and through Seerr when Seerr handles
+  requests) and the titles they follow with *Notify me*, once they are in the library and the person can open them. It
+  holds the exact version: a 4K request waits for a 4K copy and puts in that file, a standard request takes a standard
+  copy (any copy unless *Standard requests need a non-4K copy* is on), a follow takes a standard copy, else 4K. A season
+  goes in episode by episode in order; a series or season is never put in as one item. Someone else's request, or a
+  title on a list they can see, never adds anything.
+- **What comes out.** A title leaves when the person has watched it, after 30 days (*Days a title stays in a Ready
+  playlist*), or while they can't open it any more or have hidden it with Hidden Content. Watched or expired titles don't
+  come back unless they ask for them again. A title that was here before they asked or followed isn't added. A better
+  copy replacing the file swaps the entry in place, with no duplicate and no new 30 days.
+- **It's theirs.** People can rename it and play it like any playlist. If they delete it, Jellyfin Enhanced doesn't make
+  it again until they turn the option on again. Turning the option off stops the updates and keeps the playlist as it
+  is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated.
+  A playlist they made themselves with the same name is never touched.
+- **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
+  playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist).
+
+**TV messages.** With *Ready messages on TVs and apps* on (under phase 4 and notifications), each person can turn on
+*Show a message on my TV or app when something is ready*. When a title they asked for or follow becomes ready, one short
+message appears on one Jellyfin app signed in as them (and no one else), and only if nothing is playing or paused on any
+of their devices. It is never shown in their quiet hours or for a hidden title, *hide titles* keeps the title out of it,
+and a message that can't be shown right away is dropped, never shown later. The bell, phone and e-mail alerts are
+unchanged, so nothing is missed with the app closed. Not every app shows these messages (the web client does); Jellyfin
+only tells Jellyfin Enhanced that it passed the message on, not that the app displayed it. *Send me a test* in *Requests &
+alerts* also sends one.
+
+Administrators see each person's choices, read-only, on **Dashboard → Users** (they can't turn them on for anyone).
+
 ### Privacy and Seerr scans
 
 - **Download progress from Seerr.** Seerr's title answers include the download rows it copies from Sonarr/Radarr's
