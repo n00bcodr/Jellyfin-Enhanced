@@ -1403,3 +1403,60 @@ test('r3 S2: the spy sees delayed list-sheet writes with no list stack frame (pl
   await opening;
   h.spy.take();
 });
+
+
+// Review round 4: a denied refresh revokes the sheet's ticket without leaving the page.
+for (const collection of [false, true]) for (const status of [403, 404]) for (const active of [false, true]) {
+  test(`r4 S1: ${collection ? 'collection' : 'playlist'} refresh ${status} cancels ${active ? 'active' : 'pending'} Request and recovers only on success`, async t => {
+    const held = deferred();
+    t.after(() => held.resolve());
+    let response = 200;
+    let loading = false;
+    const id = collection ? COLL : LIST;
+    const entry = ph(P(1), { actions: ['request'] });
+    const body = view([entry], [entry.token], { listId: id, listKind: collection ? 'collection' : 'playlist', actions: ['request'] });
+    const h = setup(t, {
+      views: () => [response === 200 ? body : null, response],
+      items: { [id]: { Id: id, Type: collection ? 'BoxSet' : 'Playlist' } },
+      preview: () => [{ items: [{ placeholderId: entry.id, outcome: 'request', cost: 1 }] }],
+      route: async (_, path) => {
+        if (active || !path.startsWith('/acquire/requests/quota')) return null;
+        loading = true;
+        await held.promise;
+        return null;
+      }
+    });
+    await h.start();
+    const page = collection ? h.collectionPage() : h.playlistPage().page;
+    await h.show(page, '#/details?id=' + id);
+    const lp = h.JE.internals.arrListPages;
+    const ctrl = [...lp.pages.controllers].find(c => c.page === page);
+    const ticket = ctrl.ticket;
+    let ended = false;
+    const pending = lp.request.open({ listId: id, ticket: () => ctrl.ticket }, entry, page.querySelector('.je-list-request')).then(() => { ended = true; });
+    await h.settle();
+    if (active) assert.ok(h.document.querySelector('.je-sheet-backdrop'));
+    else assert.equal(loading, true, 'the real quota loader is held');
+    response = status;
+    await ctrl.load(); // Same page show and route: no navigation to revoke it for us.
+    await h.settle();
+    const cancelledBeforeRelease = ended;
+    held.resolve();
+    await Promise.race([pending, sleep(150)]);
+    await h.settle();
+    assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, 'no sheet after the denied refresh or late loader');
+    assert.equal(ticket.current(), false, 'the originating ticket is revoked');
+    if (!active) assert.equal(cancelledBeforeRelease, true, 'pending open settles before its loader');
+    assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 0);
+    response = 503;
+    await ctrl.load();
+    assert.ok(!ctrl.ticket?.current(), 'an outage cannot issue a replacement ticket');
+    response = 200;
+    await ctrl.load();
+    await h.settle();
+    assert.ok(ctrl.ticket.current(), 'access restored without navigating');
+    assert.notEqual(ctrl.ticket, ticket);
+    assert.equal(ticket.current(), false, 'the old sheet can never acquire the new ticket');
+    assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 1);
+  });
+}
