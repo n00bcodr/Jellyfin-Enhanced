@@ -92,6 +92,11 @@ public class ListsHostTests
         made.SavedName = storedName;
         fail = false;
 
+        var deferred = await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None);
+        Assert.Equal(409, deferred.StatusCode);
+        Assert.Equal("The person's name", made.SavedName);
+        Assert.Equal("name_conflict", h.Store.Load(made.Info.Id.ToString("N"))!.Reconcile);
+        made.Info = made.Info with { Name = storedName! }; // Jellyfin rematerialises; JE never registers a snapshot.
         var retry = ListsHarness.Ok<CreateListResultDto>(await h.Service.CreateListAsync(owner, kind, "JE name", false, entries, ListsHarness.K("rename-race"), CancellationToken.None));
 
         Assert.Equal("The person's name", storedName);
@@ -321,8 +326,11 @@ public class ListsHostTests
     public async Task AWriteGrantIsSpentOnceForItsOwnListAndKind()
     {
         var playlists = new Mock<IPlaylistManager>();
-        var host = new JellyfinListHost(Mock.Of<ILibraryManager>(), playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
         var list = Guid.NewGuid();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(list)).Returns(new Playlist { Id = list, Name = "Mine" });
+        library.Setup(l => l.RetrieveItem(list)).Returns(new Playlist { Id = list, Name = "Mine" });
+        var host = new JellyfinListHost(library.Object, playlists.Object, Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
         var owner = Guid.NewGuid();
         var grant = new ListWrite(list, owner, ListWriteKind.Move);
 

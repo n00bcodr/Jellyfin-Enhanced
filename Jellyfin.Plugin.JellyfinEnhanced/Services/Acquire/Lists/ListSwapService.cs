@@ -200,6 +200,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // the write (a share removed or made read-only during an earlier insert of the same pass stops the rest).
         private bool StillInserting(PassContext context, ListWriteKind kind, IReadOnlyCollection<Guid> items)
         {
+            if (!ListNameConsistency.Matches(_host, context.List.Id))
+            {
+                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                context.Dirty = true;
+                context.Inserts = false;
+            }
+
             if (context.Inserts && (_gate == null || !_gate.SwapAllowed(context.List.Id, context.Doc, context.Owner, kind, items, InsertsAllowed, context.OnBehalfOf)))
             {
                 context.Inserts = false;
@@ -600,6 +607,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             // Consent is judged on the list as Jellyfin has it now (the caller's copy may predate a removed share), and
             // judged again by the gate before every write (each one waits for Jellyfin).
             var current = _host.GetList(list.Id);
+            if (current != null && !ListNameConsistency.Matches(_host, list.Id))
+            {
+                var changed = doc.Reconcile != ListNameConsistency.ReconcileReason;
+                doc.Reconcile = ListNameConsistency.ReconcileReason;
+                return new SwapOutcome(doc, changed, default);
+            }
+
             var context = new PassContext(current ?? list, owner, doc, UtcNow()) { Inserts = current != null && InsertsAllowed(current, doc), OnBehalfOf = onBehalfOf };
             var fresh = new HashSet<string>(freshMetadata ?? (IEnumerable<string>)Array.Empty<string>(), StringComparer.Ordinal);
             foreach (var pair in metadata ?? new Dictionary<string, PlaceholderMetadata>())
@@ -622,6 +636,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
+            if (!ListNameConsistency.Matches(_host, list.Id))
+            {
+                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                return new SwapOutcome(context.Doc, true, new SwapPassResult(context.Inserted, context.Retired));
+            }
+
             if (context.Doc.Reconcile != null)
             {
                 // Restore/import reconciliation: intents are settled by Jellyfin's real membership (above) before
@@ -942,11 +962,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 // The consent, the owner or their access changed during the run: nothing more goes in on this pass.
                 _logger.Info($"[Lists] Stopped swapping into list {context.ListIdN}: {lost.Message}");
+                if (lost is ListNameConflictException)
+                {
+                    context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                    context.Dirty = true;
+                }
                 context.Inserts = false;
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[Lists] Swapping into list {context.ListIdN} failed (retried on the next pass): {ex.Message}");
+            }
+
+            if (context.Doc.Reconcile == ListNameConsistency.ReconcileReason || !ListNameConsistency.Matches(_host, listId))
+            {
+                context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                context.Dirty = true;
+                context.Inserts = false;
+                return null; // keep the pre-write intent; reconcile landed entries once the name is consistent
             }
 
             var raw = _host.GetRawEntries(listId);
@@ -993,6 +1026,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 catch (ListAccessLostException lost)
                 {
                     _logger.Info($"[Lists] Stopped placing new entries of list {context.ListIdN}: {lost.Message}");
+                    if (lost is ListNameConflictException)
+                    {
+                        context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                        context.Dirty = true;
+                    }
                     context.Inserts = false;
                     actual = ListOrder.BuildRealTokens(_host.GetRawEntries(context.List.Id));
                 }
@@ -1107,6 +1145,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (ListAccessLostException lost)
                     {
                         _logger.Info($"[Lists] Stopped adding to collection {context.ListIdN}: {lost.Message}");
+                        if (lost is ListNameConflictException)
+                        {
+                            context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                            context.Dirty = true;
+                        }
                         context.Inserts = false;
                         failed = true;
                     }
@@ -1115,6 +1158,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         _logger.Warning($"[Lists] Adding to collection {context.ListIdN} failed (retried on the next pass): {ex.Message}");
                         failed = true;
                     }
+                }
+
+                if (context.Doc.Reconcile == ListNameConsistency.ReconcileReason || !ListNameConsistency.Matches(_host, context.List.Id))
+                {
+                    context.Doc.Reconcile = ListNameConsistency.ReconcileReason;
+                    context.Dirty = true;
+                    context.Inserts = false;
+                    return false; // keep the saved intent for the next consistent pass
                 }
 
                 var after = OccurrenceCounts(_host.GetRawEntries(context.List.Id));

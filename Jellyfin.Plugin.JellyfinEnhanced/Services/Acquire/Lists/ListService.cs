@@ -771,6 +771,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (visibility.Matches(_access.ParentalStamp(current!.User)) && string.Equals(stamp, _access.ParentalStamp(current.User), StringComparison.Ordinal))
                 {
+                    if (!ListNameConsistency.Matches(_host, current.List.Id))
+                    {
+                        MarkNameConflict(current, doc ?? _store.LoadForUpdate(current.ListIdN, current.List.Kind));
+                        return new CheckedWrite(ListNameConflictException.Refusal(), null, null, new HashSet<string>());
+                    }
+
                     return new CheckedWrite(null, current, visibility, blocked);
                 }
             }
@@ -793,6 +799,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CancellationToken cancellationToken)
         {
             var doc = _store.LoadForUpdate(access.ListIdN, access.List.Kind);
+            if (!ListNameConsistency.Matches(_host, access.List.Id))
+            {
+                MarkNameConflict(access, doc);
+                return ListNameConflictException.Refusal();
+            }
+
             if (expectedRev.HasValue && expectedRev.Value != doc.Rev)
             {
                 return await ListContinuation.Await(() => ConflictAsync(access, "rev_conflict", "The list changed; reload it.", visibility, cancellationToken)).ConfigureAwait(false);
@@ -1030,6 +1042,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (denied == null && hooks?.AfterFailedApply != null && RecordPartialApply(access, hooks.AfterFailedApply, doc, result, skipped, accepted))
                 {
+                    changed = true;
+                }
+
+                if (ex is ListNameConflictException)
+                {
+                    doc.Reconcile = ListNameConsistency.ReconcileReason;
                     changed = true;
                 }
 
@@ -1578,6 +1596,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (ListAccessLostException lost)
                     {
                         _logger.Info($"[Lists] Stopped moving an entry of list {access.ListIdN}: {lost.Message}");
+                        if (lost is ListNameConflictException)
+                        {
+                            MarkNameConflict(access, doc);
+                            return lost.Outcome!;
+                        }
+
                         if (!movedNow)
                         {
                             return lost.Outcome!;
@@ -2449,6 +2473,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 _logger.Warning($"[Lists] Recording what a failed update of list {access.ListIdN} added failed: {ex.Message}");
                 return false;
+            }
+        }
+
+        // Called under the list lock. Record the deferral without changing entries or the shared native item.
+        private void MarkNameConflict(ListAccess access, ListDoc doc)
+        {
+            if (_gate.Edit(access).Denied != null)
+            {
+                return;
+            }
+
+            if (doc.Reconcile != ListNameConsistency.ReconcileReason)
+            {
+                doc.Reconcile = ListNameConsistency.ReconcileReason;
+                _store.Save(doc);
             }
         }
 

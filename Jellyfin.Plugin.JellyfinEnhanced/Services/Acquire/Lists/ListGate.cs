@@ -101,7 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     }
 
     /// <summary>The gate refused a write: what to answer (null for background work, which just stops).</summary>
-    internal sealed class ListAccessLostException : Exception
+    internal class ListAccessLostException : Exception
     {
         public ListAccessLostException(ListOutcome? outcome, string message)
             : base(message)

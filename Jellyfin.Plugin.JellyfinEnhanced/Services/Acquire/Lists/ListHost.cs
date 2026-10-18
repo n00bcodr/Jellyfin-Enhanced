@@ -280,6 +280,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         Guid? FindSeason(Guid seriesId, int seasonNumber, User? user);
     }
 
+    // Entry managers save the entire cached item. A failed naming save or a native save of a different
+    // materialisation can leave its Name stale. There is no supported per-item cache refresh on either target:
+    // do not assign Name or publish a repository snapshot here. A create retry decides naming by the durable name;
+    // other edits wait until Jellyfin itself supplies a consistent instance.
+    internal static class ListNameConsistency
+    {
+        internal const string ReconcileReason = "name_conflict";
+
+        internal static bool Matches(IListHost host, Guid id)
+        {
+            var cached = host.GetList(id);
+            var stored = host.GetStoredName(id);
+            return Matches(cached?.Name, stored);
+        }
+
+        internal static bool Matches(string? cached, string? stored) => cached != null && stored != null && string.Equals(cached, stored, StringComparison.Ordinal);
+
+        internal static void Require(string? cached, string? stored)
+        {
+            if (!Matches(cached, stored))
+            {
+                throw new ListNameConflictException();
+            }
+        }
+    }
+
+    internal sealed class ListNameConflictException : ListAccessLostException
+    {
+        internal ListNameConflictException()
+            : base(Refusal(), "The cached list name differs from the repository; waiting for Jellyfin to reconcile it.")
+        {
+        }
+
+        internal static ListOutcome Refusal() => ListOutcome.Error(409, "list_name_conflict", "Jellyfin is reconciling the list's name; try again once it has refreshed.");
+    }
+
     /// <summary>The production <see cref="IListHost"/> over Jellyfin's library, playlist and collection managers.</summary>
     public sealed class JellyfinListHost : IListHost
     {
@@ -435,6 +471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
         {
             write.Spend(write.ListId, ListWriteKind.Insert);
+            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
 #if JF12
             return _playlistManager.AddItemToPlaylistAsync(write.ListId, itemIds.ToArray(), rawPosition, write.ActAs);
 #else
@@ -446,6 +483,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
         {
             write.Spend(write.ListId, ListWriteKind.Move);
+            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
             return _playlistManager.MoveItemAsync(
                 write.ListId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
                 itemId.ToString("N", System.Globalization.CultureInfo.InvariantCulture),
@@ -457,6 +495,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
         {
             write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+            ListNameConsistency.Require(_libraryManager.GetItemById(write.ListId)?.Name, GetStoredName(write.ListId));
             return _collectionManager.AddToCollectionAsync(write.ListId, itemIds.Distinct().ToArray());
         }
 

@@ -1362,7 +1362,11 @@ follows Jellyfin's own rights and the household's request rules:
   Jellyfin re-adds the deleted folder with the same id. If the creator loses access while Jellyfin writes, the create
   answers without the list's id, kind or name. A failed save of JE's chosen name keeps a name the person changed while
   it was pending, including a rename made while the failed save is being handled. Creates, retries and recovery check
-  the saved name directly; a stale cached name never gives JE permission to rename the list again.
+  the saved name directly; a stale cached name never gives JE permission to rename the list again. Entry edits
+  (including add, move, removal and automatic swap-in) pause with a retryable name conflict whenever Jellyfin's cached
+  name differs from its saved name. JE marks the list for reconciliation and preserves the saved name; edits resume
+  once Jellyfin has refreshed its instance. Retrying a create finishes naming only while the saved name still carries
+  that create's marker; a person's native rename stands.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).
   Collections list their entries by release date, undated (TBA) ones last.

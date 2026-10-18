@@ -26,6 +26,16 @@ internal sealed class FakeListHost : IListHost
         /// null for a list the test made directly.
         /// </summary>
         public string? SavedName { get; set; }
+        public ListInfo? SavedInfo { get; private set; }
+        public IReadOnlyList<RawEntry> SavedRaw { get; private set; } = Array.Empty<RawEntry>();
+
+        // Native managers save the entire item, including its cached name, on entry writes.
+        public void Persist()
+        {
+            SavedInfo = Info;
+            SavedName = Info.Name;
+            SavedRaw = Raw.ToArray();
+        }
     }
 
     /// <summary>Jellyfin's managed collections folder (CollectionManager.GetCollectionsFolderPath).</summary>
@@ -195,7 +205,13 @@ internal sealed class FakeListHost : IListHost
 
     public ListInfo? GetList(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.Info : null;
 
-    public string? GetStoredName(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.SavedName ?? list.Info.Name : null;
+    public Action<Guid>? OnStoredNameRead { get; set; }
+
+    public string? GetStoredName(Guid listId)
+    {
+        OnStoredNameRead?.Invoke(listId);
+        return Lists.TryGetValue(listId, out var list) ? list.SavedName ?? list.Info.Name : null;
+    }
 
     /// <summary>Runs at the start of every <see cref="GetRawEntries"/> call (to change a list between two reads).</summary>
     public Action<Guid>? OnRawRead { get; set; }
@@ -229,6 +245,7 @@ internal sealed class FakeListHost : IListHost
     public async Task AddToPlaylistAsync(ListWrite write, IReadOnlyList<Guid> itemIds, int? rawPosition)
     {
         write.Spend(write.ListId, ListWriteKind.Insert);
+        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"add:{string.Join(',', itemIds.Select(Short))}@{rawPosition?.ToString() ?? "end"}");
@@ -263,6 +280,7 @@ internal sealed class FakeListHost : IListHost
             // 10.11: drops items already in the playlist and repeats within the batch, then appends.
             var existing = raw.Where(r => r.ItemId.HasValue).Select(r => r.ItemId!.Value).ToHashSet();
             raw.AddRange(add.Where(id => !existing.Contains(id)).Distinct().Select(id => new RawEntry(id, true)));
+            Lists[playlistId].Persist();
             AfterAdd?.Invoke(playlistId);
             return;
         }
@@ -277,6 +295,7 @@ internal sealed class FakeListHost : IListHost
             raw.InsertRange(Math.Max(rawPosition.Value, 0), entries);
         }
 
+        Lists[playlistId].Persist();
         AfterAdd?.Invoke(playlistId);
         if (FailAdds != null)
         {
@@ -287,6 +306,7 @@ internal sealed class FakeListHost : IListHost
     public Task MoveInPlaylistAsync(ListWrite write, Guid itemId, int newIndex)
     {
         write.Spend(write.ListId, ListWriteKind.Move);
+        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
         var playlistId = write.ListId;
         var userId = write.ActAs;
         Calls.Add($"move:{Short(itemId)}->{newIndex}");
@@ -340,12 +360,14 @@ internal sealed class FakeListHost : IListHost
             raw.Insert(index, moved);
         }
 
+        Lists[playlistId].Persist();
         return Task.CompletedTask;
     }
 
     public Task AddToCollectionAsync(ListWrite write, IReadOnlyList<Guid> itemIds)
     {
         write.Spend(write.ListId, ListWriteKind.CollectionAdd);
+        ListNameConsistency.Require(GetList(write.ListId)?.Name, GetStoredName(write.ListId));
         var collectionId = write.ListId;
         Calls.Add($"collection:{string.Join(',', itemIds.Select(Short))}");
         OnWrite?.Invoke("collection", collectionId, Guid.Empty, itemIds);
@@ -368,6 +390,7 @@ internal sealed class FakeListHost : IListHost
         }
 
         Lists[collectionId].Raw.AddRange(itemIds.Where(id => !CollectionDrops.Contains(id)).Select(id => new RawEntry(id, true)));
+        Lists[collectionId].Persist();
         AfterCollectionAdd?.Invoke(collectionId);
         return FailAdds != null ? Task.FromException(FailAdds) : Task.CompletedTask;
     }
