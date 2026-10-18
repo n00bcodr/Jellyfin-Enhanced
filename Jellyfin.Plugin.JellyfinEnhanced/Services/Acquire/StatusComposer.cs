@@ -204,7 +204,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A movie: <paramref name="item"/> is the Jellyfin item asked for (null on the key path);
         /// <paramref name="copies"/> every Jellyfin copy of the movie (null: only <paramref name="item"/> is known).
         /// </summary>
-        public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail)
+        /// <remarks>
+        /// <paramref name="followEveryRole"/>: a request for one edition (its own instances' facts only): a family
+        /// member follows that edition's copies wherever they have got to, 4K ones included (the whole title's status
+        /// follows a 4K copy only once its item is visible).
+        /// </remarks>
+        public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false)
         {
             var jf = copies ?? (item != null ? new[] { new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } } : Array.Empty<JfCopy>());
             var variants = new List<(ArrCopyFacts Copy, CopyState State, JfCopy? Jf)>();
@@ -261,7 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // may be) those hidden items are left out, so the answer is the one they would get if
                 // the hidden copies didn't exist (a title nobody has, when nothing else is left).
                 var hiddenCopies = !c.Viewer.IsAdmin && jf.Count > 0;
-                var eligible = variants.Where(v => c.Viewer.IsAdmin || (FamilyMayFollow(v.Copy, v.State) && !(hiddenCopies && MayBeHiddenCopy(v.Copy, v.State, c)))).ToList();
+                var eligible = variants.Where(v => c.Viewer.IsAdmin || ((followEveryRole || FamilyMayFollow(v.Copy, v.State)) && !(hiddenCopies && MayBeHiddenCopy(v.Copy, v.State, c)))).ToList();
                 if (eligible.Count > 0)
                 {
                     var best = eligible.OrderByDescending(v => v.State.Rank).ThenBy(v => RoleOrder(v.Copy.Instance.Role)).First();
@@ -518,11 +523,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         // ------------------------------------------------------------------ series, seasons, episodes
 
         /// <summary>A series page (or card): per-season summary and the series pill.</summary>
-        public static TitleStatus Series(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfSeason>? jfSeasons, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null)
+        public static TitleStatus Series(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, IReadOnlyList<JfSeason>? jfSeasons, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, jfSeasons);
             jfEpisodes = visibleEpisodes;
-            var copy = PrimarySeriesCopy(facts);
+            var copy = SeriesCopyFor(facts, page, copies);
             if (copy == null)
             {
                 var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
@@ -598,13 +603,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>A season page (or card): summary, and with <paramref name="detail"/> every episode.</summary>
-        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, RequestFacts? request = null)
+        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, RequestFacts? request = null)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
             jfEpisodes = visibleEpisodes;
             var season = item.Season ?? 0;
             var key = facts.Key.WithSeason(season).ToString();
-            var copy = PrimarySeriesCopy(facts);
+            var copy = SeriesCopyFor(facts, page, copies);
             if (copy == null)
             {
                 return new TitleStatus
@@ -678,11 +683,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>An episode page (or card); a virtual episode shows where the arr has got to.</summary>
-        public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null)
+        public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null)
         {
             var season = item.Season ?? 0;
             var number = item.Episode ?? 0;
-            var copy = PrimarySeriesCopy(facts);
+            var copy = SeriesCopyFor(facts, page, copies);
             CopyState state;
             ArrEpisodeEntry? arr = null;
             if (!item.Virtual)
@@ -938,23 +943,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// A movie asked for in 4K only, by key (the Requests page): where the 4K copies have got to,
-        /// so a 4K request for a movie Jellyfin already has in standard quality isn't "Ready". Also
-        /// returns when the 4K copy arrived. <paramref name="movie"/> is the whole-title status (its
-        /// admin block is kept).
+        /// A movie asked for in one edition, by key (the Requests page): Ready only when a copy the viewer can open
+        /// holds a playable source of that edition (<paramref name="held"/>, from <see cref="EditionAvailability"/>),
+        /// never because an arr of that edition holds the title or shares its folder; otherwise where that edition's
+        /// arr copies have got to (4K: the 4K instances; standard: the others), followed by family members too. Also
+        /// returns when the edition arrived (the newest qualifying source in <paramref name="hits"/>, else the newest
+        /// held copy) and the copy Play opens. <paramref name="movie"/> is the whole-title status (its admin block is kept).
         /// </summary>
-        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) Requested4k(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> copies, ComposeContext c, JfCopy? seerr4k = null)
+        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK)
         {
-            var siblings = facts.Copies.Where(x => x.Movie != null).ToList();
-            // "No 4K Radarr has it" is judged on the 4K instances alone: a standard Radarr that can't
-            // be read says nothing about the 4K copy (as the Overview's Needs attention list).
-            var fourK = FourKOnly(facts);
-            fourK.Copies.RemoveAll(x => x.Movie == null);
-            // Only copies matched to a 4K instance for sure (never "the only copy there is", which may be
-            // the standard one); without one, Seerr's own 4K item when the viewer can open it.
-            var jf = fourK.Copies.SelectMany(x => MatchCopies(x, copies, siblings, soleFallback: false)).Distinct().ToList();
-            if (jf.Count == 0 && seerr4k is { Visible: true }) jf.Add(seerr4k);
-            var scoped = Movie(fourK, null, jf, c, detail: false);
+            // "No 4K Radarr has it" is judged on the edition's instances alone: a standard Radarr that can't be read
+            // says nothing about the 4K copy (as the Overview's Needs attention list), and the other way round.
+            var edition = fourK ? FourKOnly(facts) : StandardOnly(facts);
+            edition.Copies.RemoveAll(x => x.Movie == null);
+            var jf = held.Where(x => x.Visible).ToList();
+            var scoped = Movie(edition, null, jf, c, detail: false, followEveryRole: true);
             var status = new TitleStatus
             {
                 Key = movie.Key,
@@ -966,14 +969,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Progress = scoped.Progress,
                 NextDate = scoped.NextDate,
                 NextDay = scoped.NextDay,
-                // The whole title's admin block, with the "OK'd in Seerr, but no 4K Radarr has it" line
-                // only when that is why this 4K request is flagged (never the whole title's own line).
-                Admin = WithHandoff(movie.Admin, scoped.Reason.Code == StatusReasonCode.ApprovedNotInArr ? scoped.Admin?.ApprovedNotInArrSince : null, fourK: true),
+                // The whole title's admin block, with the "OK'd in Seerr, but no (4K) Radarr has it" line only when
+                // that is why this request is flagged (never the whole title's own line).
+                Admin = WithHandoff(movie.Admin, scoped.Reason.Code == StatusReasonCode.ApprovedNotInArr ? scoped.Admin?.ApprovedNotInArrSince : null, fourK),
             };
-            var arrived = scoped.Stage == StatusStage.Ready ? jf.Where(x => x.Visible).Select(x => x.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max() : null;
-            // The 4K copy the viewer can open (Play opens it, not the standard one).
-            return (status, arrived, jf.FirstOrDefault(x => x.Visible));
+            DateTime? arrived = null;
+            if (scoped.Stage == StatusStage.Ready)
+            {
+                arrived = hits.Count > 0
+                    ? hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max()
+                    : jf.Select(x => x.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
+            }
+            // The copy with the edition's source (Play opens it, never another edition's copy).
+            return (status, arrived, jf.FirstOrDefault());
         }
+
+        /// <summary>A movie asked for in 4K only (see <see cref="RequestedEdition"/>): <paramref name="held"/> are the copies with a 4K source.</summary>
+        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) Requested4k(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, ComposeContext c)
+            => RequestedEdition(facts, movie, held, Array.Empty<EditionHit>(), c, fourK: true);
 
         /// <summary>
         /// The part of a title a request asked for when no arr instance set up in Jellyfin Enhanced
@@ -1648,6 +1661,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static ArrCopyFacts? PrimarySeriesCopy(TitleFacts facts)
             => facts.Copies.Where(c => c.Series != null).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
 
+        /// <summary>
+        /// The Sonarr copy a page of one Jellyfin series copy (<paramref name="page"/>, the series item a series,
+        /// season or episode page is in) reads its arr facts from: the one matched to that copy for sure (linked
+        /// library, path mapping or folder; never "the only copy there is"), so a 4K copy's page reads the 4K Sonarr
+        /// and not the standard one's files, downloads or upgrades. The primary copy when none matches, or when the
+        /// page's copy is unknown.
+        /// </summary>
+        internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies)
+        {
+            var primary = PrimarySeriesCopy(facts);
+            if (page is not Guid id || copies == null || copies.Count == 0) return primary;
+            var siblings = SeriesCopies(facts);
+            if (siblings.Count < 2) return primary;
+            return siblings.Where(x => MatchCopies(x, copies, siblings, soleFallback: false).Any(m => m.ItemId == id))
+                .OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() ?? primary;
+        }
+
         private static CopyState NothingKnown(TitleFacts facts)
             => facts.Unreadable.Count > 0
                 ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
@@ -1778,6 +1808,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             fourK.Stale.AddRange(facts.Stale.Where(i => i.Role == "4k"));
             fourK.Checked.AddRange(facts.Checked.Where(i => i.Role == "4k"));
             return fourK;
+        }
+
+        /// <summary>
+        /// The facts as the standard (every non-4K) instance knows them: a standard request needing a non-4K copy is
+        /// judged on these (see <see cref="FourKOnly"/>).
+        /// </summary>
+        internal static TitleFacts StandardOnly(TitleFacts facts)
+        {
+            var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            standard.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role != "4k"));
+            standard.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role != "4k"));
+            standard.Stale.AddRange(facts.Stale.Where(i => i.Role != "4k"));
+            standard.Checked.AddRange(facts.Checked.Where(i => i.Role != "4k"));
+            return standard;
         }
 
         /// <summary>

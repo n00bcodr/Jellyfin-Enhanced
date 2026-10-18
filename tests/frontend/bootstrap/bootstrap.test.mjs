@@ -138,6 +138,18 @@ for (const saved of [null, 'fr']) test(`default display language respects existi
   assert.equal(h.window.localStorage.getItem('user-a-language'), saved || 'pt-BR');
 });
 
+for (const junk of ['undefined', 'null', '  ', 'en_US!']) test(`an administrator default language of ${JSON.stringify(junk)} is never seeded`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: junk } }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+});
+
+for (const [stored, admin, expected] of [['undefined', 'pt-br', 'pt-BR'], ['null', '', null], ['undefined', 'undefined', null]]) test(`a stored ${stored} language is repaired (${admin || 'no'} default)`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: admin } }), storage: { 'user-a-language': stored } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+});
+
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
   const h = setup(t, { data: payload({ PublicConfig: { ClearTranslationCacheTimestamp: 2000 } }), storage: {
     JE_translation_en: 'old', JE_translation_ts_en: '1000', JE_translation_fr: 'new', JE_translation_ts_fr: '3000', unrelated: 'keep'

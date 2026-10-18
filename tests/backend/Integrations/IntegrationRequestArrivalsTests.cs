@@ -719,6 +719,8 @@ public class IntegrationRequestArrivalsTests
         lab.Arr.Now = lab.Arr.Now.AddHours(1);
         var uhd = Guid.NewGuid();
         lab.View.AddCopy(TitleKey.Parse(Matrix)!, new JfCopy { ItemId = uhd, Path = "/media/movies4k/The Matrix (1999)/The Matrix.mkv", LibraryName = "Movies 4K", DateCreated = lab.Arr.Now.UtcDateTime });
+        // A 4K copy is one with a 4K source (D44): its 2160p file.
+        lab.View.AddSource(uhd, 3840, 2160, created: lab.Arr.Now.UtcDateTime);
         lab.View.Rev++;
         row = (await lab.Page(lab.Emma))[Matrix];
         Assert.Equal(("ready", uhd.ToString("N")), (row.GetProperty("group").GetString(), row.GetProperty("itemId").GetString()));
@@ -726,6 +728,35 @@ public class IntegrationRequestArrivalsTests
         Assert.Equal(("fulfilled", "fulfilled"), (lab.Ledger.Find(standard)!.Status, lab.Ledger.Find(fourK)!.Status));
         row = (await lab.Page(lab.Emma))[Matrix];
         Assert.Equal(("ready", uhd.ToString("N")), (row.GetProperty("group").GetString(), row.GetProperty("itemId").GetString()));
+    }
+
+    [Fact]
+    public async Task AFourKAskIsNeverFulfilledByTheHdCopyAFourKRadarrSharesOnlyByA4kVersion()
+    {
+        // One Movies library for every quality: both Radarrs are linked to it, and Radarr 4K says it has the file.
+        // Jellyfin has only the 1080p version. Before, the 4K ask was fulfilled at once (the HD item matched Radarr 4K).
+        using var lab = new Lab(fourK: true);
+        lab.Policy.Adjust = (_, _, person) => person with { Can4k = true };
+        var rows = JsonNode.Parse(lab.Config.RadarrInstances)!.AsArray();
+        foreach (var row in rows) row!["LinkedLibraryIds"] = new JsonArray("movieslib");
+        lab.Config.RadarrInstances = rows.ToJsonString();
+        lab.Arr.Hosts["radarr4k.lan"].Movies[0]["hasFile"] = true;
+        var item = Guid.NewGuid();
+        lab.View.AddCopy(TitleKey.Parse(Matrix)!, new JfCopy { ItemId = item, Path = "/media/movies/The Matrix (1999)/The Matrix.mkv", LibraryId = "movieslib", LibraryName = "Movies", DateCreated = lab.Arr.Now.UtcDateTime.AddDays(-1) });
+        lab.View.AddSource(item, 1920, 1080);
+        await lab.Warm();
+        var fourK = await lab.Ask(lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
+        await lab.Outbox.TickAsync(default);
+        Assert.Equal(0, await lab.Fulfilment.CheckAsync(new[] { Matrix }, default));
+        Assert.NotEqual("fulfilled", lab.Ledger.Find(fourK)!.Status);
+        Assert.NotEqual("ready", (await lab.Page(lab.Emma))[Matrix].GetProperty("group").GetString());
+
+        // The 2160p file joins the same movie as a version: fulfilled, and Play opens that item.
+        lab.View.AddSource(item, 3840, 2160, created: lab.Arr.Now.UtcDateTime);
+        Assert.Equal(1, await lab.Fulfilment.CheckAsync(new[] { Matrix }, default));
+        Assert.Equal("fulfilled", lab.Ledger.Find(fourK)!.Status);
+        var row4k = (await lab.Page(lab.Emma))[Matrix];
+        Assert.Equal(("ready", item.ToString("N")), (row4k.GetProperty("group").GetString(), row4k.GetProperty("itemId").GetString()));
     }
 
     /// <summary>Adds a 4K Radarr (role 4k) holding Dune in its own folder (no file yet), before anything is read.</summary>
@@ -782,6 +813,7 @@ public class IntegrationRequestArrivalsTests
         rig.Arr.Now = rig.Arr.Now.AddHours(1);
         var uhd = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(IntegrationNotificationsTestsDune)!, new JfCopy { ItemId = uhd, Path = "/media/movies4k/Dune Part Two (2024)/Dune.mkv", LibraryName = "Movies 4K", DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.AddSource(uhd, 3840, 2160, created: rig.Arr.Now.UtcDateTime);
         rig.View.Rev++;
         await service.EvaluateAsync(new[] { IntegrationNotificationsTestsDune }, null, default);
         Assert.True(ledger.Fulfil(fourK, rig.Arr.Now, ledger.Find(fourK)!));
@@ -818,6 +850,7 @@ public class IntegrationRequestArrivalsTests
         rig.Arr.Now = rig.Arr.Now.AddHours(1);
         var uhd = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(IntegrationNotificationsTestsDune)!, new JfCopy { ItemId = uhd, Path = "/media/movies4k/Dune Part Two (2024)/Dune.mkv", LibraryName = "Movies 4K", DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.View.AddSource(uhd, 3840, 2160, created: rig.Arr.Now.UtcDateTime);
         rig.View.Rev++;
         await rig.Step(IntegrationNotificationsTestsDune);
         await rig.Step(IntegrationNotificationsTestsDune);

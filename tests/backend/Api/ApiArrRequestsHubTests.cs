@@ -452,6 +452,7 @@ public class ApiArrRequestsHubTests
             r.Radarr4k.Movies.Add(FakeArr.Movie(9, 45745, "Sintel", path: "/data/movies4k/Sintel (2010)"));
             var key = TitleKey.Parse("movie:tmdb:45745")!;
             r.View.AddCopy(key, new JfCopy { ItemId = fourKItem, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = fourKAt });
+            r.View.AddSource(fourKItem, 3840, 2160, created: fourKAt);
             r.Seerr.Requests.Add(FakeSeerr.Request(21, "movie", 45745, 2, r.Sam.UserId, Asked.AddHours(6), Asked.AddHours(7), is4k: true));
         }))
         {
@@ -775,7 +776,8 @@ public class ApiArrRequestsHubTests
             Assert.False(entry.Value.TryGetProperty("itemId", out _));
         }
 
-        // OK'd, and Seerr says the 4K copy is available (since two hours ago): Ready, arrived then.
+        // OK'd, and Seerr says the 4K copy is available, but the only copy Sam can open is the HD one: not Ready
+        // (D44: a 4K request needs a 4K source the viewer can open; Seerr's word alone is not one).
         DateTime availableAt = default;
         using (var rig = await Ready(r =>
         {
@@ -787,27 +789,56 @@ public class ApiArrRequestsHubTests
             r.Seerr.Requests.Add(request);
         }))
         {
+            var sam = Root(await Hub(rig, rig.Sam));
+            Assert.Null(Find(sam, "ready", "movie:tmdb:45745"));
+            // Never the standard copy's Play.
+            Assert.False(Find(sam, "mine", "movie:tmdb:45745")!.Value.TryGetProperty("itemId", out _));
+        }
+
+        // The 4K copy is in Jellyfin (Movies 4K, a 2160p file since three hours ago): Ready, arrived then, Play opens it
+        // although Seerr names no item.
+        var fourK = Guid.NewGuid();
+        DateTime fourKAt = default;
+        using (var rig = await Ready(r =>
+        {
+            Roles(r, radarr4k: false, sonarr4k: false);
+            availableAt = r.Arr.Now.UtcDateTime.AddHours(-2);
+            fourKAt = r.Arr.Now.UtcDateTime.AddHours(-3);
+            SintelSince(r, -60);
+            r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourK, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = fourKAt });
+            r.View.AddSource(fourK, 3840, 2160, created: fourKAt);
+            var request = FakeSeerr.Request(21, "movie", 45745, 2, r.Sam.UserId, Asked.AddHours(6), availableAt, is4k: true);
+            request["media"]!["status4k"] = 5;
+            r.Seerr.Requests.Add(request);
+        }))
+        {
             var ready = Find(Root(await Hub(rig, rig.Sam)), "ready", "movie:tmdb:45745");
             Assert.NotNull(ready);
-            Assert.Equal(availableAt, ready!.Value.GetProperty("readyAt").GetDateTime().ToUniversalTime());
-            // Seerr names no 4K item: no Play (the standard copy is not the 4K one).
-            Assert.False(ready.Value.TryGetProperty("itemId", out _));
+            Assert.Equal(fourKAt, ready!.Value.GetProperty("readyAt").GetDateTime().ToUniversalTime());
+            Assert.Equal(fourK.ToString("N"), ready.Value.GetProperty("itemId").GetString());
         }
     }
 
     [Fact]
-    public async Task PlayOnAFourKCardOpensOnlyTheFourKItemSeerrNamesAndOnlyWhenTheViewerCanOpenIt()
+    public async Task PlayOnAFourKCardOpensACopyWithA4kSourceTheViewerCanOpenSeerrsFirst()
     {
         var fourK = Guid.NewGuid();
-        // No 4K instance in Jellyfin Enhanced; Seerr says the 4K copy is available and names its item.
+        // No 4K instance in Jellyfin Enhanced; Seerr says the 4K copy is available (and may name its item). A 4K copy
+        // is one with a 4K source (D44): Movies 4K's 2160p file, or Sintel's own item once it holds a 2160p version.
         async Task<JsonElement?> ReadyFor(Guid? seerrItem, bool visible, bool is4k = true, bool mergedWithSintel = false)
         {
             using var rig = await Ready(r =>
             {
-                if (mergedWithSintel) seerrItem = r.Sintel;
+                if (mergedWithSintel)
+                {
+                    seerrItem = r.Sintel;
+                    r.View.AddSource(r.Sintel, 1920, 1080);
+                    r.View.AddSource(r.Sintel, 3840, 2160);
+                }
                 Roles(r, radarr4k: false, sonarr4k: false);
                 SintelSince(r, -60);
                 r.View.AddCopy(TitleKey.Parse("movie:tmdb:45745")!, new JfCopy { ItemId = fourK, Path = "/media/movies4k/Sintel (2010)/Sintel.mkv", LibraryName = "Movies 4K", DateCreated = r.Arr.Now.UtcDateTime.AddHours(-2) }, visible ? Array.Empty<Guid>() : new[] { r.Admin.UserId });
+                r.View.AddSource(fourK, 3840, 2160);
                 var request = FakeSeerr.Request(21, "movie", 45745, 2, r.Sam.UserId, Asked.AddHours(6), r.Arr.Now.UtcDateTime.AddHours(-2), is4k: is4k);
                 request["media"]![is4k ? "status4k" : "status"] = 5;
                 if (seerrItem is Guid id) request["media"]![is4k ? "jellyfinMediaId4k" : "jellyfinMediaId"] = id.ToString();
@@ -817,15 +848,15 @@ public class ApiArrRequestsHubTests
         }
         // A separate 4K copy the viewer can open: Play opens it.
         Assert.Equal(fourK.ToString("N"), (await ReadyFor(fourK, visible: true))!.Value.GetProperty("itemId").GetString());
-        // Merged versions (Seerr names the one item that holds both): that item.
+        // Merged versions (Seerr names the one item that holds both): that item, before the other 4K copy.
         var merged = await ReadyFor(null, visible: true, mergedWithSintel: true);
-        Assert.NotNull(merged!.Value.GetProperty("itemId").GetString());
-        // Seerr names no item: no Play.
-        Assert.False((await ReadyFor(null, visible: true))!.Value.TryGetProperty("itemId", out _));
-        // The 4K copy is in a library the viewer can't open: no Play.
-        Assert.False((await ReadyFor(fourK, visible: false))!.Value.TryGetProperty("itemId", out _));
-        // An id Seerr names that isn't a copy of the title: ignored.
-        Assert.False((await ReadyFor(Guid.NewGuid(), visible: true))!.Value.TryGetProperty("itemId", out _));
+        Assert.NotEqual(fourK.ToString("N"), merged!.Value.GetProperty("itemId").GetString());
+        // Seerr names no item: the copy with the 4K source.
+        Assert.Equal(fourK.ToString("N"), (await ReadyFor(null, visible: true))!.Value.GetProperty("itemId").GetString());
+        // The only 4K copy is in a library the viewer can't open: not Ready for them, and never the HD copy's Play.
+        Assert.Null(await ReadyFor(fourK, visible: false));
+        // An id Seerr names that isn't a copy of the title: ignored; the copy with the 4K source is opened.
+        Assert.Equal(fourK.ToString("N"), (await ReadyFor(Guid.NewGuid(), visible: true))!.Value.GetProperty("itemId").GetString());
     }
 
     [Fact]
@@ -1028,7 +1059,9 @@ public class ApiArrRequestsHubTests
 
         var arrived = rig2.Arr.Now.UtcDateTime.AddHours(-3);
         rig2.View.AddCopy(TitleKey.Parse(firefly)!, new JfCopy { ItemId = fourKItem, Path = "/media/tv4k/Firefly", LibraryName = "Shows 4K", DateCreated = arrived });
-        rig2.View.AddEpisode(fourKItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = arrived });
+        var episode = Guid.NewGuid();
+        rig2.View.AddEpisode(fourKItem, new JfEpisode { ItemId = episode, Season = 1, Episode = 1, DateCreated = arrived });
+        rig2.View.AddSource(episode, 3840, 2160, created: arrived);
         rig2.View.Rev++;
         var ready = Find(Root(await Hub(rig2, rig2.Emma)), "ready", firefly);
         Assert.NotNull(ready);

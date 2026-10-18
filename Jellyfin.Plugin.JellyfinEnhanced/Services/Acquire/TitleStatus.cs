@@ -424,6 +424,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public int? Versions { get; set; }
 
+        /// <summary>
+        /// On a movie details status: true when a copy the viewer can open (this one or another library's) already
+        /// has a playable 4K source, so the page doesn't offer "Get 4K". Absent otherwise.
+        /// </summary>
+        public bool? FourK { get; set; }
+
         /// <summary>Where it has got to (<see cref="StatusStage"/>).</summary>
         public string Stage { get; init; } = StatusStage.None;
 

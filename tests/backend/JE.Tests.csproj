@@ -11,6 +11,13 @@
     <IsTestProject>true</IsTestProject>
     <AssemblyName>JE.Tests</AssemblyName>
   </PropertyGroup>
+  <!-- The Jellyfin version the tests run against, for fakes that model a behaviour of only one of them. -->
+  <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf12'">
+    <DefineConstants>$(DefineConstants);JF12</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(JellyfinTarget)' == 'jf10'">
+    <DefineConstants>$(DefineConstants);JF10</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

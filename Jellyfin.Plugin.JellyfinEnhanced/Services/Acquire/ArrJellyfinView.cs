@@ -15,7 +15,9 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.MediaInfo;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
@@ -177,7 +179,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <inheritdoc />
         public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
         {
-            if (viewer.Handle is not User user) return Array.Empty<JfCopy>();
+            var user = viewer.Handle as User;
+            if (user == null && !viewer.IsLibraryContext) return Array.Empty<JfCopy>();
             // The key and its aliases of the same kind, one query per set of distinct providers
             // (Jellyfin matches any of the ids a query names; an item is listed once).
             var queries = TitleAliases.ProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>());
@@ -204,7 +207,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 copies.Add(new JfCopy
                 {
                     ItemId = item.Id,
-                    Visible = _libraryManager.GetItemById<BaseItem>(item.Id, user) != null,
+                    Visible = user == null || _libraryManager.GetItemById<BaseItem>(item.Id, user) != null,
                     LibraryId = library?.Id.ToString("N", CultureInfo.InvariantCulture),
                     LibraryName = library?.Name,
                     Path = item.Path,
@@ -384,6 +387,97 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
             }
             return null;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer)
+            => Openable(itemId, viewer) is Video video and (Movie or Episode) ? SourcesOf(video) : Array.Empty<JfSource>();
+
+        /// <summary>The item when the viewer can open it (Jellyfin's own check), or any item for the library context.</summary>
+        private BaseItem? Openable(Guid itemId, StatusViewer viewer)
+            => viewer.IsLibraryContext ? _libraryManager.GetItemById(itemId)
+                : viewer.Handle is User user ? _libraryManager.GetItemById<BaseItem>(itemId, user) : null;
+
+        /// <inheritdoc />
+        public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
+        {
+            if (Openable(seriesItemId, viewer) is not Series series) return Array.Empty<JfEpisodeSources>();
+            // The series item's own folders (its ancestry), not its presentation key: another grouped folder's
+            // episodes are that series item's, judged when it is a copy of its own.
+            var items = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                AncestorIds = new[] { series.Id },
+                Recursive = true,
+                IsVirtualItem = false,
+                ParentIndexNumber = season,
+                DtoOptions = new DtoOptions(false),
+            });
+            var list = new List<JfEpisodeSources>();
+            foreach (var e in items.OfType<Episode>())
+            {
+                if (!OwnPlayableEpisode(e, series.Id, season) || Openable(e.Id, viewer) == null) continue;
+                var sources = readDimensions ? SourcesOf(e) : new List<JfSource> { new() { SourceId = e.Id, ItemId = e.Id, BackingItemId = e.Id, Path = e.Path, DateCreated = Utc(e.DateCreated) } };
+                list.Add(new JfEpisodeSources { ItemId = e.Id, Season = e.ParentIndexNumber!.Value, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Sources = sources });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// The filter of <see cref="EpisodeSources"/>: a numbered episode with a file whose own series is
+        /// <paramref name="seriesId"/> (of <paramref name="season"/> when given), never another item's version.
+        /// </summary>
+        internal static bool OwnPlayableEpisode(Episode e, Guid seriesId, int? season)
+            => !seriesId.Equals(Guid.Empty) && e.SeriesId.Equals(seriesId) && !e.IsVirtualItem && !string.IsNullOrEmpty(e.Path)
+                && e.ParentIndexNumber is int s && (season == null || s == season) && e.IndexNumber.HasValue && !IsAnotherItemsVersion(e);
+
+        /// <inheritdoc />
+        public IReadOnlyList<Guid> GroupedSeries(Guid seriesItemId, StatusViewer viewer)
+        {
+            if (viewer.Handle is not User user) return Array.Empty<Guid>();
+            if (_libraryManager.GetItemById<BaseItem>(seriesItemId, user) is not Series series) return Array.Empty<Guid>();
+            var key = series.PresentationUniqueKey;
+            if (string.IsNullOrEmpty(key)) return Array.Empty<Guid>();
+            return _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Series },
+                PresentationUniqueKey = key,
+                Recursive = true,
+                DtoOptions = new DtoOptions(false),
+            }).Where(i => !i.Id.Equals(series.Id) && _libraryManager.GetItemById<BaseItem>(i.Id, user) is Series).Select(i => i.Id).ToList();
+        }
+
+        /// <summary>
+        /// The playable sources of a movie or episode as Jellyfin plays them (its media sources, every version
+        /// included), each with its video stream's dimensions. None for a missing (virtual) item or a placeholder.
+        /// </summary>
+        private List<JfSource> SourcesOf(Video video)
+        {
+            var list = new List<JfSource>();
+            // A missing episode is a virtual item without a file.
+            if (video.IsVirtualItem || video.IsPlaceHolder || string.IsNullOrEmpty(video.Path)) return list;
+            foreach (var source in video.GetMediaSources(false))
+            {
+                if (source.Protocol != MediaProtocol.File || string.IsNullOrEmpty(source.Path) || source.Type == MediaSourceType.Placeholder) continue;
+                var stream = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video).OrderByDescending(s => (s.Width ?? 0) * (long)(s.Height ?? 0)).FirstOrDefault();
+                var id = Guid.TryParse(source.Id, out var parsed) ? parsed : video.Id;
+                // The item that plays exactly this file: the primary for its own path, else the version's item by
+                // source id, else by path. A source with none is not credited to the primary (nothing could insert it).
+                var version = id.Equals(video.Id) || string.Equals(source.Path, video.Path, StringComparison.Ordinal) ? video
+                    : _libraryManager.GetItemById(id) as Video ?? _libraryManager.FindByPath(source.Path, false) as Video;
+                if (version == null) continue;
+                list.Add(new JfSource
+                {
+                    SourceId = id,
+                    ItemId = video.Id,
+                    BackingItemId = version.Id,
+                    Width = stream?.Width,
+                    Height = stream?.Height,
+                    Path = source.Path,
+                    DateCreated = Utc(version.DateCreated),
+                });
+            }
+            return list;
         }
 
         /// <summary>

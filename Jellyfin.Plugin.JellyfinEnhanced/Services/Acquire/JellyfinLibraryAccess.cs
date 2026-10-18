@@ -91,6 +91,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         bool QueueItemRefresh(Guid itemId);
 
         /// <summary>
+        /// Queues a refresh of one movie or episode whose file changed in place (an upgrade imported at the same
+        /// path): Jellyfin reads the file and its versions again (media info, dimensions). False when the item isn't a video.
+        /// </summary>
+        bool QueueFileRefresh(Guid itemId);
+
+        /// <summary>
         /// Tells Jellyfin's library monitor a path changed (its own debounced refresh, as real-time
         /// monitoring does). Jellyfin acts on it whatever the library's monitoring setting, by
         /// validating the nearest item it has recursively: only for libraries with real-time monitoring on.
@@ -300,6 +306,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 new MetadataRefreshOptions(new DirectoryService(_fileSystem))
                 {
                     MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                    ImageRefreshMode = MetadataRefreshMode.Default,
+                },
+                RefreshPriority.High);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public bool QueueFileRefresh(Guid itemId)
+        {
+            if (_libraryManager.GetItemById(itemId) is not Video) return false;
+            // The default mode re-runs the providers whose file changed (the media probe), and the item's versions with it.
+            _providerManager.QueueRefresh(
+                itemId,
+                new MetadataRefreshOptions(new DirectoryService(_fileSystem))
+                {
+                    MetadataRefreshMode = MetadataRefreshMode.Default,
                     ImageRefreshMode = MetadataRefreshMode.Default,
                 },
                 RefreshPriority.High);

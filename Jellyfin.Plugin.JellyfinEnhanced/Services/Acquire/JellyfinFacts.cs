@@ -27,6 +27,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The Jellyfin user object, used only for server-side item and destination access checks.</summary>
         internal object? Handle { get; init; }
+
+        /// <summary>
+        /// The server's library context (no person): <see cref="IArrJellyfinView.Copies"/>, <see cref="IArrJellyfinView.Sources"/>
+        /// and <see cref="IArrJellyfinView.EpisodeSources"/> answer for every item, with no access filter (a list's server
+        /// context, a background job). Every other view method answers nothing for it.
+        /// </summary>
+        public bool IsLibraryContext { get; init; }
+
+        /// <summary>The server's library context (see <see cref="IsLibraryContext"/>).</summary>
+        public static StatusViewer Library { get; } = new() { IsLibraryContext = true, IsAdmin = true, PolicyRevision = "library" };
     }
 
     /// <summary>A Jellyfin item a status was asked for, resolved for one viewer (only items the viewer can see).</summary>
@@ -104,6 +114,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>When Jellyfin added it (UTC).</summary>
         public DateTime? DateCreated { get; init; }
+    }
+
+    /// <summary>
+    /// One playable media source of a movie or episode (one of its versions), as Jellyfin plays it: its own id,
+    /// file and video dimensions. Never sent to the browser (the path is server-side only).
+    /// </summary>
+    public sealed class JfSource
+    {
+        /// <summary>Jellyfin's media source id (not a permanent identity: 10.11 changes it while grouping versions).</summary>
+        public Guid SourceId { get; init; }
+
+        /// <summary>The movie or episode the viewer opens to play it (the item Jellyfin lists it under: the primary).</summary>
+        public Guid ItemId { get; init; }
+
+        /// <summary>
+        /// The exact item that is this version (the primary for its own file, else the alternate's own item, found by
+        /// source id or path): what a playlist or collection inserts to play exactly this file. A source with no such
+        /// item is never listed.
+        /// </summary>
+        public Guid BackingItemId { get; init; }
+
+        /// <summary>Width of its video stream; null while Jellyfin hasn't read the file yet.</summary>
+        public int? Width { get; init; }
+
+        /// <summary>Height of its video stream; null while Jellyfin hasn't read the file yet.</summary>
+        public int? Height { get; init; }
+
+        /// <summary>The file (server-side matching only).</summary>
+        public string? Path { get; init; }
+
+        /// <summary>When Jellyfin added this version (UTC).</summary>
+        public DateTime? DateCreated { get; init; }
+    }
+
+    /// <summary>One episode item of exactly one series item (never another grouped folder's), with its playable sources.</summary>
+    public sealed class JfEpisodeSources
+    {
+        /// <summary>Episode item id.</summary>
+        public Guid ItemId { get; init; }
+
+        /// <summary>Season number.</summary>
+        public int Season { get; init; }
+
+        /// <summary>Episode number.</summary>
+        public int Episode { get; init; }
+
+        /// <summary>Last episode number of a multi-episode file.</summary>
+        public int? EpisodeEnd { get; init; }
+
+        /// <summary>Its playable sources (12.x keeps an episode's other files as versions of one item; 10.11 lists them as more items).</summary>
+        public IReadOnlyList<JfSource> Sources { get; init; } = Array.Empty<JfSource>();
     }
 
     /// <summary>One Jellyfin episode of a series, as the viewer sees it.</summary>
@@ -206,6 +267,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Null when none does.
         /// </summary>
         Guid? VersionHolder(Guid itemId, IReadOnlyList<Guid> candidates, StatusViewer viewer);
+
+        /// <summary>
+        /// The playable sources (versions) of a movie or episode the viewer can open, each with its own video
+        /// dimensions (Jellyfin's media sources). Empty for a missing (virtual) item, a placeholder, another kind
+        /// of item, or one the viewer can't open.
+        /// </summary>
+        IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer);
+
+        /// <summary>
+        /// The episodes with a file of exactly this series item (its own folders, never another series item
+        /// Jellyfin's automatic grouping lists with it, never a second version of an episode as an item of its
+        /// own), of one season or all, that the viewer can open, each with its playable sources. Empty when the
+        /// viewer can't open the series. Without <paramref name="readDimensions"/> each episode has one source with no
+        /// dimensions (Jellyfin's media sources aren't read: enough when any playable copy will do).
+        /// </summary>
+        IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true);
+
+        /// <summary>
+        /// The other series items Jellyfin's automatic series grouping presents as one show with this one (the
+        /// same presentation key: the same provider id, language and library) that the viewer can open.
+        /// </summary>
+        IReadOnlyList<Guid> GroupedSeries(Guid seriesItemId, StatusViewer viewer);
     }
 
     /// <summary>What a request system knows about a title (Seerr in Seerr mode; filled in by the read model).</summary>

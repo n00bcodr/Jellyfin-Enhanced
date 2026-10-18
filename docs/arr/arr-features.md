@@ -69,10 +69,13 @@ own message ("Manual Import required") and what would fix it.
 - **Requests page** (`#/requests`, "Requests" in the sidebar): your own requests, grouped into *Waiting for an
   OK*, *On the way*, *Not out yet* and *Said no*; **Coming soon** (dates in the next two months, by day) and
   **Ready** (what arrived in the last two weeks, with Play). Each request follows what it asked for: a request
-  for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy (with no 4K
-  Sonarr/Radarr set up in Jellyfin Enhanced, for Seerr to say the 4K copy is available); **Play** on a 4K
-  request only ever opens the 4K copy, never the standard one (a copy counts as the 4K one only when the 4K
-  Sonarr/Radarr's linked libraries, path mappings or folder name say so, or Seerr names it). Nobody sees anyone else's requests here, and
+  for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
+  arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
+  any library and in any folder of a grouped series, every requested episode by its own files); a 4K Sonarr/Radarr
+  holding the title, sharing its folder or library with the standard copy, or Seerr saying it is available is never
+  enough on its own. A standard request has arrived once any copy plays, a 4K one included, unless the
+  administrator turns on *Standard requests need a non-4K copy*. **Play** on a request opens a copy with that
+  edition (Seerr's own item first when it has it), never the other edition's. Nobody sees anyone else's requests here, and
   someone else's request for the same title doesn't change how yours shows. Titles you hid with
   **Hidden Content** (when it filters requests) don't show here either. Release dates are calendar days: a
   movie out "on the 20th" (or an episode with an air day but no time) is on the 20th wherever you are, and
@@ -914,7 +917,8 @@ profiles, folders or tags.
   requests) aren't offered again there or in the sheet, also once Sonarr has them and the page reads *Looking for it*
   (Search still offers them once their episodes are missing for a long while). Once one has arrived your ask is done:
   if that season is deleted again later, it is offered again.
-- **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet.
+- **Movies in the library** get **Get 4K** for people who may ask for 4K, when no 4K copy is there yet: neither a
+  4K version of the movie on the page nor a 4K copy in another library they can open.
 - **Collection pages** say "You have 4 of 6." and offer **Get the 2 missing** with a cost preview ("Uses 2 of your 5
   this week; 1 need {contact}'s OK"). Movies that aren't out yet are listed but not asked for; movies someone has
   already asked for show that instead; movies that can't be asked for now say *Paused: storage full* and are left
