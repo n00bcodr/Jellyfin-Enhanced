@@ -3,8 +3,44 @@ using System.Linq;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 {
+    /// <summary>What a row of a list answer stands for in the snapshot (review round 3, D53 rule 1).</summary>
+    internal enum SourceRowKind
+    {
+        /// <summary>A title JE imports, under one usable key.</summary>
+        Usable,
+
+        /// <summary>A deliberately unsupported entry (a person, a game, an adult title): counted, never a key.</summary>
+        Excluded,
+
+        /// <summary>An entry of a supported type JE couldn't key (no id, an id of the wrong form, missing season or episode).</summary>
+        Malformed,
+    }
+
+    /// <summary>
+    /// One row of a list answer as its parser read it. A row is <see cref="SourceRowKind.Usable"/> only when its entry has a
+    /// key (<see cref="Of"/> decides: an entry without one is malformed); the entry of an excluded or malformed row may still
+    /// be kept (an id-less gap, a title-only entry), but it never stands for a key of the snapshot.
+    /// </summary>
+    /// <param name="Kind">What the row stands for.</param>
+    /// <param name="Item">The entry it gives the list, if any.</param>
+    internal readonly record struct SourceRow(SourceRowKind Kind, SourceItem? Item)
+    {
+        /// <summary>A row of a supported type for this entry: usable when it has a key, else malformed (the entry kept).</summary>
+        /// <param name="item">The parsed entry (null: unreadable).</param>
+        /// <returns>The row.</returns>
+        public static SourceRow Of(SourceItem? item) => new(item?.Key != null ? SourceRowKind.Usable : SourceRowKind.Malformed, item);
+
+        /// <summary>A deliberately unsupported entry (counted separately).</summary>
+        /// <param name="gap">An id-less entry that keeps its place in the list, or null.</param>
+        /// <returns>The row.</returns>
+        public static SourceRow Excluded(SourceItem? gap = null) => new(SourceRowKind.Excluded, gap);
+
+        /// <summary>An entry of a supported type JE can't read.</summary>
+        public static readonly SourceRow Malformed = new(SourceRowKind.Malformed, null);
+    }
+
     /// <summary>What one page of a paged list read said about the list (each paging loop reports every page it read).</summary>
-    /// <param name="Rows">Rows on the page, as the source sent them (before JE drops any it can't use).</param>
+    /// <param name="Rows">Rows the parser read on the page (every kind), counted by <see cref="SourceRead"/>, never by the caller.</param>
     /// <param name="PageCount">The page count the page reported (TMDB <c>total_pages</c>, Seerr <c>totalPages</c>, Trakt <c>X-Pagination-Page-Count</c>).</param>
     /// <param name="ItemCount">The list's total the page reported (TMDB <c>item_count</c>/<c>total_results</c>, Seerr <c>totalResults</c>, Trakt <c>X-Pagination-Item-Count</c>, IMDb <c>total</c>).</param>
     /// <param name="HasNext">IMDb <c>pageInfo.hasNextPage</c>, when the page carried it as a boolean.</param>
@@ -15,7 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// <summary>Why a paging loop stopped.</summary>
     internal enum SourceReadEnd
     {
-        /// <summary>Stopped without an end: no end marker, an empty page, no cursor to go on with.</summary>
+        /// <summary>Stopped without an end: no end marker, an empty page, no cursor to go on with, a cursor read before.</summary>
         Stalled,
 
         /// <summary>The source's own end: the last page of its page count, or <c>hasNextPage=false</c>.</summary>
@@ -31,10 +67,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         PageLimit,
     }
 
-    /// <summary>The facts one paged read collected: its pages, why it stopped, and whether the list moved meanwhile.</summary>
+    /// <summary>
+    /// The facts one read collected: every row its parser read (review round 3, D53 rule 1: completeness is about what the
+    /// snapshot represents, so the rows are reported here as parsed, and the provider functions count distinct usable
+    /// keys and counted exclusions, never the transport's row count), its pages, why it stopped, and whether the list moved
+    /// meanwhile.
+    /// </summary>
     internal sealed class SourceRead
     {
         private readonly List<SourcePage> _pages = new();
+        private readonly HashSet<string> _keys = new(System.StringComparer.Ordinal);
+        private readonly HashSet<string> _cursors = new(System.StringComparer.Ordinal);
+        private int _pageRows;
 
         /// <summary>The pages read, in order.</summary>
         public IReadOnlyList<SourcePage> Pages => _pages;
@@ -42,12 +86,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>Why the loop stopped (<see cref="SourceReadEnd.Stalled"/> until it says otherwise).</summary>
         public SourceReadEnd End { get; private set; } = SourceReadEnd.Stalled;
 
-        /// <summary>The list changed while it was read (offset pages: a row came back, a probe didn't match).</summary>
+        /// <summary>The list changed while it was read (offset pages: a row came back, a probe didn't match; a cursor came back).</summary>
         public bool Drifted { get; private set; }
 
-        /// <summary>Reports a page.</summary>
-        /// <param name="page">The page.</param>
-        public void Page(SourcePage page) => _pages.Add(page);
+        /// <summary>Distinct usable keys read.</summary>
+        public int Keys => _keys.Count;
+
+        /// <summary>Deliberately unsupported rows (counted, never keys).</summary>
+        public int Excluded { get; private set; }
+
+        /// <summary>Rows of a supported type that JE couldn't key.</summary>
+        public int Malformed { get; private set; }
+
+        /// <summary>Usable rows whose key was read before (in this read, on any page).</summary>
+        public int Repeated { get; private set; }
+
+        /// <summary>Rows read, of every kind.</summary>
+        public int Rows { get; private set; }
+
+        /// <summary>Rows the snapshot represents: one per distinct key, plus the counted exclusions.</summary>
+        public int Represented => Keys + Excluded;
+
+        /// <summary>Every row read is one distinct usable key or a counted exclusion, and nothing came back twice.</summary>
+        public bool RowsSound => Malformed == 0 && Repeated == 0 && !Drifted;
+
+        /// <summary>Reports a row as its parser read it.</summary>
+        /// <param name="row">The row.</param>
+        /// <returns>The entry it gives the list (null: none).</returns>
+        public SourceItem? Row(SourceRow row)
+        {
+            _pageRows++;
+            Rows++;
+            switch (row.Kind)
+            {
+                case SourceRowKind.Usable when !_keys.Add(row.Item!.Key!):
+                    Repeated++;
+                    break;
+                case SourceRowKind.Excluded:
+                    Excluded++;
+                    break;
+                case SourceRowKind.Malformed:
+                    Malformed++;
+                    break;
+            }
+
+            return row.Item;
+        }
+
+        /// <summary>Closes a page: the rows reported since the last page, and what the page said.</summary>
+        /// <param name="pageCount">The page count it reported.</param>
+        /// <param name="itemCount">The list's total it reported.</param>
+        /// <param name="hasNext">IMDb <c>hasNextPage</c>.</param>
+        /// <param name="cursor">IMDb <c>endCursor</c> (a cursor read before is drift).</param>
+        /// <param name="errors">Errors next to the data.</param>
+        public void Page(int? pageCount = null, int? itemCount = null, bool? hasNext = null, string? cursor = null, bool errors = false)
+        {
+            if (cursor != null && !_cursors.Add(cursor))
+            {
+                Drifted = true;
+            }
+
+            _pages.Add(new SourcePage(_pageRows, pageCount, itemCount, hasNext, cursor != null, errors));
+            _pageRows = 0;
+        }
 
         /// <summary>Reports why the loop stopped.</summary>
         /// <param name="end">The reason.</param>
@@ -64,32 +165,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     {
         /// <summary>The whole list was read.</summary>
         public bool Complete => !Partial && !Truncated;
-
-        /// <summary>A whole one-answer list.</summary>
-        public static readonly SourceVerdict Whole = new(false, false);
     }
 
     /// <summary>
-    /// When a list read is complete, per provider (review round 2, D53 rule 1). Completeness is POSITIVELY established:
-    /// a read is complete only when every fact that proves the whole list was read holds, never because no known bad
-    /// sign showed up. Anything less is partial (nothing may be removed on it) or truncated (JE stopped on purpose); an
-    /// answer without the list it should carry is a typed failure before it gets here.
+    /// When a list read is complete, per provider (review round 2, D53 rule 1; review round 3: about the snapshot). A read
+    /// is complete only when every fact that proves the whole list was read holds, never because no known bad sign showed
+    /// up: the provider's positive end below, AND every row read is one distinct usable key or a counted exclusion
+    /// (<see cref="SourceRead.RowsSound"/>: no malformed row, no key read twice, no cursor read twice), with the rows the
+    /// snapshot represents (<see cref="SourceRead.Represented"/>, never the transport's row count) equal to the total the
+    /// source announced where it announces one. Anything less is partial (nothing may be removed on it) or truncated (JE
+    /// stopped on purpose); an answer without the list it should carry is a typed failure before it gets here.
     /// <list type="bullet">
     /// <item><b>Offset lists</b> (TMDB lists; Trakt lists and watchlists), <see cref="OffsetList"/>: every page reports the
     /// page count and the list's total, the same on every page; the loop ended on the page count's last page; no page is
-    /// empty (an empty list's single page aside); the rows read equal the total; the list didn't move while it was read;
-    /// no error.</item>
+    /// empty (an empty list's single page aside); the rows represented equal the total; the list didn't move while it
+    /// was read; no error.</item>
     /// <item><b>Charts</b> (TMDB and Seerr charts, Trakt charts), <see cref="Chart"/>: every page reports the page count and
     /// the total, the same on every page; no page is empty; no error; and either the chart's last page was read and the
-    /// rows read equal its total, or JE's chart window ended before the chart did.</item>
+    /// rows represented equal its total, or JE's chart window ended before the chart did.</item>
     /// <item><b>Cursor lists</b> (IMDb), <see cref="Cursor"/>: every page carries <c>pageInfo.hasNextPage</c> as a boolean
-    /// and the same <c>total</c>; every page that says more follow is non-empty and has a cursor; the last page says
-    /// <c>hasNextPage=false</c>; the edges read equal the total; no GraphQL errors.</item>
+    /// and the same <c>total</c>; every page that says more follow is non-empty and has a cursor never seen before; the
+    /// last page says <c>hasNextPage=false</c>; the rows represented equal the total; no GraphQL errors.</item>
     /// <item><b>MDBList</b>: the public JSON is one answer by the endpoint's contract: complete when it carries the list
     /// array, announces nothing more and is below the entry cap (<see cref="MdblistPublic"/>). The API reads one page of
     /// up to the cap: complete on an explicit <c>has_more=false</c>, or on a page shorter than the limit asked for
     /// (<see cref="MdblistApi"/>).</item>
-    /// <item><b>One-answer sources</b> (TMDB and Seerr collections; Trakt's box office, which isn't paginated), <see cref="SourceVerdict.Whole"/>:
+    /// <item><b>One-answer sources</b> (TMDB and Seerr collections; Trakt's box office, which isn't paginated), <see cref="Whole"/>:
     /// the answer carries its list array (else a typed failure).</item>
     /// <item><b>Chronolists</b> (<see cref="Chronolists"/>): the page's data was read, every entry of it is usable and none
     /// was left over the cap.</item>
@@ -111,10 +212,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var pageCount = Same(pages, p => p.PageCount);
             var total = Same(pages, p => p.ItemCount);
-            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && !read.Drifted && !pages.Any(p => p.Errors);
+            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.RowsSound && !pages.Any(p => p.Errors);
             return read.End switch
             {
-                SourceReadEnd.Last => new SourceVerdict(!(sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && pages.Sum(p => p.Rows) == total), false),
+                SourceReadEnd.Last => new SourceVerdict(!(sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && read.Represented == total), false),
                 SourceReadEnd.Cap or SourceReadEnd.PageLimit => new SourceVerdict(!sound, true),
                 _ => new SourceVerdict(true, false),
             };
@@ -133,10 +234,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var pageCount = Same(pages, p => p.PageCount);
             var total = Same(pages, p => p.ItemCount);
-            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && !pages.Any(p => p.Errors);
+            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.RowsSound && !pages.Any(p => p.Errors);
             var complete = read.End switch
             {
-                SourceReadEnd.Last => sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && pages.Sum(p => p.Rows) == total,
+                SourceReadEnd.Last => sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && read.Represented == total,
                 SourceReadEnd.Window => sound && pages.Count < pageCount!.Value,
                 _ => false,
             };
@@ -156,41 +257,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var total = Same(pages, p => p.ItemCount);
             var sound = total is int
+                && read.RowsSound
                 && pages.All(p => p.HasNext is bool && !p.Errors)
                 && pages.Where(p => p.HasNext == true).All(p => p.HasCursor && p.Rows > 0);
             return read.End switch
             {
-                SourceReadEnd.Last => new SourceVerdict(!(sound && pages[^1].HasNext == false && pages.Sum(p => p.Rows) == total), false),
+                SourceReadEnd.Last => new SourceVerdict(!(sound && pages[^1].HasNext == false && read.Represented == total), false),
                 SourceReadEnd.Cap or SourceReadEnd.PageLimit => new SourceVerdict(!sound, true),
                 _ => new SourceVerdict(true, false),
             };
         }
 
+        /// <summary>A one-answer source (collections, Trakt's box office): the answer's array, every row of it sound.</summary>
+        /// <param name="read">The read (its one answer's rows).</param>
+        /// <returns>The verdict.</returns>
+        public static SourceVerdict Whole(SourceRead read) => new(!read.RowsSound, false);
+
         /// <summary>MDBList's public JSON (one answer).</summary>
-        /// <param name="rows">Rows of the answer.</param>
+        /// <param name="read">The read (its one answer's rows).</param>
         /// <param name="moreAnnounced">The answer announced more (a header or pagination).</param>
         /// <param name="cap">JE's entry cap.</param>
         /// <returns>The verdict.</returns>
-        public static SourceVerdict MdblistPublic(int rows, bool moreAnnounced, int cap) =>
-            moreAnnounced || rows >= cap ? new SourceVerdict(false, true) : SourceVerdict.Whole;
+        public static SourceVerdict MdblistPublic(SourceRead read, bool moreAnnounced, int cap) =>
+            new(!read.RowsSound, moreAnnounced || read.Rows >= cap);
 
         /// <summary>The MDBList API's one page.</summary>
-        /// <param name="rows">Rows of the page.</param>
+        /// <param name="read">The read (its one page's rows).</param>
         /// <param name="hasMore">The page's own answer to "more follow" (null: it didn't say).</param>
         /// <param name="limit">The limit asked for.</param>
         /// <returns>The verdict.</returns>
-        public static SourceVerdict MdblistApi(int rows, bool? hasMore, int limit) => hasMore switch
+        public static SourceVerdict MdblistApi(SourceRead read, bool? hasMore, int limit) => new(!read.RowsSound, hasMore switch
         {
-            true => new SourceVerdict(false, true),
-            false when rows <= limit => SourceVerdict.Whole,
-            null when rows < limit => SourceVerdict.Whole, // a page shorter than the limit asked for is the last one
-            _ => new SourceVerdict(false, true),
-        };
+            true => true,
+            false when read.Rows <= limit => false,
+            null when read.Rows < limit => false, // a page shorter than the limit asked for is the last one
+            _ => true,
+        });
 
         /// <summary>A Chronolists watch order.</summary>
         /// <param name="list">The page's data.</param>
+        /// <param name="read">The read (the page's entries).</param>
         /// <returns>The verdict.</returns>
-        public static SourceVerdict Chronolists(ChronolistsList list) => new(list.Unusable > 0, list.Truncated || list.Total > list.Items.Count);
+        public static SourceVerdict Chronolists(ChronolistsList list, SourceRead read) =>
+            new(list.Unusable > 0 || !read.RowsSound, list.Truncated || list.Total > list.Items.Count);
 
         // The value every page reported (null when a page didn't report it, or two pages disagree).
         private static int? Same(IReadOnlyList<SourcePage> pages, System.Func<SourcePage, int?> value)

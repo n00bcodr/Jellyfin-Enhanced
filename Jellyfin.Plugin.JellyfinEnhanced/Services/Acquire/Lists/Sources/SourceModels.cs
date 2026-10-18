@@ -89,6 +89,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         public bool Partial { get; init; }
 
         /// <summary>
+        /// Rows of the answer that are deliberately unsupported (a person, a game, an adult title), counted separately
+        /// (review round 3, D53 rule 1): they never stand for a key, and they don't make a read partial.
+        /// </summary>
+        public int Excluded { get; init; }
+
+        /// <summary>
         /// Every entry carries exact TMDB ids and the metadata a placeholder needs (<see cref="SourceItem.Details"/>):
         /// entries are grouped (runs of episodes) and built without title lookups (Chronolists).
         /// </summary>

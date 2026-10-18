@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace JE.Tests;
 
-// Track 4c2a review round 2 (D53 rule 3, one transmission gate): a source scan that fails on any unnamed or raw
+// Track 4c2a review rounds 2 and 3 (D53 rules 1 and 3, one transmission gate): a source scan that fails on any unnamed or raw
 // HttpClient use in Services/Acquire/Lists/**, and on any list-source transmission that doesn't pass the fetcher's one
 // gate (SendAsync: the provider switch re-checked, admission and quota charged, then the source transport). The shared
 // MdblistService path the gate calls for the quota (TryReserveListRequestAsync) must not reach its own unnamed client.
@@ -195,6 +195,94 @@ public class ListsSourceTransmissionScanTests
 
         Assert.DoesNotMatch(@"CreateClient|GetAccountStatusAsync|GetAsync\s*\(|SendAsync\s*\(", reserve);
         Assert.DoesNotMatch(@"\bvirtual\b[^;{]*TryReserveListRequestAsync", code); // tests use the real quota
+    }
+
+    // ── Review round 3 (D53 rule 3): the final check is the last step before the bytes leave ──
+
+    [Fact]
+    public void TheFinalCheckIsTheLastStepBeforeEverySendWithNoAwaitBetween()
+    {
+        var code = Code(Fetcher);
+        foreach (var transport in new[] { "SendOnceAsync", "SeerrOnceAsync" })
+        {
+            var body = Body(code, transport);
+            var sends = Regex.Matches(body, @"\.SendAsync\s*\(");
+            Assert.NotEmpty(sends);
+            foreach (Match send in sends)
+            {
+                var awaitSend = Regex.Matches(body[..send.Index], @"\bawait\b").Last();
+                var gate = body.LastIndexOf("GateOpen(transmission)", awaitSend.Index, StringComparison.Ordinal);
+                Assert.True(gate >= 0, transport + ": no final check before the send");
+                Assert.DoesNotMatch(@"\bawait\b", body[gate..awaitSend.Index]); // nothing awaited between the check and the send
+            }
+        }
+
+        // Every wait of the gate comes before the transport: the Seerr limiter's lease too.
+        var gateBody = Body(code, "SendAsync");
+        Assert.True(gateBody.IndexOf("_limiter.AcquireAsync", StringComparison.Ordinal) is var lease && lease >= 0 && lease < gateBody.IndexOf("SeerrOnceAsync(", StringComparison.Ordinal), "the limiter is awaited before the Seerr transport");
+        Assert.DoesNotMatch(@"_limiter\.AcquireAsync", Body(code, "SeerrOnceAsync"));
+    }
+
+    [Fact]
+    public void EveryAnswerTheGateReturnsIsStreamedThroughTheBoundedReader()
+    {
+        var code = Code(Fetcher);
+        foreach (var transport in new[] { "SendOnceAsync", "SeerrOnceAsync" })
+        {
+            var body = Body(code, transport);
+            foreach (Match send in Regex.Matches(body, @"\.SendAsync\s*\(([^;]*)\)\s*\.ConfigureAwait"))
+            {
+                Assert.Contains("HttpCompletionOption.ResponseHeadersRead", send.Groups[1].Value, StringComparison.Ordinal);
+            }
+
+            Assert.Contains("ReadBoundedAsync(response", body, StringComparison.Ordinal);
+        }
+
+        // The content of an answer is read nowhere else in the fetcher (no buffering reader, no helper that reads it whole).
+        var outside = code.Replace(Body(code, "ReadBoundedAsync"), string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"ReadAsStringAsync|ReadAsByteArrayAsync|ReadAsStreamAsync|LoadIntoBufferAsync|ReadResponseAsync|ReadFromJsonAsync", outside);
+    }
+
+    [Fact]
+    public void TheQuotaBalanceIsOnlyChargedAndReplacedByItsTwoHelpers()
+    {
+        var code = Code(File.ReadAllText(Path.Combine(Root(), "Services", "MdblistService.cs")));
+        var hold = Body(code, "Hold");
+        var consume = Body(code, "ConsumeLocked");
+        var rest = code.Replace(hold, string.Empty, StringComparison.Ordinal).Replace(consume, string.Empty, StringComparison.Ordinal);
+
+        // A status read replaces the balance only through Hold (requests charged since it was asked for come off it), and
+        // a request is charged only through ConsumeLocked (which counts it).
+        Assert.DoesNotMatch(@"_accountStatus\s*=[^=]", rest);
+        Assert.DoesNotMatch(@"RateLimitRemaining\s*(?:=[^=>]|-=|--)", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal));
+        var reserve = Body(code, "TryReserveListRequestAsync");
+        Assert.Matches(@"_statusRefresh\.WaitAsync", reserve); // one refresh at a time
+        var locked = Body("private void L() " + reserve[reserve.LastIndexOf("lock (_accountStatusLock)", StringComparison.Ordinal)..], "L");
+        Assert.Matches(@"FreshLocked\(\)[\s\S]*RateLimitRemaining\s*<=\s*SafetyMargin[\s\S]*ConsumeLocked\(\)", locked); // checked and charged in one step
+    }
+
+    // ── Review round 3 (D53 rule 1): completeness is decided on the parsed rows ──
+
+    [Fact]
+    public void CompletenessIsOnlyDecidedOnTheRowsTheParsersReported()
+    {
+        var code = Code(Fetcher);
+
+        // Pages and verdicts are made by SourceRead and SourceCompleteness only: a caller can't hand in a row count.
+        Assert.DoesNotMatch(@"new\s+SourcePage\b|new\s+SourceVerdict\b|SourceVerdict\s*\(", code);
+
+        // Every row parser answers with a SourceRow (usable, counted exclusion or malformed), never a bare entry.
+        Assert.DoesNotMatch(@"static\s+SourceItem\?\s+\w+Item\s*\(", code);
+        foreach (var parser in new[] { "TmdbRow", "SeerrRow", "TraktRow", "ImdbRow" })
+        {
+            Assert.Matches(@"static\s+SourceRow\s+" + parser + @"\s*\(", code);
+            foreach (Match call in Regex.Matches(code, @"\b" + parser + @"\s*\("))
+            {
+                var before = code[Math.Max(0, call.Index - 40)..call.Index];
+                Assert.True(Regex.IsMatch(before, @"(?:\.Row\(|static\s+SourceRow\s+)$") || code[call.Index..].StartsWith(parser + "(probeRow", StringComparison.Ordinal),
+                    parser + " is reported into the read: " + code.Substring(Math.Max(0, call.Index - 40), 80));
+            }
+        }
     }
 
     [Fact]

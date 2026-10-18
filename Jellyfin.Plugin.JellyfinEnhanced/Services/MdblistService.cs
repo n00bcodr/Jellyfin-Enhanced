@@ -69,6 +69,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const int SafetyMargin = 5;
         private readonly object _accountStatusLock = new();
         private MdblistAccountStatus? _accountStatus;
+        // Review round 3 (4c2-R3-2): one status refresh at a time, and the quota's consumption counted, so an answer that
+        // arrives late never puts back requests charged after it was asked for (guarded by _accountStatusLock).
+        private readonly SemaphoreSlim _statusRefresh = new(1, 1);
+        private long _consumed;
+        private long _heldIssuedAt = -1;
 
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
         {
@@ -201,32 +206,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task<bool> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(readStatus);
-            var status = FreshStatus();
-            if (status == null)
+            if (FreshStatus() == null)
             {
-                status = await readStatus(cancellationToken).ConfigureAwait(false);
-                if (status != null)
+                // Single flight: one refresh at a time; a caller that waited takes the status the refresh before it read.
+                await _statusRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    lock (_accountStatusLock)
+                    if (FreshStatus() == null)
                     {
-                        _accountStatus = status;
+                        var issuedAt = Consumed();
+                        if (await readStatus(cancellationToken).ConfigureAwait(false) is { } status)
+                        {
+                            Hold(status, issuedAt);
+                        }
                     }
+                }
+                finally
+                {
+                    _statusRefresh.Release();
                 }
             }
 
+            // The reservation is checked against the balance as it is now and charged in the same step.
             lock (_accountStatusLock)
             {
-                if (status != null && status.RateLimitRemaining <= SafetyMargin)
+                var current = FreshLocked();
+                if (current != null && current.RateLimitRemaining <= SafetyMargin)
                 {
                     return false;
                 }
 
-                if (_accountStatus != null)
+                ConsumeLocked();
+                return true;
+            }
+        }
+
+        // Requests charged so far (the mark a status read is issued at).
+        private long Consumed()
+        {
+            lock (_accountStatusLock)
+            {
+                return _consumed;
+            }
+        }
+
+        // Holds a status read issued when `issuedAt` requests had been charged: the requests charged since may not be in
+        // its count, so they come off it; a read issued before the status held never replaces it.
+        private void Hold(MdblistAccountStatus status, long issuedAt)
+        {
+            lock (_accountStatusLock)
+            {
+                if (issuedAt < _heldIssuedAt)
                 {
-                    _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+                    return;
                 }
 
-                return true;
+                status.RateLimitRemaining = (int)Math.Max(0, status.RateLimitRemaining - (_consumed - issuedAt));
+                _accountStatus = status;
+                _heldIssuedAt = issuedAt;
+            }
+        }
+
+        // One request charged to the quota (caller holds _accountStatusLock).
+        private void ConsumeLocked()
+        {
+            _consumed++;
+            if (_accountStatus != null)
+            {
+                _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
             }
         }
 
@@ -235,11 +282,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             lock (_accountStatusLock)
             {
-                return _accountStatus != null && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl
-                    ? _accountStatus
-                    : null;
+                return FreshLocked();
             }
         }
+
+        private MdblistAccountStatus? FreshLocked() =>
+            _accountStatus != null && DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(_accountStatus.FetchedAtUnixMs) < AccountStatusTtl
+                ? _accountStatus
+                : null;
 
         /// <summary>Reads MDBList's GET /user answer (plan, daily limit, remaining requests, reset time).</summary>
         /// <param name="json">The answer.</param>
@@ -291,8 +341,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
+            // Review round 3 (4c2-R3-2): the same single-flight refresh as the list quota's, and the answer held by Hold
+            // (requests charged after it was asked for come off it; an older answer never replaces a newer one).
+            var single = false;
             try
             {
+                if (!testingOverride)
+                {
+                    await _statusRefresh.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    single = true;
+                }
+
+                if (single && !forceRefresh && FreshStatus() is { } landed)
+                {
+                    return landed;
+                }
+
+                var issuedAt = Consumed();
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = RequestTimeout;
 
@@ -310,7 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (!testingOverride)
                 {
-                    lock (_accountStatusLock) { _accountStatus = status; }
+                    Hold(status, issuedAt);
                 }
                 return status;
             }
@@ -318,6 +383,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
                 return null;
+            }
+            finally
+            {
+                if (single)
+                {
+                    _statusRefresh.Release();
+                }
             }
         }
 
@@ -358,10 +430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // rather than all reading the same stale "remaining" value.
                 lock (_accountStatusLock)
                 {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
+                    ConsumeLocked();
                 }
 
                 if (!response.IsSuccessStatusCode)
@@ -436,10 +505,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // FetchFromMdblistAsync for why this decrements immediately.
                 lock (_accountStatusLock)
                 {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
+                    ConsumeLocked();
                 }
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -745,6 +811,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             timer?.Dispose();
             if (_dirty) SaveToDisk();
             foreach (var gate in _inFlight.Values) gate.Dispose();
+            _statusRefresh.Dispose();
         }
     }
 }

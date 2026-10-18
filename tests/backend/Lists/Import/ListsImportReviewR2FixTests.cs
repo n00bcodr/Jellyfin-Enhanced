@@ -24,7 +24,7 @@ public class ListsImportReviewR2FixTests
     private const string SourceClient = "JellyfinEnhanced.ListSources";
     private const string SeerrClient = "JellyfinEnhancedSeerr";
 
-    private sealed class CountingAdmission : ISourceReadAdmission
+    internal sealed class CountingAdmission : ISourceReadAdmission
     {
         public List<string> Admitted { get; } = new();
 
@@ -41,7 +41,7 @@ public class ListsImportReviewR2FixTests
     }
 
     /// <summary>Hands out clients over one transport and records the names asked for.</summary>
-    private sealed class NamedFactory(Func<string, HttpClient> create) : IHttpClientFactory
+    internal sealed class NamedFactory(Func<string, HttpClient> create) : IHttpClientFactory
     {
         public List<string> Names { get; } = new();
 
@@ -57,7 +57,7 @@ public class ListsImportReviewR2FixTests
     }
 
     /// <summary>The production fetcher with the REAL MDBList quota (MdblistService) over a scripted network.</summary>
-    private sealed class Net : IDisposable
+    internal sealed class Net : IDisposable
     {
         private readonly string _cache = Path.Combine(Path.GetTempPath(), "je-4c2r2-" + Guid.NewGuid().ToString("N"));
 
@@ -71,7 +71,7 @@ public class ListsImportReviewR2FixTests
         public TmdbResponseCache Tmdb { get; }
         public ListSourceFetcher Fetcher { get; }
 
-        public Net(Func<string, HttpClient>? clients = null)
+        public Net(Func<string, HttpClient>? clients = null, MetadataCallLimiter? limiter = null)
         {
             Transport = new IntegrationTransport((request, _) =>
             {
@@ -87,7 +87,7 @@ public class ListsImportReviewR2FixTests
             ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
             Quota = new MdblistService(Factory, Mock.Of<IApplicationPaths>(p => p.PluginsPath == _cache), Plugin.Core.Logger);
             Tmdb = new TmdbResponseCache(Factory, TimeProvider.System);
-            Fetcher = new ListSourceFetcher(Factory, Tmdb, Quota, new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger, null, Admission);
+            Fetcher = new ListSourceFetcher(Factory, Tmdb, Quota, limiter ?? new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger, null, Admission);
         }
 
         public Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration Config => Plugin.Plugin.Configuration;
@@ -109,22 +109,22 @@ public class ListsImportReviewR2FixTests
         }
     }
 
-    private static HttpResponseMessage Json(string body, int status = 200) => IntegrationTransport.Response(body, status);
+    internal static HttpResponseMessage Json(string body, int status = 200) => IntegrationTransport.Response(body, status);
 
-    private static HttpResponseMessage Limited(int seconds)
+    internal static HttpResponseMessage Limited(int seconds)
     {
         var response = Json("{\"error\":\"slow down\"}", 429);
         response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
         return response;
     }
 
-    private static string Query(HttpRequestMessage request, string name) => System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)[name] ?? string.Empty;
+    internal static string Query(HttpRequestMessage request, string name) => System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)[name] ?? string.Empty;
 
-    private static int Page(HttpRequestMessage request) => int.Parse(Query(request, "page"), CultureInfo.InvariantCulture);
+    internal static int Page(HttpRequestMessage request) => int.Parse(Query(request, "page"), CultureInfo.InvariantCulture);
 
-    private static string Rows(Func<int, string> row, int from, int count) => string.Join(',', Enumerable.Range(from, count).Select(row));
+    internal static string Rows(Func<int, string> row, int from, int count) => string.Join(',', Enumerable.Range(from, count).Select(row));
 
-    private static bool IsComplete(SourceFetchResult result) => result.Ok && SourceSnapshots.Classify(result, null).State == SnapshotState.Complete;
+    internal static bool IsComplete(SourceFetchResult result) => result.Ok && SourceSnapshots.Classify(result, null).State == SnapshotState.Complete;
 
     // ── Fixtures per provider ───────────────────────────────────────────
 
@@ -134,7 +134,7 @@ public class ListsImportReviewR2FixTests
         "{" + (errors == null ? string.Empty : "\"errors\":" + errors + ",") + "\"data\":{\"list\":{\"name\":{\"originalText\":\"Mine\"},\"items\":{"
         + (total is int t ? "\"total\":" + t + "," : string.Empty) + "\"edges\":[" + edges + "]" + (pageInfo == null ? string.Empty : ",\"pageInfo\":" + pageInfo) + "}}}}";
 
-    private static string ImdbAfter(HttpRequestMessage request)
+    internal static string ImdbAfter(HttpRequestMessage request)
     {
         using var doc = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
         var after = doc.RootElement.GetProperty("variables").GetProperty("after");

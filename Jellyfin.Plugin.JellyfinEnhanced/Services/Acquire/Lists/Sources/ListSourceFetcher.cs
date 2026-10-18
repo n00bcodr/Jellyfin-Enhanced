@@ -313,8 +313,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var response = await SendAsync(new Transmission("mdblist", "https://mdblist.com" + publicPath), options, cancellationToken).ConfigureAwait(false);
                 if (response.Status == 200 && response.Body != null)
                 {
-                    var items = MdblistItems(source, response.Body);
-                    return Done(source, "mdblist", null, items, items.Count, SourceCompleteness.MdblistPublic(items.Count, MdblistMore(response) == true, MaxItems));
+                    var read = new SourceRead();
+                    var items = MdblistItems(source, response.Body, read);
+                    return Done(source, "mdblist", null, items, items.Count, SourceCompleteness.MdblistPublic(read, MdblistMore(response) == true, MaxItems), read);
                 }
 
                 if (response.Status is 401 or 403 or 404)
@@ -336,11 +337,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             var query = "?apikey=" + Uri.EscapeDataString(key) + "&limit=" + MaxItems.ToString(CultureInfo.InvariantCulture) + "&unified=true"
                 + (source.Shape == "official" ? "&mediatype=" + (source.Part("media") == "shows" ? "show" : "movie") : string.Empty);
             // Each transmission (a 429 retry too) takes one request of the daily quota first (the gate).
-            var api = await SendAsync(new Transmission(MdblistApiProvider, "https://api.mdblist.com" + apiPath + query), options, cancellationToken).ConfigureAwait(false);
+            var api = await SendAsync(new Transmission(MdblistApiProvider, "https://api.mdblist.com" + apiPath + query) { Credential = key }, options, cancellationToken).ConfigureAwait(false);
             if (api.Status == 200 && api.Body != null)
             {
-                var items = MdblistItems(source, api.Body);
-                return WithNotice(Done(source, MdblistApiProvider, null, items, items.Count, SourceCompleteness.MdblistApi(items.Count, MdblistMore(api), MaxItems)), "mdblist_api");
+                var read = new SourceRead();
+                var items = MdblistItems(source, api.Body, read);
+                return WithNotice(Done(source, MdblistApiProvider, null, items, items.Count, SourceCompleteness.MdblistApi(read, MdblistMore(api), MaxItems), read), "mdblist_api");
             }
 
             if (api.Status is 401 or 403 or 404)
@@ -357,7 +359,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // quota treats like the ratings path does (it fails open).
         private async Task<MdblistAccountStatus?> QuotaStatusAsync(SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            var response = await SendAsync(new Transmission(MdblistStatusProvider, "https://api.mdblist.com/user?apikey=" + Uri.EscapeDataString(MdblistKey)), options, cancellationToken).ConfigureAwait(false);
+            var key = MdblistKey;
+            var response = await SendAsync(new Transmission(MdblistStatusProvider, "https://api.mdblist.com/user?apikey=" + Uri.EscapeDataString(key)) { Credential = key }, options, cancellationToken).ConfigureAwait(false);
             return response.Status == 200 && response.Body != null ? MdblistService.ParseAccountStatus(response.Body) : null;
         }
 
@@ -396,7 +399,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             return more;
         }
 
-        private static List<SourceItem> MdblistItems(ParsedSourceUrl source, string body)
+        // Every element of the answer is reported into the read as one row (D53 rule 1): an entry, a counted exclusion (an
+        // adult title, kept as an id-less gap) or a malformed row (not an object, no usable id).
+        private static List<SourceItem> MdblistItems(ParsedSourceUrl source, string body, SourceRead read)
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
@@ -433,13 +438,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             {
                 if (element.ValueKind != JsonValueKind.Object)
                 {
+                    read.Row(SourceRow.Malformed);
                     continue;
                 }
 
                 // An adult title is never imported (TMDB lookups drop them too): it holds its place as an id-less gap.
                 if (element.TryGetProperty("adult", out var adult) && (adult.ValueKind == JsonValueKind.True || (adult.ValueKind == JsonValueKind.Number && adult.TryGetInt32(out var flag) && flag != 0)))
                 {
-                    items.Add(new SourceItem("movie", null, null, null, null, null, null, null, null));
+                    items.Add(read.Row(SourceRow.Excluded(new SourceItem("movie", null, null, null, null, null, null, null, null)))!);
                     continue;
                 }
 
@@ -455,7 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     tvdb = Int(ids, "tvdb") ?? tvdb;
                 }
 
-                items.Add(new SourceItem(mediaType, tmdb is > 0 ? tmdb : null, ValidImdb(imdb), tvdb is > 0 ? tvdb : null, Str(element, "title"), Year(Int(element, "release_year")), null, null, null));
+                items.Add(read.Row(SourceRow.Of(new SourceItem(mediaType, tmdb is > 0 ? tmdb : null, ValidImdb(imdb), tvdb is > 0 ? tvdb : null, Str(element, "title"), Year(Int(element, "release_year")), null, null, null)))!);
             }
 
             return items;
@@ -522,9 +528,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
 
                     using var doc = JsonDocument.Parse(json);
-                    var parts = ListArray(doc.RootElement, "parts").Select(p => TmdbItem(p, "movie", "release_date")).OfType<SourceItem>();
+                    var read = new SourceRead();
+                    var parts = ListArray(doc.RootElement, "parts").Select(p => read.Row(TmdbRow(p, "movie", "release_date"))).OfType<SourceItem>().ToList();
                     var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
-                    return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, SourceVerdict.Whole);
+                    return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, SourceCompleteness.Whole(read), read);
                 }
 
                 case "list":
@@ -554,16 +561,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                             drift.Total(itemCount);
                             total = itemCount ?? total;
                             var rows = ListArray(doc.RootElement, "items").ToList();
-                            read.Page(new SourcePage(rows.Count, pages, itemCount));
                             foreach (var row in rows)
                             {
-                                var item = TmdbItem(row, null, null);
+                                var item = read.Row(TmdbRow(row, null, null));
                                 drift.Row(Str(row, "media_type") is { } mediaType && Int(row, "id") is { } rowId ? mediaType + "|" + rowId.ToString(CultureInfo.InvariantCulture) : item?.Key);
                                 if (item != null)
                                 {
                                     items.Add(item);
                                 }
                             }
+
+                            read.Page(pages, itemCount);
 
                             if (pages is int last && page >= last)
                             {
@@ -597,7 +605,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                         if (drift.Consistent || attempt == 2)
                         {
-                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), SourceCompleteness.OffsetList(read));
+                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), SourceCompleteness.OffsetList(read), read);
                         }
 
                         _logger.Debug($"[Lists] TMDB list {id} changed while it was read; reading it again");
@@ -620,8 +628,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         using var doc = JsonDocument.Parse(json);
                         var rows = ListArray(doc.RootElement, "results").ToList();
                         var pages = Int(doc.RootElement, "total_pages");
-                        read.Page(new SourcePage(rows.Count, pages, Int(doc.RootElement, "total_results")));
-                        items.AddRange(rows.Select(p => TmdbItem(p, defaultType, null)).OfType<SourceItem>());
+                        items.AddRange(rows.Select(p => read.Row(TmdbRow(p, defaultType, null))).OfType<SourceItem>().ToList());
+                        read.Page(pages, Int(doc.RootElement, "total_results"));
                         if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                         {
                             break;
@@ -629,7 +637,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
 
                     var chart = items.Take(MaxChartItems).ToList();
-                    return Done(source, "tmdb", null, chart, chart.Count, SourceCompleteness.Chart(read));
+                    return Done(source, "tmdb", null, chart, chart.Count, SourceCompleteness.Chart(read), read);
                 }
             }
         }
@@ -664,7 +672,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             // it is now, and the pages of one snapshot must be of one age) and over the source transport (no redirects,
             // public addresses only). The fetcher's own short result cache keeps preview → apply → link to one read.
             var url = "https://api.themoviedb.org/3/" + path + query + (query.Length == 0 ? "?" : "&") + "api_key=" + Uri.EscapeDataString(key);
-            var response = await SendAsync(new Transmission("tmdb", url), options, cancellationToken).ConfigureAwait(false);
+            var response = await SendAsync(new Transmission("tmdb", url) { Credential = key }, options, cancellationToken).ConfigureAwait(false);
             if (response.Status == 200 && response.Body != null)
             {
                 return response.Body;
@@ -695,8 +703,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
 
                 using var doc = JsonDocument.Parse(json);
-                var parts = ListArray(doc.RootElement, "parts").Select(p => SeerrItem(p, "movie")).OfType<SourceItem>().ToList();
-                return Done(source, "seerr", Str(doc.RootElement, "name"), parts, parts.Count, SourceVerdict.Whole);
+                var whole = new SourceRead();
+                var parts = ListArray(doc.RootElement, "parts").Select(p => whole.Row(SeerrRow(p, "movie"))).OfType<SourceItem>().ToList();
+                return Done(source, "seerr", Str(doc.RootElement, "name"), parts, parts.Count, SourceCompleteness.Whole(whole), whole);
             }
 
             var path = source.Shape == "trending"
@@ -712,8 +721,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 using var doc = JsonDocument.Parse(json);
                 var rows = ListArray(doc.RootElement, "results").ToList();
                 var pages = Int(doc.RootElement, "totalPages");
-                read.Page(new SourcePage(rows.Count, pages, Int(doc.RootElement, "totalResults")));
-                items.AddRange(rows.Select(p => SeerrItem(p, defaultType)).OfType<SourceItem>());
+                items.AddRange(rows.Select(p => read.Row(SeerrRow(p, defaultType))).OfType<SourceItem>().ToList());
+                read.Page(pages, Int(doc.RootElement, "totalResults"));
                 if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                 {
                     break;
@@ -721,14 +730,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var chart = items.Take(MaxChartItems).ToList();
-            return Done(source, "seerr", null, chart, chart.Count, SourceCompleteness.Chart(read));
+            return Done(source, "seerr", null, chart, chart.Count, SourceCompleteness.Chart(read), read);
         }
 
         // A Seerr fallback read, through the gate (the TMDB switch and Seerr's setup re-checked, admission charged) over
         // Seerr's own transport. Null when Seerr has no such title (404, or the 500 Seerr answers for an unknown TMDB id).
         private async Task<string?> SeerrGetAsync(string baseUrl, string apiKey, string path, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            var response = await SendAsync(new Transmission(SeerrProvider, baseUrl + path) { SeerrKey = apiKey }, options, cancellationToken).ConfigureAwait(false);
+            var response = await SendAsync(new Transmission(SeerrProvider, baseUrl + path) { Credential = apiKey, SeerrBase = baseUrl }, options, cancellationToken).ConfigureAwait(false);
             if (response.Status == 200 && response.Body != null)
             {
                 return response.Body;
@@ -742,42 +751,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
-        private static SourceItem? TmdbItem(JsonElement element, string? defaultType, string? dateField)
+        // A TMDB row: a movie or show with its id; a person (trending "all") is a counted exclusion; anything else, or a
+        // movie or show without an id, is malformed.
+        private static SourceRow TmdbRow(JsonElement element, string? defaultType, string? dateField)
         {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                return SourceRow.Malformed;
+            }
+
             var mediaType = Str(element, "media_type") ?? defaultType;
             if (mediaType is not ("movie" or "tv"))
             {
-                return null;
+                return mediaType == "person" ? SourceRow.Excluded() : SourceRow.Malformed;
             }
 
             var id = Int(element, "id");
             if (id is not > 0)
             {
-                return null;
+                return SourceRow.Malformed;
             }
 
             var title = mediaType == "movie" ? Str(element, "title") : Str(element, "name");
             var date = Str(element, dateField ?? (mediaType == "movie" ? "release_date" : "first_air_date"));
-            return new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null);
+            return SourceRow.Of(new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null));
         }
 
-        private static SourceItem? SeerrItem(JsonElement element, string? defaultType)
+        // A Seerr row (TMDB's, in Seerr's field names): the same rule.
+        private static SourceRow SeerrRow(JsonElement element, string? defaultType)
         {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                return SourceRow.Malformed;
+            }
+
             var mediaType = Str(element, "mediaType") ?? defaultType;
             if (mediaType is not ("movie" or "tv"))
             {
-                return null;
+                return mediaType == "person" ? SourceRow.Excluded() : SourceRow.Malformed;
             }
 
             var id = Int(element, "id");
             if (id is not > 0)
             {
-                return null;
+                return SourceRow.Malformed;
             }
 
             var title = mediaType == "movie" ? Str(element, "title") : Str(element, "name");
             var date = mediaType == "movie" ? Str(element, "releaseDate") : Str(element, "firstAirDate");
-            return new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null);
+            return SourceRow.Of(new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null));
         }
 
         // ── Trakt ───────────────────────────────────────────────────────────
@@ -839,7 +861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 for (var page = 1; ; page++)
                 {
                     var url = "https://api.trakt.tv" + path + "?page=" + page.ToString(CultureInfo.InvariantCulture) + "&limit=" + TraktPageSize.ToString(CultureInfo.InvariantCulture);
-                    var response = await SendAsync(new Transmission("trakt", url) { Headers = headers }, options, cancellationToken).ConfigureAwait(false);
+                    var response = await SendAsync(new Transmission("trakt", url) { Headers = headers, Credential = clientId }, options, cancellationToken).ConfigureAwait(false);
                     if (response.Status == 404)
                     {
                         return page == 1 ? SourceFetchResult.Fail(source, "not_found", "Trakt didn't find this list (only public lists can be imported).") : throw new SourceHttpException("upstream_error", "Trakt stopped answering while reading the list.");
@@ -865,7 +887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     string? pageLast = null;
                     foreach (var row in rows)
                     {
-                        var item = TraktItem(row, defaultType);
+                        var item = read.Row(TraktRow(row, defaultType));
                         // Trakt's list-item id identifies a row; without one, the entry's own key.
                         pageLast = RowIdentity(row, item);
                         drift.Row(pageLast);
@@ -878,7 +900,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     if (checkDrift && page > 1 && drift.Consistent)
                     {
                         var probeUrl = "https://api.trakt.tv" + path + "?page=" + rowsBefore.ToString(CultureInfo.InvariantCulture) + "&limit=1";
-                        var probe = await SendAsync(new Transmission("trakt", probeUrl) { Headers = headers }, options, cancellationToken).ConfigureAwait(false);
+                        var probe = await SendAsync(new Transmission("trakt", probeUrl) { Headers = headers, Credential = clientId }, options, cancellationToken).ConfigureAwait(false);
                         if (probe.Status != 200 || probe.Body == null)
                         {
                             throw Upstream(probe, "Trakt");
@@ -886,7 +908,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                         using var probeDoc = JsonDocument.Parse(probe.Body);
                         var probeRow = probeDoc.RootElement.ValueKind == JsonValueKind.Array ? probeDoc.RootElement.EnumerateArray().FirstOrDefault() : default;
-                        if (probeRow.ValueKind != JsonValueKind.Object || RowIdentity(probeRow, TraktItem(probeRow, defaultType)) != lastRow)
+                        if (probeRow.ValueKind != JsonValueKind.Object || RowIdentity(probeRow, TraktRow(probeRow, defaultType).Item) != lastRow)
                         {
                             drift.Mismatch();
                         }
@@ -896,7 +918,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     lastRow = pageLast ?? lastRow;
                     int? pageCount = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : null;
                     int? reported = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : null;
-                    read.Page(new SourcePage(rows.Count, pageCount, reported));
+                    read.Page(pageCount, reported);
                     drift.Total(reported);
                     total = reported ?? items.Count;
                     if (unpaged)
@@ -932,24 +954,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                 if (!checkDrift || drift.Consistent || attempt == 2)
                 {
-                    var verdict = unpaged ? SourceVerdict.Whole : chart ? SourceCompleteness.Chart(read) : SourceCompleteness.OffsetList(read);
+                    var verdict = unpaged ? SourceCompleteness.Whole(read) : chart ? SourceCompleteness.Chart(read) : SourceCompleteness.OffsetList(read);
                     var capped = items.Take(cap).ToList();
-                    return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), verdict);
+                    return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), verdict, read);
                 }
 
                 _logger.Debug($"[Lists] Trakt list {path} changed while it was read; reading it again");
             }
         }
 
-        private static SourceItem? TraktItem(JsonElement element, string? defaultType)
+        // A Trakt row: a movie, show, season or episode (malformed without an id JE can key, or without its season or
+        // episode number); a person (lists can hold people) is a counted exclusion; any other type is malformed.
+        private static SourceRow TraktRow(JsonElement element, string? defaultType)
         {
             if (element.ValueKind != JsonValueKind.Object)
             {
-                return null;
+                return SourceRow.Malformed;
             }
 
             var type = Str(element, "type") ?? (element.TryGetProperty("episode", out _) ? "episode" : element.TryGetProperty("season", out _) ? "season"
-                : element.TryGetProperty("movie", out _) ? "movie" : element.TryGetProperty("show", out _) ? "show" : defaultType);
+                : element.TryGetProperty("movie", out _) ? "movie" : element.TryGetProperty("show", out _) ? "show" : element.TryGetProperty("person", out _) ? "person" : defaultType);
             var note = Str(element, "notes");
             JsonElement show = default;
             var hasShow = element.TryGetProperty("show", out show) && show.ValueKind == JsonValueKind.Object;
@@ -959,40 +983,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 {
                     var movie = element.TryGetProperty("movie", out var m) && m.ValueKind == JsonValueKind.Object ? m : element;
                     var (tmdb, imdb, _) = TraktIds(movie);
-                    return new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note);
+                    return SourceRow.Of(new SourceItem("movie", tmdb, imdb, null, Str(movie, "title"), Year(Int(movie, "year")), null, null, note));
                 }
 
                 case "show":
                 {
                     var target = hasShow ? show : element;
                     var (tmdb, imdb, tvdb) = TraktIds(target);
-                    return new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note);
+                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(target, "title"), Year(Int(target, "year")), null, null, note));
                 }
 
                 case "season":
                 {
-                    if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object)
+                    if (!hasShow || !element.TryGetProperty("season", out var season) || season.ValueKind != JsonValueKind.Object || Int(season, "number") is not int number)
                     {
-                        return null;
+                        return SourceRow.Malformed;
                     }
 
                     var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), Int(season, "number"), null, note);
+                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), number, null, note));
                 }
 
                 case "episode":
                 {
-                    if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object)
+                    if (!hasShow || !element.TryGetProperty("episode", out var episode) || episode.ValueKind != JsonValueKind.Object
+                        || Int(episode, "season") is not int season || Int(episode, "number") is not int number)
                     {
-                        return null;
+                        return SourceRow.Malformed;
                     }
 
                     var (tmdb, imdb, tvdb) = TraktIds(show);
-                    return new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), Int(episode, "season"), Int(episode, "number"), note);
+                    return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
                 }
 
+                case "person":
+                    return SourceRow.Excluded();
+
                 default:
-                    return null;
+                    return SourceRow.Malformed;
             }
         }
 
@@ -1075,14 +1103,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var edges = Array(connection, "edges").ToList();
                 foreach (var edge in edges)
                 {
-                    if (!edge.TryGetProperty("node", out var node))
+                    if (edge.ValueKind != JsonValueKind.Object || !edge.TryGetProperty("node", out var node) || node.ValueKind != JsonValueKind.Object)
                     {
+                        read.Row(SourceRow.Malformed);
                         continue;
                     }
 
                     var item = node.TryGetProperty("item", out var inner) ? inner : node;
-                    var parsed = ImdbItem(item);
-                    if (parsed != null)
+                    if (read.Row(ImdbRow(item)) is { } parsed)
                     {
                         items.Add(parsed);
                     }
@@ -1093,16 +1121,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     ? next.ValueKind == JsonValueKind.True
                     : null;
                 var cursor = pageInfo.ValueKind == JsonValueKind.Object ? Str(pageInfo, "endCursor") : null;
-                read.Page(new SourcePage(edges.Count, null, reportedTotal, hasNext, cursor != null, errors));
+                read.Page(null, reportedTotal, hasNext, cursor, errors);
                 if (hasNext == false)
                 {
                     read.Stop(SourceReadEnd.Last);
                     break;
                 }
 
-                if (hasNext != true || cursor == null || edges.Count == 0)
+                if (hasNext != true || cursor == null || edges.Count == 0 || read.Drifted)
                 {
-                    break; // no end marker, no cursor to go on with, or an empty page that says more follow: stalled
+                    break; // no end marker, no cursor to go on with, an empty page that says more follow, or a cursor read before: stalled
                 }
 
                 if (items.Count >= MaxItems)
@@ -1143,6 +1171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 Total = Math.Max(total, capped.Count),
                 Truncated = verdict.Truncated || items.Count > MaxItems || total > MaxItems,
                 Partial = verdict.Partial,
+                Excluded = read.Excluded,
             };
         }
 
@@ -1183,27 +1212,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             return (data.Clone(), partial);
         }
 
-        private static SourceItem? ImdbItem(JsonElement item)
+        // IMDb title types JE never imports (counted exclusions): games, music videos, podcasts, pilots.
+        private static readonly HashSet<string> ImdbExcludedTypes = new(StringComparer.Ordinal) { "videoGame", "musicVideo", "podcastSeries", "podcastEpisode", "tvPilot" };
+
+        // An IMDb list item: a title of a type JE imports, keyed by its IMDb id (an episode by its show's id, season and
+        // number); a non-title item (a person: the Title fragment matched nothing, so the item is empty) or a title type
+        // JE never imports is a counted exclusion; a title without a valid id, of an unknown type, or an episode without
+        // its show, season or number, is malformed.
+        private static SourceRow ImdbRow(JsonElement item)
         {
-            var id = ValidImdb(Str(item, "id"));
-            if (id == null)
+            if (item.ValueKind != JsonValueKind.Object)
             {
-                return null;
+                return SourceRow.Malformed;
             }
 
+            if (!item.EnumerateObject().Any())
+            {
+                return SourceRow.Excluded();
+            }
+
+            var id = ValidImdb(Str(item, "id"));
             var type = item.TryGetProperty("titleType", out var titleType) && titleType.ValueKind == JsonValueKind.Object ? Str(titleType, "id") : null;
+            if (type != null && ImdbExcludedTypes.Contains(type))
+            {
+                return SourceRow.Excluded();
+            }
+
+            if (id == null)
+            {
+                return SourceRow.Malformed;
+            }
+
             var title = item.TryGetProperty("titleText", out var text) && text.ValueKind == JsonValueKind.Object ? Str(text, "text") : null;
             var year = item.TryGetProperty("releaseYear", out var release) && release.ValueKind == JsonValueKind.Object ? Year(Int(release, "year")) : null;
             switch (type)
             {
                 case "tvSeries" or "tvMiniSeries":
-                    return new SourceItem("tv", null, id, null, title, year, null, null, null);
+                    return SourceRow.Of(new SourceItem("tv", null, id, null, title, year, null, null, null));
                 case "tvEpisode":
                 {
                     if (!item.TryGetProperty("series", out var series) || series.ValueKind != JsonValueKind.Object
                         || !series.TryGetProperty("series", out var show) || show.ValueKind != JsonValueKind.Object)
                     {
-                        return null;
+                        return SourceRow.Malformed;
                     }
 
                     var showId = ValidImdb(Str(show, "id"));
@@ -1223,13 +1274,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         }
                     }
 
-                    return showId == null || !season.HasValue || !episode.HasValue ? null : new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title);
+                    return showId == null || !season.HasValue || !episode.HasValue ? SourceRow.Malformed : SourceRow.Of(new SourceItem("tv", null, showId, null, showTitle, null, season, episode, title));
                 }
 
                 case "movie" or "tvMovie" or "short" or "tvShort" or "video" or "tvSpecial":
-                    return new SourceItem("movie", null, id, null, title, year, null, null, null);
+                    return SourceRow.Of(new SourceItem("movie", null, id, null, title, year, null, null, null));
                 default:
-                    return null; // games, podcasts, music videos, people
+                    return SourceRow.Malformed; // a title type JE doesn't know
             }
         }
 
@@ -1266,7 +1317,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 _logger.Info($"[Lists] {source.CanonicalUrl}: {list.Unusable.ToString(CultureInfo.InvariantCulture)} of {list.Total.ToString(CultureInfo.InvariantCulture)} entries couldn't be read; the fetch counts as partial (nothing is removed).");
             }
 
-            var verdict = SourceCompleteness.Chronolists(list);
+            // Each entry is one row of the snapshot (an unreadable one is counted in Unusable; a key read twice is drift).
+            var read = new SourceRead();
+            foreach (var item in list.Items)
+            {
+                read.Row(SourceRow.Of(item));
+            }
+
+            var verdict = SourceCompleteness.Chronolists(list, read);
             return new SourceFetchResult
             {
                 Ok = true,
@@ -1279,38 +1337,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 Truncated = verdict.Truncated,
                 Partial = verdict.Partial,
                 Exact = true,
+                Excluded = read.Excluded,
             };
         }
 
         // ── HTTP ────────────────────────────────────────────────────────────
 
-        // THE transmission gate of the list-source subsystem (review round 2, D53 rule 3). Every upstream send of a list
-        // read passes here and only here: every page, each retry, the MDBList quota's status read and the Seerr fallback.
-        // Before EACH transmission it re-checks the provider's switch and credential (GateOpen, again after any await of
-        // the gate itself: an administrator turning a provider off, IMDb's opt-in included, stops the very next send), charges the provider's admission and, for the
-        // MDBList API, one request of the daily quota (whose status read is itself a transmission through this gate);
-        // then it hands the request to the provider's transport: SourceHttp for list sites (no redirects, public addresses
-        // only), Seerr's own no-redirect client for the Seerr fallback (the administrator's Seerr, usually on the LAN). A
-        // short Retry-After (≤ 5 s) is honoured once; the retry goes through every check again.
+        // THE transmission gate of the list-source subsystem (review rounds 2 and 3, D53 rule 3). Every upstream send of a
+        // list read passes here and only here: every page, each retry, the MDBList quota's status read and the Seerr
+        // fallback. First every wait: the early check (nothing is charged for a site that's off), the provider's admission,
+        // for the MDBList API one request of the daily quota (whose status read is itself a transmission through this
+        // gate), the Seerr fallback's place in the shared metadata limiter. Then the transport, whose LAST step before the
+        // bytes leave is the final check (GateOpen: the switch, IMDb's opt-in and the credential and address the request
+        // carries, as they are NOW), with no await in between; and every answer it returns is read by ReadBoundedAsync
+        // (streamed, at most MaxBodyBytes: too_large, never a silent cut). A short Retry-After (≤ 5 s) is honoured once;
+        // the retry goes through every step again.
         private async Task<HttpResult> SendAsync(Transmission transmission, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             for (var attempt = 0; ; attempt++)
             {
-                GateOpen(transmission.Provider);
+                GateOpen(transmission);
                 Admit(transmission.Provider == MdblistStatusProvider ? MdblistApiProvider : transmission.Provider, options);
-                if (transmission.Provider == MdblistApiProvider && _mdblist != null)
+                if (transmission.Provider == MdblistApiProvider && _mdblist != null
+                    && !await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false))
                 {
-                    if (!await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false))
-                    {
-                        throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
-                    }
-
-                    GateOpen(transmission.Provider); // the reservation may have read the status: the switch as it is now
+                    throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
                 }
 
-                var result = transmission.Provider == SeerrProvider
-                    ? await SeerrOnceAsync(transmission, cancellationToken).ConfigureAwait(false)
-                    : await SendOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                HttpResult result;
+                if (transmission.Provider == SeerrProvider)
+                {
+                    using var lease = await _limiter.AcquireAsync("source-fetch", false, cancellationToken).ConfigureAwait(false);
+                    result = await SeerrOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    result = await SendOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                }
+
                 if (result.Status == 429 && attempt == 0 && result.RetryAfter is >= 0 and <= MaxRetryWaitSeconds)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, result.RetryAfter.Value)), cancellationToken).ConfigureAwait(false);
@@ -1321,21 +1385,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
-        // The provider's switch and credential, as they are now (refused: a typed failure, nothing is sent).
-        private static void GateOpen(string provider)
+        // The provider's switch (IMDb's opt-in, the MDBList API's) and the credential and address the request carries,
+        // checked against the configuration as it is now (refused: a typed failure, nothing is sent). A request built
+        // with a key that was since cleared or replaced, or for a Seerr address that changed, is never sent.
+        private static void GateOpen(Transmission transmission)
         {
             var config = Config;
-            switch (provider)
+            switch (transmission.Provider)
             {
                 case "imdb" when !ListImportFlags.Provider(config, SourceKinds.Imdb):
                     throw new SourceHttpException(SourceFailures.ImdbDisabled, "IMDb lists were turned off on this server while the list was read. Nothing more was read from IMDb.");
                 case "imdb":
                     return;
                 case "mdblist" when ListImportFlags.Provider(config, SourceKinds.Mdblist):
-                case MdblistApiProvider or MdblistStatusProvider when ListImportFlags.MdblistApi(config) && MdblistKey.Length > 0:
-                case "tmdb" when ListImportFlags.Provider(config, SourceKinds.Tmdb) && TmdbKey.Length > 0:
-                case SeerrProvider when ListImportFlags.Provider(config, SourceKinds.Tmdb) && SeerrConfigured(out _, out _):
                 case "chronolists" when ListImportFlags.Provider(config, SourceKinds.Chronolists):
+                case MdblistApiProvider or MdblistStatusProvider when ListImportFlags.MdblistApi(config) && Carries(transmission, MdblistKey):
+                case "tmdb" when ListImportFlags.Provider(config, SourceKinds.Tmdb) && Carries(transmission, TmdbKey):
+                    return;
+                case SeerrProvider when ListImportFlags.Provider(config, SourceKinds.Tmdb) && SeerrConfigured(out var seerrUrl, out var seerrKey)
+                    && Carries(transmission, seerrKey) && string.Equals(transmission.SeerrBase, seerrUrl, StringComparison.Ordinal):
                     return;
                 case "trakt" when ListImportFlags.Provider(config, SourceKinds.Trakt):
                     if (TraktKey.Length == 0)
@@ -1343,11 +1411,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         throw new SourceHttpException(SourceFailures.TraktNotConfigured, "The Trakt client ID was removed while the list was read.");
                     }
 
+                    if (!Carries(transmission, TraktKey))
+                    {
+                        throw new SourceHttpException(SourceFailures.ProviderDisabled, "The Trakt client ID changed while the list was read. Nothing more was read from Trakt.");
+                    }
+
                     return;
                 default:
-                    throw new SourceHttpException(SourceFailures.ProviderDisabled, "This list site was turned off (or its key removed) on this server while the list was read. Nothing more was read from it.");
+                    throw new SourceHttpException(SourceFailures.ProviderDisabled, "This list site was turned off, or its key or address changed, on this server while the list was read. Nothing more was read from it.");
             }
         }
+
+        // The request carries the provider's current credential (a request built without one never matches).
+        private static bool Carries(Transmission transmission, string current) =>
+            current.Length > 0 && string.Equals(transmission.Credential, current, StringComparison.Ordinal);
 
         // The list-site transport (SourceHttp): never a redirect, public addresses only. Called by the gate only.
         private async Task<HttpResult> SendOnceAsync(Transmission transmission, CancellationToken cancellationToken)
@@ -1373,6 +1450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     request.Content = new StringContent(transmission.Body, Encoding.UTF8, "application/json");
                 }
 
+                GateOpen(transmission); // the final check: nothing awaited between it and the send
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)
@@ -1380,31 +1458,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
                 }
 
-                string? text = null;
-                if (status == 200)
-                {
-                    if (response.Content.Headers.ContentLength > MaxBodyBytes)
-                    {
-                        throw new SourceHttpException("too_large", "The list is too large to import.");
-                    }
-
-                    await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-                    using var buffer = new MemoryStream();
-                    var chunk = new byte[81920];
-                    int read;
-                    while ((read = await stream.ReadAsync(chunk, timeout.Token).ConfigureAwait(false)) > 0)
-                    {
-                        if (buffer.Length + read > MaxBodyBytes)
-                        {
-                            throw new SourceHttpException("too_large", "The list is too large to import.");
-                        }
-
-                        buffer.Write(chunk, 0, read);
-                    }
-
-                    text = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-                }
-
+                var text = status == 200 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null;
                 return new HttpResult(status, text, RetryAfterOf(response), HeadersOf(response));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -1423,26 +1477,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
-        // The Seerr fallback's transport: Seerr's own named client (never a redirect; never the unnamed fallback client),
-        // under the shared metadata limiter. Called by the gate only.
+        // The Seerr fallback's transport: Seerr's own named client (never a redirect; never the unnamed fallback client).
+        // The gate holds the shared metadata limiter's lease around it. Called by the gate only.
         private async Task<HttpResult> SeerrOnceAsync(Transmission transmission, CancellationToken cancellationToken)
         {
-            using var lease = await _limiter.AcquireAsync("source-fetch", false, cancellationToken).ConfigureAwait(false);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(Timeout);
             try
             {
                 var client = _httpClientFactory.CreateClient(SeerrHttpHelper.NamedClient);
-                using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, transmission.Url, transmission.SeerrKey ?? string.Empty);
-                using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, transmission.Url, transmission.Credential ?? string.Empty);
+                GateOpen(transmission); // the final check: nothing awaited between it and the send
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)
                 {
                     throw new SourceHttpException(SourceFailures.Redirected, "Seerr answered with a redirect, which Jellyfin Enhanced doesn't follow.");
                 }
 
-                var (json, _) = await SeerrHttpHelper.ReadResponseAsync(response, transmission.Url, timeout.Token).ConfigureAwait(false);
-                return new HttpResult(status, status == 200 ? json : null, RetryAfterOf(response), HeadersOf(response));
+                var json = status == 200 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null;
+                return new HttpResult(status, json, RetryAfterOf(response), HeadersOf(response));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -1452,6 +1506,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             {
                 throw new SourceHttpException("upstream_error", "Can't reach Seerr right now.");
             }
+        }
+
+        // Every answer the gate returns is read here, and only here: streamed from the headers on, at most MaxBodyBytes
+        // (an announced or actual body over the cap is too_large: nothing past the cap is read, nothing is cut silently).
+        private static async Task<string> ReadBoundedAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
+            if (response.Content.Headers.ContentLength > MaxBodyBytes)
+            {
+                throw new SourceHttpException("too_large", "The list is too large to import.");
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                if (buffer.Length + read > MaxBodyBytes)
+                {
+                    throw new SourceHttpException("too_large", "The list is too large to import.");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+
+            return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
         }
 
         private static int? RetryAfterOf(HttpResponseMessage response) => response.Headers.RetryAfter is { } ra
@@ -1503,9 +1583,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             Truncated = result.Truncated,
             Partial = result.Partial,
             Exact = result.Exact,
+            Excluded = result.Excluded,
         };
 
-        private static SourceFetchResult Done(ParsedSourceUrl source, string provider, string? title, List<SourceItem> items, int total, SourceVerdict verdict)
+        private static SourceFetchResult Done(ParsedSourceUrl source, string provider, string? title, List<SourceItem> items, int total, SourceVerdict verdict, SourceRead read)
         {
             var capped = items.Count > MaxItems ? items.Take(MaxItems).ToList() : items;
             return new SourceFetchResult
@@ -1519,6 +1600,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 Total = Math.Max(total, capped.Count),
                 Truncated = verdict.Truncated || items.Count > MaxItems,
                 Partial = verdict.Partial,
+                Excluded = read.Excluded,
             };
         }
 
@@ -1694,7 +1776,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             public string Accept { get; init; } = "application/json";
 
-            public string? SeerrKey { get; init; }
+            // The secret the request carries (an API key or client id): the gate's final check compares it with the current one.
+            public string? Credential { get; init; }
+
+            // The Seerr address the request was built for (the final check compares it with the configured one).
+            public string? SeerrBase { get; init; }
         }
 
         // One caller's running upstream fetches and the start times within the window (guarded by locking the instance).
