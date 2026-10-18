@@ -12,7 +12,7 @@
     const SURFACE = 'details';
     /** Pauses before asking again after a failed re-read (the page keeps following meanwhile). */
     const RETRY_MS = [5000, 15000, 60000];
-    let current = null; // { itemId, controller, loading, quiet, unsubscribe, retries, retryTimer }
+    let current = null; // { page, itemId, epoch, userId, serverId, controller, loading, dirty, quiet, unsubscribe, retries, retryTimer }
     let started = false;
 
     /**
@@ -35,6 +35,27 @@
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Server identity from both the route and API client, including a server switch on the same item.
+     * @returns {string} Server identity.
+     */
+    function serverIdentity() {
+        const route = new URLSearchParams((window.location.hash || '').split('?')[1] || '');
+        return JSON.stringify([route.get('serverId'), window.ApiClient?.serverId?.()]);
+    }
+
+    /**
+     * Whether a read still belongs to the page and signed-in identity shown now.
+     * @param {Object} state Read state.
+     * @returns {boolean} Same context.
+     */
+    function sameContext(state) {
+        return state.page === visiblePage() && state.itemId === itemIdFromHash()
+            && state.epoch === JE.session?.getEpoch?.()
+            && state.userId === window.ApiClient?.getCurrentUserId?.()
+            && state.serverId === serverIdentity();
     }
 
     /**
@@ -103,7 +124,10 @@
      * @returns {Promise<void>}
      */
     async function update(force) {
-        if (!JE.arrStatus?.enabled()) return;
+        if (!JE.arrStatus?.enabled()) {
+            stop();
+            return;
+        }
         const page = visiblePage();
         const itemId = itemIdFromHash();
         // A title that isn't in the library (native details facade) is read by its page id too: the
@@ -114,76 +138,97 @@
             stop();
             return;
         }
-        if (!force && current && current.itemId === itemId && (current.loading || page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`) || current.quiet)) return;
+        if (current && !sameContext(current)) stop();
+        if (current?.loading) {
+            // Keep the active answer: progress events can arrive faster than a status read.
+            // Any number of refreshes during it needs just one trailing read.
+            if (force) current.dirty = true;
+            return;
+        }
+        if (!force && current && (page.querySelector(`.je-arr-status[data-je-arr-surface="${SURFACE}"]`) || current.quiet)) return;
         // The subscription of the item shown is handed over until the new answer replaces it.
-        const previous = force && current && current.itemId === itemId ? current : null;
+        const previous = force ? current : null;
         const kept = previous ? previous.unsubscribe : null;
         const retries = previous ? previous.retries : 0;
         if (previous) previous.unsubscribe = null;
         stop();
         const controller = new AbortController();
-        const state = { itemId, controller, loading: true, quiet: false, unsubscribe: kept, retries, retryTimer: null };
+        const state = {
+            page, itemId, controller, epoch: JE.session?.getEpoch?.(),
+            userId: window.ApiClient?.getCurrentUserId?.(), serverId: serverIdentity(),
+            loading: true, dirty: false, quiet: false, unsubscribe: kept, retries, retryTimer: null
+        };
         current = state;
-        const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
-        if (current !== state) return;
-        state.loading = false;
-        if (!data && kept) {
-            // The re-read failed (or timed out): keep what is shown and the subscription, ask again later.
-            state.retries = retries + 1;
-            state.retryTimer = setTimeout(() => {
-                state.retryTimer = null;
-                if (current === state) update(true);
-            }, RETRY_MS[Math.min(state.retries, RETRY_MS.length) - 1]);
-            return;
-        }
-        state.retries = 0;
-        state.unsubscribe = null;
-        // The handed-over subscription ends once the new one (if any) is in place, so the feed's
-        // running poll isn't restarted for the same titles.
-        const release = () => { if (typeof kept === 'function') kept(); };
-        const status = data?.items?.[0];
-        if (!status) {
-            // The item the page showed is gone (Jellyfin deleted a missing episode or season once its file
-            // was there): when its successor opens in the page's place, the page stays as it is until then.
-            const arrival = JE.internals?.arrStatusArrival;
-            if (arrival?.vanished) {
-                // Still following while the successor is looked up (a newer read takes the subscription over).
-                state.unsubscribe = kept;
-                const moving = await arrival.vanished(page, itemId);
-                if (current !== state || moving) return;
-                state.unsubscribe = null;
+        try {
+            const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
+            if (current !== state) return;
+            if (!sameContext(state)) { stop(); return; }
+            if (!data && kept) {
+                // The re-read failed (or timed out): keep what is shown and the subscription, ask again later.
+                state.retries = retries + 1;
+                state.retryTimer = setTimeout(() => {
+                    state.retryTimer = null;
+                    if (current === state) update(true);
+                }, RETRY_MS[Math.min(state.retries, RETRY_MS.length) - 1]);
+                return;
             }
-            // Nothing to show (a person, collection or album page, an item without provider ids, or a
-            // failed first request): don't ask again for this page view, and drop what was shown.
-            state.quiet = true;
-            clear();
-            JE.internals?.arrStatusEpisodes?.clear?.();
-            JE.internals?.arrManage?.attachDetails?.(visiblePage(), null);
-            JE.internals?.arrNotify?.attachDetails?.(visiblePage(), null);
-            JE.internals?.arrAskActions?.attachDetails?.(visiblePage(), null);
+            state.retries = 0;
+            state.unsubscribe = null;
+            // The handed-over subscription ends once the new one (if any) is in place, so the feed's
+            // running poll isn't restarted for the same titles.
+            const release = () => { if (typeof kept === 'function') kept(); };
+            const status = data?.items?.[0];
+            if (!status) {
+                // The item the page showed is gone (Jellyfin deleted a missing episode or season once its file
+                // was there): when its successor opens in the page's place, the page stays as it is until then.
+                const arrival = JE.internals?.arrStatusArrival;
+                if (arrival?.vanished) {
+                    // Still following while the successor is looked up (a newer read takes the subscription over).
+                    state.unsubscribe = kept;
+                    const moving = await arrival.vanished(page, itemId);
+                    if (current !== state) return;
+                    if (!sameContext(state)) { stop(); return; }
+                    if (moving) return;
+                    state.unsubscribe = null;
+                }
+                // Nothing to show (a person, collection or album page, an item without provider ids, or a
+                // failed first request): don't ask again for this page view, and drop what was shown.
+                state.quiet = true;
+                clear();
+                JE.internals?.arrStatusEpisodes?.clear?.();
+                JE.internals?.arrManage?.attachDetails?.(visiblePage(), null);
+                JE.internals?.arrNotify?.attachDetails?.(visiblePage(), null);
+                JE.internals?.arrAskActions?.attachDetails?.(visiblePage(), null);
+                release();
+                return;
+            }
+            const livePage = visiblePage();
+            if (!livePage || itemIdFromHash() !== itemId) {
+                release();
+                return;
+            }
+            const block = render(livePage, status, data);
+            state.quiet = !block;
+            // Administrators (only they get the admin block) get the Manage button in the action row.
+            JE.internals?.arrManage?.attachDetails?.(livePage, status);
+            // Phase 2: Notify me / Following in the action row, Remind next to a stuck status.
+            JE.internals?.arrNotify?.attachDetails?.(livePage, status, data);
+            JE.internals?.arrAskActions?.attachDetails?.(livePage, status, data);
+            // Native details of an absent title: Open once a copy arrives, and the blocks in its slot.
+            JE.internals?.nativeDetails?.statusShown?.(livePage, status);
+            // The title (or the item Jellyfin replaced it with) became available: the page turns into it.
+            JE.internals?.arrStatusArrival?.seen?.(livePage, itemId, status);
+            // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
+            const keys = [status.key, status.liveKey].filter(Boolean);
+            state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });
             release();
-            return;
+        } finally {
+            state.loading = false;
+            if (current === state) {
+                if (!sameContext(state)) stop();
+                else if (state.dirty) update(true);
+            }
         }
-        const livePage = visiblePage();
-        if (!livePage || itemIdFromHash() !== itemId) {
-            release();
-            return;
-        }
-        const block = render(livePage, status, data);
-        state.quiet = !block;
-        // Administrators (only they get the admin block) get the Manage button in the action row.
-        JE.internals?.arrManage?.attachDetails?.(livePage, status);
-        // Phase 2: Notify me / Following in the action row, Remind next to a stuck status.
-        JE.internals?.arrNotify?.attachDetails?.(livePage, status, data);
-        JE.internals?.arrAskActions?.attachDetails?.(livePage, status, data);
-        // Native details of an absent title: Open once a copy arrives, and the blocks in its slot.
-        JE.internals?.nativeDetails?.statusShown?.(livePage, status);
-        // The title (or the item Jellyfin replaced it with) became available: the page turns into it.
-        JE.internals?.arrStatusArrival?.seen?.(livePage, itemId, status);
-        // The title's own key and, for a title Jellyfin knows by another id, the key the feed announces it under.
-        const keys = [status.key, status.liveKey].filter(Boolean);
-        state.unsubscribe = JE.arrStatus.subscribe(keys, () => update(true), { since: data.since ?? null });
-        release();
     }
 
     /**
@@ -221,8 +266,13 @@
             }
         };
         const schedule = JE.helpers?.debounce ? JE.helpers.debounce(look, 60) : () => setTimeout(look, 60);
-        const onNav = JE.core?.navigation?.onNavigate?.(schedule);
-        const onView = JE.core?.navigation?.onViewPage?.(schedule);
+        const changed = () => {
+            // Cancellation is immediate; only the next page's first look is debounced.
+            if (current && !sameContext(current)) stop();
+            schedule();
+        };
+        const onNav = JE.core?.navigation?.onNavigate?.(changed);
+        const onView = JE.core?.navigation?.onViewPage?.(changed);
         if (lifecycle) {
             if (onNav) lifecycle.track(onNav);
             if (onView) lifecycle.track(onView);

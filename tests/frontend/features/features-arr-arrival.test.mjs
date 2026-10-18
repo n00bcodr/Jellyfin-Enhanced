@@ -40,6 +40,8 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
   const itemReads = [];
   const userChange = [];
   const session = { epoch: 0 };
+  const navigations = [];
+  const views = [];
   const h = createHarness({
     html: html ?? page(type),
     url: `http://jellyfin.test/web/index.html${hash}`,
@@ -58,18 +60,21 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
         api: {
           plugin: async (path, options) => {
             calls.push({ path, options });
-            const answer = answers(path, calls.filter(c => c.path.startsWith(path.split('?')[0])).length);
+            const answer = answers(path, calls.filter(c => c.path.startsWith(path.split('?')[0])).length, options);
             if (answer instanceof Error) throw answer;
             return answer;
           }
         },
-        navigation: { onNavigate: () => () => {}, onViewPage: () => () => {}, replayViewShow: el => replays.push(el) },
+        navigation: { onNavigate: fn => { navigations.push(fn); return () => {}; }, onViewPage: fn => { views.push(fn); return () => {}; }, replayViewShow: el => replays.push(el) },
         lifecycle: { register: () => ({ track: x => x }) }
       },
       session: { getEpoch: () => session.epoch, isCurrent: e => e === session.epoch, onUserChange: (k, fn) => userChange.push(fn) }
     }
   });
-  t.after(() => h.close());
+  t.after(() => {
+    h.JE.internals?.arrStatusDetails?.stop();
+    h.close();
+  });
   for (const m of MODULES) h.load(m);
   const A = h.JE.internals.arrStatusArrival;
   Object.assign(A.timing, { probe: 5, recheck: 5, settle: 5, gap: 0, batch: 0 });
@@ -79,7 +84,7 @@ function setup(t, { hash = `#/details?id=${OLD}&serverId=${SERVER}&context=tvsho
   view.addEventListener('viewshow', e => host.shows.push(e));
   h.document.addEventListener('viewshow', () => { host.bubbled++; });
   return {
-    ...h, calls, replays, itemReads, userChange, session, A, view, host,
+    ...h, calls, replays, itemReads, userChange, session, navigations, views, A, view, host,
     S: h.JE.arrStatus,
     D: h.JE.internals.arrStatusDetails,
     statusReads: () => calls.filter(c => c.path.startsWith('/acquire/status/item/')).length,
@@ -707,30 +712,265 @@ for (const kind of ['season', 'series']) {
   });
 }
 
-test('a season page\'s wait restarts only when what is available changes, and never runs past its cap', async t => {
-  let ready = 1;
-  const h = setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(ready) });
-  // The cap far away first: were the 120 ms wait restarted by each read of the same count, the page would
-  // reload only at the cap (2 s). The bounds leave room for a busy machine; the loops run on far longer.
-  Object.assign(h.A.timing, { batch: 120, batchMax: 2000 });
+/** Controlled realm time: deadlines never depend on the host event loop. */
+function virtualClock(h) {
+  let now = 100000;
+  let serial = 0;
+  const timers = new Map();
+  const NativeDate = h.window.Date;
+  h.window.Date = class extends NativeDate { static now() { return now; } };
+  h.window.setTimeout = (fn, wait = 0, ...args) => {
+    const id = ++serial;
+    timers.set(id, { at: now + Math.max(0, wait), fn: () => fn(...args) });
+    return id;
+  };
+  h.window.clearTimeout = id => timers.delete(id);
+  return {
+    get now() { return now; },
+    advance(ms) {
+      const target = now + ms;
+      let count = 0;
+      for (;;) {
+        const next = [...timers.entries()].filter(([,v]) => v.at <= target).sort((a,b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!next) break;
+        assert.ok(++count < 10000, 'finite scheduled work');
+        const [id, timer] = next;
+        now = timer.at;
+        timers.delete(id);
+        timer.fn();
+      }
+      now = target;
+    }
+  };
+}
+/** A season page drawn with one ready episode before an arrival. */
+function makeSeason(t, options = {}) {
+  return setup(t, { type: 'Season', hash: `#/details?id=${SEASON}&serverId=${SERVER}`, answers: () => season(1), ...options });
+}
+/** Deliver the real arrival rule a status accepted for the current page. */
+const notice = (h, ready) => h.A.seen(h.view, SEASON, season(ready).items[0]);
+/** A status response whose completion is controlled by the test. */
+const deferredAnswer = () => {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+};
+
+test('virtual: same-count reads preserve the original settle deadline', async t => {
+  const h = makeSeason(t);
+  const clock = virtualClock(h);
+  Object.assign(h.A.timing, { batch: 120, batchMax: 2000, settle: 10000 });
   await h.D.update(false);
-  ready = 2;
-  // A long download stream: the change feed reads the same count again and again, every 20 ms.
-  let start = Date.now();
-  while (h.host.shows.length === 0 && Date.now() - start < 3000) {
-    h.S.refresh(['tv:tvdb:75932:s1']);
-    await sleep(20);
+  notice(h, 2);
+  const since = h.A.state().pending.since;
+  for (let time = 20; time <= 100; time += 20) {
+    clock.advance(20);
+    notice(h, 2);
+    assert.equal(h.A.state().pending.since, since);
+    assert.equal(h.host.shows.length, 0);
   }
-  assert.equal(h.host.shows.length, 1, 'reloaded while the reads went on');
-  assert.ok(Date.now() - start < 1000, `repeated reads of the same count don't postpone it (${Date.now() - start} ms)`);
-  // Arrivals that keep coming faster than the wait (every 40 ms): one reload within the cap (300 ms now).
-  h.A.timing.batchMax = 300;
-  start = Date.now();
-  while (h.host.shows.length === 1 && Date.now() - start < 3000) {
-    ready++;
-    h.S.refresh(['tv:tvdb:75932:s1']);
-    await sleep(40);
+  clock.advance(19);
+  assert.equal(h.host.shows.length, 0);
+  clock.advance(1);
+  assert.equal(h.host.shows.length, 1, 'same-count reads do not postpone the 120 ms reload');
+});
+
+test('virtual: increasing counts restart settle but preserve the absolute cap', async t => {
+  const h = makeSeason(t);
+  const clock = virtualClock(h);
+  Object.assign(h.A.timing, { batch: 120, batchMax: 300, settle: 10000 });
+  await h.D.update(false);
+  notice(h, 2);
+  for (let time = 40; time <= 280; time += 40) {
+    clock.advance(40);
+    notice(h, 2 + time / 40);
+    assert.equal(h.host.shows.length, 0);
   }
-  assert.equal(h.host.shows.length, 2);
-  assert.ok(Date.now() - start < 1500, `the cap holds (${Date.now() - start} ms)`);
+  clock.advance(19);
+  assert.equal(h.host.shows.length, 0);
+  clock.advance(1);
+  assert.equal(h.host.shows.length, 1, 'reload exactly at the cap while counts are still changing');
+});
+
+test('virtual: an already-pending cap fires while a status read never answers', async t => {
+  let slow = false;
+  const answer = deferredAnswer();
+  const h = makeSeason(t, { answers: () => slow ? answer.promise : season(1) });
+  const clock = virtualClock(h);
+  Object.assign(h.A.timing, { batch: 120, batchMax: 300, settle: 10000 });
+  await h.D.update(false);
+  notice(h, 2);
+  slow = true;
+  const reading = h.D.update(true);
+  for (let time = 40; time <= 280; time += 40) {
+    clock.advance(40);
+    notice(h, 2 + time / 40);
+  }
+  assert.equal(h.A.state().checking, false, 'status loading is not arrival.checking');
+  clock.advance(20);
+  assert.equal(h.host.shows.length, 1, 'in-flight status read cannot hold an armed cap');
+  answer.resolve(season(10));
+  await reading;
+});
+
+test('virtual: LibraryChanged removal bursts preserve the cap while their probe is unresolved', async t => {
+  const h = makeSeason(t);
+  const clock = virtualClock(h);
+  Object.assign(h.A.timing, { batch: 120, batchMax: 300, settle: 10000, probe: 5 });
+  await h.D.update(false);
+  let probes = 0;
+  h.JE.internals.arrStatusDetails.update = () => { probes++; return new Promise(() => {}); };
+  const removed = () => h.window.ApiClient._callbacks.message.forEach(cb => cb(null, { MessageType: 'LibraryChanged', Data: { FoldersRemovedFrom: [SEASON] } }));
+  removed();
+  const since = h.A.state().pending.since;
+  for (let time = 40; time <= 280; time += 40) {
+    clock.advance(40);
+    removed();
+    assert.equal(h.A.state().pending.since, since);
+    assert.equal(h.host.shows.length, 0);
+  }
+  assert.ok(probes > 0);
+  assert.equal(h.A.state().checking, false);
+  clock.advance(20);
+  assert.equal(h.host.shows.length, 1);
+});
+
+/** Drain the finite promise chain from feed position through rendering and a trailing read. */
+async function drain() {
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+}
+
+test('slow status answers keep applying during refreshes every 20 ms and arrival reloads the page', async t => {
+  let slow = false;
+  let aborted = 0;
+  const h = makeSeason(t, { answers: (path, n, options) => {
+    if (!slow) return season(1);
+    return new Promise(resolve => {
+      const onAbort = () => {
+        aborted++;
+        h.window.clearTimeout(timer);
+        resolve(null);
+      };
+      const timer = h.window.setTimeout(() => {
+        options.signal.removeEventListener('abort', onAbort);
+        resolve(season(2));
+      }, 80);
+      options.signal.addEventListener('abort', onAbort, { once: true });
+    });
+  } });
+  const clock = virtualClock(h);
+  Object.assign(h.A.timing, { batch: 120, batchMax: 300, settle: 10000 });
+  await h.D.update(false);
+  slow = true;
+  h.S.refresh(['tv:tvdb:75932:s1']);
+  await drain();
+  for (let time = 20; time <= 400; time += 20) {
+    clock.advance(20);
+    await drain();
+    h.S.refresh(['tv:tvdb:75932:s1']);
+    await drain();
+    if (time === 80) {
+      assert.equal(h.A.state().pending?.base.count, 2, 'the first slow answer reaches arrival while refreshes continue');
+      assert.match(h.view.querySelector('.je-arr-summary').textContent, /2 of 6/);
+    }
+    if (time === 200) assert.equal(h.host.shows.length, 1, 'arrival reloads exactly 120 ms after the first answer');
+  }
+  assert.equal(h.host.shows.length, 1);
+  assert.equal(aborted, 0, 'same-page refreshes never abort the active read');
+  assert.equal(h.statusReads(), 7, 'one baseline and one read per 80 ms, rather than one per event');
+  h.D.stop();
+  await drain();
+});
+
+test('a burst during one read produces exactly one trailing read, including a failed active read', async t => {
+  for (const fails of [false, true]) {
+    const answers = [];
+    const h = makeSeason(t, { answers: () => {
+      const answer = deferredAnswer();
+      answers.push(answer);
+      return answer.promise;
+    } });
+    virtualClock(h);
+    const first = h.D.update(false);
+    await drain();
+    answers[0].resolve(season(1));
+    await first;
+    const active = h.D.update(true);
+    await drain();
+    for (let i = 0; i < 10; i++) h.S.refresh(['tv:tvdb:75932:s1']);
+    await drain();
+    assert.equal(answers.length, 2, 'burst shares the active read');
+    answers[1].resolve(fails ? null : season(2));
+    await drain();
+    assert.equal(answers.length, 3, 'one trailing read catches changes during the active read');
+    answers[2].resolve(season(3));
+    await active;
+    await drain();
+    assert.equal(answers.length, 3, 'no further read without a new refresh');
+    h.D.stop();
+  }
+});
+
+for (const change of ['item', 'page', 'user', 'epoch', 'server']) {
+  test(`a ${change} change cancels immediately and drops a late status answer and its queued refresh`, async t => {
+    const answer = deferredAnswer();
+    let slow = false;
+    let user = 'user-a';
+    const h = makeSeason(t, { apiClient: { getCurrentUserId: () => user }, answers: () => slow ? answer.promise : season(1) });
+    const clock = virtualClock(h);
+    h.JE.initializeArrStatusDetails();
+    await h.D.update(false);
+    slow = true;
+    const reading = h.D.update(true);
+    await drain();
+    const signal = h.calls.at(-1).options.signal;
+    h.S.refresh(['tv:tvdb:75932:s1']);
+    await drain();
+    if (change === 'item') h.window.location.hash = `#/details?id=${SERIES}&serverId=${SERVER}`;
+    if (change === 'page') {
+      h.view.classList.add('hide');
+      h.document.body.insertAdjacentHTML('beforeend', page('Season'));
+    }
+    if (change === 'user') {
+      user = 'user-b';
+      h.session.epoch++;
+      h.userChange.forEach(fn => fn());
+    }
+    if (change === 'epoch') h.session.epoch++;
+    if (change === 'server') h.window.location.hash = `#/details?id=${SEASON}&serverId=another-server`;
+    h.navigations.forEach(fn => fn());
+    h.views.forEach(fn => fn());
+    assert.equal(signal.aborted, true, 'cancellation does not wait for the delayed page look');
+    answer.resolve(season(2)); // Fixture intentionally ignores abort: late answers must still be rejected.
+    await reading;
+    await drain();
+    clock.advance(120);
+    assert.equal(h.host.shows.length, 0, 'late answer never arms arrival');
+    assert.equal(h.statusReads(), 2, 'old queued refresh is discarded');
+    assert.doesNotMatch(h.document.body.textContent, /2 of 6/);
+    h.D.stop();
+  });
+}
+
+test('an identity change without a page notification still drops a late answer', async t => {
+  let server = SERVER;
+  let slow = false;
+  const answer = deferredAnswer();
+  const h = makeSeason(t, { apiClient: { serverId: () => server }, answers: () => slow ? answer.promise : season(1) });
+  const clock = virtualClock(h);
+  await h.D.update(false);
+  slow = true;
+  const reading = h.D.update(true);
+  await drain();
+  const signal = h.calls.at(-1).options.signal;
+  h.S.refresh(['tv:tvdb:75932:s1']);
+  await drain();
+  server = 'another-api-server';
+  answer.resolve(season(2));
+  await reading;
+  clock.advance(120);
+  assert.equal(signal.aborted, true);
+  assert.equal(h.host.shows.length, 0);
+  assert.equal(h.statusReads(), 2);
+  assert.doesNotMatch(h.view.textContent, /2 of 6/);
 });
