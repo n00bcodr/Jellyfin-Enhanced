@@ -129,10 +129,29 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
     public List<IReadOnlyList<string>> CopyQueries { get; } = new();
 
+    /// <summary>
+    /// When set, the copies Jellyfin returns are the production lookup's (<see cref="FakeJellyfinLibrary"/> under the real
+    /// <see cref="ArrJellyfinView"/>), so its bounds apply; the viewer's visibility still comes from this fake.
+    /// </summary>
+    public ArrJellyfinView? Production { get; set; }
+
+    /// <summary>The complete copy lookup can't be made now (completeness unknown).</summary>
+    public bool CopiesUnknown { get; set; }
+
+    /// <summary>Every physical copy of the title (the key and its aliases of the same kind), complete; null when unknown.</summary>
+    public IReadOnlyList<Guid>? TitleCopyIds(TitleKey titleKey, IReadOnlyCollection<TitleKey>? aliases = null)
+    {
+        if (CopiesUnknown) return null;
+        if (Production != null) return Production.TitleCopyIds(titleKey, aliases);
+        var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct();
+        return keys.SelectMany(k => CopiesByKey.TryGetValue(k, out var list) ? list.Select(c => c.Copy.ItemId) : Enumerable.Empty<Guid>()).Distinct().ToList();
+    }
+
     /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item.</summary>
     public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
     {
         OnCopies?.Invoke();
+        var returned = Production?.Copies(titleKey, StatusViewer.Library, aliases).Select(c => c.ItemId).ToHashSet();
         var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct().ToList();
         CopyQueries.Add(keys);
         var seen = new HashSet<Guid>();
@@ -142,7 +161,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
             if (!CopiesByKey.TryGetValue(key, out var list)) continue;
             foreach (var c in list)
             {
-                if (!seen.Add(c.Copy.ItemId)) continue;
+                if ((returned != null && !returned.Contains(c.Copy.ItemId)) || !seen.Add(c.Copy.ItemId)) continue;
                 result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = viewer.IsLibraryContext || c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId) });
             }
         }

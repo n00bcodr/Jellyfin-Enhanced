@@ -195,12 +195,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 more = rows.Count > take,
                 items = rows.Take(take).Select(r =>
                 {
-                    // A Ready or new-episodes row as the caller may be told about it now, decided as every channel sends it
-                    // (NotifyDispatcher.AlertCheck): a title they can open and haven't hidden, a batch narrowed to the episodes
-                    // they can open and haven't hidden, counted and worded again.
+                    // A Ready or new-episodes row, or a request's outcome, as the caller may be told about it now, decided as
+                    // every channel sends it (NotifyDispatcher.AlertCheck): a title they can open and haven't hidden, a batch
+                    // narrowed to the episodes they can open and haven't hidden, counted and worded again; an outcome of a title
+                    // they haven't hidden.
                     var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(r.Payload), StringComparer.Ordinal);
                     var itemId = r.ItemId;
-                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes && (check == null || check.Decide(r.Kind, r.Key, payload, ref itemId).Why != null);
+                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved
+                        && (check == null || check.Decide(r.Kind, r.Key, payload, ref itemId).Why != null);
                     // Episode file ids are retained only for server-side delivery checks.
                     var parameters = payload.Where(p => p.Key != "episodeItems").ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
                     // Such a row (or one whose Hidden Content can't be read now), or an ask waiting for an OK (or a reminder)

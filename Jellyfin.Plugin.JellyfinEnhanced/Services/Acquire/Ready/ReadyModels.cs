@@ -124,7 +124,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <param name="ReadyAt">When it became ready for this interest (UTC).</param>
     public sealed record ReadyCandidate(ReadyInterest Interest, string Part, Guid LogicalItemId, Guid? SeriesId, Guid PlayableItemId, int? Season, int? Episode, DateTime ReadyAt)
     {
-        /// <summary>Every copy of the content the choice was made among (its item and physical series): a title-level Hidden Content rule on any of them hides it.</summary>
+        /// <summary>
+        /// The copies of the content the choice was made among (its item and physical series), at the selection: a title-level
+        /// Hidden Content rule on any of them hides it. The final check adds every copy of the title as it is then.
+        /// </summary>
         public IReadOnlyList<(Guid ItemId, Guid? SeriesId)> Copies { get; init; } = Array.Empty<(Guid, Guid?)>();
 
         /// <summary>The content coordinate of a movie or an episode.</summary>
@@ -185,7 +188,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// </summary>
         public string? Nonce { get; init; }
 
-        /// <summary>When Jellyfin made the bound playlist (its DateCreated, UTC ms), recorded when it was bound; null before.</summary>
+        /// <summary>
+        /// When Jellyfin made the playlist (its DateCreated as stored, UTC ms): recorded right before JE writes its nonce into it,
+        /// kept when it is bound; null before.
+        /// </summary>
         public long? PlaylistCreated { get; init; }
 
         /// <summary>The membership change in progress (JSON), or null.</summary>
@@ -225,13 +231,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         public bool HasMarker(string? marker) => !string.IsNullOrEmpty(marker) && FolderName.Contains(marker, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// True when this is the very playlist a binding made: JE's nonce in it and the creation time recorded when it was
-        /// bound (within a second: Jellyfin rounds it). Jellyfin gives a playlist made again under the same folder the same
-        /// id, but neither the nonce nor the time.
+        /// Its creation time at the precision Jellyfin guarantees for it, the whole second (UTC Unix seconds): 12.2 and 10.11
+        /// first save it with a fraction, then their refresh stores it again from the playlist's metadata file, which keeps
+        /// whole seconds, and a later save of the instance the create made can put the fraction back. Both forms are this
+        /// second (probed live, 4f round 5).
+        /// </summary>
+        public long CreatedSecond => Created.ToUnixTimeSeconds();
+
+        /// <summary>The creation second, as a binding records it (UTC ms of the whole second).</summary>
+        public long CreatedMs => CreatedSecond * 1000;
+
+        /// <summary>
+        /// True when this is the very playlist a binding made: JE's nonce in it and exactly the creation second recorded when
+        /// it was stamped (equality at the host's precision, never a tolerance across seconds). Jellyfin gives a playlist made
+        /// again under the same folder the same id, but neither the nonce nor, in any other second, the time.
         /// </summary>
         public bool Carries(string? nonce, long? createdMs)
             => !string.IsNullOrEmpty(nonce) && string.Equals(Nonce, nonce, StringComparison.Ordinal)
-               && createdMs is long created && Math.Abs(Created.ToUnixTimeMilliseconds() - created) < 1000;
+               && createdMs is long created && SecondOf(created) == CreatedSecond;
+
+        /// <summary>The whole UTC second a millisecond time falls in (a binding recorded by an earlier version may hold a fraction).</summary>
+        public static long SecondOf(long ms) => (long)Math.Floor(ms / 1000.0);
 
         /// <summary>True when it is owned by <paramref name="owner"/>, not public and shared with nobody.</summary>
         public bool PrivateTo(Guid owner) => OwnerId == owner && !OpenAccess && ShareCount == 0;

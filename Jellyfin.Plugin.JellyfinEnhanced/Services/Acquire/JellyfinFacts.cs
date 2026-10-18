@@ -237,6 +237,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>
+        /// Every physical copy of a title (each Jellyfin movie or series carrying the key's provider id, or any of its
+        /// <paramref name="aliases"/>, in any library, whoever may open it), complete: the evidence a privacy decision reads (a
+        /// Hidden Content rule made on any copy hides the title). Null when completeness can't be established now (a library
+        /// query failed): the caller fails closed. Unlike <see cref="Copies"/>, no presentation cap applies.
+        /// </summary>
+        IReadOnlyList<Guid>? TitleCopyIds(TitleKey titleKey, IReadOnlyCollection<TitleKey>? aliases = null);
+
+        /// <summary>
         /// The series' episodes the viewer can see (one season, or all when null), virtual ones included
         /// when asked; for a viewer with parental limits also the episodes (real or virtual) Jellyfin
         /// hides from them, marked <see cref="JfEpisode.Hidden"/> (numbers only).

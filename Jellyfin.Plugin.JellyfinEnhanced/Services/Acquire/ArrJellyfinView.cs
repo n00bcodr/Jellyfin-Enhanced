@@ -177,6 +177,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// At most 20 copies: what the pages, cards and request checks show or pick from (presentation). Privacy decisions read
+        /// <see cref="TitleCopyIds"/> instead.
+        /// </remarks>
         public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
         {
             var user = viewer.Handle as User;
@@ -215,6 +219,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 });
             }
             return copies;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<Guid>? TitleCopyIds(TitleKey titleKey, IReadOnlyCollection<TitleKey>? aliases = null)
+        {
+            // Jellyfin's id query with no Limit: one complete read per set of distinct providers (no page to miss an item, no
+            // cap), every library, nobody's visibility. A failed query means the set isn't known: null, never a partial list.
+            try
+            {
+                var found = new HashSet<Guid>();
+                foreach (var providers in TitleAliases.AllProviderQueries(titleKey, aliases ?? Array.Empty<TitleKey>()))
+                {
+                    found.UnionWith(_libraryManager.GetItemIds(new InternalItemsQuery
+                    {
+                        IncludeItemTypes = new[] { titleKey.IsMovie ? BaseItemKind.Movie : BaseItemKind.Series },
+                        HasAnyProviderId = providers,
+                        Recursive = true,
+                    }));
+                }
+
+                found.Remove(Guid.Empty);
+                return found.ToList();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return null;
+            }
         }
 
         /// <inheritdoc />

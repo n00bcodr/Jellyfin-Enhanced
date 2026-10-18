@@ -388,22 +388,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                     if (!Still(generation, user, epoch) || id is not Guid madeId) return "changed";
                     // Ownership comes only from JE's own create: the playlist Jellyfin reports for the create call, read as
                     // stored right after it (nothing awaited in between) and found to be what the create makes (the person's,
-                    // private, the marker, no nonce, empty, made around the create). Its creation time is that playlist's
-                    // identity: the nonce is written only into a playlist with that creation time, so one the person put in
-                    // its place under the same id later is never stamped (the create is abandoned; the next look makes another).
+                    // private, the marker, no nonce, empty, made around the create). Its creation second as Jellyfin stores it is
+                    // that playlist's identity: it is recorded, and the nonce is written only into a playlist with exactly that
+                    // creation second, so one the person put in its
+                    // place under the same id in any other second is never stamped (the create is abandoned; the next look makes
+                    // another). A delete-and-remake inside the same stored second is Jellyfin's limit (D49). The second is the
+                    // precision Jellyfin guarantees: its refresh stores the time again from the playlist's metadata file, to the
+                    // second (ReadyPlaylistInfo.CreatedSecond).
                     var fresh = _host.Get(madeId);
-                    var created = fresh?.Created.ToUnixTimeMilliseconds();
-                    if (fresh == null || created is not long at || !fresh.PrivateTo(user) || !fresh.HasMarker(marker) || fresh.Nonce != null
-                        || at < now.ToUnixTimeMilliseconds() - 5000 || at > _now().ToUnixTimeMilliseconds() + 5000 || _host.Entries(madeId).Count != 0) return "changed";
+                    if (fresh == null || !fresh.PrivateTo(user) || !fresh.HasMarker(marker) || fresh.Nonce != null) return "changed";
+                    var at = fresh.Created.ToUnixTimeMilliseconds();
+                    if (at < now.ToUnixTimeMilliseconds() - 5000 || at > _now().ToUnixTimeMilliseconds() + 5000 || _host.Entries(madeId).Count != 0) return "changed";
+                    if (!_store.NoteCreated(generation, _server, user, epoch, fresh.CreatedMs, _now())) return "changed";
                     // The nonce goes into the playlist itself before it is bound: only a playlist carrying it is ever JE's.
-                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce, at)).ConfigureAwait(false);
+                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce, fresh.CreatedSecond)).ConfigureAwait(false);
                     if (stamped != null || !Still(generation, user, epoch)) return "changed";
                     made = _host.Get(madeId);
-                    if (made == null || Math.Abs(made.Created.ToUnixTimeMilliseconds() - at) > 1000) return "changed";
+                    if (made == null || made.CreatedSecond != fresh.CreatedSecond) return "changed";
                 }
 
                 if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker) || !string.Equals(made.Nonce, nonce, StringComparison.Ordinal)) return "changed";
-                if (!_store.Bind(generation, _server, user, epoch, made.Id, made.Created.ToUnixTimeMilliseconds(), now)) return "changed";
+                if (!_store.Bind(generation, _server, user, epoch, made.Id, made.CreatedMs, now)) return "changed";
                 if (!string.Equals(made.Name, PlaylistName, StringComparison.Ordinal))
                 {
                     // JE's name only while the stored name is still the create's own (a name the person gave it stays).
@@ -485,26 +490,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         // The last check of what a membership write sets (run by the host with no await before its call): every chosen version
-        // against the person's Hidden Content as it is now (unreadable: no write) and their access to that exact version.
+        // against the person's Hidden Content as it is now (unreadable: no write), every copy of its title as Jellyfin has them
+        // now (complete; unknown: chosen again) and their access to that exact version. "stale": the selection is made again.
         private string? StillChosen(Guid user, ReadySelection selection)
         {
             var hides = _privacy.Load(user);
             if (hides == null) return "unreadable";
-            return selection.Candidates.All(c => _selector.StillChosen(user, hides, c)) ? null : "stale";
+            var titles = new Dictionary<string, IReadOnlyList<Guid>?>(StringComparer.Ordinal);
+            return selection.Candidates.All(c => _selector.StillChosen(user, hides, c, titles)) ? null : "stale";
         }
 
         /// <summary>The name a playlist is made under: the display name and the create's marker (its folder keeps it).</summary>
         internal static string CreateName(string marker) => PlaylistName + " (" + marker + ")";
 
         // The playlist an interrupted create made, when the evidence says it is JE's own: the id recorded before the create
-        // call, carrying the create's nonce, made within the window after it, still empty, the person's, private and carrying
-        // the marker. A playlist the person made under that name (the name shows the marker) never carries the nonce, so it's
-        // never adopted; a create interrupted before the nonce was written is left alone too (a new one is made).
+        // call, carrying the create's nonce, exactly the creation second recorded right before the nonce was written (made within
+        // the window after the create), still empty, the person's, private and carrying the marker. A playlist the person made
+        // under that name (the name shows the marker) never carries the nonce, so it's never adopted; a create interrupted
+        // before the nonce was written is left alone too (a new one is made).
         private ReadyPlaylistInfo? Interrupted(ReadyBinding b, Guid user)
         {
-            if (b.Marker == null || string.IsNullOrEmpty(b.Nonce) || b.CreateId is not Guid id || b.CreateAt is not long at) return null;
+            if (b.Marker == null || string.IsNullOrEmpty(b.Nonce) || b.CreateId is not Guid id || b.CreateAt is not long at || b.PlaylistCreated is not long stamped) return null;
             var found = _host.Get(id);
-            if (found == null || found.Id != id || !found.PrivateTo(user) || !found.HasMarker(b.Marker) || !string.Equals(found.Nonce, b.Nonce, StringComparison.Ordinal)) return null;
+            if (found == null || found.Id != id || !found.PrivateTo(user) || !found.HasMarker(b.Marker) || !found.Carries(b.Nonce, stamped)) return null;
             var created = found.Created.ToUnixTimeMilliseconds();
             if (created < at - 5000 || created > at + (long)CreateWindow.TotalMilliseconds) return null;
             return _host.Entries(id).Count == 0 ? found : null;
@@ -527,19 +535,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             };
 
         // The last check before JE writes its nonce into the playlist it has just made: the binding still names no playlist,
-        // this marker and this nonce, and the playlist as stored is the person's, private, carries the marker, carries no nonce,
-        // is empty and is the very playlist read right after the create (its creation time; Jellyfin stores it to the second).
-        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce, long created)
+        // this marker, this nonce and this creation second, and the playlist as stored is the person's, private, carries the
+        // marker, carries no nonce, is empty and is the very playlist read right after the create: exactly its stored creation
+        // second (equality at the precision the host guarantees, never a tolerance across seconds).
+        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce, long createdSecond)
             => stored =>
             {
                 if (_store.Generation != generation) return "changed";
                 if (!ReadyFlags.Playlist(_config())) return "off";
                 if (_store.Binding(_server, user) is not { OptedIn: true, State: ReadyState.Active, PlaylistId: null } now || now.Epoch != epoch
-                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal)) return "changed";
+                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal)
+                    || now.PlaylistCreated is not long recorded || ReadyPlaylistInfo.SecondOf(recorded) != createdSecond) return "changed";
                 if (_view.Viewer(user) == null) return "no_user";
                 if (stored == null) return "missing";
                 if (!stored.PrivateTo(user) || !stored.HasMarker(marker) || stored.Nonce != null) return "identity";
-                if (Math.Abs(stored.Created.ToUnixTimeMilliseconds() - created) > 1000 || _host.Entries(stored.Id).Count != 0) return "identity";
+                if (stored.CreatedSecond != createdSecond || _host.Entries(stored.Id).Count != 0) return "identity";
                 return null;
             };
 

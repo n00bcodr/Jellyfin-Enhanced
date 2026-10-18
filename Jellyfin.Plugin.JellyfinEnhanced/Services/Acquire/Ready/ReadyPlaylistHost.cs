@@ -192,7 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         // The stored playlist through the gate, then the cached instance healed from it, then the latest stored playlist through
-        // the WHOLE gate again (owner, privacy, shares, JE's nonce, creation time and the caller's own conditions): it and the
+        // the WHOLE gate again (owner, privacy, shares, JE's nonce, creation second and the caller's own conditions): it and the
         // healed instance Jellyfin is about to save must still be the playlist the gate passed, with the owner, privacy, shares
         // and name the heal gave the instance (a change in between would be undone by the save: nothing is written, the next
         // look sees it). Nothing awaited in between, and the caller calls Jellyfin right after. Jellyfin has no conditional
@@ -215,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         private static bool SameItem(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
-            => a.Id == b.Id && a.OwnerId == b.OwnerId && string.Equals(a.Nonce, b.Nonce, StringComparison.Ordinal) && a.Created == b.Created
+            => a.Id == b.Id && a.OwnerId == b.OwnerId && string.Equals(a.Nonce, b.Nonce, StringComparison.Ordinal) && a.CreatedSecond == b.CreatedSecond
                && string.Equals(a.FolderName, b.FolderName, StringComparison.OrdinalIgnoreCase);
 
         // What the heal copied that the person can change: an instance healed from an older read would undo it on save.

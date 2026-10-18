@@ -711,6 +711,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Released by someone else's request going out (no OK of its own): "on its way".
                 if (n.Kind == "merged") p["shared"] = "1";
                 if (kind == NotifyKind.Declined && !string.IsNullOrWhiteSpace(n.DeclineReason)) p["reason"] = n.DeclineReason!.Trim() is var r && r.Length > 300 ? r[..300] : r;
+                // May the requester be told (the decision every channel makes again right before its send): a title they hid
+                // (Hidden Content, on any copy of it) is handled with no notification; rules or copies that can't be read now
+                // leave the notice for the next round (dropped unsent once it is too old).
+                if (ActiveViewer(want.UserId) is not { } requester) continue;
+                string? none = null;
+                var verdict = _dispatcher.Check(want.UserId, requester).Decide(kind!, key.Title.ToString(), p, ref none);
+                if (verdict.Wait) continue;
+                if (verdict.Why != null)
+                {
+                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                    continue;
+                }
                 var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : "req-no|") + want.Id;
                 if (Notify(want.UserId, kind!, eventKey, key.Title.ToString(), null, p, now, prefs, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
                 else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
@@ -1436,11 +1448,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && _users.IsActive(requester))
                 {
                     var prefs = _store.Prefs(requester);
-                    if (prefs.Declined && r.Key != null)
+                    if (prefs.Declined && r.Key != null && ActiveViewer(requester) is { } viewer)
                     {
                         var p = TitleParams(r.Key.Title, null, r);
                         p["contact"] = Contact();
-                        Notify(requester, NotifyKind.Declined, "declined|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key.Title.ToString(), null, p, now, prefs);
+                        // Not for a title the requester hid; rules or copies that can't be read now: this change isn't noted as
+                        // seen, so the next read of Seerr decides it again.
+                        string? none = null;
+                        var verdict = _dispatcher.Check(requester, viewer).Decide(NotifyKind.Declined, r.Key.Title.ToString(), p, ref none);
+                        if (verdict.Wait) changed.Remove((r.Id, r.Status));
+                        else if (verdict.Why == null) Notify(requester, NotifyKind.Declined, "declined|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key.Title.ToString(), null, p, now, prefs);
                     }
                 }
                 if (r.Status == SeerrRequestStatus.Pending && fresh)
