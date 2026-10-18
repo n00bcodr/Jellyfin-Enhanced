@@ -52,8 +52,9 @@ own message ("Manual Import required") and what would fix it.
   media info, versions and Jellyfin's own badges appear (the *Missing* badge goes). The same item is reloaded in
   place; a missing episode or season, which Jellyfin replaces with a new item once its file is there, is swapped for
   that item in the same history entry (Back goes where it went before). This follows the page's own status updates
-  and Jellyfin's library change messages, whichever comes first. It waits while you type in a field, have a dialog,
-  menu or sheet open, or play something, and happens once the page is yours again; a page reloaded in place keeps
+  and Jellyfin's library change messages, whichever comes first. Frequent download updates share the status read
+  already running, then ask once more, so a slow connection still lets the page catch up. It waits while you type
+  in a field, have a dialog, menu or sheet open, or play something, and happens once the page is yours again; a page reloaded in place keeps
   your scroll position. Before the page moves to another item, Jellyfin is asked again whether you can still open it
   (your library access or parental limits may have changed while it waited). The page stays in the copy of the series
   it showed (a 4K copy, the series in another library, or another folder of the series that Jellyfin's automatic
