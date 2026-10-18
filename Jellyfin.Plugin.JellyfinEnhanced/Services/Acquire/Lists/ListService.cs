@@ -1065,7 +1065,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             _store.Save(doc); // Durable placement plan BEFORE Jellyfin can append anything.
                             try
                             {
-                                order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, items, anchor, desired, inserted)).ConfigureAwait(false);
+                                order = await ListContinuation.Await(() => PlaceRealItemsAsync(access, items, anchor, desired, inserted, doc, intent)).ConfigureAwait(false);
                             }
                             catch
                             {
@@ -1376,8 +1376,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // Puts a contiguous run of new real items into Jellyfin right after `anchor` (see ListPlaylistPlacement); the gate
         // allows the insert and every move that places it, each right before it, as the playlist's current owner.
-        private Task<List<string>> PlaceRealItemsAsync(ListAccess access, IReadOnlyList<Guid> items, string? anchor, List<string> desired, IReadOnlyList<string> inserted) =>
-            ListPlaylistPlacement.PlaceAsync(_host, _logger, access.List.Id, access.ListIdN, access.Owner!, items, anchor, desired, inserted, (kind, written) => _gate.Write(access, kind, written));
+        private Task<List<string>> PlaceRealItemsAsync(ListAccess access, IReadOnlyList<Guid> items, string? anchor, List<string> desired, IReadOnlyList<string> inserted, ListDoc doc, SwapIntent intent) =>
+            ListPlaylistPlacement.PlaceAsync(_host, _logger, access.List.Id, access.ListIdN, access.Owner!, items, anchor, desired, inserted, (kind, written) => _gate.Write(access, kind, written), (before, after) => ListPlaylistPlacement.RecordSave(doc, intent, before, after));
 
         // ── Placeholder edits ────────────────────────────────────────────────
 

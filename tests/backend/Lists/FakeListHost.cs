@@ -26,12 +26,14 @@ internal sealed class FakeListHost : IListHost
         /// null for a list the test made directly.
         /// </summary>
         public string? SavedName { get; set; }
+        public DateTime? StoredSaveStamp { get; set; } = DateTime.UtcNow;
         public ListInfo? SavedInfo { get; private set; }
         public IReadOnlyList<RawEntry> SavedRaw { get; private set; } = Array.Empty<RawEntry>();
 
         // Native managers save the entire item, including its cached name, on entry writes.
         public void Persist()
         {
+            StoredSaveStamp = StoredSaveStamp?.AddTicks(1);
             SavedInfo = Info;
             SavedName = Info.Name;
             SavedRaw = Raw.ToArray();
@@ -49,6 +51,9 @@ internal sealed class FakeListHost : IListHost
     public sealed record FakeEpisode(Guid Id, Guid SeriesId, int Season, int Episode, int? EpisodeEnd, bool Virtual, int? OwnTmdb);
 
     public bool SupportsPositionalInsert { get; set; } = true;
+    public DateTime? GetStoredSaveStamp(Guid listId) => Lists.TryGetValue(listId, out var list) ? list.StoredSaveStamp : null;
+
+    public Task NativeMoveAsync(Guid listId, Guid itemId, int index, Guid userId) => MoveCore(listId, itemId, index, userId);
     /// <summary>Items that are 4K copies (<see cref="IsFourK"/>); everything else is a standard copy.</summary>
     public HashSet<Guid> FourK { get; } = new();
     public Dictionary<string, Guid> MoviesByImdb { get; } = new();

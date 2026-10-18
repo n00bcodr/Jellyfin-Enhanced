@@ -473,6 +473,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("nativeOrder")]
         public List<string>? NativeOrder { get; set; }
 
+        /// <summary>
+        /// The list's durable DateLastSaved immediately after JE's last native write for this placement. Only the
+        /// unchanged repository stamp permits a recovery move; null (old or interrupted observation) fails closed.
+        /// </summary>
+        [JsonPropertyName("storedSaveStamp")]
+        public DateTime? StoredSaveStamp { get; set; }
+
         /// <summary>A person's later JE reorder supersedes this plan, including a reorder back to the same native order.</summary>
         [JsonPropertyName("supersededByReorder")]
         public bool SupersededByReorder { get; set; }

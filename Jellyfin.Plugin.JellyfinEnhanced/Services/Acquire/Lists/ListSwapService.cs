@@ -946,7 +946,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             List<string>? placed = null;
             try
             {
-                placed = await ListContinuation.Await(() => ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
+                placed = await ListContinuation.Await(() => ListPlaylistPlacement.PlaceAsync(_host, _logger, listId, context.ListIdN, context.Owner!, items, anchor, desired, inserted, (kind, written) => SwapWrite(context, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
             }
             catch (ListAccessLostException lost)
             {
@@ -1029,13 +1029,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
                         _host, _logger, context.List.Id, owner, anchor, inserted,
-                        (kind, written) => SwapWrite(context, kind, written))).ConfigureAwait(false);
+                        (kind, written) => SwapWrite(context, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
                 }
                 else
                 {
                     actual = await ListContinuation.Await(() => ListPlaylistPlacement.MoveAfterAnchorAsync(
                         _host, _logger, context.List.Id, owner, anchor, inserted,
-                        (kind, written) => _gate!.Write(actor!, kind, written))).ConfigureAwait(false);
+                        (kind, written) => _gate!.Write(actor!, kind, written), (beforeSave, afterSave) => ListPlaylistPlacement.RecordSave(context.Doc, intent, beforeSave, afterSave))).ConfigureAwait(false);
                 }
             }
 
@@ -1449,9 +1449,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _logger.Info($"[Lists] placement_abandoned list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} reason={reason} attempts={intent.Attempts}; retained landed membership and provenance.");
         }
 
-        // Additions/removals alone do not reorder surviving occurrences. A changed relative native order, or an
-        // explicit JE reorder recorded before its write, supersedes recovery. Old plans without evidence can settle
-        // in place, but must not guess whether a misplaced entry belongs to JE's failure or a later person's edit.
+        // A changed relative order, an explicit JE reorder, or a changed durable save stamp supersedes recovery.
+        // Snapshot equality cannot rule out a native reorder away and back. Old plans without a save stamp may
+        // settle in place, but must never move an entry on the strength of order equality alone.
         private string? PlacementOrderFailure(PassContext context, SwapIntent intent, IReadOnlyList<Guid> landed)
         {
             if (intent.SupersededByReorder) return "superseded_by_reorder";
@@ -1464,8 +1464,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             if (intent.Anchor != null && !actual.Contains(intent.Anchor)) return "anchor_removed";
+            var stamp = _host.GetStoredSaveStamp(context.List.Id);
+            if (intent.StoredSaveStamp.HasValue && stamp.HasValue && stamp != intent.StoredSaveStamp)
+                return "superseded_by_reorder";
+
             var tokens = landed.Select(id => ListOrder.RealToken(id, intent.OccurrenceCountsBefore.GetValueOrDefault(N(id)))).ToList();
-            return intent.NativeOrder == null && !ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, intent.Anchor)
+            return (intent.NativeOrder == null || !stamp.HasValue || !intent.StoredSaveStamp.HasValue)
+                && !ListPlaylistPlacement.RunFollowsAnchor(actual, tokens, intent.Anchor)
                 ? "placement_evidence_missing" : null;
         }
 

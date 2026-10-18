@@ -8,6 +8,9 @@ using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Playlists;
 using Moq;
+using Microsoft.EntityFrameworkCore;
+using Jellyfin.Database.Implementations;
+using Jellyfin.Database.Implementations.Entities;
 
 namespace JE.Tests;
 
@@ -15,6 +18,51 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ListsHostTests
 {
+    [Fact]
+    public void PlacementSaveStampComesFromTheDatabaseColumnRatherThanCachedOrSerializedItems()
+    {
+        var id = Guid.NewGuid(); var stamp = DateTime.UtcNow;
+        var cached = new Playlist { Id = id, DateLastSaved = stamp.AddDays(1) };
+        var stored = new Playlist { Id = id, DateLastSaved = stamp.AddSeconds(-1) };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(id)).Returns(cached);
+        library.Setup(l => l.RetrieveItem(id)).Returns(stored);
+        var database = new IntegrationCalendarTests.CalendarDatabase();
+        using (var db = database.CreateDbContext())
+        {
+            db.BaseItems.Add(new BaseItemEntity { Id = id, Type = typeof(Playlist).FullName!, DateLastSaved = stamp });
+            db.SaveChanges();
+        }
+        var host = new JellyfinListHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>(), database);
+        Assert.Equal(stamp, host.GetStoredSaveStamp(id));
+        using (var db = database.CreateDbContext())
+        {
+            db.BaseItems.Single().DateLastSaved = stamp.AddSeconds(1); db.SaveChanges();
+        }
+        Assert.Equal(stamp.AddSeconds(1), host.GetStoredSaveStamp(id));
+        Assert.Equal(stamp.AddDays(1), cached.DateLastSaved);
+        Assert.Null(host.GetStoredSaveStamp(Guid.NewGuid()));
+        using (var db = database.CreateDbContext())
+        {
+            db.BaseItems.Single().DateLastSaved = null; db.SaveChanges();
+        }
+        Assert.Null(host.GetStoredSaveStamp(id));
+        library.Verify(l => l.GetItemById(It.IsAny<Guid>()), Times.Never);
+    }
+
+    [Fact]
+    public void UnreadableSaveStampNeverFallsBackToAListInstance()
+    {
+        var id = Guid.NewGuid();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.RetrieveItem(id)).Returns(new Playlist { Id = id, DateLastSaved = DateTime.UtcNow });
+        var database = new Mock<IDbContextFactory<JellyfinDbContext>>();
+        database.Setup(d => d.CreateDbContext()).Throws(new IOException("database unavailable"));
+        var host = new JellyfinListHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<ICollectionManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>(), database.Object);
+        Assert.Null(host.GetStoredSaveStamp(id));
+        library.Verify(l => l.RetrieveItem(It.IsAny<Guid>()), Times.Never);
+    }
+
     // Round 8: the native save lands after RetrieveItem has materialised its snapshot, before RegisterItem.
     // Run the real host's failure handling AND the real service's retry against separate cache/repository names.
     [Theory]

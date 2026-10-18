@@ -15,6 +15,70 @@ public class ListsPlacementRecoveryTests
     private static readonly CancellationToken None = CancellationToken.None;
 
     [Theory]
+    [InlineData(false, "native-back")]
+    [InlineData(true, "native-back")]
+    [InlineData(false, "je-only")]
+    [InlineData(true, "je-only")]
+    [InlineData(false, "legacy-stamp")]
+    [InlineData(true, "legacy-stamp")]
+    public async Task RecoveryRequiresAnUnchangedStoredSaveStampEvenWhenNativeOrderMatches(bool positional, string scenario)
+    {
+        using var h = new ListsHarness(); h.Host.SupportsPositionalInsert = positional;
+        var owner = h.NewUser("owner"); var editor = h.NewUser("editor");
+        var list = h.Host.AddPlaylist(owner, false, new ListShare(editor.Id, true));
+        var access = h.AccessFor(list, owner);
+        var a = h.Host.AddItem(); var b = h.Host.AddItem(); var c = h.Host.AddItem();
+        list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true) }); list.Persist();
+        // A native insert lands, but completion dies before the desired C-after-A move can settle.
+        h.Host.AfterAdd = _ =>
+        {
+            list.Raw.Clear(); list.Raw.AddRange(new[] { new RawEntry(a, true), new RawEntry(b, true), new RawEntry(c, true) });
+            list.Persist(); throw new IOException("lost completion");
+        };
+        Assert.Equal(500, (await h.Service.ApplyAsync(h.AccessFor(list, editor), new[] { new ApplyEntry(0, c, null) }, new PositionDto { AfterToken = E(a) }, null, null, None)).StatusCode);
+        h.Host.AfterAdd = null;
+        var stamp = h.Host.GetStoredSaveStamp(list.Info.Id);
+        var pending = Assert.Single(h.Store.Load(access.ListIdN)!.Intents);
+        Assert.Equal(new[] { E(a), E(b), E(c) }, pending.NativeOrder);
+        if (scenario == "native-back")
+        {
+            // Use the native manager algorithm twice, with no JE reorder journal involved.
+            await h.Host.NativeMoveAsync(list.Info.Id, c, 1, owner.Id);
+            Assert.Equal(new[] { a, c, b }, h.Host.Resolved(list.Info.Id));
+            await h.Host.NativeMoveAsync(list.Info.Id, c, 2, owner.Id);
+            Assert.Equal(new[] { a, b, c }, h.Host.Resolved(list.Info.Id));
+            Assert.True(h.Host.GetStoredSaveStamp(list.Info.Id) > stamp);
+        }
+        if (scenario == "legacy-stamp")
+        {
+            var doc = h.Store.LoadForUpdate(access.ListIdN, ListKinds.Playlist);
+            var json = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(doc.Intents[0]))!.AsObject();
+            json.Remove("storedSaveStamp");
+            doc.Intents[0] = JsonSerializer.Deserialize<SwapIntent>(json.ToJsonString())!; h.Store.Save(doc);
+        }
+        h.Store.InvalidateAll(); h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None);
+        var final = h.Store.Load(access.ListIdN)!;
+        Assert.Empty(final.Intents);
+        if (scenario == "je-only")
+        {
+            Assert.Equal(new[] { a, c, b }, h.Host.Resolved(list.Info.Id));
+            Assert.Contains(h.Host.Calls, call => call.StartsWith("move:"));
+            Assert.Empty(final.AbandonedPlacements);
+        }
+        else
+        {
+            Assert.Equal(new[] { a, b, c }, h.Host.Resolved(list.Info.Id));
+            Assert.Empty(h.Host.Calls);
+            var reason = scenario == "native-back" ? "superseded_by_reorder" : "placement_evidence_missing";
+            Assert.Equal(reason, Assert.Single(final.AbandonedPlacements).AbandonedReason);
+            Assert.Contains("reason=" + reason, File.ReadAllText(h.Plugin.Core.Logger.CurrentLogFilePath));
+            var view = JsonSerializer.SerializeToElement(await h.Service.GetViewAsync(access, None));
+            Assert.Equal(reason, Assert.Single(view.GetProperty("placements").EnumerateArray()).GetProperty("reason").GetString());
+        }
+    }
+
+    [Theory]
     [InlineData(false, "displaced")]
     [InlineData(true, "displaced")]
     [InlineData(false, "native")]
@@ -266,7 +330,7 @@ public class ListsPlacementRecoveryTests
         doc.Items.Add(ph);
         doc.Order = swapIntent ? new() { E(a), P(waiting.Id), E(b), E(c), P(ph.Id) } : new() { E(a), E(b), E(c), P(ph.Id) };
         doc.Intents.Add(new SwapIntent { ByUserId = swapIntent ? null : editor.Id.ToString("N"), PhId = swapIntent ? waiting.Id : "",
-            ItemIds = new() { c.ToString("N") }, Anchor = E(a), Index = 1, CreatedAt = "test", NativeOrder = new() { E(a), E(b), E(c) }, OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
+            ItemIds = new() { c.ToString("N") }, Anchor = E(a), Index = 1, CreatedAt = "test", NativeOrder = new() { E(a), E(b), E(c) }, StoredSaveStamp = h.Host.GetStoredSaveStamp(list.Info.Id), OccurrenceCountsBefore = new() { [c.ToString("N")] = 0 } });
         doc.Source = new ListSource { Owned = new() { ["waiting"] = new SourceOwnership { PhId = waiting.Id } } };
         h.Store.Save(doc); await h.Consent(access);
         h.Host.FailMoves = 100;

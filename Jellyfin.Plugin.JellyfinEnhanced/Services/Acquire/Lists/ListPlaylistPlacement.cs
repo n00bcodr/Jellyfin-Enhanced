@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
@@ -31,6 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// The gate, asked right before each Jellyfin write (the insert, then every move that places it) for that write's
         /// grant; it throws when the write isn't allowed any more, which stops the placement there.
         /// </param>
+        /// <param name="saved">Observes the durable stamp immediately after each native write, including failed asynchronous saves.</param>
         /// <returns>The canonical order after the insert (desired, or Jellyfin's actual order reconciled).</returns>
         public static async Task<List<string>> PlaceAsync(
             IListHost host,
@@ -42,7 +44,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             string? anchor,
             List<string> desired,
             IReadOnlyList<string> inserted,
-            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write)
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
+            Action<DateTime?, DateTime?>? saved = null)
         {
             var ownerVisible = new Dictionary<Guid, bool>();
             bool VisibleToOwner(Guid itemId)
@@ -68,11 +71,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (host.SupportsPositionalInsert)
             {
                 var position = ListOrder.RawInsertPosition(host.GetRawEntries(listId), anchor);
-                await ListContinuation.Await(() => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position)).ConfigureAwait(false);
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, position), saved)).ConfigureAwait(false);
             }
             else
             {
-                await ListContinuation.Await(() => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null)).ConfigureAwait(false);
+                await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.AddToPlaylistAsync(write(ListWriteKind.Insert, items), items, null), saved)).ConfigureAwait(false);
                 var raw = host.GetRawEntries(listId);
                 var current = ListOrder.BuildRealTokens(raw);
                 var previous = anchor;
@@ -90,7 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                     foreach (var newIndex in moves)
                     {
-                        await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex)).ConfigureAwait(false);
+                        await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), saved)).ConfigureAwait(false);
                     }
 
                     if (moves.Count > 0)
@@ -116,7 +119,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(actualRaw, items[0], target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex)).ConfigureAwait(false);
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { items[0] }), items[0], newIndex), saved)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -154,6 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="anchor">Real token the entries go after (null = start); must still exist.</param>
         /// <param name="tokens">The entries' real tokens, in order.</param>
         /// <param name="write">The gate, asked right before each move for its grant (throws when it isn't allowed).</param>
+        /// <param name="saved">Observes the durable stamp after each native write.</param>
         /// <returns>Jellyfin's real tokens afterwards.</returns>
         public static async Task<List<string>> MoveAfterAnchorAsync(
             IListHost host,
@@ -162,7 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             User owner,
             string? anchor,
             IReadOnlyList<string> tokens,
-            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write)
+            Func<ListWriteKind, IReadOnlyList<Guid>, ListWrite> write,
+            Action<DateTime?, DateTime?>? saved = null)
         {
             var raw = host.GetRawEntries(listId);
             var current = ListOrder.BuildRealTokens(raw);
@@ -207,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var moves = ListOrder.FindMoves(raw, itemId, target, VisibleToOwner) ?? Array.Empty<int>();
                 foreach (var newIndex in moves)
                 {
-                    await ListContinuation.Await(() => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex)).ConfigureAwait(false);
+                    await ListContinuation.Await(() => ObserveSaveAsync(host, listId, () => host.MoveInPlaylistAsync(write(ListWriteKind.Place, new[] { itemId }), itemId, newIndex), saved)).ConfigureAwait(false);
                 }
 
                 if (moves.Count > 0)
@@ -220,6 +225,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             return current;
+        }
+
+        // Invoke before entering try: a synchronous gate refusal has made no native write, so it must not absorb
+        // a newer person's stamp. A crash before this observation leaves no new proof and recovery fails closed.
+        private static async Task ObserveSaveAsync(IListHost host, Guid listId, Func<Task> write, Action<DateTime?, DateTime?>? saved)
+        {
+            var before = host.GetStoredSaveStamp(listId);
+            var pending = write();
+            try
+            {
+                await ListContinuation.Await(() => pending).ConfigureAwait(false);
+            }
+            finally
+            {
+                saved?.Invoke(before, host.GetStoredSaveStamp(listId));
+            }
+        }
+
+        // Other pending placements can outlive this JE insert. Advance only proof that matched immediately before
+        // our write; an intervening native save, an unstamped legacy plan and a superseded plan never gain new proof.
+        internal static void RecordSave(ListDoc doc, SwapIntent active, DateTime? before, DateTime? after)
+        {
+            foreach (var intent in doc.Intents)
+            {
+                if (!intent.SupersededByReorder && (ReferenceEquals(intent, active) || (before.HasValue && intent.StoredSaveStamp == before)))
+                    intent.StoredSaveStamp = after;
+            }
         }
 
         // Whether `token` directly follows `anchor` in a real-token order (anchor null = first).

@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations;
+using Microsoft.EntityFrameworkCore;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using MediaBrowser.Controller.Collections;
@@ -99,6 +101,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="listId">Id.</param>
         /// <returns>The saved name, or null when the list is missing.</returns>
         string? GetStoredName(Guid listId);
+
+        /// <summary>Reads the saved list's DateLastSaved directly from the repository, never the shared item cache.</summary>
+        /// <param name="listId">List id.</param>
+        /// <returns>The durable UTC save stamp, or null when missing or unavailable.</returns>
+        DateTime? GetStoredSaveStamp(Guid listId);
 
         /// <summary>The raw <c>LinkedChildren</c> slots of a list, freshly read, in order.</summary>
         /// <param name="listId">Id.</param>
@@ -290,18 +297,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly IPlaylistManager _playlistManager;
         private readonly ICollectionManager _collectionManager;
         private readonly IFileSystem _fileSystem;
+        private readonly IDbContextFactory<JellyfinDbContext>? _database;
 
         /// <summary>Creates the host.</summary>
         /// <param name="libraryManager">Library manager.</param>
         /// <param name="playlistManager">Playlist manager.</param>
         /// <param name="collectionManager">Collection manager.</param>
         /// <param name="fileSystem">File system (Jellyfin's file-name rules for collection folders).</param>
-        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem)
+        /// <param name="database">Host database factory for direct durable save-stamp reads; missing proof fails closed.</param>
+        public JellyfinListHost(ILibraryManager libraryManager, IPlaylistManager playlistManager, ICollectionManager collectionManager, IFileSystem fileSystem, IDbContextFactory<JellyfinDbContext>? database = null)
         {
             _libraryManager = libraryManager;
             _playlistManager = playlistManager;
             _collectionManager = collectionManager;
             _fileSystem = fileSystem;
+            _database = database;
         }
 
         /// <inheritdoc />
@@ -316,6 +326,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <inheritdoc />
         public string? GetStoredName(Guid listId) => _libraryManager.RetrieveItem(listId) is { } item && item is Playlist or BoxSet ? item.Name ?? string.Empty : null;
+
+        /// <inheritdoc />
+        public DateTime? GetStoredSaveStamp(Guid listId)
+        {
+            if (_database == null) return null;
+            try
+            {
+                using var db = _database.CreateDbContext();
+                var stamp = db.BaseItems.AsNoTracking().Where(item => item.Id == listId).Select(item => item.DateLastSaved).FirstOrDefault();
+                return stamp is { } value && value != default ? DateTime.SpecifyKind(value, DateTimeKind.Utc) : null;
+            }
+            catch (Exception)
+            {
+                // Unreadable evidence never authorizes a recovery move or falls back to a cached/serialized item.
+                return null;
+            }
+        }
 
         /// <inheritdoc />
         public IReadOnlyList<RawEntry> GetRawEntries(Guid listId)

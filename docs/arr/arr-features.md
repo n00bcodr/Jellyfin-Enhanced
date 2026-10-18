@@ -1367,8 +1367,10 @@ follows Jellyfin's own rights and the household's request rules:
   A native rename therefore stands and edits can continue. Retrying a create finishes naming only while the saved
   name still carries that create's marker. Interrupted playlist placement verifies its saved position on both Jellyfin
   versions and retries without inserting another copy. A later reorder through JE or Jellyfin supersedes the old
-  placement: JE keeps the new order and records `superseded_by_reorder`. Missing anchors (`anchor_removed`) and older
-  misplaced intents without ordering evidence (`placement_evidence_missing`) also retire with a receipt. If its editor loses
+  placement: JE keeps the new order and records `superseded_by_reorder`, including a native move away and back.
+  A recovery move requires the list's stored save stamp to match JE's last write; any later save conservatively
+  retires the plan. Missing anchors (`anchor_removed`) and older misplaced intents without a saved stamp
+  (`placement_evidence_missing`) also retire with a receipt. If its editor loses
   access, is deleted or disabled, JE abandons that placement and keeps the landed entries where they are, with their
   provenance. Three recovery attempts also bound a repeatedly failing move. Other entries can still be added and
   swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. JE validates the

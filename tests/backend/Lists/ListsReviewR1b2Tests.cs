@@ -28,12 +28,18 @@ public class ListsReviewR1b2Tests
 
         public List<RawEntry>? Raw { get; set; }
 
-        public void Capture(ListsHarness h, FakeListHost.FakeList list, string listIdN)
+        public DateTime? StoredSaveStamp { get; set; }
+
+        public void Capture(ListsHarness h, FakeListHost.FakeList list, string listIdN, bool recordSaveEvidence = false)
         {
             if (Doc == null)
             {
                 Doc = h.Store.LoadForUpdate(listIdN, list.Info.Kind);
                 Raw = list.Raw.ToList();
+                StoredSaveStamp = h.Host.GetStoredSaveStamp(list.Info.Id);
+                // Model either crash boundary explicitly: before observation, or after recording the native save.
+                if (recordSaveEvidence)
+                    foreach (var intent in Doc.Intents) intent.StoredSaveStamp = StoredSaveStamp;
             }
         }
 
@@ -42,6 +48,7 @@ public class ListsReviewR1b2Tests
             Assert.NotNull(Doc);
             list.Raw.Clear();
             list.Raw.AddRange(Raw!);
+            list.StoredSaveStamp = StoredSaveStamp;
             using (await h.Store.LockAsync(listIdN))
             {
                 h.Store.Save(Doc!);
@@ -61,9 +68,12 @@ public class ListsReviewR1b2Tests
         }
     }
 
-    // F8: 10.11 appends, then moves; a crash in between left the movie at the end. Recovery finishes the move.
-    [Fact]
-    public async Task AnInterruptedTenElevenSwapIsMovedNextToItsAnchorOnRecovery()
+    // F8: 10.11 appends, then moves. Recorded unchanged proof permits recovery; a crash before observing the
+    // native save has no proof and must visibly retire without a move.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnInterruptedTenElevenSwapIsMovedNextToItsAnchorOnRecovery(bool recordSaveEvidence)
     {
         using var h = new ListsHarness();
         h.Host.SupportsPositionalInsert = false;
@@ -78,7 +88,7 @@ public class ListsReviewR1b2Tests
 
         var arrived = h.Host.AddItem(tmdb: 801);
         var crash = new CrashPoint();
-        h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN);
+        h.Host.AfterAdd = _ => crash.Capture(h, playlist, access.ListIdN, recordSaveEvidence);
         await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
         h.Host.AfterAdd = null;
         await crash.RestoreAsync(h, playlist, access.ListIdN);
@@ -88,12 +98,23 @@ public class ListsReviewR1b2Tests
         h.Host.Calls.Clear();
         await h.Swap.RunListPassAsync(access.ListIdN, Array.Empty<string>(), MetadataMode.None, None); // intents only
 
-        Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
-        Assert.Equal(new[] { $"move:{FakeListHost.Short(arrived)}->1" }, h.Host.Calls);
         var doc = h.Store.Load(access.ListIdN)!;
+        if (recordSaveEvidence)
+        {
+            Assert.Equal(new[] { a, arrived, b }, h.Host.Resolved(playlist.Info.Id));
+            Assert.Equal(new[] { $"move:{FakeListHost.Short(arrived)}->1" }, h.Host.Calls);
+            Assert.Empty(doc.AbandonedPlacements);
+            Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
+        }
+        else
+        {
+            Assert.Equal(new[] { a, b, arrived }, h.Host.Resolved(playlist.Info.Id));
+            Assert.Empty(h.Host.Calls);
+            Assert.Equal("placement_evidence_missing", Assert.Single(doc.AbandonedPlacements).AbandonedReason);
+            Assert.Equal(new[] { E(a), E(b), E(arrived) }, doc.Order);
+        }
         Assert.Empty(doc.Intents);
         Assert.Empty(doc.Items);
-        Assert.Equal(new[] { E(a), E(arrived), E(b) }, doc.Order);
     }
 
     // F8: recovery puts the landed episode at the planned spot — after the placeholders before it, before its own

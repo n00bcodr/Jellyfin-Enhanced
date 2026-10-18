@@ -180,3 +180,5 @@ Uncovered cases remain documented for follow-up. Human visual and translation qu
 Round 13 list recovery (`ListsPlacementRecoveryTests`): both host seams verify failed-completion displacement,
 already-settled placement, later JE/native reorder with durable abandonment and audit receipts, and the existing
 revoked/deleted/disabled-actor matrix. Staged refusal and original-actor write-gate coverage remain required.
+
+Interrupted list placement recovery additionally covers native reorder-away-and-back, unchanged stored-save-stamp controls and unstamped legacy intents on both host capability settings and both targets. The production host test keeps repository save stamps separate from stale cached items.
