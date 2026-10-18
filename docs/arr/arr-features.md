@@ -1354,11 +1354,16 @@ either is off, the automatic requests above behave exactly as described there. W
   unknown free space, and the budgets. Whatever changed while the request was being prepared counts, including while
   the send was being counted against its budget. The last check is made inside the connection itself, as each
   automatic write is handed over to be sent, so nothing can wait between its answer and the send. It first reads
-  everything it needs from storage (budgets, the instance's breaker, eligibility, the person's opt-out, free space);
-  those reads can wait, for example while a backup is being restored. Only then does it read the settings and decide,
-  and if anything those reads depend on changed while they were made (a setting saved, a breaker opened, the person's
-  settings saved, a restore), it reads them again, or the request waits a moment and is checked again. A kill switch,
-  budget or opt-out changed while the check was reading therefore still stops the send. It also counts the
+  everything it needs from storage (budgets, the instance's breaker, eligibility grants, whether the person is a
+  Jellyfin administrator, the person's opt-out, whether Seerr's key is stored); those reads can wait, for example while
+  a backup is being restored. Only then does it read the settings, and whatever is in memory (free space and whether it
+  is known, both from the same reading of the instance's disk facts; the person's household role), and decide. Every
+  change to something it read from storage is marked as under way before it can be seen and as done after, even when
+  the change fails: a breaker opening, a budget counted, a grant, a person's settings saved, a backup restored, an
+  administrator removing someone's administrator rights or disabling them, a credential saved. If any such change was
+  under way or happened while the check was reading, it reads again, or the request waits a moment and is checked
+  again. A kill switch, budget, opt-out or administrator change made while the check was reading therefore still stops
+  the send, as does low disk space reported meanwhile. It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
   0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
   budget waits until every full window has room again (when the hourly and the daily window are both full, until the

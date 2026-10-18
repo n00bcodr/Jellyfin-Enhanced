@@ -38,7 +38,7 @@ public class IntegrationAutomationTests
             return preference;
         }
 
-        // Like the settings file's version: moves on with every change.
+        // Like the settings file's version: odd while a change is made, moved on by each change.
         public long Version(Guid user) => Map.Version;
 
         internal sealed class Preferences : Dictionary<(Guid, string), bool?>
@@ -52,15 +52,18 @@ public class IntegrationAutomationTests
                 get => base[key];
                 set
                 {
-                    base[key] = value;
+                    // Like the settings file's version: odd while the change is made, even once it is in place.
                     Interlocked.Increment(ref _version);
+                    try { base[key] = value; }
+                    finally { Interlocked.Increment(ref _version); }
                 }
             }
 
             public new bool Remove((Guid, string) key)
             {
                 Interlocked.Increment(ref _version);
-                return base.Remove(key);
+                try { return base.Remove(key); }
+                finally { Interlocked.Increment(ref _version); }
             }
         }
     }

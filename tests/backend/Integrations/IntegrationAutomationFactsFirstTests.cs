@@ -17,8 +17,13 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class IntegrationAutomationFactsFirstTests
 {
-    /// <summary>The storage reads the transport check makes for a Direct add, each held in turn.</summary>
-    public static readonly string[] Reads = { "budget", "breaker", "approval", "consent", "low_disk", "disk_unknown" };
+    /// <summary>
+    /// The storage reads the transport check makes for a Direct add, each held in turn. Since round 8 both disk verdicts are
+    /// read in the decision from memory: the low_disk and disk_unknown cells hold the disk facts' only step left in the
+    /// gather (starting the reads of any not in memory yet). "approval" holds the Jellyfin administrator read, "grant" the
+    /// eligibility grant's.
+    /// </summary>
+    public static readonly string[] Reads = { "budget", "breaker", "approval", "consent", "low_disk", "disk_unknown", "grant" };
 
     /// <summary>The controls flipped while a read is held, and the hold each one gives.</summary>
     public static readonly Dictionary<string, string?> Flips = new(StringComparer.Ordinal)
@@ -66,10 +71,10 @@ public class IntegrationAutomationFactsFirstTests
         {
             case "budget": e.Budgets.RowsRead = category => { if (category == BudgetCategories.HouseholdAdd) barrier.Hold(); }; break;
             case "breaker": e.Store.BreakerRead = _ => barrier.Hold(); break;
-            case "approval": e.R.Policy.Reading = what => { if (what == "evaluate") barrier.Hold(); }; break;
+            case "approval": e.R.Policy.Reading = what => { if (what == "is_admin") barrier.Hold(); }; break;
             case "consent": e.Consent.Reading = barrier.Hold; break;
-            case "low_disk": e.R.Policy.Reading = what => { if (what == "title_pause") barrier.Hold(); }; break;
-            case "disk_unknown": e.R.Policy.Reading = what => { if (what == "disk_known") barrier.Hold(); }; break;
+            case "low_disk" or "disk_unknown": e.R.Policy.Reading = what => { if (what == "warm_disk") barrier.Hold(); }; break;
+            case "grant": e.Store.GrantRead = _ => barrier.Hold(); break;
             default: throw new ArgumentOutOfRangeException(nameof(read), read, null);
         }
     }

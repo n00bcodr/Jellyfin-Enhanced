@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Extensions;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
@@ -309,7 +310,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (accountChanged || remoteChanged)
                     {
-                        await _userManager.UpdatePolicyAsync(user.Id, dto.Policy).ConfigureAwait(false);
+                        // Inside the person's Jellyfin permission version's bracket (the automatic-write check reads it).
+                        await JellyfinUserVersions.Mutate(user.Id, () => _userManager.UpdatePolicyAsync(user.Id, dto.Policy)).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
@@ -604,7 +606,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             if (accountSet.Contains(idStr)) dto.Policy.IsDisabled = false;
                             if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
 
-                            await _userManager.UpdatePolicyAsync(userId, dto.Policy).ConfigureAwait(false);
+                            await JellyfinUserVersions.Mutate(userId, () => _userManager.UpdatePolicyAsync(userId, dto.Policy)).ConfigureAwait(false);
                             _logger.Info($"[Maintenance] Restored user '{user.Username}'");
                         }
                     }

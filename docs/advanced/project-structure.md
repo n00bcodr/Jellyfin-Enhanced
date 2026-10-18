@@ -422,6 +422,11 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   and Seerr backends, the old recipes' direct Seerr POST: every switch, kill, mode, consent, eligibility, breaker, disk
   and budget gate; facts first, then one decision: every storage read is made before the live settings are read and
   judged, and facts that may have gone stale meanwhile are read again, checked by version stamps),
+  `AutomationFacts.cs` the one registry of every fact that check reads (read in its decision from memory, or gathered
+  with a version every change moves before it can be seen), the Jellyfin user permission versions and the filter that
+  brackets Jellyfin's own user actions (a test walks the check against the registry, another scans every writer for its
+  bracket; `Helpers/FactVersion.cs` is that version, a seqlock: every change runs inside its bracket, odd before it can
+  be seen and even after, also when it throws),
   `AutomationTransportHandler.cs` the guarantee behind it: the HTTP handler on the arr, Seerr
   and default clients that checks every write made in an automation context (an `AsyncLocal` the outbox and the old
   recipes set) synchronously as it is handed on, the job's budget reservations among the gate's facts and judged with

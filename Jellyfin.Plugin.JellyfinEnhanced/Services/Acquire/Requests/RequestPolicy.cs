@@ -115,6 +115,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// knowing (guard off, Seerr handling, no usable instance: the send refuses then). Automatic sends wait while false.
         /// </summary>
         bool DiskKnown(MutationInput input) => true;
+        /// <summary>
+        /// The low-disk guard's two answers for a request like <paramref name="input"/> on <paramref name="config"/>: the
+        /// facts it would refuse with (<see cref="TitlePause"/>) and whether a verdict can be reached (<see cref="DiskKnown"/>),
+        /// both from ONE read of each published snapshot they use. Memory only: no lock, no I/O, starts nothing; the
+        /// automatic-write check reads it in its final decision (<see cref="WarmDisk"/> starts the missing reads before).
+        /// </summary>
+        (RequestDiskFacts? Pause, bool Known) Disk(MutationInput input, PluginConfiguration config);
+        /// <summary>Starts the reads <see cref="Disk"/> needs that aren't in memory yet (never waits).</summary>
+        void WarmDisk(MutationInput input)
+        {
+        }
+        /// <summary>
+        /// The person's household role on <paramref name="config"/> given whether they are a Jellyfin administrator
+        /// (<paramref name="admin"/>, read by <see cref="IsAdmin"/>): memory only, read in the automatic-write check's decision.
+        /// </summary>
+        string RoleOf(Guid userId, bool admin, PluginConfiguration config);
+        /// <summary>
+        /// The version of the person's Jellyfin permissions (a FactVersion sample): odd while a change to them may be
+        /// landing, moved by each change. <see cref="IsAdmin"/> reads Jellyfin's database, so the automatic-write check
+        /// gathers it before its decision and compares this. Memory only.
+        /// </summary>
+        long PermissionVersion(Guid userId);
     }
     /// <summary>Central role, parental, destination, edition and disk policy.</summary>
     public sealed class RequestPolicy : IRequestPolicy
@@ -315,9 +337,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (direct) _ = _store.WarmSystem(instance);
                 return null;
             }
+            return LowDisk(config, instance, input, key, system, !direct || newAdd ? null : _store.PeekLibrary(instance.Id), newAdd);
+        }
+        // The verdict on snapshots already read: memory only, starts nothing.
+        private RequestDiskFacts? LowDisk(PluginConfiguration config, ArrConnection instance, MutationInput input, TitleKey key, ArrSystemSnapshot? system, ArrLibrarySnapshot? library, bool newAdd)
+        {
+            if (config.ArrLowDiskPercent <= 0 || system == null) return null;
             string? folder;
-            if (!direct || newAdd) folder = input.RootFolder ?? instance.Defaults?.RootFolderPath;
-            else if (_store.PeekLibrary(instance.Id) is not { } library) return null;
+            if (config.ArrRequestBackend != "je" || newAdd) folder = input.RootFolder ?? instance.Defaults?.RootFolderPath;
+            else if (library == null) return null;
             else folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
             if (string.IsNullOrWhiteSpace(folder)) return null;
             var disk = system.DiskSpace.Where(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path)).OrderByDescending(d => d.Path!.Length).FirstOrDefault();
@@ -388,19 +416,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <inheritdoc />
         public bool DiskKnown(MutationInput input)
         {
+            WarmDisk(input);
+            return Disk(input, Configuration).Known;
+        }
+        /// <inheritdoc />
+        public void WarmDisk(MutationInput input)
+        {
             var config = Configuration;
-            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || TitleKey.Parse(input.Key) is not { } key) return true;
-            var (instance, _, _) = Target(input, key);
-            if (instance is not { Usable: true }) return true;
+            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || TitleKey.Parse(input.Key) is not { } key || Instance(input, key) is not { Usable: true } instance) return;
+            if (_store.PeekSystem(instance.Id) == null) _ = Quietly(_store.WarmSystem(instance) ?? Task.CompletedTask);
+            if (_store.PeekLibrary(instance.Id) == null) _ = Quietly(_store.GetLibraryAsync(instance, CancellationToken.None));
+        }
+        /// <inheritdoc />
+        public (RequestDiskFacts? Pause, bool Known) Disk(MutationInput input, PluginConfiguration config)
+        {
+            if (TitleKey.Parse(input.Key) is not { } key || Instance(input, key) is not { Usable: true } instance) return (null, true);
+            // One read of each published snapshot (a refresh replaces it whole): both answers come from the same ones.
             var system = _store.PeekSystem(instance.Id);
             var library = _store.PeekLibrary(instance.Id);
-            if (system == null) _ = Quietly(_store.WarmSystem(instance) ?? Task.CompletedTask);
-            if (library == null) _ = Quietly(_store.GetLibraryAsync(instance, CancellationToken.None));
-            if (system == null || library == null) return false;
+            var pause = LowDisk(config, instance, input, key, system, library, newAdd: false);
+            if (config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je") return (pause, true);
+            if (system == null || library == null) return (pause, false);
             var folder = HeldFolder(library, key.Title) ?? input.RootFolder ?? instance.Defaults?.RootFolderPath;
-            if (string.IsNullOrWhiteSpace(folder)) return true;
-            return system.DiskSpace.Any(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path) && d.TotalSpace is > 0 && d.FreeSpace != null);
+            return (pause, string.IsNullOrWhiteSpace(folder) || system.DiskSpace.Any(d => d.Path != null && BridgePaths.IsUnder(folder, d.Path) && d.TotalSpace is > 0 && d.FreeSpace != null));
         }
+        /// <inheritdoc />
+        public string RoleOf(Guid userId, bool admin, PluginConfiguration config)
+            => admin ? "Admin" : NormalizeRole(Settings(config, userId).Role ?? config.ArrRequestDefaultRole);
+        /// <inheritdoc />
+        public long PermissionVersion(Guid userId) => Automation.JellyfinUserVersions.Sample(userId);
         /// <inheritdoc />
         public RequestDiskFacts? AddPause(bool movie)
         {
@@ -422,10 +466,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private (ArrConnection? Instance, string Id, string Generation) Target(MutationInput input, TitleKey key)
         {
-            var instance = input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
-                _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
+            var instance = Instance(input, key);
             return (instance, instance?.Id ?? string.Empty, instance == null ? string.Empty : _clients.ConnectionGeneration(instance.Id) ?? string.Empty);
         }
+        // The instance a request like this goes to (the configuration's registry: memory only).
+        private ArrConnection? Instance(MutationInput input, TitleKey key)
+            => input.InstanceId != null ? _store.Registry.Get(input.InstanceId) :
+                _store.Registry.DefaultFor(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr, input.Variant == "4k" ? ArrInstanceRole.FourK : ArrInstanceRole.Standard);
         /// <inheritdoc />
         public bool? Has4kTarget(bool movie)
         {

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
@@ -64,6 +65,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
 
         /// <summary>The store name used for an arr instance's key.</summary>
         public static string ArrKeyName(string instanceId) => ArrKeyPrefix + instanceId;
+
+        /// <summary>
+        /// The version of what the store holds (a <see cref="FactVersion"/>): every change of its values, on disk and in
+        /// memory, is made inside its bracket (the automatic-write check reads whether Seerr's API key is stored).
+        /// </summary>
+        public FactVersion Version { get; } = new();
 
         /// <summary>Full path of the sidecar file.</summary>
         public string FilePath => _path;
@@ -169,13 +176,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
                 }
                 try
                 {
-                    Write(copy);
+                    // On disk and in memory inside the version's bracket.
+                    Version.Mutate(() =>
+                    {
+                        Write(copy);
+                        _values = copy;
+                    });
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     throw new SecretsStoreUnavailableException($"{FileName} could not be written ({ex.GetType().Name}: {ex.Message}).", ex);
                 }
-                _values = copy;
             }
         }
 
@@ -251,13 +262,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets
         private Dictionary<string, string> Values()
         {
             if (_values != null && (_unavailableReason == null || _now() - _loadFailedAt < ReloadInterval)) return _values;
-            _values = Load();
+            // A (re)load changes what the store answers: inside the version's bracket.
+            var values = Version.Mutate(() => _values = Load());
             if (_unavailableReason == null && _warnedUnavailable)
             {
                 _warnedUnavailable = false;
                 _warn($"Secrets store {FileName} is readable again.");
             }
-            return _values;
+            return values;
         }
 
         // Caller holds _lock. Never moves, renames or rewrites an unreadable file: it stays exactly

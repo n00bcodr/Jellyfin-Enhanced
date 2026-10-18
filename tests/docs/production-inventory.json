@@ -191,6 +191,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/FactVersion.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/JellyseerrPermissionHelper.cs",
       "category": "Helpers"
     },
@@ -452,6 +456,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationDecision.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationFacts.cs",
       "category": "Services"
     },
     {
@@ -9817,7 +9825,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 545,
+    "files": 547,
     "routes": 255,
     "configuration_properties": 595,
     "storage_references": 84,

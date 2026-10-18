@@ -18,8 +18,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
     {
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<SecretsStore?> _secrets;
-        private readonly object _lock = new();
-        private (string Sonarr, string Radarr, IReadOnlyList<ArrConnection> All)? _cache;
+        // The parsed lists of the configuration last seen, replaced whole (read without a lock).
+        private sealed record Parsed(string Sonarr, string Radarr, IReadOnlyList<ArrConnection> All);
+        private volatile Parsed? _cache;
 
         /// <summary>Registry over the live plugin configuration.</summary>
         public ArrInstanceRegistry()
@@ -44,16 +45,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             if (config == null) return Array.Empty<ArrConnection>();
             var sonarr = config.SonarrInstances ?? string.Empty;
             var radarr = config.RadarrInstances ?? string.Empty;
-            lock (_lock)
-            {
-                if (_cache is { } c && ReferenceEquals(c.Sonarr, sonarr) && ReferenceEquals(c.Radarr, radarr)) return c.All;
-            }
+            if (_cache is { } c && ReferenceEquals(c.Sonarr, sonarr) && ReferenceEquals(c.Radarr, radarr)) return c.All;
 
             var all = Rows(sonarr, ArrKind.Sonarr).Concat(Rows(radarr, ArrKind.Radarr)).ToList();
-            lock (_lock)
-            {
-                _cache = (sonarr, radarr, all);
-            }
+            _cache = new Parsed(sonarr, radarr, all);
             return all;
         }
 

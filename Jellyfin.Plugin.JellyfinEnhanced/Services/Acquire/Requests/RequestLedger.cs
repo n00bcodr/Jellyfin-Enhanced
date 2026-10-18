@@ -951,9 +951,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Purges a deleted person's intent and all personal outbox contexts in one transaction.</summary>
         public void PurgeUser(Guid user)
         {
-            _db.Write((c, t) => PurgeUser(c, t, user));
-            // Their eligibility grant went with them.
-            _db.AutomationChanged();
+            // Their eligibility grant goes with them: inside the automation version's bracket.
+            _db.WriteAutomation((c, t) => PurgeUser(c, t, user));
         }
         internal static int PurgeUser(SqliteConnection c, SqliteTransaction t, Guid user)
         {
@@ -996,7 +995,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             return count;
         }
         /// <summary>Retention and stale marking; old completed intent is removed after a year.</summary>
-        public void Retain(DateTimeOffset now, int staleDays) => _db.Write((c, t) =>
+        public void Retain(DateTimeOffset now, int staleDays) => _db.WriteAutomation((c, t) =>
         {
             Exec(c, t, "DELETE FROM request_events WHERE created_at<$at", ("$at", Ms(now.AddHours(-48))));
             Exec(c, t, "DELETE FROM request_notices WHERE created_at<$at", ("$at", Ms(now.AddDays(-90))));

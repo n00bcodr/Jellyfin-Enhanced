@@ -42,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <summary>Tests: runs as a breaker read returns (with its target): a change made then is one the read missed.</summary>
         internal Action<string>? BreakerRead { get; set; }
 
+        /// <summary>Tests: runs as a grant read returns (with its person).</summary>
+        internal Action<Guid>? GrantRead { get; set; }
+
         /// <summary>The database.</summary>
         public AcquireDatabase Database => _db;
 
@@ -94,9 +97,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="user">The person.</param>
         public bool HasGrant(Guid user)
         {
+            var granted = false;
             try
             {
-                return _db.Available && _db.Read(c =>
+                granted = _db.Available && _db.Read(c =>
                 {
                     using var cmd = RequestLedger.Cmd(c, null, "SELECT 1 FROM automation_grants WHERE user_id=$u", ("$u", RequestLedger.Id(user)));
                     return cmd.ExecuteScalar() != null;
@@ -104,8 +108,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
-                return false;
+                // Not granted.
             }
+
+            GrantRead?.Invoke(user);
+            return granted;
         }
 
         /// <summary>Every recorded grant.</summary>
@@ -128,7 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="now">When.</param>
         internal void Commit(IEnumerable<(Guid User, string Source, string? Detail)> grants, IReadOnlyDictionary<string, string> meta, DateTimeOffset now)
         {
-            _db.Write((c, t) =>
+            _db.WriteAutomation((c, t) =>
             {
                 foreach (var (user, source, detail) in grants)
                     RequestLedger.Exec(c, t, "INSERT OR IGNORE INTO automation_grants(user_id,source,detail,granted_at) VALUES($u,$s,$d,$at)", ("$u", RequestLedger.Id(user)), ("$s", source), ("$d", detail), ("$at", RequestLedger.Ms(now)));
@@ -136,7 +143,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     RequestLedger.Exec(c, t, "INSERT INTO meta(key,value) VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=$v", ("$k", key), ("$v", value));
                 return 0;
             });
-            _db.AutomationChanged();
         }
 
         /// <summary>A small state value, or null (also when unreadable).</summary>
@@ -214,14 +220,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return;
-                _db.Write((c, t) =>
+                _db.WriteAutomation((c, t) =>
                 {
                     RequestLedger.Exec(c, t, "INSERT INTO automation_breakers(target,failures,last_reason,updated_at) VALUES($t,1,$r,$at) ON CONFLICT(target) DO UPDATE SET failures=failures+1,last_reason=$r,updated_at=$at",
                         ("$t", target), ("$r", reason), ("$at", RequestLedger.Ms(now)));
                     return RequestLedger.Exec(c, t, "UPDATE automation_breakers SET opened_until=$until WHERE target=$t AND failures>=$n",
                         ("$t", target), ("$n", BreakerThreshold), ("$until", RequestLedger.Ms(now + BreakerCooldown)));
                 });
-                _db.AutomationChanged();
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -237,8 +242,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return;
-                if (_db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,updated_at=$at WHERE target=$t AND (failures>0 OR opened_until IS NOT NULL)",
-                    ("$t", target), ("$at", RequestLedger.Ms(now)))) > 0) _db.AutomationChanged();
+                _db.WriteAutomation((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,updated_at=$at WHERE target=$t AND (failures>0 OR opened_until IS NOT NULL)",
+                    ("$t", target), ("$at", RequestLedger.Ms(now))));
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -254,7 +259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="now">Now.</param>
         public bool Reset(string target, DateTimeOffset now)
         {
-            var reset = _db.Write((c, t) =>
+            var reset = _db.WriteAutomation((c, t) =>
             {
                 var reset = RequestLedger.Exec(c, t, "UPDATE automation_breakers SET failures=0,opened_until=NULL,last_reason='reset',updated_at=$at WHERE target=$t", ("$t", target), ("$at", RequestLedger.Ms(now)));
                 RequestLedger.Exec(c, t, "UPDATE jobs SET next_attempt=$at WHERE state='retry' AND reason=$r AND next_attempt>$at AND " +
@@ -262,7 +267,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     ("$t", target), ("$r", AutomationHolds.BreakerOpen), ("$at", RequestLedger.Ms(now)));
                 return reset;
             });
-            _db.AutomationChanged();
             return reset == 1;
         }
     }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Data.Sqlite;
 
@@ -41,7 +42,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly SemaphoreSlim _writer = new(1, 1);
         private readonly ReaderWriterLockSlim _swap = new(LockRecursionPolicy.SupportsRecursion);
         private long _generation;
-        private long _automationRevision;
         private readonly Logger? _logger;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -298,14 +298,16 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         public long Generation => Interlocked.Read(ref _generation);
 
         /// <summary>
-        /// Moves on after each change to what the automatic-write gate reads from this database (budget admissions and
-        /// their settling, breakers, eligibility grants). The transport check compares it before and after it gathers
-        /// those facts: a fact read while another change landed is read again. Memory only, never waits.
+        /// The version of what the automatic-write check reads from this database: budget admissions and their settling
+        /// (<c>automation_budget</c>), breakers (<c>automation_breakers</c>) and eligibility grants
+        /// (<c>automation_grants</c>). Every write of those tables is made through <see cref="WriteAutomation{T}"/> (a source
+        /// scan checks it), and a restore replaces them inside it too: the version is odd before the change commits and
+        /// even after. The check samples it before it gathers those facts and again when it decides.
         /// </summary>
-        public long AutomationRevision => Interlocked.Read(ref _automationRevision);
+        public FactVersion Automation { get; } = new();
 
-        /// <summary>Marks a change to the automation state (<see cref="AutomationRevision"/>), after it is committed.</summary>
-        internal void AutomationChanged() => Interlocked.Increment(ref _automationRevision);
+        /// <summary>Tests: runs on the writer's thread as a write has committed (other readers see it), before it returns.</summary>
+        internal Action? Committed { get; set; }
 
         /// <summary>Runs a read (any number at once). Throws <see cref="InvalidOperationException"/> when unavailable.</summary>
         public T Read<T>(Func<SqliteConnection, T> read)
@@ -336,6 +338,17 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
         /// when a restore replaced it since.
         /// </summary>
         public (bool Done, T Result) WriteIf<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise)
+            => WriteCore(generation, write, otherwise, null);
+
+        /// <summary>
+        /// Runs a write like <see cref="Write{T}"/> that changes what the automatic-write check reads (budget admissions,
+        /// breakers, grants): inside <see cref="Automation"/>'s bracket, from the moment this write is the writer until it
+        /// has committed or failed. The only way to write those tables.
+        /// </summary>
+        public T WriteAutomation<T>(Func<SqliteConnection, SqliteTransaction, T> write)
+            => WriteCore(null, write, default!, Automation).Result;
+
+        private (bool Done, T Result) WriteCore<T>(long? generation, Func<SqliteConnection, SqliteTransaction, T> write, T otherwise, FactVersion? version)
         {
             ThrowIfUnavailable();
             _writer.Wait();
@@ -345,11 +358,7 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                 try
                 {
                     if (generation.HasValue && generation.Value != Generation) return (false, otherwise);
-                    using var connection = Open();
-                    using var transaction = connection.BeginTransaction(deferred: false);
-                    var result = write(connection, transaction);
-                    transaction.Commit();
-                    return (true, result);
+                    return version == null ? Commit(write) : version.Mutate(() => Commit(write));
                 }
                 finally
                 {
@@ -360,6 +369,16 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
             {
                 _writer.Release();
             }
+        }
+
+        private (bool Done, T Result) Commit<T>(Func<SqliteConnection, SqliteTransaction, T> write)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var result = write(connection, transaction);
+            transaction.Commit();
+            Committed?.Invoke();
+            return (true, result);
         }
 
         /// <summary>A consistent copy of the database (SQLite's online backup), for JE's backup zip; null when there is none.</summary>
@@ -412,9 +431,13 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                             // A file that isn't a database fails here, before the live one is touched.
                             UserVersion(source);
                             using var live = Open();
-                            source.BackupDatabase(live);
+                            // Every automation table is replaced: inside its version's bracket, like any other write of them.
+                            Automation.Mutate(() =>
+                            {
+                                source.BackupDatabase(live);
+                                Interlocked.Increment(ref _generation);
+                            });
                         }
-                        Interlocked.Increment(ref _generation);
                         lock (_initLock)
                         {
                             _initialized = false;

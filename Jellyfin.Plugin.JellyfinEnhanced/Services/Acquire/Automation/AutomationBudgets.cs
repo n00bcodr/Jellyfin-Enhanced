@@ -171,7 +171,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return new(false, null, "accounting_unavailable", null);
-                var admitted = _db.Write((c, t) =>
+                var admitted = _db.WriteAutomation((c, t) =>
                 {
                     // The limits and the clock are read once the writer is taken: a limit saved while the admission waited
                     // for it applies (4a-security-r6-1).
@@ -196,7 +196,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         RequestLedger.Exec(c, t, "UPDATE automation_budget SET state='reserved',outcome=NULL,settled_at=NULL,reserved_at=$at,job_id=$j WHERE id=$id", ("$id", id), ("$j", jobId), ("$at", RequestLedger.Ms(now)));
                     return new BudgetAdmission(true, id, null, null);
                 });
-                if (admitted.Admitted && !admitted.Replayed) _db.AutomationChanged();
                 return admitted;
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
@@ -281,8 +280,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return;
-                if (_db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE id=$id AND state IN ('reserved','ambiguous')",
-                    ("$s", state), ("$o", label), ("$at", RequestLedger.Ms(_now())), ("$id", id))) > 0) _db.AutomationChanged();
+                _db.WriteAutomation((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE id=$id AND state IN ('reserved','ambiguous')",
+                    ("$s", state), ("$o", label), ("$at", RequestLedger.Ms(_now())), ("$id", id)));
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
@@ -303,10 +302,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             try
             {
                 if (!_db.Available) return 0;
-                var changed = _db.Write((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE job_id=$j AND state IN ('ambiguous','reserved')",
+                return _db.WriteAutomation((c, t) => RequestLedger.Exec(c, t, "UPDATE automation_budget SET state=$s,outcome=$o,settled_at=$at WHERE job_id=$j AND state IN ('ambiguous','reserved')",
                     ("$s", confirmed ? "consumed" : "released"), ("$o", confirmed ? "confirmed" : "not_there"), ("$at", RequestLedger.Ms(_now())), ("$j", jobId)));
-                if (changed > 0) _db.AutomationChanged();
-                return changed;
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
             {
