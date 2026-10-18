@@ -16,6 +16,28 @@
         return code;
     }
 
+    /**
+     * A language tag JE may use, normalized (`en-au` → `en-AU`), or '' for anything else: a literal "undefined" or
+     * "null" (a value stringified by mistake), an empty or malformed value, or one Intl refuses.
+     * @param {*} raw A stored or configured value.
+     * @returns {string} The tag, or ''.
+     */
+    function languageCode(raw) {
+        if (typeof raw !== 'string') return '';
+        const code = raw.trim();
+        if (!code || /^(undefined|null|nan|true|false)$/i.test(code)) return '';
+        if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
+        const normalized = normalizeLangCode(code);
+        try {
+            if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
+        } catch (e) {
+            return '';
+        }
+        return normalized;
+    }
+
+    JE.languageCode = languageCode;
+
     function buildLanguageChain(primaryLang) {
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];
@@ -273,17 +295,18 @@
             let lang = 'en';
             if (userId) {
                 const storageKey = `${userId}-language`;
-                const storedLang = localStorage.getItem(storageKey);
+                // A junk value ("undefined", "null", malformed) is no language: fall back as if none were set.
+                const storedLang = languageCode(localStorage.getItem(storageKey));
                 if (storedLang) {
-                    lang = normalizeLangCode(storedLang);
+                    lang = storedLang;
                 } else {
                     // Fall back to the HTML lang attribute set by Jellyfin's web client.
                     // This covers the Android app and other clients where the localStorage
                     // key may not exist but Jellyfin has already resolved the user's
                     // preferred language from server-side settings.
-                    const docLang = document.documentElement.lang;
+                    const docLang = languageCode(document.documentElement.lang);
                     if (docLang) {
-                        lang = normalizeLangCode(docLang);
+                        lang = docLang;
                     }
                 }
             }
