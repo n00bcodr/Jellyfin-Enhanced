@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>The library index in memory for an instance (no read is started, nothing is marked as read).</summary>
         public ArrLibrarySnapshot? PeekLibrary(string instanceId)
-            => _states.TryGetValue(instanceId, out var state) ? state.Library.Peek().Value : null;
+            => _states.TryGetValue(instanceId, out var state) ? state.Library.Current : null;
 
         /// <summary>
         /// The library index in memory for an instance and the error of its latest read when that
@@ -51,7 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>The system facts (health, disk, root folders, tasks) in memory for an instance (no read is started).</summary>
         public ArrSystemSnapshot? PeekSystem(string instanceId)
-            => _states.TryGetValue(instanceId, out var state) ? state.System.Peek().Value : null;
+            => _states.TryGetValue(instanceId, out var state) ? state.System.Current : null;
 
         /// <summary>
         /// Adds, replaces (by arr id) or removes titles in the in-memory library index, when one is

@@ -96,6 +96,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="role">Their household role (Admin from Jellyfin).</param>
         public string? Why(Guid user, string role) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : _trust.IsTrusted(user) ? "trusted" : _store.HasGrant(user) ? "grant" : null;
 
+        /// <summary>The same rule on facts already read (the automatic-write check's decision).</summary>
+        /// <param name="role">Their household role.</param>
+        /// <param name="trusted">Whether they are Trusted (<see cref="Trusted"/>).</param>
+        /// <param name="granted">Whether they hold a grant (<see cref="Granted"/>).</param>
+        public static string? Why(string role, bool trusted, bool granted) => role == "Admin" ? "admin" : role is "Kid" or "Watcher" ? null : trusted ? "trusted" : granted ? "grant" : null;
+
+        /// <summary>Whether the person is Trusted (the 4b seam; its implementations read memory only).</summary>
+        /// <param name="user">The person.</param>
+        public bool Trusted(Guid user) => _trust.IsTrusted(user);
+
+        /// <summary>Whether the person holds a recorded grant (reads the database; false when it can't be read).</summary>
+        /// <param name="user">The person.</param>
+        public bool Granted(Guid user) => _store.HasGrant(user);
+
         /// <summary>True when the person's automatic requests may go ahead without an OK.</summary>
         /// <param name="user">The person.</param>
         /// <param name="role">Their household role.</param>

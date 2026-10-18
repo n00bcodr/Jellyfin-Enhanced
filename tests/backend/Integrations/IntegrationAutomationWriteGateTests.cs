@@ -858,12 +858,13 @@ public class IntegrationAutomationWriteGateTests
         var walk = WriteGateWalk.Plugin;
         Clean(walk.Errors());
         Clean(AfterDecisions(walk));
-        // The gate gathers the facts (every storage read), then decides; the transport answers with that one check.
+        // The gate gathers the facts (every storage read, the job's budget rows included), then decides; the transport
+        // answers with that one check.
         var gate = Source(GateFile);
         var check = IntegrationAutoRequestLedgerTests.Body(gate, "internal AutomationHold? Check(AutomationWrite? write, ISendAdmission? admission)");
-        Assert.True(check.IndexOf("Gather(write, config, every: false)", StringComparison.Ordinal) is >= 0 and var gather
-            && gather < check.IndexOf("admission?.Rows()", StringComparison.Ordinal)
-            && check.IndexOf("admission?.Rows()", StringComparison.Ordinal) < check.IndexOf("Final(", StringComparison.Ordinal));
+        Assert.True(check.IndexOf("Gather(write, config, every: false, admission)", StringComparison.Ordinal) is >= 0 and var gather
+            && gather < check.IndexOf("Final(", StringComparison.Ordinal));
+        Assert.Contains("Admission = admission?.Rows(),", IntegrationAutoRequestLedgerTests.Body(gate, "private Facts Gather(AutomationWrite w, PluginConfiguration config, bool every, ISendAdmission? admission)"), StringComparison.Ordinal);
         Assert.Contains("var hold = context.Gate.Check(write, context.Admission);", Source(HandlerFile), StringComparison.Ordinal);
     }
 
@@ -876,11 +877,16 @@ public class IntegrationAutomationWriteGateTests
         ["file_in_a_gate"] = (GateFile, new[] { ("\"kill_target\" => AutomationFlags.KilledTarget(c, w.Target)", "\"kill_target\" => File.Exists(c.JellyseerrUrls) || AutomationFlags.KilledTarget(c, w.Target)") }, "file I/O (File.Exists)"),
         ["consent_read_in_the_decision"] = (GateFile, new[] { ("w.Recipe != null && f.Consented != true", "w.Recipe != null && !AutomationConsent.Allows(_consents, w.Requester, w.Recipe)") }, "file I/O (File."),
         ["seerr_key_read_in_the_decision"] = (GateFile, new[] { ("SeerrRequestReadModel.IsActive(c, f.SeerrKey == true)", "SeerrRequestReadModel.IsActive(c)") }, "a lock at"),
-        ["sleep_in_the_decision"] = (GateFile, new[] { ("hold = Decide(write, live, facts, rows, admission);", "Thread.Sleep(1); hold = Decide(write, live, facts, rows, admission);") }, "a blocking wait (Thread.Sleep)"),
+        ["sleep_in_the_decision"] = (GateFile, new[] { ("hold = Decide(write, live, facts, admission);", "Thread.Sleep(1); hold = Decide(write, live, facts, admission);") }, "a blocking wait (Thread.Sleep)"),
         ["budget_read_in_the_judgement"] = ("Services/Acquire/Automation/AutomationAdmission.cs", new[] { ("var judged = AutomationBudgets.Judge(slot, config, now);", "var judged = _budgets.Recheck(slot.Category, slot.Scope, slot.Own!);") }, "a database call (AcquireDatabase.Read)"),
         ["sleep_in_the_budget_judgement"] = ("Services/Acquire/Automation/AutomationBudgets.cs", new[] { ("var windows = Windows(rows.Category, config);", "Thread.Sleep(1); var windows = Windows(rows.Category, config);") }, "a blocking wait (Thread.Sleep)"),
         ["budget_rows_read_before_the_hand_off"] = (HandlerFile, new[] { ("                throw new AutomationTransportRefusedException(hold);\n            }\n", "                throw new AutomationTransportRefusedException(hold);\n            }\n            context.Admission?.Rows();\n") }, "a database call (AcquireDatabase.Read)"),
-        ["release_before_the_hand_off"] = (HandlerFile, new[] { ("            if (hold != null)\n            {\n                context.Admission?.Release();", "            context.Admission?.Release();\n            if (hold != null)\n            {") }, "a database call (AcquireDatabase.Write)"),
+        ["release_before_the_hand_off"] = (HandlerFile, new[] { ("            if (hold != null)\n            {\n                context.Admission?.Release();", "            context.Admission?.Release();\n            if (hold != null)\n            {") }, "a database call (AcquireDatabase.WriteAutomation)"),
+        // Round 8: the disk verdicts read the old way in the decision (their warm-up takes a snapshot slot's lock), the
+        // locked Peek back in the published snapshot read, a lock back in the instance registry the disk decision uses.
+        ["disk_read_the_old_way_in_the_decision"] = (GateFile, new[] { ("var disk = engine ? Disk(write, config) : null;", "var disk = engine && write.Input != null && _policy != null ? (_policy.TitlePause(write.Input), _policy.DiskKnown(write.Input)) : ((RequestDiskFacts?, bool)?)null;") }, "a lock at"),
+        ["locked_snapshot_peek"] = ("Services/Arr/ArrStateStore.Live.cs", new[] { ("? state.System.Current : null;", "? state.System.Peek().Value : null;") }, "a lock at"),
+        ["registry_lock"] = ("Services/Arr/ArrInstanceRegistry.cs", new[] { ("            _cache = new Parsed(sonarr, radarr, all);", "            lock (all) { _cache = new Parsed(sonarr, radarr, all); }") }, "a lock at"),
         ["sleep_before_the_inner_handler"] = (HandlerFile, new[] { ("            return base.SendAsync(request, cancellationToken);", "            Thread.Sleep(1);\n            return base.SendAsync(request, cancellationToken);") }, "a blocking wait (Thread.Sleep)"),
         ["lock_before_the_synchronous_send"] = (HandlerFile, new[] { ("            return base.Send(request, cancellationToken);", "            lock (Checked.Key) { }\n            return base.Send(request, cancellationToken);") }, "a lock at"),
     };

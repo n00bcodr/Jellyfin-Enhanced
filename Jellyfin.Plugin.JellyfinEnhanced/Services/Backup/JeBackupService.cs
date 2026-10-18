@@ -468,7 +468,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 try
                 {
                     File.WriteAllBytes(temp, bytes);
-                    File.Move(temp, target, overwrite: true);
+                    // People's settings files among them: put in place inside their version's bracket (the automatic-write
+                    // check reads consents from them).
+                    UserConfigurationManager.AllSettingsVersion.Mutate(() => File.Move(temp, target, overwrite: true));
                 }
                 finally
                 {

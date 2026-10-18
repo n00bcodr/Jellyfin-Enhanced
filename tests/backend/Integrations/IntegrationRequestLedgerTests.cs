@@ -23,26 +23,53 @@ public class IntegrationRequestLedgerTests
         public Func<Guid, MutationInput, RequestPolicyFacts, RequestPolicyFacts>? Adjust { get; set; }
         public Func<bool, bool?>? FourK { get; set; }
         public bool? Has4kTarget(bool movie) => FourK?.Invoke(movie);
+        // The disk facts in memory, published as one reference (as ArrStateStore publishes each snapshot): the drive
+        // the request would land on (non-null: below the low-disk threshold) and whether the destination's facts are known.
+        private volatile DiskSnapshot _disk = new(null, true);
+        internal sealed record DiskSnapshot(RequestDiskFacts? Pause, bool Known);
         /// <summary>The destination's disk facts are in memory (as <see cref="RequestPolicy.DiskKnown"/> reads them).</summary>
-        public bool DiskFacts { get; set; } = true;
+        public bool DiskFacts { get => _disk.Known; set => _disk = _disk with { Known = value }; }
         /// <summary>Non-null: the drive the request would land on is below the low-disk threshold.</summary>
-        public RequestDiskFacts? Pause { get; set; }
-        /// <summary>Runs as a read returns (evaluate, title_pause, disk_known): a change made then is one the read missed.</summary>
+        public RequestDiskFacts? Pause { get => _disk.Pause; set => _disk = _disk with { Pause = value }; }
+        /// <summary>A snapshot refresh: new disk facts published in one step.</summary>
+        public void Publish(RequestDiskFacts? pause, bool known) => _disk = new(pause, known);
+        /// <summary>Runs as a read returns (evaluate, is_admin, title_pause, disk_known, warm_disk): a change made then is one the read missed.</summary>
         public Action<string>? Reading { get; set; }
-        public RequestDiskFacts? TitlePause(MutationInput input) => Read("title_pause", Pause);
+        public RequestDiskFacts? TitlePause(MutationInput input) => Read("title_pause", _disk.Pause);
         // Like production: known when the guard is off or Seerr handles requests; else when the facts are in memory.
-        public bool DiskKnown(MutationInput input) => Read("disk_known", Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || DiskFacts);
+        public bool DiskKnown(MutationInput input) => Read("disk_known", Configuration.ArrLowDiskPercent <= 0 || Configuration.ArrRequestBackend != "je" || _disk.Known);
+        // Both answers from one read of the published reference, on the configuration given: memory only, no hook (it is
+        // read in the write gate's final decision, where nothing may wait).
+        public (RequestDiskFacts? Pause, bool Known) Disk(MutationInput input, PluginConfiguration config)
+        {
+            var disk = _disk;
+            return (disk.Pause, config.ArrLowDiskPercent <= 0 || config.ArrRequestBackend != "je" || disk.Known);
+        }
+        public void WarmDisk(MutationInput input) => Reading?.Invoke("warm_disk");
         private T Read<T>(string what, T value)
         {
             Reading?.Invoke(what);
             return value;
         }
+        // Like Jellyfin's user permissions: a change moves the version odd before it is visible and even after.
+        private long _permissions;
+        public long PermissionVersion(Guid user) => Interlocked.Read(ref _permissions);
+        /// <summary>Changes a person's role (an administrator demoted, say) inside the permission version's bracket.</summary>
+        public void Demote(Guid user, string role)
+        {
+            Interlocked.Increment(ref _permissions);
+            try { People[user] = People[user] with { Role = role, CanApprove = role is "Manager" or "Admin", Can4k = role == "Admin" }; }
+            finally { Interlocked.Increment(ref _permissions); }
+        }
+        // The household role from memory: an administrator by Jellyfin's permission, else the role stored for them.
+        public string RoleOf(Guid user, bool admin, PluginConfiguration config)
+            => admin ? "Admin" : People.GetValueOrDefault(user)?.Role is { } role && role != "Admin" ? role : "Watcher";
         public Task PrepareIdentityAsync(Guid userId, bool movie, CancellationToken ct) => Task.CompletedTask;
         public Task PrepareAsync(Guid user, MutationInput input, CancellationToken ct) => Before?.Invoke(user, input) ?? Task.CompletedTask;
         /// <summary>Runs when the rating facts a person's visibility needs are loaded (tests make visibility depend on it).</summary>
         public Func<Guid, MutationInput, Task>? Visibility { get; set; }
         public Task PrepareVisibilityAsync(Guid user, MutationInput input, CancellationToken ct) => Visibility?.Invoke(user, input) ?? Task.CompletedTask;
-        public bool IsAdmin(Guid user) => People.GetValueOrDefault(user)?.Role == "Admin";
+        public bool IsAdmin(Guid user) => Read("is_admin", People.GetValueOrDefault(user)?.Role == "Admin");
         public string AuthorizationStamp(Guid user, MutationInput input) => JsonSerializer.Serialize(People.GetValueOrDefault(user)) + JsonSerializer.Serialize(Configuration);
         public RequestPolicyFacts Evaluate(Guid user, MutationInput input)
         {

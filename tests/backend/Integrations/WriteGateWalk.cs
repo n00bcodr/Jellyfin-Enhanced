@@ -38,6 +38,7 @@ internal sealed class WriteGateWalk
         ["_http"] = "the HTTP client factory (IHttpClientFactory.CreateClient)",
         ["_now"] = "the clock",
         ["_config"] = "the live configuration (an administrator's save replaces it)",
+        ["_secrets"] = "the secrets store's version (a FactVersion sample)",
     };
 
     private static readonly Lazy<WriteGateWalk> _plugin = new(() => new WriteGateWalk(Load()));
@@ -131,6 +132,17 @@ internal sealed class WriteGateWalk
     internal List<string> Errors(string? relative = null)
         => (relative == null ? _compilation.GetDiagnostics() : Model(Tree(relative)).GetDiagnostics())
             .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id != "CS0619").Select(d => d.ToString()).ToList();
+
+    /// <summary>Every source file of the plugin, with its semantic model (round 8's fact registry and writer scans).</summary>
+    internal IEnumerable<(SyntaxTree Tree, SemanticModel Model)> Sources()
+        => _compilation.SyntaxTrees.Where(t => t.FilePath != "ImplicitUsings.cs").Select(t => (t, Model(t)));
+
+    /// <summary>One source file of the plugin, with its semantic model.</summary>
+    internal (SyntaxTree Tree, SemanticModel Model) Source(string relative)
+    {
+        var tree = Tree(relative);
+        return (tree, Model(tree));
+    }
 
     private SyntaxTree Tree(string relative)
     {
@@ -453,7 +465,7 @@ internal sealed class WriteGateWalk
     {
         var type = symbol.ContainingType?.ToDisplayString() ?? string.Empty;
         var space = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        if (type == "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.AcquireDatabase" && symbol.Name is "Read" or "Write" or "WriteIf" or "Snapshot" or "ReplaceWith")
+        if (type == "Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.AcquireDatabase" && symbol.Name is "Read" or "Write" or "WriteIf" or "WriteAutomation" or "Snapshot" or "ReplaceWith")
             return "a database call (AcquireDatabase." + symbol.Name + ")";
         if (space.StartsWith("Microsoft.Data.Sqlite", StringComparison.Ordinal)) return "a database call (" + symbol.ContainingType!.Name + "." + symbol.Name + ")";
         if (type == "System.Threading.Monitor" && symbol.Name is not ("Exit" or "Pulse" or "PulseAll" or "IsEntered")) return "a lock (Monitor." + symbol.Name + ")";

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
@@ -112,12 +113,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// change, search, tag and refresh of the Direct backend (after the wait for a connection slot), the Seerr backend's
     /// POST, and the old recipes' own POST to Seerr at each address. Nothing a write site decided before an await is
     /// trusted here: every call reads it all again, in two steps. First the facts the gates read from storage are
-    /// gathered (breaker, budgets, eligibility grant and role, the person's consent, disk facts, whether Seerr's key is
-    /// stored); those reads may wait. Then the live configuration is read and every gate is judged on it and those facts,
-    /// in <see cref="Gates"/> order, with nothing that waits (no I/O, lock, wait or await) before the answer: the first
-    /// hold, or null when the write may go. Facts read earlier can go stale while a later one waits, so the decision is
-    /// only made when nothing they depend on moved in between (the configuration, the database generation and its
-    /// automation revision, the person's settings version); otherwise they are gathered again, a few times at most.
+    /// gathered (breaker, budgets, the eligibility grant, whether the person is a Jellyfin administrator, their consent,
+    /// whether Seerr's key is stored); those reads may wait. Then the live configuration is read and every gate is judged
+    /// on it and those facts, in <see cref="Gates"/> order, with nothing that waits (no I/O, lock, wait or await) before
+    /// the answer: the first hold, or null when the write may go. What can be read from memory is read in that decision
+    /// (the published disk snapshots, the household role, Trusted). Every fact is registered in
+    /// <see cref="AutomationFacts"/>, either read in the decision or versioned: each change to a versioned fact moves its
+    /// version odd before the change can be seen and even after (<see cref="FactVersion"/>). The versions are sampled
+    /// before the gather and at the decision; the decision is only made when every sample is settled and none moved,
+    /// otherwise the facts are gathered again, a few times at most.
     /// The last call is made inside the HTTP transport (<see cref="AutomationTransportHandler"/>, D41), with the job's
     /// budget reservations among the facts and judged in the same decision: that is the guarantee. The write sites' own
     /// calls (budgets admitted per write right after them, <see cref="ISendAdmission"/>) stay as defence in depth. The
@@ -141,6 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         private readonly AutomationEligibility? _eligibility;
         private readonly IAutomationConsents? _consents;
         private readonly Func<DateTimeOffset> _now;
+        private readonly Func<long> _secrets;
 
         /// <summary>
         /// Creates the gate over the live configuration. Without the policy, store, eligibility or budgets (the old
@@ -153,8 +158,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="eligibility">Eligibility (administrators, Trusted, grants).</param>
         /// <param name="consents">Per-person consents.</param>
         /// <param name="now">Clock.</param>
+        /// <param name="secrets">The secrets store's version (default: the plugin's store).</param>
         public AutomationWriteGate(Func<PluginConfiguration?> config, IRequestPolicy? policy = null, AutomationBudgets? budgets = null, AutomationStore? store = null,
-            AutomationEligibility? eligibility = null, IAutomationConsents? consents = null, Func<DateTimeOffset>? now = null)
+            AutomationEligibility? eligibility = null, IAutomationConsents? consents = null, Func<DateTimeOffset>? now = null, Func<long>? secrets = null)
         {
             _config = config;
             _policy = policy;
@@ -163,11 +169,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             _eligibility = eligibility;
             _consents = consents;
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _secrets = secrets ?? (() => JellyfinEnhanced.Instance?.Secrets.Version.Sample() ?? 0);
         }
 
         /// <summary>
-        /// What the gates read from storage, gathered before the decision. Null: not gathered (not needed for this write,
-        /// or the service it is read from isn't there: the gate then holds the write as unchecked).
+        /// The versioned facts (<see cref="AutomationFacts"/>), gathered before the decision. Null: not gathered (not needed
+        /// for this write, or the service it is read from isn't there: the gate then holds the write as unchecked).
         /// </summary>
         internal sealed record Facts
         {
@@ -180,29 +187,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             /// <summary>The person consents to the recipe asking for them.</summary>
             public bool? Consented { get; init; }
 
-            /// <summary>The person may have automatic requests go ahead without an OK (their role and grant).</summary>
-            public bool? Eligible { get; init; }
+            /// <summary>The person is a Jellyfin administrator (enabled, with the administrator permission).</summary>
+            public bool? Admin { get; init; }
+
+            /// <summary>The person holds a recorded eligibility grant.</summary>
+            public bool? Granted { get; init; }
 
             /// <summary>The target's breaker.</summary>
             public AutomationBreaker? Breaker { get; init; }
 
-            /// <summary>The drive it would land on is below the low-disk threshold.</summary>
-            public bool? LowDisk { get; init; }
-
-            /// <summary>The destination's free space is known.</summary>
-            public bool? DiskKnown { get; init; }
-
             /// <summary>What the preliminary budget check counts.</summary>
             public BudgetRows? Budget { get; init; }
+
+            /// <summary>What the job's admitted writes count (at the transport).</summary>
+            public IReadOnlyList<BudgetRows>? Admission { get; init; }
         }
 
-        // What the facts depend on, read without waiting: the configuration (the object, and what it holds, as a save may
-        // change it in place), the database's generation (a restore) and automation revision (budgets, breakers, grants),
-        // and the person's settings version (their consents).
-        private readonly record struct Stamp(PluginConfiguration Config, string Settings, long Generation, long Revision, long Person)
+        // The version sources of the gathered facts (AutomationFacts.Versions), sampled without waiting: the configuration
+        // (the object, and what it holds, as a save may change it in place), the database's generation (a restore) and its
+        // automation version (budgets, breakers, grants), the person's settings version (their consents), their Jellyfin
+        // permission version, and the secrets store's version (Seerr's key).
+        private readonly record struct Stamp(PluginConfiguration Config, string Settings, long Generation, long Automation, long Person, long Jellyfin, long Secrets)
         {
+            // No change was in flight as it was sampled.
+            public bool Settled => FactVersion.Settled(Automation) && FactVersion.Settled(Person) && FactVersion.Settled(Jellyfin) && FactVersion.Settled(Secrets);
+
             public bool Same(Stamp other) => ReferenceEquals(Config, other.Config) && Settings == other.Settings && Generation == other.Generation
-                && Revision == other.Revision && Person == other.Person;
+                && Automation == other.Automation && Person == other.Person && Jellyfin == other.Jellyfin && Secrets == other.Secrets;
         }
 
         private sealed record Gate(string Id, bool EngineOnly = false);
@@ -254,17 +265,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 var config = _config();
                 if (config == null) return Unloaded(write);
                 var before = StampOf(write, config);
-                // Facts first: each of these reads may wait (the database, during a restore too; a settings file; the policy).
-                var facts = Gather(write, config, every: false);
-                var rows = admission?.Rows();
-                if (Final(write, before, facts, rows, admission, round, out var hold)) return hold;
+                // Facts first: each of these reads may wait (the database, during a restore too; a settings file; Jellyfin's
+                // users; the secrets store).
+                var facts = Gather(write, config, every: false, admission);
+                if (Final(write, before, facts, admission, round, out var hold)) return hold;
             }
         }
 
         // The decision. Nothing here waits: the live configuration, the stamps, every gate and the budget judgement read
-        // memory only, and the transport hands the request on as soon as this answers. False: a fact may be stale (what it
-        // depends on moved while the facts were gathered), so they are gathered again.
-        private bool Final(AutomationWrite write, Stamp before, Facts facts, IReadOnlyList<BudgetRows>? rows, ISendAdmission? admission, int round, out AutomationHold? hold)
+        // memory only, and the transport hands the request on as soon as this answers. False: a fact may be stale (a change
+        // to what it depends on was in flight, or landed, while the facts were gathered), so they are gathered again.
+        private bool Final(AutomationWrite write, Stamp before, Facts facts, ISendAdmission? admission, int round, out AutomationHold? hold)
         {
             var live = _config();
             if (live == null)
@@ -279,26 +290,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 hold = Changed("The request database was restored while this automatic request was checked; it is checked again under the restored state.");
                 return true;
             }
-            if (!after.Same(before) || (Engine(write, live) && !facts.EngineFacts))
+            if (!before.Settled || !after.Settled || !after.Same(before) || (Engine(write, live) && !facts.EngineFacts))
             {
                 hold = round >= GatherRounds ? Changed("The automation settings or state kept changing while this automatic request was checked; it is checked again shortly.") : null;
                 return round >= GatherRounds;
             }
-            hold = Decide(write, live, facts, rows, admission);
+            hold = Decide(write, live, facts, admission);
             return true;
         }
 
         // Every gate in order on the live configuration and the gathered facts, then the admitted writes' budgets.
-        private AutomationHold? Decide(AutomationWrite write, PluginConfiguration config, Facts facts, IReadOnlyList<BudgetRows>? rows, ISendAdmission? admission)
+        private AutomationHold? Decide(AutomationWrite write, PluginConfiguration config, Facts facts, ISendAdmission? admission)
         {
             var engine = Engine(write, config);
+            var disk = engine ? Disk(write, config) : null;
             foreach (var gate in Ordered)
             {
                 if (gate.EngineOnly && !engine) continue;
-                if (Run(gate.Id, write, config, facts) is { } hold) return hold;
+                if (Run(gate.Id, write, config, facts, disk) is { } hold) return hold;
             }
-            return rows != null && admission?.Recheck(rows, config) is { } limited ? new AutomationHold(limited.Reason, limited.Message, limited.Wait) : null;
+            return facts.Admission is { } rows && admission?.Recheck(rows, config) is { } limited ? new AutomationHold(limited.Reason, limited.Message, limited.Wait) : null;
         }
+
+        // Both disk verdicts, from one read of each published snapshot (memory only); null: no policy or no scope.
+        private (RequestDiskFacts? Pause, bool Known)? Disk(AutomationWrite write, PluginConfiguration config)
+            => write.Input != null && _policy != null ? _policy.Disk(write.Input, config) : null;
 
         /// <summary>The result of one named gate alone for <paramref name="write"/> (tests and diagnostics): its facts gathered, then judged.</summary>
         /// <param name="id">The gate's id (<see cref="Gates"/>).</param>
@@ -308,24 +324,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             var config = _config();
             if (config == null) return null;
             var gate = Ordered.Single(g => g.Id == id).Id;
-            return Run(gate, write, config, Gather(write, config, every: true));
+            return Run(gate, write, config, Gather(write, config, every: true, null), Disk(write, config));
         }
 
         private static bool Engine(AutomationWrite write, PluginConfiguration config) => write.Automatic && AutomationFlags.Engine(config);
 
+        // The version of every source a gathered fact depends on (AutomationFacts.Versions): memory only.
         private Stamp StampOf(AutomationWrite write, PluginConfiguration config)
         {
             var db = _store?.Database ?? _budgets?.Database;
-            return new(config, JsonSerializer.Serialize(config), db?.Generation ?? 0, db?.AutomationRevision ?? 0, _consents?.Version(write.Requester) ?? 0);
+            return new(config, JsonSerializer.Serialize(config), db?.Generation ?? 0, db?.Automation.Sample() ?? 0, _consents?.Version(write.Requester) ?? 0,
+                _policy?.PermissionVersion(write.Requester) ?? 0, _secrets());
         }
 
-        // The storage reads, each only where a gate needs it. The engine-only gates' facts are read while the engine is in
-        // effect (or for every gate, when one is asked alone).
-        private Facts Gather(AutomationWrite w, PluginConfiguration config, bool every)
+        // The versioned facts (AutomationFacts), each only where a gate needs it. The engine-only gates' facts are read
+        // while the engine is in effect (or for every gate, when one is asked alone).
+        private Facts Gather(AutomationWrite w, PluginConfiguration config, bool every, ISendAdmission? admission)
         {
             var facts = new Facts
             {
                 SeerrKey = w.Path == AutomationWritePath.Queued && w.Automatic && w.Backend == "seerr" ? !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()) : null,
+                // At the transport: what the job's admitted writes count.
+                Admission = admission?.Rows(),
             };
             if (!every && !Engine(w, config)) return facts;
             facts = facts with { EngineFacts = true };
@@ -333,16 +353,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 facts = facts with { Budget = w.Backend == "seerr" ? _budgets.Rows(BudgetCategories.SeerrPost, AutomationFlags.SeerrTarget) : _budgets.Rows(BudgetCategories.Search, w.Target ?? string.Empty) };
             if (!string.IsNullOrEmpty(w.Target) && _store != null) facts = facts with { Breaker = _store.Breaker(w.Target) };
             if (w.Approver == null && _policy != null && _eligibility != null && w.Input != null)
-                facts = facts with { Eligible = _eligibility.Eligible(w.Requester, _policy.Evaluate(w.Requester, w.Input).Role) };
+                facts = facts with { Admin = _policy.IsAdmin(w.Requester), Granted = _eligibility.Granted(w.Requester) };
             if (w.OriginKind == RequestOrigin.AutomationKind && w.Recipe != null) facts = facts with { Consented = AutomationConsent.Allows(_consents, w.Requester, w.Recipe) };
-            // Memory reads (the policy's disk facts) last.
-            if (w.Input != null && _policy != null)
-                facts = facts with { LowDisk = _policy.TitlePause(w.Input) != null, DiskKnown = w.Backend == "je" ? _policy.DiskKnown(w.Input) : null };
+            // The disk facts are read in the decision, from memory; start the reads of any that aren't there yet.
+            if (w.Input != null && _policy != null) _policy.WarmDisk(w.Input);
             return facts;
         }
 
-        // One gate, on the configuration and facts given: memory only.
-        private AutomationHold? Run(string id, AutomationWrite w, PluginConfiguration c, Facts f) => id switch
+        // One gate, on the configuration, the gathered facts and the disk verdicts given: memory only.
+        private AutomationHold? Run(string id, AutomationWrite w, PluginConfiguration c, Facts f, (RequestDiskFacts? Pause, bool Known)? disk) => id switch
         {
             "legacy_switch" => w.OriginKind == RequestOrigin.AutomationKind && !AutomationRecipes.SwitchedOn(c, w.Recipe)
                 ? Hold(w.Path == AutomationWritePath.LegacySeerr ? Disabled : AutomationHolds.RecipePaused, "The recipe is switched off: its request waits until it is on again.") : null,
@@ -366,9 +385,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             "approval" => Approval(w, c, f),
             "breaker" => Breaker(w, f),
             // Seerr handling included: the policy measures the drive Seerr's default server would fill (as before).
-            "low_disk" => w.Input == null ? null : _policy == null || f.LowDisk == null ? Unchecked() : f.LowDisk == true
+            "low_disk" => w.Input == null ? null : disk is not { } low ? Unchecked() : low.Pause != null
                 ? Hold(AutomationHolds.LowDisk, "The drive it would land on is below the low-disk threshold.") : null,
-            "disk_unknown" => w.Backend != "je" || w.Input == null || c.ArrLowDiskPercent <= 0 ? null : _policy == null || f.DiskKnown == null ? Unchecked() : f.DiskKnown == false
+            "disk_unknown" => w.Backend != "je" || w.Input == null || c.ArrLowDiskPercent <= 0 ? null : disk is not { } known ? Unchecked() : !known.Known
                 ? Hold(AutomationHolds.DiskUnknown, "The destination's free space isn't known yet; automatic sends wait for it.") : null,
             "budget" => Budget(w, c, f),
             _ => throw new ArgumentOutOfRangeException(nameof(id), id, null),
@@ -392,13 +411,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             return null;
         }
 
-        // Ask mode, or a person who isn't eligible (any more): an OK is required now.
+        // Ask mode, or a person who isn't eligible (any more): an OK is required now. Their role and Trusted are read here
+        // from memory, on the live configuration; whether they are a Jellyfin administrator and hold a grant were gathered.
         private AutomationHold? Approval(AutomationWrite w, PluginConfiguration c, Facts f)
         {
             if (w.Approver != null) return null;
-            if (_policy == null || _eligibility == null || w.Input == null || f.Eligible == null) return Unchecked();
+            if (_policy == null || _eligibility == null || w.Input == null || f.Admin is not { } admin || f.Granted is not { } granted) return Unchecked();
             var mode = w.Recipe == null ? AutomationMode.Shadow : AutomationModes.Mode(c, w.Recipe);
-            return mode == AutomationMode.Ask || f.Eligible == false
+            var eligible = AutomationEligibility.Why(_policy.RoleOf(w.Requester, admin, c), _eligibility.Trusted(w.Requester), granted) != null;
+            return mode == AutomationMode.Ask || !eligible
                 ? Park(AutomationHolds.ApprovalRequired, "An OK is required now (Ask mode, or the person isn't eligible for automatic requests).") : null;
         }
 

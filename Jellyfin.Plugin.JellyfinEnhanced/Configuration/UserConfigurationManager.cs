@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -19,8 +20,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
-        // Per person (normalized id): moves on after each write of their settings.json (see SettingsVersion).
-        private static readonly ConcurrentDictionary<string, long> _settingsVersions = new ConcurrentDictionary<string, long>();
+        // The versions of each person's settings.json (normalized id) and of every person's at once (a restore, a quarantine,
+        // the start-up migration): see SettingsVersion. Per-user files the automatic-write check doesn't read are put in
+        // place inside a bracket nobody samples.
+        private static readonly FactVersions _settingsVersions = new FactVersions();
+        private static readonly FactVersion _allSettingsVersion = new FactVersion();
+        private static readonly FactVersion _otherFiles = new FactVersion();
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
@@ -33,7 +38,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // {abcd...}, {ABCD...}, AND {abcd-...} folders. Different request paths
             // hit different folders, so per-user settings appeared to "drift" — see
             // PR #573 thread. Idempotent; cheap when there's nothing to migrate.
-            try { MigrateCaseVariantUserDirs(); }
+            try { _allSettingsVersion.Mutate(MigrateCaseVariantUserDirs); }
             catch (Exception ex) { _logger.Error($"Per-user dir case-variant migration failed: {ex}"); }
         }
 
@@ -64,19 +69,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public object UserSettingsLock(string userId) => GetUserFileLock(userId, SettingsFileName);
 
         /// <summary>
-        /// Moves on after every write of the person's settings.json (each writer holds <see cref="UserSettingsLock"/>; the
-        /// version moves once the file is in place) and when their folder is removed. A reader that takes it before
-        /// reading the file and compares it later knows whether what it read is still what is stored. Memory only, never
-        /// waits, never takes the lock.
+        /// The version of the person's settings.json (a <see cref="FactVersion"/> sample): odd from before their file is put in
+        /// place, or their folder removed, until after (each writer holds <see cref="UserSettingsLock"/>), and likewise
+        /// while every person's files change at once (a restore, a corrupt file quarantined, the start-up migration).
+        /// A reader that takes it before reading the file and finds it settled and the same later knows that what it read
+        /// is still what is stored. Memory only, never waits, never takes the lock. (The sum of the person's version and
+        /// every person's: each change moves it up from a settled sample, so a settled sum that is the same twice means
+        /// neither moved.)
         /// </summary>
-        public static long SettingsVersion(string userId)
-            => _settingsVersions.TryGetValue((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), out var version) ? version : 0;
+        public static long SettingsVersion(string userId) => _settingsVersions.Sample(Normalized(userId)) + _allSettingsVersion.Sample();
 
-        private static void SettingsChanged(string userId)
-            => _settingsVersions.AddOrUpdate((userId ?? string.Empty).Replace("-", "").ToLowerInvariant(), 1, (_, version) => version + 1);
+        /// <summary>The version every person's settings.json moves with at once (a JE backup restore writes them).</summary>
+        public static FactVersion AllSettingsVersion => _allSettingsVersion;
+
+        private static string Normalized(string? userId) => (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+
+        // The bracket a per-user file is put in place inside: the person's settings version for settings.json.
+        private static FactVersion VersionOf(string userId, string fileName)
+            => string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase) ? _settingsVersions.For(Normalized(userId)) : _otherFiles;
 
         /// <summary>Tests: runs at the start of every <see cref="SaveUserConfiguration"/> (normalized user id, file name).</summary>
         internal Action<string, string>? Saving { get; set; }
+
+        /// <summary>Tests: runs as <see cref="SaveUserConfiguration"/> has put the file in place (readers see it), before it returns.</summary>
+        internal Action<string, string>? Moved { get; set; }
 
         /// <summary>
         /// The fields of a person's settings that are their own consents (Phase 4: what JE may request or do on their
@@ -366,11 +382,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
 
                 File.WriteAllText(tempPath, jsonToSave);
-                File.Move(tempPath, configPath, overwrite: true);
-                if (string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase))
+                // In place inside the version's bracket: settings.json is what the automatic-write check reads consents from.
+                VersionOf(userId, fileName).Mutate(() =>
                 {
-                    SettingsChanged(userId);
-                }
+                    File.Move(tempPath, configPath, overwrite: true);
+                    Moved?.Invoke(Normalized(userId), fileName);
+                });
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
@@ -464,7 +481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var backupPath = filePath + ".corrupt-"
                     + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                     + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-                File.Move(filePath, backupPath);
+                _allSettingsVersion.Mutate(() => File.Move(filePath, backupPath));
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
             }
             catch (Exception ex)
@@ -473,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // Last resort: if the move failed, delete the unreadable file so
                 // the 503-per-request loop still breaks. The content is already
                 // unparseable, and the failure is logged above for forensics.
-                try { File.Delete(filePath); }
+                try { _allSettingsVersion.Mutate(() => File.Delete(filePath)); }
                 catch (Exception delEx)
                 {
                     _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");
@@ -645,8 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 if (!Directory.Exists(userDir)) return false;
-                Directory.Delete(userDir, recursive: true);
-                SettingsChanged(userId.ToString("N"));
+                _settingsVersions.For(userId.ToString("N")).Mutate(() => Directory.Delete(userDir, recursive: true));
                 return true;
             }
             catch (Exception ex)

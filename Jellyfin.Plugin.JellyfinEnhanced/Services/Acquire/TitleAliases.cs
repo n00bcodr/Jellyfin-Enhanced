@@ -142,7 +142,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyCollection<string> FromArrs(TitleKey key)
         {
             var result = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var instance in _arr.Instances(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
+            // The libraries in memory (an instance without a key never has one): memory only, no secrets read.
+            foreach (var instance in _arr.Registry.Usable(key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
             {
                 if (_arr.PeekLibrary(instance.Id) is not { } library) continue;
                 if (key.IsMovie)

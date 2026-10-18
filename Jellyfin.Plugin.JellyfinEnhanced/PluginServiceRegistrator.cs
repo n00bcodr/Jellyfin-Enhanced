@@ -155,6 +155,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationBudgets>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationTrust, Services.Acquire.Automation.NoAutomationTrust>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.IAutomationConsents, Services.Acquire.Automation.UserSettingsConsents>();
+            // Round 8: the version of each person's Jellyfin permissions (the automatic-write check reads them from Jellyfin's
+            // database): bracketed around Jellyfin's user actions that change them, and moved by its user events.
+            serviceCollection.AddSingleton<Services.Acquire.Automation.JellyfinUserChangeBracket>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Automation.JellyfinUserChangeBracket>());
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationEligibility>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationDecider>();
             serviceCollection.AddSingleton<Services.Acquire.Automation.AutomationSendGuard>();
