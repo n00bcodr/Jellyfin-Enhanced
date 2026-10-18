@@ -74,12 +74,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
     {
         private const int MaxEntries = 2000;
         private const int MaxRange = 50;
+        // Provider queries per title: the native pages' TMDB id and its aliases; the import's every-id identity (each
+        // query carries one value of each provider, so this bounds the distinct values per provider).
+        private const int MaxAliasQueries = 4;
+        private const int MaxIdentityQueries = 8;
         private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
 
         private readonly ILibraryManager _library;
         private readonly TitleAliases? _aliases;
         private readonly Func<long>? _revision;
         private readonly ConcurrentDictionary<string, (long Revision, DateTime At, PhysicalTitle Value)> _cache = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (long Revision, DateTime At, bool Value)> _without = new(StringComparer.Ordinal);
 
         /// <summary>Creates the reader.</summary>
         /// <param name="library">Library manager.</param>
@@ -103,8 +108,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public PhysicalTitle Read(User viewer, string viewerRevision, bool movie, int tmdb, int? season, bool everySeason = false)
         {
             everySeason &= season == null && !movie;
-            return Cached(viewer, viewerRevision, movie, tmdb, season?.ToString(CultureInfo.InvariantCulture) ?? (everySeason ? "*" : "-"), () => Compute(viewer, movie, tmdb, season, everySeason));
+            return Cached(viewer, viewerRevision, movie, tmdb.ToString(CultureInfo.InvariantCulture), season?.ToString(CultureInfo.InvariantCulture) ?? (everySeason ? "*" : "-"), () => Compute(viewer, movie, TmdbKeys(movie, tmdb), MaxAliasQueries, season, everySeason));
         }
+
+        /// <summary>
+        /// What the library holds of a title for a viewer, asked under EVERY id the caller knows it by (the list import,
+        /// review round 2, 4c2-R2-B1): a copy held only under its TVDB or IMDb id is found as well as one under TMDB. The
+        /// arr libraries' and Seerr's aliases of each id are added as for <see cref="Read(User, string, bool, int, int?, bool)"/>.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="viewerRevision">The viewer's policy revision (part of the cache key).</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="keys">Every key the title is known by (its TMDB, TVDB and IMDb ids; seasons ignored).</param>
+        /// <param name="season">The season whose episodes are wanted, or null.</param>
+        /// <returns>The physical title (<see cref="PhysicalTitle.None"/> without a usable key or a copy).</returns>
+        public PhysicalTitle Read(User viewer, string viewerRevision, bool movie, IReadOnlyCollection<TitleKey> keys, int? season)
+        {
+            var titles = keys.Where(k => k.IsMovie == movie).Select(k => k.Title).Distinct().OrderBy(k => k.ToString(), StringComparer.Ordinal).ToList();
+            if (titles.Count == 0) return PhysicalTitle.None;
+            return Cached(viewer, viewerRevision, movie, string.Join(',', titles), season?.ToString(CultureInfo.InvariantCulture) ?? "-", () => Compute(viewer, movie, titles, MaxIdentityQueries, season, false));
+        }
+
+        /// <summary>
+        /// True when the library holds copies (movies or series, any library) that carry none of <paramref name="providers"/>'
+        /// ids, so a lookup under those ids alone can't find every copy of a title (no network I/O; cached like the reads).
+        /// </summary>
+        /// <param name="movie">Movies (else series).</param>
+        /// <param name="providers">Providers of the ids at hand: "tmdb", "tvdb", "imdb".</param>
+        /// <returns>True when such copies exist (or the library can't be asked: then the caller can't rely on those ids).</returns>
+        public bool HoldsCopiesWithout(bool movie, IReadOnlyCollection<string> providers)
+        {
+            var key = "without|" + (movie ? "m" : "t") + "|" + string.Join(',', providers.OrderBy(p => p, StringComparer.Ordinal));
+            var revision = _revision?.Invoke();
+            if (revision is long r && _without.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
+            var value = (_library.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { movie ? BaseItemKind.Movie : BaseItemKind.Series },
+                HasTmdbId = providers.Contains("tmdb") ? false : null,
+                HasTvdbId = !movie && providers.Contains("tvdb") ? false : null,
+                HasImdbId = providers.Contains("imdb") ? false : null,
+                Recursive = true,
+                Limit = 1,
+                DtoOptions = new DtoOptions(false),
+            }) ?? new List<BaseItem>()).Count > 0;
+            if (revision is long now)
+            {
+                if (_without.Count >= MaxEntries) _without.Clear();
+                _without[key] = (now, DateTime.UtcNow, value);
+            }
+
+            return value;
+        }
+
+        private static IReadOnlyList<TitleKey> TmdbKeys(bool movie, int tmdb) =>
+            TitleKey.Parse((movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture)) is { } key && tmdb > 0 ? new[] { key } : Array.Empty<TitleKey>();
 
         /// <summary>
         /// The title's copies only (<see cref="PhysicalTitle.Copies"/>, <see cref="PhysicalTitle.Shown"/>,
@@ -116,11 +173,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <param name="tmdb">TMDB id.</param>
         /// <returns>The physical title, without season or episode facts.</returns>
         public PhysicalTitle ReadCopies(User viewer, string viewerRevision, bool movie, int tmdb)
-            => Cached(viewer, viewerRevision, movie, tmdb, "c", () => Copies(viewer, movie, tmdb).Title);
+            => Cached(viewer, viewerRevision, movie, tmdb.ToString(CultureInfo.InvariantCulture), "c", () => Copies(viewer, movie, TmdbKeys(movie, tmdb), MaxAliasQueries).Title);
 
-        private PhysicalTitle Cached(User viewer, string viewerRevision, bool movie, int tmdb, string part, Func<PhysicalTitle> compute)
+        private PhysicalTitle Cached(User viewer, string viewerRevision, bool movie, string title, string part, Func<PhysicalTitle> compute)
         {
-            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", tmdb.ToString(CultureInfo.InvariantCulture), part);
+            var key = string.Join('|', viewer.Id.ToString("N", CultureInfo.InvariantCulture), viewerRevision, movie ? "m" : "t", title, part);
             var revision = _revision?.Invoke();
             if (revision is long r && _cache.TryGetValue(key, out var hit) && hit.Revision == r && DateTime.UtcNow - hit.At < Ttl) return hit.Value;
             var value = compute();
@@ -134,14 +191,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>Every copy of the title in any library (no user on the query), and which of them the viewer can open.</summary>
-        private (PhysicalTitle Title, HashSet<Guid> Shown) Copies(User viewer, bool movie, int tmdb)
+        private (PhysicalTitle Title, HashSet<Guid> Shown) Copies(User viewer, bool movie, IReadOnlyList<TitleKey> keys, int maxQueries)
         {
-            var key = TitleKey.Parse((movie ? "movie" : "tv") + ":tmdb:" + tmdb.ToString(CultureInfo.InvariantCulture));
-            if (key == null || tmdb <= 0) return (PhysicalTitle.None, new HashSet<Guid>());
-            var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
+            if (keys.Count == 0) return (PhysicalTitle.None, new HashSet<Guid>());
+            var key = keys[0];
+            var aliases = keys.Skip(1).Concat(keys.SelectMany(k => _aliases?.Of(k) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>())).ToList();
             var copies = new List<BaseItem>();
             var seen = new HashSet<Guid>();
-            foreach (var providers in TitleAliases.ProviderQueries(key, aliases))
+            foreach (var providers in TitleAliases.ProviderQueries(key, aliases, maxQueries))
             {
                 // No user on the query: every copy in any library, whoever may see it.
                 var found = _library.GetItemList(new InternalItemsQuery
@@ -165,9 +222,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return (new PhysicalTitle { Copies = ids, Shown = shownInOrder, Hidden = shown.Count == 0 }, shown);
         }
 
-        private PhysicalTitle Compute(User viewer, bool movie, int tmdb, int? season, bool everySeason)
+        private PhysicalTitle Compute(User viewer, bool movie, IReadOnlyList<TitleKey> keys, int maxQueries, int? season, bool everySeason)
         {
-            var (title, shown) = Copies(viewer, movie, tmdb);
+            var (title, shown) = Copies(viewer, movie, keys, maxQueries);
             if (title.Copies.Count == 0 || title.Hidden || movie) return title;
             var ids = title.Copies.ToArray();
 

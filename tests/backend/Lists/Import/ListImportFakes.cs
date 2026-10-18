@@ -19,6 +19,7 @@ internal sealed class FakeImportLookup : IImportLookup
     public Dictionary<(int Id, int Season), List<EpisodeFacts>> Seasons { get; } = new();
     public Dictionary<string, ImdbEpisodeFind> ImdbEpisodes { get; } = new(StringComparer.Ordinal);
     public HashSet<string> TransientQueries { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<(string Type, int Id)> TransientDetails { get; } = new();
     public TimeSpan Delay { get; set; }
     public ConcurrentQueue<string> Log { get; } = new();
 
@@ -66,6 +67,11 @@ internal sealed class FakeImportLookup : IImportLookup
         await Pause(cancellationToken);
         context.CountCall();
         Log.Enqueue($"details:{mediaType}/{tmdbId}");
+        if (TransientDetails.Contains((mediaType, tmdbId)))
+        {
+            return LookupResult<TitleDetails>.Transient;
+        }
+
         if (Details.TryGetValue((mediaType, tmdbId), out var details))
         {
             return Ok(details);
@@ -199,7 +205,8 @@ internal sealed class FakePhysicalTitles : IImportPhysicalTitles
         set.Add(episode);
     }
 
-    public ImportPhysical Read(User viewer, bool movie, int tmdb, int? season)
+    /// <summary>Titles are held under their TMDB id here (the every-id cases use the production reader).</summary>
+    public ImportPhysical Read(User viewer, ImportIdentity identity, int? season)
     {
         Interlocked.Increment(ref Reads);
         if (Unreadable)
@@ -207,7 +214,7 @@ internal sealed class FakePhysicalTitles : IImportPhysicalTitles
             return ImportPhysical.Unreadable;
         }
 
-        if (!_held.TryGetValue((viewer.Id, movie, tmdb), out var held))
+        if (identity.Tmdb is not int tmdb || !_held.TryGetValue((viewer.Id, identity.Movie, tmdb), out var held))
         {
             return ImportPhysical.None;
         }
@@ -215,6 +222,8 @@ internal sealed class FakePhysicalTitles : IImportPhysicalTitles
         var episodes = season is int s && held.Episodes.TryGetValue(s, out var set) ? set : new HashSet<int>();
         return new ImportPhysical(held.Title, held.Seasons, episodes);
     }
+
+    public bool HoldsCopiesBeyond(ImportIdentity identity) => false;
 
     private Held Of(User viewer, bool movie, int tmdb)
     {

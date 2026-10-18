@@ -194,10 +194,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 pending = await FilterParentalAsync(response.Results, options.Caller, cancellationToken).ConfigureAwait(false);
             }
 
-            // SEC-02: what the library holds but the caller can't open is never offered as absent (every caller).
+            // SEC-02 / R2-B1: what the library holds but the caller can't open is never offered as absent (every caller),
+            // whichever id the library holds it under.
             if (_physical != null)
             {
-                ProjectPhysical(response.Results, options.Caller);
+                await ProjectPhysicalAsync(response.Results, options.Caller, options.Context, cancellationToken).ConfigureAwait(false);
+                response.Complete = response.Results.All(r => r.State != "transient");
             }
 
             // The caller's own rules last (they never reveal anything a parental limit hid).
@@ -762,6 +764,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 TvdbId = candidate.Details?.TvdbId,
                 ImdbId = candidate.Details?.ImdbId,
                 Alternative = candidate.Alternative,
+                // Found under the entry's own ids: those name it too (an IMDb episode id names the episode, not the title).
+                EntryIds = candidate.Explicit ? (hit.MediaType == "tv" ? wanted.TvdbId : null, wanted.ImdbEpisode ? null : wanted.ImdbId) : (null, null),
             };
 
             var kind = hit.MediaType == "movie" ? PlaceholderKinds.Movie : wanted.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Kind : PlaceholderKinds.Series;
@@ -870,30 +874,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        // SEC-02: a candidate (an alternative's too) for a title the library holds but the caller can't open (no copy they
-        // can open; its season, or one of its episodes, hidden from them) is left out, so it is never offered as a title
-        // that isn't in the library. One library read per title and season.
-        private void ProjectPhysical(List<ResolvedEntryDto> results, User caller)
+        // SEC-02 / R2-B1: a candidate (an alternative's too) for a title the library holds but the caller can't open (no
+        // copy they can open; its season, or one of its episodes, hidden from them) is left out, so it is never offered as
+        // a title that isn't in the library. The library is asked under every id the candidate is known by (TMDB, the
+        // details' TVDB and IMDb, the entry's own id it was found under), completed through the lookup when the library
+        // holds copies those ids can't find (ImportPhysicalProjection). An entry whose candidate couldn't be checked (the
+        // lookup failed) is transient: retried, never offered unchecked.
+        private async Task ProjectPhysicalAsync(List<ResolvedEntryDto> results, User caller, ImportCallContext context, CancellationToken cancellationToken)
         {
-            var read = new Dictionary<(bool, int, int?), ImportPhysical>();
-            bool Hidden(ImportCandidateDto candidate)
-            {
-                var movie = candidate.MediaType == "movie";
-                var season = movie ? null : candidate.Scope.Season;
-                var key = (movie, candidate.TmdbId, season);
-                if (!read.TryGetValue(key, out var physical))
-                {
-                    read[key] = physical = _physical!.Read(caller, movie, candidate.TmdbId, season);
-                }
-
-                return physical.Hides(season, movie ? null : candidate.Scope.Episodes);
-            }
-
+            var projection = new ImportPhysicalProjection(_physical!, _lookup, caller, context);
             foreach (var result in results)
             {
-                Remove(result, Hidden);
+                var hidden = new HashSet<ImportCandidateDto>();
+                var unknown = false;
+                foreach (var candidate in result.Candidates)
+                {
+                    var movie = candidate.MediaType == "movie";
+                    var identity = new ImportIdentity(movie, candidate.TmdbId, candidate.TvdbId ?? candidate.EntryIds.Tvdb, candidate.ImdbId ?? candidate.EntryIds.Imdb);
+                    var season = movie ? null : candidate.Scope.Season;
+                    var physical = await projection.ReadAsync(identity, season, cancellationToken).ConfigureAwait(false);
+                    if (physical == null)
+                    {
+                        unknown = true;
+                        break;
+                    }
+
+                    if (physical.Hides(season, movie ? null : candidate.Scope.Episodes))
+                    {
+                        hidden.Add(candidate);
+                    }
+                }
+
+                if (unknown)
+                {
+                    result.State = "transient";
+                    result.Candidates = new List<ImportCandidateDto>();
+                    result.Match = null;
+                    result.Confidence = ImportScoring.Levels.None;
+                    result.Reasons = new List<string>();
+                    continue;
+                }
+
+                Remove(result, hidden.Contains);
             }
         }
+
+        /// <summary>The title lookup (the source preview completes its entries' identities through it).</summary>
+        internal IImportLookup Lookup => _lookup;
 
         // Leaves out the candidates `remove` names; a lost top match lowers the entry's confidence (none without any).
         private static void Remove(ResolvedEntryDto result, Func<ImportCandidateDto, bool> remove)

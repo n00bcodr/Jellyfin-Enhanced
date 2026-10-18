@@ -186,6 +186,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
 
         /// <summary>The library scope the candidate stands for (season and episodes of a TV scope), for the caller's physical-title projection; never sent.</summary>
         [JsonIgnore] internal (int? Season, IReadOnlyList<int>? Episodes) Scope { get; set; }
+
+        /// <summary>
+        /// Internal (never sent): the TVDB / IMDb id the import entry named this candidate by (it was found under that
+        /// id), part of its identity for the physical-title check next to <see cref="TvdbId"/> and <see cref="ImdbId"/>.
+        /// </summary>
+        [JsonIgnore] internal (int? Tvdb, string? Imdb) EntryIds { get; set; }
     }
 
     /// <summary>The resolution of one entry.</summary>

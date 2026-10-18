@@ -1435,9 +1435,17 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   already in the library.
 - **Privacy.** A person with parental limits gets only titles whose rating is verified to be within them, and source
   counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
-  Guard on, overviews and episode titles of guarded titles are left out.
+  Guard on, overviews and episode titles of guarded titles are left out. A title, season or episode the library holds
+  in a library the person can't open is never offered as missing, whichever id the library knows it by (TMDB, TVDB or
+  IMDb): when some library items lack a TMDB id, the title's other ids are looked up first.
+- **Whole lists only.** A list read counts as complete only when the site itself says it ended and its page and item
+  counts add up (no empty page in the middle, no error). Anything less is shown as partial (or cut off at the
+  1000-entry cap), so nothing would ever be removed because of it.
 - **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
-  for people over background work. MDBList's API is used only when an administrator chooses it for a list.
+  for people over background work. MDBList's API is used only when an administrator chooses it for a list. Every
+  request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
+  its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
+  redirects and only at public addresses.
 - **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
   get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
 

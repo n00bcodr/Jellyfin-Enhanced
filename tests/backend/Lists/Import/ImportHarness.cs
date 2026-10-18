@@ -30,13 +30,15 @@ internal sealed class ImportHarness : IDisposable
 
     /// <param name="seerr">Configure a (synthetic) Seerr.</param>
     /// <param name="realLibrary">Library matches come from the production lookup over <see cref="Host"/> instead of <see cref="Library"/>.</param>
-    public ImportHarness(bool seerr = false, bool realLibrary = false)
+    /// <param name="physical">The physical-title reader to use instead of <see cref="Physical"/> (e.g. the production one).</param>
+    public ImportHarness(bool seerr = false, bool realLibrary = false, Func<ImportHarness, IImportPhysicalTitles>? physical = null)
     {
         Lists = new ListsHarness(seerr);
         ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
         IListLibraryLookup library = realLibrary ? new ResolverListLibraryLookup(Lists.Resolver, Host) : Library;
-        ImportResolver = new ListImportResolver(Lookup, library, Access, Limiter, Plugin.Core.Logger, Viewer, Physical);
-        Sources = new ListSourcePreview(Fetcher, ImportResolver, Access, Plugin.Core.Logger, Viewer, Physical);
+        var reader = physical?.Invoke(this) ?? Physical;
+        ImportResolver = new ListImportResolver(Lookup, library, Access, Limiter, Plugin.Core.Logger, Viewer, reader);
+        Sources = new ListSourcePreview(Fetcher, ImportResolver, Access, Plugin.Core.Logger, Viewer, reader);
     }
 
     public ApiPluginFixture Plugin => Lists.Plugin;

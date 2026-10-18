@@ -122,7 +122,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             // SEC-02: a title, season or episode the library holds but the caller can't open is never offered as absent.
-            var held = FilterPhysical(items, caller);
+            var held = await FilterPhysicalAsync(items, caller, cancellationToken).ConfigureAwait(false);
             hideCounts |= held.Count < items.Count;
             items = held;
 
@@ -272,34 +272,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             || !caller.HasPermission(PermissionKind.EnableAllFolders)
             || caller.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).Length > 0;
 
-        // SEC-02: entries for a title the library holds but the caller can't open (no copy they can open; the season or
-        // episode hidden from them) are left out. One library read per title and season.
-        private List<SourceItem> FilterPhysical(List<SourceItem> items, User caller)
+        // SEC-02 / R2-B1: entries for a title the library holds but the caller can't open (no copy they can open; the
+        // season or episode hidden from them) are left out. The library is asked under every id the entry carries (TMDB,
+        // TVDB, IMDb), completed through the title lookup when the library holds copies those ids can't find; an entry
+        // whose ids couldn't be completed (the lookup failed) is left out too (fails closed). One read per title and season.
+        private async Task<List<SourceItem>> FilterPhysicalAsync(List<SourceItem> items, User caller, CancellationToken cancellationToken)
         {
             if (_physical == null)
             {
                 return items;
             }
 
-            var read = new Dictionary<(bool, int, int?), ImportPhysical>();
-            bool Hidden(SourceItem item)
+            var projection = new ImportPhysicalProjection(_physical, _resolver.Lookup, caller, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false));
+            var held = new List<SourceItem>();
+            foreach (var item in items)
             {
-                if (item.TmdbId is not int tmdb || tmdb <= 0)
-                {
-                    return false; // an IMDb/TVDB-only entry: matched by the resolver, which projects it
-                }
-
                 var movie = item.MediaType == "movie";
-                var key = (movie, tmdb, movie ? null : item.Season);
-                if (!read.TryGetValue(key, out var physical))
+                var season = movie ? null : item.Season;
+                var physical = await projection.ReadAsync(new ImportIdentity(movie, item.TmdbId, movie ? null : item.TvdbId, item.ImdbId), season, cancellationToken).ConfigureAwait(false);
+                if (physical != null && !physical.Hides(season, item.Episode is int e ? new[] { e } : null))
                 {
-                    read[key] = physical = _physical.Read(caller, movie, tmdb, key.Item3);
+                    held.Add(item);
                 }
-
-                return physical.Hides(movie ? null : item.Season, item.Episode is int e ? new[] { e } : null);
             }
 
-            return items.Where(i => !Hidden(i)).ToList();
+            return held;
         }
 
         // Exact sources: group the (allowed) entries by their positions in the whole list, prepare each group's

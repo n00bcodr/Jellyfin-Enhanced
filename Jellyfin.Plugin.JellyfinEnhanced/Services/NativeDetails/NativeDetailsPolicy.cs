@@ -200,6 +200,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
+        /// <see cref="Physical(User, bool, int, int?, bool)"/> asked under every id the caller knows the title by (TMDB,
+        /// TVDB, IMDb: the list import's physical-title projection, review round 2), with this policy's viewer revision.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="keys">Every key of the title.</param>
+        /// <param name="season">The season whose hidden episodes are wanted, or null.</param>
+        /// <returns>The physical title (hidden when the library can't be read).</returns>
+        public PhysicalTitle Physical(User viewer, bool movie, IReadOnlyCollection<TitleKey> keys, int? season)
+        {
+            if (_physical == null) return PhysicalTitle.None;
+            try
+            {
+                return _physical.Read(viewer, Revision(viewer), movie, keys, season);
+            }
+            catch (Exception)
+            {
+                return new PhysicalTitle { Hidden = true };
+            }
+        }
+
+        /// <summary>The library reader's <see cref="NativeDetailsLibrary.HoldsCopiesWithout"/> (true when it can't be asked).</summary>
+        /// <param name="movie">Movies (else series).</param>
+        /// <param name="providers">Providers of the ids at hand.</param>
+        /// <returns>True when copies exist that none of those ids can find.</returns>
+        public bool HoldsCopiesWithout(bool movie, IReadOnlyCollection<string> providers)
+        {
+            if (_physical == null) return false;
+            try
+            {
+                return _physical.HoldsCopiesWithout(movie, providers);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        /// <summary>
         /// The viewer-level part of <see cref="MaySeeAsync"/>, the same for every title: the feature is on,
         /// the viewer is enabled, Seerr is configured and (Seerr mode) the viewer is linked and not
         /// import-blocked. Artwork requests re-run it, since grants outlive the page that minted them.
