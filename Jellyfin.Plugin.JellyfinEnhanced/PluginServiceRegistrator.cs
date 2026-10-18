@@ -181,6 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<MdblistService>();
+            serviceCollection.AddSingleton<DoesTheDogDieService>();
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and
             // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
             serviceCollection.AddSingleton<TmdbResponseCache>();

@@ -94,7 +94,7 @@ public class PerfRound2TagCacheTests
         library.Setup(l => l.GetItemById<BaseItem>(episode.Id)).Returns(episode);
         var snapshot = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
         Directory.CreateDirectory(f.Core.ConfigRoot);
-        File.WriteAllText(snapshot, JsonSerializer.Serialize(new { SchemaVersion = 7, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = new Dictionary<string, TagCacheEntry>() }));
+        File.WriteAllText(snapshot, JsonSerializer.Serialize(new { SchemaVersion = 8, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = new Dictionary<string, TagCacheEntry>() }));
 
         // Shutdown applies the queued update synchronously: the first rebuild adds the entry...
         using (var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger))

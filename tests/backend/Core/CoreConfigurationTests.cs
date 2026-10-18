@@ -8,7 +8,7 @@ public class CoreConfigurationTests
     [Fact]
     public void DefaultUserSettingsPreserveOptInAndInheritedChoices()
     {
-        var settings = new UserSettings();
+        var settings = new JellyfinEnhancedUserSettings();
         Assert.False(settings.AutoPauseEnabled);
         Assert.False(settings.AutoResumeEnabled);
         Assert.False(settings.AutoSkipIntro);
@@ -40,6 +40,7 @@ public class CoreConfigurationTests
         Assert.True(state.PendingTmdb.ContainsKey("tv:123"));
         Assert.Null(state.Prefs.HideRatings);
         Assert.Null(state.Prefs.UseAdvancedCategories);
+        Assert.Null(state.Prefs.HideTrickplay);
     }
 
     [Theory]

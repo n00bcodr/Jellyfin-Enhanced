@@ -81,6 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             HideReviewsFromDisabledUsers = true;
             MirrorReviewRatingsToJellyfin = false;
             ShowAwards = false;
+            DoesTheDogDieEnabled = false;
+            DoesTheDogDieApiKey = "";
             MdblistApiKey = "";
             MdblistRatingsEnabled = false;
             MdblistRatingsShowOnItemDetails = true;
@@ -179,6 +181,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             JellyseerrEnable4KRequests = false;
             JellyseerrEnable4KTvRequests = false;
             JellyseerrShowAdvanced = false;
+            JellyseerrSingleSeasonRequestOnly = false;
             JellyseerrShowQuotaInfo = true;
             JellyseerrShowSimilar = true;
             JellyseerrShowRecommended = true;
@@ -315,6 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ActivityFeedShowWatched = true;
             ActivityFeedShowFavorited = true;
             ActivityFeedShowReviewed = true;
+            ActivityFeedOwnOnlyForNonAdmins = false;
             ActivityFeedShowActiveStreams = true;
             ActivityFeedUsePluginPages = false;
             ActivityFeedUseCustomTabs = false;
@@ -429,6 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             SpoilerAutoEnableLibraryIds = "";
             SpoilerBlurStrictRefresh = false;
             SpoilerKeepMoviePosters = true;
+            SpoilerBlurTrickplay = true;
             SpoilerOverviewPlaceholder = "Spoiler Guard activated";
 
             // Advanced per-category reveals. Off by default so existing
@@ -563,6 +568,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// are touched (season/episode reviews have no reliable TMDB-keyed item).</summary>
         public bool MirrorReviewRatingsToJellyfin { get; set; }
         public bool ShowAwards { get; set; }
+        /// <summary>Shows a content-warnings section (DoesTheDogDie votes) on item-details pages.</summary>
+        public bool DoesTheDogDieEnabled { get; set; }
+        /// <summary>DoesTheDogDie API key. Server-side only, never sent to clients.</summary>
+        public string DoesTheDogDieApiKey { get; set; } = string.Empty;
         /// <summary>MDBList API key (mdblist.com). Never exposed to clients;
         /// see GetPublicConfig()'s MdblistEnabled boolean. Used server-side
         /// only, by MdblistService.</summary>
@@ -742,6 +751,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool JellyseerrEnable4KRequests { get; set; }
         public bool JellyseerrEnable4KTvRequests { get; set; }
         public bool JellyseerrShowAdvanced { get; set; }
+        public bool JellyseerrSingleSeasonRequestOnly { get; set; }
         public bool JellyseerrShowQuotaInfo { get; set; }
         public bool JellyseerrShowSimilar { get; set; }
         public bool JellyseerrShowRecommended { get; set; }
@@ -1145,6 +1155,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ActivityFeedShowFavorited { get; set; } = true;
         public bool ActivityFeedShowReviewed { get; set; } = true;
         /// <summary>
+        /// When true, non-admins only see their own entries in the Activity Feed.
+        /// Admins always see everyone.
+        /// </summary>
+        public bool ActivityFeedOwnOnlyForNonAdmins { get; set; }
+        /// <summary>
         /// Shows the Active Streams section on the Activity Feed page. This is
         /// separate from ActiveStreamsEnabled (the header widget toggle) so an
         /// admin can run the section here without the persistent header icon,
@@ -1363,6 +1378,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // are usually curated marketing art, while chapter scene-thumbs (and
         // synopsis/cast) are the real spoiler vector. Off = hide posters too.
         public bool SpoilerKeepMoviePosters { get; set; } = true;
+        // True (default): trickplay seek-preview tile sheets of a listed, unwatched
+        // episode/movie are protected (sheets that end before the saved resume
+        // point still pass through). Off = seek previews always pass through
+        // (served no-store). Users can also opt out per-user via
+        // SpoilerBlurUserPrefs.HideTrickplay; the admin switch caps it.
+        public bool SpoilerBlurTrickplay { get; set; } = true;
         // Advanced per-category reveals. When on, the user's NEXT unwatched
         // regular episode and the rest of its season get their own strip masks
         // below instead of the uniform full strip; every other unwatched

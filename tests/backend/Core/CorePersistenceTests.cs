@@ -14,10 +14,10 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var id = Guid.Parse(User);
-        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new UserSettings { DisplayLanguage = "日本語", AutoPauseEnabled = true });
+        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new JellyfinEnhancedUserSettings { DisplayLanguage = "日本語", AutoPauseEnabled = true });
         var reopened = new UserConfigurationManager(f.Paths.Object, f.Logger);
-        Assert.Equal("日本語", reopened.GetUserConfiguration<UserSettings>(User, "settings.json").DisplayLanguage);
-        Assert.False(reopened.GetUserConfiguration<UserSettings>(Guid.NewGuid().ToString("N"), "settings.json").AutoPauseEnabled);
+        Assert.Equal("日本語", reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").DisplayLanguage);
+        Assert.False(reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(Guid.NewGuid().ToString("N"), "settings.json").AutoPauseEnabled);
         Assert.Same(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(id.ToString("D").ToUpperInvariant(), "settings.json"));
         Assert.NotSame(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(User, "other.json"));
     }
@@ -47,12 +47,12 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var path = f.Write(User, content);
-        Assert.Equal(5, f.Manager.GetUserConfiguration<UserSettings>(User, "settings.json").PauseScreenDelaySeconds);
+        Assert.Equal(5, f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").PauseScreenDelaySeconds);
         Assert.Equal(content, File.ReadAllText(path));
-        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json"));
+        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json"));
         Assert.False(File.Exists(path));
         Assert.Equal(content, File.ReadAllText(Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!, "*.corrupt-*"))));
-        Assert.Equal(5, f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json").PauseScreenDelaySeconds);
+        Assert.Equal(5, f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json").PauseScreenDelaySeconds);
     }
 
     [Fact]
@@ -60,11 +60,11 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var path = f.Write(User, "broken");
-        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json", false));
+        Assert.ThrowsAny<Exception>(() => f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json", false));
         Assert.Equal("broken", File.ReadAllText(path));
         f.Write(User, "{\"AutoPauseEnabled\":null,\"DisplayLanguage\":\"fr\"}");
-        Assert.Equal("fr", f.Manager.GetUserConfigurationStrict<UserSettings>(User, "settings.json").DisplayLanguage);
-        Assert.False(f.Manager.GetUserConfiguration<UserSettings>(User, "settings.json").AutoPauseEnabled);
+        Assert.Equal("fr", f.Manager.GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(User, "settings.json").DisplayLanguage);
+        Assert.False(f.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").AutoPauseEnabled);
     }
 
     [Theory]

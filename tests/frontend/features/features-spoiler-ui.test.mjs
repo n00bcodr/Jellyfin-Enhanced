@@ -100,3 +100,35 @@ test('the pending Spoiler Guard switch drawn for a native action row looks like 
   assert.equal(pill.className, 'je-spoiler-pending-btn je-spoiler-pending-on');
   assert.equal(pill.textContent, 'blur_onSpoiler Guard (pending)');
 });
+
+function settingsTab(t, pluginConfig, prefs = {}) {
+  const h = setup(t);
+  const saved = [];
+  Object.assign(h.JE, { pluginConfig: { SpoilerBlurEnabled: true, ...pluginConfig }, t: key => key, icon: () => '', IconName: { BLUR_ON: 'blur_on' } });
+  h.JE.internals = { spoilerGuard: { getUserPrefs: () => ({ ...prefs }), whenLoaded: async () => {}, isLoadOk: () => true, setUserPrefs: async next => { saved.push(next); } } };
+  h.load('enhanced/spoilerguard/settings-tab.js');
+  const ctx = { presetBoxBackground: 'black', toggleAccentColor: 'white', help: h.document.body, resetAutoCloseTimer() {} };
+  h.document.body.innerHTML = h.JE.internals.spoilerGuard.buildSettingsHtml(ctx);
+  return { h, ctx, saved, ids: [...h.document.querySelectorAll('input[id^="sbPref"]')].map(box => box.id) };
+}
+
+test('spoiler settings seek-preview row follows the admin trickplay switch and sits after Reviews', t => {
+  const { ids } = settingsTab(t, { SpoilerAdvancedMode: true });
+  assert.equal(ids.indexOf('sbPrefHideTrickplay'), ids.indexOf('sbPrefHideReviews') + 1);
+  assert.equal(ids.indexOf('sbPrefUseAdvancedCategories'), ids.indexOf('sbPrefHideTrickplay') + 1);
+  assert.equal(settingsTab(t, { SpoilerBlurTrickplay: false }).ids.includes('sbPrefHideTrickplay'), false);
+});
+
+test('spoiler settings seek-preview row reflects and saves the per-user opt-out', async t => {
+  const { h, ctx, saved } = settingsTab(t, { SpoilerBlurTrickplay: true }, { HideTrickplay: false, HideReviews: null });
+  const box = h.document.getElementById('sbPrefHideTrickplay');
+  assert.equal(box.checked, false);
+  assert.equal(box.dataset.pref, 'HideTrickplay');
+  h.JE.internals.spoilerGuard.wireSettings(ctx);
+  await new Promise(resolve => setTimeout(resolve, 0)); // let the initial preference sync finish
+  assert.equal(box.checked, false);
+  box.checked = true;
+  box.dispatchEvent(new h.window.Event('change'));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(saved, [{ HideTrickplay: null, HideReviews: null }]);
+});

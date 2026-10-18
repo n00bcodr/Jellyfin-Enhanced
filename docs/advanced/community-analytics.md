@@ -1,88 +1,214 @@
 # Community Analytics
 
-Jellyfin Enhanced can optionally report a small set of anonymous usage statistics back to a
-community analytics project, entirely **opt-in and off by default**. Nothing is sent unless an
-admin turns it on from the plugin's config page (**Admin → Usage Statistics**), and that page shows
-the exact payload before it's ever sent.
+JE can share installation statistics to help you see how the community uses the plugin. Reporting is **opt-in and off by default**; an administrator must enable **Share Anonymous Usage Statistics** and save.
 
-This page shows the current aggregate results, live, straight from the same database every opted-in
-install reports to. It reads six public, read-only views. No per-install data, no IP addresses, no
-identifying information of any kind is exposed here or anywhere in this system.
+!!! note "About the dashboard"
 
-!!! info "What these numbers are, and aren't"
-    These figures cover **only installs that have explicitly opted in**. <br>They are not a total
-    install count for Jellyfin Enhanced, and shouldn't be read as one, since opting in is off by
-    default, so this is a self-selected sample, not a census. Use it to see feature-usage
-    *trends among reporting installs*, not overall adoption or reach.
+    The dashboard reads aggregate results from public views. Visiting this page makes browser requests to the analytics service, Google Fonts and external tab-icon assets, even if your Jellyfin server has never enabled reporting. These requests are separate from installation reports.
+
+    The figures show trends among installations that choose to report. They do not count all JE installations.
+
+## How to use
+
+Choose the categories you want to share, and use **Preview** to check the statistics before saving.
+
+1. Open **Dashboard → Plugins → Jellyfin Enhanced → Admin → Usage Statistics**.
+2. Turn on **Share Anonymous Usage Statistics** to show the category, interval, and **Preview** controls. Uncheck any categories you do not want to share.
+3. Optionally click **Preview** to inspect your selections.
+4. Save. JE queues the first reporting attempt automatically; you do not need to use **Preview** first.
+
+The page shows the last successful report time, or tells you that no report has been sent yet.
+
+Administrator settings:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Share Anonymous Usage Statistics** | Off | Enables server reporting to the community analytics service. |
+| **Feature toggle states (on/off only)** | On | Shares on/off settings and selected text settings, despite the checkbox wording. |
+| **Feature usage counts** | On | Shares action counts and current totals of stored entries. |
+| **Data file sizes (bytes only, never contents)** | On | Shares the total size of the custom branding directory. |
+| **Reporting interval (days)** | 15 | Sets how often reports are sent, within 7–30 days. |
+
+??? note "Details"
+
+    On first enablement, the interface checks all three categories. After you save your choices, later enables preserve them. The category defaults do not enable reporting while the master setting is off.
+
+    If you uncheck all three categories, reports still include version information, installation credentials, the counting-period start date and build proof. See **Always included** below. The reporting interval is clamped to 7–30 days.
+
+### What Preview shows
+
+**Preview** lets you inspect the selected statistics without registering your installation or sending a report. It uses the category selections currently on screen, including unsaved changes.
+
+![Usage Statistics with the preview of the anonymous report shown before sharing is saved](../images/admin/analytics-preview.webp)
+*Previewing a report does not enable sharing.*
+
+Other configuration values come from your saved server configuration. Counts and file sizes show the current state and may change before JE sends the report.
+
+??? info "How it works"
+
+    The preview route is administrator-only: `POST /JellyfinEnhanced/usage/preview`. Before registration, the install ID reads `(not registered yet; assigned on first real send)`.
+
+    Preview shows readable property names. The actual report uses `p_*` field names and also sends the installation secret and a build-proof field, neither of which appears in Preview. The proof comes from the plugin assembly, installation ID and plugin version. It can be null if JE cannot read the assembly.
 
 ## What's collected
 
-The config page's **Preview** button always shows the exact JSON that would be sent, built from
-the same code that does the real send. What follows is the
-detailed breakdown of what that JSON can contain.
+Every enabled report includes installation and version information. The three optional categories add settings, counts or branding-directory size.
 
 ### Always included
-(even with every option below unchecked)
 
-Turning the master toggle on alone, with all three categories below left unchecked, sends only:
+Every enabled report includes these fields, even if you uncheck all three categories:
 
-- A random install ID (server-minted, never derived from anything about you or your server)
-- The plugin version
-- The Jellyfin server version and build target (`jf10`/`jf12`)
-- The reporting period's start date
+- A persistent installation ID assigned by the reporting service.
+- The plugin version, Jellyfin server version and build target.
+- The start date of the counting period.
+- The installation secret used to authenticate the report, and the build-proof field.
 
-Enough to answer "how many installs are on the latest version" and nothing else.
+??? info "How it works"
 
-!!! info
-    Despite the heading, "always" means "with every report", not "unconditionally": nothing at all
-    is sent until the master toggle is enabled and saved.
+    The build target is `jf10` or `jf12`. During registration, the service returns the installation ID and secret. JE stores them in its plugin configuration.
 
 ### Feature toggle states
 
-Every `bool` setting in the plugin's config (on/off only), reflected automatically, so a newly
-added toggle is automatically added in the next sync. See the **Feature toggle adoption** section below
-for the live, current, complete list, grouped by settings-page section.
+This category shows which features participating servers use. It shares on/off settings, whether TMDB and MDBList keys are configured, and a selected set of text settings.
 
-Also included: two derived "is a key configured" flags (`TmdbEnabled`, `MdblistEnabled`), showing
-whether a TMDB/MDBList API key is set, **never the key itself**, and a small, explicitly hand-picked
-set of non-boolean fixed-choice settings, since a string *could* be a URL or API key and only
-specific ones are ever safe to include:
+Select **Feature toggle states (on/off only)** before saving to include this category.
 
-- Icon style (`IconStyle`)
-- Maintenance Mode action (`MaintenanceModeAction`) and scheduled-window action
-  (`MaintenanceScheduleAction`), and whether it applies to all users or a
-  selection (`MaintenanceModeAffectedUsers`, sent only as `all`/`selected` — the actual user
-  selection never leaves your server)
-- Tag overlay positions (`QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`, `AgeRatingTagsPosition`)
-- Language tag priority list (`LanguageTagsPriority`) — normalized before sending: only tokens
-  shaped like language codes (e.g. `en,ja,fr`) are included, anything else typed into that box is
-  dropped
-- Native Poster Tags extra excluded clients (`NativePosterTagsWebClientNames`) — normalized before
-  sending: only short app-name-shaped entries are included (up to 20), the built-in web clients are
-  left out, and anything else typed into that box is dropped. Whether Native Poster Tags is turned
-  on is reported with the other on/off feature settings
+??? info "How it works"
 
-No other string setting is ever included: URLs, API keys, branding text/images, and every other
-free-text field are permanently excluded by design, not by an admin-configurable option.
+    Boolean settings are included except properties beginning with `Analytics` and properties marked `[AnalyticsExclude]`. `TmdbEnabled` and `MdblistEnabled` indicate whether keys are configured; the keys themselves are not sent.
+
+    The selected text settings are:
+
+    | Choice | Reported property and filtering |
+    | --- | --- |
+    | Icon style | `IconStyle` |
+    | Maintenance actions and affected users | `MaintenanceModeAction`, `MaintenanceScheduleAction` and `MaintenanceModeAffectedUsers`. The user scope is reduced to `all` or `selected`, without selected user IDs. |
+    | Tag positions | `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `RatingTagsPosition`, `AgeRatingTagsPosition` |
+    | Tag styling | `TagStyleTarget`, `TagStylePreset`, `TagStyleApplyScope` |
+    | Language priority | `LanguageTagsPriority`, filtered to tokens shaped like language codes and converted to lowercase |
+    | Additional Native Poster Tags client exclusions | `NativePosterTagsWebClientNames`, filtered to short app-name-shaped entries, deduplicated and limited to 20. Built-in web clients are omitted. |
+
+    Nonempty strings marked `[AnalyticsInclude]` are included as stored. Other strings are excluded unless the reporting code explicitly derives and filters them. Checking the shape of language/client strings does not guarantee what the entered text means.
+
+    The report does not include configured service URLs, media-service API keys, branding text or image contents.
 
 ### Feature usage counts
 
-- **Seerr requests submitted**: a counter that goes up by one each time you submit a request, sent
-  each report, then reset to zero, so it tracks recent activity rather than an ever-growing total.
-- **Item totals**: bookmarks, hidden-content items, spoiler-blur items, and reviews. Instead of
-  counting an action, the plugin just counts what's currently in each file, every time it reports.
-  Shown on the dashboard as: total count, how many installs have at least one, and how many
-  installs reported at all.
+This category shares counts of Seerr requests and qualifying home-row removal events, plus totals of stored entries. It sends counts rather than titles, review contents or user records.
 
-Counts only, always: never which items, never any title or content, never who specifically.
+Select **Feature usage counts** before saving to include this category.
+
+Current totals cover:
+
+- Bookmarks across user files.
+- Hidden-content entries, including home-row suppression entries.
+- Direct Spoiler Guard series, movie and collection entries; pending protection intents are excluded.
+- Reviews in the shared review store.
+
+These totals count entries. The same title can contribute entries for several users, so the totals do not count unique titles or users.
+
+??? info "How it works"
+
+    Action counters record:
+
+    | Counter | Meaning |
+    | --- | --- |
+    | `seerr.request_submitted` | Submitted Seerr requests recorded by the client. |
+    | `continue_watching.auto_removed` | Playback-start events that clear or demote qualifying home-row removals while the Remove Continue Watching feature is enabled. Counts events, not individual entries removed. |
+
+    Actions count only while reporting **and** the usage-count category are enabled. JE does not reconstruct earlier activity. Each off-to-on reporting transition clears counters at the point you enable reporting.
+
+    Every successful report advances the counting period and subtracts the captured counter snapshot. This also happens when **Feature usage counts** is unchecked and those earlier counts were omitted from the report. Increments during transmission carry forward. Failed attempts do not subtract the captured counts.
 
 ### Data file sizes
 
-Byte size only (never contents) of the custom branding folder, if anything has been uploaded there
-(logo/banner/favicon images). This answers "is this feature actually used" the same way the usage
-counts above do for other features.
+This category shares the total size of your custom branding directory, without file names or contents. It does not include other plugin data-file sizes.
+
+Select **Data file sizes (bytes only, never contents)** before saving to include this category.
+
+??? info "How it works"
+
+    The report uses the key `custom_branding`. It sends the total bytes in the branding directory, or zero if the directory is absent, empty or unreadable.
+
+## Reporting, storage and opt-out
+
+JE checks whether a report is due at startup and through the **Send Anonymous Usage Report** scheduled task. Turning reporting on and saving queues an immediate attempt.
+
+To stop reporting:
+
+1. Open **Admin → Usage Statistics** in the plugin configuration.
+2. Turn off **Share Anonymous Usage Statistics** and save.
+
+!!! note "Opting out and remote history"
+
+    For a registered installation, JE asks the service to exclude it from public views while keeping its history. Re-enabling reporting asks the service to include it again. Both effects depend on successful requests and the external service. Turning reporting off does not request remote deletion.
+
+??? info "How it works"
+
+    The server sends HTTPS requests to `https://cgsdfzfdoxunzoofzhgd.supabase.co`. Registration uses `/rest/v1/rpc/register_install`; reports use `/rest/v1/rpc/report_stats`.
+
+    The scheduled task's default trigger is every 24 hours. It sends only when the configured interval has elapsed or the plugin version, Jellyfin version or build target has changed. Running the task manually uses the same check. Saving an off-to-on transition bypasses the check for its immediate attempt.
+
+    Failed registration or reporting logs a warning, retains unsent counts and leaves the last-success timestamp unchanged. Repeated credential rejection can cause JE to clear its credentials and register again on the next attempt.
+
+    Credentials, the last report projection and report state are saved in plugin configuration. Action counters are stored locally in `usage-counters.json`.
+
+    Opting out queues a best-effort `/rest/v1/rpc/set_opted_out` request using the installation ID and secret. Re-enabling queues a report intended to clear that flag.
+
+??? note "Details"
+
+    Reports have no dedicated username, media-title or IP-address fields. They do use persistent installation credentials and selected text settings. This repository does not establish the remote service's retention policy or access-log practices. The dashboard shows aggregate results.
+
+### Local Catch Up activity log
+
+Catch Up has a separate local activity log for administrators. Its records are not included in installation analytics reports.
+
+With **Enable Catch Up** and **Record Catch Up activity** enabled, the server records the user's username and ID, title and ID, action, time, reported success, and selected seasons where applicable. Only administrators can retrieve the log and summary through JE.
+
+To stop future recording, turn off **Record Catch Up activity** and save.
+
+Administrator settings:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Enable Catch Up** | Off | Enables the Catch Up page. |
+| **Record Catch Up activity** | On | Records local activity when Catch Up is enabled. |
+
+??? info "How it works"
+
+    The server keeps `catchup-log.jsonl` and one rotated `catchup-log.1.jsonl` beside JE's shared data files. Rotation occurs at approximately 5 MiB per file.
+
+See [Catch Up and Activity](../enhanced/enhanced-features.md) and [settings](../enhanced/enhanced-settings.md).
 
 ## Live Dashboard
+
+Browse aggregate results from participating installations. Usage covers the last 45 days; totals show current stored entries.
+
+1. Use the facet buttons to select a settings tab.
+2. Type to filter a table.
+3. Click a column heading to sort; click it again to reverse the order.
+
+Data reloads when you arrive on the page or refresh your browser. A version warning means the build target does not match the Jellyfin major version.
+
+??? note "Details"
+
+    **Feature Toggle Adoption** lists settings present in reporting data. New or unreported settings may be absent; it is not a complete configuration catalog.
+
+    Labels and defaults come from the generated settings map. Unknown labels use readable versions of property names, and unknown groups use Other.
+
+    Queries have these limits:
+
+    | Data | Limit |
+    | --- | --- |
+    | Versions | Up to 500 rows fetched; the largest 50 fetched groups appear in the version table |
+    | Usage | 20 rows |
+    | Current totals | 24 rows |
+    | Feature flags | 500 rows |
+    | Setting values | 500 rows |
+
+    Settings percentages use the fetched value rows for each setting. These limits can further reduce the sample.
+
+<div id="je-analytics-dashboard" markdown>
 
 <p id="je-analytics-loading">Loading live data…</p>
 <p id="je-analytics-error-banner" class="je-analytics-error" hidden></p>
@@ -112,6 +238,8 @@ counts above do for other features.
 <div id="je-section-settings"></div>
 
 <p class="je-analytics-updated" id="je-analytics-updated"></p>
+
+</div>
 
 <style>
 /* Same Material Icons font the config page's tabs use; this docs page is a
@@ -166,8 +294,13 @@ counts above do for other features.
   padding: 0.4em 0.6em; border: 1px solid var(--md-default-fg-color--lightest, #ddd);
   border-radius: 6px; background: transparent; color: inherit; font: inherit;
 }
-.je-sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
-.je-sortable-th:hover { opacity: 0.75; }
+.je-sortable-th { user-select: none; white-space: nowrap; }
+.je-sortable-th button {
+  font: inherit; color: inherit; font-weight: inherit; text-align: inherit;
+  background: none; border: none; padding: 0; width: 100%; cursor: pointer;
+}
+.je-sortable-th button:hover { opacity: 0.75; }
+.je-sortable-th button:focus-visible { outline: 2px solid var(--je-link); outline-offset: 2px; }
 .je-sort-active { font-weight: 700; }
 .je-pct-cell { display: inline-flex; align-items: center; gap: 0.5em; white-space: nowrap; }
 .je-inline-bar-track {
@@ -180,6 +313,11 @@ counts above do for other features.
 
 <script>
 (function() {
+  // Instant navigation may execute this page script more than once.
+  if (window.jeAnalyticsDashboard) window.jeAnalyticsDashboard.dispose();
+  let activeRoot = null;
+  let activeController = null;
+  let subscription = null;
   const SUPABASE_URL = "https://cgsdfzfdoxunzoofzhgd.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_ShFKE3ognn7ZgncCGmCR-A_R1tPApiW";
 
@@ -188,10 +326,11 @@ counts above do for other features.
   // able to make every visitor download/render unbounded rows.
   const MAX_ROWS = 500;
 
-  async function fetchView(name, query) {
+  async function fetchView(name, query, signal) {
     const q = query || "select=*";
     const withLimit = /(^|&)limit=/.test(q) ? q : `${q}&limit=${MAX_ROWS}`;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${name}?${withLimit}`, {
+      signal,
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
     });
     if (!res.ok) throw new Error(`${name}: ${res.status}`);
@@ -361,9 +500,9 @@ counts above do for other features.
   let TAB_ICONS_MAP = {};
   let FLAG_DEFAULTS_MAP = {};
 
-  async function loadFlagGroups() {
+  async function loadFlagGroups(signal) {
     try {
-      const res = await fetch('../config-flag-groups.json');
+      const res = await fetch(new URL('../config-flag-groups.json', window.location.href), { signal });
       if (res.ok) {
         const data = await res.json();
         FLAG_GROUPS_MAP = data.groups || {};
@@ -440,7 +579,7 @@ counts above do for other features.
     function renderHead() {
       return columns.map(c => {
         const active = c.key === sortKey;
-        return `<th class="je-sortable-th${active ? ' je-sort-active' : ''}" data-sort-key="${c.key}">${escapeHtml(c.label)}${active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`;
+        return `<th class="je-sortable-th${active ? ' je-sort-active' : ''}" data-sort-key="${escapeHtml(c.key)}"${active ? ` aria-sort="${sortDir === 'asc' ? 'ascending' : 'descending'}"` : ''}><button type="button">${escapeHtml(c.label)}${active ? `<span aria-hidden="true">${sortDir === 'asc' ? ' ▲' : ' ▼'}</span>` : ''}</button></th>`;
       }).join('');
     }
 
@@ -464,7 +603,7 @@ counts above do for other features.
       // Icons are tab-icon data specifically, so only show them when this
       // facet actually is the tab column.
       const pill = (value, label, active, iconHtml) =>
-        `<button type="button" class="je-pill${active ? ' je-pill-active' : ''}" data-facet-value="${escapeHtml(value)}">${iconHtml || ''}${escapeHtml(label)}</button>`;
+        `<button type="button" class="je-pill${active ? ' je-pill-active' : ''}" aria-pressed="${active}" data-facet-value="${escapeHtml(value)}">${iconHtml || ''}${escapeHtml(label)}</button>`;
       return pill('', `All (${rows.length})`, activeFacet === null, '')
         + names.map(n => pill(n, `${n} (${counts[n]})`, activeFacet === n, facetKey === 'tab' ? iconFor(n) : '')).join('');
     }
@@ -489,6 +628,7 @@ counts above do for other features.
           activeFacet = btn.dataset.facetValue || null;
           pillRow.innerHTML = renderPills();
           tbody.innerHTML = renderRows();
+          pillRow.querySelector('.je-pill-active')?.focus();
         });
       }
 
@@ -511,6 +651,7 @@ counts above do for other features.
         }
         thead.innerHTML = renderHead();
         tbody.innerHTML = renderRows();
+        thead.querySelector('.je-sort-active button').focus();
       });
     }
 
@@ -621,7 +762,7 @@ counts above do for other features.
     }
   }
 
-  async function render() {
+  async function render(root, signal) {
     const loadingEl = document.getElementById('je-analytics-loading');
     const errorEl = document.getElementById('je-analytics-error-banner');
     try {
@@ -629,14 +770,16 @@ counts above do for other features.
       // limit would let PostgREST truncate an arbitrary subset once a view
       // outgrows it, instead of deterministically keeping the top rows.
       const [versionRows, windowRows, totalRows, brandingRows, flagRows, settingRows] = await Promise.all([
-        fetchView("v_version_adoption", "select=*&order=most_recent_seen.desc"),
-        fetchView("v_feature_usage_window", "select=*&order=total_count.desc&limit=20"),
-        fetchView("v_current_totals", "select=*&order=total_count.desc&limit=24"),
-        fetchView("v_branding_usage", "select=*"),
-        fetchView("v_config_flag_rates", "select=*&order=enabled_pct.desc"),
-        fetchView("v_config_setting_values", "select=*&order=install_count.desc"),
-        loadFlagGroups()
+        fetchView("v_version_adoption", "select=*&order=most_recent_seen.desc", signal),
+        fetchView("v_feature_usage_window", "select=*&order=total_count.desc&limit=20", signal),
+        fetchView("v_current_totals", "select=*&order=total_count.desc&limit=24", signal),
+        fetchView("v_branding_usage", "select=*", signal),
+        fetchView("v_config_flag_rates", "select=*&order=enabled_pct.desc", signal),
+        fetchView("v_config_setting_values", "select=*&order=install_count.desc", signal),
+        loadFlagGroups(signal)
       ]);
+
+      if (signal.aborted || !root.isConnected || root !== activeRoot) return;
 
       setSection('je-section-versions', renderVersionCards, versionRows);
       setSection('je-section-totals', renderTotalCounts, totalRows, brandingRows[0]);
@@ -648,6 +791,7 @@ counts above do for other features.
       if (updatedEl) updatedEl.textContent = 'Loaded live just now from the community analytics project. Refresh this page any time for current numbers.';
       if (loadingEl) loadingEl.remove();
     } catch (err) {
+      if (signal.aborted || !root.isConnected || root !== activeRoot) return;
       if (loadingEl) loadingEl.remove();
       if (errorEl) {
         errorEl.hidden = false;
@@ -656,6 +800,25 @@ counts above do for other features.
     }
   }
 
-  render();
+  function onPage() {
+    const root = document.getElementById('je-analytics-dashboard');
+    if (root === activeRoot) return;
+    if (activeController) activeController.abort();
+    activeRoot = root;
+    activeController = null;
+    if (!root) return;
+    activeController = new AbortController();
+    render(root, activeController.signal);
+  }
+
+  window.jeAnalyticsDashboard = {
+    dispose() {
+      if (activeController) activeController.abort();
+      if (subscription) subscription.unsubscribe();
+      activeRoot = null;
+    }
+  };
+  if (typeof document$ !== 'undefined') subscription = document$.subscribe(onPage);
+  onPage();
 })();
 </script>

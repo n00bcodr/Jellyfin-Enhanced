@@ -58,10 +58,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await Task.Run(() =>
             {
                 _logger.Info("Jellyfin Enhanced Startup Task run successfully.");
+                var isStale = _hostCompatibility.IsStale;
                 if (_hostCompatibility.IsMismatch)
                 {
                     // Loud on purpose: a mismatched build is a common cause of "random feature X throws" reports.
-                    _logger.Error($"BUILD/HOST MISMATCH: {_hostCompatibility.MismatchMessage} Install {_hostCompatibility.ExpectedAssetName} from {HostCompatibilityService.ManifestUrl}");
+                    _logger.Error($"BUILD/HOST MISMATCH: {_hostCompatibility.GetCompatibilityMessage(isStale, includeInstallAdvice: true)}");
+                }
+                else if (isStale)
+                {
+                    _logger.Warning($"STALE PLUGIN BUILD: {_hostCompatibility.GetCompatibilityMessage(isStale)}");
                 }
                 EnsureScriptInjected();
 

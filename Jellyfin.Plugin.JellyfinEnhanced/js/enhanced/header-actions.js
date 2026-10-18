@@ -12,6 +12,7 @@
     let started = false;
     let pageIndex = 0;
     let compactMode = false;
+    let overflowNative = [];
     const mirrors = new Map();
     const observed = new Set();
     const resizeObserver = new ResizeObserver(schedule);
@@ -67,8 +68,9 @@
      * Use the parent row's budget, never the already-overflowing tray's width.
      * Walk up through intermediate wrappers to account for native navigation,
      * logo, hamburger, avatar, gaps and theme padding exactly once.
+     * @param {HTMLElement[]} excludedNative Actions allocated by the overflow instead.
      */
-    function availableWidth() {
+    function availableWidth(excludedNative = []) {
         let available = contentWidth(row);
         const path = [];
         for (let element = header; element && element !== row; element = element.parentElement) path.unshift(element);
@@ -82,7 +84,9 @@
             available -= number(css.paddingLeft) + number(css.paddingRight);
             parent = element;
         }
-        const native = [...header.children].filter(child => child !== tray && getComputedStyle(child).position !== 'absolute' && child.getClientRects().length);
+        // Count native actions hidden by our overflow too, so resize can restore them.
+        const native = [...header.children].filter(child => child !== tray && !excludedNative.includes(child) &&
+            (getComputedStyle(child).position !== 'absolute' || overflowNative.includes(child)) && child.getClientRects().length);
         available -= native.reduce((width, child) => width + outerWidth(child), 0);
         available -= number(getComputedStyle(header).columnGap) * native.length;
         return Math.max(0, available - 2); // Allow for fractional CSS-pixel rounding.
@@ -309,6 +313,11 @@
             header.classList.add('je-header-actions-host');
             row.classList.add('je-header-actions-row');
             header.prepend(tray);
+            // Drop stand-ins that helpers.js created while the native tray was missing,
+            // including one left empty by a user switch.
+            document.querySelectorAll('[data-je-header-fallback]').forEach(stale => {
+                if (stale !== header && !stale.children.length) stale.remove();
+            });
             schedule();
         }
     }
@@ -324,15 +333,17 @@
         updateLabels();
         const sources = [...tray.querySelectorAll(sourceSelector)];
         const visibleSources = sources.filter(source => !source.hidden && source.getClientRects().length && getComputedStyle(source).display !== 'none');
+        const previousNative = overflowNative;
         const trayCSS = getComputedStyle(tray);
         const gap = number(trayCSS.columnGap);
+        const nativeGap = number(getComputedStyle(header).columnGap);
         const chrome = ['marginLeft', 'marginRight', 'paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
             .reduce((width, property) => width + number(trayCSS[property]), 0);
         // Always measure with the ordinary title restored, so a previously
         // collapsed launcher cannot keep itself stuck in the wrong state.
         if (row.classList.contains('je-launcher-tight')) row.classList.remove('je-launcher-tight');
         let available = Math.max(0, availableWidth() - chrome);
-        const fullWidth = visibleSources.reduce((width, source) => width + outerWidth(source), 0) + gap * Math.max(0, visibleSources.length - 1);
+        let fullWidth = visibleSources.reduce((width, source) => width + outerWidth(source), 0) + gap * Math.max(0, visibleSources.length - 1);
         // Measure More before allocating space. This is resolved before paint.
         launcher.style.setProperty('display', 'inline-flex', 'important');
         const moreWidth = outerWidth(launcher);
@@ -340,6 +351,29 @@
         if (visibleSources.length && fullWidth > available && available < moreWidth) {
             row.classList.add('je-launcher-tight');
             available = Math.max(0, availableWidth() - chrome);
+        }
+        // Extra MUI header links can leave less room than even More needs.
+        // Share the existing overflow with navigation links in that case. Keep
+        // popup controls in place: their original geometry anchors their menus.
+        overflowNative = available < moreWidth && visibleSources.length && header.matches('.MuiBox-root')
+            ? [...header.children].filter(source => source.matches('a[href]:not([aria-haspopup]):not([aria-controls])') &&
+                source.getAttribute('href').trim() && source.getAttribute('href').trim() !== '#' &&
+                !/^javascript:/i.test(source.getAttribute('href').trim()) && !source.hidden &&
+                source.getClientRects().length && getComputedStyle(source).display !== 'none' &&
+                (getComputedStyle(source).position !== 'absolute' || previousNative.includes(source)) &&
+                (source.getAttribute('aria-hidden') !== 'true' || previousNative.includes(source)))
+            : [];
+        if (overflowNative.length) {
+            available = Math.max(0, availableWidth(overflowNative) - chrome);
+            fullWidth += overflowNative.reduce((width, source) => width + outerWidth(source), 0) + nativeGap * overflowNative.length;
+            visibleSources.unshift(...overflowNative);
+            sources.push(...overflowNative);
+        }
+        for (const source of previousNative) {
+            if (!overflowNative.includes(source)) {
+                source.classList.remove('je-header-overflowed');
+                source.removeAttribute('aria-hidden');
+            }
         }
         // Small hysteresis prevents repeated swaps at a fractional-width boundary,
         // without reserving an entire icon's worth of usable header space.
@@ -350,13 +384,15 @@
         const inline = new Set();
         if (collapsed) {
             let remaining = Math.max(0, available - moreWidth);
-            const priority = [...pinned, ...visibleSources.filter(source => !pinned.includes(source))];
+            const priority = [...overflowNative, ...pinned,
+                ...visibleSources.filter(source => !pinned.includes(source) && !overflowNative.includes(source))];
             for (const source of priority) {
                 const width = outerWidth(source);
+                const sourceGap = overflowNative.includes(source) ? nativeGap : gap;
                 const margin = source.classList.contains('je-header-overflowed') ? 8 : 0;
-                if (width + gap + margin > remaining) break;
+                if (width + sourceGap + margin > remaining) break;
                 inline.add(source);
-                remaining -= width + gap;
+                remaining -= width + sourceGap;
             }
         } else {
             visibleSources.forEach(source => inline.add(source));
@@ -374,7 +410,7 @@
         if (!tray.dataset.ready) tray.dataset.ready = 'true';
         if (!collapsed) {
             const focused = document.activeElement;
-            const target = visibleSources.find(source => source.id === focused?.dataset.jeHeaderAction) || visibleSources[0];
+            const target = [...mirrors].find(([, button]) => button === focused)?.[0] || visibleSources[0];
             const restoreFocus = panel.open || focused === launcher;
             closeLauncher();
             if (restoreFocus) (target || header.querySelector(':scope > button, :scope > a'))?.focus();
@@ -424,6 +460,7 @@
                 .je-header-buttons-tray #je-native-tabs-separator { display: none !important; }
                 .je-header-buttons-tray .headerButton { flex-shrink: 0; }
                 #je-header-buttons-group .headerButton[hidden] { display: none !important; }
+                .je-header-actions-host > .je-header-overflowed,
                 .je-header-buttons-tray .je-header-overflowed,
                 .je-header-buttons-tray:not([data-ready]) .headerButton {
                     position: absolute !important; visibility: hidden !important;
@@ -482,6 +519,11 @@
 
     JE.session.onUserChange('header-actions', () => {
         closeLauncher();
+        for (const source of overflowNative) {
+            source.classList.remove('je-header-overflowed');
+            source.removeAttribute('aria-hidden');
+        }
+        overflowNative = [];
         mirrors.forEach(button => button.remove());
         mirrors.clear();
         tray?.replaceChildren(launcher);

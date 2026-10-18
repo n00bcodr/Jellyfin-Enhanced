@@ -138,6 +138,7 @@
 
     "// ratings",
     "others/mdblist-ratings.js",
+    "others/doesthedogdie.js",
 
     "// jellyseerr",
     "jellyseerr/seerr-status.js",

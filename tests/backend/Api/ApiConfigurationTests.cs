@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
@@ -131,6 +132,40 @@ public class ApiConfigurationTests
         Assert.Equal(first.FileContents, second.FileContents);
         Assert.Contains("dev=\"true\"", fixture.Plugin.BuildScriptTag());
     }
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PublicConfigExposesTheTrickplaySwitchThatGatesThePerUserRow(bool enabled)
+    {
+        using var fixture = new ApiPluginFixture();
+        Assert.True(fixture.Plugin.Configuration.SpoilerBlurTrickplay);
+        fixture.Plugin.Configuration.SpoilerBlurTrickplay = enabled;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        Assert.Equal(enabled, document.RootElement.GetProperty("SpoilerBlurTrickplay").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SpoilerGuardUserPrefsSaveAndReloadTheTrickplayOverride(bool? hideTrickplay)
+    {
+        using var fixture = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var controller = ApiAssetTests.Controller(fixture.Core, fixture.Core.Manager);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", user.ToString())], "test"));
+        var body = new SpoilerBlurUserPrefs { HideTrickplay = hideTrickplay, HideReviews = false, UseAdvancedCategories = false };
+        Assert.IsType<OkObjectResult>(controller.SetSpoilerBlurUserPrefs(body));
+        var reloaded = Assert.IsType<SpoilerBlurUserPrefs>(Assert.IsType<OkObjectResult>(controller.GetSpoilerBlurUserPrefs()).Value);
+        Assert.Equal(hideTrickplay, reloaded.HideTrickplay);
+        Assert.False(reloaded.HideReviews);
+        Assert.False(reloaded.UseAdvancedCategories);
+        SpoilerUserResolver.InvalidateUser(user.ToString("N"));
+    }
+
     [Fact]
     public async Task RegisteredPagesAndViewsArePackagedAndViewsHaveHtmlMime()
     {

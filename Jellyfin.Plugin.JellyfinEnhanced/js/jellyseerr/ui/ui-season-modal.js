@@ -42,6 +42,8 @@
             enableSpecialEpisodes = false;
         }
 
+        const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
+
         const tvDetails = await fetchTvShowDetails(tmdbId);
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
@@ -107,7 +109,7 @@
 
         // Show season selection UI with Select All checkbox header
         const bodyHtml = `${needsTvdbMatch ? buildTvdbMatchHTML() : ''}<div class="jellyseerr-season-list">
-            ${partialRequestsEnabled ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
+            ${partialRequestsEnabled && !singleSeasonOnly ? '<div class="jellyseerr-season-header-row"><input type="checkbox" class="jellyseerr-season-checkbox" id="jellyseerr-select-all-seasons"><label class="jellyseerr-season-header-label" for="jellyseerr-select-all-seasons">' + JE.t('jellyseerr_select_all_seasons') + '</label><div></div><div></div></div>' : ''}
         </div>${showAdvanced ? createAdvancedOptionsHTML('tv') : ''}`;
         const modalInstance = create({
             title: is4k ? `${JE.t('jellyseerr_modal_title')} - 4K` : JE.t('jellyseerr_modal_title'),
@@ -283,6 +285,14 @@
             Promise.all([...seasonFetches, tmdbFetch]).then(() => {
                 applyAirDateBackfill(tvDetails);
                 updateSeasonList(seasonList, tvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);
+            });
+        }
+
+        // Single-season mode: ticking a season unticks the others
+        if (singleSeasonOnly) {
+            seasonList.addEventListener('change', (e) => {
+                if (!e.target.classList.contains('jellyseerr-season-checkbox') || !e.target.checked) return;
+                seasonList.querySelectorAll('.jellyseerr-season-checkbox:checked').forEach(cb => { if (cb !== e.target) cb.checked = false; });
             });
         }
 

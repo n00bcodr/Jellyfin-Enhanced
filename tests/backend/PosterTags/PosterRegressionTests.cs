@@ -35,7 +35,7 @@ public class PosterRegressionTests
     [InlineData("", "jpn", true)]
     public void Audio_preference_precedence(string choice, string? expected, bool followsUser)
     {
-        var settings = PosterTagSettings.FromUserSettings(new UserSettings { QualityTagsPreferredAudioLanguage = choice }, new PluginConfiguration { QualityTagsAudioLanguageFromUser = true, QualityTagsPreferredAudioLanguage = "eng" }, "jpn");
+        var settings = PosterTagSettings.FromUserSettings(new JellyfinEnhancedUserSettings { QualityTagsPreferredAudioLanguage = choice }, new PluginConfiguration { QualityTagsAudioLanguageFromUser = true, QualityTagsPreferredAudioLanguage = "eng" }, "jpn");
         Assert.Equal(expected, settings.PreferredAudioLanguage);
         Assert.Equal(followsUser, settings.UsesJellyfinAudioPreference);
     }
