@@ -1121,7 +1121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 context.Doc.Intents.RemoveAll(i => i.CreatedAt == intent.CreatedAt);
                 context.Dirty = true;
                 context.Inserted += added.Count;
-                RecordEvent(context, context.Doc.Items.First(p => p.Id == placeholderId), added.ToList(), complete: placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series);
+                RecordEvent(context, context.Doc.Items.First(p => p.Id == placeholderId), added.ToList(), complete: placeholder.Kind == PlaceholderKinds.Movie || (placeholder.Kind == PlaceholderKinds.Series && resolution.Items.All(i => i.Kind == BaseItemKind.Series)));
                 if (failed && added.Count == 0)
                 {
                     return false;
@@ -1147,24 +1147,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             switch (placeholder.Kind)
             {
                 case PlaceholderKinds.Movie:
-                case PlaceholderKinds.Series:
+                case PlaceholderKinds.Series when resolution.Items.All(i => i.Kind == BaseItemKind.Series):
                     if (!resolution.Items.All(i => rejected.Contains(i.ItemId)))
                     {
                         Retire(context, placeholder, resolution.Items.Where(i => added.Contains(i.ItemId)).Select(i => N(i.ItemId)).ToList());
                     }
 
                     break;
+                case PlaceholderKinds.Series:
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
                     foreach (var episode in resolution.Episodes)
                     {
                         // A season's episode is in the collection through the Season item of its show copy.
-                        var listItem = placeholder.Kind == PlaceholderKinds.Season
+                        var listItem = placeholder.Kind == PlaceholderKinds.Season && resolution.Items.Any(i => i.Kind == BaseItemKind.Season)
                             ? resolution.Items.FirstOrDefault(i => i.Coords.Contains(episode.Coords[0]))?.ItemId
                             : episode.ItemId;
                         if (listItem.HasValue && !rejected.Contains(listItem.Value))
                         {
-                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null, placeholder.Kind == PlaceholderKinds.Season ? listItem : null);
+                            Fill(context, placeholder, episode, added.Contains(listItem.Value) ? listItem : null, placeholder.Kind == PlaceholderKinds.Season && resolution.Items.Any(i => i.Kind == BaseItemKind.Season) ? listItem : null);
                         }
                     }
 
@@ -1400,10 +1401,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 _logger.Info($"[Lists] Completed an interrupted swap-in of \"{placeholder.Title}\" in list {context.ListIdN}.");
-                RecordEvent(context, placeholder, landed, complete: placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series);
+                var container = placeholder.Kind == PlaceholderKinds.Movie
+                    || (placeholder.Kind == PlaceholderKinds.Series && landed.All(id => _host.GetItem(id)?.Kind == BaseItemKind.Series));
+                RecordEvent(context, placeholder, landed, complete: container);
                 if (context.List.Kind == ListKinds.Collection)
                 {
-                    if (placeholder.Kind is PlaceholderKinds.Movie or PlaceholderKinds.Series)
+                    if (container)
                     {
                         // The title is in the collection through the copy JE added, whichever copy the resolver lists
                         // first now (another library copy may have been scanned since): retire it, owning what landed,

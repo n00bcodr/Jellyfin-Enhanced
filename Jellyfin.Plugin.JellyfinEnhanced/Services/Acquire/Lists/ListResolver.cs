@@ -354,10 +354,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (available.SeriesIds.Count == 0) return ScopeResolution.None;
 
             if (collection && ListRules.EditionOf(scope) == ListRules.FourK
-                && available.Sources.Any(s => s.ItemId != s.LogicalItemId))
+                && (available.Sources.Any(s => s.ItemId != s.LogicalItemId) || (scope.Kind == PlaceholderKinds.Series && scope.Filled.Count > 0)))
             {
                 // Jellyfin's Series/Season links cannot pin a MediaSource. Keep the exact episode items when the 4K
-                // edition is an alternate of an HD primary, so a collection plays the edition it actually asked for.
+                // edition is an alternate of an HD primary, so a collection plays the edition it actually asked for. A 4K
+                // series that already filled episodes this way keeps filling them one by one (until its completion
+                // rule holds), also once later 4K episodes arrive as primaries.
                 var exact = OnePerCoordinate(new[] { available.Sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
                 return new ScopeResolution(exact, exact);
             }

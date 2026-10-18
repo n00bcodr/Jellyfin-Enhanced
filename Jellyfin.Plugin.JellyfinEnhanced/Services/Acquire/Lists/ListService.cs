@@ -516,7 +516,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                if (placeholder.Kind == PlaceholderKinds.Movie || (!isPlaylist && placeholder.Kind == PlaceholderKinds.Series))
+                if (placeholder.Kind == PlaceholderKinds.Movie || (!isPlaylist && placeholder.Kind == PlaceholderKinds.Series && resolution.Items.All(i => i.Kind == BaseItemKind.Series)))
                 {
                     result.Add(resolution.Found ? entry with { ItemId = resolution.Items[0].ItemId, Placeholder = null } : entry);
                     continue;

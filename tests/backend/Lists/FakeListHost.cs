@@ -212,7 +212,9 @@ internal sealed class FakeListHost : IListHost
 
     public bool IsFourK(Guid itemId) => FourK.Contains(itemId);
 
-    public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId) => Items.ContainsKey(itemId)
+    public Dictionary<Guid, IReadOnlyList<ListMediaSource>> MediaSources { get; } = new();
+
+    public IReadOnlyList<ListMediaSource> GetMediaSources(Guid itemId) => MediaSources.TryGetValue(itemId, out var sources) ? sources : Items.ContainsKey(itemId)
         ? new[] { new ListMediaSource(itemId, itemId.ToString("N"), FourK.Contains(itemId) ? 3840 : 1920, FourK.Contains(itemId) ? 2160 : 1080, !Episodes.Any(e => e.Id == itemId && e.Virtual)) }
         : Array.Empty<ListMediaSource>();
 

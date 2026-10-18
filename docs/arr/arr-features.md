@@ -1382,6 +1382,8 @@ follows Jellyfin's own rights and the household's request rules:
   playable 4K source, including alternate versions of the same movie or episode; its real item plays that version.
   A standard entry accepts any playable copy, preferring non-4K. Grouped series include episodes from every accessible
   folder. A 4K TV collection uses episode items when a Series or Season link would lose an alternate version's identity.
+  A 4K series entry filled that way works like a season: each 4K episode goes in as it arrives, one Jellyfin refused is
+  tried again on the next pass, and the entry stays until the series is complete.
   If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
   the list, so an item never goes in twice.
 - **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
