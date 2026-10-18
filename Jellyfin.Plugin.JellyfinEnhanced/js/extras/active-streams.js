@@ -1265,7 +1265,13 @@
             // and pushState — the old raw hashchange listener missed the
             // latter). Tracked via a lifecycle handle so destroy() removes it.
             _lifecycle = JE.core.lifecycle.register('active-streams');
-            _lifecycle.track(JE.core.navigation.onNavigate(() => applyThemeVars()));
+            // One session fetch per page navigation keeps the counter fresh
+            // without a timer; skipped until the header button exists (its
+            // first fetch is startPolling's).
+            _lifecycle.track(JE.core.navigation.onNavigate(() => {
+                applyThemeVars();
+                if (document.getElementById('je-active-streams')) updateCounter();
+            }));
         },
 
         destroy() {
