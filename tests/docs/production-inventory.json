@@ -71,6 +71,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHouseholdController.cs",
       "category": "Controllers"
     },
@@ -503,7 +507,35 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ContentArrivalHistory.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/EpisodeRange.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/CollectionCoverage.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/FollowDates.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeArrivals.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeFlags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HssSectionsAdapter.cs",
       "category": "Services"
     },
     {
@@ -1431,6 +1463,22 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-hss.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-rows.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/home/home-styles.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/hub/hub-approvals.js",
       "category": "js"
     },
@@ -2328,6 +2376,25 @@
       "method": "Search",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireDiscoverController.cs",
       "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/home",
+      "method": "GetHome",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/home/ops",
+      "method": "GetOps",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireHomeController.cs",
+      "following_attributes": [
+        "Authorize",
+        "PrivateResponse"
+      ]
     },
     {
       "verb": "GET",
@@ -6597,6 +6664,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4HomeRowsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4HssSectionsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4HomeOpsStripEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4CollectionGapsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8605,6 +8704,38 @@
     },
     {
       "class": "UserSettings",
+      "name": "HomeRowRequests",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "HomeRowSoon",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "HomeRowArrived",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
+      "name": "HomeOpsStrip",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -9798,6 +9929,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationConsents.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Home/HomeFlags.cs"
+    },
+    {
       "literal": "*.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs"
     },
@@ -10226,10 +10361,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 573,
-    "routes": 270,
-    "configuration_properties": 611,
-    "storage_references": 88,
+    "files": 585,
+    "routes": 272,
+    "configuration_properties": 619,
+    "storage_references": 89,
     "scheduled_tasks": 15,
     "locales": 33
   }

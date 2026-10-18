@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
@@ -45,6 +46,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// and sizes for administrators only. Only released movies nobody has asked for are checked.
         /// </summary>
         [JsonPropertyName("blocked"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RequestBlock? Blocked { get; init; }
+
+        /// <summary>
+        /// False when the viewer can't ask for this movie at all (the same answer as the title check's
+        /// <c>canRequest: false</c> with nothing to explain, e.g. it would land in a library they can't open): it is
+        /// left out of "Get the N missing". Left out when they can.
+        /// </summary>
+        [JsonPropertyName("askable"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Askable { get; init; }
     }
 
     /// <summary>What the viewer has of a collection and what is missing.</summary>
@@ -58,6 +66,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Missing movies in release order (unreleased ones last).</summary>
         [JsonPropertyName("missing")] public IReadOnlyList<CollectionPart> Missing { get; init; } = Array.Empty<CollectionPart>();
+
+        /// <summary>
+        /// Missing movies left out of <see cref="Missing"/> because the collection's list already holds them as entries
+        /// the viewer can see (counted in <see cref="Total"/>). Only with the phase 4 collection-gaps switch on; left out
+        /// otherwise.
+        /// </summary>
+        [JsonPropertyName("covered"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? Covered { get; init; }
+
+        /// <summary>
+        /// True when the storage check of some missing movie couldn't be made yet (the arr's disk facts or list of titles
+        /// weren't read within the wait, e.g. right after a restart): those movies aren't marked paused, but that isn't
+        /// known; read again shortly before offering them. Left out when every movie was checked.
+        /// </summary>
+        [JsonPropertyName("pausesPending"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? PausesPending { get; init; }
     }
 
     /// <summary>A collection (BoxSet) item the viewer can open, with its TMDB collection id.</summary>
@@ -90,9 +112,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<int> _declineCooldownDays;
         private readonly Func<Guid, string?>? _currentTarget;
         private readonly Func<Guid, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyDictionary<string, RequestBlock>>>? _pauses;
+        private readonly Func<IReadOnlyList<string>, bool>? _pausesUnknown;
+        private readonly Func<Guid, IReadOnlyList<string>, IReadOnlyDictionary<string, RequestBlock?>>? _refusals;
+        private readonly ICollectionCoverage? _coverage;
+        private readonly Func<bool> _phase4;
 
         /// <summary>Creates the service over the library, the shared TMDB cache and the parental filter.</summary>
-        public CollectionGapsService(IArrJellyfinView view, ILibraryManager libraryManager, RequestLedger ledger, TitleAliases aliases, TmdbResponseCache tmdb, SeerrParentalFilter parental, IRequestPolicy policy, RequestService requests)
+        /// <param name="view">Jellyfin facts.</param>
+        /// <param name="libraryManager">Library (the collection item).</param>
+        /// <param name="ledger">Request ledger (the viewer's request states).</param>
+        /// <param name="aliases">Title aliases.</param>
+        /// <param name="tmdb">Shared TMDB cache (the collection's parts).</param>
+        /// <param name="parental">Parental filter for movies not in the library.</param>
+        /// <param name="policy">Request policy (storage verdicts).</param>
+        /// <param name="requests">Request service (storage pauses).</param>
+        /// <param name="coverage">Titles the collection's list holds as entries (phase 4; null: none).</param>
+        public CollectionGapsService(IArrJellyfinView view, ILibraryManager libraryManager, RequestLedger ledger, TitleAliases aliases, TmdbResponseCache tmdb, SeerrParentalFilter parental, IRequestPolicy policy, RequestService requests, ICollectionCoverage? coverage = null)
             : this(
                 view,
                 (viewer, id) => ResolveBoxSet(libraryManager, viewer, id),
@@ -103,7 +138,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 () => DateTimeOffset.UtcNow,
                 () => policy.Configuration.ArrRequestDeclineCooldownDays,
                 user => RequestLedger.TargetKey(policy.Evaluate(user, new MutationInput { Key = "movie:tmdb:1" })),
-                (user, keys, ct) => requests.StoragePausesAsync(user, keys, true, ct))
+                (user, keys, ct) => requests.StoragePausesAsync(user, keys, true, ct),
+                keys => StorageUnknown(policy, keys),
+                coverage,
+                () => HomeFlags.CollectionGaps(policy.Configuration),
+                (user, keys) => Refusals(policy, user, keys))
         {
         }
 
@@ -118,7 +157,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<DateTimeOffset> now,
             Func<int>? declineCooldownDays = null,
             Func<Guid, string?>? currentTarget = null,
-            Func<Guid, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyDictionary<string, RequestBlock>>>? pauses = null)
+            Func<Guid, IReadOnlyList<string>, CancellationToken, Task<IReadOnlyDictionary<string, RequestBlock>>>? pauses = null,
+            Func<IReadOnlyList<string>, bool>? pausesUnknown = null,
+            ICollectionCoverage? coverage = null,
+            Func<bool>? phase4 = null,
+            Func<Guid, IReadOnlyList<string>, IReadOnlyDictionary<string, RequestBlock?>>? refusals = null)
         {
             _view = view;
             _boxSet = boxSet;
@@ -130,6 +173,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _declineCooldownDays = declineCooldownDays ?? (() => 7);
             _currentTarget = currentTarget;
             _pauses = pauses;
+            _pausesUnknown = pausesUnknown;
+            _coverage = coverage;
+            _phase4 = phase4 ?? (() => false);
+            _refusals = refusals;
         }
 
         /// <summary>
@@ -145,6 +192,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var parts = ParseCollection(json, DateOnly.FromDateTime(_now().UtcDateTime));
             if (parts == null) return (null, "collection_unknown");
 
+            // Phase 4: what the collection's list holds as entries this viewer sees (read alongside the parts).
+            var covering = _coverage != null && _phase4() ? CoveredAsync(set.ItemId, viewer, ct) : null;
             var have = 0;
             var missing = new List<CollectionPart>();
             foreach (var part in parts)
@@ -161,6 +210,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Absent movies: only what the viewer's parental limits allow (the filter refuses unknowns).
             var allowed = await Task.WhenAll(missing.Select(p => MaySeeAsync(p, viewer.UserId, ct))).ConfigureAwait(false);
             var visible = missing.Where((_, i) => allowed[i]).ToList();
+            int? covered = null;
+            if (covering != null)
+            {
+                // A title the list already offers on this page is left out here, so it's never offered twice; only
+                // movies this viewer is shown at all count (the list side is filtered for them too).
+                var keys = await covering.ConfigureAwait(false);
+                var before = visible.Count;
+                if (keys.Count > 0) visible = visible.Where(p => !IsCovered(p.Key, keys)).ToList();
+                covered = before - visible.Count;
+            }
 
             var wants = _ledger?.Database.Available == true;
             var target = wants ? _currentTarget?.Invoke(viewer.UserId) : null;
@@ -168,12 +227,86 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // What "Get the N missing" would ask for, checked title by title: a movie Radarr already has is measured on
             // its own folder's drive, a new one on the default root's (never the household's new-add pause for all).
             var askable = listed.Where(p => p.Released && p.Request == null).Select(p => p.Key).ToList();
+            bool? pending = null;
             if (_pauses != null && askable.Count > 0)
             {
                 var paused = await _pauses(viewer.UserId, askable, ct).ConfigureAwait(false);
                 if (paused.Count > 0) listed = listed.Select(p => paused.TryGetValue(p.Key, out var block) ? p with { Blocked = block } : p).ToList();
+                var open = askable.Where(k => !paused.ContainsKey(k)).ToList();
+                // A movie the viewer can't ask for at all (the title check's canRequest false) is not offered: said
+                // when the controls explain it, else just left out of the batch.
+                var refused = open.Count > 0 ? _refusals?.Invoke(viewer.UserId, open) : null;
+                if (refused is { Count: > 0 })
+                {
+                    listed = listed.Select(p => refused.TryGetValue(p.Key, out var block) ? (block != null ? p with { Blocked = block } : p with { Askable = false }) : p).ToList();
+                    open = open.Where(k => !refused.ContainsKey(k)).ToList();
+                }
+                // A movie not marked paused is only known to be gettable when its drive could be checked: otherwise
+                // the answer says so (the page reads again shortly before offering it).
+                if (open.Count > 0 && _pausesUnknown?.Invoke(open) == true) pending = true;
             }
-            return (new CollectionGaps { Have = have, Total = have + listed.Count, Missing = listed }, null);
+            return (new CollectionGaps { Have = have, Total = have + (covered ?? 0) + listed.Count, Missing = listed, Covered = covered, PausesPending = pending }, null);
+        }
+
+        /// <summary>
+        /// Whether the storage verdict of any of <paramref name="keys"/> (movies, standard edition) is still unknown: the
+        /// target instance's disk facts or list of titles aren't in memory (their reads are started), so the low-disk
+        /// guard has no verdict for it yet. False when nothing needs knowing (guard off, Seerr handling, no usable instance).
+        /// </summary>
+        /// <param name="policy">Request policy.</param>
+        /// <param name="keys">Movie title keys.</param>
+        /// <returns>Whether a verdict is missing.</returns>
+        internal static bool StorageUnknown(IRequestPolicy policy, IReadOnlyList<string> keys)
+            => keys.Any(k => TitleKey.Parse(k) is { IsMovie: true } key && !policy.DiskKnown(StorageInput(key)));
+
+        /// <summary>
+        /// The movies of <paramref name="keys"/> (standard edition) the person can't ask for now for a reason other than
+        /// storage (that is the pause answer's): the shown block (<see cref="RequestBlock.Of"/>) or null when the request
+        /// controls don't explain it (e.g. it would land in a library they can't open). A change under way
+        /// (<c>authorization_changed</c>) decides nothing; the next read answers.
+        /// </summary>
+        /// <param name="policy">Request policy.</param>
+        /// <param name="user">The person.</param>
+        /// <param name="keys">Movie title keys.</param>
+        /// <returns>The refused keys.</returns>
+        internal static IReadOnlyDictionary<string, RequestBlock?> Refusals(IRequestPolicy policy, Guid user, IReadOnlyList<string> keys)
+        {
+            var refused = new Dictionary<string, RequestBlock?>(StringComparer.Ordinal);
+            foreach (var k in keys)
+            {
+                if (TitleKey.Parse(k) is not { IsMovie: true } key) continue;
+                var facts = policy.Evaluate(user, StorageInput(key));
+                if (facts.Refusal is null or "low_disk" or "authorization_changed") continue;
+                refused[k] = RequestBlock.Of(facts);
+            }
+            return refused;
+        }
+
+        private static MutationInput StorageInput(TitleKey key) => new() { Key = key.Title.ToString(), Scope = "movie", Variant = "standard" };
+
+        private async Task<IReadOnlySet<string>> CoveredAsync(Guid collectionId, StatusViewer viewer, CancellationToken ct)
+        {
+            try
+            {
+                return await _coverage!.CoveredAsync(collectionId, viewer, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // Coverage is an addition: when it can't be read, every missing title is offered, as before.
+                return new HashSet<string>(StringComparer.Ordinal);
+            }
+        }
+
+        /// <summary>Whether a collection part is one of the covered titles (under any id the title is known by).</summary>
+        private bool IsCovered(string key, IReadOnlySet<string> covered)
+        {
+            if (covered.Contains(key)) return true;
+            var parsed = TitleKey.Parse(key);
+            return parsed != null && _aliases != null && _aliases.Of(parsed).Any(alias => covered.Contains(alias.ToString()));
         }
 
         private async Task<bool> MaySeeAsync(CollectionPart part, Guid user, CancellationToken ct)

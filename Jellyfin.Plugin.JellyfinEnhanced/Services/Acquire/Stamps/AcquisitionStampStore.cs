@@ -180,7 +180,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>The earliest recorded arrival of any of these parts, or null.</summary>
         /// <param name="parts">Part keys (<see cref="PartKeys"/>).</param>
         /// <returns>First arrival (UTC).</returns>
-        public DateTime? FirstArrival(IEnumerable<string> parts)
+        public DateTime? FirstArrival(IEnumerable<string> parts) => ReadArrival(parts, content: false);
+
+        /// <summary>The permanent first arrival of the content, across editions and sources.</summary>
+        /// <param name="parts">Edition part keys.</param>
+        /// <returns>First content arrival (UTC), or null.</returns>
+        public DateTime? FirstContentArrival(IEnumerable<string> parts) => ReadArrival(parts, content: true);
+
+        private DateTime? ReadArrival(IEnumerable<string> parts, bool content)
         {
             if (!_db.Available) return null;
             var list = parts.Distinct(StringComparer.Ordinal).ToList();
@@ -190,7 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 DateTime? first = null;
                 foreach (var part in list)
                 {
-                    if (Scalar(c, null, "SELECT first_at FROM acquisition_arrivals WHERE part_key=$p", ("$p", part)) is long ms)
+                    if (Scalar(c, null, content ? "SELECT first_at FROM home_arrivals WHERE content=$p" : "SELECT first_at FROM acquisition_arrivals WHERE part_key=$p", ("$p", content ? ContentArrivalHistory.ContentKey(part) : part)) is long ms)
                     {
                         var at = FromMs(ms);
                         if (first == null || at < first) first = at;
@@ -215,12 +222,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             {
                 foreach (var part in list)
                 {
-                    Exec(c, t, "INSERT INTO acquisition_arrivals(part_key,first_at,item_id) VALUES($p,$at,$i) ON CONFLICT(part_key) DO UPDATE SET first_at=excluded.first_at,item_id=excluded.item_id WHERE excluded.first_at<acquisition_arrivals.first_at",
-                        ("$p", part), ("$at", Ms(at)), ("$i", N(itemId)));
+                    Exec(c, t, "INSERT INTO acquisition_arrivals(part_key,first_at,item_id) VALUES($p,$at,$i) ON CONFLICT(part_key) DO UPDATE SET first_at=MIN(first_at,excluded.first_at)", ("$p", part), ("$at", Ms(at)), ("$i", N(itemId)));
+                    ContentArrivalHistory.Record(c, t, part, Ms(at));
                 }
 
                 return 0;
             });
+            Interlocked.Increment(ref _db.ArrivalRevision);
         }
 
         /// <summary>Removes everything kept for a person (they were deleted).</summary>

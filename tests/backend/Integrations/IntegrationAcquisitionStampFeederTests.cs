@@ -17,6 +17,26 @@ public class IntegrationAcquisitionStampFeederTests
 
     // ── 11. judging an arrival ───────────────────────────────────────────
 
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(30, false)]
+    [InlineData(1, true)]
+    [InlineData(30, true)]
+    public void A4kVersionAddedSecondsAfterHdIsAnUpgradeToo(int seconds, bool episode)
+    {
+        using var w = new StampWorld();
+        var key = StampWorld.Movie(603);
+        var series = w.AddSeries(StampWorld.Show(81189));
+        if (episode) key = StampWorld.Show(81189);
+        var hd = episode ? w.AddEpisode(series, null, 1, 1, T0.AddSeconds(-seconds)) : w.AddMovie(key, T0.AddSeconds(-seconds));
+        w.Feeder.Judge(hd.Id, T0);
+        var uhd = episode ? w.AddEpisode(series, null, 1, 1, T0, fourK: true) : w.AddMovie(key, T0, fourK: true);
+        w.Interests.Add(key, StampWorld.Interest(Guid.NewGuid(), T0.AddDays(-1), fourKOnly: true));
+        w.Feeder.Judge(uhd.Id, T0);
+        Assert.Empty(News(w, uhd));
+        Assert.Equal(AcquisitionStampKinds.Upgraded, Assert.Single(w.Store.FactsFor(uhd.Id)).Kind);
+    }
+
     [Fact]
     public void AnInterestMadeBeforeAFirstArrivalGivesThatPersonANewFactAndNobodyElse()
     {

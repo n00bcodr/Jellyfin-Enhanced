@@ -97,6 +97,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The title's status (family shape; admins also get its admin block).</summary>
         public TitleStatus Status { get; init; } = new();
+
+        /// <summary>
+        /// Server-side only (home rows): the earliest sign the part asked for arrived that an upgrade doesn't move (the
+        /// ledger's fulfilment, Seerr's "available"), or null when there is none. Never sent.
+        /// </summary>
+        [JsonIgnore]
+        public DateTime? FirstArrivedAt { get; init; }
     }
 
     /// <summary>The Requests page's Seerr line (family-safe: no address, no error text).</summary>
@@ -239,6 +246,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var config = _config();
             if (_ledger != null && SharedRequestFacts.LedgerAuthority(config)) return ForLedgerAsync(viewer, config!, cancellationToken);
+            var prepared = PrepareSeerr(viewer, config);
+            return _status.ForTitlesAsync(viewer, prepared.Keys, "hub", prepared.What, composed => Build(viewer, prepared.Entries, composed, config, prepared.State, prepared.ArrDown, prepared.More), cancellationToken, prepared.Scopes);
+        }
+
+        /// <summary>
+        /// Home rows (phase 4d): the viewer's request entries as the Requests page builds them (every group, the page's
+        /// own windows), composed together with <paramref name="extraKeys"/> (titles the viewer follows; no request
+        /// scope) in one cached body under its own route. <paramref name="build"/> gets the entries and every composed
+        /// title; <paramref name="what"/> names everything else the body depends on.
+        /// </summary>
+        internal async Task<StatusBody> ForHomeAsync(StatusViewer viewer, string what, IReadOnlyCollection<TitleKey> extraKeys, Func<IReadOnlyList<HubEntry>, IReadOnlyList<ArrStatusService.KeyedStatus>, byte[]> build, CancellationToken cancellationToken)
+        {
+            var config = _config();
+            var now = _status.Now.UtcDateTime;
+            if (_ledger != null && SharedRequestFacts.LedgerAuthority(config))
+            {
+                var ledger = await PrepareLedgerAsync(viewer, config!, cancellationToken).ConfigureAwait(false);
+                return await _status.ForTitlesAsync(viewer, With(ledger.Keys, extraKeys), "home", ledger.What + "|" + what, composed =>
+                {
+                    var byKey = composed.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
+                    var entries = ledger.Entries.Select(w => byKey.TryGetValue(w[0].Input.Key, out var c) ? LedgerEntry(w, c, ledger.Meta.GetValueOrDefault(w[0].Input.Key), now) : null).OfType<HubEntry>().ToList();
+                    return build(entries, composed);
+                }, cancellationToken, ledger.Scopes, ledger.Load).ConfigureAwait(false);
+            }
+            var seerr = PrepareSeerr(viewer, config);
+            return await _status.ForTitlesAsync(viewer, With(seerr.Keys, extraKeys), "home", seerr.What + "|" + what, composed =>
+            {
+                var byKey = composed.ToDictionary(t => t.Key.ToString(), StringComparer.Ordinal);
+                var entries = seerr.Entries.Select(r => byKey.TryGetValue(r[0].Key!.ToString(), out var c) ? Entry(r, c, now) : null).OfType<HubEntry>().ToList();
+                return build(entries, composed);
+            }, cancellationToken, seerr.Scopes).ConfigureAwait(false);
+        }
+
+        private static List<TitleKey> With(IReadOnlyList<TitleKey> keys, IReadOnlyCollection<TitleKey> extra)
+        {
+            var all = keys.ToList();
+            var seen = all.Select(k => k.Title.ToString()).ToHashSet(StringComparer.Ordinal);
+            all.AddRange(extra.Where(k => seen.Add(k.Title.ToString())));
+            return all;
+        }
+
+        private sealed record SeerrPrepared(List<List<SeerrRequestRecord>> Entries, List<TitleKey> Keys, Dictionary<TitleKey, ArrStatusService.RequestScope> Scopes, SeerrReadModelState State, bool ArrDown, bool More, string What);
+
+        private sealed record LedgerPrepared(List<List<RequestWant>> Entries, List<TitleKey> Keys, Dictionary<TitleKey, ArrStatusService.RequestScope> Scopes, List<TitleKey> Load, Dictionary<string, HubTitleMeta> Meta, SeerrReadModelState State, bool ArrDown, bool More, string What);
+
+        private SeerrPrepared PrepareSeerr(StatusViewer viewer, PluginConfiguration? config)
+        {
             _requests.Touch();
             var now = _status.Now.UtcDateTime;
             // Open requests first (an old one still waiting never drops off the end), then the newest.
@@ -274,7 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 : string.Empty;
             var arrDown = ArrUnavailable();
             var what = string.Join("|", _requests.Active ? "on" : "off", _requests.Loaded ? "loaded" : "-", state.LastError == null ? "ok" : "err", arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs);
-            return _status.ForTitlesAsync(viewer, keys, "hub", what, composed => Build(viewer, entries, composed, config, state, arrDown, more), cancellationToken, scopes);
+            return new SeerrPrepared(entries, keys, scopes, state, arrDown, more, what);
         }
 
         /// <summary>
@@ -286,6 +340,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// read (a few per page) so a single episode is judged by itself, not by its season.
         /// </summary>
         private async Task<StatusBody> ForLedgerAsync(StatusViewer viewer, PluginConfiguration config, CancellationToken cancellationToken)
+        {
+            var prepared = await PrepareLedgerAsync(viewer, config, cancellationToken).ConfigureAwait(false);
+            return await _status.ForTitlesAsync(viewer, prepared.Keys, "hub", prepared.What, composed => BuildLedger(viewer, prepared.Entries, composed, prepared.Meta, config, prepared.State, prepared.ArrDown, prepared.More), cancellationToken, prepared.Scopes, prepared.Load).ConfigureAwait(false);
+        }
+
+        private async Task<LedgerPrepared> PrepareLedgerAsync(StatusViewer viewer, PluginConfiguration config, CancellationToken cancellationToken)
         {
             var ledger = _ledger!;
             var now = _status.Now.UtcDateTime;
@@ -318,7 +378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var arrDown = ArrUnavailable();
             var names = string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId));
             var what = string.Join("|", "je", ledger.Revision.ToString(CultureInfo.InvariantCulture), arrDown ? "arr-down" : "arr-ok", more ? "more" : "all", adminTabs, MutationInput.Hash(names));
-            return await _status.ForTitlesAsync(viewer, keys, "hub", what, composed => BuildLedger(viewer, entries, composed, meta, config, state, arrDown, more), cancellationToken, scopes, load).ConfigureAwait(false);
+            return new LedgerPrepared(entries, keys, scopes, load, meta, state, arrDown, more, what);
         }
 
         private byte[] BuildLedger(StatusViewer viewer, List<List<RequestWant>> entries, IReadOnlyList<ArrStatusService.KeyedStatus> titles, Dictionary<string, HubTitleMeta> meta, PluginConfiguration config, SeerrReadModelState state, bool arrDown, bool more)
@@ -429,6 +489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDay = nextDay,
                 Group = group,
                 Status = status,
+                FirstArrivedAt = active.Where(w => w.Status == "fulfilled").Select(w => (DateTime?)w.UpdatedAt.UtcDateTime).DefaultIfEmpty(null).Min(),
             };
         }
 
@@ -630,6 +691,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDay = nextDay,
                 Group = group,
                 Status = status,
+                // Seerr's "available" (its last change while available: an upgrade can only move this later, never earlier).
+                FirstArrivedAt = active.Where(r => r.MediaStatus == 5 || r.Status == SeerrRequestStatus.Completed).Select(r => r.UpdatedAt).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
             };
         }
     }

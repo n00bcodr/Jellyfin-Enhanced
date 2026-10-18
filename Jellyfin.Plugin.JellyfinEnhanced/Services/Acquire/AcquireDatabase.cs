@@ -41,6 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly SemaphoreSlim _writer = new(1, 1);
         private readonly ReaderWriterLockSlim _swap = new(LockRecursionPolicy.SupportsRecursion);
         private long _generation;
+        internal long ArrivalRevision;
         private readonly Logger? _logger;
         private readonly object _initLock = new();
         private bool _initialized;
@@ -235,9 +236,14 @@ CREATE TABLE IF NOT EXISTS list_events (
     created_at INTEGER NOT NULL, delivered_at INTEGER);
 CREATE INDEX IF NOT EXISTS list_events_pending ON list_events(delivered_at);
 ",
-            // 6: reserved for phase 4d (home rows, collection completion); its step takes this slot when the tracks are
-            // joined. Empty here, so this build's step 7 doesn't depend on it.
-            "",
+            // 6: phase 4 home rows (4d). When each piece of content (a movie edition, an episode) first arrived in
+            // Jellyfin, so "Just arrived for you" leaves out upgrades: a replacement file keeps the first date.
+            // Guarded so the step doesn't depend on another phase-4 step.
+            @"
+CREATE TABLE IF NOT EXISTS home_arrivals (
+    content TEXT PRIMARY KEY, first_at INTEGER NOT NULL);
+
+",
             // 7: phase 4e acquisition badges. A person's own first arrivals ("new") and confirmed replacements ("upgraded",
             // user_id '' = everyone who can open the item), per movie or episode; which arrivals were judged; the first
             // arrival of each movie edition and episode number (so a renamed upgrade isn't a first arrival). Expiry and
@@ -634,6 +640,9 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         transaction.Commit();
                     }
                 }
+                // Repair installations whose reserved step 6 was empty (including schema 7).
+                // The newer-version rejection above always runs before this additive repair.
+                if (UserVersion(connection) >= 6) ContentArrivalHistory.Ensure(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);

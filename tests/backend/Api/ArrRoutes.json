@@ -108,6 +108,8 @@
     {"method": "GET", "route": "arr/series-slug", "access": "legacy-admin", "sample": "arr/series-slug?tvdbId=1", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "GET", "route": "arr/series-slugs", "access": "legacy-admin", "sample": "arr/series-slugs?tvdbId=1", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
     {"method": "GET", "route": "arr/links", "access": "legacy-admin", "sample": "arr/links?tmdbIds=1", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
-    {"method": "GET", "route": "arr/movie-instances", "access": "legacy-admin", "sample": "arr/movie-instances?tmdbId=1", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"}
+    {"method": "GET", "route": "arr/movie-instances", "access": "legacy-admin", "sample": "arr/movie-instances?tmdbId=1", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a", "capability": "Jellyfin administrator"},
+    {"method": "GET", "route": "acquire/home", "access": "user", "capability": "home rows switch (phase 4 + phase 3); the caller's own requests and follows only, each row also off by the person's own preference", "Member": "own rows", "Manager": "own rows (other people's requests stay in the chip bar's counts)", "Kid": "own rows", "requests.4k": "n/a (a 4K ask arrives with its 4K copy)"},
+    {"method": "GET", "route": "arr/admin/home/ops", "access": "admin", "capability": "Jellyfin administrator; home rows strip switch (and phase 2) and the administrator's own preference", "Member": "no", "Manager": "no", "Kid": "no", "requests.4k": "n/a"}
   ]
 }

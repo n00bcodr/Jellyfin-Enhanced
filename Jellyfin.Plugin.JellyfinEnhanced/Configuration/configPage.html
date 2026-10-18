@@ -2681,6 +2681,18 @@
                                 <div class="je-setting-description" data-desc-for="arrAcquisitionUpgradedDays"><div class="fieldDescription">A badge also goes as soon as the person watches the title.</div></div>
                             </div>
                             <!-- /Phase 4e: acquisition badges -->
+                            <!-- Phase 4d: home rows -->
+                            <div id="arrHomeSettings" class="je-arr-home-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4HomeRowsEnabled" is="emby-checkbox" type="checkbox"/><span>Home rows: Your requests, Coming soon for you, Just arrived for you</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HomeRowsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it". Three rows on each person's home screen, built from their own requests and the titles they follow: what they asked for and where it stands, what is dated in the next 30 days, and what arrived in the last 7 days (an upgrade of something already here doesn't count). A row with nothing in it is hidden, and everyone can switch each row off in their own Jellyfin Enhanced settings. Managers see only their own requests here; the requests waiting for their OK stay in the chip bar.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4HssSectionsEnabled" is="emby-checkbox" type="checkbox"/><span>Use Home Screen Sections for the home rows</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HssSectionsEnabled"><div class="fieldDescription">With the Home Screen Sections plugin installed, the rows are registered as its sections ("Your requests", "Coming soon for you", "Just arrived for you"): turn them on and place them in that plugin's settings. On a Home Screen Sections home they then appear only there, never twice. Titles that aren't in the library need "Native pages for titles not in the library" (Jellyfin 12). Without the plugin, or with this off, the rows are added to the home screen as usual.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4HomeOpsStripEnabled" is="emby-checkbox" type="checkbox"/><span>Administrators: a strip of what needs doing above the rows</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4HomeOpsStripEnabled"><div class="fieldDescription">Needs phase 2. Administrators see "2 downloading · 1 import blocked · /movies4k 94%" above the rows, only while an import is blocked, something needs attention or a disk is nearly full. It links to the Requests page. Each administrator can hide it.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4CollectionGapsEnabled" is="emby-checkbox" type="checkbox"/><span>Collection gaps: leave out titles the collection's list already holds</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4CollectionGapsEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it". On a collection page, "Get the N missing" leaves out titles that are already entries of that collection (lists), so the same title is never offered twice, and the older Seerr "Missing from" row stays away while the block shows. The block itself works without this switch.</div></div>
+                            </div>
+                            <!-- /Phase 4d: home rows -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6718,6 +6730,11 @@
             document.querySelector('#arrPhase4NativeStampsEnabled').checked = config.ArrPhase4NativeStampsEnabled === true;
             document.querySelector('#arrAcquisitionNewDays').value = num(config.ArrAcquisitionNewDays, 7);
             document.querySelector('#arrAcquisitionUpgradedDays').value = num(config.ArrAcquisitionUpgradedDays, 7);
+            // Phase 4d: home rows
+            document.querySelector('#arrPhase4HomeRowsEnabled').checked = config.ArrPhase4HomeRowsEnabled === true;
+            document.querySelector('#arrPhase4HssSectionsEnabled').checked = config.ArrPhase4HssSectionsEnabled === true;
+            document.querySelector('#arrPhase4HomeOpsStripEnabled').checked = config.ArrPhase4HomeOpsStripEnabled === true;
+            document.querySelector('#arrPhase4CollectionGapsEnabled').checked = config.ArrPhase4CollectionGapsEnabled === true;
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6794,6 +6811,11 @@
             config.ArrPhase4NativeStampsEnabled = document.querySelector('#arrPhase4NativeStampsEnabled').checked;
             config.ArrAcquisitionNewDays = days('#arrAcquisitionNewDays');
             config.ArrAcquisitionUpgradedDays = days('#arrAcquisitionUpgradedDays');
+            // Phase 4d: home rows
+            config.ArrPhase4HomeRowsEnabled = document.querySelector('#arrPhase4HomeRowsEnabled').checked;
+            config.ArrPhase4HssSectionsEnabled = document.querySelector('#arrPhase4HssSectionsEnabled').checked;
+            config.ArrPhase4HomeOpsStripEnabled = document.querySelector('#arrPhase4HomeOpsStripEnabled').checked;
+            config.ArrPhase4CollectionGapsEnabled = document.querySelector('#arrPhase4CollectionGapsEnabled').checked;
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10518,6 +10540,11 @@
             { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AcquisitionBadgesEnabled'] },
             { parent: 'arrPhase4AcquisitionBadgesEnabled', label: 'Poster badges: New for you, Upgraded, 4K', children: ['arrPhase4NativeStampsEnabled', 'arrAcquisitionNewDays', 'arrAcquisitionUpgradedDays'] },
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['arrPhase4NativeStampsEnabled'] },
+            // Phase 4d: home rows
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4HomeRowsEnabled', 'arrPhase4CollectionGapsEnabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4HomeRowsEnabled', 'arrPhase4CollectionGapsEnabled'] },
+            { parent: 'arrPhase4HomeRowsEnabled', label: 'Home rows', children: ['arrPhase4HssSectionsEnabled', 'arrPhase4HomeOpsStripEnabled'] },
+            { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrPhase4HomeOpsStripEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

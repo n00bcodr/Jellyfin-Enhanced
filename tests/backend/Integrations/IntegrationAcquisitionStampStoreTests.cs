@@ -116,7 +116,7 @@ public class IntegrationAcquisitionStampStoreTests
         Assert.Equal(T0.AddDays(-1), w.Store.FirstArrival(new[] { "m|movie:tmdb:603|std" }));
         w.Store.NoteArrival(new[] { "m|movie:tmdb:603|4k" }, T0.AddDays(-3), item);
         Assert.Equal(T0.AddDays(-3), w.Store.FirstArrival(new[] { "m|movie:tmdb:603|std", "m|movie:tmdb:603|4k" }));   // earliest of the parts
-        Assert.Equal(T0.AddDays(-1), w.Store.FirstArrival(new[] { "m|movie:tmdb:603|std", "m|movie:tmdb:999|std" }));
+        Assert.Equal(T0.AddDays(-3), w.Store.FirstArrival(new[] { "m|movie:tmdb:603|std", "m|movie:tmdb:999|std" }));
     }
 
     [Fact]
@@ -169,12 +169,12 @@ public class IntegrationAcquisitionStampStoreTests
         w.Now = T0;
         w.Store.MarkSeen(recent.Id);
 
-        Assert.Equal(3, w.Store.Purge());
+        Assert.Equal(2, w.Store.Purge());
         Assert.Empty(w.Store.FactsFor(old.Id));
         Assert.Single(w.Store.FactsFor(recent.Id));
         Assert.False(w.Store.Seen(old.Id));
         Assert.True(w.Store.Seen(recent.Id));
-        Assert.Null(w.Store.FirstArrival(new[] { "old" }));
+        Assert.Equal(T0.AddDays(-31), w.Store.FirstArrival(new[] { "old" }));
         Assert.NotNull(w.Store.FirstArrival(new[] { "recent" }));
         Assert.Equal(0, w.Store.Purge());
     }
@@ -236,12 +236,12 @@ public class IntegrationAcquisitionStampStoreTests
     // ── 8. schema ────────────────────────────────────────────────────────
 
     [Fact]
-    public void AFreshDatabaseIsAtSchemaSevenWithTheAcquisitionTablesAndStepSixIsEmpty()
+    public void AFreshDatabaseIsAtSchemaSevenWithHomeAndAcquisitionTables()
     {
         using var w = new StampWorld();
         Assert.Equal(7, AcquireDatabase.Migrations.Count);
         Assert.Equal(AcquireDatabase.Migrations.Count, w.Db.Version);
-        Assert.True(string.IsNullOrWhiteSpace(AcquireDatabase.Migrations[5]));
+        Assert.Contains("home_arrivals", AcquireDatabase.Migrations[5]);
         Assert.Contains("acquisition_stamps", AcquireDatabase.Migrations[6], StringComparison.Ordinal);
         Assert.Equal(StampTables, Tables(w.Db.FilePath));
     }

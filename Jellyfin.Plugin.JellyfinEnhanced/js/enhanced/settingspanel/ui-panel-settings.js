@@ -217,6 +217,21 @@
                 resetAutoCloseTimer();
             });
         }
+        // Phase 4d: home rows per person ("" = null: follow the administrator; "off" = false: hide). The home
+        // page reads its rows again once the choice is saved.
+        for (const [id, key] of [['homeRowRequestsSelect', 'homeRowRequests'], ['homeRowSoonSelect', 'homeRowSoon'], ['homeRowArrivedSelect', 'homeRowArrived'], ['homeOpsStripSelect', 'homeOpsStrip']]) {
+            document.getElementById(id)?.addEventListener('change', (event) => {
+                if (JE.pluginConfig?.ArrHomeRowsEnabled !== true) return;
+                const value = event.target.value === 'off' ? false : null;
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.settings = JE.userConfig.settings || {};
+                JE.userConfig.settings[key] = value;
+                JE.currentSettings[key] = value;
+                Promise.resolve(JE.saveUserSettings('settings.json', JE.currentSettings)).then(() => JE.arrHome?.refresh?.({ fresh: true }));
+                JE.toast(JE.t('panel_settings_home_saved'));
+                resetAutoCloseTimer();
+            });
+        }
         addSettingToggleListener('qualityTagsToggle', 'qualityTagsEnabled', 'feature_quality_tags', true);
         // Show or hide the nested category section when the master quality-tags toggle changes
         const qualityMasterToggle = document.getElementById('qualityTagsToggle');

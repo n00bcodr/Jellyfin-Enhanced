@@ -600,6 +600,29 @@
                                 ${JE.pluginConfig?.ArrNativeStampsEnabled === true ? select('nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps', 'panel_settings_badges_native') : ''}
                             </div>`;
                             })() : ''}
+                            ${JE.pluginConfig?.ArrHomeRowsEnabled === true ? (() => {
+                                // Phase 4d: per-person home rows. "" follows the administrator (null), "off" hides (false).
+                                // The server strip only for administrators, and only while its switch is on.
+                                const pick = (key) => {
+                                    const value = JE.currentSettings?.[key] ?? JE.userConfig?.settings?.[key];
+                                    return value === false ? 'off' : '';
+                                };
+                                const display = [['', 'panel_settings_home_follow'], ['off', 'panel_settings_home_hide']];
+                                const select = (id, key, labelKey) => `
+                                    <label for="${id}" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${escapeHtml(JE.t(labelKey))}</label>
+                                    <select id="${id}" style="width:100%; min-height:44px; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
+                                        ${display.map(([value, optionKey]) => `<option value="${value}" ${pick(key) === value ? 'selected' : ''}>${escapeHtml(JE.t(optionKey))}</option>`).join('')}
+                                    </select>`;
+                                return `
+                            <div style="margin-top: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_home'))}</div>
+                                <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_home_desc'))}</div>
+                                ${select('homeRowRequestsSelect', 'homeRowRequests', 'panel_settings_home_requests')}
+                                ${select('homeRowSoonSelect', 'homeRowSoon', 'panel_settings_home_soon')}
+                                ${select('homeRowArrivedSelect', 'homeRowArrived', 'panel_settings_home_arrived')}
+                                ${JE.pluginConfig?.ArrHomeOpsStripEnabled === true && JE.currentSettings?.isAdmin === true ? select('homeOpsStripSelect', 'homeOpsStrip', 'panel_settings_home_ops') : ''}
+                            </div>`;
+                            })() : ''}
                         </div>
                     </section>
                     ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}
