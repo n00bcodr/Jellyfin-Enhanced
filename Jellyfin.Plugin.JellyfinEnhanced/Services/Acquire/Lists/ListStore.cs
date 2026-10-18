@@ -493,7 +493,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 throw new InvalidDataException("unknown listKind");
             }
 
-            if (doc.Items == null || doc.Order == null || doc.Intents == null || doc.Items.Any(i => i == null || string.IsNullOrEmpty(i.Id)))
+            if (doc.Items == null || doc.Order == null || doc.Intents == null || doc.AbandonedPlacements == null || doc.Items.Any(i => i == null || string.IsNullOrEmpty(i.Id)))
             {
                 throw new InvalidDataException("missing or null collections");
             }

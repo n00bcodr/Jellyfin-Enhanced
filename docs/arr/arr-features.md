@@ -1365,8 +1365,12 @@ follows Jellyfin's own rights and the household's request rules:
   the saved name directly; a stale cached name never gives JE permission to rename the list again. Entry edits
   copy the saved name and other editable metadata onto Jellyfin's cached item immediately before changing membership.
   A native rename therefore stands and edits can continue. Retrying a create finishes naming only while the saved
-  name still carries that create's marker. Interrupted playlist placement keeps its saved position until retry or
-  reconciliation settles it, without inserting another copy. A native rename racing Jellyfin's own asynchronous
+  name still carries that create's marker. Interrupted playlist placement retries its saved position without inserting another copy. If its editor loses
+  access, is deleted or disabled, JE abandons that placement and keeps the landed entries where they are, with their
+  provenance. Three recovery attempts also bound a repeatedly failing move. Other entries can still be added and
+  swapped meanwhile; a write anchored to an entry still being placed gets a retryable conflict. The list API shows
+  the owner or an administrator pending placements and the last 32 abandonment receipts, with visible entry tokens
+  and reason codes. Restoring an editor's access does not restart an abandoned placement. A native rename racing Jellyfin's own asynchronous
   whole-item save remains a Jellyfin core limitation.
 - **Order.** Entries keep their place among the real items, also when the same item is in a playlist twice. Dragging an
   entry moves it; dragging a real item moves it in Jellyfin too (only the first copy of a duplicated item can move).

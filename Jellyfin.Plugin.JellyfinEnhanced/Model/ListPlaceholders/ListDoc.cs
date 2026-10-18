@@ -87,6 +87,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("intents")]
         public List<SwapIntent> Intents { get; set; } = new();
 
+        /// <summary>Last 32 abandoned placements, retaining the original plan/actor and landed membership provenance.</summary>
+        [JsonPropertyName("abandonedPlacements")]
+        public List<SwapIntent> AbandonedPlacements { get; set; } = new();
+
         /// <summary>When the document was last written (UTC ISO-8601).</summary>
         [JsonPropertyName("updatedAt")]
         public string? UpdatedAt { get; set; }
@@ -460,6 +464,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         /// <summary>Occurrence count per item id before the mutation (to tell done from not-done).</summary>
         [JsonPropertyName("occurrenceCountsBefore")]
         public Dictionary<string, int> OccurrenceCountsBefore { get; set; } = new(StringComparer.Ordinal);
+
+        /// <summary>Recovery attempts started (persisted before awaiting a move; at most three).</summary>
+        [JsonPropertyName("attempts")]
+        public int Attempts { get; set; }
+
+        /// <summary>Why placement was abandoned; null while pending.</summary>
+        [JsonPropertyName("abandonedReason")]
+        public string? AbandonedReason { get; set; }
+
+        /// <summary>When placement was abandoned (UTC ISO-8601).</summary>
+        [JsonPropertyName("abandonedAt")]
+        public string? AbandonedAt { get; set; }
 
         /// <summary>When the intent was recorded (UTC ISO-8601).</summary>
         [JsonPropertyName("createdAt")]

@@ -543,8 +543,11 @@ The scheduled task *Requests & downloads: list maintenance* (daily, 04:30) remov
 list records; with *Daily list maintenance* on it also refreshes entries and runs a full pass. Deleted creates keep a
 30-day retry marker, so retrying the old request cannot recreate the list. A 4K entry uses an accessible, playable 4K
 source, including alternate versions; a standard entry accepts any playable copy. Entry edits and maintenance swaps
-preserve the saved name and editable metadata even when Jellyfin's cached item is stale. Interrupted placement keeps
-its saved position for retry or reconciliation without inserting another copy.
+preserve the saved name and editable metadata even when Jellyfin's cached item is stale. Interrupted placement retries without inserting another copy, for at most three recovery attempts. Lost editor
+access (revoked, deleted or disabled) abandons the placement immediately, retaining landed membership, order and
+provenance. Other writes and arrivals continue; writes anchored to a pending entry get a retryable conflict. The list
+API exposes visible pending/abandoned placement receipts to the current owner or an administrator (last 32 retained).
+There is no new setting or automatic retry after abandonment.
 
 #### Household tab
 

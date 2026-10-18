@@ -93,6 +93,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>Overall time budget for metadata reads inside an interactive request (adds, links).</summary>
         public static readonly TimeSpan InteractiveMetadataBudget = TimeSpan.FromSeconds(6);
 
+        private const int PlacementRecoveryAttempts = 3;
+        private const int PlacementHistoryLimit = 32;
+
         private const int MaxQueuedItems = 50_000;
 
         // Seerr reads one pass runs at a time: below the metadata service's global limit, so interactive reads and other
@@ -625,11 +628,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             await ListContinuation.Await(() => RecoverIntentsAsync(context)).ConfigureAwait(false);
 
-            if (context.Doc.Intents.Count > 0)
-            {
-                return new SwapOutcome(context.Doc, context.Dirty, new SwapPassResult(context.Inserted, context.Retired));
-            }
-
             if (context.Doc.Reconcile != null)
             {
                 // Restore/import reconciliation: intents are settled by Jellyfin's real membership (above) before
@@ -650,7 +648,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var followUps = new List<string>();
             var forced = new List<string>();
             var candidates = context.Doc.Items
-                .Where(p => context.Inserts && p.Kind != PlaceholderKinds.Custom && (placeholderIds == null || placeholderIds.Contains(p.Id)))
+                .Where(p => context.Inserts && p.Kind != PlaceholderKinds.Custom && (placeholderIds == null || placeholderIds.Contains(p.Id))
+                    && !context.Doc.Intents.Any(i => i.PhId == p.Id))
                 .Select(p => p.Id)
                 .ToList();
             foreach (var placeholderId in candidates)
@@ -970,8 +969,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 catch (Exception ex)
                 {
                     _logger.Warning($"[Lists] Placement of list {context.ListIdN} is unfinished: {ex.Message}");
-                    context.Inserts = false;
-                    return null; // the saved intent, placeholder and its anchor survive every failed move
+                    context.Dirty = true;
+                    return null; // Only this entry waits; other placeholders may still be processed.
                 }
             }
 
@@ -1412,6 +1411,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 .ToList();
         }
 
+        // An actor's identity and CURRENT edit gate decide whether its plan may still be recovered. Never
+        // substitute the owner for a revoked editor, even if a positional insert needs no further native move.
+        private string? PlacementActorFailure(PassContext context, SwapIntent intent)
+        {
+            if (intent.ByUserId == null) return null; // Older consented swaps still use SwapWrite's gate.
+            if (!Guid.TryParseExact(intent.ByUserId, "N", out var id) || _userManager.GetUserById(id) is not { } user)
+                return "actor_deleted";
+            if (user.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsDisabled))
+                return "actor_disabled";
+            var actor = _access?.Resolve(context.List.Id, user);
+            return actor == null || _gate?.Edit(actor).Denied != null || !actor.Permissions.CanEdit ? "actor_revoked" : null;
+        }
+
+        private void AbandonPlacement(PassContext context, SwapIntent intent, string reason)
+        {
+            // Retire only the plan. Jellyfin membership, placeholders, fills and source ownership are untouched.
+            context.Doc.Order = Canonical(context.Doc, _host.GetRawEntries(context.List.Id));
+            context.Doc.Intents.Remove(intent);
+            intent.AbandonedReason = reason;
+            intent.AbandonedAt = UtcNow().ToString("o", CultureInfo.InvariantCulture);
+            context.Doc.AbandonedPlacements.Add(intent);
+            if (context.Doc.AbandonedPlacements.Count > PlacementHistoryLimit)
+                context.Doc.AbandonedPlacements.RemoveRange(0, context.Doc.AbandonedPlacements.Count - PlacementHistoryLimit);
+            context.Dirty = true;
+            _logger.Info($"[Lists] placement_abandoned list={context.ListIdN} intent={intent.CreatedAt} actor={intent.ByUserId ?? "swap"} reason={reason} attempts={intent.Attempts}; retained landed membership and provenance.");
+        }
+
         // A6: intents left by a crash (or a throw) are completed for the items whose occurrence count went up and
         // rolled back (dropped) for the rest; the next pass retries those. Completed playlist items take the spot the
         // intent planned (F8); collection items JE added become sync-owned (F9).
@@ -1432,8 +1458,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         && count > intent.OccurrenceCountsBefore.GetValueOrDefault(idN))
                     .Select(idN => Guid.ParseExact(idN, "N"))
                     .ToList();
-                if (landed.Count > 0 && context.List.Kind == ListKinds.Playlist)
+                var actorFailure = PlacementActorFailure(context, intent);
+                if (actorFailure != null || intent.Attempts >= PlacementRecoveryAttempts)
                 {
+                    AbandonPlacement(context, intent, actorFailure ?? "placement_retry_limit");
+                }
+                else if (landed.Count > 0 && context.List.Kind == ListKinds.Playlist)
+                {
+                    intent.Attempts++;
+                    _store.Save(context.Doc); // A crash during the awaited move consumes this attempt too.
+                    context.Dirty = true;
                     try
                     {
                         context.Doc.Order = await ListContinuation.Await(() => SettleLandedAsync(context, intent, landed)).ConfigureAwait(false);
@@ -1441,8 +1475,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     catch (Exception ex)
                     {
                         _logger.Warning($"[Lists] Interrupted placement of list {context.ListIdN} is still pending: {ex.Message}");
-                        context.Inserts = false;
-                        continue;
+                        var reason = PlacementActorFailure(context, intent);
+                        if (reason != null || intent.Attempts >= PlacementRecoveryAttempts)
+                        {
+                            AbandonPlacement(context, intent, reason ?? "placement_retry_limit");
+                        }
+                        else
+                        {
+                            continue;
+                        }
                     }
                 }
 

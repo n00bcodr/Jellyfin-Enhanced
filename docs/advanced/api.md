@@ -870,6 +870,16 @@ swap-in work that started before it; a retry with the same request id continues 
 | `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. A retry with the same `requestId` continues with the list the first attempt created, even when the server stopped right after Jellyfin made it: the create runs under the chosen name plus the attempt's marker, so Jellyfin keeps the marker in the list's own folder (and a provider id on a collection), and the list then gets its chosen name (a retry finishes that too). A list of the same name, anyone's, is never taken for it, and no list ever gets a share for nobody. Collections: one create per destination at a time across people; a name a collection in Jellyfin's collections folder already has (or its folder, compared without case) is `409 name_taken`, a `[boxset]` folder elsewhere isn't; a list another attempt already recorded is `409 create_uncertain`, before any entry is applied. |
 | `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. |
 
+The current owner or a human administrator also receives `placements: [{state, reason, attempts, at, tokens}]` in the
+list view. Other callers receive an empty array. Tokens name only landed entries the caller can currently see;
+actor ids, anchors and source provenance stay internal. Pending plans have `state: "pending"`; abandonment uses
+`state: "abandoned"` with `actor_revoked`, `actor_deleted`, `actor_disabled` or `placement_retry_limit`. The last 32
+abandoned plans are retained. Recovery checks the original editor's current gate and starts at most three attempts,
+persisting the count before awaiting a move. Abandonment keeps landed membership and provenance at the actual order,
+and is audited. Restored editor access never restarts that plan. Pending plans do not block unrelated applies or
+other placeholder swaps. A write explicitly anchored to a pending entry answers retryable `409 placement_pending`.
+
+
 Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
 
 ### Backup & restore

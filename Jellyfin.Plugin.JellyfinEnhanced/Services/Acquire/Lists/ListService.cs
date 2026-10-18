@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
@@ -809,12 +810,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 var recovered = await ListContinuation.Await(() => _swap.SwapLockedAsync(access.List, access.Owner, doc, Array.Empty<string>(), null, null, MetadataMode.None, CancellationToken.None)).ConfigureAwait(false);
                 doc = recovered.Doc;
                 settled = recovered.Dirty;
-                if (doc.Intents.Count > 0)
+                var (denied, _) = _gate.Edit(access);
+                if (denied != null) return denied;
+                if (settled) _store.Save(doc);
+                if (position?.AfterToken is { } anchor && PendingPlacementAnchor(doc, anchor))
                 {
-                    var (denied, _) = _gate.Edit(access);
-                    if (denied != null) return denied;
-                    if (settled) _store.Save(doc);
-                    return ListOutcome.Error(500, "list_update_failed", "Jellyfin could not finish placing the list entries; try again.");
+                    return ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly.");
                 }
             }
 
@@ -984,6 +985,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     foreach (var (at, _, segment) in Segments(order, cursor, run, runIndexes, anchors).OrderByDescending(s => s.At).ThenByDescending(s => s.Order))
                     {
                         var anchor = ListOrder.RealAnchorBefore(order, at);
+                        if ((position != null || hooks?.Place != null) && PendingPlacementAnchor(doc, anchor))
+                        {
+                            throw new ListAccessLostException(ListOutcome.Error(409, "placement_pending", "This entry is still being placed; try again shortly."), "The placement anchor is pending.");
+                        }
+
                         var (desired, inserted) = ListOrder.InsertEntries(order, at, segment);
                         order = desired; // what a failure below is reconciled from
                         if (inserted.Count > 0)
@@ -1302,6 +1308,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             return landed;
         }
+
+        // Only the stranded occurrence (or its placeholder) is a placement dependency.
+        private static bool PendingPlacementAnchor(ListDoc doc, string? anchor) => anchor != null && doc.Intents.Any(i =>
+            anchor == ListOrder.PlaceholderToken(i.PhId) || i.ItemIds.Any(id => Guid.TryParseExact(id, "N", out var item)
+                && anchor == ListOrder.RealToken(item, i.OccurrenceCountsBefore.GetValueOrDefault(id))));
 
         // Puts a contiguous run of new real items into Jellyfin right after `anchor` (see ListPlaylistPlacement); the gate
         // allows the insert and every move that places it, each right before it, as the playlist's current owner.
@@ -2222,6 +2233,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 SwapIn = doc?.SwapIn != null,
                 Reconciling = doc?.Reconcile != null,
             };
+            if (doc != null && (access.List.OwnerId == access.User.Id || access.User.HasPermission(Jellyfin.Database.Implementations.Enums.PermissionKind.IsAdministrator)))
+            {
+                var actual = (canonical ?? ListOrder.BuildRealTokens(_host.GetRawEntries(access.List.Id))).ToHashSet(StringComparer.Ordinal);
+                foreach (var intent in doc.Intents.Concat(doc.AbandonedPlacements))
+                {
+                    var tokens = intent.ItemIds.Where(id => Guid.TryParseExact(id, "N", out var item) && _host.IsEntryVisible(item, access.User))
+                        .Select(id => ListOrder.RealToken(Guid.ParseExact(id, "N"), intent.OccurrenceCountsBefore.GetValueOrDefault(id)))
+                        .Where(actual.Contains).ToList();
+                    if (tokens.Count == 0) continue;
+                    view.Placements.Add(new PlacementStatusDto
+                    {
+                        State = intent.AbandonedReason == null ? "pending" : "abandoned",
+                        Reason = intent.AbandonedReason, Attempts = intent.Attempts, At = intent.AbandonedAt, Tokens = tokens,
+                    });
+                }
+            }
+
             if (edit)
             {
                 view.Actions.Add("edit");
