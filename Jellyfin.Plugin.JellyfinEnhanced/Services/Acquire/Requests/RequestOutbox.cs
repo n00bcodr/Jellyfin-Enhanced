@@ -264,7 +264,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         else
                         {
                             transportStarted = true;
-                            result = await _backend.SendAsync(job, Guard, admission, ct).ConfigureAwait(false);
+                            // The send's writes are this job's: automatic work is checked again inside the transport, at
+                            // each write (D41); a person's own job enters as no automation, whatever the flow carried.
+                            using (_automation == null ? null : AutomationTransportContext.Enter(_automation.Gate, AutomationWrite.ForJob(job, want, admission != null), admission))
+                            {
+                                result = await _backend.SendAsync(job, Guard, admission, ct).ConfigureAwait(false);
+                            }
                             // A hold after a partial write and a resume are already settled by the backend: no read-back.
                             if (!result.Confirmed && !result.Parked && !result.Resumes && result.Outcome.Certainty is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                             {

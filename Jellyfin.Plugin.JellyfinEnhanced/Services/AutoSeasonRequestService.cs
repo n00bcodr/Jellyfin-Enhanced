@@ -230,6 +230,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The outcome is typed: a failed details lookup is a PreparationFailed, never "nothing to do".
         public async Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
         {
+            // Everything this check writes is the recipe's: the transport checks each write against the gate (D41).
+            using var automation = AutomationTransportContext.Enter(_gate, AutomationWrite.LegacySeerr(Recipe, _recorder != null));
             // Phase 3 turned on while a direct Seerr send was being prepared: the check starts again and goes through the
             // ledger under the rules in effect now (modes, kills, consent, budgets) instead of POSTing. A switch flipped
             // back and forth leaves it to the next trigger.
@@ -792,6 +794,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
+                    // The key is read before the gate (reading it can log through a callback), so only building the
+                    // request runs between the gate's answer and the POST.
+                    var apiKey = config.GetJellyseerrApiKey();
                     // Read live right before each POST (the next Seerr URL included).
                     if (DirectStop() is { } stop)
                     {
@@ -799,7 +804,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);
+                        HttpMethod.Post, requestUri, apiKey, jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
                     var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -808,6 +813,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return (true, null);
                     }
                     _logger.Warning($"[Auto-Season-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
+                }
+                catch (AutomationTransportRefusedException refused)
+                {
+                    // Refused by the transport's own check, the last one before the POST is handed on: nothing went out.
+                    return (false, refused.Hold.Reason);
                 }
                 catch (Exception ex)
                 {

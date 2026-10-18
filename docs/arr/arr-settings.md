@@ -514,6 +514,10 @@ phase and not used yet. `ArrAutomationMigration` records the one-time setup and 
 Per person (Jellyfin Enhanced panel, *Automatic requests*, shown while the engine is on): the next-season keeper and the
 collection completer may each be set to *Household setting* (the default, follows the administrator), *On* or *Off*.
 
+A person's **Automatic season requests** and **Automatic movie requests** consents belong to them. An administrator
+saving someone else's JE settings keeps those consents as stored, and **Reset all users' settings** leaves them alone.
+The person can still change either consent through their own settings.
+
 **Show automation status** (with the integration and phase 1 on; administrators only) reads
 `GET /JellyfinEnhanced/arr/admin/automation/status`: switches as they apply, each recipe's mode in effect and why, every
 budget window with what is used, what is waiting for a read-back and when it has room again, kill switches and breakers

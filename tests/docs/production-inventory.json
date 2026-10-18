@@ -515,6 +515,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationTransportHandler.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Automation/AutomationWriteGate.cs",
       "category": "Services"
     },
@@ -9960,6 +9964,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.locales.{baseLang}.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs"
     },
@@ -10476,10 +10484,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 595,
+    "files": 596,
     "routes": 279,
     "configuration_properties": 622,
-    "storage_references": 87,
+    "storage_references": 88,
     "scheduled_tasks": 15,
     "locales": 33
   }

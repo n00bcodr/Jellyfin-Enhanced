@@ -34,7 +34,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<IStartupFilter, ScriptInjectionStartupFilter>();
             serviceCollection.AddSingleton<IStartupFilter, BrandingAssetStartupFilter>();
 
-            serviceCollection.AddHttpClient();
+            // Phase 4a (D41): the transport check of every automatic write, on each client a Sonarr/Radarr or Seerr
+            // request can leave through (the arr and Seerr clients below, and the default one Seerr falls back to). It
+            // only acts on writes made in an automation context (AutomationTransportContext); everything else passes.
+            serviceCollection.AddTransient<Services.Acquire.Automation.AutomationTransportHandler>();
+            serviceCollection.AddHttpClient(string.Empty)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>();
 
             // a named HttpClient with AllowAutoRedirect=false so
             // forward-auth proxies (Authelia / Pangolin / Authentik) returning
@@ -43,6 +48,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // SeerrHttpHelper.UseClientName(name) selects this for outbound
             // Seerr/TMDB calls.
             serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>()
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     AllowAutoRedirect = false
@@ -50,6 +56,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Sonarr/Radarr transport: no redirects, no proxy, target address checked and pinned
             // at connect time (see ArrHttp). Per-call budgets live in ArrClient, so no HttpClient timeout.
             serviceCollection.AddHttpClient(Services.Arr.ArrHttp.ClientName)
+                .AddHttpMessageHandler<Services.Acquire.Automation.AutomationTransportHandler>()
                 .ConfigureHttpClient(c => c.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(Services.Arr.ArrHttp.CreateHandler);
             // "Requests & downloads (new)" foundations: the instance registry (v2), one client per

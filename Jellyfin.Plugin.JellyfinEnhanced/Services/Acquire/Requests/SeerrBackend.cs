@@ -602,7 +602,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // What goes out is recorded first (the account and the exact seasons), so a read-back looks for exactly that,
             // whatever Seerr's settings or account links say by then.
             if (_bind != null && !_bind(job.Id, seerrUser, seasons))
+            {
+                // Nothing went out: the POST's budget slot, admitted just above, is given back.
+                admission?.Settled(SendWriteKind.Post, "post", SendWriteResult.NotSent);
                 return BackendResults.Retry("backend_unavailable", "The request couldn't be recorded before sending; nothing was sent.");
+            }
+            // The key is read before the last gate (reading it can log through a callback), so nothing but the POST follows it.
+            var apiKey = config.GetJellyseerrApiKey();
             // Admitting and recording wait for the database (one writer at a time, none during a restore): the gate is
             // asked again after them, so nothing waits between its last answer and the POST. Refused here, nothing went out.
             if (finalGuard() is { } last)
@@ -611,7 +617,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return Refused(job, last);
             }
 
-            var raw = await RawAsync(HttpMethod.Post, url + "/api/v1/request", config.GetJellyseerrApiKey(), seerrUser, body, WriteTimeout, ct).ConfigureAwait(false);
+            Raw raw;
+            try
+            {
+                raw = await RawAsync(HttpMethod.Post, url + "/api/v1/request", apiKey, seerrUser, body, WriteTimeout, ct).ConfigureAwait(false);
+            }
+            catch (AutomationTransportRefusedException refused)
+            {
+                // Refused by the transport's own check, the last one before the POST is handed on: nothing went out, and
+                // its reservation is released already. A budget waits for its next free slot, as when the admission refuses.
+                return refused.Hold.Reason is AutomationHolds.BudgetExhausted or AutomationHolds.AccountingUnavailable
+                    ? BackendResults.Held(job.WantId, false, refused.Hold.Reason, "Seerr: " + refused.Hold.Message, refused.Hold.Wait)
+                    : Refused(job, refused.Hold.Reason);
+            }
             // Any answer means the POST reached Seerr (a refusal included); a lost answer may have.
             admission?.Settled(SendWriteKind.Post, "post", raw.Delivery switch { Delivery.NotSent => SendWriteResult.NotSent, Delivery.MaybeSent => SendWriteResult.MaybeSent, _ => SendWriteResult.Sent });
             switch (raw.Delivery)

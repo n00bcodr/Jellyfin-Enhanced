@@ -89,6 +89,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         private readonly Func<PluginConfiguration> _config;
         private readonly Func<DateTimeOffset> _now;
 
+        /// <summary>Tests: runs as an admission starts, before it waits for the database writer.</summary>
+        internal Action? BeforeAdmission { get; set; }
+
         /// <summary>Creates the budgets (DI).</summary>
         public AutomationBudgets(AcquireDatabase db)
             : this(db, () => JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration(), () => DateTimeOffset.UtcNow)
@@ -133,15 +136,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="recipe">The recipe, for reports.</param>
         public BudgetAdmission Admit(string category, string scope, string uniqueKey, string? jobId = null, string? recipe = null)
         {
+            BeforeAdmission?.Invoke();
             if (category == BudgetCategories.Backfill) return new(false, null, "not_implemented", null);
-            var windows = Windows(category);
-            if (windows.Count == 0 || string.IsNullOrEmpty(scope) || string.IsNullOrEmpty(uniqueKey) || uniqueKey.Length > 512) return new(false, null, "invalid_budget", null);
+            if (string.IsNullOrEmpty(scope) || string.IsNullOrEmpty(uniqueKey) || uniqueKey.Length > 512) return new(false, null, "invalid_budget", null);
             try
             {
                 if (!_db.Available) return new(false, null, "accounting_unavailable", null);
-                var now = _now();
                 return _db.Write((c, t) =>
                 {
+                    // The limits and the clock are read once the writer is taken: a limit saved while the admission waited
+                    // for it applies (4a-security-r6-1).
+                    var now = _now();
+                    var windows = Windows(category);
+                    if (windows.Count == 0) return new BudgetAdmission(false, null, "invalid_budget", null);
                     string? existing = null, state = null;
                     using (var cmd = RequestLedger.Cmd(c, t, "SELECT id,state FROM automation_budget WHERE category=$c AND scope=$s AND unique_key=$k", ("$c", category), ("$s", scope), ("$k", uniqueKey)))
                     using (var r = cmd.ExecuteReader())
@@ -163,6 +170,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     else
                         RequestLedger.Exec(c, t, "UPDATE automation_budget SET state='reserved',outcome=NULL,settled_at=NULL,reserved_at=$at,job_id=$j WHERE id=$id", ("$id", id), ("$j", jobId), ("$at", RequestLedger.Ms(now)));
                     return new BudgetAdmission(true, id, null, null);
+                });
+            }
+            catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
+            {
+                return new(false, null, "accounting_unavailable", null);
+            }
+        }
+
+        /// <summary>
+        /// Checks an admitted action again inside the transport, against the limits and the time as they are now: it still fits
+        /// when every window has room for one more besides everything else counted there (its own row counted once, not as
+        /// a second action). Changes nothing: a refusal is released by the admission's owner, which releases only what this
+        /// attempt reserved (a row counted earlier, sent or replayed, stays counted).
+        /// </summary>
+        /// <param name="category">The category.</param>
+        /// <param name="scope">The scope.</param>
+        /// <param name="id">The current reservation (or an earlier admission replayed by this job).</param>
+        public BudgetAdmission Recheck(string category, string scope, string id)
+        {
+            try
+            {
+                if (!_db.Available) return new(false, null, "accounting_unavailable", null);
+                return _db.Read(c =>
+                {
+                    var now = _now();
+                    var windows = Windows(category);
+                    using var own = RequestLedger.Cmd(c, null, "SELECT state FROM automation_budget WHERE id=$id AND category=$c AND scope=$s", ("$id", id), ("$c", category), ("$s", scope));
+                    if (own.ExecuteScalar() is not string state || state == "released" || windows.Count == 0)
+                        return new BudgetAdmission(false, null, "accounting_unavailable", null);
+                    foreach (var window in windows)
+                    {
+                        // Everything else in the window, then room for this one.
+                        var usage = Count(c, null, category, scope, window, now, id);
+                        if (usage.Full) return new BudgetAdmission(false, null, "budget_exhausted", usage.NextSlotAt ?? now + window.Length);
+                    }
+                    return new BudgetAdmission(true, id, null, null, Replayed: true);
                 });
             }
             catch (Exception ex) when (ex is SqliteException or InvalidOperationException)
@@ -268,12 +311,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="scope">Scope.</param>
         public BudgetUsage? Exhausted(string category, string scope) => Usage(category, scope).FirstOrDefault(u => u.Full);
 
-        private static BudgetUsage Count(SqliteConnection c, SqliteTransaction? t, string category, string scope, BudgetWindow window, DateTimeOffset now)
+        private static BudgetUsage Count(SqliteConnection c, SqliteTransaction? t, string category, string scope, BudgetWindow window, DateTimeOffset now, string? ownId = null)
         {
             var since = RequestLedger.Ms(now - window.Length);
             var stamps = new List<(long At, bool Uncertain)>();
-            using (var cmd = RequestLedger.Cmd(c, t, "SELECT reserved_at,state FROM automation_budget WHERE category=$c AND scope=$s AND state IN ('reserved','consumed','ambiguous') AND reserved_at>$since ORDER BY reserved_at",
-                ("$c", category), ("$s", scope), ("$since", since)))
+            using (var cmd = RequestLedger.Cmd(c, t, "SELECT reserved_at,state FROM automation_budget WHERE category=$c AND scope=$s AND state IN ('reserved','consumed','ambiguous') AND reserved_at>$since AND ($own IS NULL OR id<>$own) ORDER BY reserved_at",
+                ("$c", category), ("$s", scope), ("$since", since), ("$own", ownId)))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read()) stamps.Add((r.GetInt64(0), r.GetString(1) == "ambiguous"));

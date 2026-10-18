@@ -7,18 +7,23 @@ using Microsoft.CodeAnalysis.Text;
 namespace JE.Tests;
 
 /// <summary>
-/// 4a review round 5: the walk behind the write-gate source test. It compiles the plugin's own source and follows the
-/// code from a gate call to the HTTP send that carries the write, by syntax and symbols rather than by line or text:
-/// everything evaluated after the gate and before the send in the gate's method (the write's own statement and its
-/// arguments included), then, down the call that carries the write, everything before the send in each plugin method on
-/// the way (ArrClient.SendCoreAsync, SendOnceAsync, SeerrBackend.RawAsync…), and the whole body of every plugin method,
-/// constructor or property called on the way (interface and virtual calls: every implementation in the plugin). An await
+/// Defence in depth since review round 6 (D41): the guarantee for automatic writes is the transport check
+/// (AutomationTransportHandler), which runs inside the HTTP transport whatever waits before it. This walk still checks
+/// that the write sites' own gates are asked with nothing waiting before the send.
+///
+/// 4a review round 5: it compiles the plugin's own source and follows the code from a gate call to the HTTP send that
+/// carries the write, by syntax and symbols rather than by line or text: everything evaluated after the gate and before
+/// the send in the gate's method (the write's own statement and its arguments included), then, down the call that
+/// carries the write, everything before the send in each plugin method on the way (ArrClient.SendCoreAsync,
+/// SendOnceAsync, SeerrBackend.RawAsync…), and the whole body of every plugin method, constructor or property called on
+/// the way (interface and virtual calls: every implementation in the plugin, explicit ones included). An await
 /// (<c>await</c>, <c>await using</c>, <c>await foreach</c>) or a blocking wait (Wait, Result, GetResult, Sleep, a
-/// reader/writer lock's Enter…) anywhere there is reported. So is a gate that doesn't always run before the write, and a
-/// loop that could send the write again after a wait without asking the gate again. Not on the way: code that leaves
-/// before the write (<c>return</c>, <c>throw</c>), and an async method or lambda that is only started (awaiting it would
-/// be reported). A call through a delegate can't be followed: on the way itself (the gate's function and the transport
-/// methods down to the send) it is reported, unless it is one of <see cref="KnownDelegates"/>.
+/// reader/writer lock's Enter…, a BlockingCollection's Add/Take) anywhere there is reported. So is a gate that doesn't
+/// always run before the write, and a loop that could send the write again after a wait without asking the gate again.
+/// Not on the way: code that leaves before the write (<c>return</c>, <c>throw</c>). An async method that is only started
+/// runs up to its first await: that part is walked. A call through a delegate can't be followed: it is reported
+/// anywhere on the way, unless it is one of <see cref="KnownDelegates"/>, and for those every value the field is given
+/// (its initialiser, each assignment, and for a constructor parameter what each creation passes) is walked.
 /// </summary>
 internal sealed class WriteGateWalk
 {
@@ -75,6 +80,37 @@ internal sealed class WriteGateWalk
     }
 
     internal string Text(string relative) => Tree(relative).GetText().ToString();
+
+    /// <summary>
+    /// Every HttpClient the plugin gets, by symbols: each <c>IHttpClientFactory.CreateClient</c> call with the client's
+    /// name ("" for the default one; null when the name isn't a constant), and each HttpClient it constructs itself
+    /// (name "new").
+    /// </summary>
+    internal List<(string Where, string? Name)> HttpClients()
+    {
+        var found = new List<(string Where, string? Name)>();
+        foreach (var tree in _compilation.SyntaxTrees)
+        {
+            var model = Model(tree);
+            foreach (var node in tree.GetRoot().DescendantNodes())
+            {
+                if (node is InvocationExpressionSyntax { Expression: MemberAccessExpressionSyntax { Name.Identifier.Text: "CreateClient" } or IdentifierNameSyntax { Identifier.Text: "CreateClient" } } call
+                    && model.GetSymbolInfo(call).Symbol is IMethodSymbol method)
+                {
+                    var declared = (method.ReducedFrom ?? method).ContainingType.ToDisplayString();
+                    if (declared == "System.Net.Http.HttpClientFactoryExtensions") found.Add((Where(call), string.Empty));
+                    else if (declared == "System.Net.Http.IHttpClientFactory")
+                        found.Add((Where(call), call.ArgumentList.Arguments.Count == 1 && model.GetConstantValue(call.ArgumentList.Arguments[0].Expression) is { HasValue: true, Value: string name } ? name : null));
+                }
+                else if (node is BaseObjectCreationExpressionSyntax created && (node is ImplicitObjectCreationExpressionSyntax || created.ToString().Contains("HttpClient", StringComparison.Ordinal))
+                    && model.GetTypeInfo(created).Type?.ToDisplayString() == "System.Net.Http.HttpClient")
+                {
+                    found.Add((Where(created), "new"));
+                }
+            }
+        }
+        return found;
+    }
 
     /// <summary>
     /// Compile errors, in one file or in the whole plugin: symbols are only followed reliably in code that compiles. Not
@@ -260,6 +296,9 @@ internal sealed class WriteGateWalk
             InvocationExpressionSyntax i => Symbol(model, i) is { } s ? s : Unresolved(i),
             BaseObjectCreationExpressionSyntax c => model.GetSymbolInfo(c).Symbol,
             IdentifierNameSyntax n when model.GetSymbolInfo(n).Symbol is IPropertySymbol p => p,
+            // Method groups assigned to known delegate fields must be followed too (including local functions).
+            IdentifierNameSyntax n when n.Parent is AssignmentExpressionSyntax or EqualsValueClauseSyntax
+                && model.GetSymbolInfo(n).Symbol is IMethodSymbol method => method,
             _ => null,
         };
         if (used == null) return;
@@ -271,7 +310,31 @@ internal sealed class WriteGateWalk
                 MemberBindingExpressionSyntax { Name.Identifier.Text: "Invoke" } when through.Parent is ConditionalAccessExpressionSyntax access => access.Expression,
                 var called => called,
             }).ToString();
-            if (onPath && !KnownDelegates.ContainsKey(name)) problems.Add(path + ": a call through a delegate the walk can't follow (" + name + ") at " + Where(node) + ": " + Line(node));
+            if (!KnownDelegates.ContainsKey(name)) problems.Add(path + ": a call through a delegate the walk can't follow (" + name + ") at " + Where(node) + ": " + Line(node));
+            // A known factory's name alone isn't evidence: inspect every initializer/assignment of its field.
+            if (KnownDelegates.ContainsKey(name))
+            {
+                var receiver = through.Expression is MemberAccessExpressionSyntax invoke ? invoke.Expression : through.Expression;
+                if (model.GetSymbolInfo(receiver).Symbol is IFieldSymbol field && seen.Add(field))
+                {
+                    foreach (var owner in field.ContainingType.DeclaringSyntaxReferences.Select(r => r.GetSyntax()))
+                    {
+                        var inner = Model(owner.SyntaxTree);
+                        foreach (var assignment in owner.DescendantNodes().OfType<AssignmentExpressionSyntax>()
+                            .Where(a => SymbolEqualityComparer.Default.Equals(inner.GetSymbolInfo(a.Left).Symbol, field)))
+                        {
+                            foreach (var part in assignment.Right.DescendantNodesAndSelf()) Visit(inner, part, path + " → factory assignment", problems, seen, onPath: false);
+                            // Assigned from a constructor's parameter: what every creation passes for it.
+                            if (inner.GetSymbolInfo(assignment.Right).Symbol is IParameterSymbol { ContainingSymbol: IMethodSymbol { MethodKind: MethodKind.Constructor } constructor } parameter)
+                                foreach (var (argument, argumentModel) in Arguments(constructor, parameter))
+                                    foreach (var part in argument.DescendantNodesAndSelf()) Visit(argumentModel, part, path + " → factory passed at " + Where(argument), problems, seen, onPath: false);
+                        }
+                    }
+                    foreach (var declaration in field.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).OfType<VariableDeclaratorSyntax>())
+                        if (declaration.Initializer is { } initializer)
+                            foreach (var part in initializer.Value.DescendantNodesAndSelf()) Visit(Model(part.SyntaxTree), part, path + " → factory initializer", problems, seen, onPath: false);
+                }
+            }
             return;
         }
 
@@ -279,13 +342,14 @@ internal sealed class WriteGateWalk
         {
             if (!seen.Add(member)) continue;
             // A record's primary constructor is declared by the whole type: only its parameters run.
-            // An async method that isn't awaited on the way only starts: its awaits can't hold the write (awaiting its task
-            // would be reported where that happens).
-            if (member is IMethodSymbol { IsAsync: true }) continue;
+            // An unawaited async method still runs its synchronous prefix before returning its task.
+            var asyncMethod = member is IMethodSymbol { IsAsync: true };
             foreach (var declaration in member.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).Select(d => d is TypeDeclarationSyntax t ? t.ParameterList! : d).Where(d => d != null))
             {
                 var inner = Model(declaration.SyntaxTree);
-                foreach (var part in declaration.DescendantNodes(n => n == declaration || !Skip(n, null)).Where(n => !Skip(n, null)))
+                // An unawaited async method executes its synchronous prefix on this thread.
+                var firstAwait = asyncMethod ? declaration.DescendantNodes().OfType<AwaitExpressionSyntax>().Select(a => a.SpanStart).DefaultIfEmpty(int.MaxValue).Min() : int.MaxValue;
+                foreach (var part in declaration.DescendantNodes(n => n == declaration || !Skip(n, null)).Where(n => !Skip(n, null) && n.SpanStart < firstAwait))
                     Visit(inner, part, path + " → " + member.ContainingType.Name + "." + member.Name, problems, seen, onPath: false);
             }
         }
@@ -294,6 +358,23 @@ internal sealed class WriteGateWalk
         {
             problems.Add(path + ": a call the walk can't resolve at " + Where(i) + ": " + Line(i));
             return null;
+        }
+    }
+
+    // What every creation in the plugin passes for one constructor parameter (by position or by name). Only files naming
+    // the constructor's type are searched: a target-typed new() needs its type named nearby (a field, return or local).
+    private IEnumerable<(ExpressionSyntax Argument, SemanticModel Model)> Arguments(IMethodSymbol constructor, IParameterSymbol parameter)
+    {
+        foreach (var tree in _compilation.SyntaxTrees.Where(t => t.GetText().ToString().Contains(constructor.ContainingType.Name, StringComparison.Ordinal)))
+        {
+            var model = Model(tree);
+            foreach (var creation in tree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+            {
+                if (creation.ArgumentList is not { } list || !SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(creation).Symbol, constructor)) continue;
+                var argument = list.Arguments.FirstOrDefault(a => a.NameColon?.Name.Identifier.Text == parameter.Name)
+                    ?? (parameter.Ordinal < list.Arguments.Count && list.Arguments[parameter.Ordinal].NameColon == null ? list.Arguments[parameter.Ordinal] : null);
+                if (argument != null) yield return (argument.Expression, model);
+            }
         }
     }
 
@@ -314,11 +395,14 @@ internal sealed class WriteGateWalk
             _ => null,
         };
         if (symbol == null) return null;
+        if (symbol.ContainingType?.OriginalDefinition.ToDisplayString() == "System.Collections.Concurrent.BlockingCollection<T>"
+            && symbol.Name is "Add" or "Take" or "TryAdd" or "TryTake" or "GetConsumingEnumerable")
+            return "a blocking wait (BlockingCollection." + symbol.Name + ")";
         var space = symbol.ContainingNamespace?.ToDisplayString();
         return space is "System.Threading" or "System.Threading.Tasks" or "System.Runtime.CompilerServices"
             && symbol.Name is "Wait" or "WaitAll" or "WaitAny" or "WaitOne" or "Sleep" or "SpinUntil" or "Join" or "GetResult" or "Result"
                 or "EnterReadLock" or "EnterWriteLock" or "EnterUpgradeableReadLock" or "TryEnterReadLock" or "TryEnterWriteLock" or "TryEnterUpgradeableReadLock"
-            ? "a blocking wait (" + symbol.ContainingType.Name + "." + symbol.Name + ")"
+            ? "a blocking wait (" + symbol.ContainingType!.Name + "." + symbol.Name + ")"
             : null;
     }
 
@@ -372,14 +456,21 @@ internal sealed class WriteGateWalk
         if (symbol.DeclaringSyntaxReferences.Length > 0 && !symbol.IsAbstract) yield return symbol;
         if (!(symbol.IsAbstract || symbol.IsVirtual || symbol.IsOverride || symbol.ContainingType?.TypeKind == TypeKind.Interface)) yield break;
         foreach (var type in Types())
-            foreach (var member in type.GetMembers(symbol.Name))
+        {
+            // Interface implementations may be explicit (their symbol name includes the interface).
+            if (symbol.ContainingType?.TypeKind == TypeKind.Interface)
             {
-                if (SymbolEqualityComparer.Default.Equals(member, symbol) || member.DeclaringSyntaxReferences.Length == 0) continue;
-                var implements = symbol.ContainingType?.TypeKind == TypeKind.Interface
-                    ? SymbolEqualityComparer.Default.Equals(type.FindImplementationForInterfaceMember(symbol), member)
-                    : Overrides(member, symbol);
-                if (implements) yield return member;
+                if (type.FindImplementationForInterfaceMember(symbol) is { } implementation
+                    && !SymbolEqualityComparer.Default.Equals(implementation, symbol) && implementation.DeclaringSyntaxReferences.Length > 0)
+                    yield return implementation;
             }
+            else
+            {
+                foreach (var member in type.GetMembers(symbol.Name))
+                    if (!SymbolEqualityComparer.Default.Equals(member, symbol) && member.DeclaringSyntaxReferences.Length > 0 && Overrides(member, symbol))
+                        yield return member;
+            }
+        }
     }
 
     private static bool Overrides(ISymbol member, ISymbol symbol)

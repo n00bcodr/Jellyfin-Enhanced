@@ -5342,8 +5342,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastOpenedTab = "shortcuts"
                     };
 
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
-                    _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    // Under the person's settings lock, and only while they still have none (their own first save may
+                    // have landed since the check above).
+                    if (_userConfigurationManager.SeedUserSettings(authorizedUserId, defaultUserSettings))
+                    {
+                        _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
+                    }
                 }
             }
 
@@ -5407,43 +5411,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Diff against the existing config so the log shows what actually changed
-                var existing = _userConfigurationManager.GetUserConfiguration<UserSettings>(authorizedUserId, "settings.json");
-                // Phase 4c1: the list swap-in consent is the person's own. An administrator saving someone else's settings
-                // (this save replaces the whole file) keeps it as it is.
-                if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId)
+                // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
+                // replaces the whole file) keeps them as stored. Read, kept, compared and saved under the person's settings
+                // lock, so an overlapping save of the person's own can't be undone.
+                var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
+                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
+                if (saved && changes.Count > 0)
                 {
-                    userConfiguration.ListSwapIn = existing?.ListSwapIn;
-                }
-
-                var changes = new System.Collections.Generic.List<string>();
-                var isIdentical = false;
-                if (existing != null)
-                {
-                    var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
-                    var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
-                    isIdentical = existingJson == newJson;
-                    if (!isIdentical)
-                    {
-                        var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
-                        var newDoc      = System.Text.Json.JsonDocument.Parse(newJson).RootElement;
-                        foreach (var prop in newDoc.EnumerateObject())
-                        {
-                            if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) ||
-                                oldVal.ToString() != prop.Value.ToString())
-                            {
-                                changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
-                            }
-                        }
-                    }
-                }
-
-                if (!isIdentical)
-                {
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
-
-                    if (changes.Count > 0)
-                        _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                    _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
                 return Ok(new { success = true, file = "settings.json" });
@@ -8343,11 +8318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 try
                 {
-                    // Phase 4c1: a reset never sets or clears a person's own list swap-in consent.
-                    defaultUserSettings.ListSwapIn = _userConfigurationManager.UserConfigurationExists(userId, "settings.json")
-                        ? _userConfigurationManager.GetUserConfiguration<UserSettings>(userId, "settings.json").ListSwapIn
-                        : null;
-                    _userConfigurationManager.SaveUserConfiguration(userId, "settings.json", defaultUserSettings);
+                    // Phase 4: a reset never sets or clears a person's own consents (under their settings lock).
+                    _userConfigurationManager.ResetUserSettings(userId, defaultUserSettings);
                     userCount++;
                 }
                 catch (Exception ex)
