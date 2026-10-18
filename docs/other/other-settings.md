@@ -282,7 +282,7 @@ See [MDBList Ratings](other-features.md#mdblist-ratings) for batching, expiry, q
 
 ## Content Warnings
 
-Show community content warnings from DoesTheDogDie on movie and series pages. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
+Show community content warnings from DoesTheDogDie on movie and series pages. Spoiler Guard keeps protected titles’ warnings collapsed until the viewer clicks **Show**, including titles not yet in the library. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
 
 ### How to use
 

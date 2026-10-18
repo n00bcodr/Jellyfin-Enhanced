@@ -1660,5 +1660,6 @@
     "arr_ops_delete_search": "{instance} then searches for another copy.",
     "arr_ops_confirm_word": "DELETE",
     "arr_ops_not_in_queue": "That download is no longer in the queue.",
-    "arr_ops_queue_changing": "The queue is changing; try again in a moment."
+    "arr_ops_queue_changing": "The queue is changing; try again in a moment.",
+    "ddd_guarded_show": "Content warnings (hidden by Spoiler Guard) — Show"
 }

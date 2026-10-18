@@ -1145,7 +1145,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `awards/{mediaType}/{tmdbId}` | Authenticated | `movie`, `tv`, or `person` → awards object. |
 | GET | `mdblist-ratings/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → MDBList object. |
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
-| GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
+| GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → caller-specific DoesTheDogDie object; a signed-in human user is required. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 
 ```bash
@@ -1169,7 +1169,7 @@ MDBList object: `{Found,Ratings,Confirmed,FetchedAtUnixMs,Ids}`. Each rating has
 
 A missing MDBList key can return such a successful placeholder; a fresh cached result can still be returned. Confirmed awards/ratings get 30-minute private browser caching; unconfirmed placeholders do not.
 
-DoesTheDogDie object: `{Found,ItemId,Name,Topics,Confirmed,FetchedAtUnixMs}`. Each topic has `{Id,Name,Yes,No}`, where `Yes` and `No` are vote counts; only topics with at least one vote are included. `ItemId` builds the title link `https://www.doesthedogdie.com/media/{ItemId}`. Cached found results last 30 days, confirmed misses 14 days, and failed lookups return `Confirmed:false` and are retried after an hour. Movie and show matches are separated by media type, because one TMDB ID can exist as both.
+DoesTheDogDie object: `{Guarded,PolicyRevision,Found,ItemId,Name,Topics,Confirmed,FetchedAtUnixMs}`. Replies are `private, no-store`. A protected library title (including collection protection) or pending-TMDB title returns `Guarded:true` with no topics or title details. To explicitly reveal warnings, repeat the request with `?reveal=true&policyRevision=<PolicyRevision>` from this viewer’s current reply. The revision is bound to the viewer, title and current protection policy; another viewer’s revision or an old revision cannot reveal topics. The raw upstream cache is shared, but its contents are checked against current viewer protection on every reply. Each topic has `{Id,Name,Yes,No}`, where `Yes` and `No` are vote counts; only topics with at least one vote are included. `ItemId` builds the title link `https://www.doesthedogdie.com/media/{ItemId}`. Cached found results last 30 days, confirmed misses 14 days, and failed lookups return `Confirmed:false` and are retried after an hour. Movie and show matches are separated by media type, because one TMDB ID can exist as both.
 
 `ddd/topics` returns `{Topics:[{Id,Name,Category,Group}],FetchedAtUnixMs}`, refreshed about monthly. If the catalogue cannot be fetched and none is cached it returns `502`. Both `ddd` routes return `503` when the feature or key is missing and `400` for an unsupported media type or non-digit ID. The upstream key never reaches the client.
 

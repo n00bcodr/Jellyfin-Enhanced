@@ -20,6 +20,7 @@
 
         let picked = null;       // Set of topic ids, loaded once per session
         let catalogPromise = null;
+        let generation = 0;
 
         function injectCss() {
             const styleId = 'je-ddd-styles';
@@ -269,23 +270,42 @@
             if (beforeAnchor?.parentNode) beforeAnchor.parentNode.insertBefore(section, beforeAnchor);
         }
 
-        async function fetchEntry(type, tmdbId) {
+        /** Fetch a current viewer projection; only the server's raw upstream data is cached. */
+        async function fetchEntry(type, tmdbId, revealRevision) {
             try {
-                const cacheKey = `ddd:/${type}/${tmdbId}`;
-                const data = await JE.core.api.plugin(`/ddd/${type}/${tmdbId}`, { cacheKey });
-                if (data && data.Confirmed === false) JE.core.api.manager.clearCacheMatching(cacheKey);
-                return data;
+                const query = revealRevision ? `?reveal=true&policyRevision=${encodeURIComponent(revealRevision)}` : '';
+                // A custom header also prevents URL-only in-flight dedup across policy/viewer changes.
+                return await JE.core.api.plugin(`/ddd/${type}/${tmdbId}${query}`, { headers: { 'Cache-Control': 'no-cache' } });
             } catch (e) {
                 console.warn(`${logPrefix} Failed to fetch content warnings.`, e);
                 return null;
             }
         }
 
+        /** A neutral collapsed control: topic text is not fetched or placed in hidden DOM. */
+        function guardedSection(reveal) {
+            const section = el('details', `detailSection ${SECTION_CLASS}`);
+            const summary = el('summary', 'sectionTitle', JE.t('ddd_guarded_show'));
+            section.appendChild(summary);
+            summary.addEventListener('click', async (event) => {
+                event.preventDefault();
+                if (summary.getAttribute('aria-busy') === 'true') return;
+                summary.setAttribute('aria-busy', 'true');
+                try { await reveal(); }
+                finally { summary.removeAttribute('aria-busy'); }
+            });
+            return section;
+        }
+
         async function processPage(page) {
+            const currentGeneration = ++generation;
+            document.querySelectorAll(`.${SECTION_CLASS}, .je-ddd-modal`).forEach(n => n.remove());
             try {
                 const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
                 const userId = ApiClient.getCurrentUserId();
                 if (!itemId || !userId) return;
+                const current = () => currentGeneration === generation && ApiClient.getCurrentUserId() === userId
+                    && new URLSearchParams(window.location.hash.split('?')[1]).get('id') === itemId && !page.classList.contains('hide');
 
                 const getItem = (id) => (JE.helpers?.getItemCached
                     ? JE.helpers.getItemCached(id, { userId })
@@ -308,20 +328,44 @@
 
                 if (!tmdbId) { removeSection(page); return; }
 
-                const entry = await fetchEntry(type, String(tmdbId));
-                if (!entry?.Found || !entry.Topics?.length) { removeSection(page); return; }
-
-                await loadPicked();
-                const rebuild = () => insertSection(page, buildSection(entry, rebuild));
-                rebuild();
+                const render = async (entry) => {
+                    if (!current()) return;
+                    if (entry?.Guarded && !entry.Topics?.length) {
+                        insertSection(page, guardedSection(async () => render(await fetchEntry(type, String(tmdbId), entry.PolicyRevision))));
+                        return;
+                    }
+                    if (!entry?.Found || !entry.Topics?.length) { removeSection(page); return; }
+                    await loadPicked();
+                    if (!current()) return;
+                    const rebuild = () => { if (current()) insertSection(page, buildSection(entry, rebuild)); };
+                    rebuild();
+                };
+                await render(await fetchEntry(type, String(tmdbId)));
             } catch (error) {
                 console.error(`${logPrefix} Error processing page:`, error);
             }
         }
 
+        // Remove outgoing content synchronously, before any asynchronous re-read.
+        JE.session?.onUserChange('doesthedogdie', () => {
+            ++generation;
+            picked = null;
+            document.querySelectorAll(`.${SECTION_CLASS}, .je-ddd-modal`).forEach(n => n.remove());
+        });
+        JE.core.navigation?.onNavigate?.(() => {
+            ++generation;
+            document.querySelectorAll(`.${SECTION_CLASS}, .je-ddd-modal`).forEach(n => n.remove());
+        });
+        window.addEventListener('je:spoiler-changed', () => {
+            const page = document.querySelector('#itemDetailPage:not(.hide)');
+            if (page) void processPage(page);
+        });
+
         injectCss();
 
         const unregister = JE.helpers.onViewPage(async (view, element, hash) => {
+            ++generation;
+            document.querySelectorAll(`.${SECTION_CLASS}, .je-ddd-modal`).forEach(n => n.remove());
             if (!JE?.pluginConfig?.DoesTheDogDieEnabled) {
                 unregister();
                 return;

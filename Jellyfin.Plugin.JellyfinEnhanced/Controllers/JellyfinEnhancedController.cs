@@ -4866,20 +4866,58 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey());
         }
 
-        /// <summary>DoesTheDogDie content warnings for a title, by TMDB id.</summary>
+        // Read current state for EVERY projection, including a hit in the shared upstream cache.
+        // A reveal revision is viewer/title/policy-bound and deliberately never persisted as consent.
+        private (bool Guarded, string Revision, bool Readable) DoesTheDogDiePolicy(Guid viewer, string mediaType, string tmdbId)
+        {
+            var config = JellyfinEnhanced.Instance!.Configuration;
+            var state = config.SpoilerBlurEnabled ? LoadSpoilerStateForTagStrip(viewer) : new UserSpoilerBlur();
+            var guarded = config.SpoilerBlurEnabled && (state == null || state.PendingTmdb.ContainsKey($"{mediaType}:{tmdbId}"));
+            if (config.SpoilerBlurEnabled && state != null && !guarded)
+            {
+                var ids = _itemRepository.GetItemIdsByProviders(new Dictionary<string, string> { ["Tmdb"] = tmdbId },
+                    new[] { mediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series });
+                guarded = ids.Any(id => mediaType == "movie" ? _spoilerResolver.IsMovieInSpoilerScope(state, id)
+                    : state.Series.ContainsKey(id.ToString("N")));
+            }
+            var fingerprint = viewer.ToString("N") + "|" + mediaType + "|" + tmdbId + "|" + config.SpoilerBlurEnabled
+                + "|" + guarded + "|" + JsonSerializer.Serialize(state);
+            return (guarded, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint))), state != null);
+        }
+
+        /// <summary>DoesTheDogDie warnings, hidden for a guarded title until this viewer explicitly reveals them.</summary>
         [HttpGet("ddd/{mediaType}/{tmdbId}")]
         [Authorize]
-        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken,
+            [FromQuery] bool reveal = false, [FromQuery] string? policyRevision = null)
         {
+            Response.Headers["Cache-Control"] = "private, no-store";
             if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
             if (mediaType != "movie" && mediaType != "tv") return BadRequest("mediaType must be 'movie' or 'tv'.");
-            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit)) return BadRequest("tmdbId must be a positive integer.");
+            if (!int.TryParse(tmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var numericId) || numericId <= 0)
+                return BadRequest("tmdbId must be a positive integer.");
+            tmdbId = numericId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var viewer = ArrCaller.PersonId(User);
+            if (viewer == null || _userManager.GetUserById(viewer.Value) is not { } user || user.HasPermission(PermissionKind.IsDisabled)) return Forbid();
 
             try
             {
-                var result = await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
-                if (result.Confirmed) SetExternalDataCacheHeaders();
-                return Ok(result);
+                var policy = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
+                bool CanShow() => policy.Readable && (!policy.Guarded || (reveal && policyRevision == policy.Revision));
+                var result = CanShow()
+                    ? await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false)
+                    : new Model.DddCacheEntry();
+                // Protection may have changed while the external lookup was in flight.
+                policy = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
+                var show = CanShow();
+                return Ok(new {
+                    policy.Guarded, PolicyRevision = policy.Revision,
+                    Found = show && result.Found, Confirmed = show && result.Confirmed,
+                    ItemId = show ? result.ItemId : 0, Name = show ? result.Name : string.Empty,
+                    Topics = show ? result.Topics : new List<Model.DddTopicStat>(),
+                    FetchedAtUnixMs = show ? result.FetchedAtUnixMs : 0
+                });
             }
             catch (OperationCanceledException)
             {

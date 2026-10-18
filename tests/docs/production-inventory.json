@@ -3354,7 +3354,8 @@
       "method": "GetDoesTheDogDie",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
-        "Authorize"
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
       ]
     },
     {
