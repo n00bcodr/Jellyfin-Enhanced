@@ -104,6 +104,7 @@ public class IntegrationAutomationBracketScanTests
         ["WhatsNewService.SnapshotFilePath"] = "the What's New settings snapshot",
         ["WhatsNewService.WhatsNewFilePath"] = "the What's New state",
         ["WikidataAwardsService.CacheFilePath"] = "the Wikidata awards cache",
+        ["DoesTheDogDieService.CacheFilePath"] = "the DoesTheDogDie warnings cache",
         ["JeBackupService.DefaultFolderName"] = "the backups folder (backup zips and pre-restore copies)",
     };
 
@@ -167,7 +168,7 @@ public class IntegrationAutomationBracketScanTests
             foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().Where(c => c is ImplicitObjectCreationExpressionSyntax || c is ObjectCreationExpressionSyntax { Type: var t } && Streams.Any(n => t.ToString().EndsWith(n, StringComparison.Ordinal))))
                 if (model.GetTypeInfo(creation).Type is INamedTypeSymbol { Name: "FileStream" or "StreamWriter", ContainingNamespace: var ns } && ns.ToDisplayString() == "System.IO"
                     && creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression is { } path && model.GetTypeInfo(path).Type?.SpecialType == SpecialType.System_String
-                    && !Temporary(path) && (file is Users || (!ReviewedWriter(creation, model) && area.Settings(path, model))))
+                    && !Temporary(path) && !ReadOnlyStream(creation, model) && (file is Users || (!ReviewedWriter(creation, model) && area.Settings(path, model))))
                     yield return new Writer(creation, model, "a settings file change", "person_settings", path);
             // A Jellyfin user entity's members set.
             foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
@@ -248,6 +249,17 @@ public class IntegrationAutomationBracketScanTests
             default:
                 return null;
         }
+    }
+
+    // A FileStream that only reads: FileMode.Open with an explicit FileAccess.Read (without one it opens read-write), and no
+    // other mode or access. Anything else, a StreamWriter or a mode or access the scan can't read as a constant, can write.
+    private static bool ReadOnlyStream(BaseObjectCreationExpressionSyntax creation, SemanticModel model)
+    {
+        if (model.GetTypeInfo(creation).Type?.Name != "FileStream" || creation.ArgumentList is not { } list) return false;
+        var fields = list.Arguments.Skip(1).Select(a => model.GetSymbolInfo(a.Expression).Symbol).OfType<IFieldSymbol>().ToList();
+        var mode = fields.Where(f => f.ContainingType.Name == "FileMode").ToList();
+        var access = fields.Where(f => f.ContainingType.Name == "FileAccess").ToList();
+        return mode.Count == 1 && mode[0].Name == "Open" && access.Count == 1 && access[0].Name == "Read";
     }
 
     // A File.Open or FileInfo.Open that can write (any mode but Open, or any access but Read).
@@ -601,6 +613,17 @@ public class IntegrationAutomationBracketScanTests
         ["settings_stream_by_another_service"] = ("Services/WhatsNewService.cs",
             "private string SnapshotFilePath =>",
             "internal void Planted(string userId) { using var stream = new FileStream(Path.Combine(_configBaseDir, userId, \"settings.json\"), FileMode.Create); stream.WriteByte(1); }\n        private string SnapshotFilePath =>",
+            "a settings file change: outside any bracket"),
+        // Integration (the read-only stream exemption): a FileStream opened with FileMode.Open but no FileAccess opens
+        // read-write, so it is still a writer.
+        ["settings_stream_open_mode_without_access"] = ("Services/WhatsNewService.cs",
+            "private string SnapshotFilePath =>",
+            "internal void Planted(string userId) { using var stream = new FileStream(Path.Combine(_configBaseDir, userId, \"settings.json\"), FileMode.Open); stream.WriteByte(1); }\n        private string SnapshotFilePath =>",
+            "a settings file change: outside any bracket"),
+        // and so is one opened for reading and writing.
+        ["settings_stream_open_read_write"] = (Users,
+            "public object UserSettingsLock(string userId) =>",
+            "public void Planted(string path) { using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read); stream.WriteByte(1); }\n        public object UserSettingsLock(string userId) =>",
             "a settings file change: outside any bracket"),
     };
 
