@@ -312,4 +312,66 @@ public class ReadySelectorTests
         Assert.Empty(after.Desired);
         Assert.Equal(new[] { ("w:1", "m") }, after.Removed);
     }
+
+    // ------------------------------------------------------------------ 4f review round 1 (behaviour-2)
+
+    // Two accessible copies of one movie (two libraries), the same standard fit: which ranks first is by version id.
+    private static (Guid FirstItem, Guid FirstVersion, Guid SecondItem, Guid SecondVersion) TwoCopies(ReadyWorld w)
+    {
+        var (a, av) = w.Movie(Sintel, Arrived);
+        var (b, bv) = w.Movie(Sintel, Arrived);
+        return string.CompareOrdinal(ReadyPlaylistStore.Id(av[0]), ReadyPlaylistStore.Id(bv[0])) < 0 ? (a, av[0], b, bv[0]) : (b, bv[0], a, av[0]);
+    }
+
+    [Fact]
+    public void ARuleOnOneCopyLetsTheOtherCopyThrough()
+    {
+        using var w = new ReadyWorld();
+        var emma = w.User();
+        var (firstItem, firstVersion, _, secondVersion) = TwoCopies(w);
+        w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
+        Assert.Equal(new[] { firstVersion }, Select(w, emma).Desired);
+        // The copy's own item hidden (as a library card of that copy), or that exact version.
+        Assert.Equal(new[] { secondVersion }, Select(w, emma, hides: new ReadyHides(new[] { firstItem }, Array.Empty<Guid>(), Array.Empty<string>())).Desired);
+        Assert.Equal(new[] { secondVersion }, Select(w, emma, hides: new ReadyHides(new[] { firstVersion }, Array.Empty<Guid>(), Array.Empty<string>())).Desired);
+    }
+
+    [Theory]
+    [InlineData("tmdb")]
+    [InlineData("movie_rule")]
+    public void ATitleLevelRuleHidesEveryCopy(string rule)
+    {
+        using var w = new ReadyWorld();
+        var emma = w.User();
+        var (firstItem, _, _, _) = TwoCopies(w);
+        w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
+        var doc = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent();
+        doc.Settings.Enabled = true;
+        doc.Settings.FilterLibrary = true;
+        doc.Items[rule] = rule == "tmdb"
+            ? new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = "", Type = "Movie", TmdbId = "45745" }
+            // A movie's own card hidden (Hidden Content keys a movie rule to the title: every copy, D46).
+            : new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = firstItem.ToString("N"), Type = "Movie" };
+        Assert.Empty(Select(w, emma, hides: JellyfinReadyPrivacy.From(doc)).Desired);
+    }
+
+    [Fact]
+    public void AnEpisodeRuleOnOneCopyLetsTheOtherSeriesCopyThrough()
+    {
+        using var w = new ReadyWorld();
+        var emma = w.User();
+        var hd = w.Series(Firefly, Arrived);
+        var other = w.Series(Firefly, Arrived);
+        var e1 = w.View.AddEpisodeFile(hd, Firefly, 1, 1, 1920, 1080, Arrived);
+        var e1b = w.View.AddEpisodeFile(other, Firefly, 1, 1, 1920, 1080, Arrived);
+        w.Interests.Add(emma.UserId, "w:s1", ReadyInterestKind.Request, Firefly, whole: false, seasons: new[] { 1 });
+        var chosen = Assert.Single(Select(w, emma).Desired);
+        var hiddenCopy = chosen;
+        var otherCopy = chosen == e1 ? e1b : e1;
+        var doc = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent();
+        doc.Settings.Enabled = true;
+        doc.Settings.FilterLibrary = true;
+        doc.Items["ep"] = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = hiddenCopy.ToString("N"), Type = "Episode" };
+        Assert.Equal(new[] { otherCopy }, Select(w, emma, hides: JellyfinReadyPrivacy.From(doc)).Desired);
+    }
 }

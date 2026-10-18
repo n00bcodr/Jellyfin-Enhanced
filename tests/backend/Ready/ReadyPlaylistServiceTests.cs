@@ -294,7 +294,9 @@ public class ReadyPlaylistServiceTests
             {
                 if (call == "set") w.Host.Playlists.Remove(playlist.Id);
             };
-            Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
+            // Gone right before the change: no write, and a first missing read.
+            Assert.Equal("missing", await w.Service.ReconcileAsync(emma.UserId));
+            Assert.Equal(1, w.Store.Binding(ReadyWorld.Server, emma.UserId)!.MissingCount);
             w.Host.During = null;
             Assert.Equal("missing", await w.Service.ReconcileAsync(emma.UserId));
             Assert.Equal(1, w.Host.Creates);
@@ -356,9 +358,11 @@ public class ReadyPlaylistServiceTests
             Assert.Equal("not_active", await w.Service.ReconcileAsync(emma.UserId));
             Assert.Equal(calls, w.Host.Calls.Count);
 
-            // Remove deletes it only while it is still the person's own.
-            Assert.Equal(change == "owner" ? "not_ours" : "removed", await w.Service.RemoveAsync(emma.UserId));
-            Assert.Equal(change == "owner", w.Host.Playlists.ContainsKey(playlist.Id));
+            // Remove deletes it only while it is still the person's own and private (4f-r1-security-3): shared or public, it is
+            // kept as it is; another owner's is left alone. Either way JE stops managing it.
+            Assert.Equal(change == "owner" ? "not_ours" : "kept", await w.Service.RemoveAsync(emma.UserId));
+            Assert.True(w.Host.Playlists.ContainsKey(playlist.Id));
+            Assert.DoesNotContain("delete", w.Host.Gates.Where(g => g.Refused == null).Select(g => g.Call));
         }
     }
 

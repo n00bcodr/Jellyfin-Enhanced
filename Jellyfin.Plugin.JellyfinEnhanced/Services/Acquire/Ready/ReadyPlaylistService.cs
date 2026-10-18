@@ -30,15 +30,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <item><description>One person's work at a time (an async lock per person; never a database transaction, a settings lock or
     /// 4c1's list Lifecycle lock around a Jellyfin call). Every write is generation- and epoch-checked, and the binding and the
     /// switch are read again after every await.</description></item>
-    /// <item><description>Create: the marker is recorded first, the playlist is made under a name carrying it, found again only by
-    /// it after a crash, verified (owner, private, no shares, marker), recorded, then named.</description></item>
+    /// <item><description>Create: the marker, the id Jellyfin will give the playlist and the time are recorded first; the playlist is
+    /// made under a name carrying the marker, verified (owner, private, no shares, marker), recorded, then named. After a crash
+    /// in between only that id is taken, and only while it is JE's own create (made then, empty, the person's, private, the
+    /// marker): never a playlist the person made under that name.</description></item>
+    /// <item><description>Right before every Jellyfin change the switch, the binding (opted in, this epoch, this playlist), the
+    /// person and the playlist as Jellyfin stored it are checked again, with no await before the call (<see cref="ReadyGate"/>).</description></item>
     /// <item><description>Change: the raw membership is read fresh (entries Jellyfin keeps by path only resolved, duplicates and
     /// dangling entries kept as such); when it differs, the desired membership is journalled and set in one Jellyfin update
     /// (exactly these versions, in order), then read back; only what was observed is confirmed. After a crash the next run
     /// starts from what Jellyfin has, so nothing is ever added twice.</description></item>
-    /// <item><description>A playlist missing on two reads a minute apart was deleted by the person: not made again until they turn
-    /// it on again. Turning it off keeps it as it is; Remove deletes only it. Shared, public or another owner's: no more
-    /// writes. A JE restore needs the person to turn it on again first (D47); a foreign or unverifiable binding is never
+    /// <item><description>A playlist missing on two consecutive reads a minute apart was deleted by the person: not made again until
+    /// they turn it on again. Turning it off keeps it as it is; Remove deletes only it, and only while it is still private
+    /// (shared or public: kept as it is and no longer managed). Shared, public or another owner's: no more writes. A JE restore needs the person to turn it on again first (D47); a foreign or unverifiable binding is never
     /// changed.</description></item>
     /// <item><description>Jellyfin events only bump an epoch and queue bounded work (no database, no lock, no wait on the event
     /// thread); a sweep every few minutes catches what events don't say (hidden content, access, expiry).</description></item>
@@ -60,6 +64,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>How long items Jellyfin refused to add aren't asked for again.</summary>
         internal static readonly TimeSpan RefusedFor = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// An interrupted create is JE's own only when Jellyfin made that playlist within this long after the create was
+        /// recorded (its folder's creation time; a little before allows for clock rounding).
+        /// </summary>
+        internal static readonly TimeSpan CreateWindow = TimeSpan.FromMinutes(1);
 
         private readonly ReadyPlaylistStore _store;
         private readonly IReadyPlaylistHost _host;
@@ -245,9 +255,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         /// <summary>
-        /// Removes the person's managed playlist (only that one, and only while it is verifiably theirs: their own, carrying the
-        /// marker) and records it as removed: it isn't made again until they turn it on again. <c>removed</c>, <c>not_ours</c>
-        /// (the binding is dropped but the playlist is left alone) or <c>nothing</c>.
+        /// Removes the person's managed playlist (only that one, and only while it is verifiably theirs and private: their own,
+        /// carrying the marker, not public and shared with nobody, as Jellyfin stored it right before the delete) and records
+        /// it as removed: it isn't made again until they turn it on again. <c>removed</c>; <c>kept</c> (shared or public: left
+        /// as it is, no longer managed); <c>not_ours</c> (the binding is dropped but the playlist is left alone);
+        /// <c>nothing</c>; <c>changed</c> (the settings changed meanwhile: nothing done) or <c>off</c>.
         /// </summary>
         public async Task<string> RemoveAsync(Guid user, CancellationToken cancellationToken = default)
         {
@@ -259,16 +271,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 var generation = _store.Generation;
                 var b = _store.Binding(_server, user);
                 if (b?.PlaylistId is not Guid id) return "nothing";
-                var info = _host.Get(id);
-                var ours = info != null && info.OwnerId == user && info.HasMarker(b.Marker);
-                if (ours)
+                Interlocked.Increment(ref _epoch);
+                var refused = await _host.DeleteAsync(id, stored => RemoveGate(generation, user, b, id, stored)).ConfigureAwait(false);
+                switch (refused)
                 {
-                    Interlocked.Increment(ref _epoch);
-                    await _host.DeleteAsync(id).ConfigureAwait(false);
+                    case null or "gone":
+                        _store.Removed(generation, _server, user, b.Revision, _now());
+                        return "removed";
+                    case "kept":
+                        _store.Removed(generation, _server, user, b.Revision, _now(), "kept");
+                        return "kept";
+                    case "not_ours":
+                        _store.Removed(generation, _server, user, b.Revision, _now());
+                        return "not_ours";
+                    default:
+                        return refused;
                 }
-
-                _store.Removed(generation, _server, user, b.Revision, _now());
-                return ours || info == null ? "removed" : "not_ours";
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -279,6 +297,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             {
                 gate.Release();
             }
+        }
+
+        // Right before the delete: the switch, the binding unchanged since Remove read it, and the playlist as stored now: gone
+        // (nothing to delete), not the person's verifiable one (left alone), shared or public (kept), else deleted.
+        private string? RemoveGate(long generation, Guid user, ReadyBinding read, Guid playlist, ReadyPlaylistInfo? stored)
+        {
+            if (_store.Generation != generation) return "changed";
+            if (!ReadyFlags.Playlist(_config())) return "off";
+            if (_store.Binding(_server, user) is not { } now || now.Revision != read.Revision || now.PlaylistId != playlist) return "changed";
+            if (stored == null) return "gone";
+            if (stored.OwnerId != user || !stored.HasMarker(read.Marker)) return "not_ours";
+            return stored.PrivateTo(user) ? null : "kept";
         }
 
         // ------------------------------------------------------------------ reconciliation
@@ -326,30 +356,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 var info = _host.Get(bound);
                 if (info == null) return Missing(generation, user, epoch, now);
                 if (Unsafe(info, b, user) is { } reason) return Privacy(generation, user, epoch, reason, now);
+                // Read and checked: an earlier missing read doesn't count towards a deletion any more.
+                if (b.MissingCount > 0 || b.MissingSince != null) _store.ClearMissing(generation, _server, user, epoch, now);
                 playlist = bound;
             }
             else
             {
-                var marker = b.Marker;
-                if (marker == null)
-                {
-                    marker = Guid.NewGuid().ToString("N");
-                    if (!_store.BeginCreate(generation, _server, user, epoch, marker, now)) return "changed";
-                }
-
-                var made = _host.FindByMarker(user, marker);
+                // JE's own create a crash interrupted (recorded before it, made then), else a new one under a new marker.
+                var made = Interrupted(b, user);
+                var marker = made != null ? b.Marker! : Guid.NewGuid().ToString("N");
                 if (made == null)
                 {
-                    var id = await _host.CreateAsync(user, PlaylistName + " (" + marker + ")").ConfigureAwait(false);
-                    if (!Still(generation, user, epoch)) return "changed";
-                    made = _host.Get(id);
+                    var name = CreateName(marker);
+                    if (!_store.BeginCreate(generation, _server, user, epoch, marker, _host.NewPlaylistId(name), now)) return "changed";
+                    var (id, refused) = await _host.CreateAsync(user, name, Gate(generation, user, epoch, null, marker, null)).ConfigureAwait(false);
+                    if (refused != null) return Refused(generation, user, epoch, refused, now);
+                    if (!Still(generation, user, epoch) || id is not Guid madeId) return "changed";
+                    made = _host.Get(madeId);
                 }
 
                 if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker)) return "changed";
                 if (!_store.Bind(generation, _server, user, epoch, made.Id, now)) return "changed";
                 if (!string.Equals(made.Name, PlaylistName, StringComparison.Ordinal))
                 {
-                    await _host.RenameAsync(made.Id, user, PlaylistName).ConfigureAwait(false);
+                    // JE's name only while the stored name is still the create's own (a name the person gave it stays).
+                    var createName = CreateName(marker);
+                    var renamed = await _host.RenameAsync(made.Id, user, PlaylistName, Gate(generation, user, epoch, made.Id, marker,
+                        stored => string.Equals(stored.Name, createName, StringComparison.Ordinal) ? null : "named")).ConfigureAwait(false);
+                    if (renamed is not (null or "named")) return Refused(generation, user, epoch, renamed, now);
                     if (!Still(generation, user, epoch)) return "changed";
                 }
 
@@ -381,21 +415,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             }
 
             if (!_store.BeginChange(generation, _server, user, epoch, desired, now)) return "changed";
-            // The playlist checked again right before the change (shared or deleted in between: no write).
-            var current = _host.Get(playlist);
-            if (current == null) return Missing(generation, user, epoch, now);
-            if (Unsafe(current, b, user) is { } why) return Privacy(generation, user, epoch, why, now);
             // One change: exactly the desired versions in order (duplicates, entries Jellyfin keeps by path only and
-            // entries that resolve to nothing go with it), then read back; only what Jellyfin then has is confirmed.
-            await _host.SetAsync(playlist, desired, user).ConfigureAwait(false);
+            // entries that resolve to nothing go with it), made only if everything still holds right before it (switch, opt-in,
+            // person, playlist as stored); then read back, and only what Jellyfin then has is confirmed.
+            var notSet = await _host.SetAsync(playlist, desired, user, Gate(generation, user, epoch, playlist, b.Marker, null)).ConfigureAwait(false);
+            if (notSet != null) return Refused(generation, user, epoch, notSet, now);
             if (!Still(generation, user, epoch)) return "changed";
             raw = _host.Entries(playlist);
             _store.Confirm(generation, _server, user, epoch, raw, now);
-            var refused = desired.Where(id => !raw.Contains(id)).ToHashSet();
-            if (refused.Count > 0)
+            var refused2 = desired.Where(id => !raw.Contains(id)).ToHashSet();
+            if (refused2.Count > 0)
             {
-                _refused[user] = (refused, now + RefusedFor);
-                _logger?.Info($"Ready playlist: Jellyfin didn't add {refused.Count} item(s); they are tried again later.");
+                _refused[user] = (refused2, now + RefusedFor);
+                _logger?.Info($"Ready playlist: Jellyfin didn't add {refused2.Count} item(s); they are tried again later.");
             }
             else
             {
@@ -404,6 +436,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
             return "updated";
         }
+
+        /// <summary>The name a playlist is made under: the display name and the create's marker (its folder keeps it).</summary>
+        internal static string CreateName(string marker) => PlaylistName + " (" + marker + ")";
+
+        // The playlist an interrupted create made, when the evidence says it is JE's own: the id recorded before the create
+        // call, made within the window after it, still empty, the person's, private and carrying the marker. A playlist the
+        // person made under that name (the name shows the marker) fails at least the time or the contents, so it's never
+        // adopted; without that evidence nothing is.
+        private ReadyPlaylistInfo? Interrupted(ReadyBinding b, Guid user)
+        {
+            if (b.Marker == null || b.CreateId is not Guid id || b.CreateAt is not long at) return null;
+            var found = _host.Get(id);
+            if (found == null || found.Id != id || !found.PrivateTo(user) || !found.HasMarker(b.Marker)) return null;
+            var created = found.Created.ToUnixTimeMilliseconds();
+            if (created < at - 5000 || created > at + (long)CreateWindow.TotalMilliseconds) return null;
+            return _host.Entries(id).Count == 0 ? found : null;
+        }
+
+        // The last check before a Jellyfin change (run by the host with no await before its call): the database, the switch,
+        // the binding (opted in and active at this epoch, naming this playlist, or none and this marker for a create), the
+        // person, and the playlist as Jellyfin stored it now (owner, marker, private; plus any extra condition).
+        private ReadyGate Gate(long generation, Guid user, long epoch, Guid? playlist, string? marker, Func<ReadyPlaylistInfo, string?>? extra)
+            => stored =>
+            {
+                if (_store.Generation != generation) return "changed";
+                if (!ReadyFlags.Playlist(_config())) return "off";
+                if (_store.Binding(_server, user) is not { OptedIn: true, State: ReadyState.Active } now || now.Epoch != epoch || now.PlaylistId != playlist) return "changed";
+                if (marker != null && !string.Equals(now.Marker, marker, StringComparison.Ordinal)) return "changed";
+                if (_view.Viewer(user) == null) return "no_user";
+                if (playlist == null) return null;
+                if (stored == null) return "missing";
+                return Unsafe(stored, now, user) ?? extra?.Invoke(stored);
+            };
+
+        // A change the gate didn't let through: a missing playlist counts towards a deletion, a privacy or identity change
+        // stops the writes, anything else (switch off, opt-out, a new epoch, the person gone) just ends this look.
+        private string Refused(long generation, Guid user, long epoch, string reason, DateTimeOffset now) => reason switch
+        {
+            "missing" => Missing(generation, user, epoch, now),
+            "owner_changed" or "identity" or "public" or "shared" => Privacy(generation, user, epoch, reason, now),
+            _ => reason,
+        };
 
         // Owner, privacy and marker, as the playlist is now; null when it is safe to change.
         private static string? Unsafe(ReadyPlaylistInfo info, ReadyBinding b, Guid user)

@@ -21,6 +21,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         public int Shares { get; set; }
         public string Folder { get; init; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public DateTimeOffset Created { get; init; }
         public List<Guid> Entries { get; } = new();
     }
 
@@ -41,10 +42,28 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
 
     public int Creates => Calls.Count(c => c == "create");
 
-    /// <summary>A playlist a person made themselves.</summary>
+    /// <summary>The clock a playlist's creation time comes from (Jellyfin: its folder's creation time).</summary>
+    public Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Jellyfin's id of a new playlist: derived from its folder path, the folder named from the name it is made with ("1"
+    /// appended while that folder exists). So a playlist made again under the same name, once the first is gone, gets the
+    /// same id.
+    /// </summary>
+    public static Guid IdFor(string folder) => new(System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes("playlists/" + folder.ToLowerInvariant())));
+
+    private string TargetFolder(string name)
+    {
+        var folder = name;
+        while (Playlists.Values.Any(p => string.Equals(p.Folder, folder, StringComparison.OrdinalIgnoreCase))) folder += "1";
+        return folder;
+    }
+
+    /// <summary>A playlist a person made themselves (through Jellyfin: its id from its folder, created now).</summary>
     public Native AddOwn(Guid owner, string name, params Guid[] entries)
     {
-        var p = new Native { Id = Guid.NewGuid(), Owner = owner, Folder = name, Name = name };
+        var folder = TargetFolder(name);
+        var p = new Native { Id = IdFor(folder), Owner = owner, Folder = folder, Name = name, Created = Now() };
         p.Entries.AddRange(entries);
         Playlists[p.Id] = p;
         return p;
@@ -71,50 +90,65 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         }
     }
 
-    private static ReadyPlaylistInfo Info(Native p) => new(p.Id, p.Owner, p.Public, p.Shares, p.Folder, p.Name);
+    private static ReadyPlaylistInfo Info(Native p) => new(p.Id, p.Owner, p.Public, p.Shares, p.Folder, p.Name, p.Created);
 
     public ReadyPlaylistInfo? Get(Guid playlistId) => Playlists.TryGetValue(playlistId, out var p) ? Info(p) : null;
 
-    public ReadyPlaylistInfo? FindByMarker(Guid ownerId, string marker)
-        => Playlists.Values.Where(p => p.Owner == ownerId).Select(Info).FirstOrDefault(i => i.HasMarker(marker));
+    public Guid? NewPlaylistId(string name) => IdFor(TargetFolder(name));
 
     public IReadOnlyList<Guid> Entries(Guid playlistId) => Playlists.TryGetValue(playlistId, out var p) ? p.Entries.ToList() : Array.Empty<Guid>();
 
-    public Task<Guid> CreateAsync(Guid ownerId, string name)
+    /// <summary>The gates each change was asked through and what they said (null: allowed).</summary>
+    public List<(string Call, string? Refused)> Gates { get; } = new();
+
+    // Like the production host: the hook and faults first, then the gate on the playlist as stored now, then the change.
+    private string? Gate(string call, Guid? playlistId, ReadyGate gate)
+    {
+        var refused = gate(playlistId is Guid id ? Get(id) : null);
+        Gates.Add((call, refused));
+        return refused;
+    }
+
+    public Task<(Guid? Id, string? Refused)> CreateAsync(Guid ownerId, string name, ReadyGate gate)
     {
         Enter("create");
-        var p = new Native { Id = Guid.NewGuid(), Owner = ownerId, Folder = name, Name = name };
+        if (Gate("create", null, gate) is { } refused) return Task.FromResult<(Guid?, string?)>((null, refused));
+        var folder = TargetFolder(name);
+        var p = new Native { Id = IdFor(folder), Owner = ownerId, Folder = folder, Name = name, Created = Now() };
         Playlists[p.Id] = p;
         Leave("create");
-        return Task.FromResult(p.Id);
+        return Task.FromResult<(Guid?, string?)>((p.Id, null));
     }
 
-    public Task RenameAsync(Guid playlistId, Guid ownerId, string name)
+    public Task<string?> RenameAsync(Guid playlistId, Guid ownerId, string name, ReadyGate gate)
     {
         Enter("rename");
+        if (Gate("rename", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
         Playlists[playlistId].Name = name;
         Leave("rename");
-        return Task.CompletedTask;
+        return Task.FromResult<string?>(null);
     }
 
-    public Task SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId)
+    public Task<string?> SetAsync(Guid playlistId, IReadOnlyList<Guid> itemIds, Guid ownerId, ReadyGate gate)
     {
         Enter("set");
+        if (Gate("set", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
         if (!Playlists.TryGetValue(playlistId, out var p)) throw new ArgumentException("No Playlist exists with Id " + playlistId);
         // Like Jellyfin: empty the list, then add what it will hold (once each), in order.
         p.Entries.Clear();
         Leave("set-cleared");
         foreach (var id in itemIds.Where(i => !Refuses.Contains(i)).Distinct()) p.Entries.Add(id);
         Leave("set");
-        return Task.CompletedTask;
+        return Task.FromResult<string?>(null);
     }
 
-    public Task DeleteAsync(Guid playlistId)
+    public Task<string?> DeleteAsync(Guid playlistId, ReadyGate gate)
     {
         Enter("delete");
+        if (Gate("delete", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
         Playlists.Remove(playlistId);
         Leave("delete");
-        return Task.CompletedTask;
+        return Task.FromResult<string?>(null);
     }
 }
 
@@ -126,8 +160,12 @@ internal sealed class FakeReadyLibrary : IReadyLibrary
     public HashSet<Guid> NotInsertable { get; } = new();
     public HashSet<(Guid User, Guid Item)> Watched { get; } = new();
 
+    /// <summary>Runs inside each final version check (selection), so a test can change things mid-selection.</summary>
+    public Action<Guid, Guid>? OnCheck { get; set; }
+
     public ReadyVersionCheck Check(Guid userId, Guid playableItemId)
     {
+        OnCheck?.Invoke(userId, playableItemId);
         if (OpenTo.TryGetValue(playableItemId, out var users) && !users.Contains(userId)) return ReadyVersionCheck.NoAccess;
         if (NotPhysical.Contains(playableItemId)) return ReadyVersionCheck.NotPhysical;
         if (NotInsertable.Contains(playableItemId)) return ReadyVersionCheck.NotInsertable;
@@ -142,7 +180,14 @@ internal sealed class FakeReadyPrivacy : IReadyPrivacy
 {
     public Dictionary<Guid, ReadyHides?> Rules { get; } = new();
 
-    public ReadyHides? Load(Guid userId) => Rules.TryGetValue(userId, out var hides) ? hides : ReadyHides.None;
+    /// <summary>Runs as the rules are loaded, so a test can change things while they are read.</summary>
+    public Action<Guid>? OnLoad { get; set; }
+
+    public ReadyHides? Load(Guid userId)
+    {
+        OnLoad?.Invoke(userId);
+        return Rules.TryGetValue(userId, out var hides) ? hides : ReadyHides.None;
+    }
 }
 
 /// <summary>Each person's interests (null = can't be read now).</summary>
@@ -232,6 +277,7 @@ internal sealed class ReadyWorld : IDisposable
     public ReadyWorld()
     {
         Editions = new EditionAvailability(View, () => Config, (key, viewer) => View.Copies(key, viewer));
+        Host.Now = () => Now;
         Reopen();
     }
 

@@ -159,6 +159,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>The create marker: the playlist's own folder carries it from the create write on.</summary>
         public string? Marker { get; init; }
 
+        /// <summary>
+        /// The id Jellyfin gives the playlist about to be made (derived from its folder), recorded before the create call; with
+        /// <see cref="CreateAt"/> the only evidence a playlist found after a crash is JE's own. Null once bound.
+        /// </summary>
+        public Guid? CreateId { get; init; }
+
+        /// <summary>When the create call was about to be made (UTC ms), or null.</summary>
+        public long? CreateAt { get; init; }
+
         /// <summary>The membership change in progress (JSON), or null.</summary>
         public string? PendingOperation { get; init; }
 
@@ -188,7 +197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// <param name="ShareCount">How many people it is shared with.</param>
     /// <param name="FolderName">The playlist's folder name (it carries the create marker; renames keep it).</param>
     /// <param name="Name">Its display name.</param>
-    public sealed record ReadyPlaylistInfo(Guid Id, Guid OwnerId, bool OpenAccess, int ShareCount, string FolderName, string Name)
+    /// <param name="Created">When Jellyfin made it (its folder's creation time).</param>
+    public sealed record ReadyPlaylistInfo(Guid Id, Guid OwnerId, bool OpenAccess, int ShareCount, string FolderName, string Name, DateTimeOffset Created)
     {
         /// <summary>True when the folder carries <paramref name="marker"/>.</summary>
         public bool HasMarker(string? marker) => !string.IsNullOrEmpty(marker) && FolderName.Contains(marker, StringComparison.OrdinalIgnoreCase);

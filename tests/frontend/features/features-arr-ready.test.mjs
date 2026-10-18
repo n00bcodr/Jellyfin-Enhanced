@@ -164,6 +164,41 @@ test('Remove needs a second press and then removes once', async () => {
   } finally { h.close(); }
 });
 
+test('a shared playlist is offered as "stop managing", and Remove reports it was kept (4f review round 1)', async () => {
+  const h = setup({
+    reply: (path) => (path === '/acquire/ready/remove'
+      ? { outcome: 'kept', status: answer({ playlist: { state: 'removed', reason: 'kept' } }) }
+      : answer({ playlist: { optedIn: true, state: 'privacy', reason: 'shared', playlistId: ID, canRemove: true } })),
+  });
+  try {
+    h.open(); await tick();
+    const button = h.host().querySelector('[data-je-focus="ready-remove"]');
+    assert.equal(button.textContent, 'arr_ready_forget');
+    button.click(); await tick();
+    button.click(); await tick();
+    assert.match(h.host().textContent, /arr_ready_kept/);
+    assert.match(h.host().textContent, /arr_ready_state_kept/);
+    assert.doesNotMatch(h.host().textContent, /arr_ready_removed|arr_ready_state_removed/);
+  } finally { h.close(); }
+});
+
+test('a Remove the server didn\'t make says so instead of claiming it was removed', async () => {
+  const h = setup({
+    reply: (path) => (path === '/acquire/ready/remove'
+      ? { outcome: 'changed', status: answer({ playlist: { optedIn: true, state: 'active', playlistId: ID, canRemove: true } }) }
+      : answer({ playlist: { optedIn: true, state: 'active', playlistId: ID, canRemove: true } })),
+  });
+  try {
+    h.open(); await tick();
+    const button = h.host().querySelector('[data-je-focus="ready-remove"]');
+    assert.equal(button.textContent, 'arr_ready_remove');
+    button.click(); await tick();
+    button.click(); await tick();
+    assert.match(h.host().textContent, /arr_ready_save_failed/);
+    assert.doesNotMatch(h.host().textContent, /arr_ready_removed/);
+  } finally { h.close(); }
+});
+
 test('focus stays on the same control across a re-render (keyboard and TV remotes)', async () => {
   const h = setup({ reply: (path, o) => (o.method === 'PUT' ? answer({ playlist: { optedIn: true, state: 'active', playlistId: ID } }) : answer()) });
   try {
