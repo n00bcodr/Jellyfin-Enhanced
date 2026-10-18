@@ -51,8 +51,10 @@ public class IntegrationRequestArrivalsTests
         public PluginConfiguration Config => Arr.Plugin.Plugin.Configuration;
 
         /// <param name="fourK">Also a 4K Radarr (role 4k) holding The Matrix in its own folder, no file yet.</param>
-        public Lab(bool fourK = false)
+        /// <param name="jellyfin">The Jellyfin side the request, status and fulfilment services read (default: <see cref="View"/>).</param>
+        public Lab(bool fourK = false, IArrJellyfinView? jellyfin = null)
         {
+            var jf = jellyfin ?? View;
             Radarr = Arr.Add("radarr.lan", "Radarr");
             Sonarr = Arr.Add("sonarr.lan", "Sonarr");
             if (fourK)
@@ -97,12 +99,12 @@ public class IntegrationRequestArrivalsTests
             Person(Admin, "Admin");
             Person(Emma, "Member");
             Person(Kid, "Kid");
-            Requests = new RequestService(Ledger, Policy, View, Feed, () => Arr.Now);
+            Requests = new RequestService(Ledger, Policy, jf, Feed, () => Arr.Now);
             Outbox = new RequestOutbox(Ledger, Policy, Backend, new RequestTitleLocks(), Feed, new ArrAuditLog(Path.Combine(Arr.Plugin.Core.Root, "arrivals-audit-" + Guid.NewGuid().ToString("N") + ".jsonl"), 100000, 1), () => Arr.Now);
-            Status = new ArrStatusService(Store, View, new LedgerRequestFacts(Ledger, Model, Aliases), () => Config, () => Arr.Now, Feed, new ArrInstanceLibraries(Store, new FakeLibraryAccess(), () => Arr.Now));
+            Status = new ArrStatusService(Store, jf, new LedgerRequestFacts(Ledger, Model, Aliases), () => Config, () => Arr.Now, Feed, new ArrInstanceLibraries(Store, new FakeLibraryAccess(), () => Arr.Now));
             Hub = new RequestsHubService(Status, Model, () => Config, Ledger, (keys, viewer, ct) => Task.FromResult(keys.ToDictionary(k => k, k => new HubTitleMeta { Title = k == Matrix ? "The Matrix" : "Firefly" })));
             Projection = new RequestHubProjection(Requests, Directory, Aliases, (_, _, _) => Task.FromResult<HubTitleMeta?>(null), () => Arr.Now, null, Status);
-            Fulfilment = new RequestFulfilment(Ledger, Status, View, Feed, Aliases, null, () => Config, () => Arr.Now);
+            Fulfilment = new RequestFulfilment(Ledger, Status, jf, Feed, Aliases, null, () => Config, () => Arr.Now);
             View.AddCopy(TitleKey.Parse(Firefly)!, new JfCopy { ItemId = SeriesItem, Path = "/media/tv/Firefly", LibraryName = "Shows", DateCreated = Arr.Now.UtcDateTime.AddDays(-300) });
             View.AddEpisode(SeriesItem, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = Arr.Now.UtcDateTime.AddDays(-300) });
         }

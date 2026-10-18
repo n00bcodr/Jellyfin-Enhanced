@@ -390,8 +390,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
-        public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer)
-            => Openable(itemId, viewer) is Video video and (Movie or Episode) ? SourcesOf(video) : Array.Empty<JfSource>();
+        public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true)
+            => Openable(itemId, viewer) is Video video and (Movie or Episode) ? (readDimensions ? SourcesOf(video, viewer) : ItsOwnSource(video)) : Array.Empty<JfSource>();
 
         /// <summary>The item when the viewer can open it (Jellyfin's own check), or any item for the library context.</summary>
         private BaseItem? Openable(Guid itemId, StatusViewer viewer)
@@ -417,7 +417,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var e in items.OfType<Episode>())
             {
                 if (!OwnPlayableEpisode(e, series.Id, season) || Openable(e.Id, viewer) == null) continue;
-                var sources = readDimensions ? SourcesOf(e) : new List<JfSource> { new() { SourceId = e.Id, ItemId = e.Id, BackingItemId = e.Id, Path = e.Path, DateCreated = Utc(e.DateCreated) } };
+                var sources = readDimensions ? SourcesOf(e, viewer) : ItsOwnSource(e);
                 list.Add(new JfEpisodeSources { ItemId = e.Id, Season = e.ParentIndexNumber!.Value, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Sources = sources });
             }
             return list;
@@ -448,24 +448,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
+        /// A movie's or episode's own file as its one source, without reading its media sources (dimensions unknown).
+        /// None for a missing (virtual) item or a placeholder.
+        /// </summary>
+        private static List<JfSource> ItsOwnSource(Video video)
+            => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
+
+        /// <summary>True for a movie or episode with a file (a missing episode is a virtual item without one).</summary>
+        private static bool Playable(Video video) => !video.IsVirtualItem && !video.IsPlaceHolder && !string.IsNullOrEmpty(video.Path);
+
+        /// <summary>
         /// The playable sources of a movie or episode as Jellyfin plays them (its media sources, every version
         /// included), each with its video stream's dimensions. None for a missing (virtual) item or a placeholder.
+        /// A version played by another item counts only when the viewer can open that item (Jellyfin's own check:
+        /// library access and parental limits); the library context opens every one.
         /// </summary>
-        private List<JfSource> SourcesOf(Video video)
+        private List<JfSource> SourcesOf(Video video, StatusViewer viewer)
         {
             var list = new List<JfSource>();
-            // A missing episode is a virtual item without a file.
-            if (video.IsVirtualItem || video.IsPlaceHolder || string.IsNullOrEmpty(video.Path)) return list;
+            if (!Playable(video)) return list;
             foreach (var source in video.GetMediaSources(false))
             {
                 if (source.Protocol != MediaProtocol.File || string.IsNullOrEmpty(source.Path) || source.Type == MediaSourceType.Placeholder) continue;
                 var stream = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video).OrderByDescending(s => (s.Width ?? 0) * (long)(s.Height ?? 0)).FirstOrDefault();
                 var id = Guid.TryParse(source.Id, out var parsed) ? parsed : video.Id;
                 // The item that plays exactly this file: the primary for its own path, else the version's item by
-                // source id, else by path. A source with none is not credited to the primary (nothing could insert it).
+                // source id, else by path. A source with none is not credited to the primary (nothing could insert it),
+                // nor is one whose item the viewer can't open (a linked version in another library, or one rated above
+                // their limit).
                 var version = id.Equals(video.Id) || string.Equals(source.Path, video.Path, StringComparison.Ordinal) ? video
                     : _libraryManager.GetItemById(id) as Video ?? _libraryManager.FindByPath(source.Path, false) as Video;
-                if (version == null) continue;
+                if (version == null || (!ReferenceEquals(version, video) && Openable(version.Id, viewer) is not Video)) continue;
                 list.Add(new JfSource
                 {
                     SourceId = id,

@@ -147,13 +147,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The qualifying sources of a movie across <paramref name="copies"/> the viewer can open, or only in the
         /// copy <paramref name="pinned"/> names (nothing when they can't open that one: never another copy).
+        /// <paramref name="readDimensions"/> false reads each copy's own file only, without its versions' dimensions
+        /// (only for a standard edition that takes any playable copy; a placeholder or missing item still has none).
         /// </summary>
-        public IReadOnlyList<EditionHit> Movie(StatusViewer viewer, IReadOnlyList<JfCopy> copies, Edition edition, Guid? pinned = null)
+        public IReadOnlyList<EditionHit> Movie(StatusViewer viewer, IReadOnlyList<JfCopy> copies, Edition edition, Guid? pinned = null, bool readDimensions = true)
         {
             var hits = new List<EditionHit>();
             foreach (var copy in Openable(copies, pinned))
             {
-                foreach (var source in _view.Sources(copy.ItemId, viewer))
+                foreach (var source in _view.Sources(copy.ItemId, viewer, readDimensions))
                 {
                     if (Qualifies(source, edition)) hits.Add(new EditionHit(copy.ItemId, source.ItemId, null, null, null, source));
                 }

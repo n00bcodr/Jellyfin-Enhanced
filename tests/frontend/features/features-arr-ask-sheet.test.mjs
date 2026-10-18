@@ -866,10 +866,27 @@ test('a movie in the library: Get 4K only for 4K holders and only without a 4K c
   assert.equal(h.posts[0].body.input.variant, '4k');
   assert.equal(page.querySelector('.je-ask-actions .je-arr-chip').textContent, 'Asked!');
 
+  // A 4K version of this item the viewer can open: the server's edition check says so (fourK).
   item = uhd;
-  h.JE.internals.arrAskActions.attachDetails(page, { ...movieStatus, key: 'movie:tmdb:604' }, {});
+  h.JE.internals.arrAskActions.attachDetails(page, { ...movieStatus, key: 'movie:tmdb:604', fourK: true }, {});
   await settle();
   assert.equal(page.querySelector('.je-ask-actions'), null, 'a 4K copy is here already');
+});
+
+test('a movie in the library: a 4K version Jellyfin lists but the viewer cannot open leaves Get 4K', async t => {
+  // Jellyfin 10.11 lists a linked version from a library the viewer can't open (or above their parental limit) among
+  // the item's media sources; the server doesn't count it (no fourK), so Get 4K stays.
+  const listed = { Id: 'm1', MediaSources: [
+    { MediaStreams: [{ Type: 'Video', Width: 1920, Height: 1080 }] },
+    { MediaStreams: [{ Type: 'Video', Width: 3840, Height: 2160 }] },
+  ] };
+  const h = setup(t, { html: PAGE, hash: '#/details?id=m1', item: () => listed });
+  h.state.me = { ...MEMBER, can4kMovies: true };
+  await h.JE.arrAsk.me(true);
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.internals.arrAskActions.attachDetails(page, { key: 'movie:tmdb:607', itemId: 'm1', kind: 'movie', stage: 'ready', reason: { code: 'ready' }, quiet: true }, {});
+  await settle();
+  assert.equal(page.querySelector('.je-ask-action')?.textContent, '4kGet 4K');
 });
 
 test('a movie in the library: no Get 4K when a 4K copy the viewer can open is in another library', async t => {

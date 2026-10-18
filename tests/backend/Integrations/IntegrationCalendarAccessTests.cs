@@ -234,6 +234,8 @@ public class IntegrationCalendarAccessTests
         Assert.Equal(75, Assert.Single((await Read(viewer)).EnumerateArray()).GetProperty("progress").GetProperty("percent").GetInt32());
         var other = new StatusViewer { UserId = viewer.UserId, Handle = user, PolicyRevision = "movies" };
         user.SetPreference(PreferenceKind.EnabledFolders, [rig.Movies.Id]);
+        // Jellyfin now has them with the new access (their next lookup has its policy revision).
+        view.Users[other.UserId] = other;
         Assert.Equal(25, Assert.Single((await Read(other)).EnumerateArray()).GetProperty("progress").GetProperty("percent").GetInt32());
         // Both libraries linked, but mappings narrow the copy. Changing the mapping must fence the cached body.
         var config = rig.Arr.Plugin.Plugin.Configuration;
@@ -299,6 +301,8 @@ public class IntegrationCalendarAccessTests
         var allUser = rig.Callers.Register(Guid.NewGuid(), admin: false);
         allUser.SetPermission(PermissionKind.EnableAllFolders, true);
         var all = new StatusViewer { UserId = allUser.Id, Handle = allUser, PolicyRevision = "all" };
+        view.Users[member.UserId] = member;
+        view.Users[all.UserId] = all;
         var facts = new Mock<IArrRequestFacts>();
         var audience = new ArrFeedAudience(rig.Library.Object, rig.Callers.Users.Object, rig.R.Store, () => rig.R.Arr.Now, view, facts.Object, rig.R.Resolver);
         var status = new ArrStatusService(rig.R.Store, view, facts.Object, () => config, () => rig.R.Arr.Now, libraries: rig.R.Resolver);
@@ -358,6 +362,8 @@ public class IntegrationCalendarAccessTests
         var allUser = rig.Callers.Register(Guid.NewGuid(), admin: false);
         allUser.SetPermission(PermissionKind.EnableAllFolders, true);
         var all = new StatusViewer { UserId = allUser.Id, Handle = allUser, PolicyRevision = "all" };
+        view.Users[member.UserId] = member;
+        view.Users[all.UserId] = all;
         var status = new ArrStatusService(rig.R.Store, view, new Mock<IArrRequestFacts>().Object, () => config, () => rig.R.Arr.Now, libraries: rig.R.Resolver);
         async Task<JsonElement> Absent(StatusViewer viewer)
             => JsonDocument.Parse((await status.ForAbsentAsync(viewer, page, default)).Json).RootElement.GetProperty("items").Clone();

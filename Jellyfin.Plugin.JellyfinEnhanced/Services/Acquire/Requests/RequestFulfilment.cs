@@ -271,7 +271,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var title = key.ToString();
             var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _ledger.Dispatches(title));
             var composed = await _status.ComposeForAsync(viewer, new[] { key }, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = scope }, cancellationToken, loadEpisodes: true).ConfigureAwait(false);
-            return composed.Count > 0 && composed[0].Status.Stage == StatusStage.Ready && !composed[0].Guessed;
+            // The requester again, right before it is marked: someone removed, or whose access changed while the check
+            // ran, is judged again next time (as they are then).
+            return composed.Count > 0 && composed[0].Status.Stage == StatusStage.Ready && !composed[0].Guessed
+                && _view.Viewer(want.UserId) is { } still && string.Equals(still.PolicyRevision, viewer.PolicyRevision, StringComparison.Ordinal);
         }
     }
 }

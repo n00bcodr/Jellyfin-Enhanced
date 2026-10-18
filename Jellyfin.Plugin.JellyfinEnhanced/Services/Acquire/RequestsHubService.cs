@@ -234,8 +234,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Phase 1 and the Requests page are on.</summary>
         public bool Enabled => _status.Enabled && _config()?.ArrRequestsHubEnabled == true;
 
-        /// <summary>The Requests page body for the viewer.</summary>
-        public Task<StatusBody> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
+        /// <summary>
+        /// The Requests page body for the viewer. Prepared again for the viewer as they are now when their policy
+        /// changed while it was being prepared (see <see cref="ArrStatusService.ViewerChangedException"/>).
+        /// </summary>
+        public async Task<StatusBody> ForViewerAsync(StatusViewer viewer, CancellationToken cancellationToken)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return await ForViewerOnceAsync(viewer, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ArrStatusService.ViewerChangedException) when (attempt < ArrStatusService.GateAttempts && _status.View.Viewer(viewer.UserId) is { } changed)
+                {
+                    viewer = changed;
+                }
+            }
+        }
+
+        private Task<StatusBody> ForViewerOnceAsync(StatusViewer viewer, CancellationToken cancellationToken)
         {
             var config = _config();
             if (_ledger != null && SharedRequestFacts.LedgerAuthority(config)) return ForLedgerAsync(viewer, config!, cancellationToken);
