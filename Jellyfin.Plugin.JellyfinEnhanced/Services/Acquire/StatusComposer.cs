@@ -950,11 +950,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// returns when the edition arrived (the newest qualifying source in <paramref name="hits"/>, else the newest
         /// held copy) and the copy Play opens. <paramref name="movie"/> is the whole-title status (its admin block is kept).
         /// </summary>
-        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK)
+        /// <remarks>
+        /// <paramref name="everyEdition"/>: a standard request any playable copy satisfies (a 4K one included): every
+        /// Radarr's progress counts.
+        /// </remarks>
+        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK, bool everyEdition = false)
         {
             // "No 4K Radarr has it" is judged on the edition's instances alone: a standard Radarr that can't be read
             // says nothing about the 4K copy (as the Overview's Needs attention list), and the other way round.
-            var edition = fourK ? FourKOnly(facts) : StandardOnly(facts);
+            var edition = everyEdition ? EveryEdition(facts) : fourK ? FourKOnly(facts) : StandardOnly(facts);
             edition.Copies.RemoveAll(x => x.Movie == null);
             var jf = held.Where(x => x.Visible).ToList();
             var scoped = Movie(edition, null, jf, c, detail: false, followEveryRole: true);
@@ -1663,19 +1667,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The Sonarr copy a page of one Jellyfin series copy (<paramref name="page"/>, the series item a series,
-        /// season or episode page is in) reads its arr facts from: the one matched to that copy for sure (linked
-        /// library, path mapping or folder; never "the only copy there is"), so a 4K copy's page reads the 4K Sonarr
-        /// and not the standard one's files, downloads or upgrades. The primary copy when none matches, or when the
-        /// page's copy is unknown.
+        /// season or episode page is in) reads its arr facts from: only one that owns that copy's folder for sure, so
+        /// a 4K copy's page reads the 4K Sonarr and never another instance's files, downloads or upgrades. In order:
+        /// <list type="number">
+        /// <item><description>a Sonarr whose series folder is the page's folder (by its path mapping, else by the
+        /// root and title folder names); two that share the folder: the standard one first;</description></item>
+        /// <item><description>else the one Sonarr matched to this copy and to no other copy of the title (a linked
+        /// library or path mapping that claims every copy in a shared library tells nothing);</description></item>
+        /// <item><description>else, when it is the title's only Jellyfin copy and only Sonarr copy, that one, unless
+        /// its linked library or path mapping leaves the copy out.</description></item>
+        /// </list>
+        /// None (null) when ownership can't be established. The primary copy when the page's copy is unknown.
         /// </summary>
         internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies)
         {
             var primary = PrimarySeriesCopy(facts);
-            if (page is not Guid id || copies == null || copies.Count == 0) return primary;
+            if (page is not Guid id || copies == null || primary == null || copies.FirstOrDefault(x => x.ItemId == id) is not { } shown) return primary;
             var siblings = SeriesCopies(facts);
-            if (siblings.Count < 2) return primary;
-            return siblings.Where(x => MatchCopies(x, copies, siblings, soleFallback: false).Any(m => m.ItemId == id))
-                .OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() ?? primary;
+            if (siblings.Where(x => HoldsFolder(x, shown)).OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() is { } owner) return owner;
+            var only = siblings.Where(x => MatchCopies(x, copies, siblings, soleFallback: false) is var m && m.Any(c => c.ItemId == id) && m.All(c => c.ItemId == id)).ToList();
+            if (only.Count == 1) return only[0];
+            var sole = copies.All(x => x.ItemId == id) && siblings.Count == 1;
+            return sole && (Claimed(siblings[0], copies) is not { } claim || claim.Any(c => c.ItemId == id)) ? siblings[0] : null;
+        }
+
+        /// <summary>
+        /// True when an arr copy's own folder is the Jellyfin copy's folder: by the instance's path mapping when one
+        /// applies to it (the mapped folder), else by the last two folder names (root folder and title folder).
+        /// </summary>
+        private static bool HoldsFolder(ArrCopyFacts copy, JfCopy shown)
+        {
+            var arrPath = ArrPathOf(copy);
+            if (string.IsNullOrWhiteSpace(arrPath) || string.IsNullOrWhiteSpace(shown.Path)) return false;
+            var (mapped, mapping) = BridgePaths.Map(arrPath, copy.Instance.PathMappings.ToList());
+            if (mapping != null) return BridgePaths.SamePath(mapped, shown.Path);
+            return Tail(Norm(arrPath), 2) is { } tail && string.Equals(Tail(Norm(shown.Path), 2), tail, StringComparison.OrdinalIgnoreCase);
         }
 
         private static CopyState NothingKnown(TitleFacts facts)
@@ -1808,6 +1834,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             fourK.Stale.AddRange(facts.Stale.Where(i => i.Role == "4k"));
             fourK.Checked.AddRange(facts.Checked.Where(i => i.Role == "4k"));
             return fourK;
+        }
+
+        /// <summary>A copy of the facts (every instance's), for an edition any copy satisfies (see <see cref="RequestedEdition"/>).</summary>
+        internal static TitleFacts EveryEdition(TitleFacts facts)
+        {
+            var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            every.Copies.AddRange(facts.Copies);
+            every.Unreadable.AddRange(facts.Unreadable);
+            every.Stale.AddRange(facts.Stale);
+            every.Checked.AddRange(facts.Checked);
+            return every;
         }
 
         /// <summary>

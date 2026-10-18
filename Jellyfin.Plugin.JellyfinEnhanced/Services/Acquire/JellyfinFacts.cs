@@ -271,9 +271,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The playable sources (versions) of a movie or episode the viewer can open, each with its own video
         /// dimensions (Jellyfin's media sources). Empty for a missing (virtual) item, a placeholder, another kind
-        /// of item, or one the viewer can't open.
+        /// of item, or one the viewer can't open. A version counts only when the viewer can open the item that plays
+        /// it too (Jellyfin's own check: a version in a library they can't open, or one its parental rules hide from
+        /// them, is not theirs). Without <paramref name="readDimensions"/> the item has one source with no dimensions
+        /// (its media sources aren't read: enough when any playable copy will do).
         /// </summary>
-        IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer);
+        IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true);
 
         /// <summary>
         /// The episodes with a file of exactly this series item (its own folders, never another series item

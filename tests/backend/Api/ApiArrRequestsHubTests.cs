@@ -1204,6 +1204,22 @@ public class ApiArrRequestsHubTests
     }
 
     [Fact]
+    public async Task AnAdministratorDemotedWhileTheManageDrawerIsReadGetsNoOverview()
+    {
+        using var rig = await Ready();
+        Assert.Equal(200, (await Manage(rig, rig.Admin, null, "movie:tmdb:693134")).Status);
+        // The administrator permission is taken away while the drawer reads the arrs.
+        var done = false;
+        rig.View.OnCopies = () =>
+        {
+            if (done) return;
+            done = true;
+            rig.View.Revoke(rig.Admin, admin: false);
+        };
+        Assert.Equal(403, (await Manage(rig, rig.Admin, null, "movie:tmdb:693134")).Status);
+    }
+
+    [Fact]
     public async Task TheManageDrawerIsForAdministratorsOnly()
     {
         using var rig = await Ready();

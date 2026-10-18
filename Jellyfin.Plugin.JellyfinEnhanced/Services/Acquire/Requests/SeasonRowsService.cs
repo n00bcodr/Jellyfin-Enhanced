@@ -117,11 +117,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         public async Task<SeasonRows?> ForSeasonAsync(StatusViewer viewer, Guid seasonId, string? language, CancellationToken ct)
         {
-            if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
-            var jf = _view.Episodes(seriesId, season, viewer, includeVirtual: true).Where(e => e.Season == season).ToList();
-            var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
-            return await ComposeAsync(viewer, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, language, ct).ConfigureAwait(false);
+            for (var attempt = 0; attempt < ArrStatusService.GateAttempts; attempt++)
+            {
+                if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
+                var jf = _view.Episodes(seriesId, season, viewer, includeVirtual: true).Where(e => e.Season == season).ToList();
+                var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
+                var rows = await ComposeAsync(viewer, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, language, ct).ConfigureAwait(false);
+                // The final gate: the season and its episodes were read for the viewer as they were before the metadata
+                // and policy reads; when their policy changed meanwhile (or they are gone), the rows are read again.
+                if (Unchanged(viewer) is { } now && _view.Resolve(seasonId, now) is { Kind: "season" } still && still.SeriesId == seriesId) return rows;
+                if (_view.Viewer(viewer.UserId) is not { } changed) return null;
+                viewer = changed;
+            }
+            return null;
         }
+
+        /// <summary>The viewer as Jellyfin has them now, when their policy is the same as <paramref name="prepared"/>'s; else null.</summary>
+        private StatusViewer? Unchanged(StatusViewer prepared)
+            => _view.Viewer(prepared.UserId) is { } now && now.IsAdmin == prepared.IsAdmin && string.Equals(now.PolicyRevision, prepared.PolicyRevision, StringComparison.Ordinal) ? now : null;
 
         /// <summary>
         /// The rows of a season of a title that isn't in the library (the native details page of an
@@ -144,6 +157,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct)
         {
             var rows = await ComposeAsync(viewer, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, language, ct).ConfigureAwait(false);
+            // The page was read for the viewer as they were: none when their policy changed meanwhile (the page asks again).
+            if (Unchanged(viewer) == null) return null;
             if (rows == null || page.Spoilers is not { } spoilers) return rows;
             // Spoiler Guard on the title: the rows carry no plot (as the page's own episode list).
             return rows with
