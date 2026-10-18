@@ -138,8 +138,7 @@
                 const translationExists = true;
 
                 // Save to settings.json (use base language code)
-                JE.currentSettings.displayLanguage = newLang;
-                await JE.saveUserSettings('settings.json', JE.currentSettings);
+                await JE.updateSettings({ displayLanguage: newLang });
 
                 // Save to localStorage (use the same code)
                 if (fullCultureCode) {

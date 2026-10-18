@@ -145,3 +145,209 @@ test('rewiring the panel while Show is pending still refreshes cards after the d
   await new Promise(done => setImmediate(done));
   assert.deepEqual(h.resets, [null]);
 });
+
+/** Replace the panel and both settings views, as a panel-opening GET does. */
+function reopen(h, server) {
+  h.JE.userConfig.settings = { ...server };
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+  h.wire();
+}
+
+for (const initial of [null, false]) for (const nativeFirst of [false, true]) {
+  test(`R6 earlier success survives replaced settings and later failure: ${initial}, native first ${nativeFirst}`, async t => {
+    const baseline = { acquisitionBadges: initial, nativeAcquisitionStamps: initial };
+    const h = panel(t, { config: badges, settings: baseline });
+    const held = [deferred(), deferred()];
+    const posted = [];
+    let persisted = baseline;
+    h.window.ApiClient.ajax = async request => {
+      if (request.type !== 'POST') return [];
+      const n = posted.length;
+      posted.push(JSON.parse(request.data));
+      await held[n].promise;
+      persisted = posted[n];
+    };
+    h.wire();
+    const keys = nativeFirst ? ['nativeAcquisitionStamps', 'acquisitionBadges'] : ['acquisitionBadges', 'nativeAcquisitionStamps'];
+    await h.choose(keys[0] + 'Select', initial === false ? '' : 'off');
+    reopen(h, baseline);
+    held[0].resolve();
+    await new Promise(done => setImmediate(done));
+    await h.choose(keys[1] + 'Select', initial === false ? '' : 'off');
+    held[1].reject(new Error('later save fails'));
+    await new Promise(done => setImmediate(done));
+    assert.equal(posted.length, 2);
+    for (const key of keys) {
+      assert.equal(h.JE.currentSettings[key], persisted[key], key + ' active document follows earlier success');
+      assert.equal(h.JE.userConfig.settings[key], persisted[key]);
+      assert.equal(h.document.getElementById(key + 'Select').value, persisted[key] === false ? 'off' : '');
+    }
+  });
+}
+
+for (const sameUser of [false, true]) test(`session change cancels unsent saves and isolates in-flight completion, same user ${sameUser}`, async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: null, nativeAcquisitionStamps: null } });
+  h.load('core/navigation.js');
+  h.load('core/session.js');
+  // Reload config after the real session module, matching the manifest order.
+  h.load('enhanced/config.js');
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.wire();
+  const held = deferred();
+  const posted = [];
+  h.window.ApiClient.ajax = request => {
+    if (request.type !== 'POST') return Promise.resolve([]);
+    posted.push({ url: request.url, user: h.window.ApiClient.getCurrentUserId() });
+    return held.promise;
+  };
+  await h.choose('acquisitionBadgesSelect', 'off');
+  await h.choose('nativeAcquisitionStampsSelect', 'off');
+  h.window.ApiClient.getCurrentUserId = () => null;
+  h.JE.session.checkNow('test logout');
+  h.window.ApiClient.getCurrentUserId = () => sameUser ? 'user-a' : 'user-b';
+  h.JE.session.checkNow('test login');
+  reopen(h, { acquisitionBadges: null, nativeAcquisitionStamps: null });
+  const resetCount = h.resets.length, toastCount = h.toasts.length;
+  held.resolve();
+  await new Promise(done => setImmediate(done));
+  assert.equal(posted.length, 1, 'the previous session must not send queued data using new credentials');
+  assert.equal(h.JE.currentSettings.acquisitionBadges, null);
+  assert.equal(h.JE.currentSettings.nativeAcquisitionStamps, null);
+  assert.equal(h.resets.length, resetCount, 'old completions cannot repaint the new session');
+  assert.equal(h.toasts.length, toastCount);
+});
+
+for (const scenario of ['pending save', 'save completed', 'session switch', 'fresh read']) {
+  test(`panel GET cannot replace a newer document: ${scenario}`, async t => {
+    const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
+    let epoch = 1;
+    h.JE.session = { getEpoch: () => epoch, isCurrent: value => value === epoch };
+    const get = deferred(), save = deferred();
+    h.window.ApiClient.ajax = request => request.url.includes('/Localization/Cultures') ? Promise.resolve([]) : request.type === 'GET' ? get.promise : save.promise;
+    h.load('enhanced/settingspanel/ui-panel.js');
+    h.JE.initializeShortcuts = () => {};
+    h.document.body.insertAdjacentHTML('beforeend', '<div id="jellyfin-enhanced-panel"></div>');
+    h.JE.toCamelCase = value => value;
+    h.wire();
+    const reading = h.JE.showEnhancedPanel();
+    if (scenario === 'pending save' || scenario === 'save completed') await h.choose('acquisitionBadgesSelect', 'off');
+    if (scenario === 'save completed') { save.resolve(); await new Promise(done => setImmediate(done)); }
+    if (scenario === 'session switch') {
+      epoch++;
+      h.JE.userConfig.settings = { acquisitionBadges: false };
+      h.JE.currentSettings = h.JE.loadSettings();
+    }
+    get.resolve({ acquisitionBadges: scenario === 'fresh read' ? false : null });
+    await reading;
+    assert.equal(h.JE.currentSettings.acquisitionBadges, false, 'only an uncontested current-session read may update persisted');
+    save.resolve();
+    await new Promise(done => setImmediate(done));
+  });
+}
+
+for (const [id, key, value, initial] of [
+  ['nativePosterTagsToggle', 'useNativePosterTags', false, true],
+  ['autoSeasonRequestsSelect', 'autoSeasonRequests', 'on', null],
+  ['listStatusSelect', 'listStatus', 'off', null],
+  ['pauseScreenDelayInput', 'pauseScreenDelaySeconds', '12', 5]
+]) test(`shared settings store rolls back the other queued control ${id}`, async t => {
+  const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrAutomationEngineEnabled: true, ArrListsEnabled: true, ArrListStatusEnabled: true }, settings: { [key]: initial } });
+  h.wire();
+  const held = deferred();
+  h.window.ApiClient.ajax = request => request.type === 'POST' ? held.promise : Promise.resolve([]);
+  h.expectConsoleError(/Failed to save settings.json/);
+  const input = h.document.getElementById(id);
+  if (input.type === 'checkbox') input.checked = value; else input.value = value;
+  input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await new Promise(done => setImmediate(done));
+  held.reject(new Error('save fails'));
+  await new Promise(done => setImmediate(done));
+  assert.equal(h.JE.currentSettings[key], initial);
+  assert.equal(h.JE.userConfig.settings[key], initial);
+  if (input.type === 'checkbox') assert.equal(input.checked, initial);
+  else assert.equal(input.value, initial === null ? '' : String(initial));
+});
+
+for (const startedPending of [false, true]) test(`a GET cannot undo a save that completes before its response; started pending ${startedPending}`, async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
+  const get = deferred(), save = deferred();
+  h.window.ApiClient.ajax = request => request.url.includes('/Localization/Cultures') ? Promise.resolve([]) : request.type === 'GET' ? get.promise : save.promise;
+  h.wire();
+  let reading;
+  if (!startedPending) reading = h.JE.readUserSettings('settings.json');
+  await h.choose('acquisitionBadgesSelect', 'off');
+  if (startedPending) reading = h.JE.readUserSettings('settings.json');
+  save.resolve();
+  await new Promise(done => setImmediate(done));
+  get.resolve({ acquisitionBadges: null });
+  assert.equal(await reading, true);
+  assert.equal(h.JE.currentSettings.acquisitionBadges, false);
+  assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, 'off');
+});
+
+test('fresh GET updates every view and invalidates an earlier successful POST dedup value', async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
+  h.wire();
+  await h.choose('acquisitionBadgesSelect', 'off');
+  let posts = 0;
+  h.window.ApiClient.ajax = async request => {
+    if (request.type === 'GET') return { acquisitionBadges: null };
+    posts++;
+  };
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(h.JE.currentSettings.acquisitionBadges, null);
+  assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, '');
+  await h.choose('acquisitionBadgesSelect', 'off');
+  assert.equal(posts, 1, 'another browser changed persisted: identical old data must POST again');
+});
+
+test('only the newest uncontested server read may supply the persisted baseline', async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
+  const reads = [deferred(), deferred()];
+  let n = 0;
+  h.window.ApiClient.ajax = request => request.url.includes('/Localization/Cultures') ? Promise.resolve([]) : reads[n++].promise;
+  h.wire();
+  const first = h.JE.readUserSettings('settings.json'), second = h.JE.readUserSettings('settings.json');
+  reads[1].resolve({ acquisitionBadges: false });
+  await second;
+  reads[0].resolve({ acquisitionBadges: null });
+  await first;
+  assert.equal(h.JE.currentSettings.acquisitionBadges, false);
+  assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, 'off');
+});
+
+test('other settings files have independent queues and do not replace the active settings view', async t => {
+  const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
+  const held = deferred(), calls = [];
+  h.window.ApiClient.ajax = async request => {
+    if (request.type === 'POST') calls.push(request.url);
+    if (request.url.endsWith('bookmark.json')) await held.promise;
+  };
+  h.wire();
+  const bookmark = h.JE.saveUserSettings('bookmark.json', { bookmarks: { one: { label: 'scene' } } });
+  await h.choose('acquisitionBadgesSelect', 'off');
+  assert.equal(calls.length, 2);
+  assert.equal(h.JE.currentSettings.acquisitionBadges, false);
+  held.resolve();
+  await bookmark;
+  assert.equal(h.JE.currentSettings.acquisitionBadges, false);
+});
+
+test('session changes close the outgoing settings panel through its cleanup handler', t => {
+  const h = panel(t, { config: badges });
+  h.load('core/navigation.js');
+  h.load('core/session.js');
+  h.load('enhanced/settingspanel/ui-panel.js');
+  const wrapper = h.document.createElement('div');
+  wrapper.id = 'jellyfin-enhanced-panel';
+  wrapper.append(...h.document.body.childNodes);
+  h.document.body.append(wrapper);
+  let cleanups = 0;
+  // The host owns removal/media/key cleanup; the identity handler invokes that existing close path.
+  h.document.getElementById('closeSettingsPanel').addEventListener('click', () => { cleanups++; wrapper.remove(); });
+  h.window.ApiClient.getCurrentUserId = () => 'user-b';
+  h.JE.session.checkNow('test switch with panel open');
+  assert.equal(cleanups, 1);
+  assert.equal(h.document.getElementById('jellyfin-enhanced-panel'), null);
+});

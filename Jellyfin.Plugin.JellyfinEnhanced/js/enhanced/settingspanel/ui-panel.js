@@ -10,35 +10,28 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    // An outgoing panel must not remain an editable view after its identity store is cleared.
+    // Use the existing close handler so media, drag and keyboard listeners are cleaned up too.
+    JE.session?.onUserChange?.('settings-panel', () => {
+        document.getElementById('closeSettingsPanel')?.click();
+    });
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = async () => {
-        // Refresh user settings when panel opens to ensure correct user's settings are displayed
+        // The shared document store fences this read against newer saves and identity changes.
+        const epoch = JE.session?.getEpoch?.();
         const currentUserId = ApiClient.getCurrentUserId();
         if (currentUserId) {
             try {
-                // Fetch fresh settings for the current user
-                const settingsResponse = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
-                    dataType: 'json'
-                });
-
-                // Update the userConfig with fresh data
-                if (settingsResponse) {
-                    JE.userConfig = JE.userConfig || {};
-                    JE.userConfig.settings = window.JellyfinEnhanced.toCamelCase(settingsResponse);
-
-                    // Reload current settings
-                    if (typeof JE.loadSettings === 'function') {
-                        JE.currentSettings = JE.loadSettings();
-                    }
-                }
+                if (!await JE.readUserSettings('settings.json')) return;
             } catch (e) {
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
+        if (currentUserId !== ApiClient.getCurrentUserId()
+            || (epoch !== undefined && !JE.session.isCurrent(epoch))) return;
 
         // Re-initialize shortcuts to ensure they're populated before building the panel
         if (typeof JE.initializeShortcuts === 'function') {
@@ -254,8 +247,7 @@
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
-                    JE.currentSettings.lastOpenedTab = pane.dataset.pane;
-                    JE.saveUserSettings('settings.json', JE.currentSettings);
+                    JE.updateSettings({ lastOpenedTab: pane.dataset.pane });
                 }
                 resetAutoCloseTimer();
             };

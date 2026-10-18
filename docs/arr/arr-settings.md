@@ -558,7 +558,9 @@ Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are
 *Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off. Hiding web badges
 takes effect immediately; showing them refreshes the cards once the choice has saved. Both controls keep your latest
 choices while they save. Once saving finishes, the controls and cards match the last successful save, including when
-quick web and native changes have mixed save outcomes. Live acquisition badges work independently of the phase-1
+quick web and native changes have mixed save outcomes. Reopening the panel while saving keeps those choices and
+earlier successful saves. A user switch clears pending unsent saves; old responses cannot change the next person’s
+settings. Live acquisition badges work independently of the phase-1
 poster status switch.
 
 #### Household tab

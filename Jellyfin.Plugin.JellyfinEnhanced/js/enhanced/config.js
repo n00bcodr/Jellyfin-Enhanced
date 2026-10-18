@@ -26,128 +26,161 @@
         pauseScreenClickTimer: null
     };
 
-    // One per-user/file document owns the successful snapshot, deduplication and pending choices.
-    const _saveDocuments = {};
-    // Per-file chain of in-flight saves. Every control posts the whole object,
-    // so two quick changes must reach the server in call order or the earlier
-    // (smaller) snapshot can land last and drop the newer change.
-    const _saveChain = {};
+    // The store belongs to the identity session, never to a panel or its settings objects.
+    // Every file has exactly one persisted document, ordered pending documents and derived view.
+    const documents = new Map();
+    let identity;
+    JE.internals = JE.internals || {};
 
-    /** The persistence state for one person's document, isolated from replaced settings/session objects. */
+    /** Copy JSON settings so neither callers nor views can mutate the persisted baseline. */
+    const copyDocument = value => JSON.parse(JSON.stringify(value || {}));
+
+    /** Capture identity even in hosts without the session module. */
+    const currentIdentity = () => JSON.stringify([
+        typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null,
+        JE.session?.getServerId?.(), JE.session?.getEpoch?.()
+    ]);
+
+    /** Discard observers, deduplication and unsent work on logout, user or server change. */
+    const clearDocuments = () => { documents.clear(); identity = undefined; };
+    JE.session?.onUserChange?.('settings-store', clearDocuments);
+
+    /** Get the active session's sole state for a file. Object replacement is just a new view. */
     const settingsDocument = fileName => {
-        const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : undefined;
-        const cacheKey = `${userId}:${fileName}`;
-        const epoch = JE.session?.getEpoch?.();
-        const current = fileName === 'settings.json' ? JE.currentSettings : undefined;
-        const own = fileName === 'settings.json' ? JE.userConfig?.settings : undefined;
-        let state = _saveDocuments[cacheKey];
-        if (!state || state.settings !== current || state.own !== own || state.epoch !== epoch) {
-            state = { settings: current, own, epoch, userId, saved: { ...own }, pending: [], serialized: undefined, reconcile: null };
-            _saveDocuments[cacheKey] = state;
+        const now = currentIdentity();
+        if (identity !== now) { clearDocuments(); identity = now; }
+        let state = documents.get(fileName);
+        if (!state) {
+            const own = JE.userConfig?.[fileName.replace(/\.json$/, '')];
+            const persisted = copyDocument(own);
+            state = { fileName, identity, persisted, shown: copyDocument(persisted), pending: [],
+                revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map() };
+            documents.set(fileName, state);
         }
         return state;
     };
 
-    JE.internals = JE.internals || {};
-    /** Registers the current document's display reconciliation before any optimistic edit. */
-    JE.internals.observeSettingsDocument = reconcile => {
-        const state = settingsDocument('settings.json');
-        state.reconcile = reconcile;
+    /** True only while this document still belongs to the active identity/session. */
+    const isActiveDocument = state => currentIdentity() === state.identity && documents.get(state.fileName) === state;
+
+    /** Replace a compatibility view in place, including deletion of fields absent from the document. */
+    const replaceView = (view, document) => {
+        for (const key of Object.keys(view)) if (!Object.hasOwn(document, key)) delete view[key];
+        Object.assign(view, copyDocument(document));
     };
 
-    /** Reconcile only the active document, retaining the newest queued whole-document choice until it settles. */
-    const reconcileDocument = (state, cacheKey, snapshot, succeeded) => {
-        state.pending.splice(state.pending.indexOf(snapshot), 1);
-        const previousSaved = state.saved;
-        if (succeeded) state.saved = snapshot;
-        if (_saveDocuments[cacheKey] !== state || state.settings !== JE.currentSettings
-            || state.own !== JE.userConfig?.settings
-            || (state.epoch !== undefined && !JE.session?.isCurrent(state.epoch))
-            || ApiClient.getCurrentUserId?.() !== state.userId) return;
-        state.reconcile?.(state.pending.at(-1) || state.saved, state.saved, previousSaved);
+    /** Recompute from persisted + pending documents; views never supply rollback snapshots. */
+    const publishDocument = (state, previousPersisted = state.persisted, reason = 'settled') => {
+        if (!isActiveDocument(state)) return;
+        const previousShown = state.shown;
+        state.shown = copyDocument(state.pending.at(-1)?.document || state.persisted);
+        if (state.fileName === 'settings.json') {
+            JE.userConfig = JE.userConfig || {};
+            JE.userConfig.settings = JE.userConfig.settings || {};
+            replaceView(JE.userConfig.settings, state.shown);
+            JE.currentSettings = JE.currentSettings || {};
+            replaceView(JE.currentSettings, resolveSettings(state.shown));
+            // Hide is immediate. Show reads again after persistence; failures restore the surface too.
+            const before = previousShown.acquisitionBadges, after = state.shown.acquisitionBadges;
+            if ((reason === 'queued' ? after === false && before !== false : before !== after)
+                || (reason === 'saved' && state.persisted.acquisitionBadges !== previousPersisted.acquisitionBadges
+                    && state.persisted.acquisitionBadges === after && after !== false)) {
+                JE.internals.arrStatusCards?.reset?.();
+            }
+        }
+        for (const observer of state.observers.values()) observer(state.shown, reason);
+    };
+
+    /** Subscribe a named pure view; replacement panels replace their observer without replacing state. */
+    JE.internals.observeSettingsDocument = (name, observer) => {
+        const state = settingsDocument('settings.json');
+        state.observers.set(name, observer);
+        observer(state.shown);
     };
 
     /**
-     * Saves user settings to the server.
-     * Skips the POST if the data is identical to the last value saved this session
-     * (prevents redundant writes). The first save per session for a given file is
-     * always allowed through since the cache starts empty.
-     * Failures are logged and swallowed unless the caller opts in to them.
-     * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
-     * @param {object} settings The whole document to save.
-     * @param {{throwOnError?: boolean}} [options] throwOnError: reject (without logging) when
-     *   nothing was saved, so a caller can roll back its own optimistic change.
+     * Read a server document with a revision fence. A response begun during/before a newer save
+     * cannot replace that save's baseline, even if it arrives after the save completes.
+     * @param {string} fileName Settings document to read.
+     * @returns {Promise<boolean>} Whether the response belongs to the active session.
+     */
+    JE.readUserSettings = async fileName => {
+        const state = settingsDocument(fileName);
+        const revision = state.revision, readRevision = ++state.readRevision;
+        const hadPending = state.pending.length > 0;
+        const userId = ApiClient.getCurrentUserId();
+        const response = await ApiClient.ajax({ type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}?_=${Date.now()}`), dataType: 'json' });
+        if (!isActiveDocument(state)) return false;
+        if (response && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision) {
+            state.persisted = copyDocument(JE.toCamelCase ? JE.toCamelCase(response) : response);
+            // A fresh read may reflect another browser's write: invalidate POST deduplication.
+            state.serialized = undefined;
+        }
+        publishDocument(state, state.persisted, 'read');
+        return true;
+    };
+
+    /** Save a patch through the same whole-document queue as legacy settings writers. */
+    JE.updateSettings = (patch, options) => {
+        const state = settingsDocument('settings.json');
+        return JE.saveUserSettings('settings.json', { ...resolveSettings(state.shown),
+            useNativePosterTags: state.shown.useNativePosterTags ?? null, ...patch }, options);
+    };
+
+    /**
+     * Queue a whole per-user document. Success advances persisted; failure drops only its entry.
+     * The last pending document is the shown value, because each POST persists that entire snapshot.
+     * @param {string} fileName Per-user settings file.
+     * @param {object} settings Whole document to save.
+     * @param {{throwOnError?: boolean}} [options] Reject failures for callers that request it.
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
-        const throwOnError = options?.throwOnError === true;
-        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
-            if (throwOnError) throw new Error('ApiClient not available');
-            console.error("🪼 Jellyfin Enhanced: ApiClient not available");
-            return;
-        }
         try {
+            if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) throw new Error('ApiClient not available');
             const userId = ApiClient.getCurrentUserId();
-            if (!userId) {
-                if (throwOnError) throw new Error('User ID not available');
-                console.error("🪼 Jellyfin Enhanced: User ID not available");
-                return;
-            }
-
-            // Convert data back to PascalCase for server C# deserialization
-            let dataToSave = settings;
-            // currentSettings carries the resolved native-poster value (on). Leave it
-            // unset on disk until the user explicitly switches it in the panel.
-            if (fileName === 'settings.json' && settings === JE.currentSettings
-                && JE.userConfig?.settings?.useNativePosterTags == null) {
-                dataToSave = { ...settings, useNativePosterTags: null };
-            }
-            const snapshot = JSON.parse(JSON.stringify(dataToSave));
-            if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
-                dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
-            }
-
-            const serialized = JSON.stringify(dataToSave);
+            if (!userId) throw new Error('User ID not available');
             const state = settingsDocument(fileName);
-            state.pending.push(snapshot);
-            const cacheKey = `${userId}:${fileName}`;
-
-            const post = async () => {
-                // Skip the POST if nothing has changed since the last save this session.
-                if (state.serialized === serialized) {
-                    return; // no-op — identical to last save
-                }
-
-                await ApiClient.ajax({
-                    type: 'POST',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`),
-                    data: serialized,
-                    contentType: 'application/json'
-                });
-
-                // Update the cache on success so subsequent identical saves are skipped
-                state.serialized = serialized;
-            };
-            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
-            _saveChain[cacheKey] = save.catch(() => {});
-            let succeeded = false;
-            try {
-                await save;
-                succeeded = true;
-            } finally {
-                reconcileDocument(state, cacheKey, snapshot, succeeded);
+            let data = settings;
+            if (fileName === 'settings.json' && settings === JE.currentSettings && state.shown.useNativePosterTags == null) {
+                data = { ...settings, useNativePosterTags: null };
             }
-        } catch (e) {
-            if (throwOnError) throw e;
-            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
+            const entry = { document: copyDocument(data) };
+            const wire = (fileName === 'bookmark.json' || fileName === 'settings.json') && typeof JE.toPascalCase === 'function'
+                ? JE.toPascalCase(entry.document) : entry.document;
+            const serialized = JSON.stringify(wire);
+            const client = ApiClient;
+            const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}`);
+            state.revision++;
+            state.pending.push(entry);
+            const save = state.chain.then(async () => {
+                // A queued old-session write must never run under incoming credentials.
+                if (!isActiveDocument(state)) throw new Error('Settings session changed');
+                if (state.serialized === serialized) return;
+                await client.ajax({ type: 'POST', url, data: serialized, contentType: 'application/json' });
+                if (isActiveDocument(state)) state.serialized = serialized;
+            });
+            state.chain = save.catch(() => {});
+            publishDocument(state, state.persisted, 'queued');
+            let succeeded = false;
+            try { await save; succeeded = true; }
+            finally {
+                state.pending.splice(state.pending.indexOf(entry), 1);
+                const previousPersisted = state.persisted;
+                if (succeeded) state.persisted = entry.document;
+                publishDocument(state, previousPersisted, succeeded ? 'saved' : 'failed');
+            }
+        } catch (error) {
+            if (options?.throwOnError === true) throw error;
+            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, error);
         }
     };
 
     /**
      * Loads and merges settings from user config, plugin defaults, and hardcoded fallbacks.
      */
-    JE.loadSettings = () => {
-        const userSettings = JE.userConfig?.settings || {};
+    const resolveSettings = userSettings => {
         const pluginDefaults = JE.pluginConfig || {};
 
         const hardcodedDefaults = {
@@ -256,6 +289,14 @@
         }
 
         return mergedSettings;
+    };
+
+    /** Derive resolved settings from the store, retaining pending choices across replacement views. */
+    JE.loadSettings = () => {
+        const state = settingsDocument('settings.json');
+        JE.userConfig = JE.userConfig || {};
+        JE.userConfig.settings = copyDocument(state.shown);
+        return resolveSettings(state.shown);
     };
 
     /** Shortcut combo for a keydown, e.g. "Ctrl+Shift+A". Shift is dropped for shifted symbols ("+", not "Shift++"). */
