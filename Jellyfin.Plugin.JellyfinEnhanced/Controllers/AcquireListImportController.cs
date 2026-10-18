@@ -21,12 +21,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
     /// reading a list URL into entries, and which sources work. Every route needs a signed-in person (no API key, no
     /// disabled user: 403 <c>user_required</c>), answers 404 <c>{code:"disabled"}</c> while import is off
     /// (<see cref="ListImportFlags.Import"/>; URL reads also need <see cref="ListImportFlags.Sources"/> and the provider's own
-    /// switch), and is private and never stored (<c>private, no-store</c>). A target list (for "in library" as its owner
+    /// switch), and is private and never stored (<c>private, no-store</c> on every result through
+    /// <see cref="PrivateResponseAttribute"/>, the framework's own body-limit and model-validation refusals included). A target list (for "in library" as its owner
     /// sees it) needs edit rights on it, the same answer as a list that doesn't exist otherwise. Bodies are capped before
     /// binding (resolve: 128 KiB for 25 entries with episodes and alternatives; source: 16 KiB).
     /// </summary>
     [ApiController]
     [Route("JellyfinEnhanced")]
+    [PrivateResponse]
     public class AcquireListImportController : ControllerBase
     {
         /// <summary>Body cap of resolve (25 entries, each up to 100 episodes and 4 alternatives).</summary>

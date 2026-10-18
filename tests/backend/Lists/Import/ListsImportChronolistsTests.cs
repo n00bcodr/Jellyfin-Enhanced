@@ -291,7 +291,7 @@ public class ListsImportChronolistsTests
         Assert.Equal("not_found", (await net.Fetch("https://chronolists.com/nope")).ErrorCode); // 404
 
         net.Reply = _ => IntegrationTransport.Response("<html>moved</html>", 301, "text/html");
-        Assert.Equal("upstream_error", (await net.Fetch("https://chronolists.com/dctv")).ErrorCode); // redirects aren't followed
+        Assert.Equal("source_redirected", (await net.Fetch("https://chronolists.com/dctv")).ErrorCode); // redirects aren't followed (a typed failure)
         Assert.Equal(2, net.Requests.Count);
 
         net.Reply = _ => IntegrationTransport.Response("<html><body>a redesigned page</body></html>", 200, "text/html");

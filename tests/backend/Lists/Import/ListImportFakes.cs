@@ -164,3 +164,65 @@ internal sealed class FakeSourceFetcher : IListSourceFetcher
 
     public SourceProvidersDto Providers(User caller) => new() { MaxItems = ListSourceFetcher.MaxItems, Import = true, Sources = true };
 }
+
+/// <summary>
+/// What the library holds of titles per viewer (the import's physical-title projection): titles held only where a viewer
+/// can't open them, and seasons / episodes hidden from a viewer. Counts reads.
+/// </summary>
+internal sealed class FakePhysicalTitles : IImportPhysicalTitles
+{
+    private sealed class Held
+    {
+        public bool Title;
+        public HashSet<int> Seasons { get; } = new();
+        public Dictionary<int, HashSet<int>> Episodes { get; } = new();
+    }
+
+    private readonly Dictionary<(Guid Viewer, bool Movie, int Tmdb), Held> _held = new();
+
+    public int Reads;
+    public bool Unreadable { get; set; }
+
+    /// <summary>The title is held only in libraries <paramref name="viewer"/> can't open.</summary>
+    public void HideTitle(User viewer, bool movie, int tmdb) => Of(viewer, movie, tmdb).Title = true;
+
+    public void HideSeason(User viewer, int tmdb, int season) => Of(viewer, false, tmdb).Seasons.Add(season);
+
+    public void HideEpisode(User viewer, int tmdb, int season, int episode)
+    {
+        var held = Of(viewer, false, tmdb);
+        if (!held.Episodes.TryGetValue(season, out var set))
+        {
+            held.Episodes[season] = set = new HashSet<int>();
+        }
+
+        set.Add(episode);
+    }
+
+    public ImportPhysical Read(User viewer, bool movie, int tmdb, int? season)
+    {
+        Interlocked.Increment(ref Reads);
+        if (Unreadable)
+        {
+            return ImportPhysical.Unreadable;
+        }
+
+        if (!_held.TryGetValue((viewer.Id, movie, tmdb), out var held))
+        {
+            return ImportPhysical.None;
+        }
+
+        var episodes = season is int s && held.Episodes.TryGetValue(s, out var set) ? set : new HashSet<int>();
+        return new ImportPhysical(held.Title, held.Seasons, episodes);
+    }
+
+    private Held Of(User viewer, bool movie, int tmdb)
+    {
+        if (!_held.TryGetValue((viewer.Id, movie, tmdb), out var held))
+        {
+            _held[(viewer.Id, movie, tmdb)] = held = new Held();
+        }
+
+        return held;
+    }
+}

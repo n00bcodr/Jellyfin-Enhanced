@@ -211,6 +211,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportLookup, Services.Acquire.Lists.Import.MetadataImportLookup>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IListLibraryLookup, Services.Acquire.Lists.Import.ResolverListLibraryLookup>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportViewerPolicy, Services.Acquire.Lists.Import.UserImportViewerPolicy>();
+            // What the library holds of a title for the caller (a title in a library they can't open is never offered as
+            // absent): the native details' projection on 12, the same library reader on 10.11.
+#if JF12
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportPhysicalTitles>(sp => new Services.Acquire.Lists.Import.LibraryImportPhysicalTitles(
+                sp.GetRequiredService<Services.NativeDetails.NativeDetailsPolicy>()));
+#else
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportPhysicalTitles>(sp => new Services.Acquire.Lists.Import.LibraryImportPhysicalTitles(
+                new Services.NativeDetails.NativeDetailsLibrary(
+                    sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
+                    sp.GetRequiredService<Services.Acquire.TitleAliases>(),
+                    () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision),
+                sp.GetRequiredService<Services.Acquire.IArrJellyfinView>()));
+#endif
+            // List-source reads: no redirects, public addresses only (checked at connect time), the system proxy kept.
+            serviceCollection.AddHttpClient(Services.Acquire.Lists.Sources.SourceHttp.ClientName)
+                .ConfigurePrimaryHttpMessageHandler(Services.Acquire.Lists.Sources.SourceHttp.CreateHandler);
             serviceCollection.AddSingleton<Services.Acquire.Lists.Import.ListImportResolver>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.IListSourceFetcher, Services.Acquire.Lists.Sources.ListSourceFetcher>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.ListSourcePreview>();

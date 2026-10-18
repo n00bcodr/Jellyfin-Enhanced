@@ -311,7 +311,7 @@ public class ListsImportSourceTests
         };
         var moved = await net.Fetch("https://mdblist.com/lists/me/moved");
         Assert.False(moved.Ok);
-        Assert.Equal("upstream_error", moved.ErrorCode);
+        Assert.Equal("source_redirected", moved.ErrorCode); // typed (review round 1, SEC-03)
         Assert.DoesNotContain(net.Requests, r => r.RequestUri!.Host == "169.254.169.254");
 
         net.Routes["https://mdblist.com/lists/me/ok/json"] = _ => Json("[{\"id\":1,\"mediatype\":\"movie\",\"title\":\"A\"}]");

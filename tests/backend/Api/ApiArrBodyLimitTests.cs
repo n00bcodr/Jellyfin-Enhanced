@@ -68,8 +68,11 @@ public class ApiArrBodyLimitTests
         foreach (var (method, route, action) in admin)
             Assert.True(Private(action), $"{method} {route} has no [PrivateResponse]");
         // User status, hub and notification routes are cached by the browser with their ETag (private, no-cache).
-        foreach (var (method, route, action) in actions.Where(a => a.Route.StartsWith("acquire/", StringComparison.Ordinal)))
+        // The list import review is the exception: its answers (candidates, library ids) are never stored (4c2a SEC-07).
+        foreach (var (method, route, action) in actions.Where(a => a.Route.StartsWith("acquire/", StringComparison.Ordinal) && !a.Route.StartsWith("acquire/lists/import/", StringComparison.Ordinal)))
             Assert.False(Private(action), $"{method} {route} must not be no-store");
+        foreach (var (method, route, action) in actions.Where(a => a.Route.StartsWith("acquire/lists/import/", StringComparison.Ordinal)))
+            Assert.True(Private(action), $"{method} {route} has no [PrivateResponse]");
         Assert.False(Private(typeof(RequestsHubController).GetMethod(nameof(RequestsHubController.GetHub))!));
     }
 

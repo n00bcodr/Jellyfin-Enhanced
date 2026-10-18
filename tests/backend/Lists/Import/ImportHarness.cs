@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
@@ -21,6 +23,7 @@ internal sealed class ImportHarness : IDisposable
     public FakeLibraryLookup Library { get; } = new();
     public FakeSourceFetcher Fetcher { get; } = new();
     public FakeImportViewerPolicy Viewer { get; } = new();
+    public FakePhysicalTitles Physical { get; } = new();
     public MetadataCallLimiter Limiter { get; } = new(4, TimeSpan.Zero, TimeProvider.System);
     public ListImportResolver ImportResolver { get; }
     public ListSourcePreview Sources { get; }
@@ -32,8 +35,8 @@ internal sealed class ImportHarness : IDisposable
         Lists = new ListsHarness(seerr);
         ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
         IListLibraryLookup library = realLibrary ? new ResolverListLibraryLookup(Lists.Resolver, Host) : Library;
-        ImportResolver = new ListImportResolver(Lookup, library, Access, Limiter, Plugin.Core.Logger, Viewer);
-        Sources = new ListSourcePreview(Fetcher, ImportResolver, Access, Plugin.Core.Logger, Viewer);
+        ImportResolver = new ListImportResolver(Lookup, library, Access, Limiter, Plugin.Core.Logger, Viewer, Physical);
+        Sources = new ListSourcePreview(Fetcher, ImportResolver, Access, Plugin.Core.Logger, Viewer, Physical);
     }
 
     public ApiPluginFixture Plugin => Lists.Plugin;
@@ -43,7 +46,13 @@ internal sealed class ImportHarness : IDisposable
     public Dictionary<string, string> Tmdb => Lists.Tmdb;
     public List<string> SeerrCalls => Lists.SeerrCalls;
 
-    public User NewUser(string name, bool admin = false, bool collections = false, int? maxRating = null) => Lists.NewUser(name, admin, collections, maxRating);
+    /// <summary>A user with Jellyfin's default policy (access to every library, as a new Jellyfin user gets).</summary>
+    public User NewUser(string name, bool admin = false, bool collections = false, int? maxRating = null)
+    {
+        var user = Lists.NewUser(name, admin, collections, maxRating);
+        user.SetPermission(PermissionKind.EnableAllFolders, true);
+        return user;
+    }
 
     public ListAccess AccessFor(FakeListHost.FakeList list, User user) => Lists.AccessFor(list, user);
 

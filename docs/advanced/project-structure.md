@@ -448,10 +448,11 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   List import (review only, never changes a list) lives in **`Services/Acquire/Lists/Import/`**: `ListImportResolver.cs`
   matches parsed entries to titles (`ImportScoring.cs` confidence, `ImportLookup.cs`/`TmdbImportLookup.cs` the Seerr and
   TMDB lookups behind `MetadataImportLookup`, `MetadataCallLimiter.cs` fair upstream concurrency, `ListLibraryLookup.cs`
-  the adapter to `ListResolver`, `ImportViewerPolicy.cs` Hidden Content and Spoiler Guard per viewer), `ListImportFlags.cs`
+  the adapter to `ListResolver`, `ImportViewerPolicy.cs` Hidden Content and Spoiler Guard per viewer, `ImportPhysicalTitles.cs`
+  what the library holds but the viewer can't open), `ListImportFlags.cs`
   the switches, and `JeListMetadata.cs` the TMDB-only `IListMetadataSource` used when Seerr isn't set up. List sites live in
   **`Services/Acquire/Lists/Sources/`**: `ListSourceUrl.cs` URL parsing, `ListSourceFetcher.cs` the provider-pinned
-  fetchers with typed failures, `ChronolistsPage.cs` the watch-order page reader, `ListSourceGroups.cs` episode runs,
+  fetchers with typed failures, `SourceHttp.cs` their transport (no redirects, public addresses only), `ChronolistsPage.cs` the watch-order page reader, `ListSourceGroups.cs` episode runs,
   `SourceModels.cs` snapshots, tombstone-aware plans and read budgets (`ISourceReadAdmission`), and `ListSourcePreview.cs`
   the per-viewer review of a URL. Routes in **`Controllers/AcquireListImportController.cs`**, models in
   **`Model/ListPlaceholders/ListImportDtos.cs`**, and the client in **`js/arr/lists/list-parser.js`** and

@@ -183,6 +183,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders
         [JsonPropertyName("hidden")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Hidden { get; set; }
         /// <summary>The caller guards this title with Spoiler Guard: its overview and episode titles are left out.</summary>
         [JsonPropertyName("spoilerGuarded")][JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? SpoilerGuarded { get; set; }
+
+        /// <summary>The library scope the candidate stands for (season and episodes of a TV scope), for the caller's physical-title projection; never sent.</summary>
+        [JsonIgnore] internal (int? Season, IReadOnlyList<int>? Episodes) Scope { get; set; }
     }
 
     /// <summary>The resolution of one entry.</summary>

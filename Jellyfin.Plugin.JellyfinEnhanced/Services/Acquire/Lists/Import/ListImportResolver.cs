@@ -52,8 +52,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// <item>"A or B" lines resolve every alternative and always go to review; TBA / in-development lines prefer
     /// undated or future titles and are never auto-accepted;</item>
     /// <item>library matches ("in library": only copies every library user can open) and the caller's title policy are
-    /// computed per request, after the shared cache: parental limits hide candidates (unknown fails closed), then Hidden
-    /// Content marks and Spoiler Guard strips (<see cref="ImportViewer"/>). Nothing a restricted caller can't see is in
+    /// computed per request, after the shared cache: parental limits hide candidates (unknown fails closed), then a title,
+    /// season or episode the library holds but the caller can't open is left out (<see cref="IImportPhysicalTitles"/>,
+    /// never shown as absent), then Hidden Content marks and Spoiler Guard strips (<see cref="ImportViewer"/>). Nothing a restricted caller can't see is in
     /// the answer, not even as an alternative or a count.</item>
     /// </list>
     /// Every upstream call goes through the shared <see cref="MetadataCallLimiter"/>; the call has a deadline after which
@@ -95,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private readonly MetadataCallLimiter _limiter;
         private readonly Logger _logger;
         private readonly IImportViewerPolicy? _viewer;
+        private readonly IImportPhysicalTitles? _physical;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _activeCalls = new(StringComparer.Ordinal);
 
         /// <summary>Creates the resolver.</summary>
@@ -104,8 +106,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <param name="limiter">The shared Seerr limiter (its counters go into the log).</param>
         /// <param name="logger">JE logger.</param>
         /// <param name="viewer">The caller's Hidden Content / Spoiler Guard rules (null: none).</param>
-        public ListImportResolver(IImportLookup lookup, IListLibraryLookup library, ListAccessService access, MetadataCallLimiter limiter, Logger logger, IImportViewerPolicy? viewer = null)
+        /// <param name="physical">What the library holds of a title for the caller (null: nothing is held anywhere).</param>
+        public ListImportResolver(IImportLookup lookup, IListLibraryLookup library, ListAccessService access, MetadataCallLimiter limiter, Logger logger, IImportViewerPolicy? viewer = null, IImportPhysicalTitles? physical = null)
         {
+            _physical = physical;
             _lookup = lookup;
             _library = library;
             _access = access;
@@ -188,6 +192,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             if (options.Parental && _access.IsRestricted(options.Caller))
             {
                 pending = await FilterParentalAsync(response.Results, options.Caller, cancellationToken).ConfigureAwait(false);
+            }
+
+            // SEC-02: what the library holds but the caller can't open is never offered as absent (every caller).
+            if (_physical != null)
+            {
+                ProjectPhysical(response.Results, options.Caller);
             }
 
             // The caller's own rules last (they never reveal anything a parental limit hid).
@@ -775,12 +785,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 };
             }
 
+            var episodes = wanted.OpenEnded && candidate.Episodes is { Count: > 0 } ? candidate.Episodes.Select(e => e.Episode).ToList() : wanted.Episodes;
+            dto.Scope = (kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null);
             if (wanted.EpisodeTitle != null && wanted.Episodes.Count == 0)
             {
                 return dto; // the episode itself is unknown: nothing to look for in the library yet
             }
 
-            var episodes = wanted.OpenEnded && candidate.Episodes is { Count: > 0 } ? candidate.Episodes.Select(e => e.Episode).ToList() : wanted.Episodes;
             dto.InLibrary = FindInLibrary(new LibraryScope(kind, hit.TmdbId, dto.TvdbId, dto.ImdbId, kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes ? wanted.Season : null, kind == PlaceholderKinds.Episodes ? episodes : null), libraryUsers, dto.EpisodeTotal);
             return dto;
         }
@@ -859,6 +870,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
+        // SEC-02: a candidate (an alternative's too) for a title the library holds but the caller can't open (no copy they
+        // can open; its season, or one of its episodes, hidden from them) is left out, so it is never offered as a title
+        // that isn't in the library. One library read per title and season.
+        private void ProjectPhysical(List<ResolvedEntryDto> results, User caller)
+        {
+            var read = new Dictionary<(bool, int, int?), ImportPhysical>();
+            bool Hidden(ImportCandidateDto candidate)
+            {
+                var movie = candidate.MediaType == "movie";
+                var season = movie ? null : candidate.Scope.Season;
+                var key = (movie, candidate.TmdbId, season);
+                if (!read.TryGetValue(key, out var physical))
+                {
+                    read[key] = physical = _physical!.Read(caller, movie, candidate.TmdbId, season);
+                }
+
+                return physical.Hides(season, movie ? null : candidate.Scope.Episodes);
+            }
+
+            foreach (var result in results)
+            {
+                Remove(result, Hidden);
+            }
+        }
+
+        // Leaves out the candidates `remove` names; a lost top match lowers the entry's confidence (none without any).
+        private static void Remove(ResolvedEntryDto result, Func<ImportCandidateDto, bool> remove)
+        {
+            var before = result.Match;
+            result.Candidates = result.Candidates.Where(c => !remove(c)).ToList();
+            result.Match = result.Candidates.FirstOrDefault();
+            if (result.Match == null && before != null)
+            {
+                result.Confidence = ImportScoring.Levels.None;
+                result.Reasons = result.Reasons.Where(r => r != "noMatch").Append("noMatch").ToList();
+            }
+            else if (!ReferenceEquals(before, result.Match))
+            {
+                result.Confidence = ImportScoring.Cap(result.Confidence, ImportScoring.Levels.Low);
+            }
+        }
+
         // C5: restricted callers never see blocked or unverifiable candidates: a title is kept only when the check says
         // allowed; unknown (no rating, a failed lookup) is hidden like blocked. Returns true when checks ran out of time.
         private async Task<bool> FilterParentalAsync(List<ResolvedEntryDto> results, User caller, CancellationToken cancellationToken)
@@ -902,18 +955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             foreach (var result in results)
             {
-                var before = result.Match;
-                result.Candidates = result.Candidates.Where(c => !blocked.Contains((c.MediaType, c.TmdbId))).ToList();
-                result.Match = result.Candidates.FirstOrDefault();
-                if (result.Match == null && before != null)
-                {
-                    result.Confidence = ImportScoring.Levels.None;
-                    result.Reasons = result.Reasons.Where(r => r != "noMatch").Append("noMatch").ToList();
-                }
-                else if (!ReferenceEquals(before, result.Match))
-                {
-                    result.Confidence = ImportScoring.Cap(result.Confidence, ImportScoring.Levels.Low);
-                }
+                Remove(result, c => blocked.Contains((c.MediaType, c.TmdbId)));
             }
 
             return pending;

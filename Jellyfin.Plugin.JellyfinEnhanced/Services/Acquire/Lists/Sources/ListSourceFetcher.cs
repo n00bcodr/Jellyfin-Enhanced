@@ -36,8 +36,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// <item><b>Chronolists</b>: the watch-order page's embedded data (<see cref="ChronolistsPage"/>); exact ids, no key.</item>
     /// <item><b>Letterboxd</b> is never fetched (<see cref="ListSourceUrl"/> answers with guidance).</item>
     /// </list>
-    /// Requests go only to fixed hosts built from the parsed parts (SSRF guard), without redirects, with a 20 s timeout,
-    /// an 8 MiB body cap and a 1000-entry cap; a short Retry-After (≤ 5 s) is honoured once, longer ones are reported.
+    /// Requests go only to fixed hosts built from the parsed parts (SSRF guard), over <see cref="SourceHttp"/> (TMDB
+    /// included): never a redirect (a 3xx is <c>source_redirected</c>) and only to public addresses checked at connect time
+    /// (else <c>source_address_blocked</c>), with a 20 s timeout, an 8 MiB body cap and a 1000-entry cap; a short
+    /// Retry-After (≤ 5 s) is honoured once, longer ones are reported. Every transmission, a 429 retry included, is charged
+    /// to the provider's admission (and the MDBList API's daily quota) before it is sent; no reservation, no retry.
+    /// Paging never stops early as "complete": a missing continuation, an empty page before the last one or a missing page
+    /// count is <see cref="SourceFetchResult.Partial"/>, and a page limit reached with pages left is truncated.
     /// An answer without the list array it should have is an error, never an empty list. Successful fetches are cached
     /// for 5 minutes (bounded, keyed by the credentials' identity) so preview → apply → link doesn't fetch twice.
     /// Reads are bounded by <see cref="SourceReadLimits"/>: at most a few at a time, per caller per window, and per
@@ -61,6 +66,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         internal const int MaxCachedItems = 20_000;
 
         private const int MaxBodyBytes = 8 * 1024 * 1024;
+        private const int MaxListPages = 100;
+        private const int TraktPageSize = 100;
+        private const int MaxTraktPages = 20;
+        private const int MaxImdbPages = 10;
         private const int MaxRetryWaitSeconds = 5;
         private const string ImdbGraphQl = "https://api.graphql.imdb.com/";
         private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
@@ -293,8 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             var useApi = options.Provider == "mdblist-api" || (options.AllowMdblistApi && options.Provider != "mdblist");
             if (!useApi)
             {
-                Admit("mdblist", options);
-                var response = await SendAsync(HttpMethod.Get, "https://mdblist.com" + publicPath, null, null, cancellationToken).ConfigureAwait(false);
+                var response = await SendAsync("mdblist", options, HttpMethod.Get, "https://mdblist.com" + publicPath, null, null, cancellationToken).ConfigureAwait(false);
                 if (response.Status == 200 && response.Body != null)
                 {
                     return MdblistItems(source, "mdblist", response.Body, false);
@@ -309,11 +317,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var key = MdblistKey;
-            Admit("mdblist-api", options);
-            if (_mdblist != null && !await _mdblist.TryReserveListRequestAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return SourceFetchResult.Fail(source, "quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
-            }
 
             var apiPath = source.Shape switch
             {
@@ -323,7 +326,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
             var query = "?apikey=" + Uri.EscapeDataString(key) + "&limit=" + MaxItems.ToString(CultureInfo.InvariantCulture) + "&unified=true"
                 + (source.Shape == "official" ? "&mediatype=" + (source.Part("media") == "shows" ? "show" : "movie") : string.Empty);
-            var api = await SendAsync(HttpMethod.Get, "https://api.mdblist.com" + apiPath + query, null, null, cancellationToken).ConfigureAwait(false);
+            // Each transmission (a 429 retry too) takes one request of the daily quota first.
+            var api = await SendAsync("mdblist-api", options, HttpMethod.Get, "https://api.mdblist.com" + apiPath + query, null, null, cancellationToken, reserve: _mdblist == null ? null : _mdblist.TryReserveListRequestAsync).ConfigureAwait(false);
             if (api.Status == 200 && api.Body != null)
             {
                 return WithNotice(MdblistItems(source, "mdblist-api", api.Body, MdblistHasMore(api)), "mdblist_api");
@@ -514,7 +518,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         string? title = null;
                         var total = 0;
                         var truncated = false;
-                        for (var page = 1; page <= 100; page++)
+                        var unknownEnd = false;
+                        for (var page = 1; ; page++)
                         {
                             var json = await TmdbGetAsync("list/" + id, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false);
                             if (json == null)
@@ -540,23 +545,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                             }
 
                             items.AddRange(pageItems);
-                            var pages = Int(doc.RootElement, "total_pages") ?? 1;
+                            // B2: without a page count, whether more pages follow is unknown: never "complete".
+                            var reportedPages = Int(doc.RootElement, "total_pages");
+                            unknownEnd |= reportedPages == null;
+                            var pages = reportedPages ?? 1;
                             if (items.Count >= MaxItems)
                             {
                                 truncated = items.Count > MaxItems || page < pages;
                                 break;
                             }
 
-                            if (page >= pages || rows.Count == 0)
+                            if (page >= pages)
                             {
                                 drift.End();
+                                break;
+                            }
+
+                            if (rows.Count == 0)
+                            {
+                                drift.Mismatch(); // an empty page before the last one: rows went missing meanwhile
+                                break;
+                            }
+
+                            if (page >= MaxListPages)
+                            {
+                                truncated = true; // the page limit, with pages left
                                 break;
                             }
                         }
 
                         if (drift.Consistent || attempt == 2)
                         {
-                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), truncated, partial: !drift.Consistent);
+                            return Done(source, "tmdb", title, items, Math.Max(total, items.Count), truncated, partial: !drift.Consistent || unknownEnd);
                         }
 
                         _logger.Debug($"[Lists] TMDB list {id} changed while it was read; reading it again");
@@ -570,6 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         ? $"trending/{media}/{source.Part("period")}"
                         : $"{media}/{source.Part("chart").Replace('-', '_')}";
                     var items = new List<SourceItem>();
+                    var unknownEnd = false;
                     for (var page = 1; page <= MaxChartItems / 20 && items.Count < MaxChartItems; page++)
                     {
                         var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
@@ -577,46 +598,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         using var doc = JsonDocument.Parse(json);
                         var defaultType = media == "all" ? null : media;
                         items.AddRange(ListArray(doc.RootElement, "results").Select(p => TmdbItem(p, defaultType, null)).OfType<SourceItem>());
-                        if (page >= (Int(doc.RootElement, "total_pages") ?? 1))
+                        var pages = Int(doc.RootElement, "total_pages");
+                        if (pages == null || page >= pages)
                         {
+                            // A chart is its first pages; without a page count, whether this was all is unknown.
+                            unknownEnd = pages == null && page < MaxChartItems / 20;
                             break;
                         }
                     }
 
                     var chart = items.Take(MaxChartItems).ToList();
-                    return Done(source, "tmdb", null, chart, chart.Count, false);
+                    return Done(source, "tmdb", null, chart, chart.Count, false, partial: unknownEnd);
                 }
             }
         }
 
         private async Task<string?> TmdbGetAsync(string path, string query, string key, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            Admit("tmdb", options);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(Timeout);
-            TmdbResponseCache.TmdbResponse response;
-            try
+            // F17 + 4C2-SEC-03: read upstream every time (never TmdbResponseCache's 6 h copy: a sync must see the list as
+            // it is now, and the pages of one snapshot must be of one age) and over the source transport (no redirects,
+            // public addresses only). The fetcher's own short result cache keeps preview → apply → link to one read.
+            var url = "https://api.themoviedb.org/3/" + path + query + (query.Length == 0 ? "?" : "&") + "api_key=" + Uri.EscapeDataString(key);
+            var response = await SendAsync("tmdb", options, HttpMethod.Get, url, null, null, cancellationToken).ConfigureAwait(false);
+            if (response.Status == 200 && response.Body != null)
             {
-                // F17: never the cached copy (6 h for lists and collections): a sync must see the list as it is now,
-                // and the pages of one snapshot must not be of different ages. The fetcher's own short result cache
-                // keeps preview → apply → link to one read.
-                response = await _tmdb!.GetAsync(path, query, key, timeout.Token, refresh: true).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new SourceHttpException("timeout", "TMDB took too long to answer.");
+                return response.Body;
             }
 
-            if (response.IsSuccess)
-            {
-                return response.Content;
-            }
-
-            return response.StatusCode switch
+            return response.Status switch
             {
                 404 => null,
                 401 => throw new SourceHttpException("tmdb_key_invalid", "TMDB refused the API key configured in Jellyfin Enhanced."),
-                429 => throw new SourceHttpException("rate_limited", "TMDB is rate limiting; try again shortly.", 10),
+                429 => throw new SourceHttpException("rate_limited", "TMDB is rate limiting; try again shortly.", response.RetryAfter ?? 10),
                 _ => throw new SourceHttpException("upstream_error", "TMDB returned an error."),
             };
         }
@@ -645,6 +658,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 ? $"/api/v1/discover/trending?mediaType={source.Part("media")}&timeWindow={source.Part("period")}"
                 : source.Part("media") == "tv" ? "/api/v1/discover/tv/upcoming?" : "/api/v1/discover/movies/upcoming?";
             var items = new List<SourceItem>();
+            var unknownEnd = false;
             for (var page = 1; page <= MaxChartItems / 20 && items.Count < MaxChartItems; page++)
             {
                 var json = await SeerrGetAsync(baseUrl, seerrKey, path + (path.EndsWith('?') ? string.Empty : "&") + "page=" + page.ToString(CultureInfo.InvariantCulture), options, cancellationToken).ConfigureAwait(false)
@@ -652,14 +666,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 using var doc = JsonDocument.Parse(json);
                 var defaultType = source.Part("media") is "movie" or "tv" ? source.Part("media") : null;
                 items.AddRange(ListArray(doc.RootElement, "results").Select(p => SeerrItem(p, defaultType)).OfType<SourceItem>());
-                if (page >= (Int(doc.RootElement, "totalPages") ?? 1))
+                var pages = Int(doc.RootElement, "totalPages");
+                if (pages == null || page >= pages)
                 {
+                    unknownEnd = pages == null && page < MaxChartItems / 20;
                     break;
                 }
             }
 
             var chart = items.Take(MaxChartItems).ToList();
-            return Done(source, "seerr", null, chart, chart.Count, false);
+            return Done(source, "seerr", null, chart, chart.Count, false, partial: unknownEnd);
         }
 
         private async Task<string?> SeerrGetAsync(string baseUrl, string apiKey, string path, SourceFetchOptions options, CancellationToken cancellationToken)
@@ -784,14 +800,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var drift = new PageDrift();
                 var items = new List<SourceItem>();
                 var truncated = false;
+                var unknownEnd = false;
                 var total = 0;
                 var rowsBefore = 0;
                 string? lastRow = null;
-                for (var page = 1; page <= 20; page++)
+                for (var page = 1; ; page++)
                 {
-                    var url = "https://api.trakt.tv" + path + "?page=" + page.ToString(CultureInfo.InvariantCulture) + "&limit=100";
-                    Admit("trakt", options);
-                    var response = await SendAsync(HttpMethod.Get, url, headers, null, cancellationToken).ConfigureAwait(false);
+                    var url = "https://api.trakt.tv" + path + "?page=" + page.ToString(CultureInfo.InvariantCulture) + "&limit=" + TraktPageSize.ToString(CultureInfo.InvariantCulture);
+                    var response = await SendAsync("trakt", options, HttpMethod.Get, url, headers, null, cancellationToken).ConfigureAwait(false);
                     if (response.Status == 404)
                     {
                         return page == 1 ? SourceFetchResult.Fail(source, "not_found", "Trakt didn't find this list (only public lists can be imported).") : throw new SourceHttpException("upstream_error", "Trakt stopped answering while reading the list.");
@@ -831,8 +847,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     if (checkDrift && page > 1 && drift.Consistent)
                     {
                         var probeUrl = "https://api.trakt.tv" + path + "?page=" + rowsBefore.ToString(CultureInfo.InvariantCulture) + "&limit=1";
-                        Admit("trakt", options);
-                        var probe = await SendAsync(HttpMethod.Get, probeUrl, headers, null, cancellationToken).ConfigureAwait(false);
+                        var probe = await SendAsync("trakt", options, HttpMethod.Get, probeUrl, headers, null, cancellationToken).ConfigureAwait(false);
                         if (probe.Status != 200 || probe.Body == null)
                         {
                             throw Upstream(probe, "Trakt");
@@ -850,7 +865,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     lastRow = pageLast ?? lastRow;
 
                     items.AddRange(pageItems);
-                    var pages = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : 1;
+                    int? pageCount = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : null;
+                    // B2: no page count after a full page: whether more follow is unknown, never "complete".
+                    unknownEnd |= pageCount == null && rows.Count >= TraktPageSize;
+                    var pages = pageCount ?? 1;
                     int? reported = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : null;
                     drift.Total(reported);
                     total = reported ?? items.Count;
@@ -860,9 +878,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         break;
                     }
 
-                    if (page >= pages || rows.Count == 0)
+                    if (page >= pages)
                     {
                         drift.End();
+                        break;
+                    }
+
+                    if (rows.Count == 0)
+                    {
+                        // An empty page before the last one: rows went missing meanwhile (charts too).
+                        drift.Mismatch();
+                        unknownEnd = true;
+                        break;
+                    }
+
+                    if (page >= MaxTraktPages)
+                    {
+                        truncated = source.Shape != "chart"; // the page limit, with pages left (a chart is its first pages)
                         break;
                     }
                 }
@@ -870,7 +902,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 if (!checkDrift || drift.Consistent || attempt == 2)
                 {
                     var capped = items.Take(cap).ToList();
-                    return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), truncated, partial: checkDrift && !drift.Consistent);
+                    return Done(source, "trakt", null, capped, Math.Max(total, capped.Count), truncated, partial: (checkDrift && !drift.Consistent) || unknownEnd);
                 }
 
                 _logger.Debug($"[Lists] Trakt list {path} changed while it was read; reading it again");
@@ -993,7 +1025,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             string? title = null;
             var total = 0;
             var truncated = false;
-            for (var page = 0; page < 10; page++)
+            var edgesRead = 0;
+            var continues = false;
+            for (var page = 0; page < MaxImdbPages; page++)
             {
                 var (data, pagePartial) = await ImdbQueryAsync(query, variables, options, cancellationToken).ConfigureAwait(false);
                 partial |= pagePartial;
@@ -1015,6 +1049,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 total = Int(connection, "total") ?? total;
                 foreach (var edge in Array(connection, "edges"))
                 {
+                    edgesRead++;
                     if (!edge.TryGetProperty("node", out var node))
                     {
                         continue;
@@ -1034,17 +1069,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     break;
                 }
 
+                continues = false;
                 if (!connection.TryGetProperty("pageInfo", out var pageInfo) || !pageInfo.TryGetProperty("hasNextPage", out var next) || next.ValueKind != JsonValueKind.True)
                 {
                     break;
                 }
 
+                // B2: more pages, but no cursor to read them with: the rest is missing (partial), never "complete".
+                continues = true;
                 variables["after"] = Str(pageInfo, "endCursor");
                 if (variables["after"] == null)
                 {
+                    partial = true;
+                    continues = false;
                     break;
                 }
             }
+
+            // The page limit with a continuation outstanding is truncated; fewer rows than IMDb's own total, with no page
+            // left, means rows went missing (partial).
+            truncated |= continues;
+            partial |= !truncated && total > edgesRead;
 
             var capped = items.Take(MaxItems).ToList();
             if (capped.Count == 0)
@@ -1074,10 +1119,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // Returns the data and whether GraphQL reported errors next to it (a partial answer: nulled items are missing).
         private async Task<(JsonElement Data, bool Partial)> ImdbQueryAsync(string query, Dictionary<string, object?> variables, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            Admit("imdb", options);
             var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["query"] = query, ["variables"] = variables });
             var headers = new Dictionary<string, string>(StringComparer.Ordinal) { ["x-imdb-client-name"] = "jellyfin-enhanced" };
-            var response = await SendAsync(HttpMethod.Post, ImdbGraphQl, headers, body, cancellationToken).ConfigureAwait(false);
+            var response = await SendAsync("imdb", options, HttpMethod.Post, ImdbGraphQl, headers, body, cancellationToken).ConfigureAwait(false);
             if (response.Status != 200 || response.Body == null)
             {
                 throw Upstream(response, "IMDb");
@@ -1165,8 +1209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // by ChronolistsPage. The entries carry exact TMDB ids and metadata, so the result is "exact".
         private async Task<SourceFetchResult> ChronolistsAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            Admit("chronolists", options);
-            var response = await SendAsync(HttpMethod.Get, "https://chronolists.com/" + Esc(source.Part("slug")), null, null, cancellationToken, "text/html").ConfigureAwait(false);
+            var response = await SendAsync("chronolists", options, HttpMethod.Get, "https://chronolists.com/" + Esc(source.Part("slug")), null, null, cancellationToken, "text/html").ConfigureAwait(false);
             if (response.Status == 404)
             {
                 return SourceFetchResult.Fail(source, "not_found", "Chronolists has no watch order at this address.");
@@ -1210,10 +1253,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         // ── HTTP ────────────────────────────────────────────────────────────
 
-        private async Task<HttpResult> SendAsync(HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, CancellationToken cancellationToken, string accept = "application/json")
+        // One upstream request, with at most one retry after a short Retry-After. Every transmission is charged before it
+        // is sent (4C2-SEC-06): the provider's admission, and `reserve` (the MDBList API's daily quota) when given; a refusal
+        // is a typed failure, so a retry without a reservation never goes out.
+        private async Task<HttpResult> SendAsync(string provider, SourceFetchOptions options, HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body, CancellationToken cancellationToken, string accept = "application/json", Func<CancellationToken, Task<bool>>? reserve = null)
         {
             for (var attempt = 0; ; attempt++)
             {
+                Admit(provider, options);
+                if (reserve != null && !await reserve(cancellationToken).ConfigureAwait(false))
+                {
+                    throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
+                }
+
                 var result = await SendOnceAsync(method, url, headers, body, accept, cancellationToken).ConfigureAwait(false);
                 if (result.Status == 429 && attempt == 0 && result.RetryAfter is >= 0 and <= MaxRetryWaitSeconds)
                 {
@@ -1231,8 +1283,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             timeout.CancelAfter(Timeout);
             try
             {
-                // The no-redirect client: a source must answer from the fixed host, never send JE elsewhere.
-                var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
+                // The source transport (SourceHttp): never a redirect, public addresses only.
+                var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
                 using var request = new HttpRequestMessage(method, url);
                 request.Headers.UserAgent.ParseAdd(SeerrHttpHelper.UserAgent + " (+https://github.com/n00bcodr/Jellyfin-Enhanced)");
                 request.Headers.Accept.ParseAdd(accept);
@@ -1251,6 +1303,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
+                if (status is >= 300 and < 400 && status != 304)
+                {
+                    throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
+                }
+
                 int? retryAfter = null;
                 if (response.Headers.RetryAfter is { } ra)
                 {
@@ -1295,11 +1352,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             {
                 throw new SourceHttpException("timeout", "The list site took too long to answer.");
             }
+            catch (HttpRequestException ex) when (Blocked(ex) is { } blocked)
+            {
+                _logger.Warning($"[Lists] Refused a list-source connection: {blocked.Message}");
+                throw new SourceHttpException(SourceFailures.AddressBlocked, "The list site's address isn't a public one, so Jellyfin Enhanced didn't connect.");
+            }
             catch (HttpRequestException ex)
             {
                 _logger.Debug($"[Lists] Source request failed: {ex.Message}");
                 throw new SourceHttpException("unreachable", "Can't reach the list site right now.");
             }
+        }
+
+        private static SourceAddressBlockedException? Blocked(Exception ex)
+        {
+            for (var inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            {
+                if (inner is SourceAddressBlockedException blocked)
+                {
+                    return blocked;
+                }
+            }
+
+            return null;
         }
 
         private static SourceHttpException Upstream(HttpResult response, string site) => response.Status == 429

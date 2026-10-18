@@ -262,6 +262,32 @@ public class ListsImportControllerTests
         Assert.Equal(25, capabilities.GetProperty("resolveChunk").GetInt32());
     }
 
+    // SEC-07: the framework's own refusals (the body cap before binding, model validation of malformed JSON) happen
+    // before the actions set their headers: they are private, no-store too.
+    [Fact]
+    public async Task TheFrameworksOwnRefusalsArePrivateAndNeverStored()
+    {
+        using var f = new Fixture();
+        using var viewer = f.Client(f.Viewer);
+        var huge = "{\"entries\":[{\"title\":\"" + new string('x', AcquireListImportController.ResolveBody) + "\"}]}";
+        foreach (var (path, body, status) in new[]
+        {
+            (Resolve, huge, HttpStatusCode.RequestEntityTooLarge),
+            (Source, "{\"url\":\"" + new string('x', 20 * 1024) + "\"}", HttpStatusCode.RequestEntityTooLarge),
+            (Resolve, "{\"entries\":[{\"title\":", HttpStatusCode.BadRequest),
+            (Source, "{\"url\": 12,", HttpStatusCode.BadRequest),
+            (Resolve, "{\"entries\":{\"title\":\"x\"}}", HttpStatusCode.BadRequest),
+        })
+        {
+            using var response = await viewer.PostAsync(path, Json(body));
+            Assert.True(status == response.StatusCode, $"{path} {body.Length}: {response.StatusCode}");
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true }, $"{path} {response.StatusCode}: {response.Headers.CacheControl}");
+        }
+
+        Assert.Empty(f.H.Fetcher.Calls);
+        Assert.Empty(f.H.Lookup.Log);
+    }
+
     [Fact]
     public async Task OnlyAnAdministratorMayAskForTheMdblistApiAndOnlyDeliberately()
     {

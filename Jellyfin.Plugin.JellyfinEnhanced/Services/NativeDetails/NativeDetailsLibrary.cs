@@ -1,4 +1,3 @@
-#if JF12
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -15,7 +14,8 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 {
     /// <summary>
-    /// What the library itself holds of a title, judged for one viewer: every copy in any library
+    /// What the library itself holds of a title, judged for one viewer (both Jellyfin targets: the native details pages
+    /// use it on 12, the list import's physical-title projection on 12 and 10.11): every copy in any library
     /// (no user on the query), then Jellyfin's own visibility. A synthetic page must never stand in
     /// for a library row Jellyfin hides from the viewer (parental rating, custom rating, tags, library
     /// access), so hidden copies, seasons and episodes are named here.
@@ -253,4 +253,3 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private bool CanOpen(Guid id, User viewer) => _library.GetItemById<BaseItem>(id, viewer) != null;
     }
 }
-#endif

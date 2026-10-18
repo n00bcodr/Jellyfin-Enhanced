@@ -4,7 +4,10 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data;
+using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import;
 
@@ -13,8 +16,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// <summary>
     /// The URL half of the import review (design §8 F1–F6, preview only): reads a list URL through
     /// <see cref="IListSourceFetcher"/> and answers its entries with ids for the review, filtered for restricted callers
-    /// (C5) before anything else. Exact sources (Chronolists) come back grouped into runs, each entry with all its source
-    /// keys and a prepared resolution, so no title lookup is needed. Nothing here changes a list or stores a link: the
+    /// (C5) before anything else, then by what the library holds (an entry for a title, season or episode the library has
+    /// but the caller can't open is left out, never shown as absent; 4C2-SEC-02). Exact sources (Chronolists) come back
+    /// grouped into runs, each entry with all its source keys and a prepared resolution, so no title lookup is needed. The
+    /// snapshot describes exactly the keys the reply carries, after every cap and filter (4c2-B3); a caller whose view can
+    /// be narrower than the list (parental limits, library access) never gets totals, drops, a digest or a snapshot
+    /// (<c>countsHidden</c>, 4C2-SEC-05), whatever left entries out. Nothing here changes a list or stores a link: the
     /// apply and linked sync (track 4c2b) take the same fetch (the fetcher's short cache) and re-check everything.
     /// </summary>
     public sealed class ListSourcePreview
@@ -27,6 +34,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         private readonly ListImportResolver _resolver;
         private readonly ListAccessService _access;
         private readonly IImportViewerPolicy? _viewer;
+        private readonly IImportPhysicalTitles? _physical;
         private readonly Logger _logger;
 
         /// <summary>Creates the service (DI).</summary>
@@ -35,13 +43,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="access">Access service (parental checks).</param>
         /// <param name="logger">JE logger.</param>
         /// <param name="viewer">Hidden Content / Spoiler Guard rules of the caller.</param>
-        public ListSourcePreview(IListSourceFetcher fetcher, ListImportResolver resolver, ListAccessService access, Logger logger, IImportViewerPolicy? viewer = null)
+        /// <param name="physical">What the library holds of a title for the caller (null: nothing is held anywhere).</param>
+        public ListSourcePreview(IListSourceFetcher fetcher, ListImportResolver resolver, ListAccessService access, Logger logger, IImportViewerPolicy? viewer = null, IImportPhysicalTitles? physical = null)
         {
             _fetcher = fetcher;
             _resolver = resolver;
             _access = access;
             _logger = logger;
             _viewer = viewer;
+            _physical = physical;
         }
 
         /// <summary>Provider capabilities (GET import/providers).</summary>
@@ -99,9 +109,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var items = result.Items.Where(i => i.Key != null).ToList();
             response.Dropped = result.Items.Count - items.Count;
-            var restricted = _access.IsRestricted(caller);
-            var filtered = false;
-            if (restricted)
+            var hideCounts = HidesCounts(caller);
+            if (_access.IsRestricted(caller))
             {
                 var (allowed, pending) = await FilterRestrictedAsync(items, caller, cancellationToken).ConfigureAwait(false);
                 if (pending)
@@ -109,30 +118,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     return new ListOutcome { StatusCode = 504, RetryAfterSeconds = 2, Value = new ListErrorDto { Code = "parental_pending", Message = "Checking titles against your parental controls; try again in a moment." } };
                 }
 
-                filtered = allowed.Count < items.Count;
                 items = allowed;
             }
 
+            // SEC-02: a title, season or episode the library holds but the caller can't open is never offered as absent.
+            var held = FilterPhysical(items, caller);
+            hideCounts |= held.Count < items.Count;
+            items = held;
+
             var viewer = _viewer?.For(caller) ?? ImportViewer.None;
+            var capped = false;
             if (result.Exact)
             {
-                await PrepareGroupedEntriesAsync(response, result.Items, items, libraryUsers ?? new[] { caller }, caller, viewer, cancellationToken).ConfigureAwait(false);
+                capped = await PrepareGroupedEntriesAsync(response, result.Items, items, libraryUsers ?? new[] { caller }, caller, viewer, cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 response.Entries = items.Select((item, i) => ToEntry(item, i)).ToList();
             }
 
-            if (filtered)
+            if (hideCounts)
             {
-                // A2: nothing says how many entries the caller's controls left out (totals, unusable rows, the digest).
+                // A2 / SEC-05: nothing says how many entries the caller's view left out, wherever they were left out
+                // (parental limits, library access, id-less or adult rows): no totals, drops, digest or snapshot.
                 response.CountsHidden = true;
                 response.Total = 0;
                 response.Dropped = 0;
             }
             else
             {
-                response.Snapshot = SourceSnapshots.Describe(result);
+                // B3: the snapshot of what the reply carries, after every cap and filter.
+                var represented = result.Exact ? response.SnapshotKeys ?? new List<string>() : response.Entries.Select(e => e.SourceKey).OfType<string>().ToList();
+                response.Snapshot = SourceSnapshots.Describe(result, represented, capped);
             }
 
             return ListOutcome.Ok(response);
@@ -242,17 +259,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
+        /// <summary>
+        /// True when the caller's view of a list can be narrower than the list itself: Seerr's or Jellyfin's parental
+        /// rules, or library access short of every library. Such a caller never gets counts or a snapshot (SEC-05), so the
+        /// answer's shape doesn't depend on what was left out.
+        /// </summary>
+        /// <param name="caller">Caller.</param>
+        /// <returns>True when counts are hidden.</returns>
+        private bool HidesCounts(User caller) =>
+            _access.IsRestricted(caller)
+            || ArrJellyfinView.HasParentalLimit(caller)
+            || !caller.HasPermission(PermissionKind.EnableAllFolders)
+            || caller.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).Length > 0;
+
+        // SEC-02: entries for a title the library holds but the caller can't open (no copy they can open; the season or
+        // episode hidden from them) are left out. One library read per title and season.
+        private List<SourceItem> FilterPhysical(List<SourceItem> items, User caller)
+        {
+            if (_physical == null)
+            {
+                return items;
+            }
+
+            var read = new Dictionary<(bool, int, int?), ImportPhysical>();
+            bool Hidden(SourceItem item)
+            {
+                if (item.TmdbId is not int tmdb || tmdb <= 0)
+                {
+                    return false; // an IMDb/TVDB-only entry: matched by the resolver, which projects it
+                }
+
+                var movie = item.MediaType == "movie";
+                var key = (movie, tmdb, movie ? null : item.Season);
+                if (!read.TryGetValue(key, out var physical))
+                {
+                    read[key] = physical = _physical.Read(caller, movie, tmdb, key.Item3);
+                }
+
+                return physical.Hides(movie ? null : item.Season, item.Episode is int e ? new[] { e } : null);
+            }
+
+            return items.Where(i => !Hidden(i)).ToList();
+        }
+
         // Exact sources: group the (allowed) entries by their positions in the whole list, prepare each group's
-        // resolution and library match, and hand out every key of what is shown as the snapshot.
-        private async Task PrepareGroupedEntriesAsync(SourceFetchResponse response, IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem> allowed, IReadOnlyList<User> libraryUsers, User caller, ImportViewer viewer, CancellationToken cancellationToken)
+        // resolution and library match, and hand out every key of what is shown as the snapshot. Returns true when the
+        // groups were capped (the reply then stands for part of the list only).
+        private async Task<bool> PrepareGroupedEntriesAsync(SourceFetchResponse response, IReadOnlyList<SourceItem> all, IReadOnlyList<SourceItem> allowed, IReadOnlyList<User> libraryUsers, User caller, ImportViewer viewer, CancellationToken cancellationToken)
         {
             var (positioned, facts) = Positioned(all, allowed);
             await AddSeasonCountsAsync(facts, positioned, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false), cancellationToken).ConfigureAwait(false);
             var groups = ListSourceGroups.Group(positioned, facts);
+            var capped = false;
             if (groups.Count > ListStore.MaxPlaceholders)
             {
                 groups = groups.Take(ListStore.MaxPlaceholders).ToList();
                 response.Truncated = true;
+                capped = true;
             }
 
             var library = new GroupLibrary(_resolver, libraryUsers);
@@ -268,6 +331,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             response.SnapshotKeys = groups.SelectMany(g => g.Keys).ToList();
             response.Dropped += positioned.Count < allowed.Count ? allowed.Count - positioned.Count : 0;
+            return capped;
         }
 
         // C5 for fetched lists: restricted callers keep only TMDB titles their parental controls allow. Unknown (an
@@ -380,7 +444,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 "not_found" or "mdblist_not_public" => 404,
                 "rate_limited" or "quota_exhausted" or "fetch_limited" or "read_budget_exhausted" => 429,
                 "timeout" => 504,
-                "upstream_error" or "unreachable" or "too_large" or "source_empty" or ChronolistsPage.FormatChanged => 502,
+                "upstream_error" or "unreachable" or "too_large" or "source_empty" or ChronolistsPage.FormatChanged or SourceFailures.Redirected or SourceFailures.AddressBlocked => 502,
                 _ => 400, // configuration: provider_disabled, trakt_not_configured, tmdb_key_required, tmdb_key_invalid, imdb_disabled, trakt_unauthorized, provider_pinned
             };
             var outcome = ListOutcome.Error(status, result.ErrorCode ?? "upstream_error", result.Message ?? "The list couldn't be read.");

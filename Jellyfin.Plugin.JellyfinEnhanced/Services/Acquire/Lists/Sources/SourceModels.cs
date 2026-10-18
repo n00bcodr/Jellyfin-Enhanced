@@ -127,6 +127,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         /// <summary>The per-provider read budget is used up (try again later).</summary>
         public const string ReadBudgetExhausted = "read_budget_exhausted";
+
+        /// <summary>The list site answered with a redirect, which is never followed.</summary>
+        public const string Redirected = "source_redirected";
+
+        /// <summary>The list site's host resolved to a non-public address: nothing was sent.</summary>
+        public const string AddressBlocked = "source_address_blocked";
     }
 
     /// <summary>Provenance keys of source entries (F1): <c>type|id|season|episode</c>, never the list rank.</summary>
@@ -414,14 +420,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>The client description of a successful fetch (state and digest; no keys of entries the caller can't see).</summary>
         /// <param name="fetched">The fetch.</param>
         /// <returns>The description.</returns>
-        public static SourceSnapshotDto Describe(SourceFetchResult fetched)
+        public static SourceSnapshotDto Describe(SourceFetchResult fetched) => Describe(fetched, Keys(fetched), false);
+
+        /// <summary>
+        /// The client description of what a reply actually carries (4c2-B3): the digest of <paramref name="represented"/>
+        /// (the keys after every cap and filter), and a state that is never "complete" unless the reply carries every key
+        /// of the fetch: a cap makes it truncated, any other key left out partial (both: additions only).
+        /// </summary>
+        /// <param name="fetched">The fetch.</param>
+        /// <param name="represented">The keys the reply carries, in order.</param>
+        /// <param name="capped">The reply was capped (it stands for the first part of the list).</param>
+        /// <returns>The description.</returns>
+        public static SourceSnapshotDto Describe(SourceFetchResult fetched, IReadOnlyList<string> represented, bool capped)
         {
             var verdict = Classify(fetched, null);
-            return new SourceSnapshotDto
-            {
-                State = verdict.State switch { SnapshotState.Truncated => "truncated", SnapshotState.Partial => "partial", _ => "complete" },
-                Digest = Digest(Keys(fetched)),
-            };
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var keys = represented.Where(seen.Add).ToList();
+            var all = Keys(fetched);
+            var whole = keys.Count == all.Count && all.All(seen.Contains);
+            var state = verdict.State == SnapshotState.Truncated || capped ? "truncated"
+                : verdict.State == SnapshotState.Partial || !whole ? "partial"
+                : "complete";
+            return new SourceSnapshotDto { State = state, Digest = Digest(keys) };
         }
 
         /// <summary>
