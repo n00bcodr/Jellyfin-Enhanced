@@ -2670,6 +2670,33 @@
                                 <div class="je-setting-description" data-desc-for="arrPhase4ListStatusEnabled"><div class="fieldDescription">Each entry shows where its request stands (the same status as the rest of Requests &amp; downloads). Everyone can hide it for themselves.</div></div>
                             </div>
                             <!-- /Phase 4c1: lists -->
+                            <!-- Phase 4c2: list import and sources -->
+                            <div id="arrListImportSettings" class="je-arr-list-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListImportEnabled" is="emby-checkbox" type="checkbox"/><span>Import lists (paste, file or URL), with a review first</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListImportEnabled"><div class="fieldDescription">Needs "Adding and editing list entries". People who can edit a list can paste a watch guide, table or titles, import a CSV (IMDb and Letterboxd exports too) or read a list URL, and review every match before anything is added. Titles are looked up on TMDB with this server's TMDB key (or through Seerr when no key is saved); people's parental limits, Hidden Content and Spoiler Guard apply to what the review shows. The review itself never changes a list.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListSourcesEnabled" is="emby-checkbox" type="checkbox"/><span>Import from a list URL (From URL)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListSourcesEnabled"><div class="fieldDescription">Needs "Import lists". Each list site below has its own switch; a site that is off is never contacted. Letterboxd is never read directly: people are pointed to an MDBList mirror or a CSV export.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListMdblistEnabled" is="emby-checkbox" type="checkbox"/><span>MDBList public lists</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListMdblistEnabled"><div class="fieldDescription">Public MDBList lists, read without a key (MDBList also mirrors Letterboxd, IMDb and Trakt lists).</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListMdblistApiEnabled" is="emby-checkbox" type="checkbox"/><span>Let administrators read private MDBList lists with this server's MDBList key</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListMdblistApiEnabled"><div class="fieldDescription">Needs "MDBList public lists" and an MDBList API key (Ratings section). Only an administrator's deliberate choice reads a list through the API; it counts against the key's daily quota, which ratings share. A list MDBList doesn't serve publicly is never read through the key on its own.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListTmdbEnabled" is="emby-checkbox" type="checkbox"/><span>TMDB lists, collections and charts</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListTmdbEnabled"><div class="fieldDescription">Needs the TMDB API key. Without one, collections, trending and upcoming movies can be read through Seerr instead; the review says so.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListChronolistsEnabled" is="emby-checkbox" type="checkbox"/><span>Chronolists watch orders</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListChronolistsEnabled"><div class="fieldDescription">chronolists.com watch orders (MCU, DC Arrowverse and others) with exact TMDB ids: runs of episodes become one entry each, no title search needed.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListTraktEnabled" is="emby-checkbox" type="checkbox"/><span>Trakt lists, watchlists and charts</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListTraktEnabled"><div class="fieldDescription">Needs a Trakt client ID below (create an API app on trakt.tv). Without one, Trakt URLs say so and nothing is read.</div></div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrListTraktApiKey">Trakt client ID</label>
+                                    <input id="arrListTraktApiKey" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                                    <div class="fieldDescription">Kept on the server only (never sent to browsers); Replace or Clear it here.</div>
+                                </div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListImdbEnabled" is="emby-checkbox" type="checkbox"/><span>IMDb lists, watchlists and charts (unofficial)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListImdbEnabled"><div class="fieldDescription">An opt-in: IMDb has no public API for lists, so this uses IMDb's unofficial one, which may stop working without notice; the review always says so. IMDb CSV exports work without it.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListJeMetadataEnabled" is="emby-checkbox" type="checkbox"/><span>Title details for list entries from TMDB when Seerr isn't set up</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListJeMetadataEnabled"><div class="fieldDescription">Needs "Lists" and the TMDB API key. Release dates, posters, seasons and episodes of list entries come from TMDB directly. When Seerr is set up it keeps answering, as before.</div></div>
+                            </div>
+                            <!-- /Phase 4c2: list import and sources -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -5531,6 +5558,7 @@
             jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
             jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
             jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || '');
+            jeSecretInit(document.querySelector('#arrListTraktApiKey'), fresh.ArrListTraktApiKey || ''); // Phase 4c2
             jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
             loadArrInstances(fresh);
             updateAllDependencies();
@@ -6313,6 +6341,7 @@
             jeSecretInit(document.querySelector('#arrSmtpPassword'), config.ArrSmtpPassword || '');
             document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
             document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
+            jeSecretInit(document.querySelector('#arrListTraktApiKey'), config.ArrListTraktApiKey || ''); // Phase 4c2
             jeLoadArrAutomationSettings(config);
         }
 
@@ -6394,6 +6423,7 @@
             config.ArrSmtpPassword = jeSecretRead(document.querySelector('#arrSmtpPassword'));
             config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
             config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
+            config.ArrListTraktApiKey = jeSecretRead(document.querySelector('#arrListTraktApiKey')); // Phase 4c2
             jeSaveArrAutomationSettings(config);
         }
 
@@ -6702,6 +6732,11 @@
             document.querySelector('#arrPhase4ListSwapInEnabled').checked = config.ArrPhase4ListSwapInEnabled === true;
             document.querySelector('#arrPhase4ListMaintenanceEnabled').checked = config.ArrPhase4ListMaintenanceEnabled === true;
             document.querySelector('#arrPhase4ListStatusEnabled').checked = config.ArrPhase4ListStatusEnabled === true;
+            // Phase 4c2: list import and sources
+            ['arrPhase4ListImportEnabled', 'arrPhase4ListSourcesEnabled', 'arrPhase4ListMdblistEnabled', 'arrPhase4ListMdblistApiEnabled', 'arrPhase4ListTmdbEnabled',
+                'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled', 'arrPhase4ListJeMetadataEnabled'].forEach(function(id) {
+                document.querySelector('#' + id).checked = config[id.charAt(0).toUpperCase() + id.slice(1)] === true;
+            });
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6772,6 +6807,11 @@
             config.ArrPhase4ListSwapInEnabled = document.querySelector('#arrPhase4ListSwapInEnabled').checked;
             config.ArrPhase4ListMaintenanceEnabled = document.querySelector('#arrPhase4ListMaintenanceEnabled').checked;
             config.ArrPhase4ListStatusEnabled = document.querySelector('#arrPhase4ListStatusEnabled').checked;
+            // Phase 4c2: list import and sources
+            ['arrPhase4ListImportEnabled', 'arrPhase4ListSourcesEnabled', 'arrPhase4ListMdblistEnabled', 'arrPhase4ListMdblistApiEnabled', 'arrPhase4ListTmdbEnabled',
+                'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled', 'arrPhase4ListJeMetadataEnabled'].forEach(function(id) {
+                config[id.charAt(0).toUpperCase() + id.slice(1)] = document.querySelector('#' + id).checked;
+            });
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10492,6 +10532,13 @@
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ListPlaceholdersEnabled'] },
             { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListAuthoringEnabled', 'arrPhase4ListRequestsEnabled', 'arrPhase4ListSwapInEnabled', 'arrPhase4ListMaintenanceEnabled', 'arrPhase4ListStatusEnabled'] },
             { parent: 'arrPhase4ListRequestsEnabled', label: 'Ask for list entries', children: ['arrPhase4ListRequestAllEnabled'] },
+            // Phase 4c2: list import and sources
+            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListJeMetadataEnabled'] },
+            { parent: 'arrPhase4ListAuthoringEnabled', label: 'Adding and editing list entries', children: ['arrPhase4ListImportEnabled'] },
+            { parent: 'arrPhase4ListImportEnabled', label: 'Import lists', children: ['arrPhase4ListSourcesEnabled'] },
+            { parent: 'arrPhase4ListSourcesEnabled', label: 'Import from a list URL', children: ['arrPhase4ListMdblistEnabled', 'arrPhase4ListTmdbEnabled', 'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled'] },
+            { parent: 'arrPhase4ListMdblistEnabled', label: 'MDBList public lists', children: ['arrPhase4ListMdblistApiEnabled'] },
+            { parent: 'arrPhase4ListTraktEnabled', label: 'Trakt lists, watchlists and charts', children: ['arrListTraktApiKey'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
