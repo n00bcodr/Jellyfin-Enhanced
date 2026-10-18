@@ -10,7 +10,7 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     const { showReleaseNotesNotification } = internal;
-    const badgeSettingsGenerations = new Map();
+    const badgeSettingsStates = new Map();
 
     // Position-tab preview text ("AaBbCcDd") mirrors the real font family, and
     // its size scaled relative to "Normal" so it stays legible in the small
@@ -207,26 +207,39 @@
             document.getElementById(id)?.addEventListener('change', async (event) => {
                 if (JE.pluginConfig?.ArrAcquisitionBadgesEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
-                const generation = (badgeSettingsGenerations.get(key) || 0) + 1;
-                badgeSettingsGenerations.set(key, generation);
                 const current = JE.arrStatus?.responseGuard?.();
                 const epoch = JE.session?.getEpoch?.();
                 const settings = JE.currentSettings;
                 const select = event.target;
-                const previous = settings[key];
+                const userId = typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : undefined;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.settings = JE.userConfig.settings || {};
                 const userSettings = JE.userConfig.settings;
-                const previousOwn = userSettings[key];
+                let state = badgeSettingsStates.get(key);
+                if (!state || state.settings !== settings || state.userSettings !== userSettings
+                    || state.epoch !== epoch || state.userId !== userId) {
+                    state = { settings, userSettings, epoch, userId, generation: 0,
+                        savedGeneration: 0, saved: settings[key], savedOwn: userSettings[key] };
+                    badgeSettingsStates.set(key, state);
+                }
+                const generation = ++state.generation;
                 userSettings[key] = value;
                 settings[key] = value;
-                const valid = () => badgeSettingsGenerations.get(key) === generation
-                    && settings === JE.currentSettings && settings[key] === value
-                    && (epoch === undefined || JE.session.isCurrent(epoch));
+                const sameSession = () => badgeSettingsStates.get(key) === state
+                    && settings === JE.currentSettings && userSettings === JE.userConfig?.settings
+                    && (epoch === undefined || JE.session.isCurrent(epoch))
+                    && (userId === undefined || ApiClient.getCurrentUserId?.() === userId);
+                const valid = () => sameSession() && state.generation === generation && settings[key] === value;
                 if (key === 'acquisitionBadges' && value === false) JE.internals?.arrStatusCards?.reset?.();
                 resetAutoCloseTimer();
                 try {
                     await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
+                    // Earlier queued successes still advance the rollback baseline for the latest choice.
+                    if (sameSession() && generation > state.savedGeneration) {
+                        state.savedGeneration = generation;
+                        state.saved = value;
+                        state.savedOwn = value;
+                    }
                     if (!valid()) return;
                     // A Hide reset invalidates response tickets intentionally. Show must retain its ticket.
                     if (key === 'acquisitionBadges' && value !== false && (!current || current())) {
@@ -235,9 +248,9 @@
                     JE.toast(JE.t('toast_badge_settings_saved'));
                 } catch (err) {
                     if (!valid()) return;
-                    settings[key] = previous;
-                    userSettings[key] = previousOwn;
-                    select.value = previous === false ? 'off' : '';
+                    settings[key] = state.saved;
+                    userSettings[key] = state.savedOwn;
+                    select.value = state.saved === false ? 'off' : '';
                     if (key === 'acquisitionBadges') JE.internals?.arrStatusCards?.reset?.();
                     console.warn('🪼 Jellyfin Enhanced: badge settings save failed', err);
                 }

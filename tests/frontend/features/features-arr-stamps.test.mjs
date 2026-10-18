@@ -671,3 +671,53 @@ for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : '
   h.cards.scan();
   assert.equal(h.observers.some(io => io.observed.size > 0), hiding, 'observer follows restored preference');
 });
+
+// Review round 4: the real save queue must roll back to persisted, not optimistic, state.
+for (const initial of [null, false]) for (const outcomes of [[false, false], [false, true], [true, false]]) {
+  test(`queued badge toggles from ${initial} with save outcomes ${outcomes}`, async t => {
+    const saves = [deferred(), deferred()];
+    const posted = [];
+    let persisted = initial;
+    const h = setup(t, {
+      html: cardsHtml(['Movie']),
+      config: { ArrAcquisitionBadgesEnabled: true, ArrStatusPosterBadges: false },
+      settings: { acquisitionBadges: initial },
+      responses: path => stampAnswer(path, { [id(0)]: 'new' }),
+      apiClient: { ajax: async request => {
+        const n = posted.length;
+        posted.push(JSON.parse(request.data).acquisitionBadges);
+        await saves[n].promise;
+        persisted = posted[n];
+      } }
+    });
+    h.JE.userConfig = { settings: { ...h.JE.currentSettings }, shortcuts: { Shortcuts: [] } };
+    const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+    Object.assign(h.JE, { escapeHtml: value => String(value ?? ''), icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
+      fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
+      decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
+    h.JE.pluginConfig.Shortcuts = [];
+    h.load('enhanced/config.js');
+    h.load('enhanced/settingspanel/ui-panel-template.js');
+    h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
+    h.load('enhanced/settingspanel/ui-panel-settings.js');
+    h.JE.internals.enhancedUi.wireSettingsListeners({ createToast() {}, resetAutoCloseTimer() {} });
+    await h.show();
+    const select = h.document.getElementById('acquisitionBadgesSelect');
+    const change = value => { select.value = value === false ? 'off' : ''; select.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+    change(initial === false ? null : false);
+    change(initial);
+    await nextTurn();
+    assert.equal(posted.length, 1, 'second snapshot waits for the real save queue');
+    for (let n = 0; n < 2; n++) {
+      if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
+      await nextTurn();
+    }
+    await h.show();
+    assert.equal(posted.length, 2);
+    assert.equal(h.JE.currentSettings.acquisitionBadges, persisted);
+    assert.equal(h.JE.userConfig.settings.acquisitionBadges, persisted);
+    assert.equal(select.value, persisted === false ? 'off' : '');
+    assert.equal(!!h.document.querySelector('.je-arr-tone-new'), persisted !== false);
+  });
+}

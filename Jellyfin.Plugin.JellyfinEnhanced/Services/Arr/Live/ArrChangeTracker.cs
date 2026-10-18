@@ -239,12 +239,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             Enqueue(e?.Item);
         }
 
-        // An old primary can gain a new MediaSource. Announce its title as well as the metadata
-        // updates that finish a recent arrival; Enqueue still coalesces them off the scanner thread.
+        // Metadata completes recent arrivals. For old items, the source-aware stamp feeder publishes
+        // committed acquisition transitions; a metadata refresh alone must not invalidate every title.
         private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
         {
             if (e?.Item is not { } item) return;
-            if (!_recentlyAdded.IsRecent(item.Id) && !Acquire.Stamps.AcquisitionStampFlags.Badges(_config())) return;
+            if (!_recentlyAdded.IsRecent(item.Id)) return;
             Enqueue(item);
         }
 

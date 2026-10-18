@@ -538,7 +538,7 @@ public class IntegrationArrLiveStatusTests
     }
 
     [Fact]
-    public async Task UpdatesOfOldPrimariesAlsoAnnounceNewVersions()
+    public async Task UnchangedOldPrimariesDoNotAnnounceMetadataRefreshes()
     {
         // A new episode gets its numbers (and so its "Ready" on the season page) only when its
         // metadata is read, after ItemAdded: that ItemUpdated must reach the feed too.
@@ -559,7 +559,15 @@ public class IntegrationArrLiveStatusTests
             rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
             rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
-            Assert.Equal(1, tracker.FlushItems());   // an alternate source can arrive on an old primary
+            Assert.Equal(0, tracker.FlushItems());   // the stamp feeder publishes real acquisition transitions
+            var cursor = rig.Feed.Cursor;
+            for (var round = 0; round < 5; round++)
+            {
+                for (var i = 0; i < 20; i++)
+                    library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = old });
+                Assert.Equal(0, tracker.FlushItems());
+            }
+            Assert.Equal(cursor, rig.Feed.Cursor);
 
             library.Raise(l => l.ItemAdded += null, library.Object, new ItemChangeEventArgs { Item = fresh });
             Assert.Equal(1, tracker.FlushItems());

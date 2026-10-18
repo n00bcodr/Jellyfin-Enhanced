@@ -873,12 +873,12 @@ public class IntegrationArrLiveTests
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
             Assert.Equal(1, tracker.FlushItems());
             Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
-            // An old primary can still gain a source after the arrival window, with badges on.
+            // Past the arrival window, metadata alone does not publish; the stamp feeder owns upgrades.
             rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
             rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
             now = now.AddMinutes(11);
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
-            Assert.Equal(1, tracker.FlushItems());
+            Assert.Equal(0, tracker.FlushItems());
         }
         finally
         {

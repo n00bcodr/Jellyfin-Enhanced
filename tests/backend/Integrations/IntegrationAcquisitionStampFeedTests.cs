@@ -67,7 +67,8 @@ public class IntegrationAcquisitionStampFeedTests
         w.Library.RaiseUpdated(changed);
         w.Now = w.Now.AddSeconds(61);
         await w.Feeder.TickAsync(default);
-        Assert.Contains(w.Feed.Read(w.Feed.Epoch, cursor).Changes, c => c.Key == "movie:tmdb:603");
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        Assert.Single(w.Feed.Read(w.Feed.Epoch, cursor).Changes, c => c.Key == "movie:tmdb:603");
         Assert.Equal("upgraded", Read(w, user, hd.Id).GetProperty("items")[0].GetProperty("stamp").GetString());
     }
 
@@ -136,4 +137,43 @@ public class IntegrationAcquisitionStampFeedTests
         Assert.Contains(w.Feed.Read(w.Feed.Epoch, cursor).Changes, c => c.Key == "movie:tmdb:603");
         Assert.Empty(w.Store.FactsFor(movie.Id));
     }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReplacingOrPurgingAnExpiredFactPublishesExactlyOnce(bool purge)
+    {
+        using var w = new StampWorld(live: true);
+        var store = new AcquisitionStampStore(w.Db, w.Clock, w.Feed);
+        var movie = w.AddMovie(StampWorld.Movie(603), w.Now.AddYears(-1));
+        if (purge) store.AddUpgraded(movie, w.Now.AddDays(-29), "import");
+        else store.AddNew(Guid.NewGuid(), movie, w.Now.AddDays(-8), "follow");
+        store.InvalidateExpired(w.Now, TimeSpan.FromDays(7), TimeSpan.FromDays(7)); // expiry is already announced
+        var cursor = w.Feed.Cursor;
+        if (purge)
+        {
+            w.Now = w.Now.AddDays(2); // beyond the 30-day retention limit
+            Assert.True(store.Purge() > 0);
+        }
+        else Assert.True(store.AddUpgraded(movie, w.Now, "replacement"));
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        store.InvalidateExpired(w.Now, TimeSpan.FromDays(7), TimeSpan.FromDays(7));
+        store.InvalidateExpired(w.Now, TimeSpan.FromDays(7), TimeSpan.FromDays(7));
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+    }
+
+    [Fact]
+    public async Task LifetimeExtensionReactivatesAStoredExpiredFactExactlyOnce()
+    {
+        using var w = new StampWorld(live: true);
+        var movie = w.AddMovie(StampWorld.Movie(603), w.Now.AddYears(-1));
+        w.Store.AddNew(Guid.NewGuid(), movie, w.Now.AddDays(-8), "follow");
+        await w.Feeder.TickAsync(default);
+        var cursor = w.Feed.Cursor;
+        w.Config.ArrAcquisitionNewDays = 14;
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+        await w.Feeder.TickAsync(default);
+        Assert.Equal(cursor + 1, w.Feed.Cursor);
+    }
+
 }

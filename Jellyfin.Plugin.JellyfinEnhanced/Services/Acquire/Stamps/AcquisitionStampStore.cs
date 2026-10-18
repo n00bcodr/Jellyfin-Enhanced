@@ -354,7 +354,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 var expired = index.Titles.Where(pair => now >= pair.Key.At + (pair.Key.Kind == AcquisitionStampKinds.New ? newFor : upgradedFor))
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
                 keys = expired.Where(pair => !_expired.ContainsKey(pair.Key))
-                    .Concat(_expired.Where(pair => !expired.ContainsKey(pair.Key)))
+                    // Only a retained fact can reactivate after a lifetime extension. Deleted/replaced
+                    // facts were already announced by their mutation, including facts outside retention.
+                    .Concat(_expired.Where(pair => index.Titles.ContainsKey(pair.Key) && !expired.ContainsKey(pair.Key)))
                     .Select(pair => pair.Value).OfType<string>().ToList();
                 _expired = expired;
             }
