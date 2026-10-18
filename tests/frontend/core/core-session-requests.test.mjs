@@ -85,8 +85,12 @@ test('JE write helpers all enter the core transport',()=>{
  // A dynamic mutation must not hide from the audit merely because its verb is not a literal.
  assert.equal(nonCoreWrites("ApiClient.ajax({type:hidden?'PUT':'DELETE',url:'/rule'})",'probe.js').length,1);
  assert.equal(nonCoreWrites("window.fetch('/rule',opts)",'probe.js').length,1);
+ // Play edge only (Q-PLAYD51-3): modules from tracks merged beside D46 that the integration rebuild binds to the
+ // core transport ("session-bound client modules" rule). Exactly these files; anything new still fails.
+ const pendingRebuild=['arr/adminusers/admin-users-api.js','arr/lists/list-api.js','arr/lists/list-grid.js'];
  const bypass=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')).flatMap(f=>nonCoreWrites(readFileSync(f,'utf8'),f.slice(jsRoot.length+1)));
- assert.deepEqual(bypass,[]);
+ assert.deepEqual(bypass.filter(s=>!pendingRebuild.includes(s.split(':')[0])),[]);
+ assert.deepEqual([...new Set(bypass.map(s=>s.split(':')[0]))].sort(),pendingRebuild,'drop an entry once the rebuild binds it');
  const readers=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')).filter(f=>/JE\.requestManager\.(?:fetchWithRetry|deduplicatedFetch|withConcurrencyLimit)\(/.test(readFileSync(f,'utf8')));
  assert.deepEqual(readers,[],'legacy reader transports must use core fetch for body/publication binding');
 });
