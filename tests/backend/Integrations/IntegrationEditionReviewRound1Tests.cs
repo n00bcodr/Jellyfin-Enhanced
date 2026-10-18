@@ -80,7 +80,7 @@ public class IntegrationEditionReviewRound1Tests
             Uhd.Versions.Add(Version(Uhd.Id, Uhd.Path, 3840, 2160));
             var root = new CollectionFolder { Id = Guid.NewGuid(), Name = "Movies" };
             BaseItem? ById(Guid id) => id == Hd.Id ? Hd : id == Uhd.Id ? Uhd : id == root.Id ? root : null;
-            Manager.Setup(l => l.GetVirtualFolders()).Returns(new List<VirtualFolderInfo> { new() { ItemId = root.Id.ToString("N") } });
+            Manager.Setup(l => l.GetVirtualFolders()).Returns(new List<VirtualFolderInfo> { new() { ItemId = root.Id.ToString("N"), Locations = new[] { "/media/movies", "/media/movies4k" } } });
             Manager.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.IncludeItemTypes.Contains(BaseItemKind.Movie) ? new List<BaseItem> { Hd } : new List<BaseItem>());
             Manager.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder> { root });
             Manager.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => ById(id));

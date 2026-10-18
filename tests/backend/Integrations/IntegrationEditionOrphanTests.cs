@@ -4,6 +4,10 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.IO;
+using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -29,6 +33,7 @@ public class IntegrationEditionOrphanTests
 
     private sealed class EpisodeFile : Episode
     {
+        protected override bool IsActiveRecording() => false;
         public List<MediaSourceInfo> Files { get; } = new();
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Files;
     }
@@ -49,6 +54,8 @@ public class IntegrationEditionOrphanTests
         public ArrJellyfinView View { get; }
         public bool IncludeHd { get; set; }
         private readonly ILibraryManager _previous = BaseItem.LibraryManager;
+        private readonly IServerConfigurationManager _previousConfiguration = BaseItem.ConfigurationManager;
+        private readonly IFileSystem _previousFileSystem = BaseItem.FileSystem;
 
         public Library()
         {
@@ -63,16 +70,24 @@ public class IntegrationEditionOrphanTests
                 .Returns((Guid id, User? _) => Denied.Contains(id) ? null : Items.GetValueOrDefault(id));
             Manager.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
                 q.IncludeItemTypes.Contains(BaseItemKind.Movie) ? (IncludeHd ? new List<BaseItem> { Hd, Uhd } : new List<BaseItem> { Uhd })
-                : Items.Values.Where(i => q.IncludeItemTypes.Contains(BaseItemKind.Series) ? i is Series : i is Episode).ToList());
+                : Items.Values.Where(i => (q.IncludeItemTypes.Contains(BaseItemKind.Series) && i is Series) || (q.IncludeItemTypes.Contains(BaseItemKind.Season) && i is Season) || (q.IncludeItemTypes.Contains(BaseItemKind.Episode) && i is Episode)).ToList());
             Users.Setup(u => u.GetUserById(It.IsAny<Guid>())).Returns((Guid id) => People.GetValueOrDefault(id));
             View = new ArrJellyfinView(Manager.Object, Users.Object);
             BaseItem.LibraryManager = Manager.Object;
+            var configuration = new Mock<IServerConfigurationManager>();
+            configuration.SetupGet(c => c.Configuration).Returns(new ServerConfiguration());
+            BaseItem.ConfigurationManager = configuration.Object;
+            var fileSystem = new Mock<IFileSystem>();
+            fileSystem.Setup(f => f.IsPathFile(It.IsAny<string>())).Returns(true);
+            BaseItem.FileSystem = fileSystem.Object;
+            Manager.Setup(m => m.Sort(It.IsAny<IEnumerable<BaseItem>>(), It.IsAny<User?>(), It.IsAny<IEnumerable<ItemSortBy>>(), It.IsAny<SortOrder>()))
+                .Returns((IEnumerable<BaseItem> items, User? _, IEnumerable<ItemSortBy> _, SortOrder _) => items);
         }
 
         public void AddRoot(Folder folder)
         {
             Items[folder.Id] = folder;
-            Live.Add(new VirtualFolderInfo { ItemId = folder.Id.ToString("N"), Name = folder.Name, LibraryOptions = new() });
+            Live.Add(new VirtualFolderInfo { ItemId = folder.Id.ToString("N"), Name = folder.Name, Locations = new[] { "/media/" + folder.Name }, LibraryOptions = new() });
         }
 
         private MovieFile Movie(Folder root, int width)
@@ -93,6 +108,7 @@ public class IntegrationEditionOrphanTests
         {
             switch (state)
             {
+                case "path": Live.Single(f => f.ItemId == UhdRoot.Id.ToString("N")).Locations = new[] { "/media/still-live" }; break;
                 case "missing": Parents[Uhd.Id].Clear(); break;
                 case "removed": Live.RemoveAll(f => f.ItemId == UhdRoot.Id.ToString("N")); break;
                 case "denied": Denied.Add(UhdRoot.Id); break;
@@ -100,7 +116,7 @@ public class IntegrationEditionOrphanTests
             }
         }
 
-        public void Dispose() { View.Dispose(); BaseItem.LibraryManager = _previous; }
+        public void Dispose() { View.Dispose(); BaseItem.LibraryManager = _previous; BaseItem.ConfigurationManager = _previousConfiguration; BaseItem.FileSystem = _previousFileSystem; }
     }
 
     private static MediaSourceInfo File(Video item, int width) => new()
@@ -110,6 +126,8 @@ public class IntegrationEditionOrphanTests
     };
 
     [Theory]
+    [InlineData("path", false)]
+    [InlineData("path", true)]
     [InlineData("missing", false)]
     [InlineData("removed", false)]
     [InlineData("denied", false)]
@@ -132,6 +150,7 @@ public class IntegrationEditionOrphanTests
     }
 
     [Theory]
+    [InlineData("path")]
     [InlineData("missing")]
     [InlineData("removed")]
     [InlineData("denied")]
@@ -154,6 +173,7 @@ public class IntegrationEditionOrphanTests
     }
 
     [Theory]
+    [InlineData("path")]
     [InlineData("missing")]
     [InlineData("removed")]
     [InlineData("denied")]
@@ -181,6 +201,7 @@ public class IntegrationEditionOrphanTests
     }
 
     [Theory]
+    [InlineData("path")]
     [InlineData("missing")]
     [InlineData("removed")]
     [InlineData("denied")]
@@ -221,8 +242,10 @@ public class IntegrationEditionOrphanTests
         if (!libraryContext) l.Manager.Verify(m => m.GetItemById<BaseItem>(l.HdRoot.Id, It.IsAny<User?>()), Times.Once);
     }
 
-    [Fact]
-    public async Task LibraryRemovalInvalidatesCachedEditionStatusWithoutAnItemEvent()
+    [Theory]
+    [InlineData("path")]
+    [InlineData("removed")]
+    public async Task LibraryRemovalInvalidatesCachedEditionStatusWithoutAnItemEvent(string state)
     {
         using var l = new Library { IncludeHd = true };
         using var lab = new IntegrationRequestArrivalsTests.Lab(fourK: true, jellyfin: l.View);
@@ -231,7 +254,7 @@ public class IntegrationEditionOrphanTests
         using var before = JsonDocument.Parse((await lab.Status.ForItemAsync(viewer, l.Hd.Id, default)).Json);
         Assert.True(before.RootElement.GetProperty("items")[0].GetProperty("fourK").GetBoolean());
         // A cancelled cleanup need never send ItemRemoved for the still-present database row.
-        l.Change("removed");
+        l.Change(state);
         using var after = JsonDocument.Parse((await lab.Status.ForItemAsync(viewer, l.Hd.Id, default)).Json);
         Assert.False(after.RootElement.GetProperty("items")[0].TryGetProperty("fourK", out var fourK) && fourK.GetBoolean());
     }
@@ -245,6 +268,7 @@ public class IntegrationEditionOrphanTests
         var old = l.UhdRoot; l.Change("removed");
         Assert.DoesNotContain(l.View.Copies(Matrix, viewer), c => c.Visible && c.ItemId == l.Uhd.Id);
         var readded = new CollectionFolder { Id = Guid.NewGuid(), Name = "Renamed 4K" }; l.AddRoot(readded);
+        l.Live.Single(f => f.ItemId == readded.Id.ToString("N")).Locations = new[] { "/media/Movies 4K" };
         // A stale collection row may be listed before the current one. The physical media need not get a new id.
         l.Parents[l.Uhd.Id] = new() { old, readded };
         l.Manager.Invocations.Clear();
@@ -266,7 +290,7 @@ public class IntegrationEditionOrphanTests
         using var l = new Library();
         using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         var viewer = libraryContext ? StatusViewer.Library : l.Person(fake.Member);
-        var series = new Series { Id = Guid.NewGuid(), Path = "/media/tv4k/Firefly", PresentationUniqueKey = "firefly" };
+        var series = new Series { Id = Guid.NewGuid(), Path = "/media/Movies 4K/Firefly", PresentationUniqueKey = "firefly" };
         series.SetProviderId(MetadataProvider.Tvdb, "78874");
         var episode = new EpisodeFile { Id = Guid.NewGuid(), SeriesId = series.Id, ParentIndexNumber = 1, IndexNumber = 1, Path = series.Path + "/S01E01.mkv" };
         episode.Files.Add(File(episode, 3840));
@@ -279,4 +303,155 @@ public class IntegrationEditionOrphanTests
         Assert.Empty(l.View.EpisodeSources(series.Id, 1, viewer));
         Assert.False(editions.AvailableRange(viewer, Firefly, 1, 1, 1, Edition.Standard));
     }
+    private static (Series Live, Series Orphan, Season Season, EpisodeFile Episode) GroupedRows(Library l)
+    {
+        var live = new Series { Id = Guid.NewGuid(), Path = "/media/Movies/Firefly", PresentationUniqueKey = "firefly" };
+        var orphan = new Series { Id = Guid.NewGuid(), Path = "/media/Movies 4K/Firefly", PresentationUniqueKey = "firefly" };
+        live.SetProviderId(MetadataProvider.Tvdb, "78874"); orphan.SetProviderId(MetadataProvider.Tvdb, "78874");
+        var season = new Season { Id = Guid.NewGuid(), SeriesId = live.Id, ParentId = orphan.Id, IndexNumber = 2, Path = orphan.Path + "/Season 02", SeriesPresentationUniqueKey = "firefly" };
+        var episode = new EpisodeFile { Id = Guid.NewGuid(), SeriesId = live.Id, ParentId = season.Id, ParentIndexNumber = 2, IndexNumber = 1, Path = season.Path + "/S02E01.mkv", SeriesPresentationUniqueKey = "firefly" };
+        episode.Files.Add(File(episode, 3840));
+        foreach (var i in new BaseItem[] { live, orphan, season, episode })
+        {
+            l.Items[i.Id] = i; l.Parents[i.Id] = new() { i == live ? l.HdRoot : l.UhdRoot };
+        }
+        return (live, orphan, season, episode);
+    }
+
+    [Theory]
+    [InlineData("Copies")]
+    [InlineData("Resolve")]
+    [InlineData("Sources")]
+    [InlineData("Sources-fast")]
+    [InlineData("Linked-sources")]
+    [InlineData("Linked-path")]
+    [InlineData("Episodes")]
+    [InlineData("Episodes-season")]
+    [InlineData("Seasons")]
+    [InlineData("SeriesParts-season")]
+    [InlineData("SeriesParts-episode")]
+    [InlineData("VersionHolder")]
+    [InlineData("EpisodeSources")]
+    [InlineData("EpisodeSources-fast")]
+    [InlineData("GroupedSeries")]
+    [InlineData("ScopeForAll")]
+    [InlineData("AvailableRange")]
+    public void EveryNativeQueryRejectsARowOutsideCurrentLocations(string entry)
+    {
+        using var l = new Library();
+        using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        var viewer = l.Person(fake.Member);
+        var rows = GroupedRows(l);
+        l.Hd.Files.Add(File(l.Uhd, 3840));
+        l.Manager.Setup(m => m.FindByPath(l.Uhd.Path, false)).Returns(l.Uhd);
+        l.Change("path"); // Same live collection id, stale native collection mapping.
+        l.Manager.Invocations.Clear();
+        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+        switch (entry)
+        {
+            case "Copies": Assert.Empty(l.View.Copies(Matrix, viewer)); break;
+            case "Resolve": Assert.Null(l.View.Resolve(l.Uhd.Id, viewer)); break;
+            case "Sources": Assert.Empty(l.View.Sources(l.Uhd.Id, viewer)); break;
+            case "Sources-fast": Assert.Empty(l.View.Sources(l.Uhd.Id, viewer, false)); break;
+            case "Linked-sources": Assert.DoesNotContain(l.View.Sources(l.Hd.Id, viewer), x => x.Width == 3840); break;
+            case "Linked-path":
+                l.Hd.Files[1].Id = "path-only";
+                Assert.DoesNotContain(l.View.Sources(l.Hd.Id, viewer), x => x.Width == 3840); break;
+            case "Episodes": Assert.Empty(l.View.Episodes(rows.Live.Id, null, viewer, true)); break;
+            case "Episodes-season": Assert.Empty(l.View.Episodes(rows.Live.Id, 2, viewer, true)); break;
+            case "Seasons": Assert.Empty(l.View.Seasons(rows.Live.Id, viewer)); break;
+            case "SeriesParts-season": Assert.Empty(l.View.SeriesParts(rows.Live.Id, 2, null, viewer)); break;
+            case "SeriesParts-episode": Assert.Empty(l.View.SeriesParts(rows.Live.Id, 2, 1, viewer)); break;
+            case "VersionHolder":
+                l.Uhd.LinkedAlternateVersions = new[] { new LinkedChild { ItemId = l.Hd.Id } };
+                Assert.Null(l.View.VersionHolder(l.Hd.Id, new[] { l.Uhd.Id }, viewer)); break;
+            case "EpisodeSources": Assert.Empty(l.View.EpisodeSources(rows.Live.Id, null, viewer)); break;
+            case "EpisodeSources-fast": Assert.Empty(l.View.EpisodeSources(rows.Live.Id, null, viewer, false)); break;
+            case "GroupedSeries": Assert.Empty(l.View.GroupedSeries(rows.Live.Id, viewer)); break;
+            case "ScopeForAll": Assert.Empty(editions.ScopeForAll(Array.Empty<StatusViewer>(), Matrix, Edition.FourK)); break;
+            case "AvailableRange": Assert.False(editions.AvailableRange(viewer, Firefly, 2, 1, 1, Edition.FourK)); break;
+        }
+        // Each public lookup takes one topology/access snapshot even for grouped/linked children.
+        l.Manager.Verify(m => m.GetVirtualFolders(), Times.Exactly(entry == "AvailableRange" ? 2 : 1));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GroupedOrphansNeverBecomeReadyEpisodesOrHiddenPolicyMarkers(bool parental)
+    {
+        using var l = new Library();
+        using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        var person = (User)fake.Member.Handle!;
+        if (parental) person.MaxParentalRatingScore = 100;
+        var viewer = l.Person(fake.Member);
+        var rows = GroupedRows(l);
+        l.Change("path");
+        var episodes = l.View.Episodes(rows.Live.Id, null, viewer, true);
+        var seasons = l.View.Seasons(rows.Live.Id, viewer);
+        Assert.Empty(episodes); Assert.Empty(seasons);
+        var c = new ComposeContext(viewer, DateTime.UtcNow, 24);
+        var copy = new ArrCopyFacts(new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrConnection { Kind = Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrKind.Sonarr });
+        Assert.Empty(StatusComposer.EpisodeStates(copy, 2, episodes, c));
+        var status = StatusComposer.Series(new TitleFacts(Firefly), l.View.Resolve(rows.Live.Id, viewer)!, episodes, seasons, c, true);
+        Assert.NotEqual(StatusStage.Ready, status.Stage);
+    }
+
+    [Theory]
+    [InlineData("/media/Movies 4K-other/file.mkv")]
+    [InlineData("/media/Movies 4K/../removed/file.mkv")]
+    public void PhysicalAncestryRequiresACompleteNormalizedDirectoryBoundary(string path)
+    {
+        using var l = new Library();
+        using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        l.Uhd.Path = path;
+        Assert.Empty(l.View.Copies(Matrix, l.Person(fake.Member)));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void VirtualRowsUseTheirOwnPhysicalParentAncestry(bool removed)
+    {
+        using var l = new Library();
+        using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        var viewer = l.Person(fake.Member);
+        var rows = GroupedRows(l);
+        rows.Season.Path = null; rows.Season.IsVirtualItem = true;
+        rows.Episode.Path = null; rows.Episode.IsVirtualItem = true;
+        if (removed) l.Change("path");
+        if (removed)
+        {
+            Assert.Null(l.View.Resolve(rows.Season.Id, viewer));
+            Assert.Null(l.View.Resolve(rows.Episode.Id, viewer));
+            Assert.Empty(l.View.Episodes(rows.Live.Id, null, viewer, true));
+            Assert.Empty(l.View.Seasons(rows.Live.Id, viewer));
+        }
+        else
+        {
+            Assert.NotNull(l.View.Resolve(rows.Season.Id, viewer));
+            Assert.NotNull(l.View.Resolve(rows.Episode.Id, viewer));
+            Assert.Single(l.View.Episodes(rows.Live.Id, null, viewer, true));
+            Assert.Single(l.View.Seasons(rows.Live.Id, viewer));
+        }
+        // Native LocationType.Virtual also follows from an absent path, independently of the stored flag.
+        rows.Season.IsVirtualItem = false; rows.Episode.IsVirtualItem = false;
+        Assert.Equal(!removed, l.View.Resolve(rows.Season.Id, viewer) != null);
+        Assert.Equal(!removed, l.View.Resolve(rows.Episode.Id, viewer) != null);
+    }
+
+    [Fact]
+    public void ASourcesPrimaryIdCannotLendAPathOutsideCurrentLocations()
+    {
+        using var l = new Library();
+        using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
+        var source = File(l.Uhd, 3840); source.Id = l.Hd.Id.ToString("N");
+        l.Hd.Files.Add(source);
+        l.Manager.Setup(m => m.FindByPath(l.Uhd.Path, false)).Returns(l.Uhd);
+        var viewer = l.Person(fake.Member);
+        Assert.Equal(2, l.View.Sources(l.Hd.Id, viewer).Count);
+        l.Change("path");
+        Assert.Single(l.View.Sources(l.Hd.Id, l.Person(fake.Member)));
+    }
+
 }
