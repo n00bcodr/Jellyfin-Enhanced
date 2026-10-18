@@ -576,9 +576,9 @@ public class IntegrationSeerrDestinationTableTests
         ("RequestLedger.cs", "if (jobs.Any(j => j.Input.Scope == \"seasons\" && j.Input.Seasons.Contains(season))) return false;", "one request's own jobs: a new season once per request", null),
     };
 
-    private static string RequestsFolder()
+    private static string RequestsFolder([System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "")
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        var root = new DirectoryInfo(Path.GetDirectoryName(sourceFile)!);
         while (root != null && !Directory.Exists(Path.Combine(root.FullName, "Jellyfin.Plugin.JellyfinEnhanced", "Services"))) root = root.Parent;
         // External output folders do not have the repository as an ancestor.
         root ??= new DirectoryInfo(Directory.GetCurrentDirectory());
