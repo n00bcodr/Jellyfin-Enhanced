@@ -310,6 +310,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             });
         }
 
+        /// <summary>Tests: runs after the event worker has handled one changed item.</summary>
+        internal Action<Guid>? Handled { get; set; }
+
         // Library events fire on Jellyfin's scan thread: only the cheap kind check and a hand-off here.
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
@@ -336,6 +339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                         }
                         else if (_library!.GetItemById(id) is { } item && change.Generation == _db.Generation)
                             Record(ContentOf(item).Select(content => (content, Utc(item.DateCreated))).ToList(), change.Generation);
+                        Handled?.Invoke(id);
                     }
                 }
             }
@@ -355,6 +359,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         {
             foreach (var source in item.SourceItems())
             {
+                // Jellyfin announces a new item before it has probed the file: with no dimensions yet the edition is
+                // unknown, and recording it as standard would make a first 4K copy an upgrade. ItemUpdated brings the
+                // probed source (its observation time is kept); the badge feeder waits for dimensions the same way.
+                if (source.Width == 0 && source.Height == 0) continue;
                 var at = source.SourceId is { } identity ? SourceAt(identity) : source.DateCreated;
                 if (at is DateTime known && known != DateTime.MinValue)
                     _stamps.NoteArrival(AcquisitionStampStore.PartKeys(source), known, item.Id, generation);
