@@ -49,11 +49,16 @@
     let generation = 0;
     let refocusing = false;
 
+    /** Closes a drawer whose operation ended (another page, mount or feature-off); a user switch closes it anyway. */
+    function ended(state) {
+        if (current === state && !state.submitted.current()) close();
+    }
+
     /** Sends through the core binding only while this drawer's opening identity remains current. */
     async function boundApi(state, path, options) {
-        if (current !== state || !state.action.current()) throw new DOMException('Cancelled', 'AbortError');
+        if (current !== state || !state.action.current()) { ended(state); throw new DOMException('Cancelled', 'AbortError'); }
         const result = await JE.core.api.plugin(path, options);
-        if (current !== state || !state.action.current()) throw new DOMException('Cancelled', 'AbortError');
+        if (current !== state || !state.action.current()) { ended(state); throw new DOMException('Cancelled', 'AbortError'); }
         return result;
     }
 
@@ -167,10 +172,13 @@
     /**
      * Opens the drawer for a Jellyfin item or a title key.
      * @param {{itemId?: string, key?: string}} target What to manage.
+     * @param {{operation?: Object}} [options] The operation a title action submitted (else the dispatched press,
+     *     if any): the drawer reads, shows and writes only while it is current, and closes once it isn't.
      * @returns {Promise<void>}
      */
-    async function open(target) {
-        if (!enabled() || !target || (!target.itemId && !target.key)) return;
+    async function open(target, options) {
+        const submitted = JE.captureSubmitted(options?.operation);
+        if (!enabled() || !target || (!target.itemId && !target.key) || !submitted.current()) return;
         close();
         const opener = document.activeElement;
         const mine = ++generation;
@@ -186,9 +194,11 @@
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
         // The session that opened the drawer owns every read, re-read and retry of it.
-        current = { target, overlay, root, opener, action: JE.createSessionAction(), unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        const session = JE.createSessionAction();
+        const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel };
+        current = { target, overlay, root, opener, action, submitted, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
-        root.addEventListener('click', event => { if (current !== opening || !opening.action.current()) event.stopImmediatePropagation(); }, true);
+        root.addEventListener('click', event => { if (current !== opening || !opening.action.current()) { event.stopImmediatePropagation(); ended(opening); } }, true);
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
