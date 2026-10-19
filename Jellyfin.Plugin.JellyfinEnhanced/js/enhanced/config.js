@@ -250,9 +250,10 @@
     });
     settingsEffects.set('language-mirror', ({ state, reason }) => {
         if (reason !== 'saved' && reason !== 'read') return;
-        // Only a real language tag is mirrored: a stored "undefined" or "null" mirrors as Auto ('').
-        const stored = resolveSettings(state.persisted).displayLanguage;
-        const language = typeof JE.languageCode === 'function' ? JE.languageCode(stored) : normalizeLanguage(stored);
+        // Only a real, supported language tag is mirrored: a stored "undefined" or "null", a malformed or an unsupported
+        // value mirrors as Auto (''). Without the translations module's check nothing is written.
+        if (typeof JE.supportedLanguageCode !== 'function') return;
+        const language = JE.supportedLanguageCode(resolveSettings(state.persisted).displayLanguage);
         const key = `${ApiClient.getCurrentUserId()}-language`;
         if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
     });

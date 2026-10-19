@@ -150,6 +150,33 @@ for (const [stored, admin, expected] of [['undefined', 'pt-br', 'pt-BR'], ['null
   assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
 });
 
+// Dashcrash §7 (integration rebuild): the bootstrap seed writes the shared native key only with a valid, supported
+// language tag; an absent, empty, junk, malformed or unsupported configured value seeds nothing, and a malformed browser
+// language is never copied in.
+for (const [configured, list, expected] of [
+  [undefined, undefined, null], ['', undefined, null], ['en-AU', undefined, 'en-AU'], ['en-au', ['en'], 'en-AU'],
+  ['undefined', undefined, null], ['null', undefined, null], ['en_US!', undefined, null], ['english', undefined, null],
+  ['zz-ZZ', undefined, null], ['xx', ['en', 'pr'], null], ['pr', ['en', 'pr'], 'pr']
+]) test(`the seed writes ${expected} for a configured language ${JSON.stringify(configured)} (${list ? 'list ' + list : 'no list'})`, async t => {
+  const config = { ...(configured === undefined ? {} : { DefaultLanguage: configured }), ...(list ? { SupportedLanguages: list } : {}) };
+  const h = setup(t, { data: payload({ PublicConfig: config }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+});
+
+for (const browser of ['undefined', 'null', 'en_US!', '']) test(`a malformed browser language (${JSON.stringify(browser)}) is never written to the shared key`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: {} }) });
+  Object.defineProperty(h.window.navigator, 'language', { configurable: true, get: () => browser });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+});
+
+test('a malformed language already in the shared key is removed, not kept or rewritten', async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: 'en_US!' } }), storage: { 'user-a-language': 'en_US!' } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+});
+
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
   const h = setup(t, { data: payload({ PublicConfig: { ClearTranslationCacheTimestamp: 2000 } }), storage: {
     JE_translation_en: 'old', JE_translation_ts_en: '1000', JE_translation_fr: 'new', JE_translation_ts_fr: '3000', unrelated: 'keep'

@@ -259,6 +259,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageReader.cs",
       "category": "Helpers"
     },
@@ -10647,10 +10651,6 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
     },
     {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
-    },
-    {
       "literal": "shortcuts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-shortcut-editor.js"
     },
@@ -10867,10 +10867,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 626,
+    "files": 627,
     "routes": 292,
     "configuration_properties": 638,
-    "storage_references": 92,
+    "storage_references": 91,
     "scheduled_tasks": 15,
     "locales": 33
   }

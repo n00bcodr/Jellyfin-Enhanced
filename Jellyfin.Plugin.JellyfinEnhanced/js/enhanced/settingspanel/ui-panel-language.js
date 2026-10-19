@@ -117,7 +117,8 @@
 
                 // The store mirrors the persisted document and schedules its session-owned reload. Anything that isn't a
                 // language tag (a stringified "undefined" or "null") is saved as Auto, never written to the shared language key.
-                const languageTag = typeof JE.languageCode === 'function' ? JE.languageCode(newLang) : newLang;
+                // Only a supported language tag is saved; anything else is Auto ('').
+                const languageTag = typeof JE.supportedLanguageCode === 'function' ? JE.supportedLanguageCode(newLang) : '';
                 try {
                     await JE.updateSettings({ displayLanguage: languageTag ? newLang : '' }, { throwOnError: true });
                 } catch (err) {

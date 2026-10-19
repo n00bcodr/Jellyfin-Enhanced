@@ -38,6 +38,37 @@
 
     JE.languageCode = languageCode;
 
+    /**
+     * Whether JE can show a language: one it ships (exactly, or its base language: the server's list) or one the browser
+     * has locale data for (a newer remote locale is a real language).
+     * @param {string} code A tag from {@link languageCode}.
+     * @returns {boolean} Supported.
+     */
+    function isSupportedLanguage(code) {
+        const lower = code.toLowerCase(), base = lower.split('-')[0];
+        const shipped = Array.isArray(JE.pluginConfig?.SupportedLanguages) ? JE.pluginConfig.SupportedLanguages : [];
+        if (shipped.some(c => typeof c === 'string' && (c.toLowerCase() === lower || c.toLowerCase() === base))) return true;
+        try {
+            return typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat?.supportedLocalesOf === 'function'
+                && Intl.DateTimeFormat.supportedLocalesOf([code]).length > 0;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * The language tag JE may WRITE (Jellyfin's shared `${userId}-language` key, its own displayLanguage): a tag
+     * {@link languageCode} accepts that is also supported, else '' (Auto). Reading stays lenient (languageCode).
+     * @param {*} raw A stored, configured or chosen value.
+     * @returns {string} The tag, or ''.
+     */
+    function supportedLanguageCode(raw) {
+        const code = languageCode(raw);
+        return code && isSupportedLanguage(code) ? code : '';
+    }
+
+    JE.supportedLanguageCode = supportedLanguageCode;
+
     function buildLanguageChain(primaryLang) {
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];

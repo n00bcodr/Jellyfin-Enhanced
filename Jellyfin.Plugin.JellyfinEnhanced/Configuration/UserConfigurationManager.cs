@@ -137,7 +137,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
         /// the stored settings are read (strictly: a corrupt file is never overwritten), every personal consent is kept from
-        /// them whoever saves (<see cref="KeepPersonalConsents"/>), and the file is written when anything differs.
+        /// them whoever saves (<see cref="KeepPersonalConsents"/>), the display language is a supported tag or Auto
+        /// (<see cref="LanguageTags.Sanitize"/>), and the file is written when anything differs.
         /// </summary>
         /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
         public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings)
@@ -146,6 +147,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
                 KeepPersonalConsents(settings, existing);
+                // A display language JE stores is a supported language tag, else Auto: never "undefined", "null" or a
+                // malformed value the client would mirror into Jellyfin's shared language key (dashcrash §7).
+                settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
 
                 var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                 var newJson = System.Text.Json.JsonSerializer.Serialize(settings);

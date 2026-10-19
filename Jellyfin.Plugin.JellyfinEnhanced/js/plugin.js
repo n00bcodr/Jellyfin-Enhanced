@@ -1089,13 +1089,30 @@
             }
             return normalized;
         };
-        // A stringified "undefined" or "null" in the shared key is no one's choice: it goes, so Jellyfin and JE fall
-        // back to the user's or the browser's language (or the administrator's default below).
-        if (/^\s*(undefined|null)\s*$/i.test(localStorage.getItem(languageKey) || '')) localStorage.removeItem(languageKey);
+        // What JE writes is also a supported language (JE.supportedLanguageCode in translations.js; the same rule here
+        // when that module didn't load): one JE ships (exactly or its base language) or one the browser has data for.
+        const supportedCode = (raw) => {
+            if (typeof JE.supportedLanguageCode === 'function') return JE.supportedLanguageCode(raw);
+            const code = languageCode(raw);
+            if (!code) return '';
+            const lower = code.toLowerCase(), base = lower.split('-')[0];
+            const shipped = Array.isArray(JE.pluginConfig?.SupportedLanguages) ? JE.pluginConfig.SupportedLanguages : [];
+            if (shipped.some(c => typeof c === 'string' && (c.toLowerCase() === lower || c.toLowerCase() === base))) return code;
+            try {
+                return Intl.DateTimeFormat.supportedLocalesOf([code]).length > 0 ? code : '';
+            } catch (e) {
+                return '';
+            }
+        };
+        // A stringified "undefined" or "null", or a malformed value, in the shared key is no one's choice (and can make
+        // Intl throw): it goes, so Jellyfin and JE fall back to the user's or the browser's language (or the
+        // administrator's default below). A valid tag someone chose there is never touched.
+        const stored = localStorage.getItem(languageKey);
+        if (stored !== null && stored.trim() !== '' && !languageCode(stored)) localStorage.removeItem(languageKey);
         // Only seed the admin's default language if the user has no language set yet.
         // This prevents overwriting the user's own language choice on every page load.
         if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = languageCode(JE.currentSettings?.displayLanguage);
+            const desiredLanguage = supportedCode(JE.currentSettings?.displayLanguage);
             if (desiredLanguage) localStorage.setItem(languageKey, desiredLanguage);
         }
     }

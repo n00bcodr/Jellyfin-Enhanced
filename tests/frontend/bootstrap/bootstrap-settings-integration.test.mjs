@@ -79,3 +79,13 @@ test('a stored language that is no language tag is mirrored to the browser as Au
   await new Promise(done => setImmediate(done));
   assert.equal(h.window.localStorage.getItem('user-a-language'), 'en-GB');
 });
+
+// Dashcrash §7 (integration rebuild): the store's mirror writes a supported language or Auto, never an unsupported or
+// malformed one (the panel's own choice: bootstrap-settings-badges).
+for (const [stored, expected] of [['zz-ZZ', ''], ['xx', ''], ['en_US!', ''], ['null', ''], ['', ''], ['en-AU', 'en-AU'], ['pr', 'pr']]) test(`a stored language ${JSON.stringify(stored)} is mirrored as ${JSON.stringify(expected)}`, async t => {
+  const h = panel(t, { config: { SupportedLanguages: ['en', 'pr'] } });
+  h.window.localStorage.setItem('user-a-language', 'de');
+  await h.JE.updateSettings({ displayLanguage: stored });
+  await new Promise(done => setImmediate(done));
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+});

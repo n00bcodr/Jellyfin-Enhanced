@@ -69,7 +69,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 ShowRatingInPlayer = config.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = config.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = config.ReviewsExpandedByDefault,
-                DisplayLanguage = config.DefaultLanguage,
+                // Only a supported language tag; anything else is Auto (dashcrash §7).
+                DisplayLanguage = Helpers.LanguageTags.Sanitize(config.DefaultLanguage),
                 CalendarDisplayMode = "list",
                 CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"

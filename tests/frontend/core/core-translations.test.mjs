@@ -164,3 +164,23 @@ test('JE.languageCode accepts language tags only', t => {
   assert.equal(code('fr'), 'fr');
   for (const junk of ['undefined', 'null', 'Undefined', 'nan', 'true', '', ' ', 'e', 'en_US', 'en-', '../en', 'en/../../x', null, undefined, 42, {}]) assert.equal(code(junk), '', String(junk));
 });
+
+// Dashcrash §7 (integration rebuild): what JE WRITES (the shared `${userId}-language` key, its own displayLanguage) is
+// a valid language tag that is also supported: a language JE ships (exactly, or its base language) or one the browser
+// has locale data for. Anything else is '' (Auto). Empty stays Auto.
+test('JE.supportedLanguageCode accepts only supported language tags', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  const write = h.JE.supportedLanguageCode;
+  assert.equal(typeof write, 'function');
+  h.JE.pluginConfig = { SupportedLanguages: ['en', 'en-GB', 'pr', 'gsw', 'pt-BR'] };
+  assert.equal(write('en-au'), 'en-AU');   // a region of a shipped language
+  assert.equal(write('PT-br'), 'pt-BR');
+  assert.equal(write('pr'), 'pr');         // JE's own locale, unknown to Intl
+  assert.equal(write('ja'), 'ja');         // not shipped, but the browser knows it (a newer remote locale)
+  for (const value of [undefined, null, '', '  ', 'undefined', 'null', 'NULL', 'nan', 'en_US', 'en-', 'e', '../en', 42, {}]) assert.equal(write(value), '', String(value));
+  for (const unsupported of ['xx', 'zz-ZZ', 'qaa']) assert.equal(write(unsupported), '', unsupported);
+  // Without the server's list only the browser's locale data counts.
+  h.JE.pluginConfig = {};
+  assert.equal(write('pr'), '');
+  assert.equal(write('en-AU'), 'en-AU');
+});

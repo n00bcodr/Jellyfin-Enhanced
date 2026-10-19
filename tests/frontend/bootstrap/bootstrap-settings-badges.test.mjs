@@ -28,6 +28,9 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
     apiClient: { ajax: async request => { if (request.type === 'POST') writes.push(request); return []; } }
   });
   tt.after(() => h.close());
+  // The language rule the store's mirror and the language panel write by (loaded before the settings store, as in
+  // production).
+  h.load('enhanced/translations.js');
   h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
@@ -455,6 +458,22 @@ async function languagePanel(t, initial = 'en', target = 'fr') {
   assert.equal(h.window.localStorage.getItem('user-a-language'), initial);
   return { ...h, held, transition, timers };
 }
+// Dashcrash §7 (integration rebuild): the language panel saves only a supported language tag; anything else is Auto.
+for (const [chosen, saved] of [['zz-ZZ', ''], ['fr', 'fr'], ['', '']]) test(`choosing ${JSON.stringify(chosen)} in the language panel saves ${JSON.stringify(saved)}`, async t => {
+  const h = panel(t, { config: { ...badges, SupportedLanguages: ['en', 'fr'] }, settings: { displayLanguage: 'en' } });
+  h.window.fetch = async () => ({ ok: false });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr', 'zz-ZZ'] : [];
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+  await tick();
+  const select = h.document.getElementById('displayLanguageSelect');
+  for (const code of ['', 'zz-ZZ', 'fr']) if (![...select.options].some(o => o.value === code)) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
+  h.window.ApiClient.ajax = async request => { if (request.type === 'POST') h.writes.push(request); return []; };
+  await h.choose('displayLanguageSelect', chosen);
+  assert.equal(select.value, chosen);
+  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, saved);
+});
+
 function expectReload(h, expected) {
   const before = h.errors.length;
   h.timers.filter(timer => timer.ms === 1500).forEach(timer => timer.callback());

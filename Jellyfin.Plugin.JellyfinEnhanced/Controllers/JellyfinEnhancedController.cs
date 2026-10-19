@@ -3980,6 +3980,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleTextEffect,
                 config.DisableCustomSubtitleStyles,
                 config.DefaultLanguage,
+                // The languages JE ships: the client writes only a supported language into Jellyfin's shared key.
+                SupportedLanguages = LanguageTags.Bundled,
                 // Overlay positions
                 config.QualityTagsPosition,
                 config.GenreTagsPosition,
@@ -5071,14 +5073,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [ResponseCache(Duration = 86400)]
         public ActionResult GetAvailableLocales()
         {
-            var prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
-            var suffix = ".json";
-            var locales = Assembly.GetExecutingAssembly()
-                .GetManifestResourceNames()
-                .Where(n => n.StartsWith(prefix, StringComparison.Ordinal) && n.EndsWith(suffix, StringComparison.Ordinal))
-                .Select(n => n.Substring(prefix.Length, n.Length - prefix.Length - suffix.Length))
+            var locales = LanguageTags.Bundled
                 .Where(code => code != "en") // Exclude base English (en-GB and en-US are the usable variants)
-                .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             return Ok(locales);

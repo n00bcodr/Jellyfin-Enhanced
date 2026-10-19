@@ -347,6 +347,8 @@ Choose a starting language for JE's interface. Users can save a personal choice 
 |---|---|---|
 | **Display Language** | **Auto** (empty before the admin default supplies a starting value) | Overrides the admin default with a saved personal selection. |
 
+JE only saves, and only writes into the browser's shared Jellyfin language setting, a language it supports: one it ships (or its base language, so `en-AU` uses English) or one the browser knows. Anything else, such as a stray `undefined` or `null`, a malformed code or an unknown language, is saved as **Auto**, and a malformed value already in the browser's language setting is removed so Jellyfin falls back to its own choice.
+
 ??? info "How it works"
 
     A saved personal selection, including an explicitly saved **Auto**, takes precedence over the admin default. Automatic resolution uses the browser's user language key, then Jellyfin's document language, with English as fallback. See [Internationalization](other-features.md#internationalization) for bundled languages and loading behavior.
