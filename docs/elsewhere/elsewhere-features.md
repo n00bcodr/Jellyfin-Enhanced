@@ -154,7 +154,7 @@ Admin settings in **Elsewhere**:
 | **Show TMDB Reviews** | Off | Displays TMDB reviews for movies and series. |
 | **Expand reviews by default** | Off | Sets the starting expansion preference, which you can override by opening or closing the section. |
 
-TMDB cards have blue borders and show the author, review date, and supplied rating. Text over 350 characters starts as a preview. Opening or closing the section saves your preference for future pages; opening a writing form also opens the section. There is no separate expansion toggle in the personal Enhanced panel.
+TMDB cards have blue borders and show the author, review date, supplied rating, and a TMDB logo that links to the original review. Text over 350 characters starts as a preview. Opening or closing the section saves your preference for future pages; opening a writing form also opens the section. There is no separate expansion toggle in the personal Enhanced panel.
 
 ![TMDB review cards with Read More and Read Less controls](../images/elsewhere/tmdb-reviews.webp)
 *With local reviews disabled, the panel has no **Write a Review** button.*
@@ -174,6 +174,36 @@ TMDB cards have blue borders and show the author, review date, and supplied rati
 ??? note "Spoiler Guard defaults and overrides"
 
     **Enable Spoiler Guard** is off by default; **Hide reviews on Spoiler Guard series** is on by default. The personal **Reviews** override inherits the admin policy until changed. Turning it off allows reviews after Spoiler Guard state loads successfully. If state loading fails, reviews are hidden before that override is checked.
+
+## AniList Reviews
+
+Read the top AniList user reviews for anime on movie and series detail pages. The cards appear in the same **Reviews ({count})** section, after any TMDB reviews.
+
+### How to use
+
+1. Make sure AniList is a metadata provider for your anime library (for example with the Jellyfin AniList plugin), so each item has an AniList ID.
+2. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere** tab, turn on **Show AniList Reviews**, and click **Save Settings**.
+3. Reload the client, open an anime movie or series that has an AniList ID, and expand **Reviews ({count})**.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Show AniList Reviews** | Off | Displays the top AniList user reviews for movies and series that have an AniList ID. |
+
+AniList cards have a lighter blue border and show the author, review date, the reviewer's score out of ten, the AniList logo and a link to the original review. The review summary appears in bold above the text. Text over 350 characters starts as a preview with **Read More** and **Read Less**.
+
+![AniList review cards with scores, the AniList logo and Read More controls](../images/elsewhere/anilist-reviews.webp)
+
+!!! note "Requires AniList as a metadata provider"
+
+    Items are matched by their AniList ID, so this only works for items that have one. Items without an AniList ID show no AniList cards. No API key is needed.
+
+??? info "How AniList reviews load"
+
+    Jellyfin Enhanced retrieves reviews through your Jellyfin server from AniList's public API, so your browser does not call AniList directly. The server keeps results in memory for 12 hours (2 hours when an anime has no reviews) to stay well inside AniList's rate limit.
+
+    The panel shows up to ten reviews, ordered by how many AniList users found them helpful. Spoiler sections of a review are replaced with "[spoiler hidden]", and embedded images and videos are removed. Seasons and episodes support local reviews only. **Reviews ({count})** includes the AniList cards.
+
+    Spoiler Guard hides AniList reviews on guarded series the same way it hides TMDB and local reviews.
 
 ## Release Dates
 

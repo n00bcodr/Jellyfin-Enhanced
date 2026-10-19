@@ -69,6 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // endpoint (no API key), cached to disk indefinitely for hits / with a TTL
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
+            serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<MdblistService>();
             serviceCollection.AddSingleton<DoesTheDogDieService>();
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and

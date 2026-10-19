@@ -5,7 +5,8 @@
     JE.initializeReviewsScript = function () {
         const tmdbReviewsEnabled = JE.pluginConfig.ShowReviews && JE.pluginConfig.TmdbEnabled;
         const userReviewsEnabled = JE.pluginConfig.ShowUserReviews;
-        if (!tmdbReviewsEnabled && !userReviewsEnabled) {
+        const anilistReviewsEnabled = JE.pluginConfig.ShowAnilistReviews;
+        if (!tmdbReviewsEnabled && !userReviewsEnabled && !anilistReviewsEnabled) {
             console.log('🪼 Jellyfin Enhanced: Reviews feature disabled.');
             return;
         }
@@ -94,6 +95,40 @@
                     console.error(`${logPrefix} Failed to fetch reviews.`, error);
                     return null;
                 });
+        }
+
+        // Needs the AniList id that the AniList metadata provider sets. Maps reviews to the TMDB card shape.
+        function fetchAnilistReviews(item) {
+            const ids = item?.ProviderIds || {};
+            const anilistId = parseInt(ids.AniList || ids.Anilist, 10);
+            if (!anilistId) return Promise.resolve(null);
+
+            const query = `anilistId=${anilistId}`;
+            return JE.core.api.fetch(`${ApiClient.getUrl('/JellyfinEnhanced/anilist/reviews')}?${query}`, { cacheKey: `anilist:${query}` })
+                // Jellyfin serializes PascalCase
+                .then(data => (data?.Reviews || []).map(r => ({
+                    source: 'anilist',
+                    author: r.Author || 'Anonymous',
+                    created_at: r.CreatedAt,
+                    content: r.Summary ? `**${r.Summary}**
+
+${r.Content}` : r.Content,
+                    author_details: { rating: r.Score ? Number((r.Score / 10).toFixed(1)) : null },
+                    url: r.Url,
+                })))
+                .catch(error => {
+                    console.error(`${logPrefix} Failed to fetch AniList reviews.`, error);
+                    return null;
+                });
+        }
+
+        async function fetchExternalReviews(item, tmdbKey, mediaType) {
+            if (mediaType !== 'Movie' && mediaType !== 'Series') return null;
+            const [tmdb, anilist] = await Promise.all([
+                tmdbReviewsEnabled ? fetchReviews(tmdbKey.split(':')[0], mediaType) : null,
+                anilistReviewsEnabled ? fetchAnilistReviews(item) : null,
+            ]);
+            return tmdb || anilist ? [...(tmdb || []), ...(anilist || [])] : null;
         }
 
         /**
@@ -373,6 +408,10 @@
             const REVIEW_PREVIEW_LENGTH = 350;
             const reviewCard = document.createElement('div');
             reviewCard.className = 'tmdb-review-card';
+            if (review.source === 'anilist') {
+                reviewCard.classList.add('je-anilist-review-card');
+                reviewCard.dataset.fullContent = review.content || '';
+            }
 
             const content = review.content || 'No content available';
             const isLongReview = content.length > REVIEW_PREVIEW_LENGTH;
@@ -397,6 +436,23 @@
                     <p class="tmdb-review-text"></p>
                 </div>
             `;
+
+            // Source tag with logo; only links to the original review on the expected host
+            const isAnilist = review.source === 'anilist';
+            const sourceUrl = isAnilist ? /^https:\/\/anilist\.co\//.test(review.url || '') && review.url
+                : /^https:\/\/www\.themoviedb\.org\//.test(review.url || '') && review.url;
+            const tag = sourceUrl
+                ? JE.helpers.createExternalLink(sourceUrl, { className: 'je-review-source', resetStyle: true })
+                : Object.assign(document.createElement('span'), { className: 'je-review-source' });
+            const logo = document.createElement('img');
+            logo.src = JE.cdn.url('mdblist-logos', isAnilist ? 'anilist.png' : 'tmdb.png');
+            logo.alt = '';
+            logo.className = 'je-review-source-logo';
+            logo.loading = 'lazy';
+            tag.append(logo, isAnilist ? 'AniList' : 'TMDB');
+            const dateEl = reviewCard.querySelector('.tmdb-review-date');
+            if (reviewDate) dateEl.append(Object.assign(document.createElement('span'), { textContent: '·' }));
+            dateEl.append(tag);
 
             const textElement = reviewCard.querySelector('.tmdb-review-text');
             textElement.innerHTML = parseMarkdown(previewContent) +
@@ -799,8 +855,8 @@
                     if (e.target.classList.contains('tmdb-review-toggle')) {
                         const textElement = e.target.parentElement;
                         const card = textElement.closest('.tmdb-review-card');
-                        // Skip user review cards (they use dataset.fullContent)
-                        if (card.classList.contains('je-user-review-card')) {
+                        // Skip user and AniList review cards (they use dataset.fullContent)
+                        if (card.dataset.fullContent !== undefined) {
                             const full = card.dataset.fullContent || '';
                             if (textElement.classList.toggle('expanded')) {
                                 textElement.innerHTML = parseMarkdown(full) + `<span class="tmdb-review-toggle">${JE.t('reviews_read_less')}</span>`;
@@ -913,9 +969,7 @@
                 // Fetch the current user fresh alongside the review data so
                 // admin status reflects the actual live session.
                 const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                    (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
-                        ? fetchReviews(tmdbKey.split(':')[0], mediaType)
-                        : Promise.resolve(null),
+                    fetchExternalReviews(item, tmdbKey, mediaType),
                     userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
                     ApiClient.getCurrentUser().catch(() => null),
                 ]);
@@ -985,6 +1039,10 @@
                     display: flex;
                     flex-direction: column;
                 }
+                .je-anilist-review-card { border-left-color: rgb(61, 180, 242); }
+                .je-review-source { color: rgb(1, 180, 228); display: inline-flex; align-items: center; gap: 0.3em; }
+                .je-anilist-review-card .je-review-source { color: rgb(61, 180, 242); }
+                .je-review-source-logo { width: 1.1em; height: 1.1em; border-radius: 3px; }
                 .je-user-review-card {
                     border-left-color: rgb(94, 213, 95);
                     background: rgba(10, 26, 10, 0.52);
@@ -994,7 +1052,7 @@
                 .je-user-review-header { align-items: center; gap: 0.75em; }
                 .tmdb-review-author-info { display: flex; flex-direction: column; gap: 0.3em; flex: 1; }
                 .tmdb-review-author { color: #fff; font-size: 1.1em; font-weight: 600; }
-                .tmdb-review-date { color: #aaa; font-size: 0.9em; }
+                .tmdb-review-date { color: #aaa; font-size: 0.9em; display: flex; align-items: center; gap: 0.4em; }
                 .tmdb-review-rating { display: inline-flex; align-items: center; color: #ffd700; background: rgba(255, 215, 0, 0.1); padding: 0.2em 0.5em; border-radius: 4px; gap: 0.2em;}
                 .je-user-review-rating {
                     white-space: nowrap;
@@ -1201,10 +1259,8 @@
                     if (tmdbKey) {
                         // See refreshReviews for why currentUser is resolved fresh here.
                         const [tmdbReviews, userReviews, currentUser] = await Promise.all([
-                            // TMDB reviews only available for top-level movie/tv, not seasons/episodes
-                            (tmdbReviewsEnabled && (mediaType === 'Movie' || mediaType === 'Series'))
-                                ? fetchReviews(tmdbKey.split(':')[0], mediaType)
-                                : Promise.resolve(null),
+                            // TMDB and AniList reviews are movie/series only
+                            fetchExternalReviews(item, tmdbKey, mediaType),
                             userReviewsEnabled ? fetchUserReviews(tmdbKey, apiMediaType) : Promise.resolve([]),
                             ApiClient.getCurrentUser().catch(() => null),
                         ]);
@@ -1221,7 +1277,7 @@
         // Use Emby.Page.onViewShow hook for reliable page navigation detection
         const unregister = JE.helpers.onViewPage(async (view, element, hash, itemPromise) => {
             // Check if feature is still enabled
-            if (!JE?.pluginConfig?.ShowReviews && !JE?.pluginConfig?.ShowUserReviews) {
+            if (!JE?.pluginConfig?.ShowReviews && !JE?.pluginConfig?.ShowUserReviews && !JE?.pluginConfig?.ShowAnilistReviews) {
                 unregister();
                 return;
             }

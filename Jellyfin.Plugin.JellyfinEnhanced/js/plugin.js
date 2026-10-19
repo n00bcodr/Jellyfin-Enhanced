@@ -1358,7 +1358,7 @@
             if (typeof JE.initializeArrTagLinksScript === 'function' && JE.pluginConfig?.ArrTagsShowAsLinks) JE.initializeArrTagLinksScript();
             if (typeof JE.initializeSeerrDetailLinkScript === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowDetailPageLink) JE.initializeSeerrDetailLinkScript();
             if (typeof JE.initializeLetterboxdLinksScript === 'function' && JE.pluginConfig?.LetterboxdEnabled) JE.initializeLetterboxdLinksScript();
-            if (typeof JE.initializeReviewsScript === 'function' && (JE.pluginConfig?.ShowReviews || JE.pluginConfig?.ShowUserReviews)) JE.initializeReviewsScript();
+            if (typeof JE.initializeReviewsScript === 'function' && (JE.pluginConfig?.ShowReviews || JE.pluginConfig?.ShowUserReviews || JE.pluginConfig?.ShowAnilistReviews)) JE.initializeReviewsScript();
             if (typeof JE.initializeAwardsScript === 'function' && JE.pluginConfig?.ShowAwards) JE.initializeAwardsScript();
             if (typeof JE.initializeDoesTheDogDieScript === 'function' && JE.pluginConfig?.DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
             if (typeof JE.initializeMdblistRatingsScript === 'function' && JE.pluginConfig?.MdblistRatingsEnabled && JE.pluginConfig?.MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();

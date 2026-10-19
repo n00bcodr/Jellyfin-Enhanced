@@ -315,6 +315,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnilistReviewsService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoMovieRequestMonitor.cs",
       "category": "Services"
     },
@@ -2142,6 +2146,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/anilist/reviews",
+      "method": "GetAnilistReviews",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/awards/{mediaType}/{tmdbId}",
       "method": "GetAwards",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
@@ -3492,6 +3505,14 @@
     {
       "class": "PluginConfiguration",
       "name": "ShowUserReviews",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ShowAnilistReviews",
       "type": "bool",
       "initializer": null,
       "constructor_assignment": "false",
@@ -7754,9 +7775,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 356,
-    "routes": 177,
-    "configuration_properties": 529,
+    "files": 357,
+    "routes": 178,
+    "configuration_properties": 530,
     "storage_references": 69,
     "scheduled_tasks": 13,
     "locales": 33

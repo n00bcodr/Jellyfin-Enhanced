@@ -2731,6 +2731,16 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="sectionTitle">AniList Reviews</legend>
+                        <div class="configSection">
+                            <div class="checkboxContainer je-main-feature"><label><input id="showAnilistReviews" is="emby-checkbox" type="checkbox"/><span>Show AniList Reviews</span></label></div>
+                            <div class="je-setting-description" data-desc-for="showAnilistReviews">
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Shows the top AniList user reviews for anime in the reviews section.<br>Will only work if AniList is a metadata provider, since items are matched by their AniList ID.<br>No API key needed.<br>Spoiler sections of reviews are hidden.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="sectionTitle">Release Dates</legend>
                         <div class="configSection">
                             <div class="checkboxContainer je-main-feature"><label><input id="showReleaseDate" is="emby-checkbox" type="checkbox"/><span>Show Release/Air Date</span></label></div>
@@ -6575,6 +6585,7 @@
                 document.querySelector('#mdblistRatingsShowPercentSymbol').checked = !!config.MdblistRatingsShowPercentSymbol;
                 if (config.MdblistApiKey && typeof checkMdblistStatus === 'function') checkMdblistStatus();
                 document.querySelector('#showUserReviews').checked = !!config.ShowUserReviews;
+                document.querySelector('#showAnilistReviews').checked = !!config.ShowAnilistReviews;
                 document.querySelector('#reviewsExpandedByDefault').checked = config.ReviewsExpandedByDefault;
                 document.querySelector('#showReleaseDate').checked = !!config.ShowReleaseDates;
                 document.querySelector('#hideReviewsFromHiddenUsers').checked = config.HideReviewsFromHiddenUsers !== false;
@@ -7149,6 +7160,7 @@
             config.MdblistRatingsSources = (typeof computeMdblistRatingsSources === 'function') ? computeMdblistRatingsSources() : '';
             config.MdblistRatingsShowPercentSymbol = document.querySelector('#mdblistRatingsShowPercentSymbol').checked;
             config.ShowUserReviews = document.querySelector('#showUserReviews').checked;
+            config.ShowAnilistReviews = document.querySelector('#showAnilistReviews').checked;
             config.ReviewsExpandedByDefault = document.querySelector('#reviewsExpandedByDefault').checked;
             config.ShowReleaseDates = document.querySelector('#showReleaseDate').checked;
             config.HideReviewsFromHiddenUsers = document.querySelector('#hideReviewsFromHiddenUsers').checked;

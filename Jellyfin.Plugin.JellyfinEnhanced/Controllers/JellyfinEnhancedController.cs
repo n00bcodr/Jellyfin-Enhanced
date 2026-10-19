@@ -67,6 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.SpoilerUserResolver _spoilerResolver;
         private readonly Services.SpoilerTagDataStripper _spoilerTagDataStripper;
         private readonly Services.WikidataAwardsService _wikidataAwardsService;
+        private readonly Services.AnilistReviewsService _anilistReviewsService;
         private readonly Services.MdblistService _mdblistService;
         private readonly Services.DoesTheDogDieService _doesTheDogDieService;
         private readonly Services.WhatsNewService _whatsNewService;
@@ -203,6 +204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.SpoilerUserResolver spoilerResolver,
             Services.SpoilerTagDataStripper spoilerTagDataStripper,
             Services.WikidataAwardsService wikidataAwardsService,
+            Services.AnilistReviewsService anilistReviewsService,
             Services.MdblistService mdblistService,
             Services.DoesTheDogDieService doesTheDogDieService,
             Services.SeerrParentalFilter parentalFilter,
@@ -234,6 +236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             _spoilerResolver = spoilerResolver;
             _spoilerTagDataStripper = spoilerTagDataStripper;
             _wikidataAwardsService = wikidataAwardsService;
+            _anilistReviewsService = anilistReviewsService;
             _mdblistService = mdblistService;
             _doesTheDogDieService = doesTheDogDieService;
             _parentalFilter = parentalFilter;
@@ -3654,6 +3657,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
+                config.ShowAnilistReviews,
                 DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
@@ -4487,6 +4491,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return Ok(result);
+        }
+
+        /// <summary>Top AniList reviews for an anime, by AniList id.</summary>
+        [HttpGet("anilist/reviews")]
+        [Authorize]
+        public async Task<IActionResult> GetAnilistReviews([FromQuery] int anilistId, CancellationToken cancellationToken)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !config.ShowAnilistReviews)
+            {
+                return StatusCode(503, "AniList reviews are not enabled.");
+            }
+
+            if (anilistId <= 0)
+            {
+                return BadRequest("anilistId must be a positive integer.");
+            }
+
+            try
+            {
+                var result = await _anilistReviewsService.GetReviewsAsync(anilistId, cancellationToken).ConfigureAwait(false);
+                SetExternalDataCacheHeaders();
+                return Ok(result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Error($"Failed to fetch AniList reviews. Error: {ex.Message}");
+                return StatusCode(502, "Failed to fetch AniList reviews.");
+            }
         }
 
         [HttpGet("awards/{mediaType}/{tmdbId}")]

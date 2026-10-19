@@ -76,6 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowAudioLanguages = true;
             ShowReviews = false;
             ShowUserReviews = false;
+            ShowAnilistReviews = false;
             ReviewsExpandedByDefault = false;
             HideReviewsFromHiddenUsers = true;
             HideReviewsFromDisabledUsers = true;
@@ -542,6 +543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowAudioLanguages { get; set; }
         public bool ShowReviews { get; set; }
         public bool ShowUserReviews { get; set; }
+        public bool ShowAnilistReviews { get; set; }
         public bool ReviewsExpandedByDefault { get; set; }
         public bool HideReviewsFromHiddenUsers { get; set; } = true;
         public bool HideReviewsFromDisabledUsers { get; set; } = true;

@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
 import {createHarness} from '../helpers/harness.mjs';
 
-async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}}}={}) {
+async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],anilist={Reviews:[]},admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}}}={}) {
   let hook;const calls=[];
   const h=createHarness({html:'<div id="itemDetailPage"><div class="mediaInfoItems"></div><div class="tagline"></div></div>',url:'http://jellyfin.test/web/index.html#!/details?id=item',apiClient:{getItem:async(_user,id)=>id==='series'?parent:item,getCurrentUser:async()=>({Id:'user-a',Policy:{IsAdministrator:admin}})},JE:{
     pluginConfig:{ShowReviews:true,TmdbEnabled:true,ShowUserReviews:true,...config},spoilerBlur,
     escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     t:key=>key,icon:()=>'<span>star</span>',IconName:{STAR:'star'},
-    helpers:{onViewPage:fn=>{hook=fn;return ()=>{};}},
-    core:{api:{fetch:async url=>{calls.push(url);return {results:tmdb};},plugin:async url=>{calls.push(url);return {reviews};}}}
+    cdn:{url:(source,file)=>`/cdn/${source}/${file}`},
+    helpers:{onViewPage:fn=>{hook=fn;return ()=>{};},createExternalLink:(href,{className})=>Object.assign(h.document.createElement('a'),{href,className})},
+    core:{api:{fetch:async url=>{calls.push(url);return url.includes('/anilist/reviews')?anilist:{results:tmdb};},plugin:async url=>{calls.push(url);return {reviews};}}}
   }});
   t.after(()=>h.close());
   // Advance the page-visibility delay without sleeping; promises still resolve asynchronously.
@@ -56,6 +57,24 @@ test('review cards escape user content and regular viewers cannot moderate other
   assert.equal(h.document.querySelector('.je-review-admin-delete-btn'),null);
   assert.equal(h.document.querySelector('.je-review-edit-btn'),null);assert.equal(h.document.querySelector('.je-review-delete-btn'),null);
   assert.match(h.document.querySelector('.je-avg-user-rating-chip').textContent,/8/);
+});
+test('AniList reviews of an anime with an AniList id render as cards with score, logo and link beside TMDB ones',async t=>{
+  const Review={Author:'Kai',Summary:'Solid',Content:'Body text',Score:85,CreatedAt:'2021-04-17T13:07:24Z',Url:'https://anilist.co/review/1'};
+  const h=await setup(t,{item:{Id:'item',Type:'Series',ProviderIds:{Tmdb:'7',AniList:'113415'}},config:{ShowAnilistReviews:true},anilist:{SiteUrl:'x',Reviews:[Review,{...Review,Author:'Evil',Url:'https://evil.test/x'}]},tmdb:[{author:'Tm',content:'Hello',url:'https://www.themoviedb.org/review/9'}]});
+  assert.ok(h.calls.some(url=>url.endsWith('/anilist/reviews?anilistId=113415')));
+  const cards=[...h.document.querySelectorAll('.je-anilist-review-card')];
+  assert.equal(cards.length,2);assert.equal(h.document.querySelectorAll('.tmdb-review-card').length,3);
+  assert.match(cards[0].textContent,/Kai/);assert.match(cards[0].textContent,/8\.5/);
+  assert.equal(cards[0].querySelector('a.je-review-source').href,'https://anilist.co/review/1');
+  assert.equal(cards[0].querySelector('.je-review-source-logo').getAttribute('src'),'/cdn/mdblist-logos/anilist.png');
+  assert.equal(cards[1].querySelector('a'),null);
+  const tmdb=[...h.document.querySelectorAll('.tmdb-review-card:not(.je-anilist-review-card)')].find(card=>card.textContent.includes('Tm'));
+  assert.equal(tmdb.querySelector('.je-review-source-logo').getAttribute('src'),'/cdn/mdblist-logos/tmdb.png');
+  assert.equal(tmdb.querySelector('a.je-review-source').href,'https://www.themoviedb.org/review/9');
+});
+test('AniList reviews are not requested without an AniList id',async t=>{
+  const h=await setup(t,{config:{ShowAnilistReviews:true}});
+  assert.ok(!h.calls.some(url=>url.includes('/anilist/reviews')));
 });
 test('regular viewers get edit and delete controls on their own review only',async t=>{
   const h=await setup(t,{reviews:[{userId:'other',userName:'Other',content:'Theirs',rating:3},{userId:'user-a',userName:'Me',content:'Mine',rating:4}]});

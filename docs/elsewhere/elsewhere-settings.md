@@ -253,6 +253,27 @@ Opening or closing **Reviews ({count})** saves your expansion choice, including 
 
     Your expansion choice is stored in `settings.json`. TMDB requests use `en-US`, page 1, and show at most ten TMDB cards. The count includes all fetched TMDB reviews plus visible local reviews and can exceed the cards shown. Failed or empty lookups can leave **Reviews (0)**.
 
+## AniList Reviews
+
+Show the top AniList user reviews for anime on movie and series pages. See [AniList Reviews](elsewhere-features.md#anilist-reviews) for card behavior and limits.
+
+### How to use
+
+1. Make sure AniList is a metadata provider for your anime library, so items have an AniList ID.
+2. Turn on **Show AniList Reviews**, click **Save Settings**, and reload the client.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Show AniList Reviews** | Off | Enables AniList review cards for movies and series that have an AniList ID. |
+
+![AniList Reviews setting in the Elsewhere tab](../images/elsewhere/anilist-reviews-settings.webp)
+
+??? info "Dependencies and privacy"
+
+    This needs no API key and is independent of **Enable Elsewhere**, the TMDB key and **Show TMDB Reviews**. Items without an AniList ID show no AniList cards.
+
+    Your Jellyfin server sends the item's AniList ID to AniList's public GraphQL API (`graphql.anilist.co`) and caches the response in memory. No user information is sent.
+
 ## User Reviews
 
 Let viewers share text reviews and/or star ratings on your server. Local reviews need no TMDB API key or enabled provider panel.
