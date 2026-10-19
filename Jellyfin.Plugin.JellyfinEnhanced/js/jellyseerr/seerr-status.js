@@ -95,6 +95,21 @@
         return jellyfinId ? M.AVAILABLE : M.DELETED;
     };
 
+    /**
+     * The library copy a Seerr result stands for: the standard copy's Jellyfin id, else the 4K copy's when
+     * the 4K copy is (partly) available. A title only held in 4K is in the library like any other (its row
+     * card opens it, "exclude library items" leaves it out), as the native feeds already treat it.
+     *
+     * @param {Object|null|undefined} mediaInfo Seerr mediaInfo.
+     * @returns {string|null} Jellyfin item id, or null.
+     */
+    seerrStatus.libraryCopyId = function(mediaInfo) {
+        if (mediaInfo?.jellyfinMediaId) return mediaInfo.jellyfinMediaId;
+        const fourK = mediaInfo?.status4k;
+        return mediaInfo?.jellyfinMediaId4k && (fourK === M.AVAILABLE || fourK === M.PARTIALLY_AVAILABLE)
+            ? mediaInfo.jellyfinMediaId4k : null;
+    };
+
     // ── Display resolution ───────────────────────────────────────────────────
 
     /**

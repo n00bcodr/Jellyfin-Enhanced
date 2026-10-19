@@ -21,6 +21,11 @@
     let loadOk = false;
     let statePromise = null;
 
+    /** Tell current detail-page consumers to discard topic content after a policy change. */
+    function notifyPolicyChanged() {
+        window.dispatchEvent(new Event('je:spoiler-changed'));
+    }
+
     function request(path, options) {
         return JE.core.api.plugin(path, options);
     }
@@ -107,6 +112,7 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledSeries.add(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -117,6 +123,7 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledSeries.delete(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -128,6 +135,7 @@
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledMovies.add(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -138,6 +146,7 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledMovies.delete(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -149,6 +158,7 @@
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledCollections.add(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -159,6 +169,7 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledCollections.delete(normalized);
+                notifyPolicyChanged();
             });
     };
 
@@ -193,6 +204,7 @@
                     enabledMovies.add(jellyfinId);
                     if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
                 }
+                notifyPolicyChanged();
                 return response;
             });
     };
@@ -212,6 +224,7 @@
                 } else if (response?.removedFrom === 'movie' && response.jellyfinId) {
                     enabledMovies.delete(internal.normalizeId(response.jellyfinId));
                 }
+                notifyPolicyChanged();
                 return response;
             });
     };
@@ -224,6 +237,7 @@
             .then(function(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 userPrefs = Object.assign({}, payload);
+                notifyPolicyChanged();
                 return response?.prefs || userPrefs;
             })
             .catch(function(err) {

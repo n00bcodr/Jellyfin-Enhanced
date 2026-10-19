@@ -146,6 +146,7 @@ function buildTvActions(data, show4kOption = false) {
 function buildSingleTv4kButton(data) {
     const button = document.createElement('button');
     button.className = 'jellyseerr-request-button jellyseerr-button-request';
+    button.dataset.jeEdition = '4k';
     button.innerHTML = `${JE.jellyseerrUIIcons?.request || '<span class="material-icons">download</span>'}<span>${JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'}</span>`;
     button.addEventListener('click', async (e) => {
         e.preventDefault();

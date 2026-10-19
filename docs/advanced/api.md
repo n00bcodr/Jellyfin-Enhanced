@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 173 method/path entries in plugin version **12.12.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 258 method/path entries in plugin version **12.12.0.0**, including the experimental [Requests & downloads (new)](#requests-downloads-new) routes. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -659,7 +659,7 @@ Use these routes to check connectivity and user linkage, test connection setting
 | Method | Path | Access | Inputs → response |
 |---|---|---|---|
 | GET | `jellyseerr/status` | Authenticated | `{"active":true}`; reachability only, cached 30 seconds, including negative results. |
-| GET | `jellyseerr/user-status` | Authenticated/caller | `active`, `userFound`, `reason`; linked results also contain string `jellyseerrUserId` and boolean `canRequestAdvanced`; `no-store`. |
+| GET | `jellyseerr/user-status` | Authenticated/caller | `active`, `userFound`, `reason`; linked results also contain string `jellyseerrUserId` and booleans `canRequestAdvanced` and `canViewIssues` (whether `jellyseerr/issue` would answer the caller or refuse with `403`); `no-store`. |
 | GET | `jellyseerr/validate` | Administrator | Query `url`, header `X-Arr-ApiKey` → `{"ok":true}`. |
 | POST | `jellyseerr/trigger-recently-added-scan` | Administrator | Query `url`, header `X-Arr-ApiKey`, no body needed → `{"ok":true}`. |
 | GET | `jellyseerr/permission-audit` | Administrator | Array of `{jellyfinUsername,jellyfinUserId,linked,permissions,issues}`. |
@@ -673,7 +673,7 @@ Use these routes to check connectivity and user linkage, test connection setting
 User-status ordinarily returns `200` with reasons `disabled`, `no_user`, `blocked`, `unlinked`, `unreachable`, or `linked`; status does not establish linking. It can use cached user results. For example:
 
 ```json
-{"active":true,"userFound":true,"reason":"linked","jellyseerrUserId":"7","canRequestAdvanced":false}
+{"active":true,"userFound":true,"reason":"linked","jellyseerrUserId":"7","canRequestAdvanced":false,"canViewIssues":true}
 ```
 
 ```bash
@@ -727,7 +727,7 @@ All routes in this table require **Seerr-linked** access, except TV-by-studio's 
 | GET | `jellyseerr/movie/{tmdbId}/ratingscombined` | Upstream combined movie ratings. |
 | GET | `jellyseerr/tv/{tmdbId}/similar` | `page=1` → upstream title page. |
 | GET | `jellyseerr/tv/{tmdbId}/recommendations` | `page=1` → upstream title page. |
-| GET | `jellyseerr/tv/{tmdbId}/ratings` | Upstream TV ratings. |
+| GET | `jellyseerr/tv/{tmdbId}/ratings` | Upstream TV ratings; `null` for a series Rotten Tomatoes doesn't know. |
 | GET | `jellyseerr/discover/trending` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/movies` | `page=1`, discover filters → upstream discovery page. |
 | GET | `jellyseerr/discover/tv` | `page=1`, discover filters → upstream discovery page. |
@@ -1145,7 +1145,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `awards/{mediaType}/{tmdbId}` | Authenticated | `movie`, `tv`, or `person` → awards object. |
 | GET | `mdblist-ratings/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → MDBList object. |
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
-| GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
+| GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → caller-specific DoesTheDogDie object; a signed-in human user is required. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 
 ```bash
@@ -1169,7 +1169,7 @@ MDBList object: `{Found,Ratings,Confirmed,FetchedAtUnixMs,Ids}`. Each rating has
 
 A missing MDBList key can return such a successful placeholder; a fresh cached result can still be returned. Confirmed awards/ratings get 30-minute private browser caching; unconfirmed placeholders do not.
 
-DoesTheDogDie object: `{Found,ItemId,Name,Topics,Confirmed,FetchedAtUnixMs}`. Each topic has `{Id,Name,Yes,No}`, where `Yes` and `No` are vote counts; only topics with at least one vote are included. `ItemId` builds the title link `https://www.doesthedogdie.com/media/{ItemId}`. Cached found results last 30 days, confirmed misses 14 days, and failed lookups return `Confirmed:false` and are retried after an hour. Movie and show matches are separated by media type, because one TMDB ID can exist as both.
+DoesTheDogDie object: `{Guarded,PolicyRevision,Found,ItemId,Name,Topics,Confirmed,FetchedAtUnixMs}`. Replies are `private, no-store`. A protected library title (including collection protection) or pending-TMDB title returns `Guarded:true` with no topics or title details. To explicitly reveal warnings, repeat the request with `?reveal=true&policyRevision=<PolicyRevision>` from this viewer’s current reply. The revision is bound to the viewer, title and current protection policy; another viewer’s revision or an old revision cannot reveal topics. The raw upstream cache is shared, but its contents are checked against current viewer protection on every reply. Each topic has `{Id,Name,Yes,No}`, where `Yes` and `No` are vote counts; only topics with at least one vote are included. `ItemId` builds the title link `https://www.doesthedogdie.com/media/{ItemId}`. Cached found results last 30 days, confirmed misses 14 days, and failed lookups return `Confirmed:false` and are retried after an hour. Movie and show matches are separated by media type, because one TMDB ID can exist as both.
 
 `ddd/topics` returns `{Topics:[{Id,Name,Category,Group}],FetchedAtUnixMs}`, refreshed about monthly. If the catalogue cannot be fetched and none is cached it returns `502`. Both `ddd` routes return `503` when the feature or key is missing and `400` for an unsupported media type or non-digit ID. The upstream key never reaches the client.
 
@@ -1299,8 +1299,8 @@ All routes in this table require **Administrator** access. Lookup routes query e
 
 | Method | Path | Inputs → response |
 |---|---|---|
-| GET | `arr/validate/sonarr` | Query `url`, header `X-Arr-ApiKey` → `{ok:true}`. |
-| GET | `arr/validate/radarr` | Query `url`, header `X-Arr-ApiKey` → `{ok:true}`. |
+| GET | `arr/validate/sonarr` | Query `url`, header `X-Arr-ApiKey` → `{ok:true}`. Checks the app name; a masked key plus `instanceId` tests the saved key against that instance's saved URL. |
+| GET | `arr/validate/radarr` | Query `url`, header `X-Arr-ApiKey` → `{ok:true}`. Same checks as Sonarr. |
 | GET | `arr/identify-url` | Query `url` → `{reachable,service}`. |
 | GET | `arr/series-slug` | Positive query `tvdbId`; first enabled Sonarr → `{titleSlug}`. |
 | GET | `arr/series-slugs` | Positive query `tvdbId`; all enabled Sonarr → `{matches,errors}`. |
@@ -1335,20 +1335,20 @@ Batch inputs are comma-separated positive integer movie TMDB IDs and series TVDB
 
 ### Queue, history, and Requests data
 
-These reads require authentication. Queue/history are administrator-visible without Seerr linkage; non-admin filtering depends on server settings and a linked caller's requests.
+These reads require authentication and answer `403` with `code: "feature_disabled"` while their page is off. Queue/history are administrator-visible without Seerr linkage. Anyone else only gets rows of titles they may see; **Filter Downloads by User Requests** narrows that to a linked caller's requests.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Filter Downloads by User Requests** | `true` | `DownloadsFilterByUserRequests`; filters non-admin queue/history by caller's linked Seerr requests. |
+| **Filter Downloads by User Requests** | `true` | `DownloadsFilterByUserRequests`; filters non-admin queue/history by caller's linked Seerr requests, and scopes their `arr/requests` list to their own requests. |
 | **Show Download History Section** | `true` | `DownloadsShowHistory`; controls history availability. |
 | **Restrict Download History to Admins** | `false` | `DownloadsHistoryAdminOnly`; hides history from viewers. |
 | **Poll Interval (seconds)** | `30` | `DownloadsPollIntervalSeconds`; also cache TTL, clamped `5..300` seconds. |
 
 | Method | Path | Parameters → response |
 |---|---|---|
-| GET | `arr/queue` | No parameters → `{items,errors}`. |
-| GET | `arr/history` | `take=20` clamped `1..50`, `skip=0` minimum 0 → `{items,totalPages,visible}`. |
-| GET | `arr/requests` | `take=20` clamped `1..200`, `skip=0` minimum 0, optional `filter`, `userOnly=false` → `{requests,totalPages,totalResults,canApproveRequests}`. |
+| GET | `arr/queue` | Requests page on. No parameters → `{items,errors}`; every row for an administrator, otherwise rows of titles the caller may see. |
+| GET | `arr/history` | Requests page on. `take=20` clamped `1..50`, `skip=0` minimum 0 → `{items,totalPages,visible,errors}`; filtered like the queue before paging, and `errors` lists instances whose history can't be read. |
+| GET | `arr/requests` | Requests or Calendar page on. `take=20` clamped `1..200`, `skip=0` minimum 0, optional `filter`, `userOnly=false` → `{requests,totalPages,totalResults,canApproveRequests}`. |
 | POST | `arr/requests/{requestId}/approve` | Seerr request ID, no body → `{success:true}`. |
 | POST | `arr/requests/{requestId}/decline` | Seerr request ID, no body → `{success:true}`. |
 
@@ -1362,7 +1362,7 @@ Queue items contain `id`, `source`, `instanceName`, `title`, `subtitle`, nullabl
 
 History items contain `source`, `instanceName`, `title`, `subtitle`, `eventType`, `date`, `posterUrl`, `tmdbId`; grouped Sonarr packs additionally contain `episodeCount`, `importedCount`, `failedCount`. Event types include `imported`, `failed`, and grouped `partial`. The merged history is bounded to 200 entries before caller filtering/paging; `totalPages` covers this visible window, rather than all upstream history.
 
-Instance failures can yield partial/empty history without an errors array.
+Instance failures can yield partial/empty history; `errors` names each instance whose history can't be read.
 
 History disabled or admin-restricted returns successful empty results with `visible:false`. Unavailable non-admin linkage/request data can return successful empty queue/history with history `visible:true`.
 
@@ -1376,7 +1376,7 @@ Request records contain `id`, `type`, `title`, `year`, `posterUrl`, `tmdbId`, `t
 
 Raw request statuses are `1` Pending, `2` Approved, `3` Declined, `4` Failed, `5` Completed, separate from media availability.
 
-`filter` recognizes `pending`, `approved`, `available`, `processing`, `comingsoon`; other values use the upstream unfiltered list. Callers without `REQUEST_VIEW`, `MANAGE_REQUESTS`, or admin authority see only their own requests; `userOnly=true` also enforces this.
+`filter` recognizes `pending`, `approved`, `available`, `processing`, `comingsoon`; other values use the upstream unfiltered list. Callers without `REQUEST_VIEW`, `MANAGE_REQUESTS`, or admin authority see only their own requests; `userOnly=true` also enforces this, and so does **Filter Downloads by User Requests** for every non-admin.
 
 Processing/Coming Soon split a 500-record upstream processing window: future release/air-date items go to Coming Soon, others Processing, excluding orphaned rows from both.
 
@@ -1384,18 +1384,51 @@ Orphan detection considers old Approved/Processing requests and missing content 
 
 Approve/decline requires a linked caller with Jellyfin administrator authority, Seerr `ADMIN`, or `MANAGE_REQUESTS`. Missing setup returns `503`; missing caller identity `400`; unlinked `404`; insufficient permission `403`. It uses the first configured URL and passes upstream failure statuses through. An administrator API key lacking a linked caller cannot bypass linkage.
 
+??? info "Snapshots and per-instance errors"
+    The Sonarr/Radarr data of the routes above comes from in-memory snapshots, refreshed in the background
+    while a page uses them (queue and history at the Requests page's poll interval, calendar and library
+    every 15 minutes), so a request makes no call to Sonarr or Radarr. A calendar range before last month
+    or more than about three months ahead is read in the background by whole months (two at a time per
+    instance at most; the request waits up to 15 seconds) and kept for 15 minutes; when the instance can't
+    be read, the error is reported and that month is tried again 30 seconds later. The link routes report an
+    instance's latest read error even while they still answer from the list read before. Each per-instance entry in
+    `errors` has `instanceName`, `source` and a short `reason`; admins also get `detail`. A route whose page
+    is switched off answers `403` with `code: "feature_disabled"`.
+
+??? info "Who sees which downloads and calendar rows"
+    Administrators (and Jellyfin API keys) get every row.
+    Anyone else gets a queue or history row only for a title they may see: one Jellyfin has, when Jellyfin lets
+    them open it (library access, parental rating and tags; down to single episodes of a season pack, whose
+    counts shrink with them); one Jellyfin doesn't have yet, when they can open a library its instance is
+    linked to (an instance without linked libraries counts as open to all) or, for users with a parental
+    limit, only when they asked for it in Seerr (the integration's request list, or without it the user's
+    Seerr requests, read only when some row waits on them, reused for about 30 seconds by both routes and
+    never waited on for more than about 2 seconds; when Seerr can't be read, an older answer, up to 10 minutes
+    old, is served meanwhile; answers are dropped when the Seerr settings are saved). A row without a
+    TMDB (movie) or TVDB (series) id is never shown to them. "Filter Downloads by User Requests" narrows this
+    further to titles they requested in Seerr. On the
+    Calendar, with "filter by library access" on, an event Jellyfin has is Jellyfin's own check (the
+    episode itself too, when Jellyfin has it in that copy, found by its ids or by its season and episode
+    number): every copy counts when a title is in more than one library, and the event's `itemId` /
+    `itemEpisodeId` point at the caller's own copy; an upcoming title it doesn't have yet is shown when the caller
+    may open the library it lands in: the instance's linked libraries, else its folder through the
+    instance's path mappings (the longest one that applies) and the Jellyfin library whose folder holds it.
+    A folder no library holds, or, with no mapping for the folder, a root folder another instance also has
+    unmapped or root folders of an instance that can't be read yet, hides the event from everyone but
+    administrators (the System tab's path doctor flags such roots: `shared_root`, `roots_unknown`). Other callers without a known Jellyfin user get no events while this filter is on.
+
 ### Calendar
 
 Read upcoming events from configured sources, then use user-data to retrieve favorite and watched flags for event references.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Filter by Library Access** | `true` | `CalendarFilterByLibraryAccess`; excludes events with known inaccessible items/root folders. |
+| **Filter by Library Access** | `true` | `CalendarFilterByLibraryAccess`; excludes events the caller can't open, and upcoming titles whose destination library they can't open or that can't be told. |
 
 | Method | Path | Access | Request → response |
 |---|---|---|---|
-| GET | `arr/calendar` | Authenticated | Optional query `start`, `end` → `{events,errors}`. |
-| POST | `arr/calendar/user-data` | Existing caller | `{Events:[<event reference>]}` → `{results:[{id,isFavorite,isWatched}]}`. |
+| GET | `arr/calendar` | Authenticated; Calendar page on | Optional query `start`, `end` → `{events,errors}`. Each event's `id` is opaque and unique across instances and sources (the source, instance and Sonarr episode, Radarr movie and release type, or Shoko episode, joined by `|`). |
+| POST | `arr/calendar/user-data` | Existing caller; Calendar page on | `{Events:[<event reference>]}` → `{results:[{id,isFavorite,isWatched}]}`. Body ≤ 1 MiB and at most 2000 distinct item ids (`400 too_many_ids` before any lookup); flags only for items the caller can open; `403 user_required` for an API key. |
 
 GET defaults to today's UTC date through 90 days ahead. Parseable dates override each endpoint; invalid dates retain defaults, reversed ranges swap, ranges over 365 days cap at 365. Missing configuration returns `500`. Enabled Sonarr/Radarr and configured Shoko contribute events; per-source errors contain `instanceName`, `source`, `reason`.
 
@@ -1403,7 +1436,7 @@ Calendar events contain `id`, `source`, `type`, `title`, `subtitle`, `releaseDat
 
 Duplicate entries across instances are combined, preferring accessible/file-backed entries and recording other instance names.
 
-Internal root-folder access information is not serialized in calendar events. If item/root-folder access cannot be determined, an event can pass the access filter. Requested-only display preferences operate in the client.
+Internal root-folder access information is not serialized in calendar events. If an upcoming title's destination library cannot be determined, only administrators get the event. Requested-only display preferences operate in the client.
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
@@ -1419,6 +1452,253 @@ User-data references accept optional `Id`, `Type`, `Title`, nullable GUID `ItemI
 Only IDs/type are needed for flag reads. Use exact `Type:"Movie"`/`"Series"` for watched-state handling. `isFavorite` actually reads `Likes == true`; `isWatched` includes `Played` or positive resume ticks on a movie, or on the supplied episode for Series.
 
 This POST does not save preferences. Missing caller/account returns `401`; empty events return an empty array; lookup failures can leave partial results.
+
+## Requests & downloads (new)
+
+These routes back the experimental Requests & downloads integration. See [*arr features](../arr/arr-features.md#requests-downloads-new) for what each stage does and [*arr settings](../arr/arr-settings.md#requests-downloads-new) for its switches. A route whose switch is off answers `403` with `code: "feature_disabled"`.
+
+??? note "Callers, bodies, and caching"
+    (`acquire/*`, `arr/admin/*`,
+    `admin/backup/*`, `admin/secrets/*`). A server API key, a token whose user id is empty and a user
+    Jellyfin no longer knows, and disabled accounts, are not a person: per-user routes answer `403` with `code: "user_required"`
+    and store nothing; administrators' routes answer `403` (an API key's administrator role is not enough:
+    an administrator is a user with Jellyfin's administrator permission). Every route that takes a JSON body
+    caps it before reading it (16 KiB; 64 KiB for `acquire/notify/read`, 256 KiB for `acquire/changes`, and
+    1 MiB for `arr/calendar/user-data` and the arrs' webhook `arr/hook/{instanceId}`) and refuses a larger
+    one, declared or streamed, with `413 {"error":true,"code":"payload_too_large","limitBytes":…}`. The
+    backup uploads (`admin/backup/inspect`, `admin/backup/restore`) are multipart files of up to 512 MiB under
+    the server's own request limit; a larger upload is refused by the server itself, not yet with this
+    structured `413`.
+    Administrators' answers (`arr/admin*`) carry `Cache-Control: private, no-store`; user status and hub
+    answers keep `private, no-cache` with their `ETag`.
+
+### Instances, live updates, and webhooks
+
+Administrators use these routes to inspect and test instances and set up live updates. The webhook receiver is the only anonymous route.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `arr/admin/instances` | Admin, Requests & downloads (new): the instance registry; keys reported as set/hint only |
+| POST | `arr/admin/instances/{id}/test` | Admin, Requests & downloads (new): test a saved instance (app, version, feature gates, health) |
+| POST | `arr/admin/test` | Admin, Requests & downloads (new): test unsaved values |
+| GET | `arr/admin/audit` | Admin, Requests & downloads (new): recent audited arr actions |
+| GET | `arr/admin/state` | Admin: the in-memory Sonarr/Radarr snapshots behind the routes below (age, size, last refresh error per instance) and per-route counters of upstream calls made by requests themselves |
+| POST | `arr/admin/state/refresh?instanceId=&kind=` | Admin: ask for a refresh of one snapshot (`library`, `queue`, `history`, `calendar`, `system`, `episodes`; debounced two seconds) |
+| GET | `arr/admin/live` | Admin, Requests & downloads (new): live updates per instance (connection state, webhook traffic, a "silent for a day" warning) and the change feed's position |
+| GET | `arr/admin/instances/{id}/webhook` | Admin, Requests & downloads (new): Jellyfin Enhanced's webhook(s) in that arr's Connect list (address, events, whether the secret matches; never the secret) |
+| POST | `arr/admin/instances/{id}/webhook` | Admin, phase 1 on: set up or repair the webhook (body `{"consent":true,"jellyfinUrl":"http://jellyfin:8096","idempotencyKey":"…"}`; audited, idempotent) |
+| DELETE | `arr/admin/instances/{id}/webhook` | Admin, Requests & downloads (new): remove the webhook and forget its secret (body `{"consent":true}`; audited) |
+| POST | `arr/admin/instances/{id}/webhook/manual` | Admin, phase 1 on: copy-paste set-up (address, header name and the secret); audited |
+| POST | `arr/hook/{instanceId}` | Anonymous, phase 1 on: the arrs' webhook receiver. Needs the instance's secret in `X-JE-Hook-Secret`; body ≤ 1 MiB; only triggers re-reads; `204`, or `401`/`400`/`429` with no body, or `413` `payload_too_large` for a larger body |
+
+### Status and the change feed
+
+Pages read where titles have got to and long-poll the change feed for updates.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| POST | `acquire/changes` | Any signed-in user, phase 1 on: the change feed. Body `{"epoch","cursor","keys":["movie:tmdb:…","tv:tvdb:…[:s…[:e…]]","req:u:<own user id>","ntf:u:<own user id>","req:state","admin:ops"],"wait":25}` (`req:u:…` changes when the caller's own Seerr request list does, `ntf:u:…` when their notification inbox does; nobody else ever hears either. `req:state` changes for everyone when the request list is first read, can't be read or recovers. A poll that follows `req:state` counts as the Requests page being open: only that page follows it. `admin:ops` reaches administrators only, with phase 2 on: something the Requests page's admin tabs show may have changed); answers `{"epoch","cursor","keys","reset"}` as soon as a title the caller asked about (and may open) changes, or after `wait` seconds. The first call (no epoch) returns the current position. At most 500 keys (`400 too_many_keys` beyond; send no keys to hear about every title the caller may open). At most 4 waits per user (`429` beyond) |
+| GET | `acquire/status?ids=&keys=` | Any user, Requests & downloads + status on pages on: where each title has got to, for up to 100 Jellyfin item ids (items the caller can't open are left out) and up to 50 title keys (`movie:tmdb:603`, `tv:tvdb:78874`) |
+| GET | `acquire/status?keys=&detail=true` | Same, for exactly one title key, with a movie's journey (Seerr's more-info window; `400 detail_needs_one_key` otherwise) |
+| GET | `acquire/status/item/{itemId}` | Same, for one item's details page: the journey (movies, episodes), per-season state (series) or per-episode state (seasons). An empty `items` list when the caller can't see the item or it has no status (other item types, no provider id). Also answers the native details page id of a title that isn't in the library (by key; `openItemId` once a copy the caller can open is here) |
+| GET | `acquire/status/arrival?key=…[&itemId=][&seriesId=]` | Where a details page goes once its title arrives: for the page's scope key (movie, series, season or episode), the id it showed and the series item it belonged to, `{"itemId": …}`, the item of that scope the caller can open (the movie copy the page showed while they can open it; a series, season or episode in the series copy the page showed, never another copy such as the 4K one, the series in another library or another folder of a grouped series; an episode only with its file; a movie whose file Jellyfin now keeps as a version of a new item, that item), or `{}` (no `itemId`) when there is none. Jellyfin replaces a missing episode or season with a new item once its file is there. Never names an item the caller can't open. Answered `Cache-Control: private, no-store`. Until Jellyfin drops the missing item, `acquire/status/item/{itemId}` of it reads as the item Jellyfin added for it, with that item's id in `openItemId`; so does a movie or episode whose file Jellyfin now keeps as a version of another item. A movie or episode status also says in `versions` how many versions Jellyfin plays it from for the caller (a version whose own item they can't open, in a library they can't open or above their parental limit, isn't counted), and a movie's says `fourK: true` when a copy the caller can open (this one or another library's) already has a playable 4K version they can open |
+
+??? info "Status answers"
+    The `acquire/status` routes answer with a stage (`asked`, `approved`, `notOut`, `looking`, `downloading`,
+    `almostReady`, `ready`, `notHere`, `none`), a reason code with parameters (dates, percent, ETA) and, for
+    series and seasons, counts. Each status has a `key`; a title Jellyfin knows only by another id (an IMDb-only movie,
+    a series without a TVDB id) also gets `liveKey`, the `movie:tmdb:…`/`tv:tvdb:…` key `acquire/changes` announces it
+    under. Non-admins never get instance names, URLs, paths, download clients, release names or
+    the arr's own messages; admins also get an `admin` block with one entry per instance. Responses are
+    per user with a private `ETag` (`Cache-Control: private, no-cache`; `If-None-Match` answers `304`), are
+    served from the snapshots without calling Sonarr or Radarr, and answer `403` with `code: "feature_disabled"`
+    while the feature is off. Request facts (asked, OK'd, declined; "you" or "someone in your household") come from
+    Seerr's request list, which Jellyfin Enhanced reads in the background (every few minutes, every 30 seconds while
+    someone has the Requests page open, and a second after a request is made or answered through Jellyfin Enhanced);
+    no status route or `acquire/hub` calls Seerr. A user with a parental rating or tag limit gets statuses by key only
+    for titles Jellyfin lets them open or that they asked for themselves. With phase 2 on, a title Seerr OK'd that no
+    Sonarr/Radarr holds reads `approved_not_in_arr` (administrators after the grace period, with
+    `admin.approvedNotInArrSince`; everyone else after the "still looking" hours), and the `acquire/hub` admin block
+    carries `hub: true` (the admin tabs).
+
+### Requests page and Manage
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/hub` | Any signed-in user, phase 1 and the Requests page on: the caller's own Seerr requests with their status (of the part asked for: the requested seasons of a series, the 4K copy of a 4K-only request): `mine` (groups `needsOk`, `onTheWay`, `notOut`, `declined`), `soon` (a date in the next 60 days), `ready` (arrived in the last 14 days), plus `seerr` (`configured`, `loaded`, `unavailable`). Administrators also get `admin` (`downloads`/`calendar` tabs, the request list's last read and error). Private `ETag` |
+| GET | `arr/admin/manage?itemId=` or `?key=` | Admin, phase 1 and the Manage button on: the Manage drawer for a Jellyfin item or a title key (`movie:…`, `tv:…[:s…[:e…]]`): the admin status (of that season or episode for a season or episode key), every instance of the title's kind (in it or not, monitored, profile, path, its Jellyfin copy, queue rows, timeline of added/history events/Jellyfin Enhanced actions; with phase 2 on also `downloads`, the whole downloads in scope as on `arr/admin/hub/activity`, with their `actions`) and Seerr's requests with who asked. `403` for anyone else |
+| POST | `arr/admin/manage/search` | Admin, same switches: Search now on one instance (body `{"instanceId","key","idempotencyKey"}`; movie, series, season or episode search; audited; the answer has `status`, `message`, `readBack`) |
+| GET | `arr/admin/manage/add-options` | Administrator; `?instanceId=…&key=…` → the instance's profiles, root folders, tags and saved defaults from a current snapshot; with a key, the title and its seasons from one lookup on that instance. |
+| POST | `arr/admin/manage/add` | Administrator, Jellyfin Enhanced mode; body `instanceId`, `key`, optional `profileId`/`rootFolder`, `seasons` for a series, one `idempotencyKey` per sheet. The add is a request owned by the administrator and routed to that instance. A 4K instance needs the phase-3 4K switch for that kind of title. |
+
+### Notifications
+
+Signed-in users manage their own inbox, follows and delivery settings; administrators see delivery state and send tests.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/notify/inbox?before=&limit=` | Any signed-in user, phase 2 notifications on: the caller's own notifications, newest first (`limit` 1-50, `before` an id to page back), with `unread` and `more`. Each item has `id`, `kind` (`ready`, `episodes`, `declined`, `approval`, `instance_down`, `instance_up`, `low_disk`, `stuck_digest`, `remind`, `attention` — a Needs attention row with `params.code` `import_blocked` or `approved_not_in_arr` —, `test`), `key`, `itemId` (a Jellyfin item the caller can open), `createdAt`, `read`, `params` (title, year, poster, counts…) and `link` (a hash route: the item's page, else `#/requests`, or for administrators' alerts about the arrs `#/requests?tab=overview` (Needs attention, stuck digest) or `?tab=system` (outages, low disk)). Administrators' kinds are left out (items and `unread`) when the caller is no longer an administrator; a `ready` or `episodes` item whose Jellyfin item the caller can no longer open comes without `key`, `itemId` and the title, year and poster in `params` (its `link` is the Requests page) |
+| POST | `acquire/notify/read` | Same: mark the caller's own notifications read (`{"ids":[…]}` or `{"all":true}`) |
+| GET, PUT | `acquire/notify/prefs` | Same: the caller's notification settings (`toasts`, `ready`, `episodes`, `declined`, `autoFollowRequests`, `ntfy`, `email`, `hideTitles`, `quietHours`, `quietFrom`/`quietTo` `HH:mm`, `timeZone`, `utcOffsetMinutes`; administrators also `adminAlerts`) and the channels on offer (the ntfy server people subscribe to; never a token or password). PUT changes only the fields sent |
+| POST | `acquire/notify/ntfy/topic` | Same: set (`{"topic":"…"}`, 8-64 of `A-Z a-z 0-9 - _`), make up (`{"generate":true}`, 128 bits) or clear the caller's ntfy topic |
+| POST, DELETE | `acquire/notify/email` | Same: send a 6-digit code to an address (`{"address":"…"}`; once a minute, five a day; `409 email_not_set_up` without SMTP), or forget the address |
+| POST | `acquire/notify/email/verify` | Same: confirm the address with the code (`{"code":"123456"}`; five tries end the code, counted before the code is compared, so requests at once get no more) |
+| POST | `acquire/notify/test` | Same: send the caller a test notification (bell, and every channel they have on); once per 30 seconds (several at once send one; the rest get 429 `too_soon`) |
+| GET, PUT | `acquire/follows` | Same: the caller's follows, mutes and the titles followed because they asked for them; PUT `{"key":"movie:tmdb:…" or "tv:tvdb:…[:s…]","on":true}` follows (or stops following; stopping an own request's automatic follow mutes it). `403 not_allowed` for a title the caller may not read by key; at most 300 |
+| POST | `acquire/remind` | Same: "Remind {contact}" (`{"key","itemId"}`) about a title that needs attention right now; administrators get it as an admin event. At most once per user and title every 24 hours, the movie or series whichever episode or season it is sent from (`429 too_soon` with `nextAt`); `409 not_stuck` / `409 admin` |
+| GET | `arr/admin/notify` | Admin: channels (masked), database, deliveries (pending, sent and failed in 24 h, the latest problems) and every user's phone/e-mail state |
+| PUT | `arr/admin/notify/users/{userId}` | Admin: give a user an ntfy topic (`{"topic"}` or `{"generate":true}`); their phone alerts go on |
+| POST | `arr/admin/notify/test` | Admin: send one test straight through `ntfy` (to `topic`) or `email` (to `address`) with the saved settings; answers `{"ok","error"}` |
+
+### Admin tools (phase 2)
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `arr/admin/hub/overview` | Admin, phase 2 on: instance cards (live state, queue, health, disk per root folder), `needsAttention` (rows with `code`, `severity`, the app's `message`, `since`, `fixes` such as `open_in_arr`, `search_now`, `remove_search`, `retry_import`, `scan_now`, `open_system`, `open_seerr`, and `arrLink`, `downloadId` or `arrPath` for them), `next24h`, `downloading`, `waitingForOk`, `days` (grabs/imports for 14 days). `403` for anyone else (`code: "feature_disabled"` for admins with phase 2 off) |
+| GET | `arr/admin/hub/activity` | Admin, phase 2: downloads grouped per download id (a season pack is one; `scope`, `episodes`, `state`, `status`, `percent`, the app's `messages`, `problem`, `actions`) and the recent history |
+| GET | `arr/admin/hub/system` | Admin, phase 2: per instance version, health, disk space, root folders, scheduled tasks, live connection and webhook; Seerr's read state; the Jellyfin bridge (`targetedRefresh`, recent refreshes, `notInJellyfin`, `missingTitles`, `pathDoctor`) |
+| POST | `arr/admin/queue/confirm` | Admin, phase 2 (a non-administrator's call to this or the other phase-2 POST routes gets `403` and a `denied` audit line, at most one a minute per user and route): body `{"instanceId","downloadId"}`; what the download covers and a one-time `token` (two minutes, bound to this administrator, instance and download) for `remove_with_data`. `404` when it's no longer queued; `409 queue_changing` when a paged, partial or cut queue cannot be checked against the download's complete rows |
+| POST | `arr/admin/queue/action` | Admin, phase 2: body `{"instanceId","downloadId","action","blocklist","searchAgain","idempotencyKey","confirmationToken"}`; `action` is `remove` (keeps the client's data), `remove_with_data` (needs the token), `search` or `retry_import` (the app's `RefreshMonitoredDownloads`). Every row of the download is acted on; audited (refusals too); the answer has `status`, `message`, `readBack`, `auditId` |
+| POST | `arr/admin/hub/search` | Admin, phase 2: Search now by title key for a row that isn't queued (body as `arr/admin/manage/search`; a search refused before the app is called is audited too) |
+| POST | `arr/admin/bridge/scan` | Admin, phase 2: Scan now for an imported path as the app sees it (body `{"instanceId","path","idempotencyKey"}`): refreshes the nearest Jellyfin folder (then each new folder below it), or queues Jellyfin's scan of that one library when the path needs a TV library's root; paths outside every library, relative paths and paths with a `.` or `..` segment (either slash) are refused. Audited |
+
+### Requests and approvals (phase 3)
+
+Create, list, approve and send durable requests.
+
+All routes below require an authenticated Jellyfin person; API keys and deleted or disabled accounts cannot use them.
+Paths are relative to `/JellyfinEnhanced`. Responses include `outcome`, `reason`, `certainty` and safe `message` fields.
+New intent (including a free follow of queued intent) returns 201; a repeated ask or a scope confirmed upstream returns 200; malformed input returns 400, permission or policy refusal
+403, missing ids 404, conflicting idempotency or concurrent changes 409, hard limits 429, and unavailable storage 503.
+Bulk approval returns 207 when some rows fail, with a separate checked outcome for every item.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| POST | `acquire/requests` | `requests.create`; create explicit movie, seasons, episodes, future or next-season scope |
+| GET | `acquire/requests?view=mine` | Own requests filtered by current visibility |
+| GET | `acquire/requests?view=pending` | `requests.approve`; visible pending requests |
+| GET | `acquire/requests/quota` | Own allowance, use, estimate and next usable slot |
+| GET | `acquire/requests/me` | Any person (Watchers too); own role, whether they may ask or approve, 4K, the household contact word, and `pausedMovies` / `pausedSeries` when new titles of that kind are paused for storage (`{"reason": "low_disk"}`; administrators also get `instance`, `folder`, `free`, `freePercent`, `limitPercent`) |
+| GET | `acquire/requests/check?key=&variant=` | Any person; whether they may ask for one title (`standard` or `4k`) now: `{canRequest, blocked}`, `blocked` as in `pausedMovies` (or `instance_changed` / `invalid_instance` / `invalid_defaults`) |
+| GET | `acquire/requests/season/{itemId}` | A season item the caller can open; their request state per episode, the metadata of episodes with no file, and `blocked` (why they can't ask now, as in the check) |
+| POST | `acquire/requests/search` | `requests.create`; search again for what requests already sent, described below. |
+| POST | `acquire/requests/{id}/cancel` | Owner, or visible Admin; before the outgoing write |
+| POST | `acquire/requests/{id}/approve` | Approver; optional `input` edits scope/edition; instance/profile/folder edits require Admin |
+| POST | `acquire/requests/{id}/decline` | Approver; plain-text `reason`, at most 500 characters |
+| POST | `acquire/requests/bulk-approve` | Approver; at most 20 `ids`, each independently checked |
+| GET | `acquire/requests/collection/{itemId}` | Any signed-in person who can open the collection; its gaps, described below. |
+| POST | `acquire/requests/lab/{id}/hold` | Administrator, lab only (`ArrRequestLabEnabled`, off by default): persist a sending row without contacting any transport, as a crash checkpoint. |
+| DELETE | `acquire/requests/lab/{id}` | Administrator, lab only: delete rows carrying the CLI prefix; never calls a backend. |
+
+Create example:
+
+```json
+{
+  "clientRequestId": "a-new-client-generated-id",
+  "input": {
+    "key": "tv:tvdb:78874",
+    "scope": "seasons",
+    "variant": "standard",
+    "seasons": [1, 2],
+    "episodes": []
+  }
+}
+```
+
+A future or next-season scope confirms one explicit season number; episode scope uses objects such as
+`{"season":1,"episode":2}`. The canonical input is stored with an immutable fingerprint: reusing the client id with a
+different input returns `idempotency_conflict`. Approving with edits uses the same input shape inside the approval body.
+A matching ask from an Admin or Manager who may approve authorizes the existing pending scope after fresh requester
+checks. The original scope owner keeps the charge; the new asker follows for free. A Member allowed to request
+automatically can start their own authorized scope when the earlier ask is still awaiting approval. Once scope is queued,
+other visible, permitted pending wants covered by it become free followers; additional scope remains pending. Declining
+one pending want preserves other users' pending intents and holds their reservations until approval. Quota response fields
+use camelCase, including `used`, `remaining`, `nextSlotAt`, `usedGb` and `available`.
+Requests are serialized locally by title and edition; this lock cannot stop another upstream application writing.
+The outgoing worker rechecks identity, roles, visibility, edition, flags, authority and connection identity at send.
+A changed permission parks work for review. Restarted `sending` rows become `maybe_sent` and require read-back before
+any resend. A 4K request nothing can take any more (no usable 4K Radarr/Sonarr in Jellyfin Enhanced mode, no 4K server
+in Seerr as last read in Seerr mode) says so instead of turning stale: one not sent yet waits for an administrator
+(`no_4k_instance`, "Stuck · nothing can take the 4K copy now" on the approval card; a queued job is held at send with
+that reason), and one already sent keeps its state with that reason and is listed on the approval page as stuck. When a
+4K target is back each is released as it was (sent, queued, or waiting for an OK, which resumes a job held at send).
+A new 4K ask with no 4K target is refused up front, as the 4K capability needs one. List validators include user, role and policy revision, with private cache headers. Family responses contain
+no backend connection, folder, profile, credential or other person's identity.
+
+`acquire/requests/search` takes `{"key": "tv:tvdb:78874:s1:e4", "idempotencyKey": "…"}` (a movie key, or a series key, alone, with a season, or with a season and episode). It answers `{found}` (true, false, or null while unknown); outcome `skipped` with `not_requested` (nothing was sent for it: ask instead) or `not_searchable` (not missing for long enough) when there is nothing for it to search; 429 `searched_recently`, 502 `search_failed`, and the request API's own refusals (Watchers, parental limits).
+
+`acquire/requests/collection/{itemId}` answers `{outcome, reason, certainty, message, collection: {have, total, missing: [{key, title, year, poster, released, request, blocked?}]}}`, where `request` is the person's own request state (`waiting`, `asked`, `declined`) or `household` when someone else asked, and `blocked` (released movies nobody asked for only) says why the person can't ask for it now, as in the title check (`{"reason": "low_disk"}`; where and how much is free for administrators only). A collection the person can't open, or one TMDB can't describe, answers 404.
+
+#### Moving requests from Seerr
+
+Administrators move Seerr's requests into Jellyfin Enhanced with a check, a move, and a rollback within 14 days.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/migration/seerr` | Request handling now and the newest moves with their rollback deadline |
+| POST | `acquire/migration/seerr/preview` | The check: counts by kind, what is left out, Seerr's requesting state and a digest |
+| POST | `acquire/migration/seerr/commit` | `{"digest": "…", "confirmRequestsDisabled": false}`; 409 when Seerr changed or its address was changed during the move (`seerr_changed`), the read was incomplete, requesting is still on or Jellyfin Enhanced's own Seerr writes didn't finish in time (`seerr_writes_in_flight`); 503 `switch_failed` when the switch couldn't be saved (nothing moved) |
+| POST | `acquire/migration/seerr/rollback` | `{"batchId": "…"}`; within 14 days; 503 `switch_failed` (nothing rolled back) or `rollback_failed` (switched back; roll back again) |
+
+### Discover, household, and approvals
+
+Routes for JE mode's Discover tab and search row, and for approvals and the household. API keys and unknown users get `403 user_required`; Watchers `requests_create_required`; Seerr mode and phase 3 off `feature_disabled`.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/discover` | A signed-in person who may ask, JE mode; query `list` (`trending`, `upcoming`, `popular` or `because`), `type` (`movie` or `tv`) and `page` (1–10) → one page of a row (`because`: groups per watched title). |
+| GET | `acquire/search` | Same; `?q=…&page=1..10` → movies and series only. Queries over 100 characters get `400 query_too_long`; Kids get `403 search_hidden` when search is hidden from them. |
+| GET | `acquire/requests/approvals` | Manager or Admin; approval cards for visible titles (requester names, role, quota use, rating line, "also wanted by", estimate) |
+| GET | `acquire/requests/mine` | Any person; own requests with title data and whether each can still be cancelled |
+| GET | `acquire/requests/attention` | Manager or Admin; `needOk` and `stuck` counts for visible titles (no network) |
+| GET | `acquire/household` | Manager (people sharing a library) or Admin (everyone, overrides and house rules) |
+| POST | `acquire/household` | Jellyfin administrator; saves roles, per-person limits, role limits, the preset and the default role |
+
+Each result carries the title key, kind, TMDB id, title, year, poster path, a short overview, whether you have it
+(with the Jellyfin item), whether anyone asked and your own ask's state, with what your own open asks cover
+(`mineVariants`: standard and/or 4k; `mineSeasons`: the seasons your standard asks cover whole; both left out when
+empty), and `blocked` when the person can't ask for the title's standard copy now (as in the title check: `low_disk`
+measured on the title's own drive, else the default root's; worked out on every answer, cached pages too). Nothing
+about Sonarr/Radarr, paths or other people is included (administrators' `blocked` names the instance, folder and free
+space). TMDB being unavailable answers 503 `discover_unavailable`.
+
+The household save body names only what changes, for example
+`{"preset":"ask_first","users":{"<user id>":{"role":"Kid","quotaLimit":3}},"roles":{"Member":{"quotaLimit":7}}}`.
+A person's entry replaces their role and limit overrides (`null` removes one); other parts of the override, such as
+4K grants and GB caps, are kept. Unknown user ids, the Admin role, unknown presets and limits outside −1 to 10000 are
+refused with 400 and nothing is written. Responses are private to the caller and never name an instance, profile,
+folder or path.
+
+### Native details pages
+
+The native page's own requests are answered by the facade and never touch the library.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| GET | `acquire/status/item/{pageId}` | The page's status by key, as for a library item; adds `openItemId` once a copy the caller can open is here. An empty list when the caller may not open the page |
+| GET | `acquire/requests/season/{pageId}` | A season page's rows: every episode's metadata and the caller's request state; 404 when the caller may not open it |
+| GET | `native-details/resolve?key=…[&season=&episode=]` or `?id={pageId}` | Where a title opens for the caller: `{itemId}` (a library item they can open, the season or episode when named) or `{id}` (the native page). 404 when the title has no TMDB id; 403 for API keys or with the setting off |
+| GET | `native-details/person/{tmdbId}/filmography` | The filmography on a person's own page, filtered for the caller on the server: a library copy they can open carries its Jellyfin id, a title the library hides from them is left out, a title not in the library is listed only when its page would open for them. No Seerr account needed in Jellyfin Enhanced request mode. 404 when refused or unknown, 503 when Seerr can't answer, 504 while parental checks still run, 429 (`Retry-After`) when the list isn't cached and the caller has started too many new reads or already has 8 running or waiting (or the server has too many queued); 403 for API keys or with the setting off |
+| GET | `native-details/discover/{type}/{source}/{feedId}` | `type` `movie` or `tv`; `source` `genre`, `studio`, `network`, `company` or `keyword`; query `page`, `sortBy`. One page of a genre, studio, network or tag (TMDB keyword) discovery feed (`company`: a studio's own series, from TMDB), filtered and limited for the caller like the filmography; `totalPages` is the upstream count, so a page with every title left out isn't the end. Library pages' discovery rows use these for callers without a Seerr account |
+| GET | `native-details/title/{type}/{tmdbId}`, `native-details/title/{type}/{tmdbId}/ratings` | `type` `movie` or `tv`. A title's public details (Seerr's per-account `mediaInfo` replaced by the caller's own: `{status: 5, jellyfinMediaId}` for a library copy they can open, else Seerr's public state of an absent title) or its ratings (`null` when it has none), for its native page's extras and for Seerr's details window of a caller without a Seerr account, under that page's own rule (no Seerr account needed in Jellyfin Enhanced request mode). Also answered with native pages off while requests run in Jellyfin Enhanced mode; ratings are limited like the feeds |
+| GET | `native-details/title/{type}/{tmdbId}/related/{relation}` | `relation` `similar` or `recommendations`; query `page`. One page of a title's similar or recommended titles, under the title's rule above and filtered and limited like the discovery feeds, for the rows on a title's page of a caller without a Seerr account |
+| GET | `native-details/collection/{collectionId}` | A movie collection's public details and its movies, each judged for the caller like a filmography's titles (`mediaInfo.status` 5 and `jellyfinMediaId` for a copy they can open), for a collection's **Request** of a caller without a Seerr account; answered like the title route |
+| GET | `native-details/genres/{type}`, `native-details/keywords` | Query `query` for keywords. TMDB's genres (`[{id, name}]`) and the keywords matching a tag (`{results: [{id, name}]}`), so library genre and tag rows find their TMDB ids without a Seerr account |
+
+The native page's own reads (its title, seasons, episodes and parents, a person, studio or network page) come out of
+the same per-account budget as these lists: a read nobody has made yet waits up to 3 seconds for room, then answers
+429 with `Retry-After: 2`. Jellyfin Enhanced's browser code waits at least that long before it asks again.
+
+### Backup & restore
+
+Admin only. Jellyfin's own backups don't include plugin data.
+
+| Method | Path | Access and contract |
+|---|---|---|
+| POST | `admin/backup/export` | Download a backup zip. Body `{"secrets":"exclude"}` (default) or `{"secrets":"encrypt","passphrase":"…"}` (12+ characters) |
+| POST | `admin/backup/inspect` | Multipart `file` (+ optional `passphrase`): describe a backup without changing anything |
+| POST | `admin/backup/restore` | Multipart `file`, `passphrase` (when it holds credentials) and `confirm=restore`: restore it; a safety copy of the current data is saved first |
+| POST | `admin/secrets/rollback` | Admin: write stored credentials back into the plugin configuration before a downgrade (body `{"confirm":"write-credentials-to-plugin-config"}`; `409` if `secrets.json` can't be read) |
 
 ## Activity Feed & What's New
 
@@ -1552,7 +1832,7 @@ Read now-playing sessions or send an administrator message to sessions with usab
 | GET | `active-streams/sessions` | Administrator, or authenticated with viewer setting enabled | Bare now-playing session array. |
 | POST | `active-streams/broadcast` | Administrator | `{Header,Text,TimeoutMs}` → `{sent,skipped,errors}`. |
 | GET | `proxy/avatar` | Authenticated | Query `path` → cached raster image bytes. |
-| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID. |
+| GET | `items/by-providers` | Authenticated | Query provider dictionary and optional `types` → one matching GUID the caller can open. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/active-streams/sessions"
@@ -1594,9 +1874,9 @@ curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
   "$JE_URL/items/by-providers"
 ```
 
-Provider lookup accepts multiple dictionary entries such as `providers[Tmdb]`, `providers[Imdb]`. `types` is a comma-separated item-kind list parsed case-insensitively; invalid kinds are ignored. No IDs/match returns `400` with `No provider ids supplied or no items found`; success is a GUID value.
+Provider lookup accepts multiple dictionary entries such as `providers[Tmdb]`, `providers[Imdb]`. `types` is a comma-separated item-kind list parsed case-insensitively; invalid kinds are ignored. No provider IDs return `400` with `No provider ids supplied`; no match returns `204` with no body. Success is a GUID value.
 
-Repository lookup is not filtered to caller library access and does not establish permission to view the returned item.
+For a signed-in user, only an item they can open (library access and parental limits) is returned. A server API key, which has no library view, gets the first match.
 
 ## Branding
 
@@ -1701,6 +1981,6 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 173 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 258 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
-For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
+For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements most indexed routes. `catchup/*` is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs), and the Requests & downloads routes are in the `Acquire*`, `Arr*`, `NativeDetails*`, `Notify`, `RequestsHub` and `JeBackup` controllers beside it. These upstream source links may advance beyond this versioned reference.

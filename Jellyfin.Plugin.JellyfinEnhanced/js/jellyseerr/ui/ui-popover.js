@@ -14,6 +14,8 @@
     const escapeHtml = JE.escapeHtml;
     const icons = internal.icons; // requires ui-icons.js to be loaded first
     const addTouchTapListener = JE.core.ui.addTouchTapListener;
+    /** The 4K popup (it lives under <body>, not in its card) -> the split button and item it was opened for. */
+    const popupSources = new WeakMap();
 
     // ================================
     // DOWNLOAD PROGRESS POPOVER SYSTEM
@@ -238,6 +240,7 @@
         popup.appendChild(request4KBtn);
         document.body.appendChild(popup);
         state.active4KPopup = popup;
+        popupSources.set(popup, { buttonGroup, item });
 
         // Position the popup relative to the button group
         const rect = buttonGroup.getBoundingClientRect();
@@ -315,6 +318,12 @@
     internal.createInlineProgress = createInlineProgress;
     internal.hide4KPopup = hide4KPopup;
     internal.show4KPopup = show4KPopup;
+    /**
+     * The split button and item a 4K popup was opened for (the popup is appended to <body>).
+     * @param {Element|null} popup The .jellyseerr-4k-popup element.
+     * @returns {{buttonGroup: HTMLElement, item: Object}|null} Its source, or null.
+     */
+    internal.fourKPopupSource = (popup) => (popup && popupSources.get(popup)) || null;
     internal.addDownloadProgressHover = addDownloadProgressHover;
 
 })(window.JellyfinEnhanced);

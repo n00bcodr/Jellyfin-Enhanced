@@ -560,7 +560,7 @@ Enable **Show synced tags as links** under the admin **\*arr** → **Tags Sync**
 
 Filter comparisons ignore case after reconstructing each full prefixed name. Initial prefix matching is case-sensitive.
 
-The factory prefix includes a trailing space. If the admin prefix field is empty on load or save, the admin UI substitutes `Requested by: `. Inspect the actual configured prefix.
+The factory prefix includes a trailing space. If the admin prefix field is empty on load or save, the admin UI substitutes `JE Arr Tag: `. Inspect the actual configured prefix.
 
 The following admin settings under **Tags Sync** control tag imports:
 

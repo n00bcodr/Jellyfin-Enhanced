@@ -264,7 +264,7 @@ Choose which information to hide while you browse protected titles. These admin 
 | **Hide chapter names (keep timestamps)** | On | Uses `Chapter N` for protected chapter names; keeps timestamps. Image-byte protection is independent. |
 | **Hide taglines** | On | Removes eligible taglines. |
 | **Hide ratings** | On | Clears community and critic scores and suppresses their JE card overlays. |
-| **Hide air date** | On | Clears eligible premiere dates. |
+| **Hide air date** | On | Clears eligible premiere dates. JE's release-date chip in the details header then doesn't look the date up on TMDB either (unwatched episodes, and seasons after the first with nothing watched). |
 | **Replace episode titles** | On | Uses `Season X, Episode Y` for numbered protected episodes, and `Season N` for eligible numbered seasons. |
 | **Hide cast on unwatched episodes** | On | Filters eligible cast lists, including applicable non-episode items. |
 | **Cast hiding scope** | **Guest stars only (recommended)** | Removes only guest-star entries. **Entire cast (regulars + guest stars)** removes every person entry, including crew. |

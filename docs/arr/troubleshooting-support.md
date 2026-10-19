@@ -77,9 +77,9 @@ If tags are present in metadata but missing as links:
 Seeing existing tag links does not require administrator status or **Enable Tags Sync**.
 
 ??? info "Tag matching and prefix behavior"
-    Movie sync matches TMDB IDs; series sync matches IMDb IDs, not the TVDB ID used by Sonarr item links. Sync updates movies and series in your library, excluding virtual placeholders.
+    Movie sync matches TMDB IDs (or a unique IMDb ID); series sync matches TVDB, TMDB, or IMDb IDs, whichever the item has. See [How titles are matched](arr-features.md#tag-filtering). Sync updates movies and series in your library, excluding virtual placeholders.
 
-    Keep **Tag Prefix** nonempty. Settings replace a blank value with `Requested by: `, while displayed tag links use `JE Arr Tag: ` for a blank prefix. Sync uses `Requested by: ` only if the stored prefix is unset, rather than empty. See [tag settings and examples](arr-features.md#arr-tags).
+    A blank **Tag Prefix** is saved, synced, and linked as `JE Arr Tag: `. See [tag settings and examples](arr-features.md#arr-tags).
 
 ### Calendar Not Loading
 
@@ -105,7 +105,7 @@ Filters can hide events even when a source loads successfully. Check the visible
 
 1. Return to **Today**, change the view, and clear selected chips and **NOT**. **AND** between mutually exclusive release categories can show nothing.
 2. Turn on **Unmonitored** if the missing upstream event is unmonitored; it is excluded by default.
-3. Check **Filter by Library Access** and your Jellyfin library permissions. Future-title root-folder inference is best-effort; unknown roots and unmatched Shoko events can remain visible.
+3. Check **Filter by Library Access** and your Jellyfin library permissions. A title not in Jellyfin yet shows only to people who can open its destination library; when that can't be told, only administrators see it, and the Requests page's System tab path doctor flags the root. Unmatched Shoko events can remain visible.
 4. Review **Show Requested Only (Default)** and **Force Only Requested Items**. These need request data for your linked Seerr account; they exclude Shoko events. Forced mode hides the **Requests** chip.
 5. For Shoko, verify the six episode-type switches; only **Episodes** defaults on. Enter both **Shoko URL** and **Shoko API Key**. A URL without a key, or a key without a URL, produces an error. Check Shoko API v3 access and server logs.
 6. Check [Hidden Content filtering](#hidden-content-filtering) and named source failures.
@@ -137,17 +137,17 @@ Check the queue source and your access rules if Downloads is empty. Administrato
 
 1. Under **Pages** → **Requests Page**, enable **Enable Requests Page** and **Show Downloads in Requests Page**, then save and reload.
 2. Verify complete enabled Sonarr/Radarr cards and use **Test**. Confirm the upstream queue contains records.
-3. Compare administrator and viewer results. With **Filter Downloads by User Requests** on, administrators bypass filtering. Viewers need enabled/configured Seerr, a linked account, and requested titles.
+3. Compare administrator and viewer results. Administrators bypass filtering. Viewers only see titles they could open in Jellyfin; with **Filter Downloads by User Requests** on they also need enabled/configured Seerr, a linked account, and requested titles.
 4. Clear download search/status selections and check Hidden Content filtering.
 5. Inspect named queue errors and server logs. Healthy instances can return data despite another source failing.
 
 Auto-refresh is not required for the initial load. Neither queue nor History requires **Enable \*arr Links on Detail Pages**.
 
 !!! warning "Turning off ownership filtering shares download titles"
-    Turning off **Filter Downloads by User Requests** exposes other users' queue/history titles to authenticated viewers, subject to the independent History administrator restriction.
+    Turning off **Filter Downloads by User Requests** shows authenticated viewers other users' queue/history titles they could open in Jellyfin, subject to the independent History administrator restriction.
 
 ??? info "Queue limits and ownership matching"
-    JE reads one queue page of up to 1,000 records per instance. Viewer requests match by TMDB ID and media type. No linkage/requests or missing upstream TMDB IDs can produce empty results.
+    JE reads every queue row, page by page. Viewer requests match by TMDB ID and media type. No linkage/requests or missing upstream TMDB IDs can produce empty results.
 
 #### Status Not Updating
 

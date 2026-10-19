@@ -282,7 +282,7 @@ See [MDBList Ratings](other-features.md#mdblist-ratings) for batching, expiry, q
 
 ## Content Warnings
 
-Show community content warnings from DoesTheDogDie on movie and series pages. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
+Show community content warnings from DoesTheDogDie on movie and series pages. Spoiler Guard keeps protected titles’ warnings collapsed until the viewer clicks **Show**, including titles not yet in the library. See the [feature guide](other-features.md#content-warnings) for what users see and how the request budget works.
 
 ### How to use
 
@@ -293,7 +293,7 @@ Show community content warnings from DoesTheDogDie on movie and series pages. Se
 | Setting | Default | What it does |
 |---|---|---|
 | **Show Content Warnings** | Off | Master switch. Needs a saved key to take effect. |
-| **DoesTheDogDie API Key** | Empty | Used by the server only. Never sent to clients. |
+| **DoesTheDogDie API Key** | Empty | Used by the server only. Never sent to clients. Stored with the other API keys in `secrets.json`; once saved the page shows a masked value with **Replace** and **Clear**. |
 
 These controls are server-wide. Each user picks their own triggers from the gear icon on the section, so there is no admin trigger list.
 

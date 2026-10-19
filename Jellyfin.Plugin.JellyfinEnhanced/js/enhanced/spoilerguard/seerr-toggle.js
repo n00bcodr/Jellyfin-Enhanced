@@ -1,5 +1,6 @@
 // @ts-check
-// Spoiler Guard pending toggle for the Jellyseerr more-info modal.
+// Spoiler Guard pending toggle for the Jellyseerr more-info modal, and for the details page of a
+// title that isn't in the library (a button in the native action row, like the library's own).
 (function(JE) {
     'use strict';
 
@@ -8,7 +9,15 @@
     const internal = JE.internals.spoilerGuard = JE.internals.spoilerGuard || {};
     const logPrefix = '🪼 Jellyfin Enhanced [SpoilerGuard]:';
 
-    internal.buildSeerrToggle = function(data, mediaType) {
+    /**
+     * The pending Spoiler Guard switch for a title known by its TMDB id.
+     * @param {Object} data Seerr details ({id, title|name, mediaInfo}).
+     * @param {string} mediaType 'movie' | 'tv'.
+     * @param {{detail?: boolean}} [options] detail: drawn as a native action-row button (icon only,
+     *     the label as its tooltip and accessible name), as the library's Spoiler Guard button is.
+     * @returns {HTMLButtonElement|null} Button, or null when Spoiler Guard is off or the title unknown.
+     */
+    internal.buildSeerrToggle = function(data, mediaType, options) {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return null;
         if (mediaType !== 'tv' && mediaType !== 'movie') return null;
         const tmdbId = data?.id;
@@ -16,17 +25,27 @@
 
         const jellyfinMediaId = data?.mediaInfo?.jellyfinMediaId || null;
         const displayName = data?.title || data?.name || '';
+        const detail = options?.detail === true;
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'je-spoiler-pending-btn';
+        button.className = detail ? 'button-flat detailButton emby-button je-spoiler-pending-detail' : 'je-spoiler-pending-btn';
+        if (detail) button.setAttribute('is', 'emby-button');
         button.dataset.jeTmdbId = String(tmdbId);
         button.dataset.jeMediaType = mediaType;
 
         const icon = document.createElement('span');
-        icon.className = 'material-icons';
+        icon.className = detail ? 'material-icons detailButton-icon' : 'material-icons';
+        icon.setAttribute('aria-hidden', 'true');
         const label = document.createElement('span');
-        button.appendChild(icon);
-        button.appendChild(label);
+        if (detail) {
+            const content = document.createElement('div');
+            content.className = 'detailButton-content';
+            content.appendChild(icon);
+            button.appendChild(content);
+        } else {
+            button.appendChild(icon);
+            button.appendChild(label);
+        }
 
         function refresh() {
             const enabled = internal.isTmdbEnabled(mediaType, tmdbId, jellyfinMediaId);
@@ -34,6 +53,7 @@
             button.classList.toggle('je-spoiler-pending-on', enabled);
             button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
             button.title = text;
+            if (detail) button.setAttribute('aria-label', text);
             icon.textContent = enabled ? 'blur_on' : 'blur_off';
             label.textContent = text;
         }

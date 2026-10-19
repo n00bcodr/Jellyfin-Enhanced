@@ -504,6 +504,8 @@ Show community-voted content warnings, such as "a dog dies", gore or flashing li
 2. Open admin **Display** → **Content Warnings (DoesTheDogDie)** and turn on **Show Content Warnings**.
 3. Paste the key into **DoesTheDogDie API Key**, click **Save Settings**, and reload the web client.
 4. Open a movie or series that DoesTheDogDie knows about. A **Content Warnings** section appears above Reviews.
+
+When Spoiler Guard protects the title for you, the section starts collapsed: **Content warnings (hidden by Spoiler Guard) — Show**. Click **Show** to read its warnings before watching. The topics are fetched only after that click, including on request pages for titles outside your library. Reveals last for the current page visit; changing protection or switching users hides the warnings again.
 5. Click the gear icon on the section to choose your own triggers.
 
 ![Content Warnings (DoesTheDogDie) settings in the admin Display tab, with the master switch and API key field](../images/other/content-warnings-admin.webp)

@@ -33,6 +33,13 @@
   function handleViewShow(e) {
     const targetPage = e.target;
     if (!targetPage) return;
+    // Jellyfin's router answering our own route (a link or typed hash to #/recommendations inside the app):
+    // its page is "Page not found", so this page takes its place.
+    if (window.location.hash === "#/recommendations" && targetPage.id !== "je-recommendations-page" && targetPage.id !== "je-recommendations-category-page") {
+      if (state.pageVisible) targetPage.classList.add("hide");
+      else showPage();
+      return;
+    }
     if (state.pageVisible && targetPage.id !== "je-recommendations-page" && targetPage.id !== "je-recommendations-category-page") {
       hidePage();
     }

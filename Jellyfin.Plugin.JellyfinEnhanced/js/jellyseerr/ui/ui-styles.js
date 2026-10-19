@@ -90,6 +90,10 @@
             .jellyseerr-elsewhere-icons img { width: 1.8em; height: auto; border-radius: 0.7em; background-color: rgba(255,255,255,0.5); padding: 2px;}
             .jellyseerr-meta { display: flex; justify-content: center; align-items: center; gap: 1em; padding: 0 .75em; min-height: 24px; }
             .jellyseerr-rating { display: flex; align-items: center; gap: .3em; color: #bdbdbd; }
+            /* Phone widths: the Seerr icon, year and rating fit a 95px card instead of being cut at both ends. */
+            @media (max-width: 480px) { .jellyseerr-meta { gap: .35em; padding: 0; } .jellyseerr-meta .jellyseerr-rating { gap: .15em; } }
+            /* Phone widths: the provider icons shrink to fit their card instead of spilling out of both sides. */
+            @media (max-width: 480px) { .jellyseerr-elsewhere-icons { gap: .3em; padding-left: .3em; padding-right: .3em; } .jellyseerr-elsewhere-icons img { min-width: 0; flex: 0 1 1.8em; } }
             .cardText-first > a.jellyseerr-more-info-link { padding: 0 !important; margin: 0 !important; color: inherit; text-decoration: none; }
             /* REQUEST BUTTONS */
             .jellyseerr-request-button { display: flex; justify-content: center; align-items: center; gap: 0.5em; white-space: normal; text-align: center; padding: 0.6em 1.2em; line-height: 1.2; font-size: 0.9em; transition: background .2s, border-color .2s, color .2s, transform .2s; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; position: relative; z-index: 10; }

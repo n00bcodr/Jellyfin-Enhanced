@@ -95,7 +95,10 @@
             return { tmdbId: parseInt(tmdbId), type };
         } catch (error) {
             if (error.name === 'AbortError') throw error;
-            console.error(`${logPrefix} Error getting TMDB ID:`, error);
+            // An item the server won't hand out (an HTTP answer such as 404/503: a page that isn't available)
+            // has no TMDB id to look up; only real failures are errors.
+            if ((typeof Response !== 'undefined' && error instanceof Response) || typeof error?.status === 'number') console.debug(`${logPrefix} Item not readable (${error.status}).`);
+            else console.error(`${logPrefix} Error getting TMDB ID:`, error);
             return { tmdbId: null, type: null };
         }
     }
@@ -198,7 +201,7 @@
         let filteredResults = results;
 
         if (excludeLibraryItems) {
-            filteredResults = results.filter(item => !item.mediaInfo?.jellyfinMediaId);
+            filteredResults = results.filter(item => !JE.seerrStatus.libraryCopyId(item.mediaInfo));
         }
         if (JE.hiddenContent) {
             filteredResults = JE.hiddenContent.filterJellyseerrResults(filteredResults, 'recommendations');
@@ -285,7 +288,7 @@
             const titleLink = card.querySelector('.cardText-first a');
 
             // If item exists in library, link to library item
-            const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+            const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
             if (jellyfinMediaId) {
                 card.setAttribute('data-library-item', 'true');
                 card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
@@ -994,13 +997,13 @@
             const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
 
             const filteredSimilarResults = similarResults.filter(item => {
-                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) return false;
                 if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });
 
             const filteredRecommendedResults = recommendedResults.filter(item => {
-                if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) return false;
+                if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) return false;
                 if (excludeBlocklistedItems && item.mediaInfo?.status === JE.seerrStatus.MEDIA.BLOCKED) return false;
                 return true;
             });
@@ -1237,7 +1240,20 @@
             if (signal.aborted) return;
             if (!tmdbId || type !== 'tv') return;
 
-            const tvDetails = await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+            // As the More Info window reads them: public details for a viewer without a Seerr account while
+            // Jellyfin Enhanced handles requests; Seerr refusing them otherwise (said by the window) ends it here.
+            const moreInfo = JE.internals?.moreInfoModal;
+            let tvDetails = null;
+            if (typeof moreInfo?.fetchMediaDetails === 'function') {
+                try {
+                    tvDetails = await moreInfo.fetchMediaDetails(tmdbId, 'tv');
+                } catch {
+                    // Said or logged where it happened (fetchMediaDetails): no button.
+                    tvDetails = null;
+                }
+            } else {
+                tvDetails = await JE.jellyseerrAPI.fetchTvShowDetails(tmdbId);
+            }
             if (signal.aborted) return;
             if (!tvDetails) return;
 
@@ -1310,7 +1326,9 @@
 
         try {
             const itemId = detailsItemIdFromHash();
-            if (itemId) {
+            // A title that isn't in the library (native details): its native "More Like This" rail is
+            // the one recommendations rail, and its own Request replaces "Request More".
+            if (itemId && !JE.titleDetails?.isSynthetic?.(itemId)) {
                 // Use requestAnimationFrame instead of fixed timeout
                 // This ensures we're in sync with the rendering cycle
                 requestAnimationFrame(() => {

@@ -1248,6 +1248,9 @@
     async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
+        // Titles that aren't in the library (native details pages, their rails) have no tag data.
+        if (JE.titleDetails?.isSynthetic) batch = batch.filter(b => !JE.titleDetails.isSynthetic(b.itemId));
+        if (!batch.length) return;
 
         // Use arrays per ID to handle duplicate items (same movie in multiple rows)
         const elMap = new Map();

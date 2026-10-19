@@ -1,3 +1,4 @@
+#pragma warning disable ASPDEPR004, ASPDEPR008 // The shared routing fixture exercises the legacy host API on both targets.
 using System.Net;
 using System.Security.Claims;
 using System.Text.Encodings.Web;

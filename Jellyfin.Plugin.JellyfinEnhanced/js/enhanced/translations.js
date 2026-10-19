@@ -16,6 +16,28 @@
         return code;
     }
 
+    /**
+     * A language tag JE may use, normalized (`en-au` → `en-AU`), or '' for anything else: a literal "undefined" or
+     * "null" (a value stringified by mistake), an empty or malformed value, or one Intl refuses.
+     * @param {*} raw A stored or configured value.
+     * @returns {string} The tag, or ''.
+     */
+    function languageCode(raw) {
+        if (typeof raw !== 'string') return '';
+        const code = raw.trim();
+        if (!code || /^(undefined|null|nan|true|false)$/i.test(code)) return '';
+        if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
+        const normalized = normalizeLangCode(code);
+        try {
+            if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
+        } catch (e) {
+            return '';
+        }
+        return normalized;
+    }
+
+    JE.languageCode = languageCode;
+
     function buildLanguageChain(primaryLang) {
         const normalizedLang = normalizeLangCode(primaryLang);
         const langCodes = [];
@@ -58,6 +80,22 @@
         return 'unknown';
     }
 
+    /**
+     * Returns the build identity the translation cache is keyed by: the injected script
+     * tag's `version` attribute, `{version}-{dllTimestamp}` (the same value the script URLs
+     * use). It changes with every build even when the plugin version does not, so entries an
+     * earlier build wrote (older locale files, or upstream English the previous loader stored
+     * under `en`) are dropped by cleanOldTranslationCache instead of being reused. Falls back
+     * to the bare plugin version when the tag is missing.
+     * @returns {Promise<string>} The translation cache version.
+     */
+    async function getTranslationCacheVersion() {
+        const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+        const buildKey = scriptEl?.getAttribute('version');
+        if (buildKey) return buildKey;
+        return getPluginVersion();
+    }
+
     function cleanOldTranslationCache(pluginVersion) {
         try {
             for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -74,27 +112,86 @@
         }
     }
 
-    async function tryLoadSingleLanguage(code, pluginVersion) {
-        const cacheKey = `JE_translation_${code}_${pluginVersion}`;
-        const timestampKey = `JE_translation_ts_${code}_${pluginVersion}`;
-        const cachedTranslations = localStorage.getItem(cacheKey);
-        const cachedTimestamp = localStorage.getItem(timestampKey);
+    /**
+     * Reads one language's strings from the versioned localStorage cache.
+     * @param {string} code - Normalized language code (e.g. `en`, `en-GB`).
+     * @param {string} pluginVersion - Translation cache version (build identity) the entry is keyed by.
+     * @returns {object|null} The cached strings, or null when absent, expired or unreadable.
+     */
+    function readCachedTranslations(code, pluginVersion) {
+        const cachedTranslations = localStorage.getItem(`JE_translation_${code}_${pluginVersion}`);
+        const cachedTimestamp = localStorage.getItem(`JE_translation_ts_${code}_${pluginVersion}`);
 
         if (cachedTranslations && cachedTimestamp) {
             const age = Date.now() - parseInt(cachedTimestamp, 10);
             if (age < CACHE_DURATION) {
                 console.log(`🪼 Jellyfin Enhanced: Using cached translations for ${code} (age: ${Math.round(age / 1000 / 60)} minutes, version: ${pluginVersion})`);
                 try {
-                    return { translations: JSON.parse(cachedTranslations), usedLang: code };
+                    return JSON.parse(cachedTranslations);
                 } catch (e) {
                     console.warn('🪼 Jellyfin Enhanced: Failed to parse cached translations, will fetch fresh', e);
                 }
             }
         }
+        return null;
+    }
+
+    /**
+     * Loads this build's bundled English strings, the per-key fallback for every other
+     * locale. Shares the build-keyed 24 h cache entry of `en`, which only ever holds this
+     * build's bundled en.json: this loader never stores remote upstream copies under it,
+     * and entries from earlier builds (including the previous loader's) carry another key.
+     * @param {string} pluginVersion - Translation cache version (build identity) the entry is keyed by.
+     * @returns {Promise<object|null>} The bundled English strings, or null when they cannot be loaded.
+     */
+    async function loadBundledEnglish(pluginVersion) {
+        const cached = readCachedTranslations('en', pluginVersion);
+        if (cached) return cached;
+
+        try {
+            const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/locales/en.json'));
+            if (!response.ok) return null;
+            const translations = await response.json();
+            try {
+                localStorage.setItem(`JE_translation_en_${pluginVersion}`, JSON.stringify(translations));
+                localStorage.setItem(`JE_translation_ts_en_${pluginVersion}`, Date.now().toString());
+            } catch (e) { /* ignore */ }
+            return translations;
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: Failed to load bundled English fallback strings', e);
+            return null;
+        }
+    }
+
+    /**
+     * Fills the keys a resolved locale lacks (e.g. an older Weblate file or upstream's
+     * remote copy, which miss strings added in this build) with bundled English, so
+     * JE.t never falls back to the raw key. Bundled English itself is returned as-is.
+     * @param {{translations: object, usedLang: string, remote?: boolean}} result - Locale chosen by the language chain.
+     * @param {string} pluginVersion - Translation cache version (build identity) the English entry is keyed by.
+     * @returns {Promise<object>} The locale's strings layered over bundled English.
+     */
+    async function withEnglishFallback(result, pluginVersion) {
+        if (result.usedLang === 'en' && !result.remote) return result.translations;
+        const english = await loadBundledEnglish(pluginVersion);
+        return english ? { ...english, ...result.translations } : result.translations;
+    }
+
+    async function tryLoadSingleLanguage(code, pluginVersion) {
+        const cacheKey = `JE_translation_${code}_${pluginVersion}`;
+        const timestampKey = `JE_translation_ts_${code}_${pluginVersion}`;
+        const cachedTranslations = readCachedTranslations(code, pluginVersion);
+        if (cachedTranslations) {
+            return { translations: cachedTranslations, usedLang: code };
+        }
 
         console.log(`🪼 Jellyfin Enhanced: Loading bundled translations for ${code}...`);
+        // Only a definitive 404 means this build ships no file for the code; a thrown error or
+        // another status may be transient, so the locale must be retried on the next load.
+        let bundledMissing = false;
         try {
             const bundledResponse = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/locales/${code}.json`));
+            bundledMissing = bundledResponse.status === 404;
             if (bundledResponse.ok) {
                 const translations = await bundledResponse.json();
                 try {
@@ -118,14 +215,17 @@
 
             if (githubResponse.ok) {
                 const translations = await githubResponse.json();
-                try {
-                    localStorage.setItem(cacheKey, JSON.stringify(translations));
-                    localStorage.setItem(timestampKey, Date.now().toString());
-                    console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${code} from GitHub (version: ${pluginVersion})`);
-                } catch (storageError) {
-                    console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
+                // The `en` entry is reserved for the bundled en.json (the per-key fallback base).
+                if (code !== 'en') {
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(translations));
+                        localStorage.setItem(timestampKey, Date.now().toString());
+                        console.log(`🪼 Jellyfin Enhanced: Successfully fetched and cached translations for ${code} from GitHub (version: ${pluginVersion})`);
+                    } catch (storageError) {
+                        console.warn('🪼 Jellyfin Enhanced: Failed to cache translations (localStorage full?)', storageError);
+                    }
                 }
-                return { translations, usedLang: code };
+                return { translations, usedLang: code, remote: true };
             }
 
             if (githubResponse.status === 404 && code !== 'en') {
@@ -138,13 +238,15 @@
 
                 if (englishResponse.ok) {
                     const translations = await englishResponse.json();
-                    try {
-                        const enCacheKey = `JE_translation_en_${pluginVersion}`;
-                        const enTimestampKey = `JE_translation_ts_en_${pluginVersion}`;
-                        localStorage.setItem(enCacheKey, JSON.stringify(translations));
-                        localStorage.setItem(enTimestampKey, Date.now().toString());
-                    } catch (e) { /* ignore */ }
-                    return { translations, usedLang: 'en' };
+                    // Cached for the requested code (the `en` entry is reserved for the bundled
+                    // en.json), and only when the locale is definitively missing from this build.
+                    if (bundledMissing) {
+                        try {
+                            localStorage.setItem(cacheKey, JSON.stringify(translations));
+                            localStorage.setItem(timestampKey, Date.now().toString());
+                        } catch (e) { /* ignore */ }
+                    }
+                    return { translations, usedLang: 'en', remote: true };
                 }
             }
 
@@ -182,7 +284,7 @@
 
     JE.loadTranslations = async function() {
         try {
-            const pluginVersion = await getPluginVersion();
+            const pluginVersion = await getTranslationCacheVersion();
 
             let user = ApiClient.getCurrentUser ? ApiClient.getCurrentUser() : null;
             if (user instanceof Promise) {
@@ -193,17 +295,18 @@
             let lang = 'en';
             if (userId) {
                 const storageKey = `${userId}-language`;
-                const storedLang = localStorage.getItem(storageKey);
+                // A junk value ("undefined", "null", malformed) is no language: fall back as if none were set.
+                const storedLang = languageCode(localStorage.getItem(storageKey));
                 if (storedLang) {
-                    lang = normalizeLangCode(storedLang);
+                    lang = storedLang;
                 } else {
                     // Fall back to the HTML lang attribute set by Jellyfin's web client.
                     // This covers the Android app and other clients where the localStorage
                     // key may not exist but Jellyfin has already resolved the user's
                     // preferred language from server-side settings.
-                    const docLang = document.documentElement.lang;
+                    const docLang = languageCode(document.documentElement.lang);
                     if (docLang) {
-                        lang = normalizeLangCode(docLang);
+                        lang = docLang;
                     }
                 }
             }
@@ -215,7 +318,7 @@
                 try {
                     const result = await tryLoadSingleLanguage(code, pluginVersion);
                     if (result && result.translations) {
-                        return result.translations;
+                        return await withEnglishFallback(result, pluginVersion);
                     }
                 } catch (e) {
                     console.warn(`🪼 Jellyfin Enhanced: Failed to load translations for ${code}`, e);

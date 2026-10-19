@@ -240,9 +240,15 @@
    */
   function handleViewShow(e) {
     const targetPage = e.target;
-    if (state.pageVisible && targetPage && targetPage.id !== "je-hidden-content-page") {
-      hidePage();
+    if (!targetPage || targetPage.id === "je-hidden-content-page") return;
+    // Jellyfin's router answering our own route (a link or typed hash to #/hidden-content inside the app):
+    // its page is "Page not found", so this page takes its place.
+    if (window.location.hash.startsWith("#/hidden-content")) {
+      if (state.pageVisible) targetPage.classList.add("hide");
+      else showPage();
+      return;
     }
+    if (state.pageVisible) hidePage();
   }
 
   /**

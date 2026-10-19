@@ -76,6 +76,8 @@
   // State management
   const state = {
     events: [],
+    // The last read of the events failed (not a per-instance error: those come with the events).
+    eventsError: false,
     isLoading: false,
     pageVisible: false,
     previousPage: null,
@@ -110,6 +112,7 @@
   // so the calendar re-derives everything for the new user on its next render.
   JE.session?.onUserChange('calendar-page', () => {
     state.events = [];
+    state.eventsError = false;
     state.userDataMap.clear();
     state.requestedItems.clear();
     state.requestedLoaded = false;
@@ -156,6 +159,32 @@
   }
 
   /**
+   * A date as the viewer's local calendar day ("yyyy-MM-dd").
+   * @param {Date} date Date.
+   * @returns {string} Day.
+   */
+  function localDay(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  /**
+   * A date-only release (a release day with no time: Radarr's dates, an episode with no air time)
+   * placed at the start of that day where the viewer is, so it lands on that day and shows no clock
+   * time (read as midnight UTC it would be the day before, at "5:00 PM", west of UTC). The UTC value
+   * stays in releaseDateUtc.
+   * @param {Object} event Calendar event from the server.
+   * @returns {Object} The event.
+   */
+  function asLocalDay(event) {
+    const parts = event.dateOnly && /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(event.releaseDateLocal || ''));
+    if (!parts) return event;
+    const local = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+    if (Number.isNaN(local.getTime())) return event;
+    return { ...event, releaseDateUtc: event.releaseDate, releaseDate: local.toISOString() };
+  }
+
+  /**
    * Fetch calendar events from backend
    */
   async function fetchCalendarEvents(startDate, endDate) {
@@ -167,17 +196,27 @@
       const query = new URLSearchParams({
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+        // The viewer's own first and last day: date-only releases are kept by day, not by instant.
+        startDay: localDay(startDate),
+        endDay: localDay(endDate),
       });
       const data = await JE.core.api.plugin(`/arr/calendar?${query.toString()}`);
       if (JE.session && !JE.session.isCurrent(epoch)) return null;
-      state.events = (data.events || []).filter((evt) => evt && evt.releaseDate);
+      // Row ids are opaque ("sonarr|<instance>|<id>", "radarr|…", "shoko|…"): unique across
+      // instances, they key the favourite/watched map and the click lookups as they are.
+      state.events = (data.events || []).filter((evt) => evt && evt.releaseDate).map(asLocalDay);
+      state.eventsError = false;
       // Surface per-instance errors from the backend envelope so a misconfigured or
       // unreachable arr instance doesn't silently leave the calendar looking fine.
       surfaceCalendarErrors(data.errors);
       return data;
     } catch (error) {
       console.error(`${logPrefix} Failed to fetch calendar events:`, error);
-      if (!JE.session || JE.session.isCurrent(epoch)) state.events = [];
+      if (!JE.session || JE.session.isCurrent(epoch)) {
+        state.events = [];
+        // Say so (with a retry) instead of "No upcoming releases".
+        state.eventsError = true;
+      }
       return null;
     }
   }
@@ -455,7 +494,8 @@
 
         try {
           const itemId = await JE.core.api.plugin(`/items/by-providers?${params.toString()}`);
-          return itemId || null;
+          // Nothing found answers 204 (no body): only an id string is an item.
+          return typeof itemId === 'string' && itemId ? itemId : null;
         } catch (error) {
           // An HTTP error (e.g. 404) means "not found" — fall through to the
           // next provider lookup, matching the pre-core `!response.ok` path.

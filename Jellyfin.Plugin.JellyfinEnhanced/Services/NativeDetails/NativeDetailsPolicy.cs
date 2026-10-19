@@ -1,0 +1,523 @@
+#if JF12
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Entities;
+using Jellyfin.Database.Implementations.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
+{
+    /// <summary>
+    /// Who may see a not-in-library title's native page. One rule for every facade route:
+    /// the feature is on, a metadata backend is configured, the viewer may use requests (Seerr mode:
+    /// a linked, not import-blocked account; JE mode: the request feature), Jellyfin's parental
+    /// policy allows the title (fails closed on an unverified rating, like the request path), and the
+    /// viewer can open a library the title would land in (RequestPolicy's visibility when the request
+    /// feature is on). A refusal answers like a hidden library item: 404.
+    /// </summary>
+    public sealed class NativeDetailsPolicy
+    {
+        /// <summary>How a listed title is shown to a viewer (<see cref="Listed"/>).</summary>
+        /// <param name="Shown">True when it is shown at all.</param>
+        /// <param name="LibraryCopy">The library copy the viewer can open, when it is shown as one.</param>
+        public readonly record struct ListedTitle(bool Shown, Guid? LibraryCopy)
+        {
+            /// <summary>Left out of the list.</summary>
+            public static ListedTitle Left => default;
+
+            /// <summary>Shown as a title that isn't in the library (its native details page).</summary>
+            public static ListedTitle Absent => new(true, null);
+
+            /// <summary>Shown as the library copy the viewer can open.</summary>
+            /// <param name="id">The copy.</param>
+            /// <returns>The answer.</returns>
+            public static ListedTitle Copy(Guid id) => new(true, id);
+        }
+
+        /// <summary>A viewer's access to native details.</summary>
+        public enum Access
+        {
+            /// <summary>Allowed.</summary>
+            Allowed,
+
+            /// <summary>Refused (answered like a hidden item).</summary>
+            Refused,
+
+            /// <summary>Can't be told right now (Seerr unreachable): retryable, the page falls back once.</summary>
+            Unknown,
+        }
+
+        private static readonly TimeSpan LibrariesTtl = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan RevisionTtl = TimeSpan.FromSeconds(5);
+
+        private readonly SeerrParentalFilter _parental;
+        private readonly INativeDetailsSource _source;
+        private readonly IJellyfinLibraryAccess _libraries;
+        private readonly IRequestPolicy? _requests;
+        private readonly NativeDetailsLibrary? _physical;
+        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At)> _revisions = new();
+        private readonly ConcurrentDictionary<Guid, long> _epochs;
+        private readonly string? _epochFile;
+        private readonly object _epochWrite = new();
+        private string _generation;
+        private (IReadOnlyList<JfLibraryRoot> Roots, DateTime At)? _roots;
+
+        /// <summary>The file the session epochs are kept in (next to the artwork grant key).</summary>
+        internal const string EpochFile = "native-details-revocations.json";
+
+        /// <summary>Creates the policy.</summary>
+        /// <param name="parental">Parental filter.</param>
+        /// <param name="source">Metadata source.</param>
+        /// <param name="libraries">Library roots.</param>
+        /// <param name="requests">Request policy (request visibility), when the request feature exists.</param>
+        /// <param name="stateDirectory">
+        /// Folder for the session epochs (the plugin's data folder, where the grant key is kept), or null
+        /// to keep them in memory only. They must outlive a restart exactly when the key does: otherwise a
+        /// grant ended by a sign-out would verify again once the epoch is back at zero.
+        /// </param>
+        /// <param name="physical">
+        /// What the library itself holds of a title (copies, seasons, episodes Jellyfin hides from the
+        /// viewer), or null when nothing is checked (no library).
+        /// </param>
+        public NativeDetailsPolicy(SeerrParentalFilter parental, INativeDetailsSource source, IJellyfinLibraryAccess libraries, IRequestPolicy? requests = null, string? stateDirectory = null, NativeDetailsLibrary? physical = null)
+        {
+            _parental = parental;
+            _source = source;
+            _libraries = libraries;
+            _requests = requests;
+            _physical = physical;
+            _epochFile = string.IsNullOrWhiteSpace(stateDirectory) ? null : System.IO.Path.Combine(stateDirectory, EpochFile);
+            (_epochs, _generation) = LoadEpochs(_epochFile);
+        }
+
+        /// <summary>True when the admin setting is on (the facade answers nothing otherwise).</summary>
+        public static bool FeatureEnabled(PluginConfiguration? config) => config?.NativeAbsentDetailsEnabled == true;
+
+        /// <summary>True when Seerr is configured (the proof's only metadata source).</summary>
+        public static bool SeerrConfigured(PluginConfiguration config)
+            => config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrls) && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey());
+
+        /// <summary>True when the phase-3 request feature runs in Jellyfin Enhanced mode (no Seerr account needed).</summary>
+        public static bool JeMode(PluginConfiguration config)
+            => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je";
+
+        /// <summary>
+        /// True when a title's public details (details, ratings, a movie collection's parts) are answered:
+        /// native pages are on, or the request feature runs in Jellyfin Enhanced mode, where Seerr's
+        /// more-info window reads them for a viewer without a Seerr account (native pages or not).
+        /// </summary>
+        public static bool PublicDetailsEnabled(PluginConfiguration? config) => FeatureEnabled(config) || (config != null && JeMode(config));
+
+        /// <summary>Whether the viewer may see this title's page (and its children).</summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title (season/episode ids are judged by their series).</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True when allowed.</returns>
+        public async Task<bool> MaySeeAsync(User viewer, SyntheticId title, CancellationToken ct)
+            => await SeeAsync(viewer, title, ct).ConfigureAwait(false) == Access.Allowed;
+
+        /// <summary>
+        /// <see cref="MaySeeAsync"/> that tells a refusal from a check that can't be made right now
+        /// (the Seerr link of a viewer while Seerr is unreachable): the page answers 404 for the first and
+        /// a retryable 503 for the second, so an outage falls back to the modal instead of refusing.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> SeeAsync(User viewer, SyntheticId title, CancellationToken ct) => SeeAsync(viewer, title, false, ct);
+
+        /// <summary>
+        /// <see cref="SeeAsync(User, SyntheticId, CancellationToken)"/> for a title's public details only (no page,
+        /// row or artwork): the same rule, admitted while <see cref="PublicDetailsEnabled"/> holds.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> SeeDetailsAsync(User viewer, SyntheticId title, CancellationToken ct) => SeeAsync(viewer, title, true, ct);
+
+        private async Task<Access> SeeAsync(User viewer, SyntheticId title, bool details, CancellationToken ct)
+        {
+            if (!title.IsTitle) return Access.Refused;
+            var access = await ViewerAccessAsync(viewer, details, ct).ConfigureAwait(false);
+            if (access != Access.Allowed) return access;
+            var mediaType = title.IsMovie ? "movie" : "tv";
+            // Fails closed for restricted users when the rating can't be verified (same rule as asking).
+            if (!await _parental.MaySeeAbsentAsync(mediaType, title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return Access.Refused;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title) ? Access.Allowed : Access.Refused;
+        }
+
+        /// <summary>
+        /// Whether the viewer may open a page a title links to that isn't a title: a person's page, or the
+        /// discovery page of a genre, studio or network. These hold public data only (a biography, a name)
+        /// and their titles come from discovery rows filtered for the viewer, so the viewer-level rule
+        /// applies (the feature, Seerr, the viewer's link); a person TMDB marks as an adult performer is
+        /// refused to a viewer with a parental limit (see <see cref="PersonAllowed"/>).
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="page">A person, genre, studio or network id.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public async Task<Access> SeeLinkedPageAsync(User viewer, SyntheticId page, CancellationToken ct)
+        {
+            if (page.IsTitle) return Access.Refused;
+            return await ViewerAccessAsync(viewer, ct).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// True when a person's page may be shown to the viewer: TMDB's adult flag (adult performers) refuses
+        /// it to viewers with any parental limit, as a title outside their rating would be.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="person">Seerr's person details.</param>
+        /// <returns>True when allowed.</returns>
+        public static bool PersonAllowed(User viewer, JsonElement person)
+            => !(person.ValueKind == JsonValueKind.Object && person.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
+               || !ArrJellyfinView.HasParentalLimit(viewer);
+
+        /// <summary>
+        /// What the library holds of the title for this viewer: its copies, and the seasons and episodes
+        /// (of <paramref name="title"/>'s season) Jellyfin hides from them. A synthetic page, row or image
+        /// never stands in for one of those.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <returns>The physical title (<see cref="PhysicalTitle.None"/> when there is no copy).</returns>
+        public PhysicalTitle Physical(User viewer, SyntheticId title)
+            => Physical(viewer, title.IsMovie, title.TmdbId, title.Kind is SyntheticKind.Season or SyntheticKind.Episode ? title.Season : null);
+
+        /// <summary><see cref="Physical(User, SyntheticId)"/> for a title and, optionally, one of its seasons.</summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <param name="season">The season whose hidden episodes are wanted, or null.</param>
+        /// <param name="everySeason">A series with no <paramref name="season"/>: the hidden episodes of every season too (its status page).</param>
+        /// <returns>The physical title.</returns>
+        public PhysicalTitle Physical(User viewer, bool movie, int tmdb, int? season, bool everySeason = false)
+        {
+            if (_physical == null) return PhysicalTitle.None;
+            try
+            {
+                return _physical.Read(viewer, Revision(viewer), movie, tmdb, season, everySeason);
+            }
+            catch (Exception)
+            {
+                // The library can't be read: nothing may stand in for what it might hide.
+                return new PhysicalTitle { Hidden = true };
+            }
+        }
+
+        /// <summary>
+        /// The viewer-level part of <see cref="MaySeeAsync"/>, the same for every title: the feature is on,
+        /// the viewer is enabled, Seerr is configured and (Seerr mode) the viewer is linked and not
+        /// import-blocked. Artwork requests re-run it, since grants outlive the page that minted them.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True when the viewer may use native details at all.</returns>
+        public async Task<bool> ViewerMayUseAsync(User viewer, CancellationToken ct)
+            => await ViewerAccessAsync(viewer, ct).ConfigureAwait(false) == Access.Allowed;
+
+        /// <summary><see cref="ViewerMayUseAsync"/> that tells an unknown Seerr link from a refusal.</summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> ViewerAccessAsync(User viewer, CancellationToken ct) => ViewerAccessAsync(viewer, false, ct);
+
+        /// <summary>
+        /// <see cref="ViewerAccessAsync(User, CancellationToken)"/> for a title's public details only, admitted
+        /// while <see cref="PublicDetailsEnabled"/> holds (so in Jellyfin Enhanced mode with native pages off).
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>The access.</returns>
+        public Task<Access> DetailsAccessAsync(User viewer, CancellationToken ct) => ViewerAccessAsync(viewer, true, ct);
+
+        private async Task<Access> ViewerAccessAsync(User viewer, bool details, CancellationToken ct)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (!(details ? PublicDetailsEnabled(config) : FeatureEnabled(config)) || viewer.HasPermission(PermissionKind.IsDisabled)) return Access.Refused;
+            if (!SeerrConfigured(config!)) return Access.Refused;
+            if (JeMode(config!)) return Access.Allowed;
+            if (ImportBlocked(config!, viewer)) return Access.Refused;
+            return await _source.IsSeerrLinkedAsync(viewer.Id, ct).ConfigureAwait(false) switch
+            {
+                true => Access.Allowed,
+                false => Access.Refused,
+                null => Access.Unknown,
+            };
+        }
+
+        /// <summary>
+        /// Ends every artwork grant minted for a user (their session ended: sign-out, or the session was
+        /// removed): the policy revision the grants carry moves on, so already-rendered image URLs stop
+        /// working and a new page view mints new ones.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        public void Revoke(Guid userId)
+        {
+            if (userId == Guid.Empty) return;
+            _epochs.AddOrUpdate(userId, 1, (_, epoch) => epoch + 1);
+            _revisions.TryRemove(userId, out _);
+            if (!SaveEpochs())
+            {
+                // The sign-out isn't on disk: a restart would read the epochs from before it. Remove the
+                // file, so the next start can't trust anything and begins a new generation (every grant
+                // minted before ends). Until then the epoch holds in memory.
+                TryDelete(_epochFile);
+            }
+        }
+
+        /// <summary>The persisted epochs file shape: a generation every grant carries, and the per-user epochs.</summary>
+        private sealed class EpochState
+        {
+            public string? Generation { get; set; }
+
+            public Dictionary<string, long>? Epochs { get; set; }
+        }
+
+        /// <summary>
+        /// The kept session epochs and their generation. Revocation state that can't be trusted fails
+        /// closed: no file (first start, or one removed after a failed write), an unreadable one, or one
+        /// that can't be written back now (a sign-out after this start couldn't be kept either) starts a
+        /// new generation, which ends every grant minted before (the grant key alone decides nothing).
+        /// </summary>
+        private (ConcurrentDictionary<Guid, long> Epochs, string Generation) LoadEpochs(string? file)
+        {
+            var epochs = new ConcurrentDictionary<Guid, long>();
+            var fresh = NewGeneration();
+            if (file == null) return (epochs, fresh);
+            string? generation = null;
+            try
+            {
+                if (System.IO.File.Exists(file))
+                {
+                    var stored = JsonSerializer.Deserialize<EpochState>(System.IO.File.ReadAllText(file));
+                    if (stored?.Generation is { Length: > 0 } g && stored.Epochs != null)
+                    {
+                        foreach (var (user, epoch) in stored.Epochs)
+                        {
+                            if (Guid.TryParseExact(user, "N", out var id) && id != Guid.Empty && epoch > 0) epochs[id] = epoch;
+                        }
+
+                        generation = g;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                generation = null;
+            }
+
+            if (generation == null) epochs.Clear();
+            var kept = generation ?? fresh;
+            // Written back at once: a start that can't keep its state can't keep a later sign-out either.
+            return Write(file, epochs, kept) ? (epochs, kept) : (epochs, fresh);
+        }
+
+        private static string NewGeneration() => Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8));
+
+        /// <summary>Keeps the session epochs (owner-only file, replaced whole), so a restart doesn't undo a sign-out.</summary>
+        /// <returns>False when they couldn't be written.</returns>
+        private bool SaveEpochs() => _epochFile == null || Write(_epochFile, _epochs, _generation);
+
+        private bool Write(string file, ConcurrentDictionary<Guid, long> epochs, string generation)
+        {
+            lock (_epochWrite)
+            {
+                try
+                {
+                    var snapshot = new EpochState
+                    {
+                        Generation = generation,
+                        Epochs = epochs.ToDictionary(e => e.Key.ToString("N", CultureInfo.InvariantCulture), e => e.Value),
+                    };
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+                    var temp = file + ".tmp";
+                    System.IO.File.WriteAllText(temp, JsonSerializer.Serialize(snapshot));
+                    if (!OperatingSystem.IsWindows()) System.IO.File.SetUnixFileMode(temp, System.IO.UnixFileMode.UserRead | System.IO.UnixFileMode.UserWrite);
+                    System.IO.File.Move(temp, file, overwrite: true);
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        private static void TryDelete(string? file)
+        {
+            if (file == null) return;
+            try
+            {
+                System.IO.File.Delete(file);
+            }
+            catch (Exception)
+            {
+                // A read-only folder: the next start can't write back the stale file either, so it fails closed there.
+            }
+        }
+
+        /// <summary>
+        /// The title-level part of <see cref="MaySeeAsync"/> without network I/O, for titles a page lists
+        /// (the Similar rail) or draws (artwork): the parental decision from the rating cache (a
+        /// restricted viewer needs a verified rating, so an unknown one hides the title) and library
+        /// or request visibility. A title listed here is one whose own page the viewer may open.
+        /// </summary>
+        /// <param name="viewer">The effective viewer (viewer-level checks already passed).</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <returns>True when the title may be shown.</returns>
+        public bool MayListAbsent(User viewer, SyntheticId title)
+        {
+            if (!title.IsTitle) return false;
+            if (!_parental.MaySeeAbsent(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), out _)) return false;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+        }
+
+        /// <summary>
+        /// <see cref="MayListAbsent"/> that reads a rating the parental cache doesn't hold (a restart, an
+        /// expired entry) instead of refusing: artwork grants outlive the page and the server process that
+        /// minted them. Shared and bounded like the page's own check; fails closed.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="title">Any synthetic id of the title.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True when the title may be shown.</returns>
+        public async Task<bool> MayListAbsentAsync(User viewer, SyntheticId title, CancellationToken ct)
+        {
+            if (MayListAbsent(viewer, title)) return true;
+            if (!title.IsTitle) return false;
+            if (!await _parental.MaySeeAbsentAsync(title.IsMovie ? "movie" : "tv", title.TmdbId, viewer.Id.ToString("N"), ct).ConfigureAwait(false)) return false;
+            return LibraryVisible(viewer, title) && !Physical(viewer, title).Hides(title);
+        }
+
+        /// <summary>
+        /// How a title a list names (a filmography, a discovery feed) is shown to the viewer, judged by the
+        /// library first: the library copy they can open (a library card), or, with no copy anywhere, the
+        /// absent title when its own page would open for them (<see cref="MayListAbsent"/>: the cached
+        /// parental decision, library or request visibility); otherwise nothing. A copy Jellyfin hides
+        /// from them is never shown as absent instead. No network I/O: a restricted viewer's ratings must
+        /// be in the parental cache already (the list was run through the parental filter first).
+        /// </summary>
+        /// <param name="viewer">The effective viewer (viewer-level checks already passed).</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="tmdb">TMDB id.</param>
+        /// <returns>The library copy to link to, an absent title, or nothing.</returns>
+        public ListedTitle Listed(User viewer, bool movie, int tmdb)
+        {
+            if (tmdb <= 0) return ListedTitle.Left;
+            PhysicalTitle copies;
+            try
+            {
+                copies = _physical?.ReadCopies(viewer, Revision(viewer), movie, tmdb) ?? PhysicalTitle.None;
+            }
+            catch (Exception)
+            {
+                // The library can't be read: nothing may stand in for what it might hide.
+                return ListedTitle.Left;
+            }
+
+            if (copies.Shown.Count > 0) return ListedTitle.Copy(copies.Shown[0]);
+            if (copies.Copies.Count > 0) return ListedTitle.Left;
+            return MayListAbsent(viewer, movie ? SyntheticId.Movie(tmdb) : SyntheticId.Series(tmdb)) ? ListedTitle.Absent : ListedTitle.Left;
+        }
+
+        private static bool ImportBlocked(PluginConfiguration config, User viewer)
+            => JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers).Contains(viewer.Id.ToString("N"));
+
+        private static bool RequestsOn(PluginConfiguration config)
+            => config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr";
+
+        /// <summary>Whether the viewer can open a library the title would land in (request visibility when requests are on).</summary>
+        private bool LibraryVisible(User viewer, SyntheticId title)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null) return false;
+            if (RequestsOn(config) && _requests != null)
+            {
+                try
+                {
+                    var input = new MutationInput
+                    {
+                        Key = (title.IsMovie ? "movie" : "tv") + ":tmdb:" + title.TmdbId.ToString(CultureInfo.InvariantCulture),
+                        Scope = title.IsMovie ? "movie" : "seasons",
+                    };
+                    return _requests.Evaluate(viewer.Id, input).Visible;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+
+            return CanOpenLibraryFor(viewer, title.IsMovie);
+        }
+
+        /// <summary>True when the viewer can open at least one library a title of this kind lands in.</summary>
+        /// <param name="viewer">Viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <returns>True when such a library is open to them.</returns>
+        public bool CanOpenLibraryFor(User viewer, bool movie)
+        {
+            var roots = Roots();
+            foreach (var root in roots)
+            {
+                var fits = root.CollectionType is null or "mixed" || root.CollectionType == (movie ? "movies" : "tvshows");
+                if (fits && Guid.TryParse(root.Id, out var id) && id != Guid.Empty && ArrInstanceLibraries.CanOpen(viewer, new[] { id })) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The viewer's policy revision: parental limit and tag rules, library access, the feature
+        /// switch, Seerr configuration, the request mode, the viewer's import block and their session
+        /// epoch (<see cref="Revoke"/>) with the epochs' generation. Artwork grants
+        /// carry it; any change ends the grants minted before. (Seerr linkage and per-title request
+        /// visibility are checked again on each artwork request instead.)
+        /// </summary>
+        /// <param name="viewer">Viewer.</param>
+        /// <returns>An opaque revision string.</returns>
+        public string Revision(User viewer)
+        {
+            if (_revisions.TryGetValue(viewer.Id, out var hit) && DateTime.UtcNow - hit.At < RevisionTtl) return hit.Revision;
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var text = JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(viewer))
+                + "|" + viewer.HasPermission(PermissionKind.EnableAllFolders)
+                + "|" + string.Join(',', viewer.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders).OrderBy(g => g))
+                + "|" + string.Join(',', viewer.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders).OrderBy(g => g))
+                + "|" + viewer.HasPermission(PermissionKind.IsDisabled)
+                + "|" + FeatureEnabled(config)
+                + "|" + (config != null && SeerrConfigured(config))
+                + "|" + (config != null && JeMode(config)) + "|" + (config != null && RequestsOn(config))
+                + "|" + (config != null && ImportBlocked(config, viewer))
+                + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture);
+            var revision = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).Substring(0, 16);
+            if (_revisions.Count > 1000) _revisions.Clear();
+            _revisions[viewer.Id] = (revision, DateTime.UtcNow);
+            return revision;
+        }
+
+        private IReadOnlyList<JfLibraryRoot> Roots()
+        {
+            var cached = _roots;
+            if (cached is { } c && DateTime.UtcNow - c.At < LibrariesTtl) return c.Roots;
+            var roots = _libraries.Libraries();
+            _roots = (roots, DateTime.UtcNow);
+            return roots;
+        }
+    }
+}
+#endif

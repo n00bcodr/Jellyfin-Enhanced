@@ -46,7 +46,6 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
  const h=createHarness({html,url:'http://jellyfin.test/web/index.html#!/details?id=movie-1',globals,
   JE:{pluginConfig:{JellyseerrShowSimilar:true,JellyseerrShowRecommended:true,...config},
    t:key=>titles[key]??(real?key:undefined),
-   seerrStatus:{MEDIA:{BLOCKED:6}},
    hiddenContent:{filterJellyseerrResults:list=>list.filter(entry=>!hidden.has(entry.id)),isHiddenByTmdbId:id=>hidden.has(id),
     getSettings:()=>({enabled:true,showHideButtons:true,showButtonJellyseerr:true})},
    escapeHtml:text=>String(text).replace(/[&<>"']/g,c=>`&#${c.charCodeAt(0)};`),
@@ -62,7 +61,8 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
     navigation:{onNavigate:fn=>navs.push(fn),onViewPage:fn=>views.push(fn)},
     ui:{addTouchTapListener:()=>{},addDelegatedTouchTapListener:()=>{}}},...je}});
  t.after(()=>h.close());
- if(real)for(const file of ['seerr-status','ui/ui-icons','ui/ui-popover','ui/ui-badges','ui/ui-cards'])h.load(`jellyseerr/${file}.js`);
+ h.load('jellyseerr/seerr-status.js');
+ if(real)for(const file of ['ui/ui-icons','ui/ui-popover','ui/ui-badges','ui/ui-cards'])h.load(`jellyseerr/${file}.js`);
  // Every card built, and every root posters were released under.
  const ui=h.JE.jellyseerrUI,createCard=ui.createJellyseerrCard,releasePosters=ui.releasePosters;
  ui.createJellyseerrCard=(...args)=>{const el=createCard(...args);counts.cards++;made.push(el);return el;};
@@ -483,11 +483,12 @@ test('switches off or Seerr inactive: no marker and no request; the filters stil
  assert.equal(inactive.marker(),null);assert.deepEqual(inactive.network,{similar:0,recommended:0});
  const similarOnly=setup(t,{config:{JellyseerrShowRecommended:false}});await similarOnly.start();await similarOnly.render();
  assert.deepEqual(similarOnly.network,{similar:1,recommended:0});assert.deepEqual(similarOnly.after(),['Similar']);
- // Blocklisted and library items are left out at data time.
- const extra=i=>i<5?{mediaInfo:{status:6}}:i<10?{mediaInfo:{jellyfinMediaId:`lib-${i}`}}:{};
+ // Blocklisted and library items are left out at data time, a title held only in 4K too (not one whose
+ // 4K copy is still on its way).
+ const extra=i=>i<5?{mediaInfo:{status:6}}:i<10?{mediaInfo:{jellyfinMediaId:`lib-${i}`}}:i<13?{mediaInfo:{status:1,status4k:5,jellyfinMediaId4k:`uhd-${i}`}}:i===13?{mediaInfo:{status:1,status4k:3,jellyfinMediaId4k:'uhd-13'}}:{};
  const filtered=setup(t,{config:{JellyseerrExcludeBlocklistedItems:true,JellyseerrExcludeLibraryItems:true}});
  await filtered.start({similar:results('Similar',25,extra),recommended:results('Recommended',25,extra)});await filtered.render();
- assert.deepEqual(filtered.cards(),[15,15]);
+ assert.deepEqual(filtered.cards(),[12,12]);
  // Nothing left after filtering: no marker.
  const empty=setup(t,{config:{JellyseerrExcludeBlocklistedItems:true}});
  await empty.start({similar:results('Similar',3,()=>({mediaInfo:{status:6}})),recommended:{results:[]}});assert.equal(empty.marker(),null);
@@ -684,6 +685,20 @@ test('with the real cards: a result changed in place since its card was prebuilt
  assert.match(badge(mid,0,1).className,/status-requested/);
 });
 
+test('with the real cards: a title held only in 4K is in the library through its 4K copy; one whose 4K copy is still coming is not',async t=>{
+ const extra=i=>({posterPath:`/p${i}.jpg`,...(i===0?{mediaInfo:{status:1,status4k:5,jellyfinMediaId4k:'uhd-0'}}:i===1?{mediaInfo:{status:1,status4k:3,jellyfinMediaId4k:'uhd-1'}}:{})});
+ const h=setup(t,{real:true});await h.start({similar:results('Similar',25,extra),recommended:results('Recommended',25,extra)});await h.render();
+ const cards=[...h.view.querySelectorAll('.jellyseerr-details-section')[0].querySelectorAll('.jellyseerr-card')];
+ assert.equal(cards[0].getAttribute('data-library-item'),'true');assert.equal(cards[0].getAttribute('data-jellyfin-media-id'),'uhd-0');
+ assert.ok(cards[0].classList.contains('jellyseerr-card-in-library'));
+ assert.equal(cards[0].querySelector('.cardText-first a').getAttribute('href'),'#!/details?id=uhd-0');
+ assert.equal(cards[1].getAttribute('data-library-item'),null);
+ const ui=h.JE.jellyseerrUI;
+ assert.equal(ui.isInLibrary({mediaType:'movie',mediaInfo:{status:1,status4k:5,jellyfinMediaId4k:'uhd'}}),true);
+ assert.equal(ui.isInLibrary({mediaType:'movie',mediaInfo:{status:1,status4k:3,jellyfinMediaId4k:'uhd'}}),false);
+ assert.equal(ui.isInLibrary({mediaType:'movie',mediaInfo:{status:1}}),false);
+});
+
 test('where the browser has background tasks the cards are built in short ones, cancelled with the build',async t=>{
  const h=setup(t,{prebuild:true,background:true});await h.start();
  assert.deepEqual(h.tasks(),[{priority:'background',live:true}]);assert.equal(h.idles(),0,'no idle callback');
@@ -693,4 +708,25 @@ test('where the browser has background tasks the cards are built in short ones, 
  const early=setup(t,{prebuild:true,background:true});await early.start();await early.render();
  assert.deepEqual(early.tasks(),[{priority:'background',live:false}]);assert.equal(early.counts.cards,40);
  early.background();assert.equal(early.counts.cards,40);
+});
+
+test('an item the server refuses (an HTTP answer) gets no rows and logs no error; a real failure is still logged',async t=>{
+ const refused=setup(t,{item:()=>{throw {status:404};}});await refused.start();await refused.render();
+ assert.equal(refused.counts.item,1);assert.equal(refused.marker(),null);assert.deepEqual(refused.after(),[]);assert.deepEqual(refused.network,{similar:0,recommended:0});
+ const broken=setup(t,{item:()=>{throw new Error('boom');}});broken.expectConsoleError(/Seerr Item Details: Error getting TMDB ID/);
+ await broken.start();await broken.render();assert.equal(broken.marker(),null);assert.deepEqual(broken.after(),[]);
+});
+
+test('a series page\'s Request More reads its details the way the More Info window does: public for a viewer without a Seerr account, nothing logged when Seerr refuses them',async t=>{
+ const SERIES={Type:'Series',Name:'Futurama',ProviderIds:{Tmdb:'615'}};
+ for(const outcome of ['public','refused']){
+  const details=[],proxied=[];
+  const h=setup(t,{item:()=>SERIES,config:{JellyseerrEnabled:true,JellyseerrShowSimilar:false,JellyseerrShowRecommended:false},je:{
+   internals:{moreInfoModal:{fetchMediaDetails:async(id,type)=>{details.push([id,type]);if(outcome==='refused')throw Object.assign(new Error('refused'),{seerrAccount:'unlinked'});return {id,name:'Futurama',seasons:[],jePublicDetails:true};},
+    isExplained:error=>!!error?.seerrAccount}},
+   jellyseerrMoreInfo:{checkForUnrequestedSeasons:async()=>false}}});
+  h.JE.jellyseerrAPI.fetchTvShowDetails=async id=>{proxied.push(id);return null;};
+  h.frame();await h.flush();
+  assert.deepEqual([details,proxied],[[[615,'tv']],[]],outcome);
+ }
 });

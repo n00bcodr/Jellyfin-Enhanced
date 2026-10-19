@@ -59,7 +59,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return;
             }
 
-            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Jellyseerr User Import] Jellyseerr URL or API key not configured.");
                 progress?.Report(100);
@@ -82,7 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
             cancellationToken.ThrowIfCancellationRequested();
             var importResult = await JellyseerrUserImportHelper.BulkImportAsync(
-                userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger, cancellationToken);
+                userIds, urls, config.GetJellyseerrApiKey(), _httpClientFactory, _logger, cancellationToken);
 
             if (importResult.Reached && importResult.Imported > 0)
             {

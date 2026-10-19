@@ -1,0 +1,506 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Secrets;
+
+namespace JE.Tests;
+
+/// <summary>
+/// A synthetic Sonarr/Radarr API behind <see cref="IntegrationTransport"/> (by host name), with
+/// paged queue/history, history/since, calendar, library, tags and system routes, call counting
+/// per host and path, and switchable failures. Plus the plugin wiring (instance rows, registry,
+/// client factory, store) the arr-state tests share.
+/// </summary>
+internal sealed class FakeArr : IDisposable
+{
+    public sealed class Host
+    {
+        public string App { get; set; } = "Radarr";
+        public List<JsonObject> Movies { get; } = new();
+        public List<JsonObject> Series { get; } = new();
+        public List<JsonObject> Queue { get; } = new();
+        public List<JsonObject> History { get; } = new();
+        public List<JsonObject> Calendar { get; } = new();
+        /// <summary>Episodes answered by <c>/episode?seriesId=</c> (filtered by their <c>seriesId</c>).</summary>
+        public List<JsonObject> Episodes { get; } = new();
+        public Dictionary<int, string> Tags { get; } = new();
+        /// <summary>Non-zero: every call answers with this HTTP status.</summary>
+        public int FailWith { get; set; }
+        /// <summary>Non-null: every call answers with a redirect to this URL.</summary>
+        public string? RedirectTo { get; set; }
+        /// <summary>Non-null: awaited (with the call's cancellation token) before a call to this path is answered.</summary>
+        public Func<string, CancellationToken, Task>? Before { get; set; }
+        /// <summary>Non-null: called (under the host's lock) before a page of a paged list is cut, with the path and page number — mutate the list here to move rows between pages mid-read.</summary>
+        public Action<string, int>? BeforePage { get; set; }
+        /// <summary>The paged answer's totalRecords from the path and real count; null reports the real count.</summary>
+        public Func<string, int, int>? ReportedTotal { get; set; }
+        /// <summary>Connect → notifications (webhooks) the arr holds, with ids.</summary>
+        public List<JsonObject> Notifications { get; } = new();
+        /// <summary>Called when a notification is created or changed, or tested (the arr would send its Test event here); return an error message to fail the save.</summary>
+        public Func<JsonObject, string?>? OnNotificationTest { get; set; }
+        /// <summary>Request bodies of writes, by method and path.</summary>
+        public List<(string Method, string Path, string Body)> Writes { get; } = new();
+        /// <summary>Non-zero: <c>POST /command</c> answers with this HTTP status (other calls as usual).</summary>
+        public int CommandFailWith { get; set; }
+        /// <summary>Non-zero: <c>GET /queue/details</c> answers with this HTTP status (other calls as usual).</summary>
+        public int DetailsFailWith { get; set; }
+
+        /// <summary>Status code every episode list read answers with (0: answered normally).</summary>
+        public int EpisodesFailWith { get; set; }
+        /// <summary>What <c>GET /command/{id}</c> answers for commands posted to <c>/command</c>.</summary>
+        public string CommandStatus { get; set; } = "completed";
+        /// <summary>The message of those commands.</summary>
+        public string? CommandMessage { get; set; } = "Completed";
+        /// <summary>Non-null: the <c>started</c> time (ISO, UTC) those commands report.</summary>
+        public string? CommandStarted { get; set; }
+        /// <summary>Rows of the per-title history routes (<c>/history/movie?movieId=</c>, <c>/history/series?seriesId=&amp;seasonNumber=</c>), flat as the arrs answer them.</summary>
+        public List<JsonObject> TitleHistory { get; } = new();
+        /// <summary><c>/health</c> rows.</summary>
+        public List<JsonObject> Health { get; } = new();
+        /// <summary><c>/diskspace</c> rows (path, freeSpace, totalSpace).</summary>
+        public List<JsonObject> DiskSpace { get; } = new();
+        /// <summary><c>/rootfolder</c> rows (path, freeSpace, accessible).</summary>
+        public List<JsonObject> RootFolders { get; } = new();
+        /// <summary><c>/qualityprofile</c> rows (id, name).</summary>
+        public List<JsonObject> Profiles { get; } = new();
+        /// <summary>
+        /// Metadata the arr's lookup knows (<c>movie/lookup</c>, <c>series/lookup</c>): rows matched by the
+        /// term's provider id. A title already in the library is answered with its library id, like the arrs.
+        /// </summary>
+        public List<JsonObject> Lookup { get; } = new();
+        /// <summary>True: the lookup answers every <see cref="Lookup"/> row whatever the term (a fuzzy metadata search).</summary>
+        public bool LookupIgnoresTerm { get; set; }
+        /// <summary>Episodes a series gets when it is added, by TVDB id: (season, episode) pairs.</summary>
+        public Dictionary<int, (int Season, int Episode)[]> EpisodeList { get; } = new();
+        /// <summary>Non-null: runs after a write was applied (under the host's lock); throw to lose the answer.</summary>
+        public Action<string, string>? AfterWrite { get; set; }
+        /// <summary>Non-null: answers a write (method, path, body) before it is applied (null: apply it).</summary>
+        public Func<string, string, string, HttpResponseMessage?>? OnWrite { get; set; }
+        /// <summary>Gives each new library title and episode an id.</summary>
+        public int NextId { get; set; } = 500;
+    }
+
+    public ApiPluginFixture Plugin { get; } = new();
+    public ConcurrentDictionary<string, Host> Hosts { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public ConcurrentQueue<string> Calls { get; } = new();
+    public IntegrationTransport Transport { get; }
+    public ArrInstanceRegistry Registry { get; } = new();
+    public ArrClientFactory Factory { get; }
+    public DateTimeOffset Now { get; set; } = new(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+    private readonly List<ArrStateStore> stores = new();
+
+    public FakeArr()
+    {
+        Transport = new IntegrationTransport(async (request, ct) =>
+        {
+            if (Hosts.TryGetValue(request.RequestUri!.Host, out var host) && host.Before is { } before) await before(request.RequestUri.AbsolutePath, ct);
+            return Answer(request);
+        });
+        Factory = new ArrClientFactory(Transport, Registry);
+    }
+
+    public int CallCount(string? host = null, string? pathPart = null)
+        => Calls.Count(c => (host == null || c.StartsWith(host + "/", StringComparison.OrdinalIgnoreCase)) && (pathPart == null || c.Contains(pathPart, StringComparison.Ordinal)));
+
+    /// <summary>Adds instance rows (name, kind, url, key) to the configuration and migrates them (ids, keys to the store).</summary>
+    public void Configure(params (string Name, ArrKind Kind, string Url, string Key)[] rows)
+    {
+        var config = Plugin.Plugin.Configuration;
+        config.SonarrInstances = JsonSerializer.Serialize(rows.Where(r => r.Kind == ArrKind.Sonarr).Select(r => new { r.Name, r.Url, ApiKey = r.Key, Enabled = true }));
+        config.RadarrInstances = JsonSerializer.Serialize(rows.Where(r => r.Kind == ArrKind.Radarr).Select(r => new { r.Name, r.Url, ApiKey = r.Key, Enabled = true }));
+        SecretsMigration.MigrateStored(config, Plugin.Plugin.Secrets);
+    }
+
+    public ArrConnection Instance(string name) => Registry.All().Single(c => c.Name == name);
+
+    /// <summary>A store over this fake with the test clock; <paramref name="cacheDirectory"/> null disables the warm start.</summary>
+    public ArrStateStore Store(string? cacheDirectory = null)
+    {
+        var store = new ArrStateStore(Factory, cacheDirectory, Plugin.Core.Logger, () => Now, () => Plugin.Plugin.Configuration);
+        stores.Add(store);
+        return store;
+    }
+
+    public Host Add(string host, string app)
+    {
+        var h = new Host { App = app };
+        Hosts[host] = h;
+        return h;
+    }
+
+    public static JsonObject Movie(int id, int tmdb, string title, bool hasFile = true, int[]? tags = null, string? path = null, string? digital = null)
+        => new()
+        {
+            ["id"] = id, ["tmdbId"] = tmdb, ["imdbId"] = "tt" + tmdb, ["title"] = title, ["year"] = 2010, ["hasFile"] = hasFile, ["monitored"] = true,
+            ["sizeOnDisk"] = 1000L * id, ["path"] = path ?? $"/data/movies/{title} ({tmdb})", ["qualityProfileId"] = 1,
+            ["tags"] = new JsonArray((tags ?? Array.Empty<int>()).Select(t => (JsonNode)t).ToArray()),
+            ["digitalRelease"] = digital,
+            ["images"] = new JsonArray(new JsonObject { ["coverType"] = "poster", ["remoteUrl"] = $"https://img/{tmdb}.jpg" }),
+        };
+
+    public static JsonObject SeriesRow(int id, int tvdb, string title, int? tmdb = null, string? imdb = null, int[]? tags = null, string? slug = null)
+        => new()
+        {
+            ["id"] = id, ["tvdbId"] = tvdb, ["tmdbId"] = tmdb, ["imdbId"] = imdb, ["title"] = title, ["titleSlug"] = slug ?? title.ToLowerInvariant().Replace(' ', '-'),
+            ["monitored"] = true, ["path"] = $"/data/tv/{title}", ["qualityProfileId"] = 1,
+            ["tags"] = new JsonArray((tags ?? Array.Empty<int>()).Select(t => (JsonNode)t).ToArray()),
+            ["statistics"] = new JsonObject { ["episodeFileCount"] = 3, ["episodeCount"] = 6, ["percentOfEpisodes"] = 50.0, ["sizeOnDisk"] = 3000L },
+            ["images"] = new JsonArray(new JsonObject { ["coverType"] = "poster", ["remoteUrl"] = $"https://img/tv{tvdb}.jpg" }),
+        };
+
+    public static JsonObject SonarrQueueRow(int id, string downloadId, int season, int episode, string series = "Show", int tvdb = 100, int? tmdb = 200)
+        => new()
+        {
+            ["id"] = id, ["downloadId"] = downloadId, ["title"] = $"{series}.S{season:00}E{episode:00}.1080p-GRP", ["status"] = "downloading",
+            ["trackedDownloadState"] = "downloading", ["trackedDownloadStatus"] = "ok", ["size"] = 1000.0, ["sizeleft"] = 250.0, ["timeleft"] = "00:01:00",
+            ["seriesId"] = 1, ["episodeId"] = id,
+            ["series"] = new JsonObject { ["id"] = 1, ["title"] = series, ["tvdbId"] = tvdb, ["tmdbId"] = tmdb, ["images"] = new JsonArray() },
+            ["episode"] = new JsonObject { ["id"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = $"Episode {episode}" },
+        };
+
+    public static JsonObject RadarrQueueRow(int id, int tmdb, string title, string state = "downloading", string status = "ok")
+        => new()
+        {
+            ["id"] = id, ["downloadId"] = "dl" + id, ["title"] = title + ".2010.1080p-GRP", ["status"] = "downloading",
+            ["trackedDownloadState"] = state, ["trackedDownloadStatus"] = status, ["size"] = 2000.0, ["sizeleft"] = 1000.0, ["timeleft"] = "00:02:00",
+            ["movieId"] = id, ["movie"] = new JsonObject { ["id"] = id, ["title"] = title, ["year"] = 2010, ["tmdbId"] = tmdb, ["images"] = new JsonArray() },
+            ["statusMessages"] = new JsonArray(new JsonObject { ["title"] = "x", ["messages"] = new JsonArray("Sample") }),
+        };
+
+    public static JsonObject HistoryRow(int id, string eventType, DateTime date, string? downloadId = null, int tmdb = 1, string title = "Movie", int? season = null, int? episode = null)
+    {
+        var row = new JsonObject
+        {
+            ["id"] = id, ["eventType"] = eventType, ["date"] = date.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture), ["downloadId"] = downloadId,
+        };
+        if (season.HasValue)
+        {
+            row["series"] = new JsonObject { ["id"] = 1, ["title"] = title, ["tvdbId"] = 100, ["tmdbId"] = tmdb, ["images"] = new JsonArray() };
+            row["episode"] = new JsonObject { ["id"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = "Ep " + episode };
+        }
+        else
+        {
+            row["movie"] = new JsonObject { ["id"] = id, ["title"] = title, ["year"] = 2010, ["tmdbId"] = tmdb, ["images"] = new JsonArray() };
+        }
+        return row;
+    }
+
+    public static JsonObject Episode(int id, string airUtc, string series = "Show", int tvdb = 100, int season = 1, int episode = 1)
+        => new()
+        {
+            ["id"] = id, ["seriesId"] = 1, ["tvdbId"] = 9000 + id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["title"] = "Ep " + episode,
+            ["airDateUtc"] = airUtc, ["hasFile"] = false, ["monitored"] = true,
+            ["series"] = new JsonObject { ["title"] = series, ["tvdbId"] = tvdb, ["imdbId"] = "tt" + tvdb, ["tmdbId"] = tvdb + 1, ["path"] = "/data/tv/" + series, ["images"] = new JsonArray() },
+        };
+
+    private HttpResponseMessage Answer(HttpRequestMessage request)
+    {
+        var uri = request.RequestUri!;
+        var path = uri.AbsolutePath;
+        Calls.Enqueue(uri.Host + path + uri.Query);
+        if (!Hosts.TryGetValue(uri.Host, out var host)) return IntegrationTransport.Response("{}", 404);
+        if (host.RedirectTo != null)
+        {
+            var redirect = IntegrationTransport.Response("", 302);
+            redirect.Headers.Location = new Uri(host.RedirectTo);
+            return redirect;
+        }
+        if (host.FailWith != 0) return IntegrationTransport.Response("{\"message\":\"boom\"}", host.FailWith);
+
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        string Json(object o) => JsonSerializer.Serialize(o);
+        lock (host)
+        {
+            if (path.StartsWith("/api/v3/notification", StringComparison.Ordinal)) return Notification(host, request, path);
+            if (path == "/api/v3/command" && request.Method == HttpMethod.Post)
+            {
+                var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                host.Writes.Add(("POST", path, body));
+                if (host.CommandFailWith != 0) return IntegrationTransport.Response("{\"message\":\"command refused\"}", host.CommandFailWith);
+                var command = JsonNode.Parse(body)!.AsObject();
+                command["id"] = 900 + host.Writes.Count;
+                command["status"] = "queued";
+                return IntegrationTransport.Response(command.ToJsonString(), 201);
+            }
+            if (path.StartsWith("/api/v3/command/", StringComparison.Ordinal) && int.TryParse(path["/api/v3/command/".Length..], out var commandId))
+                return IntegrationTransport.Response(new JsonObject { ["id"] = commandId, ["status"] = host.CommandStatus, ["message"] = host.CommandMessage, ["started"] = host.CommandStarted }.ToJsonString());
+            if (request.Method == HttpMethod.Get && path is "/api/v3/history/movie" or "/api/v3/history/series")
+            {
+                var field = path.EndsWith("/movie", StringComparison.Ordinal) ? "movieId" : "seriesId";
+                var id = query[field];
+                var season = query["seasonNumber"];
+                var rows = host.TitleHistory.Where(r => r[field]?.ToString() == id && (season == null || r["seasonNumber"]?.ToString() == season));
+                return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+            }
+            if (request.Method == HttpMethod.Get && TitleById(host, path) is { } title) return title;
+            if (Library(host, request, path, query) is { } library) return library;
+            // Queue removal (DELETE /queue/{id} and /queue/bulk {ids}): recorded with the query, rows dropped.
+            if (request.Method == HttpMethod.Delete && path.StartsWith("/api/v3/queue", StringComparison.Ordinal))
+            {
+                var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                host.Writes.Add(("DELETE", path + uri.Query, body));
+                var ids = path == "/api/v3/queue/bulk"
+                    ? JsonNode.Parse(body)!["ids"]!.AsArray().Select(n => (int)n!).ToList()
+                    : new List<int> { int.Parse(path["/api/v3/queue/".Length..], CultureInfo.InvariantCulture) };
+                if (!host.Queue.Any(q => ids.Contains((int)q["id"]!))) return IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404);
+                host.Queue.RemoveAll(q => ids.Contains((int)q["id"]!));
+                return IntegrationTransport.Response("{}");
+            }
+            if (path == "/api/v3/episode" && host.EpisodesFailWith != 0)
+                return IntegrationTransport.Response("{\"message\":\"boom\"}", host.EpisodesFailWith);
+            if (path == "/api/v3/queue/details" && host.DetailsFailWith != 0)
+                return IntegrationTransport.Response("{\"message\":\"boom\"}", host.DetailsFailWith);
+            if (path == "/api/v3/queue/details")
+                return IntegrationTransport.Response(new JsonArray(host.Queue.Select(q => q.DeepClone()).ToArray()).ToJsonString());
+            switch (path)
+            {
+                case "/api/v3/system/status":
+                    return IntegrationTransport.Response(Json(new { appName = host.App, version = host.App == "Sonarr" ? "4.0.20.3014" : "6.0.4.10291" }));
+                case "/api/v3/tag":
+                    return IntegrationTransport.Response(Json(host.Tags.Select(t => new { id = t.Key, label = t.Value })));
+                case "/api/v3/movie":
+                    return IntegrationTransport.Response(new JsonArray(host.Movies.Select(m => m.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/series":
+                    return IntegrationTransport.Response(new JsonArray(host.Series.Select(m => m.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/queue":
+                    host.BeforePage?.Invoke(path, PageNumber(query));
+                    return Page(host, path, host.Queue, query);
+                case "/api/v3/history":
+                    host.BeforePage?.Invoke(path, PageNumber(query));
+                    return Page(host, path, host.History.OrderByDescending(h => (string)h["date"]!).ToList(), query);
+                case "/api/v3/history/since":
+                {
+                    var since = DateTime.Parse(query["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+                    // Like the arrs: strictly after "date".
+                    var rows = host.History.Where(h => DateTime.Parse((string)h["date"]!, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal) > since);
+                    return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                }
+                case "/api/v3/episode":
+                {
+                    var seriesId = int.Parse(query["seriesId"] ?? "0", CultureInfo.InvariantCulture);
+                    var rows = host.Episodes.Where(e => (int?)e["seriesId"] == seriesId);
+                    return IntegrationTransport.Response(new JsonArray(rows.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                }
+                case "/api/v3/calendar":
+                    return IntegrationTransport.Response(new JsonArray(host.Calendar.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/health":
+                    return IntegrationTransport.Response(new JsonArray(host.Health.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/diskspace":
+                    return IntegrationTransport.Response(new JsonArray(host.DiskSpace.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/rootfolder":
+                    return IntegrationTransport.Response(new JsonArray(host.RootFolders.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                case "/api/v3/qualityprofile":
+                    return IntegrationTransport.Response(new JsonArray(host.Profiles.Select(r => r.DeepClone()).ToArray()).ToJsonString());
+                default:
+                    return IntegrationTransport.Response("{}", 404);
+            }
+        }
+    }
+
+    // Lookup, filtered library reads and the add / monitoring writes the request executor uses
+    // (POST movie|series, PUT movie/editor|series/editor|episode/monitor, POST seasonpass), applied
+    // to the host's lists like the arrs do. Null for every other call.
+    private static HttpResponseMessage? Library(Host host, HttpRequestMessage request, string path, System.Collections.Specialized.NameValueCollection query)
+    {
+        var method = request.Method.Method;
+        if (method == "GET" && path is "/api/v3/movie/lookup" or "/api/v3/series/lookup")
+        {
+            var term = query["term"] ?? string.Empty;
+            var colon = term.IndexOf(':');
+            if (colon <= 0) return IntegrationTransport.Response("[]");
+            var field = term[..colon] + "Id";
+            var value = term[(colon + 1)..];
+            var library = path == "/api/v3/movie/lookup" ? host.Movies : host.Series;
+            var rows = host.Lookup.Where(r => host.LookupIgnoresTerm || string.Equals(r[field]?.ToString(), value, StringComparison.OrdinalIgnoreCase)).Select(r =>
+            {
+                var row = r.DeepClone().AsObject();
+                var held = library.FirstOrDefault(m => m[field]?.ToString() == r[field]?.ToString());
+                row["id"] = held == null ? 0 : (int)held["id"]!;
+                return (JsonNode)row;
+            });
+            return IntegrationTransport.Response(new JsonArray(rows.ToArray()).ToJsonString());
+        }
+        if (method == "GET" && path == "/api/v3/movie" && query["tmdbId"] is { } tmdb)
+            return IntegrationTransport.Response(new JsonArray(host.Movies.Where(m => m["tmdbId"]?.ToString() == tmdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
+        if (method == "GET" && path == "/api/v3/series" && query["tvdbId"] is { } tvdb)
+            return IntegrationTransport.Response(new JsonArray(host.Series.Where(m => m["tvdbId"]?.ToString() == tvdb).Select(m => m.DeepClone()).ToArray()).ToJsonString());
+        if (method == "POST" && path == "/api/v3/tag")
+        {
+            // As the arrs do: a label they already have answers with that tag.
+            var sent = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+            host.Writes.Add((method, path, sent));
+            if (host.OnWrite?.Invoke(method, path, sent) is { } refused) return refused;
+            var label = (string?)JsonNode.Parse(sent)?["label"] ?? string.Empty;
+            var id = host.Tags.FirstOrDefault(t => string.Equals(t.Value, label, StringComparison.OrdinalIgnoreCase)).Key;
+            if (id == 0) host.Tags[id = host.Tags.Keys.DefaultIfEmpty(0).Max() + 1] = label;
+            return IntegrationTransport.Response(JsonSerializer.Serialize(new { id, label = host.Tags[id] }), 201);
+        }
+        var writes = new[] { ("POST", "/api/v3/movie"), ("POST", "/api/v3/series"), ("PUT", "/api/v3/movie/editor"), ("PUT", "/api/v3/series/editor"), ("POST", "/api/v3/seasonpass"), ("PUT", "/api/v3/episode/monitor") };
+        if (!writes.Contains((method, path))) return null;
+        var text = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        host.Writes.Add((method, path, text));
+        if (host.OnWrite?.Invoke(method, path, text) is { } answer) return answer;
+        var body = JsonNode.Parse(text)!.AsObject();
+        HttpResponseMessage reply;
+        switch (path)
+        {
+            case "/api/v3/movie":
+            {
+                if (host.Movies.Any(m => m["tmdbId"]?.ToString() == body["tmdbId"]?.ToString()))
+                    return IntegrationTransport.Response(new JsonArray(new JsonObject { ["propertyName"] = "TmdbId", ["errorMessage"] = "This movie has already been added", ["errorCode"] = "MovieExistsValidator" }).ToJsonString(), 400);
+                body["id"] = ++host.NextId;
+                body["hasFile"] = false;
+                body.Remove("addOptions");
+                host.Movies.Add(body);
+                reply = IntegrationTransport.Response(body.ToJsonString(), 201);
+                break;
+            }
+            case "/api/v3/series":
+            {
+                if (host.Series.Any(m => m["tvdbId"]?.ToString() == body["tvdbId"]?.ToString()))
+                    return IntegrationTransport.Response(new JsonArray(new JsonObject { ["propertyName"] = "TvdbId", ["errorMessage"] = "This series has already been added", ["errorCode"] = "SeriesExistsValidator" }).ToJsonString(), 400);
+                var id = ++host.NextId;
+                body["id"] = id;
+                body.Remove("addOptions");
+                host.Series.Add(body);
+                // Like Sonarr with addOptions.monitor "skip": new episodes take their season's flag.
+                var flags = body["seasons"]!.AsArray().ToDictionary(x => (int)x!["seasonNumber"]!, x => (bool)x!["monitored"]!);
+                foreach (var (season, episode) in host.EpisodeList.GetValueOrDefault((int)body["tvdbId"]!, Array.Empty<(int, int)>()))
+                    host.Episodes.Add(new JsonObject { ["id"] = ++host.NextId, ["seriesId"] = id, ["seasonNumber"] = season, ["episodeNumber"] = episode, ["monitored"] = flags.GetValueOrDefault(season), ["hasFile"] = false });
+                reply = IntegrationTransport.Response(body.ToJsonString(), 201);
+                break;
+            }
+            case "/api/v3/movie/editor":
+                foreach (var m in host.Movies.Where(m => body["movieIds"]!.AsArray().Any(i => (int)i! == (int)m["id"]!)))
+                    if (body["monitored"] is { } flag) m["monitored"] = (bool)flag;
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+            case "/api/v3/series/editor":
+                foreach (var m in host.Series.Where(m => body["seriesIds"]!.AsArray().Any(i => (int)i! == (int)m["id"]!)))
+                {
+                    if (body["monitored"] is { } flag) m["monitored"] = (bool)flag;
+                    if (body["monitorNewItems"] is { } items) m["monitorNewItems"] = (string)items!;
+                }
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+            case "/api/v3/seasonpass":
+                // Sonarr: the listed seasons' flags (and the series flag) only; episodes stay as they are.
+                foreach (var item in body["series"]!.AsArray())
+                {
+                    var series = host.Series.First(m => (int)m["id"]! == (int)item!["id"]!);
+                    if (item!["monitored"] is { } flag) series["monitored"] = (bool)flag;
+                    foreach (var season in item["seasons"]?.AsArray() ?? new JsonArray())
+                    {
+                        var stored = series["seasons"]!.AsArray().FirstOrDefault(x => (int)x!["seasonNumber"]! == (int)season!["seasonNumber"]!);
+                        if (stored != null) stored["monitored"] = (bool)season!["monitored"]!;
+                    }
+                }
+                reply = IntegrationTransport.Response("{}", 202);
+                break;
+            default:
+                foreach (var e in host.Episodes.Where(e => body["episodeIds"]!.AsArray().Any(i => (int)i! == (int)e["id"]!)))
+                    e["monitored"] = (bool)body["monitored"]!;
+                reply = IntegrationTransport.Response("[]", 202);
+                break;
+        }
+        host.AfterWrite?.Invoke(method, path);
+        return reply;
+    }
+
+    // GET /api/v3/movie/{id} and /api/v3/series/{id}: one title, or 404.
+    private static HttpResponseMessage? TitleById(Host host, string path)
+    {
+        foreach (var (prefix, list) in new[] { ("/api/v3/movie/", host.Movies), ("/api/v3/series/", host.Series) })
+        {
+            if (!path.StartsWith(prefix, StringComparison.Ordinal) || !int.TryParse(path[prefix.Length..], out var id)) continue;
+            var row = list.FirstOrDefault(m => (int)m["id"]! == id);
+            return row == null ? IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404) : IntegrationTransport.Response(row.ToJsonString());
+        }
+        return null;
+    }
+
+    // Connect → notifications: list, schema (Webhook only), create (tests first), update, delete, test.
+    private static HttpResponseMessage Notification(Host host, HttpRequestMessage request, string path)
+    {
+        var body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        if (request.Method != HttpMethod.Get) host.Writes.Add((request.Method.Method, path, body));
+        string? Tested(JsonObject n) => host.OnNotificationTest?.Invoke(n);
+        HttpResponseMessage Rejected(string message) => IntegrationTransport.Response(
+            new JsonArray(new JsonObject { ["propertyName"] = "Url", ["errorMessage"] = message }).ToJsonString(), 400);
+        if (path == "/api/v3/notification/schema")
+        {
+            var events = host.App == "Sonarr"
+                ? new[] { "Grab", "Download", "Upgrade", "ImportComplete", "Rename", "SeriesAdd", "SeriesDelete", "EpisodeFileDelete", "EpisodeFileDeleteForUpgrade", "HealthIssue", "HealthRestored", "ApplicationUpdate", "ManualInteractionRequired" }
+                : new[] { "Grab", "Download", "Upgrade", "Rename", "MovieAdded", "MovieDelete", "MovieFileDelete", "MovieFileDeleteForUpgrade", "HealthIssue", "HealthRestored", "ApplicationUpdate", "ManualInteractionRequired" };
+            var template = new JsonObject { ["name"] = "", ["implementation"] = "Webhook", ["implementationName"] = "Webhook", ["configContract"] = "WebhookSettings", ["tags"] = new JsonArray(), ["includeHealthWarnings"] = false };
+            foreach (var e in events) { template["on" + e] = false; template["supportsOn" + e] = true; }
+            template["fields"] = new JsonArray(
+                new JsonObject { ["order"] = 0, ["name"] = "url", ["type"] = "url" },
+                new JsonObject { ["order"] = 1, ["name"] = "method", ["value"] = 1, ["type"] = "select" },
+                new JsonObject { ["order"] = 2, ["name"] = "username", ["type"] = "textbox" },
+                new JsonObject { ["order"] = 3, ["name"] = "password", ["type"] = "password" },
+                new JsonObject { ["order"] = 4, ["name"] = "headers", ["value"] = new JsonArray(), ["type"] = "keyValueList" });
+            return IntegrationTransport.Response(new JsonArray(template, new JsonObject { ["implementation"] = "Discord", ["name"] = "" }).ToJsonString());
+        }
+        if (path == "/api/v3/notification" && request.Method == HttpMethod.Get)
+            return IntegrationTransport.Response(new JsonArray(host.Notifications.Select(n => n.DeepClone()).ToArray()).ToJsonString());
+        if (path == "/api/v3/notification/test" && request.Method == HttpMethod.Post)
+        {
+            var error = Tested(JsonNode.Parse(body)!.AsObject());
+            return error == null ? IntegrationTransport.Response("{}") : Rejected(error);
+        }
+        if (path == "/api/v3/notification" && request.Method == HttpMethod.Post)
+        {
+            var created = JsonNode.Parse(body)!.AsObject();
+            if (Tested(created) is { } error) return Rejected(error);
+            created["id"] = host.Notifications.Count == 0 ? 1 : host.Notifications.Max(n => (int)n["id"]!) + 1;
+            host.Notifications.Add(created);
+            return IntegrationTransport.Response(created.ToJsonString(), 201);
+        }
+        if (int.TryParse(path["/api/v3/notification/".Length..], out var id))
+        {
+            var index = host.Notifications.FindIndex(n => (int)n["id"]! == id);
+            if (index < 0) return IntegrationTransport.Response("{\"message\":\"NotFound\"}", 404);
+            if (request.Method == HttpMethod.Delete) { host.Notifications.RemoveAt(index); return IntegrationTransport.Response("{}"); }
+            if (request.Method == HttpMethod.Put)
+            {
+                var updated = JsonNode.Parse(body)!.AsObject();
+                if (updated.ToJsonString() != host.Notifications[index].ToJsonString() && Tested(updated) is { } error) return Rejected(error);
+                host.Notifications[index] = updated;
+                return IntegrationTransport.Response(updated.ToJsonString(), 202);
+            }
+            return IntegrationTransport.Response(host.Notifications[index].ToJsonString());
+        }
+        return IntegrationTransport.Response("{}", 404);
+    }
+
+    private static int PageNumber(System.Collections.Specialized.NameValueCollection query) => int.Parse(query["page"] ?? "1", CultureInfo.InvariantCulture);
+
+    // Like Sonarr's and Radarr's queue paging: a page past the end is answered with page
+    // max(total / size, 1) (integer division), not with an empty page.
+    private static HttpResponseMessage Page(Host host, string path, List<JsonObject> all, System.Collections.Specialized.NameValueCollection query)
+    {
+        var page = PageNumber(query);
+        var size = int.Parse(query["pageSize"] ?? "10", CultureInfo.InvariantCulture);
+        var records = all.Skip((page - 1) * size).Take(size).Select(r => r.DeepClone()).ToArray();
+        if (records.Length == 0 && page > 1)
+        {
+            page = Math.Max(all.Count / size, 1);
+            records = all.Skip((page - 1) * size).Take(size).Select(r => r.DeepClone()).ToArray();
+        }
+        return IntegrationTransport.Response(new JsonObject
+        {
+            ["page"] = page, ["pageSize"] = size, ["totalRecords"] = host.ReportedTotal?.Invoke(path, all.Count) ?? all.Count, ["records"] = new JsonArray(records),
+        }.ToJsonString());
+    }
+
+    public void Dispose()
+    {
+        foreach (var s in stores) s.Dispose();
+        Transport.Dispose();
+        Plugin.Dispose();
+    }
+}

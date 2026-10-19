@@ -18,6 +18,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Static so the Singleton ResponseFilter and the Scoped IEventConsumer share one pool.
         private static readonly ConcurrentDictionary<string, object> _userFileLocks = new ConcurrentDictionary<string, object>();
 
+        // One presence warning per person, file and error kind per hour: an unreadable folder is checked on every request.
+        private static readonly TimeSpan PresenceWarnInterval = TimeSpan.FromHours(1);
+        private static readonly ConcurrentDictionary<string, DateTime> _presenceWarnedAt = new();
+
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
             _configBaseDir = Path.Combine(appPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
@@ -79,6 +83,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 throw new ArgumentException($"Invalid user-config filename: '{fileName}'", nameof(fileName));
             }
             return Path.Combine(GetUserConfigDir(userId), fileName);
+        }
+
+        /// <summary>
+        /// Whether a person's file is there: true, false only when its absence is confirmed, and null when the file or
+        /// its folder can't be inspected (access denied, I/O error). File.Exists answers false for all three, which a
+        /// privacy check must not read as "no settings".
+        /// </summary>
+        public bool? UserConfigurationPresence(string userId, string fileName)
+        {
+            try
+            {
+                using var stream = new FileStream(ResolveUserFile(userId, fileName), FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                return true;
+            }
+            catch (FileNotFoundException)
+            {
+                return false;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                var now = DateTime.UtcNow;
+                var key = $"{userId}|{fileName}|{ex.GetType().Name}";
+                if (_presenceWarnedAt.AddOrUpdate(key, now, (_, last) => (now - last) >= PresenceWarnInterval ? now : last) == now)
+                {
+                    _logger.Warning($"Can't inspect '{fileName}' of user '{userId}': {ex.Message}");
+                }
+                return null;
+            }
         }
 
         public bool UserConfigurationExists(string userId, string fileName)
@@ -499,6 +536,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 {
                     _logger.Info($"User-dir case migration done: {renamed} renamed, {migrated} merged.");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Removes a deleted Jellyfin user's own folder (their settings, hidden content, bookmarks, Spoiler Guard
+        /// state). Only that user's canonical folder is touched; shared files (reviews, activity) stay as they are.
+        /// </summary>
+        /// <param name="userId">The deleted user.</param>
+        /// <returns>True when a folder was removed.</returns>
+        public bool DeleteUserData(Guid userId)
+        {
+            if (userId == Guid.Empty) return false;
+            var userDir = Path.Combine(_configBaseDir, userId.ToString("N"));
+            try
+            {
+                if (!Directory.Exists(userDir)) return false;
+                Directory.Delete(userDir, recursive: true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Could not remove the settings of deleted user {userId:N}: {ex.Message}");
+                return false;
             }
         }
 

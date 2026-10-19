@@ -4,7 +4,7 @@ import {createHarness,deferred,plain} from '../helpers/harness.mjs';
 function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html='',globals={}}={}){
   let epoch=0,changed;const notices=[],calls=[];
   const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
-  t.after(()=>h.close());h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
+  t.after(()=>h.close());h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
   return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
 // Pages hold whole grid rows: with three live columns that is four rows of 12 cards.
@@ -88,4 +88,113 @@ for(const enabled of [false,true]){
 test('downloads approval uses a single non-retried mutation then refreshes permission and data',async t=>{
   const h=setup(t,{api:async()=>({requests:[],canApproveRequests:false})});h.document.body.innerHTML='<button data-request-id="17"><span class="material-icons">check</span></button>';
   await h.P.handleRequestAction(h.document.querySelector('button'),'approve');assert.equal(h.calls[0][0],'/arr/requests/17/approve');assert.deepEqual(plain(h.calls[0][1]),{method:'POST',skipRetry:true});assert.equal(h.calls.length,2);assert.equal(h.P.state.canApproveRequests,false);
+});
+test('history read errors are toasted once per instance, escaped, and not again for an instance the queue already reported',async t=>{
+  let historyErrors=[{source:'Sonarr',instanceName:'TV',reason:'network error'},{source:'Radarr',instanceName:'<b>4K</b>',reason:'HTTP 500'}];
+  const h=setup(t,{api:path=>path==='/arr/queue'
+    ?Promise.resolve({items:[],errors:[{source:'Sonarr',instanceName:'TV',reason:'network error'}]})
+    :path.startsWith('/arr/history')?new Promise(resolve=>setTimeout(()=>resolve({items:[{id:'kept'}],visible:true,totalPages:1,errors:historyErrors}),0))
+    :Promise.resolve({})});
+  // The real translator substitutes {placeholders}; the page escapes the values it passes in.
+  h.JE.t=(key,params)=>key==='requests_history_instance_error'?Object.entries(params).reduce((s,[k,v])=>s.replace(`{${k}}`,v),'{source} history "{name}" could not be read: {reason}'):key;
+  await h.P.loadAllData();
+  assert.equal(h.P.state.history[0].id,'kept');
+  assert.equal(h.notices.length,2);
+  assert.match(h.notices[0],/queue "TV" failed: network error/);
+  assert.equal(h.notices[1],'⚠ Radarr history "&lt;b&gt;4K&lt;/b&gt;" could not be read: HTTP 500');
+  await h.P.fetchHistory();
+  assert.equal(h.notices.length,2);
+  historyErrors=[];await h.P.fetchHistory();
+  historyErrors=[{source:'Radarr',instanceName:'4K',reason:'timeout'}];await h.P.fetchHistory();
+  assert.equal(h.notices.length,3);
+  assert.equal(h.notices[2],'⚠ Radarr history "4K" could not be read: timeout');
+});
+test('an outage reported by history before the queue answers is toasted once, whichever response arrives first',async t=>{
+  const outage=[{source:'Sonarr',instanceName:'TV',reason:'network error'}];
+  const h=setup(t,{api:path=>path==='/arr/queue'
+    ?new Promise(resolve=>setTimeout(()=>resolve({items:[],errors:outage}),5))
+    :path.startsWith('/arr/history')?Promise.resolve({items:[],visible:true,totalPages:1,errors:outage})
+    :Promise.resolve({})});
+  h.JE.t=(key,params)=>key==='requests_history_instance_error'?`${params.source} history "${params.name}" could not be read: ${params.reason}`:key;
+  await h.P.loadAllData();
+  assert.deepEqual(h.notices,['⚠ Sonarr history "TV" could not be read: network error']);
+  await h.P.loadAllData();
+  assert.equal(h.notices.length,1);
+});
+
+// ---------------------------------------------------------------- overlapping reads (newest intent wins)
+// Each request answers through its own deferred, in the order the test chooses.
+function queued(t,extra={}){
+  const waits=[];const h=setup(t,{...extra,api:(path)=>{const d=deferred();waits.push({path,d});return d.promise;}});
+  h.P.state.requestsPageSize=undefined;
+  return {...h,waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
+}
+test('a poll still reading page 1 never overwrites the page 2 the user opened',async t=>{
+  const h=queued(t);
+  const poll=h.P.fetchRequests();                                     // the 30-second poll, page 1
+  h.P.state.requestsPage=2;const next=h.P.fetchRequests();              // the user's next page
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'page-2'}],totalPages:3});await next;
+  h.read('/arr/requests')[0].d.resolve({requests:[{id:'page-1'}],totalPages:3,canApproveRequests:true});assert.equal(await poll,null);
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['page-2']);
+  assert.equal(h.P.state.canApproveRequests,false);
+  assert.equal(new URL(h.read('/arr/requests')[1].path,'http://test').searchParams.get('skip'),String(h.P.state.requestsPageSize));
+});
+test('a filter\'s late answer never lands on another filter, and a newer read of the same page wins',async t=>{
+  const h=queued(t);
+  const pending=h.P.fetchRequests();
+  h.P.state.requestsFilter='pending';h.P.state.requestsPage=1;const filtered=h.P.fetchRequests();
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'pending'}]});await filtered;
+  h.read('/arr/requests')[0].d.resolve({requests:[{id:'all'}]});await pending;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['pending']);
+  // Two reads of the same page: only the newest publishes, whichever answers first.
+  const older=h.P.fetchRequests();const newer=h.P.fetchRequests();
+  h.read('/arr/requests')[3].d.resolve({requests:[{id:'newer'}]});await newer;
+  h.read('/arr/requests')[2].d.resolve({requests:[{id:'older'}]});await older;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['newer']);
+});
+test('a read whose page changed while it ran publishes nothing, even with no newer read',async t=>{
+  const h=queued(t);
+  const run=h.P.fetchHistory();
+  h.P.state.historyPage=3;                                             // e.g. a list re-sized without a read yet
+  h.read('/arr/history')[0].d.resolve({items:[{id:'page-1'}],visible:true,totalPages:5});
+  assert.equal(await run,null);assert.equal(h.P.state.history.length,0);
+});
+test('history pages race like requests: the page asked for last is the page shown',async t=>{
+  const h=queued(t);
+  const first=h.P.fetchHistory();h.P.state.historyPage=2;const second=h.P.fetchHistory();
+  h.read('/arr/history')[1].d.resolve({items:[{id:'h2'}],visible:true,totalPages:2});await second;
+  h.read('/arr/history')[0].d.resolve({items:[{id:'h1'}],visible:false,totalPages:9,errors:[{source:'Sonarr',instanceName:'TV',reason:'late'}]});await first;
+  assert.deepEqual(plain(h.P.state.history).map(i=>i.id),['h2']);
+  assert.equal(h.P.state.historyTotalPages,2);assert.equal(h.P.state.historyVisible,true);assert.equal(h.notices.length,0);
+});
+test('a late failure never empties the newer rows (queue, requests, history)',async t=>{
+  const h=queued(t);
+  for(const source of ['downloads','requests','history'])h.expectConsoleError(`Requests Page: Failed to fetch ${source}:`);
+  const oldQueue=h.P.fetchDownloads();const newQueue=h.P.fetchDownloads();
+  h.read('/arr/queue')[1].d.resolve({items:[{id:'q-new'}]});await newQueue;
+  h.read('/arr/queue')[0].d.reject(new Error('offline'));await oldQueue;
+  assert.deepEqual(plain(h.P.state.downloads).map(r=>r.id),['q-new']);
+  const oldRequests=h.P.fetchRequests();h.P.state.requestsPage=2;const newRequests=h.P.fetchRequests();
+  h.read('/arr/requests')[1].d.resolve({requests:[{id:'r2'}]});await newRequests;
+  h.read('/arr/requests')[0].d.reject(new Error('offline'));await oldRequests;
+  assert.deepEqual(plain(h.P.state.requests).map(r=>r.id),['r2']);
+  const oldHistory=h.P.fetchHistory();const newHistory=h.P.fetchHistory();
+  h.read('/arr/history')[1].d.resolve({items:[{id:'h-new'}],visible:true});await newHistory;
+  h.read('/arr/history')[0].d.reject(new Error('offline'));await oldHistory;
+  assert.deepEqual(plain(h.P.state.history).map(r=>r.id),['h-new']);
+});
+test('slow issue enrichment of an older page never replaces the issues of the page shown now',async t=>{
+  const details=[];const lists=[];
+  const h=setup(t,{ajax:options=>{
+    if(options.url.includes('/issue')){const d=deferred();lists.push(d);return d.promise;}
+    const d=deferred();details.push({url:options.url,d});return d.promise;
+  }});
+  const older=h.P.fetchIssues();
+  lists[0].resolve({results:[{id:1,media:{mediaType:'movie',tmdbId:11}}],pageInfo:{pages:2}});
+  for(let i=0;i<5&&details.length<1;i++)await new Promise(resolve=>setImmediate(resolve));
+  h.P.state.issuesPage=2;const newer=h.P.fetchIssues();
+  lists[1].resolve({results:[],pageInfo:{pages:2}});await newer;
+  details[0].d.resolve({id:11,title:'Old page'});await older;
+  assert.deepEqual(plain(h.P.state.issues),[]);
+  assert.equal(h.P.state.issuesPage,2);
 });

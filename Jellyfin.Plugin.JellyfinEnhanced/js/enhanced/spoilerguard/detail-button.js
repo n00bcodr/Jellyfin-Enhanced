@@ -25,15 +25,6 @@
         button.appendChild(content);
     }
 
-    function placeButton(button, container) {
-        const moreButton = container.querySelector('.btnMoreCommands');
-        if (moreButton) {
-            if (button.nextElementSibling !== moreButton) container.insertBefore(button, moreButton);
-        } else if (button.parentNode !== container) {
-            container.appendChild(button);
-        }
-    }
-
     function performToggle(button, itemId, kind, page, enable) {
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
@@ -110,6 +101,10 @@
         });
     }
 
+    // The buttons this module drew. A copy of one (an action row replaced by a copy of itself) has no
+    // click handler, so it never counts and goes.
+    const drawnButtons = new WeakSet();
+
     internal.addSpoilerBlurButton = function(itemId, visiblePage, itemType) {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true || !itemId || !visiblePage) return;
         if (!internal.isStateLoaded()) return;
@@ -120,13 +115,18 @@
 
         const enabled = internal.isEnabledForKind(kind, itemId);
         const state = enabled ? 'on' : 'off';
-        let button = visiblePage.querySelector('.je-spoiler-blur-btn');
+        let button = null;
+        for (const existing of visiblePage.querySelectorAll('.je-spoiler-blur-btn')) {
+            if (!button && drawnButtons.has(existing)) button = existing;
+            else existing.remove();
+        }
         if (!button) {
             button = document.createElement('button');
+            drawnButtons.add(button);
             button.setAttribute('is', 'emby-button');
             button.className = 'button-flat detailButton emby-button je-spoiler-blur-btn';
             button.type = 'button';
-            placeButton(button, container);
+            JE.core.ui.placeDetailAction(container, button);
             button.addEventListener('click', function(event) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -142,7 +142,7 @@
             return;
         }
 
-        placeButton(button, container);
+        JE.core.ui.placeDetailAction(container, button);
         const previousId = button.getAttribute('data-je-item-id');
         const previousKind = button.getAttribute('data-je-spoiler-kind');
         button.setAttribute('data-je-item-id', itemId);

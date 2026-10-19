@@ -363,7 +363,9 @@
         if (!id) return;
         const mediaType = tmdbId ? baseMediaType : (posterLink.dataset.resolvedMediaType || 'tv');
         if (e) e.preventDefault();
-        JE.jellyseerrMoreInfo.open(parseInt(id, 10), mediaType);
+        // The title's native details page when offered, else the more-info modal.
+        if (JE.titleDetails?.show) JE.titleDetails.show(parseInt(id, 10), mediaType);
+        else JE.jellyseerrMoreInfo.open(parseInt(id, 10), mediaType);
       };
       if (posterLink) {
         if (hasTmdbId && !hasJellyfinId) {

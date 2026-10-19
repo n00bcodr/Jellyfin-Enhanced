@@ -5,8 +5,12 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -16,6 +20,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     public class AutoSeasonRequestService
     {
+        /// <summary>The recipe name in the request ledger and the automation log.</summary>
+        public const string Recipe = "auto_season";
+
+        private readonly AutoRequestRecorder? _recorder;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
         private readonly IUserManager _userManager;
@@ -37,13 +45,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IUserManager userManager,
             IUserDataManager userDataManager,
             ILibraryManager libraryManager)
+            : this(httpClientFactory, logger, userManager, userDataManager, libraryManager, null)
+        {
+        }
+
+        /// <summary>Creates the service; with phase 3 on, decisions become wants through <paramref name="recorder"/>.</summary>
+        public AutoSeasonRequestService(
+            IHttpClientFactory httpClientFactory,
+            Logger logger,
+            IUserManager userManager,
+            IUserDataManager userDataManager,
+            ILibraryManager libraryManager,
+            AutoRequestRecorder? recorder)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _userManager = userManager;
             _userDataManager = userDataManager;
             _libraryManager = libraryManager;
+            _recorder = recorder;
         }
+
+        /// <summary>True when the decision goes to the request ledger (phase 3 on and a recorder available).</summary>
+        internal bool LedgerMode(PluginConfiguration? config) => _recorder != null && AutoRequestRecorder.Active(config);
+
+        private static bool SeerrConfigured(PluginConfiguration? config)
+            => config != null && config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.GetJellyseerrApiKey());
+
+        // Series details come from Seerr (TMDB data); in JE mode without Seerr, from TMDB itself.
+        private bool TmdbDetails(PluginConfiguration? config)
+            => config != null && !SeerrConfigured(config) && LedgerMode(config) && !string.IsNullOrEmpty(config.GetTmdbApiKey());
 
         private static string[] GetConfiguredUrls(string? urls)
         {
@@ -74,7 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<string?> GetSeriesDetailsJsonAsync(string tmdbId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || (!SeerrConfigured(config) && !TmdbDetails(config)))
             {
                 return null;
             }
@@ -97,6 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             async Task<string?> FetchAsync()
             {
+                if (TmdbDetails(config)) return await FetchTmdbDetailsAsync(tmdbId, config.GetTmdbApiKey());
                 var urls = GetConfiguredUrls(config.JellyseerrUrls);
                 var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
 
@@ -106,7 +138,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         var requestUrl = $"{url}/api/v1/tv/{tmdbId}";
                         using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                            HttpMethod.Get, requestUrl, config.GetJellyseerrApiKey());
                         using var response = await httpClient.SendAsync(request);
                         var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
                         if (error != null)
@@ -155,27 +187,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return content;
         }
 
+        // TMDB's series details in the shape the season checks read from Seerr (seasonNumber, episodeCount).
+        private async Task<string?> FetchTmdbDetailsAsync(string tmdbId, string apiKey)
+        {
+            try
+            {
+                var httpClient = _httpClientFactory.CreateClient();
+                using var response = await httpClient.GetAsync($"https://api.themoviedb.org/3/tv/{tmdbId}?api_key={apiKey}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.Debug($"[Auto-Season-Request] TMDB returned {response.StatusCode} for series {tmdbId}");
+                    return null;
+                }
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var root = doc.RootElement;
+                var seasons = new List<object>();
+                if (root.TryGetProperty("seasons", out var list) && list.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var season in list.EnumerateArray())
+                    {
+                        if (season.TryGetProperty("season_number", out var n) && n.TryGetInt32(out var number) &&
+                            season.TryGetProperty("episode_count", out var c) && c.TryGetInt32(out var count))
+                            seasons.Add(new { seasonNumber = number, episodeCount = count });
+                    }
+                }
+                var total = root.TryGetProperty("number_of_seasons", out var t) && t.TryGetInt32(out var totalSeasons) ? totalSeasons : seasons.Count;
+                return JsonSerializer.Serialize(new { numberOfSeasons = total, seasons });
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[Auto-Season-Request] Error reading TMDB series {tmdbId}: {ex.Message}");
+                return null;
+            }
+        }
+
         // Checks a completed episode to determine if next season should be requested.
         // Event-driven entry point called when a user finishes or starts watching an episode.
-        public async Task CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId)
+        // The outcome is typed: a failed details lookup is a PreparationFailed, never "nothing to do".
+        public async Task<AutoRequestOutcome> CheckEpisodeCompletionAsync(BaseItem episodeItem, Guid userId, CancellationToken ct = default)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.AutoSeasonRequestEnabled || !config.JellyseerrEnabled)
+            var ledger = LedgerMode(config);
+            if (config == null || !config.AutoSeasonRequestEnabled || (!ledger && !config.JellyseerrEnabled))
             {
-                return;
+                return AutoRequestOutcome.Noop("disabled");
+            }
+
+            if (ledger && config.ArrRequestBackend == "status_only")
+            {
+                return AutoRequestOutcome.Noop("requests_off");
             }
 
             var user = _userManager.GetUserById(userId);
             if (user == null)
             {
-                return;
+                return AutoRequestOutcome.Noop("user_required");
             }
 
             // Get the series this episode belongs to
             var episode = episodeItem as Episode;
             if (episode == null || episode.Series == null || !episode.ParentIndexNumber.HasValue || !episode.IndexNumber.HasValue)
             {
-                return;
+                return AutoRequestOutcome.Noop("not_an_episode");
             }
 
             var series = episode.Series;
@@ -185,16 +258,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger.Info($"[Auto-Season-Request] Checking '{series.Name}' S{seasonNumber}E{episodeNumber}");
 
             // Check this specific season for auto-season-request, passing the current episode number
-            await CheckSeasonForAutoRequest(series, seasonNumber, episodeNumber, user);
+            return await CheckSeasonForAutoRequest(series, seasonNumber, episodeNumber, user, ledger, ct);
         }
 
         // Checks if a specific season needs its next season requested
-        private async Task CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user)
+        private async Task<AutoRequestOutcome> CheckSeasonForAutoRequest(Series series, int currentSeasonNumber, int currentEpisodeNumber, JUser user, bool ledger, CancellationToken ct)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
             {
-                return;
+                return AutoRequestOutcome.Noop("disabled");
             }
 
             // Get TMDB ID first - we'll need it for Jellyseerr checks
@@ -202,15 +275,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrEmpty(tmdbId))
             {
                 _logger.Warning($"[Auto-Season-Request] Could not find TMDB ID for series '{series.Name}'");
-                return;
+                return AutoRequestOutcome.Noop("no_tmdb_id");
+            }
+
+            if (ledger && !SeerrConfigured(config) && !TmdbDetails(config))
+            {
+                return AutoRequestOutcome.Noop("not_configured");
             }
 
             // Get the total episode count for this season from TMDB/Jellyseerr
-            var totalEpisodesInSeason = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, currentSeasonNumber);
+            var (totalEpisodesInSeason, detailsFailed) = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, currentSeasonNumber);
+            if (detailsFailed)
+            {
+                _logger.Warning($"[Auto-Season-Request] Could not read the series details for '{series.Name}'; will try again shortly");
+                return AutoRequestOutcome.Failed("details_unavailable");
+            }
             if (totalEpisodesInSeason == null || totalEpisodesInSeason <= 0)
             {
                 _logger.Warning($"[Auto-Season-Request] Could not determine total episodes for '{series.Name}' S{currentSeasonNumber} from TMDB");
-                return;
+                return AutoRequestOutcome.Noop("season_unknown");
             }
 
             // Calculate remaining episodes based on current episode position and TMDB total
@@ -241,7 +324,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 availableEpisodesInJellyfin = allEpisodes.Count;
             }
 
-            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodesInSeason} (TMDB total), {availableEpisodesInJellyfin} available in Jellyfin, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
+            // Jellyfin's episodes are only counted for the "require all watched" check.
+            var inJellyfin = config.AutoSeasonRequestRequireAllWatched ? $", {availableEpisodesInJellyfin} in Jellyfin" : string.Empty;
+            _logger.Info($"[Auto-Season-Request] Season {currentSeasonNumber}: E{currentEpisodeNumber}/{totalEpisodesInSeason} (TMDB total){inJellyfin}, {remainingAfterCurrent} episodes remaining after current (threshold: {config.AutoSeasonRequestThresholdValue})");
 
             // Check if threshold is met
             bool thresholdMet = remainingAfterCurrent <= config.AutoSeasonRequestThresholdValue;
@@ -249,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!thresholdMet)
             {
                 _logger.Debug($"[Auto-Season-Request] Threshold not met for '{series.Name}' S{currentSeasonNumber}");
-                return;
+                return AutoRequestOutcome.Noop("threshold_not_met");
             }
 
             // If "Require All Episodes Watched" is enabled, verify all episodes before the threshold are watched
@@ -278,11 +363,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (!shouldRequest)
             {
-                return;
+                return AutoRequestOutcome.Noop("earlier_episodes_unwatched");
             }
 
             // Threshold met - prepare to request next season
             var nextSeasonNumber = currentSeasonNumber + 1;
+            var seriesKey = TitleKey.ForSeries(series.ProviderIds.GetValueOrDefault("Tvdb"), tmdbId, series.ProviderIds.GetValueOrDefault("Imdb"));
+            if (ledger)
+            {
+                return await RecordNextSeasonAsync(series, tmdbId, seriesKey, nextSeasonNumber, user, ct);
+            }
 
             // Check in-memory cache first (fast path to avoid redundant API calls)
             // Uses a sentinel pattern: write the entry before async work so concurrent
@@ -298,7 +388,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_requestedSeasons.ContainsKey(cacheKey))
                 {
                     _logger.Debug($"[Auto-Season-Request] Already requested S{nextSeasonNumber} for TMDB {tmdbId} (cached)");
-                    return;
+                    return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
                 }
 
                 // Reserve the slot so concurrent callers see it immediately
@@ -306,11 +396,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Get episode count for next season to verify it has started
-            var nextSeasonEpisodeCount = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, nextSeasonNumber);
+            var (nextSeasonEpisodeCount, nextFailed) = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, nextSeasonNumber);
 
-            if (nextSeasonEpisodeCount == null || nextSeasonEpisodeCount <= 0)
+            if (nextFailed || nextSeasonEpisodeCount == null || nextSeasonEpisodeCount <= 0)
             {
-                _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
+                if (!nextFailed) _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
                 // drop the sentinel so the next check actually
                 // re-evaluates instead of being stuck for an hour even after
                 // TMDB updates with the new season's data.
@@ -318,32 +408,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _requestedSeasons.Remove(cacheKey);
                 }
-                return;
+                return nextFailed ? AutoRequestOutcome.Failed("details_unavailable") : AutoRequestOutcome.Noop("next_season_not_started", seriesKey?.ToString());
             }
 
             // Check Jellyseerr for season availability/status - always query to get latest status
-            var jellyseerrStatus = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
+            var (jellyseerrStatus, statusFailed) = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
 
             if (jellyseerrStatus == null)
             {
-                _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
+                if (!statusFailed) _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} does not exist for '{series.Name}' (not available on TMDB)");
                 lock (_requestCacheLock)
                 {
                     _requestedSeasons.Remove(cacheKey);
                 }
-                return;
+                return statusFailed ? AutoRequestOutcome.Failed("seerr_unavailable") : AutoRequestOutcome.Noop("next_season_unknown", seriesKey?.ToString());
             }
 
             if (jellyseerrStatus.IsAvailable)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} already available on Jellyfin for '{series.Name}'");
-                return;
+                return AutoRequestOutcome.Noop("already_available", seriesKey?.ToString());
             }
 
             if (jellyseerrStatus.IsRequested)
             {
                 _logger.Debug($"[Auto-Season-Request] Season {nextSeasonNumber} already requested in Jellyseerr for '{series.Name}'");
-                return;
+                return AutoRequestOutcome.Noop("already_requested", seriesKey?.ToString());
             }
 
             // Season exists, not available, not requested - proceed with request
@@ -352,25 +442,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (success)
             {
                 _logger.Info($"[Auto-Season-Request] ✓ Requested '{series.Name}' S{nextSeasonNumber} (TMDB: {tmdbId}) for {user.Username}");
+                return AutoRequestOutcome.Recorded("seerr_request", seriesKey?.ToString());
             }
-            else
+
+            // Remove sentinel so a future attempt can retry
+            lock (_requestCacheLock)
             {
-                // Remove sentinel so a future attempt can retry
-                lock (_requestCacheLock)
-                {
-                    _requestedSeasons.Remove(cacheKey);
-                }
-                _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
+                _requestedSeasons.Remove(cacheKey);
             }
+            _logger.Warning($"[Auto-Season-Request] ✗ Failed to request '{series.Name}' S{nextSeasonNumber} for {user.Username}");
+            return AutoRequestOutcome.Failed("seerr_request_failed", seriesKey?.ToString());
         }
 
-        // Gets the total number of episodes in a season from TMDB
-        private async Task<int?> GetTotalEpisodesInSeasonFromTmdb(string tmdbId, int seasonNumber)
+        // Phase 3: the next season becomes a want in the request ledger, after the same checks (it has
+        // started; not already there or asked for) answered from Seerr, or from TMDB and Jellyfin's library.
+        private async Task<AutoRequestOutcome> RecordNextSeasonAsync(Series series, string tmdbId, TitleKey? seriesKey, int nextSeasonNumber, JUser user, CancellationToken ct)
+        {
+            if (seriesKey == null) return AutoRequestOutcome.Noop("no_tmdb_id");
+            var (nextCount, nextFailed) = await GetTotalEpisodesInSeasonFromTmdb(tmdbId, nextSeasonNumber);
+            if (nextFailed) return AutoRequestOutcome.Failed("details_unavailable", seriesKey.ToString());
+            if (nextCount == null || nextCount <= 0)
+            {
+                _logger.Info($"[Auto-Season-Request] Season {nextSeasonNumber} has not started yet (0 episodes) - not requesting");
+                return AutoRequestOutcome.Noop("next_season_not_started", seriesKey.ToString());
+            }
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (SeerrConfigured(config))
+            {
+                var (status, statusFailed) = await GetSeasonStatusFromJellyseerr(tmdbId, nextSeasonNumber);
+                if (statusFailed) return AutoRequestOutcome.Failed("seerr_unavailable", seriesKey.ToString());
+                if (status == null) return AutoRequestOutcome.Noop("next_season_unknown", seriesKey.ToString());
+                if (status.IsAvailable) return AutoRequestOutcome.Noop("already_available", seriesKey.ToString());
+            }
+            if (_recorder!.EpisodesInLibrary(seriesKey, nextSeasonNumber, user.Id) >= nextCount)
+            {
+                return AutoRequestOutcome.Noop("already_available", seriesKey.ToString());
+            }
+            var input = new MutationInput { Key = seriesKey.ToString(), Scope = "seasons", Seasons = new[] { nextSeasonNumber } };
+            var recorded = await _recorder.RecordAsync(Recipe, user.Id, input, ct);
+            _logger.Info($"[Auto-Season-Request] '{series.Name}' S{nextSeasonNumber} for {user.Username}: {recorded.Code} ({recorded.Reason})");
+            return recorded;
+        }
+
+        // Gets the total number of episodes in a season from TMDB (through Seerr, or TMDB itself in JE mode
+        // without Seerr). Failed when the details couldn't be read; a null count means the season isn't listed.
+        private async Task<(int? Count, bool Failed)> GetTotalEpisodesInSeasonFromTmdb(string tmdbId, int seasonNumber)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || (!SeerrConfigured(config) && !TmdbDetails(config)))
             {
-                return null;
+                return (null, true);
             }
 
             try
@@ -378,7 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var content = await GetSeriesDetailsJsonAsync(tmdbId);
                 if (string.IsNullOrEmpty(content))
                 {
-                    return null;
+                    return (null, true);
                 }
 
                 using (JsonDocument doc = JsonDocument.Parse(content))
@@ -401,21 +522,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             {
                                 var episodeCount = episodeCountProp.GetInt32();
                                 _logger.Info($"[Auto-Season-Request] TMDB reports {episodeCount} episodes in season {seasonNumber}");
-                                return episodeCount;
+                                return (episodeCount, false);
                             }
                         }
                     }
                 }
 
                 _logger.Info($"[Auto-Season-Request] Season {seasonNumber} not found in TMDB data (season does not exist on TMDB)");
-                return null;
+                return (null, false);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[Auto-Season-Request] Error querying TMDB episode count: {ex.Message}");
             }
 
-            return null;
+            return (null, true);
         }
 
         // Jellyseerr season status
@@ -426,12 +547,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Gets season status from Jellyseerr - always fetches fresh to ensure accurate request/availability state
-        private async Task<SeasonStatus?> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
+        private async Task<(SeasonStatus? Status, bool Failed)> GetSeasonStatusFromJellyseerr(string tmdbId, int seasonNumber)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
-                return null;
+                return (null, true);
             }
 
             try
@@ -446,7 +567,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         var requestUrl = $"{url}/api/v1/tv/{tmdbId}";
                         using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                            HttpMethod.Get, requestUrl, config.GetJellyseerrApiKey());
                         using var response = await httpClient.SendAsync(request);
                         var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
                         if (error != null)
@@ -466,7 +587,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (string.IsNullOrEmpty(content))
                 {
-                    return null;
+                    return (null, true);
                 }
 
                 using (JsonDocument doc = JsonDocument.Parse(content))
@@ -480,7 +601,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (seasonNumber > totalSeasons)
                         {
                             _logger.Info($"[Auto-Season-Request] Season {seasonNumber} does not exist on TMDB - show only has {totalSeasons} season(s)");
-                            return null;
+                            return (null, false);
                         }
                     }
 
@@ -530,21 +651,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 status.IsRequested = hasRequest;
 
                                 _logger.Info($"[Auto-Season-Request] Season {seasonNumber} final status from Jellyseerr: Available={status.IsAvailable}, Requested={status.IsRequested}");
-                                return status;
+                                return (status, false);
                             }
                         }
                     }
                 }
 
                 _logger.Info($"[Auto-Season-Request] Season {seasonNumber} not found in Jellyseerr response");
-                return null;
+                return (null, false);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[Auto-Season-Request] Error querying Jellyseerr: {ex.Message}");
             }
 
-            return null;
+            return (null, true);
         }
 
         // Calculates remaining unwatched episodes
@@ -582,7 +703,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<bool> RequestNextSeason(string tmdbId, int seasonNumber, string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Season-Request] Jellyseerr configuration is missing");
                 return false;
@@ -615,7 +736,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUserId, jsonContent);
+                        HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, jsonContent);
                     using var response = await httpClient.SendAsync(request);
                     var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -638,7 +759,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }
@@ -663,7 +784,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request);
                     var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 

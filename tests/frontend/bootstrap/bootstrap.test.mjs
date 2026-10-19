@@ -138,6 +138,18 @@ for (const saved of [null, 'fr']) test(`default display language respects existi
   assert.equal(h.window.localStorage.getItem('user-a-language'), saved || 'pt-BR');
 });
 
+for (const junk of ['undefined', 'null', '  ', 'en_US!']) test(`an administrator default language of ${JSON.stringify(junk)} is never seeded`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: junk } }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+});
+
+for (const [stored, admin, expected] of [['undefined', 'pt-br', 'pt-BR'], ['null', '', null], ['undefined', 'undefined', null]]) test(`a stored ${stored} language is repaired (${admin || 'no'} default)`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: admin } }), storage: { 'user-a-language': stored } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+});
+
 test('translation cache clear removes stale locales but preserves newer entries and unrelated storage', async t => {
   const h = setup(t, { data: payload({ PublicConfig: { ClearTranslationCacheTimestamp: 2000 } }), storage: {
     JE_translation_en: 'old', JE_translation_ts_en: '1000', JE_translation_fr: 'new', JE_translation_ts_fr: '3000', unrelated: 'keep'
@@ -235,4 +247,23 @@ for (const late of ['private-config', 'settings']) test(`per-endpoint fallback d
   for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.plugin.pluginConfig.SonarrUrl, undefined);
   assert.deepEqual(plain(h.plugin.userConfig.bookmark.bookmarks), { 'user-c': { name: 'user-c' } });
+});
+
+test('a household contact that starts a sentence starts with a capital ("the admin said no" reads "The admin said no")', async t => {
+  const h = setup(t);
+  await until(() => h.plugin.initialized);
+  h.plugin.translations = {
+    said_no: '{contact} said no',
+    asked: 'Asked! {contact} will take a look.',
+    paused: 'Asking is paused. {contact} can free up some space.',
+    waiting: 'Waiting for {contact} to OK it',
+    ready: '{title} is ready'
+  };
+  const t1 = (key, params) => h.plugin.t(key, params);
+  assert.equal(t1('said_no', { contact: 'the admin' }), 'The admin said no');
+  assert.equal(t1('asked', { contact: 'the admin' }), 'Asked! The admin will take a look.');
+  assert.equal(t1('paused', { contact: 'the admin' }), 'Asking is paused. The admin can free up some space.');
+  assert.equal(t1('waiting', { contact: 'the admin' }), 'Waiting for the admin to OK it', 'mid-sentence it stays as it is');
+  assert.equal(t1('said_no', { contact: 'Dad' }), 'Dad said no');
+  assert.equal(t1('ready', { title: 'iCarly' }), 'iCarly is ready', 'only the contact is touched, never a title');
 });

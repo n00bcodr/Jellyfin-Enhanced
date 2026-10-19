@@ -43,6 +43,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         {
             Instance = this;
             _applicationPaths = applicationPaths;
+            // Before anything reads a credential: the sidecar that holds them all (see SecretsStore).
+            Secrets = new Services.Secrets.SecretsStore(Services.Secrets.SecretsStore.DefaultPath(applicationPaths), m => logger.Warning(m));
             _serverConfigurationManager = serverConfigurationManager;
             _logger = logger;
             _analyticsReportingService = analyticsReportingService;
@@ -68,6 +70,121 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
+            MigrateSecretsOnStartup();
+        }
+
+        /// <summary>
+        /// The credentials sidecar. Every API key and secret JE stores lives here; the plugin
+        /// configuration only holds placeholders (see <see cref="Services.Secrets.SecretValue"/>).
+        /// </summary>
+        public Services.Secrets.SecretsStore Secrets { get; }
+
+        // Moves any credential still stored in plain text in the configuration (an upgrade from a
+        // version without the secrets store, a restored backup, a hand edit) into the store, and
+        // gives arr instances their stable ids. Idempotent; only saves when something changed.
+        private void MigrateSecretsOnStartup()
+        {
+            try
+            {
+                var config = Configuration;
+                if (config == null) return;
+                Services.Secrets.SecretsMigration.Report report;
+                lock (AnalyticsCredentialLock)
+                {
+                    report = Services.Secrets.SecretsMigration.MigrateStored(config, Secrets);
+                    if (report.ConfigChanged) SaveConfiguration();
+                }
+                if (report.Moved.Count > 0)
+                    _logger.Info($"Secrets: moved {report.Moved.Count} credential(s) out of the plugin configuration into {Services.Secrets.SecretsStore.FileName}: {string.Join(", ", report.Moved)}");
+                if (report.Missing.Count > 0)
+                    _logger.Warning($"Secrets: {report.Missing.Count} saved credential(s) are not in {Services.Secrets.SecretsStore.FileName}, so they can't be used: {string.Join(", ", report.Missing)}. Restore the file (nothing is removed from it meanwhile) or re-enter them on the configuration page.");
+                LogSecretsReport(report);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Secrets: start-up migration failed; credentials stay where they are until the next start: {ex.Message}");
+            }
+        }
+
+        // Names and reasons only, never values.
+        private void LogSecretsReport(Services.Secrets.SecretsMigration.Report report)
+        {
+            if (report.StoreUnavailable)
+                _logger.Error($"Secrets: {Services.Secrets.SecretsStore.FileName} can't be used ({Secrets.UnavailableReason ?? "write failed"}); new or changed credentials are kept in the plugin configuration as before until it can. Check the file and its folder permissions in the plugin configurations folder.");
+            if (report.NeedsReentry.Count > 0)
+                _logger.Warning($"Secrets: {report.NeedsReentry.Count} credential(s) were not kept by this save and must be entered again: {string.Join(", ", report.NeedsReentry)}");
+            foreach (var note in report.Notes) _logger.Info("Secrets: " + note);
+        }
+
+        /// <summary>
+        /// Writes every stored credential back into the plugin configuration in plain text, for
+        /// downgrading to a JE version without the secrets store. The sidecar keeps its copy; if this
+        /// version starts again it simply migrates again. Returns how many values were restored. Throws
+        /// <see cref="Services.Secrets.SecretsStoreUnavailableException"/> when the store can't be read.
+        /// </summary>
+        internal int RollbackSecretsToConfiguration()
+        {
+            lock (AnalyticsCredentialLock)
+            {
+                var restored = Services.Secrets.SecretsMigration.Rollback(Configuration, Secrets);
+                SaveConfiguration();
+                return restored;
+            }
+        }
+
+        // Set while RestoreConfiguration replaces the configuration: the restored object is applied as
+        // is (its placeholders refer to the restored secrets), not merged like a config-page save.
+        private bool _restoringConfiguration;
+
+        /// <summary>
+        /// Replaces the whole configuration with one restored from a JE backup. This install's analytics
+        /// identity and consent are kept; a saved key is only kept for the server it was saved for
+        /// (a placeholder whose address differs from the current one is blanked and listed for
+        /// re-entry, unless the backup's own encrypted credentials supplied it: <paramref name="restoredSecretNames"/>);
+        /// credentials still in plain text (a backup from a version without the secrets store) move
+        /// into the store; then the usual config-change side effects run. Returns the secrets report
+        /// (credentials the restored configuration refers to but which are not stored are listed as
+        /// missing).
+        /// </summary>
+        internal Services.Secrets.SecretsMigration.Report RestoreConfiguration(PluginConfiguration restored, IReadOnlyCollection<string> restoredSecretNames)
+        {
+            lock (AnalyticsCredentialLock)
+            {
+                var current = Configuration;
+                if (current != null)
+                {
+                    restored.AnalyticsEnabled = current.AnalyticsEnabled;
+                    restored.AnalyticsHasBeenConfigured = current.AnalyticsHasBeenConfigured;
+                    restored.AnalyticsInstallId = current.AnalyticsInstallId;
+                    restored.AnalyticsInstallSecret = current.AnalyticsInstallSecret;
+                    restored.AnalyticsLastReportedAt = current.AnalyticsLastReportedAt;
+                    restored.AnalyticsLastPayloadJson = current.AnalyticsLastPayloadJson;
+                    restored.AnalyticsLastReportedPluginVersion = current.AnalyticsLastReportedPluginVersion;
+                    restored.AnalyticsLastReportedJellyfinTarget = current.AnalyticsLastReportedJellyfinTarget;
+                    restored.AnalyticsLastReportedJellyfinVersion = current.AnalyticsLastReportedJellyfinVersion;
+                    restored.AnalyticsForbiddenSinceLastSuccess = current.AnalyticsForbiddenSinceLastSuccess;
+                }
+                var detached = current != null
+                    ? Services.Secrets.SecretsMigration.DetachMovedCredentials(restored, current, restoredSecretNames)
+                    : new List<string>();
+                var report = Services.Secrets.SecretsMigration.MigrateStored(restored, Secrets);
+                if (detached.Count > 0)
+                {
+                    report.NeedsReentry.AddRange(detached);
+                    report.Notes.Add($"Restore: {detached.Count} saved credential(s) were not kept because the backup points them at another server than this install's saved key was for; enter them again.");
+                }
+                _restoringConfiguration = true;
+                try
+                {
+                    UpdateConfiguration(restored);
+                }
+                finally
+                {
+                    _restoringConfiguration = false;
+                }
+                LogSecretsReport(report);
+                return report;
+            }
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -255,8 +372,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // backend row exists.
             lock (AnalyticsCredentialLock)
             {
-                if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
+                if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
+                    // Credentials: placeholders/blanks keep the stored value, the clear token removes
+                    // it, a typed value or import handle replaces it; only placeholders are persisted.
+                    var secretsReport = Services.Secrets.SecretsMigration.ApplyIncoming(incoming, current, Secrets);
+                    LogSecretsReport(secretsReport);
+
+                    // Household and request-handling settings the page didn't change keep what the server holds now.
+                    var kept = Services.Acquire.Requests.ServerOwnedSettings.Merge(incoming, current);
+                    if (kept.Count > 0) _logger.Info("Jellyfin Enhanced: configuration save kept the server's newer " + string.Join(", ", kept) + ".");
+
                     var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
                     var currentComplete = !string.IsNullOrEmpty(current.AnalyticsInstallId) && !string.IsNullOrEmpty(current.AnalyticsInstallSecret);
                     if (incomingIncomplete && currentComplete)

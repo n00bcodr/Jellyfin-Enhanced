@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // application/json, and it keeps filtered and unfiltered bodies alike.
         private static readonly JsonSerializerOptions RelaxedJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         private const int MaxCacheEntries = 20000;
-        private static readonly TimeSpan OverallBudget = TimeSpan.FromSeconds(12);
+        private static readonly TimeSpan DefaultOverallBudget = TimeSpan.FromSeconds(12);
         private static readonly TimeSpan PerFetchTimeout = TimeSpan.FromSeconds(8);
         // A title whose certification could not be fetched stays "unverified"
         // (hidden for restricted users) for this long before being retried, so a
@@ -95,6 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // rating-only fetches coalesce separately: a rating-only fetch in flight
         // cannot satisfy a caller with tag rules).
         private readonly ConcurrentDictionary<string, Lazy<Task<Signature?>>> _inFlight = new(StringComparer.Ordinal);
+        private readonly TimeSpan _overallBudget;
 
         /// <summary>Creates the filter; registered as a singleton so its caches and fetch pool are shared.</summary>
         public SeerrParentalFilter(
@@ -109,6 +110,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _localization = localization;
             _serverConfig = serverConfig;
             _logger = logger;
+            _overallBudget = DefaultOverallBudget;
+        }
+
+        /// <summary>Creates the filter with another wait for a response's title lookups (tests).</summary>
+        internal SeerrParentalFilter(
+            IHttpClientFactory httpClientFactory,
+            IUserManager userManager,
+            ILocalizationManager localization,
+            IServerConfigurationManager serverConfig,
+            Logger logger,
+            TimeSpan overallBudget)
+            : this(httpClientFactory, userManager, localization, serverConfig, logger)
+        {
+            _overallBudget = overallBudget;
         }
 
         // ── Policy ───────────────────────────────────────────────────────────
@@ -145,7 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public bool TryGetRestrictedPolicy(string? jellyfinUserId, out Policy policy)
         {
             policy = default;
-            if (!IsEnabled() || string.IsNullOrEmpty(jellyfinUserId) || !Guid.TryParse(jellyfinUserId, out var userGuid))
+            if (!IsEnabled() || string.IsNullOrEmpty(jellyfinUserId) || !Guid.TryParse(jellyfinUserId, out var userGuid) || userGuid == Guid.Empty)
             {
                 return false;
             }
@@ -156,6 +171,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return false;
             }
 
+            policy = PolicyFor(user);
+            return policy.IsRestricted;
+        }
+
+        /// <summary>Jellyfin's rating and tag policy, independent of plugin flags and transport configuration.</summary>
+        public static Policy PolicyFor(Jellyfin.Database.Implementations.Entities.User user)
+        {
             // Same source Jellyfin's own gate reads (BaseItem.GetBlockUnratedValue);
             // no DTO materialisation on the hot path.
             var blocked = user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems);
@@ -167,8 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var blockedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.BlockedTags));
             var allowedTags = ParentalTagDecision.ToTagSet(user.GetPreference(PreferenceKind.AllowedTags));
 
-            policy = new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
-            return policy.IsRestricted;
+            return new Policy(user.MaxParentalRatingScore, user.MaxParentalRatingSubScore, blockMovies, blockSeries, blockedTags, allowedTags);
         }
 
         private string Region()
@@ -413,6 +434,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return TmdbAccess.Deny;
         }
 
+        /// <summary>Verified absent-title rating and tags, retained with a request for later review.</summary>
+        public sealed record AbsentSignature(int? Score, int? SubScore, string[] Keywords, string[] Genres);
+
+        /// <summary>Cache-only absent-title decision. Restricted users require a rated, verified signature.</summary>
+        public bool MaySeeAbsent(string mediaType, int tmdbId, string userId, out AbsentSignature? facts)
+        {
+            facts = null;
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
+            if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature?.Score == null) return false;
+            facts = new AbsentSignature(signature.Score, signature.SubScore, signature.Keywords ?? Array.Empty<string>(), signature.Genres ?? Array.Empty<string>());
+            return IsAllowed(signature, mediaType, policy);
+        }
+
+        /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
+        public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
+        {
+            if (!TryGetRestrictedPolicy(userId, out var policy)) return true;
+            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, timeout.Token).ConfigureAwait(false);
+                return MaySeeAbsent(mediaType, tmdbId, userId, out _);
+            }
+            catch (Exception) { return false; }
+        }
+
+        private static bool HasSeerr() => JellyfinEnhanced.Instance?.Configuration is { JellyseerrEnabled: true } c && !string.IsNullOrWhiteSpace(c.JellyseerrUrls) && !string.IsNullOrWhiteSpace(c.GetJellyseerrApiKey());
+
         // ── Decisions ────────────────────────────────────────────────────────
 
         private bool IsAllowed(Signature? resolved, string mediaType, Policy policy)
@@ -520,7 +573,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-            cts.CancelAfter(OverallBudget);
+            cts.CancelAfter(_overallBudget);
             var resolved = await GetSignatureAsync(mediaType, tmdbId, Region(), policy.HasTagRules, cts.Token).ConfigureAwait(false);
             return !IsAllowed(resolved, mediaType, policy);
         }
@@ -650,7 +703,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // pushed the page they are looking at behind everything they had left,
             // until nothing resolved within the budget at all.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(requestAborted);
-            cts.CancelAfter(OverallBudget);
+            cts.CancelAfter(_overallBudget);
             var throttle = _throttle;
             var droppedFromQueue = 0;
 
@@ -710,7 +763,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var pending = tasks.Count(t => !t.IsCompletedSuccessfully) + droppedFromQueue;
             if (pending > 0)
             {
-                _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {OverallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
+                _logger.Debug($"Parental filter: {pending} of {tasks.Count} title lookups unresolved after {_overallBudget.TotalSeconds:0}s ({droppedFromQueue} never started); hiding them for this response.");
             }
 
             foreach (var task in tasks)
@@ -1036,9 +1089,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return (null, false);
             }
 
-            if (!needTags && !string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (!needTags && !string.IsNullOrEmpty(config.GetTmdbApiKey()))
             {
-                var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.TMDB_API_KEY, ct).ConfigureAwait(false);
+                var fromTmdb = await FetchCertFromTmdbAsync(mediaType, tmdbId, config.GetTmdbApiKey(), ct).ConfigureAwait(false);
                 if (fromTmdb != null)
                 {
                     return (fromTmdb, false);
@@ -1088,7 +1141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private async Task<JsonElement?> FetchDetailFromSeerrAsync(string mediaType, int tmdbId, Configuration.PluginConfiguration config, CancellationToken ct)
         {
-            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (!config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return null;
             }
@@ -1102,7 +1155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var requestUri = $"{url.Trim().TrimEnd('/')}{relative}";
                 try
                 {
-                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request, ct).ConfigureAwait(false);
                     var (body, error) = await SeerrHttpHelper.ReadResponseAsync(response, requestUri, ct).ConfigureAwait(false);
                     if (error != null || string.IsNullOrEmpty(body))

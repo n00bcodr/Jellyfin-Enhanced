@@ -118,7 +118,12 @@
         }
 
         icon.classList.remove('is-active', 'is-disabled', 'is-no-user', 'is-filter-active');
-        if (isJellyseerrActive && jellyseerrUserFound) {
+        if (isJellyseerrActive && jellyseerrUserFound && JE.internals?.arrAskSearch?.replacesSeerr?.()) {
+            // Requests & downloads, JE mode: JE's own row replaces Seerr's, so there are no Seerr-only results to
+            // filter to and the double-click does nothing; the tooltip doesn't offer it.
+            icon.title = JE.t('jellyseerr_icon_active_je_tooltip');
+            icon.classList.add('is-active');
+        } else if (isJellyseerrActive && jellyseerrUserFound) {
             icon.title = JE.t(isJellyseerrOnlyMode ? 'jellyseerr_icon_active_filter_tooltip' : 'jellyseerr_icon_active_tooltip');
             icon.classList.add('is-active');
             if (isJellyseerrOnlyMode) icon.classList.add('is-filter-active');

@@ -116,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task EnsureRegisteredAsync(PluginConfiguration config, CancellationToken cancellationToken)
         {
-            if (!string.IsNullOrEmpty(config.AnalyticsInstallId) && !string.IsNullOrEmpty(config.AnalyticsInstallSecret))
+            if (!string.IsNullOrEmpty(config.AnalyticsInstallId) && !string.IsNullOrEmpty(config.GetAnalyticsInstallSecret()))
             {
                 return;
             }
@@ -170,9 +170,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     var live = JellyfinEnhanced.Instance?.Configuration ?? config;
                     live.AnalyticsInstallId = installId;
-                    live.AnalyticsInstallSecret = installSecret;
+                    // The secret goes to the secrets store; the configuration keeps a placeholder.
+                    live.SetAnalyticsInstallSecret(installSecret);
                     config.AnalyticsInstallId = installId;
-                    config.AnalyticsInstallSecret = installSecret;
+                    config.SetAnalyticsInstallSecret(installSecret);
                     try
                     {
                         JellyfinEnhanced.Instance?.SaveConfiguration();
@@ -290,8 +291,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     && p.GetCustomAttribute<Model.AnalyticsExcludeAttribute>() == null)
                 .ToDictionary(p => p.Name, p => (bool)p.GetValue(config)!);
 
-            flags["TmdbEnabled"] = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
-            flags["MdblistEnabled"] = !string.IsNullOrWhiteSpace(config.MdblistApiKey);
+            flags["TmdbEnabled"] = !string.IsNullOrWhiteSpace(config.GetTmdbApiKey());
+            flags["MdblistEnabled"] = !string.IsNullOrWhiteSpace(config.GetMdblistApiKey());
 
             return flags;
         }
@@ -514,7 +515,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task SendCoreAsync(PluginConfiguration config, CancellationToken cancellationToken)
         {
             await EnsureRegisteredAsync(config, cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrEmpty(config.AnalyticsInstallId) || string.IsNullOrEmpty(config.AnalyticsInstallSecret))
+            if (string.IsNullOrEmpty(config.AnalyticsInstallId) || string.IsNullOrEmpty(config.GetAnalyticsInstallSecret()))
             {
                 _logger.Warning("[Analytics] Skipping report: registration did not complete.");
                 return;
@@ -536,7 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var rpcBody = new Dictionary<string, object?>
                 {
                     ["p_install_id"] = payload.InstallId,
-                    ["p_secret"] = config.AnalyticsInstallSecret,
+                    ["p_secret"] = config.GetAnalyticsInstallSecret(),
                     ["p_plugin_version"] = payload.PluginVersion,
                     ["p_jellyfin_version"] = payload.JellyfinVersion,
                     ["p_jellyfin_target"] = payload.JellyfinTarget,
@@ -580,9 +581,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             {
                                 live403.AnalyticsForbiddenSinceLastSuccess = 0;
                                 live403.AnalyticsInstallId = string.Empty;
-                                live403.AnalyticsInstallSecret = string.Empty;
+                                live403.SetAnalyticsInstallSecret(string.Empty);
                                 config.AnalyticsInstallId = string.Empty;
-                                config.AnalyticsInstallSecret = string.Empty;
+                                config.SetAnalyticsInstallSecret(string.Empty);
                                 _logger.Warning("[Analytics] Backend rejected our credentials repeatedly; will re-register on the next attempt.");
                             }
                             JellyfinEnhanced.Instance?.SaveConfiguration();
@@ -650,7 +651,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task SendOptOutAsync(PluginConfiguration config, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrEmpty(config.AnalyticsInstallId) || string.IsNullOrEmpty(config.AnalyticsInstallSecret))
+            if (string.IsNullOrEmpty(config.AnalyticsInstallId) || string.IsNullOrEmpty(config.GetAnalyticsInstallSecret()))
             {
                 return;
             }
@@ -661,7 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var rpcBody = new Dictionary<string, object?>
                 {
                     ["p_install_id"] = config.AnalyticsInstallId,
-                    ["p_secret"] = config.AnalyticsInstallSecret,
+                    ["p_secret"] = config.GetAnalyticsInstallSecret(),
                 };
 
                 var client = _httpClientFactory.CreateClient();

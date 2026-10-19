@@ -40,7 +40,7 @@ From the repository root, after [setup](docs/README.md#setup):
 python3 tests/run.py fast      # Tooling, both backend targets, frontend coverage
 python3 tests/run.py all       # Also browsers, posters, real hosts and fault replays
 npm run test:frontend          # Frontend only
-npm run test:browser           # Browser only
+npm run test:browser           # Component fixtures, including stubbed Requests & downloads
 ```
 
 See [all commands and prerequisites](docs/README.md), the [coverage matrix](docs/coverage-matrix.md), and [historical fault checks](docs/history-audit.md). Older artifact logs retain the paths used when they were generated; current documentation uses the organized paths.

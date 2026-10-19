@@ -1001,8 +1001,8 @@
          */
         async function processPendingCards(groups, currentItemId, signal) {
             const entries = [...groups];
-            // Feature switched off: paint nothing.
-            if (!JE.currentSettings?.peopleTagsEnabled) {
+            // Feature switched off, or a title that isn't in the library (its cast are not library people): paint nothing.
+            if (!JE.currentSettings?.peopleTagsEnabled || JE.titleDetails?.isSynthetic?.(currentItemId)) {
                 releaseCards(entries);
                 return;
             }
@@ -1253,7 +1253,7 @@
                 if (!JE.currentSettings?.peopleTagsEnabled || !isCurrentEpoch(epoch) || typeof JE.core?.api?.plugin !== 'function') return;
                 // A card pass already owns this item: it requests what it needs
                 // (or the item is done). A pass that claimed no card owns nothing.
-                if (!itemId || prefetches.has(itemId)) return;
+                if (!itemId || prefetches.has(itemId) || JE.titleDetails?.isSynthetic?.(itemId)) return;
                 if (lastProcessedItemId === itemId && (cardsClaimed || peopleTagsComplete)) return;
                 const ids = castOrderPersonIds(item);
                 if (!ids || ids.length === 0) return;

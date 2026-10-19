@@ -314,7 +314,7 @@
     function createSectionHeader(title, moduleName, showFilter, onFilterChange, onSortChange) {
         const header = document.createElement('div');
         header.className = 'jellyseerr-discovery-header';
-        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;';
+        header.style.cssText = 'display:flex;align-items:baseline;gap:1em;margin-bottom:1em;flex-wrap:wrap;width:100%;box-sizing:border-box;';
 
         const titleElement = document.createElement('h2');
         titleElement.className = 'sectionTitle sectionTitle-cards';
@@ -348,7 +348,11 @@
 
         if (JE.requestManager) {
             const cacheKey = `${cachePrefix}:${path}`;
-            const cached = JE.requestManager.getCached(cacheKey);
+            // The server's native feeds are filtered for the viewer's current policy (library access,
+            // parental limits): never kept by the tab, so a changed policy shows on the next read. The
+            // server keeps the upstream answers, so reading them again is cheap.
+            const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
+            const cached = keep ? JE.requestManager.getCached(cacheKey) : null;
             if (cached) return cached;
 
             // Identity epoch at request start. Cache keys carry no user id and the
@@ -375,7 +379,7 @@
                 if (!stillCurrent()) {
                     throw new DOMException('User changed during request', 'AbortError');
                 }
-                JE.requestManager.setCache(cacheKey, data);
+                if (keep) JE.requestManager.setCache(cacheKey, data);
                 return data;
             };
 
@@ -387,7 +391,7 @@
                     if (!stillCurrent()) {
                         return Promise.reject(new DOMException('User changed during request', 'AbortError'));
                     }
-                    const hit = JE.requestManager.getCached(cacheKey);
+                    const hit = keep ? JE.requestManager.getCached(cacheKey) : null;
                     return hit ? Promise.resolve(hit) : fetchFn();
                 }),
                 signal
@@ -462,7 +466,11 @@
 
         // Only keep a list fetched for the identity it was keyed under.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        const data = await fetchWithManagedRequest(`/JellyfinEnhanced/tmdb/genres/${mediaType}`, 'genre', options);
+        // Without a Seerr account the list comes from the server's native route (same TMDB genres).
+        const path = options.native
+            ? `/JellyfinEnhanced/native-details/genres/${mediaType === 'tv' ? 'tv' : 'movie'}`
+            : `/JellyfinEnhanced/tmdb/genres/${mediaType}`;
+        const data = await fetchWithManagedRequest(path, 'genre', { signal: options.signal });
         if (storageKey && Array.isArray(data) && data.length > 0
             && (!JE.session || JE.session.isCurrent(requestEpoch))) {
             try {
@@ -654,10 +662,15 @@
      * content, duplicates within the batch and (when the admin excludes them)
      * library and blocklisted items are dropped.
      * @param {Array} results - Array of items
+     * @param {object} [options]
+     * @param {boolean} [options.keepLibraryItems=false] - Keep library items
+     *   whatever the exclude setting says (a list that is the page's only
+     *   list of titles, such as the filmography of someone the library
+     *   doesn't have: its library cards open the library copy)
      * @returns {Array} The items to create cards for
      */
-    function filterCardResults(results) {
-        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true;
+    function filterCardResults(results, options = {}) {
+        const excludeLibraryItems = JE.pluginConfig?.JellyseerrExcludeLibraryItems === true && !options.keepLibraryItems;
         const excludeBlocklistedItems = JE.pluginConfig?.JellyseerrExcludeBlocklistedItems === true;
         const seen = new Set();
         const items = [];
@@ -675,7 +688,7 @@
             if (seen.has(key)) continue;
             seen.add(key);
 
-            if (excludeLibraryItems && item.mediaInfo?.jellyfinMediaId) {
+            if (excludeLibraryItems && JE.seerrStatus.libraryCopyId(item.mediaInfo)) {
                 continue;
             }
 
@@ -707,7 +720,7 @@
         // Add media type for fast CSS-based filtering
         card.setAttribute('data-media-type', item.mediaType);
 
-        const jellyfinMediaId = item.mediaInfo?.jellyfinMediaId;
+        const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
         if (jellyfinMediaId) {
             card.setAttribute('data-library-item', 'true');
             card.setAttribute('data-jellyfin-media-id', jellyfinMediaId);
@@ -731,12 +744,13 @@
      * @param {Array} results - Array of items to create cards for
      * @param {object} [options] - Options
      * @param {string} [options.cardClass] - Card class to use ('portraitCard' or 'overflowPortraitCard')
+     * @param {boolean} [options.keepLibraryItems] - See filterCardResults
      * @returns {DocumentFragment}
      */
     function createCardsFragment(results, options = {}) {
         const { cardClass = 'portraitCard' } = options;
         const fragment = document.createDocumentFragment();
-        for (const item of filterCardResults(results)) {
+        for (const item of filterCardResults(results, options)) {
             const card = createDiscoveryCard(item, cardClass);
             if (card) fragment.appendChild(card);
         }
@@ -914,11 +928,12 @@
      * @param {object} [options]
      * @param {string} [options.cardClass='portraitCard'] - Card class
      * @param {function(): boolean} [options.isCurrent] - See appendInSlices
+     * @param {boolean} [options.keepLibraryItems] - See filterCardResults
      * @returns {Promise<number>} Number of cards appended
      */
     function appendCards(container, results, options = {}) {
         const { cardClass = 'portraitCard', isCurrent } = options;
-        const items = filterCardResults(results);
+        const items = filterCardResults(results, options);
         if (items.length === 0) return Promise.resolve(0);
         return appendInSlices(container, items, item => createDiscoveryCard(item, cardClass), {
             syncCount: cardsInView(container),
@@ -1100,6 +1115,20 @@
         document.head.appendChild(style);
     }
 
+    /**
+     * True when a library page's discovery row should read the server's native feeds (filtered there
+     * for the viewer, read with Jellyfin Enhanced's own Seerr key) instead of Seerr as the viewer: the
+     * viewer has no Seerr account, Jellyfin Enhanced request mode lets them in (Seerr mode: the server
+     * refuses them these feeds) and native details pages are on. Viewers with an account keep Seerr's
+     * own answers.
+     * @param {any} status The viewer's Seerr status (JE.jellyseerrAPI.checkUserStatus()).
+     * @returns {boolean}
+     */
+    function useNativeFeeds(status) {
+        return !!status?.active && status.userFound === false && JE.internals?.arrAskSeerr?.jeMode?.() === true
+            && !!JE.titleDetails?.available?.();
+    }
+
     // Inject styles on load
     injectFilterStyles();
 
@@ -1124,6 +1153,7 @@
         // Shared utilities
         fetchWithManagedRequest,
         fetchTmdbGenreList,
+        useNativeFeeds,
         createSessionCache,
         createCardsFragment,
         appendCards,

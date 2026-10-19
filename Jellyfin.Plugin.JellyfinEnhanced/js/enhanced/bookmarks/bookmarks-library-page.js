@@ -224,9 +224,15 @@
    */
   function handleViewShow(e) {
     const targetPage = e.target;
-    if (pageState.pageVisible && targetPage && targetPage.id !== 'je-bookmarks-standalone-page') {
-      hidePage();
+    if (!targetPage || targetPage.id === 'je-bookmarks-standalone-page') return;
+    // Jellyfin's router answering our own route (a link or typed hash to #/bookmarks inside the app):
+    // its page is "Page not found", so this page takes its place.
+    if (window.location.hash.startsWith('#/bookmarks')) {
+      if (pageState.pageVisible) targetPage.classList.add('hide');
+      else showPage();
+      return;
     }
+    if (pageState.pageVisible) hidePage();
   }
 
   /**

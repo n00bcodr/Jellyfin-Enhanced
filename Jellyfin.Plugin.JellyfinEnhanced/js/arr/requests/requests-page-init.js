@@ -227,7 +227,10 @@
       navItem.className =
         "navMenuOption lnkMediaFolder emby-button je-nav-downloads-item";
       navItem.href = "#";
-      const labelRequests = (JE.t && JE.t('requests_requests')) || 'Requests';
+      // With the new Requests page (#/requests) on, this page keeps its own link as "Downloads".
+      const labelRequests = config.ArrRequestsHubEnabled === true
+        ? ((JE.t && JE.t('requests_downloads')) || 'Downloads')
+        : ((JE.t && JE.t('requests_requests')) || 'Requests');
       navItem.innerHTML = `
         <span class="navMenuOptionIcon material-icons">download</span>
         <span class="sectionName navMenuOptionText">${labelRequests}</span>
@@ -360,8 +363,11 @@
           e.stopPropagation();
           e.stopImmediatePropagation();
           const mediaId = titleLink.getAttribute("data-media-id");
+          const tmdbId = Number(titleLink.getAttribute("data-tmdb-id"));
           if (mediaId && window.Emby?.Page?.showItem) {
             window.Emby.Page.showItem(mediaId);
+          } else if (tmdbId > 0) {
+            window.JellyfinEnhanced?.titleDetails?.open?.(tmdbId, titleLink.getAttribute("data-media-type") === "tv" ? "tv" : "movie");
           }
           return;
         }

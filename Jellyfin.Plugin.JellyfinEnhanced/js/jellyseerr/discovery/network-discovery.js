@@ -7,6 +7,11 @@
 // resolution (known-network map + company search scoring) and picks the
 // series feed: Seerr's network feed for a known network, the plugin's
 // TMDB-backed series-by-company feed for any other studio.
+// A studio or network the viewer's library doesn't offer (linked from a native
+// details page of a title not in the library) has a synthetic id that carries
+// its TMDB company or network id; its list page holds nothing else. Its feeds
+// come from the server's native-details discovery route, filtered there for
+// the viewer (no Seerr account needed).
 (function(JE) {
     'use strict';
 
@@ -83,6 +88,16 @@
     };
 
     /**
+     * The TMDB company/network a synthetic studio id carries (see js/jellyseerr/nativedetails), or null.
+     * @param {string} studioId
+     * @returns {{kind: string, tmdbId: number}|null}
+     */
+    function syntheticStudio(studioId) {
+        const parts = JE.titleDetails?.parse?.(studioId);
+        return parts && (parts.kind === 'studio' || parts.kind === 'network') ? parts : null;
+    }
+
+    /**
      * Gets studio information from Jellyfin (with caching)
      * @param {string} studioId
      * @param {AbortSignal} [signal]
@@ -98,7 +113,15 @@
                 throw new DOMException('Aborted', 'AbortError');
             }
 
-            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/studio/${studioId}`, { signal });
+            // A synthetic studio/network: the name is the page's own item, the TMDB id is in the id.
+            const synthetic = syntheticStudio(studioId);
+            const response = synthetic
+                ? await ApiClient.getItem(ApiClient.getCurrentUserId(), studioId).then(item => (item?.Name ? {
+                    name: item.Name,
+                    tmdbId: synthetic.kind === 'studio' ? String(synthetic.tmdbId) : null,
+                    networkId: synthetic.kind === 'network' ? synthetic.tmdbId : null
+                } : null))
+                : await fetchWithManagedRequest(`/JellyfinEnhanced/studio/${studioId}`, { signal });
 
             if (signal?.aborted) {
                 throw new DOMException('Aborted', 'AbortError');
@@ -214,10 +237,14 @@
         if (signal.aborted) return null;
 
         if (!status?.active || !studioInfo?.name) return null;
+        // No Seerr account (Jellyfin Enhanced request mode): the server's native feeds, filtered there.
+        const nativeFeeds = !!JE.discoveryFilter.useNativeFeeds?.(status);
+        if (status.userFound === false && !nativeFeeds && !syntheticStudio(studioId)) return null;
 
         // TV network IDs are different from company IDs in TMDB
         // Always use name lookup for TV networks
-        const tvNetworkId = getKnownNetworkId(studioInfo.name);
+        const tvNetworkId = (Number.isInteger(studioInfo.networkId) && studioInfo.networkId > 0 ? studioInfo.networkId : null)
+            || getKnownNetworkId(studioInfo.name);
 
         // For movie studios, use stored tmdbId if available, otherwise search
         const companyId = studioInfo.tmdbId
@@ -236,6 +263,7 @@
             tvId: tvNetworkId || (tvByCompany ? companyId : null),
             movieId: companyId,
             tvSource: tvNetworkId ? 'network' : 'company',
+            native: !!syntheticStudio(studioId) || nativeFeeds,
             title: JE.t('discovery_more_from_studio', { studio: studioInfo.name })
         };
     }
@@ -248,10 +276,18 @@
         // Unlike the other discovery sections, network discovery is opt-in.
         defaultEnabled: false,
         getIdFromUrl: JE.discoveryBase.idFromListParam('studioId'),
+        // A synthetic studio's or network's page lists nothing of the library's own: this row is its only
+        // list of titles, library titles included (as a synthetic person's filmography).
+        keepLibraryItems: (id) => !!syntheticStudio(id),
         // Historical page-key format: no 'network-' prefix.
         pageKey: (id) => `${id}-${window.location.hash}`,
         resolveFeeds,
         buildDiscoverPath: (kind, id, feeds) => {
+            // A synthetic studio's or network's page, or a viewer without a Seerr account: the server filters the feeds for the viewer.
+            if (feeds?.native) {
+                if (kind !== 'tv') return `/JellyfinEnhanced/native-details/discover/movie/studio/${id}`;
+                return `/JellyfinEnhanced/native-details/discover/tv/${feeds.tvSource === 'company' ? 'company' : 'network'}/${id}`;
+            }
             if (kind !== 'tv') return `/JellyfinEnhanced/jellyseerr/discover/movies/studio/${id}`;
             return feeds?.tvSource === 'company'
                 ? `/JellyfinEnhanced/jellyseerr/discover/tv/studio/${id}`

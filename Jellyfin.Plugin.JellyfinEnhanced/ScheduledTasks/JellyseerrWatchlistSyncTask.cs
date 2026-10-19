@@ -20,6 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     // Scheduled task that syncs Jellyseerr watchlist items to Jellyfin watchlist.
     public partial class JellyseerrWatchlistSyncTask : IScheduledTask
     {
+        private readonly Services.Acquire.Requests.SharedRequestFacts? _facts;
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataManager;
@@ -33,8 +34,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             IUserDataManager userDataManager,
             IHttpClientFactory httpClientFactory,
             Configuration.UserConfigurationManager userConfigurationManager,
-            Logger logger)
+            Logger logger,
+            Services.Acquire.Requests.SharedRequestFacts? facts = null)
         {
+            _facts = facts;
             _libraryManager = libraryManager;
             _userManager = userManager;
             _userDataManager = userDataManager;
@@ -96,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return null;
             }
 
-            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Seerr→Jellyfin Watchlist Sync] Jellyseerr URL or API key not configured.");
                 progress?.Report(100);
@@ -129,7 +132,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             foreach (var url in urls)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, url, config.JellyseerrApiKey);
+                jellyseerrUserMap = await GetJellyseerrUserMap(httpClient, url, config.GetJellyseerrApiKey());
                 if (jellyseerrUserMap != null)
                 {
                     jellyseerrUrl = url;
@@ -193,12 +196,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     }
 
                     // Get watchlist from Jellyseerr
-                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
+                    var watchlistItems = await GetJellyseerrWatchlist(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
 
                     var requestItems = new List<WatchlistItem>();
-                    if (config.AddRequestedMediaToWatchlist)
+                    if (config.AddRequestedMediaToWatchlist && _facts != null && Services.Acquire.Requests.SharedRequestFacts.Active(config))
                     {
-                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.JellyseerrApiKey) ?? new List<WatchlistItem>();
+                        // Phase 3: the person's requests come from the shared request facts (the ledger or
+                        // Seerr's complete read model), never a first page that may miss older ones.
+                        var asked = _facts.ForUser(config, jellyfinUser.Id);
+                        if (asked.Complete)
+                            requestItems = asked.Titles.Select(t => new WatchlistItem { TmdbId = t.TmdbId, MediaType = t.Movie ? "movie" : "tv" }).ToList();
+                        else
+                            _logger.Info($"[Seerr→Jellyfin Watchlist Sync] Request list not completely read yet; requests skipped this pass for user: {jellyfinUser.Username}");
+                    }
+                    else if (config.AddRequestedMediaToWatchlist)
+                    {
+                        requestItems = await GetJellyseerrRequests(httpClient, jellyseerrUrl, jellyseerrUserId, config.GetJellyseerrApiKey()) ?? new List<WatchlistItem>();
                     }
 
                     // Log consolidated summary

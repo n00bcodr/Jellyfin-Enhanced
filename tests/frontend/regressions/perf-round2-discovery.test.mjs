@@ -19,6 +19,7 @@ test('person discovery retries an unrendered chunk after a transient card build 
       return card;
     }
   };
+  h.load('jellyseerr/seerr-status.js');
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
   // The scroll engine is driven explicitly; real production rendering,
   // filtering and pagination run normally. No timing or geometry dependency.

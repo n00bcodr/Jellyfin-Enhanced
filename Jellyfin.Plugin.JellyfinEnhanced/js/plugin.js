@@ -101,6 +101,11 @@
             let text = translations[key] || key;
             if (params) {
                 for (const [param, value] of Object.entries(params)) {
+                    // The household contact ("the admin" when none is named) can start a sentence: a capital there.
+                    if (param === 'contact' && typeof value === 'string' && value) {
+                        const start = value.charAt(0).toLocaleUpperCase() + value.slice(1);
+                        text = text.replace(/(^|[.!?]\s+)\{contact\}/g, (match, lead) => lead + start);
+                    }
                     text = text.replace(new RegExp(`{${param}}`, 'g'), value);
                 }
             }
@@ -1068,20 +1073,30 @@
     function seedDisplayLanguage(userId) {
         if (!userId) return;
         const languageKey = `${userId}-language`;
+        // A language tag, normalized (`pt-br` → `pt-BR`), or '' for a literal "undefined"/"null" or a malformed
+        // value (translations.js applies the same rule to what it reads).
+        const languageCode = (raw) => {
+            if (typeof raw !== 'string') return '';
+            const code = raw.trim();
+            if (!code || /^(undefined|null|nan|true|false)$/i.test(code) || !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
+            const parts = code.split('-');
+            const normalized = parts.length === 1 ? parts[0].toLowerCase()
+                : parts.length === 2 ? `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}` : code;
+            try {
+                if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
+            } catch (e) {
+                return '';
+            }
+            return normalized;
+        };
+        // A stringified "undefined" or "null" in the shared key is no one's choice: it goes, so Jellyfin and JE fall
+        // back to the user's or the browser's language (or the administrator's default below).
+        if (/^\s*(undefined|null)\s*$/i.test(localStorage.getItem(languageKey) || '')) localStorage.removeItem(languageKey);
         // Only seed the admin's default language if the user has no language set yet.
         // This prevents overwriting the user's own language choice on every page load.
         if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = (JE.currentSettings?.displayLanguage || '').trim();
-            if (desiredLanguage) {
-                const normalizeLangCode = (code) => {
-                    if (!code) return '';
-                    const parts = code.split('-');
-                    if (parts.length === 1) return parts[0].toLowerCase();
-                    if (parts.length === 2) return `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}`;
-                    return code;
-                };
-                localStorage.setItem(languageKey, normalizeLangCode(desiredLanguage));
-            }
+            const desiredLanguage = languageCode(JE.currentSettings?.displayLanguage);
+            if (desiredLanguage) localStorage.setItem(languageKey, desiredLanguage);
         }
     }
 
@@ -1393,6 +1408,9 @@
             }
             if (JE.pluginConfig?.CalendarPageEnabled && typeof JE.initializeCalendarPage === 'function') {
                 JE.initializeCalendarPage();
+            }
+            if (JE.pluginConfig?.ArrStatusEnabled && typeof JE.initializeArrStatus === 'function') {
+                JE.initializeArrStatus();
             }
             if (JE.pluginConfig?.HiddenContentEnabled && typeof JE.initializeHiddenContentPage === 'function') {
                 JE.initializeHiddenContentPage();

@@ -121,6 +121,9 @@
          * Toggles between showing all search results vs only Seerr results.
          */
         function toggleJellyseerrOnlyMode() {
+            // JE mode (Requests & downloads): there is no Seerr row to show alone (JE's own row replaces it), so the
+            // filter would only hide everything else.
+            if (JE.internals?.arrAskSearch?.replacesSeerr?.()) return;
             isJellyseerrOnlyMode = !isJellyseerrOnlyMode;
 
             const searchPage = document.querySelector('#searchPage');
@@ -497,6 +500,12 @@
          * @param {string} query The search query.
          */
         async function fetchAndRenderResults(query, options = {}) {
+            // JE mode (Requests & downloads): Jellyfin Enhanced's own "Not in your library" row replaces this one.
+            if (JE.internals?.arrAskSearch?.replacesSeerr?.()) {
+                lastProcessedQuery = query;
+                clearInjectedSearchResults?.();
+                return;
+            }
             const { skipCache = false } = options;
             lastProcessedQuery = query;
             fetchingQuery = query;
@@ -1008,10 +1017,12 @@
                     // Prefetch TMDB genres in the background for instant discovery
                     // (no request when this tab already keeps fresh copies in
                     // sessionStorage, e.g. after a reload)
-                    if (isJellyseerrActive && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
+                    // A viewer without a Seerr account reads them from the native route (or not at all).
+                    const nativeGenres = !!JE.discoveryFilter?.useNativeFeeds?.(status);
+                    if (isJellyseerrActive && (jellyseerrUserFound || nativeGenres) && JE.pluginConfig?.JellyseerrShowGenreDiscovery !== false) {
                         Promise.all([
-                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', {})?.catch(() => {}),
-                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', {})?.catch(() => {})
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('tv', { native: nativeGenres })?.catch(() => {}),
+                            JE.discoveryFilter?.fetchTmdbGenreList?.('movie', { native: nativeGenres })?.catch(() => {})
                         ]).catch(() => {});
                     }
                 } else if (Date.now() - startTime > timeout) {

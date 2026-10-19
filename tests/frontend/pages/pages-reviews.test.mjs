@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {setImmediate as nextTurn} from 'node:timers/promises';
 import {createHarness} from '../helpers/harness.mjs';
 
-async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}}}={}) {
+async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},config={},spoilerBlur={},reviews=[],tmdb=[],admin=false,parent={Type:'Series',ProviderIds:{Tmdb:'9'}},getItem,errors=[]}={}) {
   let hook;const calls=[];
-  const h=createHarness({html:'<div id="itemDetailPage"><div class="mediaInfoItems"></div><div class="tagline"></div></div>',url:'http://jellyfin.test/web/index.html#!/details?id=item',apiClient:{getItem:async(_user,id)=>id==='series'?parent:item,getCurrentUser:async()=>({Id:'user-a',Policy:{IsAdministrator:admin}})},JE:{
+  const h=createHarness({html:'<div id="itemDetailPage"><div class="mediaInfoItems"></div><div class="tagline"></div></div>',url:'http://jellyfin.test/web/index.html#!/details?id=item',expectedConsoleErrors:errors,apiClient:{getItem:getItem||(async(_user,id)=>id==='series'?parent:item),getCurrentUser:async()=>({Id:'user-a',Policy:{IsAdministrator:admin}})},JE:{
     pluginConfig:{ShowReviews:true,TmdbEnabled:true,ShowUserReviews:true,...config},spoilerBlur,
     escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     t:key=>key,icon:()=>'<span>star</span>',IconName:{STAR:'star'},
@@ -135,4 +135,13 @@ test('successful review creation refreshes persisted content and edit prepopulat
   h.document.querySelector('textarea').value='Updated version';h.document.querySelector('.je-review-submit-btn').click();await nextTurn();
   assert.equal(saved.length,2);assert.equal(h.document.querySelector('.je-user-review-card .tmdb-review-text').textContent,'Updated version');
   assert.equal(h.document.querySelector('.je-review-form'),null);
+});
+// The server refusing the item (an HTTP answer: a page the viewer may not open) is not an error; a real failure still is.
+test('reviews item refused by the server (HTTP 404) logs no error and leaves page usable',async t=>{
+  const h=await setup(t,{getItem:async()=>{throw {status:404};}});
+  assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);assert.ok(h.document.querySelector('.tagline'));
+});
+test('reviews item read failing for real is still logged as an error',async t=>{
+  const h=await setup(t,{getItem:async()=>{throw Error('boom');},errors:[/Reviews: Error processing page/]});
+  assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.tmdb-reviews-section'),null);
 });

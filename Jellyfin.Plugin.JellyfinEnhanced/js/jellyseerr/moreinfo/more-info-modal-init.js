@@ -25,7 +25,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
         if (generation !== openGeneration) return;
         if (!data) {
-            internal.showError('Failed to load media information');
+            internal.showError('jellyseerr_modal_load_failed');
             return;
         }
 
@@ -39,7 +39,7 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
         }
 
         // Fetch ratings in the background and populate when ready
-        internal.fetchRatings(tmdbId, mediaType)
+        internal.fetchRatings(tmdbId, mediaType, { publicDetails: data.jePublicDetails === true })
             .then((ratings) => {
                 // Modal might have been closed or replaced; ensure we're updating the correct one
                 if (state.currentModal !== openedModal || openedModal._isClosing) return;
@@ -60,8 +60,9 @@ moreInfoModal.open = async function(tmdbId, mediaType) {
             });
     } catch (error) {
         if (generation !== openGeneration) return;
-        console.error('Error opening more info modal:', error);
-        internal.showError('Failed to load media information');
+        // Seerr won't answer for this viewer, or the server won't show them the title: said, not an error.
+        if (!internal.isExplained?.(error)) console.error('Error opening more info modal:', error);
+        internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_load_failed') : 'jellyseerr_modal_load_failed');
     }
 }
 
@@ -78,7 +79,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         const freshData = await internal.fetchMediaDetails(data.id, mediaType);
         if (state.currentModal !== modal || modal._isClosing) return;
         if (!freshData) {
-            internal.showError('Failed to refresh media information');
+            internal.showError('jellyseerr_modal_refresh_failed');
             refreshBtn.classList.remove('loading');
             refreshBtn.disabled = false;
             return;
@@ -98,8 +99,8 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 
     } catch (error) {
         if (state.currentModal !== modal || modal._isClosing) return;
-        console.error('Error refreshing modal data:', error);
-        internal.showError('Failed to refresh modal data');
+        if (!internal.isExplained?.(error)) console.error('Error refreshing modal data:', error);
+        internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_refresh_failed') : 'jellyseerr_modal_refresh_failed');
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
     }
@@ -206,6 +207,9 @@ function showModal(data, mediaType) {
         document.addEventListener('jellyseerr-tv-requested', handleTvRequest);
         modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
     }
+
+    // Let other surfaces add to the modal (Requests & downloads: the status pill).
+    document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType } }));
 
     // Trigger animation
     setTimeout(() => modal.classList.add('active'), 10);

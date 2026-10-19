@@ -15,9 +15,11 @@ Search, request, and discover media from Jellyfin using your Seerr instance. Sta
 ## Features
 
 - [Search and requests](#search-integration), including seasons, 4K, collections, advanced destinations, and quotas.
+- [Jellyfin's own details page for titles that aren't in the library](#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental) (experimental, Jellyfin 12 web).
 - [More Info](#more-info), [item-specific recommendations](#item-details), [discovery](#discovery-pages), and the [Recommendations page](#recommendations-page).
 - [Issue reporting](#issue-reporting) and the shared [Requests page](#requests-page).
 - [Watchlist sync](#watchlist-sync) and [automatic requests](#auto-request-settings).
+- [Library access](#library-access) filtering of every Seerr answer.
 
 ### Search Integration
 
@@ -323,6 +325,116 @@ The server master switch is under **Pages** → **Hidden Content**. The followin
 
     These personal defaults also apply in new user configuration. Hiding a title and filtering it out of a particular surface are separate choices.
 
+!!! note "People without a linked Seerr account"
+    Someone whose Jellyfin account isn't linked to Seerr gets no Seerr rows and, from the More Info window, a message
+    that their Seerr account isn't linked yet. With Requests & downloads handling requests itself (Jellyfin Enhanced
+    mode) they get both anyway, from public details filtered for them (see
+    [People without a Seerr account](../arr/arr-features.md#discover-and-search-je-mode)).
+
+### Titles that aren't in the library: Jellyfin's own details page (experimental)
+
+Open a title you don't have on a regular Jellyfin details page instead of the More Info modal: backdrop, logo, poster, title, year, runtime, rating, tagline, overview, genres, tags, cast and crew, the seasons and episodes of a series, and *More Like This*. Nothing is added to your library: the page is filled in from Seerr and TMDB while you look at it, and other apps (TV, mobile, DLNA) never see these titles in their lists.
+
+**How to use:**
+
+1. Under **Seerr** → **Discovery & UI Extras**, turn on **Open titles that aren't in the library on Jellyfin's own details page (Experimental)**.
+2. Click **Save Settings** and reload the web client.
+3. Open a title you don't have from search, a discovery row, recommendations, or the Requests page.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** | Off | Opens absent titles on a Jellyfin details page in the Jellyfin 12 web client. With it off, on Jellyfin 10.11 and in other apps, titles open as before. |
+
+![A series that isn't in the library: Get Season 1 where Play would be, then Request, Report issue, Spoiler Guard and Manage](../images/seerr/native-details-series.webp)
+
+??? info "Where it opens from"
+    Seerr search results, discovery rows (genre, network, studio, person, collection, tag),
+    recommendations and *Recommended*/*Similar* rows, Home Screen Sections discover cards, the Requests page (also its
+    Discover tab and, when Jellyfin Enhanced handles requests, the *Not in your library* search row), the calendar,
+    Hidden Content, and notifications about a title. A title (or the season or episode asked for) that you can
+    open in Jellyfin goes to your library copy instead; Seerr's own "it's in the library" link is checked for you first.
+    On a search card, Enter opens the page and Space still shows the overview with its Request button.
+
+??? info "What the page shows"
+    It is laid out like Jellyfin's own page for a library title of the same kind. The request
+    action sits first in Jellyfin's button row, where *Play* is on a library title (*Request*, **Get Season N**, **Get it**,
+    *Search*, or what stands in their way, such as *Paused: storage full*); the title's other request actions follow it as
+    icon buttons like the row's own (their name shows on hover), then *Report issue*, Spoiler Guard, *Manage* and *Notify
+    me* in their usual places. The status pill heads the details below, with the request's cost under it. On top of
+    Jellyfin's layout:
+
+    ![A series that isn't in the library: Get Season 1 where Play would be, then Request, Report issue, Spoiler Guard and Manage](../images/seerr/native-details-series.webp)
+
+    - **Request**: with [Requests & downloads](../arr/arr-features.md#titles-that-arent-in-the-library-native-details)
+      on, the status pill and journey, *Request* (the request sheet), *Notify me* and, for administrators, *Manage*.
+      Series pages get **Get Season N**; season pages list every episode as a row with **Get it** (or *Search* for one
+      missing for a long while) when you show missing episodes, or the *Missing: E1, E2…* banner when you don't; episode
+      pages get **Get it**. Without Requests & downloads, *Request* opens the request window over the page.
+    - The ratings row (Rotten Tomatoes, IMDb, TMDB) above the external links, where the MDBList ratings sit on a library
+      title; the trailers and teasers, and an *Information* panel: production status, release or air dates, revenue,
+      budget, original language, production countries, studios, streaming services and links (Seerr, TMDB, IMDb, TVDB,
+      Rotten Tomatoes, Trakt, Letterboxd, SIMKL), plus the movie's collection with *View*. *Elsewhere* works as on any
+      details page.
+    - **Spoiler Guard** (movies and series): its button in the row, where a library title has it. Turned on, Spoiler Guard
+      is waiting for the title and protects it once it's in your library.
+    - **Open**: when the title arrives in your library while the page is open, an *Open* button takes you to it. A link
+      to such a page after that goes straight to the library copy, and so does going Back to it.
+    - **What you already have**: a season page of a series Jellyfin has (a season it doesn't) lists the seasons and
+      episodes you can open as themselves (a file holding two episodes, E01-E02, once, with neither episode also shown as
+      missing), links to the library's series and season above it, and the *More like this*
+      row shows your copy of a title even when Seerr doesn't know it's in the library.
+    - Artwork links on these pages are made for your account and the page they were shown on, and last a day; a page
+      open longer than that gets new ones when it's shown again. They keep working after a server restart.
+
+??? note "Controls a library title has that this page doesn't"
+    Play, Shuffle, Played, Favourite, the More menu, Download, Hide and Spoiler Guard's library-item button are hidden:
+    there is nothing to play, and no rule or mark is ever stored for the page itself (Spoiler Guard's button above keeps
+    its rule by the title's TMDB id).
+
+??? info "Where the names lead"
+    The cast and crew, genres, studios or networks and tags on the page are links, as on a
+    library title:
+
+    - **People**: someone Jellyfin already has opens their Jellyfin page (with the *More with …* row of their other
+      titles). Anyone else opens a page of their own, built the same way: photo, name, biography, birth and death,
+      birthplace, what they're known for and their **Filmography** (roles before guest appearances, best-known titles
+      first, movies and series together in that order under *All*, with the usual All / Movies / Series filter and sort).
+      Each title in it opens your library copy when you have one you can open (the 4K copy or another version counts),
+      otherwise its own page like this one. Titles you have are always in it, whatever *Exclude library items* says, since it's the only list of
+      that person's titles. A person TMDB marks as an adult performer isn't shown to accounts with a parental limit. In
+      Requests & downloads' own request mode the filmography needs no Seerr account.
+    - **Genres, studios and networks**: Jellyfin's own list of that genre or studio when your library has titles in it
+      that you can open (with the genre or network discovery row below, when it's on); otherwise a discovery page with
+      just that row (no Seerr account needed in Requests & downloads' own request mode). On such a page the row keeps the
+      titles you have, whatever *Exclude library items* says, since it's the page's only list. **Tags** open the tag's list
+      with its discovery row.
+    - A name that would lead to an empty page isn't a link: with a discovery row turned off only the genres, studios and
+      tags your library has for you stay links.
+    - **Without a Seerr account** (Requests & downloads' own request mode): the page's ratings, *Information*, trailers
+      and collection come from the server, read with Jellyfin Enhanced's own Seerr key, so they show for everyone the page
+      opens for. The same goes for the discovery rows on library pages (a person's *More with …*, a genre's, studio's,
+      network's or tag's *More …* row): they read the same server-filtered feeds as the pages above. People with a Seerr
+      account keep Seerr's own answers. The *Report issue* button needs a Seerr account and isn't shown without one.
+    - Season and episode pages show the series' genres and its regular cast (Seerr has no cast list per season or
+      episode).
+    - Your parental limits and library access apply on every one of these pages. The filmography and the discovery pages'
+      rows are filtered on the server before they reach the browser: a title the library has but hides from you, a title
+      in a library you can't open, and a title not in the library whose own page you couldn't open are not sent at all.
+    - The server fetches these lists, and the pages themselves, for everyone with one Seerr key, so each account can start
+      only so many new reads at once (about sixty, then one a second; anything someone has already opened doesn't count).
+      Past that a page waits a moment for its turn, and a list asks again when the server says it may. Scrolling far down
+      a discovery page very fast can pause for a moment while it catches up.
+    - Lists filtered for your account are read again each time a page shows, so a change to your library access or
+      parental limit shows without reloading.
+
+!!! note "When it can't open"
+    A title your account may not see (parental limits, libraries you can't open, an account
+    not linked to Seerr) shows "This title isn't available to you." with *Go back*, never the modal. A page you go back
+    to is checked again before any of it shows. If Seerr can't be
+    reached, you're taken back and the More Info modal opens once; if that happens again within a few seconds the page
+    says it can't be loaded right now. With the setting off, on Jellyfin 10.11 and in other apps, titles open exactly as
+    before (the modal, or Seerr, as set above).
+
 ### Discovery Pages
 
 Find related movies and series beyond your library on Jellyfin genre, studio/network, tag, person, and collection pages. You can request them from the same cards used elsewhere in Seerr integration.
@@ -471,6 +583,19 @@ JE applies your Jellyfin parental policy to protected Seerr browsing and request
 
     Automatic movie/season requests go directly to Seerr. They bypass JE's parental-request checks and do not check the **Blocked Users** list. Scheduled watchlist matching is not limited to each user's library access. Review [automation limits](#auto-request-settings) and [watchlist access limits](#retention-and-access-limits) before relying on parental filtering for them.
 
+### Library access
+
+Seerr answers only show titles you could open in Jellyfin, so a library you can't access stays private.
+
+Seerr links every title it knows to its Jellyfin item, whichever library holds it. Before a Seerr answer reaches a user, each linked item is checked against that user's own Jellyfin access (libraries they may open, parental rating, blocked tags):
+
+- A title held only in libraries the user can't open is left out of search, discovery ("More with" a person, "More from" a genre, studio, network or tag), similar and recommended rows, filmographies, collections and the watchlist. It isn't shown as something to request either.
+- When the user can open another copy (the 4K copy, or a copy in another library), the card links to that copy instead.
+- A title's own details, requests and issues keep their entry, without the link to an item the user can't open.
+- A title held only in 4K counts as in the library once its 4K copy is available: its card opens the 4K copy, and *Exclude library items* leaves it out of the rows like any other title you have.
+
+Unrestricted users see Seerr's answers as before. This is always on and needs no setting.
+
 ### Issue Reporting
 
 Report video, audio, subtitle, or other media problems to Seerr without leaving an eligible Jellyfin detail page. The modal also shows existing reports and comments grouped by type.
@@ -510,7 +635,7 @@ Choose **Video**, **Audio**, **Subtitles**, or **Other** in **Issue Type**.
 
     Specials (season zero) and other item types are excluded. The item needs TMDB identification, which can come from the parent series or fallback lookup; submission also needs a Seerr media record (`mediaInfo.id`). Ordinary users need `CREATE_ISSUES` or `MANAGE_ISSUES`; reads need `VIEW_ISSUES` or `MANAGE_ISSUES`. Linked Jellyfin/Seerr administrators bypass those local permission checks.
 
-    Missing linkage can fail submission while the button remains visible. If Seerr is inactive at initialization, the reporter is not added; if availability fails later, an eligible identified item can show a disabled reporting button. Missing identification can also make reporting unavailable.
+    The report icon isn't shown when Seerr couldn't be reached when Jellyfin was opened (reload the page once Seerr is back), when the user has no linked Seerr account, or when the item has no TMDB match. If Seerr stops answering while Jellyfin is open, the icon is shown crossed out; pressing it (or ++enter++/++space++ on it) says why, and nothing else happens. Once Seerr answers again, the title's page has the normal report icon the next time it is shown.
 
     Existing-report and indicator fetches each inspect at most 50 global issue entries, filtered locally by title, so older matching reports can be absent. The modal has no resolve, reopen, delete, or comment-posting controls.
 
@@ -591,7 +716,7 @@ Browse your requests by status. If you have management permission, you can also 
 
     Page size adjusts to the viewport and fits whole card rows. There is no Declined filter tab; declined cards can appear in **All**. The Downloads search control does not search requests or issues.
 
-    Linked ordinary users see their own requests. Linked Jellyfin administrators and Seerr accounts with `ADMIN`, `REQUEST_VIEW`, or `MANAGE_REQUESTS` can see all requests. Request cards show requester information and status. Authorized Jellyfin/Seerr administrators and `MANAGE_REQUESTS` users can press **Approve** or **Decline** on pending requests. Controls follow the raw pending request status even if some media is already available.
+    Linked ordinary users see their own requests. Linked Jellyfin administrators and Seerr accounts with `ADMIN`, `REQUEST_VIEW`, or `MANAGE_REQUESTS` can see all requests, except that with **Filter Downloads by User Requests** on, non-admins see only their own requests whatever their Seerr permissions. Request cards show requester information and status. Authorized Jellyfin/Seerr administrators and `MANAGE_REQUESTS` users can press **Approve** or **Decline** on pending requests. Controls follow the raw pending request status even if some media is already available.
 
     **Coming Soon** uses future movie release or TV air dates and displays countdowns. **Processing** excludes Coming Soon and orphaned requests; the client additionally excludes **Partially Available** entries. Processing/Coming Soon read at most 500 upstream requests before local pagination.
 
@@ -839,3 +964,6 @@ Admin trigger settings ([complete trigger and destination reference](seerr-setti
     JE considers the entry immediately after the watched movie in Seerr's returned collection parts. It does not locally sort that array or search farther ahead if that next entry is already available/pending/processing or skipped by release checking.
 
     User/movie checks are throttled to about once per hour. **Original** copies Seerr request settings rather than the watched file's quality. Unusable original settings and an empty **Custom** configuration fall back to **Default**. The default **Use default instead of 4K fallback** behavior also falls back when original settings were 4K.
+
+!!! note "With Ask for it (Requests & downloads, phase 3)"
+    With **Requests & downloads** phase 3 (**Ask for it**) on, both automations record their requests in Jellyfin Enhanced under the household rules instead of sending them to Seerr directly; see [Automatic requests with "Ask for it"](../arr/arr-features.md#automatic-requests-with-ask-for-it).

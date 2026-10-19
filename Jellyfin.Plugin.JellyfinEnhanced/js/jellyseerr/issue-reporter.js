@@ -29,7 +29,7 @@
     /**
      * Checks if issue reporting is available.
      * Resolves TMDB via parent series or fallback for Season/Episode items.
-     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', or 'no-both'
+     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', 'no-both', or 'no-account' (no Seerr account)
      * @returns {Promise<string>}
      */
     issueReporter.checkReportingAvailability = async function (item) {
@@ -69,6 +69,13 @@
                 return 'no-tmdb';
             } else if (!jellyseerrActive) {
                 return 'no-jellyseerr';
+            }
+
+            // Issues are read and reported as the viewer's own Seerr account: without one (Jellyfin
+            // Enhanced request mode lets such viewers in) every issue call would be refused.
+            const userStatus = await JE.jellyseerrAPI?.checkUserStatus?.();
+            if (userStatus && userStatus.active && userStatus.userFound === false) {
+                return 'no-account';
             }
 
             // Both available
@@ -578,7 +585,9 @@
     };
 
     /**
-     * Create a disabled "unavailable" button to show when reporting isn't possible
+     * Create the "unavailable" button to show when reporting isn't possible. It is aria-disabled, not
+     * disabled: a browser sends a disabled button no click, and a press (click, Enter or Space) has to
+     * show the toast that says why. It does nothing else.
      * @param {HTMLElement} container
      * @param {string} itemName
      * @param {string} mediaType
@@ -598,8 +607,8 @@
             ariaLabel = 'TMDB ID not found';
             title = 'TMDB ID not found for this item';
         } else if (reason === 'no-jellyseerr') {
-            ariaLabel = 'Jellyseerr unavailable';
-            title = 'Jellyseerr is not available';
+            ariaLabel = JE.t('jellyseerr_report_unavailable_seerr_down');
+            title = ariaLabel;
         } else if (reason === 'no-both') {
             ariaLabel = 'Reporting services unavailable';
             title = 'TMDB ID not found and Jellyseerr is not available';
@@ -610,21 +619,21 @@
 
         button.setAttribute('aria-label', ariaLabel);
         button.title = title;
-        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
         button.innerHTML = `
             <div class="detailButton-content">
                 <span class="material-icons detailButton-icon" aria-hidden="true">warning_off</span>
             </div>
         `;
 
-        // Still allow click to show a helpful toast explaining why
+        // A press shows a helpful toast explaining why
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (reason === 'no-tmdb') {
                 JE.toast('TMDB ID not found for this item', 4000);
             } else if (reason === 'no-jellyseerr') {
-                JE.toast('Jellyseerr is not available', 4000);
+                JE.toast(JE.t('jellyseerr_report_unavailable_seerr_down'), 4000);
             } else if (reason === 'no-both') {
                 JE.toast('TMDB ID not found and Jellyseerr is not available', 4000);
             } else if (reason === 'no-permissions') {
@@ -799,8 +808,69 @@
         }
     };
 
+    const REPORT_ICONS = '.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon';
+
+    /** @returns {string|null} The id of the item the page shows (same way as reviews.js). */
+    const pageItemId = () => new URLSearchParams(window.location.hash.split('?')[1]).get('id');
+
+    // The look under way per details page element. Looks that overlap (Jellyfin's viewshow and the
+    // reporter's own first look on a fresh load) share it instead of each adding an icon.
+    const pendingLooks = new WeakMap();
+
+    // The icons the reporter placed, each with the item it reports. A copy of one (an action row
+    // replaced by a copy of itself) looks the same but has no click handler, so it never counts.
+    const placedIcons = new WeakMap();
+
     /**
-     * Attempts to add the report issue button to the current detail page
+     * The page's working report icon if it is for this item. Any other icon goes: the icon of the
+     * title shown before (Jellyfin reuses the page element) and dead copies of the reporter's icons.
+     * @param {HTMLElement} page
+     * @param {string} itemId
+     * @returns {Element|null}
+     */
+    function iconFor(page, itemId) {
+        let live = null;
+        for (const icon of page.querySelectorAll(REPORT_ICONS)) {
+            if (!live && placedIcons.get(icon) === itemId) live = icon;
+            else icon.remove();
+        }
+        return live;
+    }
+
+    /**
+     * @param {Element} icon
+     * @returns {boolean} The icon is the unavailable one (Seerr couldn't be reached when it was drawn).
+     */
+    const isUnavailable = icon => icon.classList.contains('jellyseerr-report-unavailable-icon');
+
+    /**
+     * Places a report icon for the item in the page's action row, unless the viewer has moved on
+     * or another look placed one meanwhile.
+     * @param {HTMLElement} row
+     * @param {HTMLElement} button
+     * @param {HTMLElement} page
+     * @param {string} itemId
+     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @returns {boolean} The page has an icon for the item now.
+     */
+    function placeIcon(row, button, page, itemId, current) {
+        if (!current()) {
+            console.debug(`${logPrefix} Page moved on before the report button was ready`);
+            return false;
+        }
+        const existing = iconFor(page, itemId);
+        // An unavailable icon gives way to the working one once Seerr answers again.
+        if (existing && !(isUnavailable(existing) && !isUnavailable(button))) return true;
+        existing?.remove();
+        button.setAttribute('data-je-item-id', itemId);
+        placedIcons.set(button, itemId);
+        JE.core.ui.placeDetailAction(row, button);
+        return true;
+    }
+
+    /**
+     * Attempts to add the report issue button to the current detail page (once per page view).
+     * @returns {Promise<boolean>} The page has a report button.
      */
     issueReporter.tryAddButton = async function () {
         const itemDetailPage = document.querySelector('#itemDetailPage:not(.hide)');
@@ -813,20 +883,40 @@
             return false;
         }
 
-        // Check if we already added the button (either active or unavailable)
-        if (itemDetailPage.querySelector('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon')) {
+        const itemId = pageItemId();
+        if (!itemId) {
+            console.debug(`${logPrefix} No item ID in URL`);
+            return false;
+        }
+
+        // Check if we already added the button. An unavailable one is checked again: Seerr may answer now.
+        const existing = iconFor(itemDetailPage, itemId);
+        if (existing && !isUnavailable(existing)) {
             console.debug(`${logPrefix} Report button already exists`);
             return true;
         }
 
-        try {
-            // Get item ID from URL hash (same way as reviews.js)
-            const itemId = new URLSearchParams(window.location.hash.split('?')[1]).get('id');
-            if (!itemId) {
-                console.debug(`${logPrefix} No item ID in URL`);
-                return false;
-            }
+        const running = pendingLooks.get(itemDetailPage);
+        if (running && running.itemId === itemId) return running.promise;
+        const look = { itemId, promise: Promise.resolve(false) };
+        const current = () => pendingLooks.get(itemDetailPage) === look && pageItemId() === itemId
+            && itemDetailPage.isConnected && !itemDetailPage.classList.contains('hide');
+        pendingLooks.set(itemDetailPage, look);
+        look.promise = addButton(itemDetailPage, itemId, current).finally(() => {
+            if (pendingLooks.get(itemDetailPage) === look) pendingLooks.delete(itemDetailPage);
+        });
+        return look.promise;
+    };
 
+    /**
+     * Reads the item and adds its report (or unavailable) button to the page.
+     * @param {HTMLElement} itemDetailPage
+     * @param {string} itemId
+     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @returns {Promise<boolean>} The page has a report button.
+     */
+    async function addButton(itemDetailPage, itemId, current) {
+        try {
             // Fetch item data from Jellyfin API (same way as reviews.js)
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
@@ -888,7 +978,7 @@
             // Jellyseerr being down, so there's nothing useful to report on this
             // item; skip silently rather than cluttering the page with a disabled
             // button that always explains the same permanent limitation.
-            if (availability === 'no-tmdb' || availability === 'no-both') {
+            if (availability === 'no-tmdb' || availability === 'no-both' || availability === 'no-account') {
                 console.debug(`${logPrefix} Skipping ${item.Name}: no TMDB ID available, nothing to report against`);
                 return false;
             }
@@ -925,12 +1015,7 @@
                 if (buttonContainerUnavail) {
                     const unavailButton = issueReporter.createUnavailableButton(buttonContainerUnavail, '', '', availability);
                     if (unavailButton) {
-                        const moreButton = buttonContainerUnavail.querySelector('.btnMoreCommands');
-                        if (moreButton) {
-                            buttonContainerUnavail.insertBefore(unavailButton, moreButton);
-                        } else {
-                            buttonContainerUnavail.appendChild(unavailButton);
-                        }
+                        if (!placeIcon(buttonContainerUnavail, unavailButton, itemDetailPage, itemId, current)) return false;
                         console.log(`${logPrefix} Added unavailable report button (${availability})`);
                         return true;
                     }
@@ -1043,24 +1128,24 @@
             );
 
             if (button) {
-                // Try to insert before btnMoreCommands, otherwise append
-                const moreButton = buttonContainer.querySelector('.btnMoreCommands');
-                if (moreButton) {
-                    buttonContainer.insertBefore(button, moreButton);
-                } else {
-                    buttonContainer.appendChild(button);
-                }
+                // In its fixed place in the row (before More…), once.
+                if (!placeIcon(buttonContainer, button, itemDetailPage, itemId, current)) return false;
+                // The item's icon was already there: nothing more to do.
+                if (button.parentNode !== buttonContainer) return true;
                 console.log(`${logPrefix} ✓ Report issue button added to ${item.Name} (${mediaType}, TMDB: ${tmdbId})`);
                 // Fire-and-forget: colour button orange + count badge when open issues exist
                 issueReporter.applyIssueIndicator(button, tmdbId, mediaType);
                 return true;
             }
         } catch (error) {
-            console.warn(`${logPrefix} Error adding button:`, error);
+            // An item the server won't hand out (an HTTP answer such as 404/503: a page that isn't available)
+            // has nothing to add to; only real failures are errors.
+            if ((typeof Response !== 'undefined' && error instanceof Response) || typeof error?.status === 'number') console.debug(`${logPrefix} Item not readable (${error.status}).`);
+            else console.warn(`${logPrefix} Error adding button:`, error);
         }
 
         return false;
-    };
+    }
 
     /**
      * Initializes issue reporter on item detail pages

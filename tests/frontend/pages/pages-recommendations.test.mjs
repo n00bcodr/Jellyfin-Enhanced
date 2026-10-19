@@ -74,3 +74,23 @@ test('recommendations disabled standalone page leaves current host untouched',t=
   const h=setup(t,async()=>({}));h.JE.pluginConfig={RecommendationsPageEnabled:false};h.JE.t=key=>key;h.P.renderInto=()=>{throw Error('must not render');};
   h.load('jellyseerr/recommendations/recommendations-page.js');h.P.showPage();assert.equal(h.document.querySelector('#je-recommendations-page'),null);
 });
+test('the recommendations page takes over when Jellyfin answers its own #/recommendations route with another page',t=>{
+  const h=setup(t,async()=>({}));h.JE.pluginConfig={RecommendationsPageEnabled:true};h.JE.t=key=>key;
+  h.JE.helpers={onSidebarRebuilt:()=>()=>{},onNavigate:()=>()=>{}};
+  h.document.body.innerHTML='<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>';
+  h.P.renderInto=()=>{};h.P.hideCategoryPage=()=>{};
+  h.load('jellyseerr/recommendations/recommendations-page.js');h.load('jellyseerr/recommendations/recommendations-init.js');
+  const show=el=>el.dispatchEvent(new h.window.CustomEvent('viewshow',{bubbles:true}));
+  // A hash change to #/recommendations inside the app: Jellyfin's router shows its own "Page not found" page.
+  const home=h.document.getElementById('home');h.window.history.replaceState(null,'','#/recommendations');
+  const notFound=h.document.createElement('div');notFound.className='mainAnimatedPage';notFound.textContent='Page not found';
+  home.after(notFound);home.classList.add('hide');show(notFound);
+  const page=h.document.getElementById('je-recommendations-page');
+  assert.ok(page&&!page.classList.contains('hide'),'the recommendations page shows');assert.ok(notFound.classList.contains('hide'));
+  // The router showing its page again on the same route is hidden again; ours stays.
+  notFound.classList.remove('hide');show(notFound);
+  assert.ok(notFound.classList.contains('hide'));assert.equal(page.classList.contains('hide'),false);
+  // Another route's page still hides it as before.
+  h.window.history.replaceState(null,'','#/home');home.classList.remove('hide');show(home);
+  assert.ok(page.classList.contains('hide'));assert.equal(h.P.state.pageVisible,false);
+});

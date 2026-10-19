@@ -71,6 +71,17 @@
      * @property {string} configKey - JE.pluginConfig gate key.
      * @property {boolean} [defaultEnabled=true] - true: render unless the config
      *   key is explicitly false. false: render only when the key is truthy.
+     * @property {(id: string) => boolean} [enabledFor] - Renders on this page
+     *   whatever the config key says (a page whose only titles are this row's,
+     *   such as the person page of someone the library doesn't have).
+     * @property {(id: string) => boolean} [keepLibraryItems] - On this page the
+     *   row keeps library titles whatever JellyseerrExcludeLibraryItems says (a
+     *   row that is the page's only list of titles; library cards open the
+     *   library copy).
+     * @property {(id: string) => boolean} [keepListOrder] - client-paged only: on
+     *   this page "All" keeps the list in the order resolveItems gave it instead
+     *   of alternating series and movies (a list already ranked, such as a
+     *   filmography with what the person is known for first).
      * @property {() => string|null} getIdFromUrl - URL/hash contract: returns the
      *   page's id (or name) when the module applies to the current page.
      * @property {(id: string) => string} [pageKey] - Override the processed-page
@@ -216,6 +227,10 @@
         // Bumped whenever the client-paged list is re-rendered from the top
         // (filter / sort change): a chunk still being built is dropped.
         let renderEpoch = 0;
+        // The page being rendered keeps its library titles (spec.keepLibraryItems).
+        let keepLibrary = false;
+        // The page being rendered keeps its list's own order in mixed mode (spec.keepListOrder).
+        let keepListOrder = false;
 
         /**
          * Managed fetch through the shared request manager (cache prefix = key).
@@ -226,10 +241,12 @@
             JE.discoveryFilter.fetchWithManagedRequest(path, key, options);
 
         /**
-         * Whether the module is enabled by plugin config.
+         * Whether the module is enabled by plugin config (or the spec enables it for this page).
+         * @param {string} [id] - The page's id.
          * @returns {boolean}
          */
-        function isEnabled() {
+        function isEnabled(id) {
+            if (id && typeof spec.enabledFor === 'function' && spec.enabledFor(id)) return true;
             if (spec.defaultEnabled === false) {
                 return !!JE.pluginConfig?.[spec.configKey];
             }
@@ -355,6 +372,8 @@
                 if (mode === filter.MODES.MOVIES || mode === filter.MODES.TV) {
                     return filter.filterByMediaType(sorted, mode);
                 }
+                // A list ranked on purpose keeps its order.
+                if (keepListOrder) return sorted;
                 // Mixed mode - interleave TV and Movies for balanced display
                 const tvResults = sorted.filter(item => item.mediaType === 'tv');
                 const movieResults = sorted.filter(item => item.mediaType === 'movie');
@@ -381,7 +400,7 @@
          * @returns {DocumentFragment}
          */
         function createCardsFragment(results) {
-            return JE.discoveryFilter.createCardsFragment(results, { cardClass });
+            return JE.discoveryFilter.createCardsFragment(results, { cardClass, keepLibraryItems: keepLibrary });
         }
 
         /**
@@ -403,6 +422,9 @@
             // Use shared header helper if available, otherwise create basic header
             if (JE.discoveryFilter?.createSectionHeader) {
                 const header = JE.discoveryFilter.createSectionHeader(title, key, showFilter, onFilterChange, onSortChange);
+                // A section without its own side padding (person, collection pages): the header keeps
+                // the same right edge as its cards, so the Sort select isn't flush with the screen edge.
+                if (!isDualFeed) header.classList.add('padded-right');
                 section.appendChild(header);
             } else {
                 const titleElement = document.createElement('h2');
@@ -515,7 +537,7 @@
 
             const epoch = renderEpoch;
             const isCurrent = () => epoch === renderEpoch && !signal?.aborted;
-            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent });
+            await JE.discoveryFilter.appendCards(itemsContainer, nextChunk, { cardClass, isCurrent, keepLibraryItems: keepLibrary });
             // A reset (filter / sort change) or navigation during the build owns
             // the pagination state now.
             if (!isCurrent()) return;
@@ -697,6 +719,7 @@
                     // the cards not in yet.
                     const rendering = JE.discoveryFilter.appendCards(itemsContainer, itemsToAdd, {
                         cardClass,
+                        keepLibraryItems: keepLibrary,
                         isCurrent: () => !signal?.aborted
                     });
                     ensureFilterControl(itemsContainer);
@@ -1277,10 +1300,12 @@
             // Prevent re-entry if already rendering this same page
             if (currentRenderingPageKey === pageKey) return;
 
-            if (!isEnabled()) return;
+            if (!isEnabled(id)) return;
 
             // Set rendering key before potentially aborting
             currentRenderingPageKey = pageKey;
+            keepLibrary = typeof spec.keepLibraryItems === 'function' && !!spec.keepLibraryItems(id);
+            keepListOrder = isClientPaged && typeof spec.keepListOrder === 'function' && !!spec.keepListOrder(id);
 
             // Cancel any previous requests (for different pages)
             if (currentAbortController) {

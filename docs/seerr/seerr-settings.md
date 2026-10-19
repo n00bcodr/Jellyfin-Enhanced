@@ -209,6 +209,7 @@ Choose how result posters and Seerr detail links open.
 | **Link available items' posters straight to Jellyfin** | Off | Makes available posters open their Jellyfin item directly. Available title links already lead to Jellyfin. |
 | **Show Seerr link on item detail pages** | On | Adds a Seerr link to the **External Links** row for TMDB-identified movies/series, independently of *arr links. |
 | **Show as text instead of icon** | Off | Uses a text Seerr detail link. Depends on **Show Seerr link on item detail pages**. |
+| **Open titles that aren't in the library on Jellyfin's own details page (Experimental)** | Off | Opens titles you don't have on a Jellyfin details page instead of the modal (Jellyfin 12 web). See [Titles that aren't in the library](seerr-features.md#titles-that-arent-in-the-library-jellyfins-own-details-page-experimental). |
 
 ??? note "Details"
 
@@ -329,6 +330,7 @@ Bring Jellyfin watchlist entries into Seerr with a scheduled task. It runs daily
 - Removes **Select All** from the season modal and lets users tick only one season per request
 - Applies everywhere the season modal opens (search, more info, item details)
 - Needs **Partial requests** enabled in Seerr; otherwise Seerr requires all seasons and this setting has no effect
+- With [Requests & downloads](../arr/arr-features.md#asking-for-titles) phase 3 on, Jellyfin Enhanced's own request sheet and series-page buttons follow it too, in Seerr mode (while Seerr takes partial requests) and in Jellyfin Enhanced mode: no **Everything** for several seasons, **Pick seasons…** takes one, and **Get missing episodes** asks for the first season with missing episodes. The server refuses an ask for more than one season (`409 single_season_only`). Requests recorded before the option was turned on can still be approved.
 
 ### Auto Import Jellyfin Users to Seerr
 
@@ -450,7 +452,7 @@ Show active downloads and recent import history alongside requests.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Show Downloads in Requests Page** | On | Displays active *arr downloads. Also required to show the history section. |
-| **Filter Downloads by User Requests** | On | Limits queue/history for non-admins to content they requested through Seerr. Without usable Seerr linkage or matching requests, their results can be empty. |
+| **Filter Downloads by User Requests** | On | Limits queue/history for non-admins to content they requested through Seerr, and the request list to their own requests whatever their Seerr permissions. Library access applies either way. Without usable Seerr linkage or matching requests, their results can be empty. |
 | **Show Download History Section** | On | Adds paginated recent import history. |
 | **Restrict Download History to Admins** | Off | Restricts history to Jellyfin administrators, enforced by the server. |
 

@@ -403,8 +403,8 @@
                     return false;
                 }
 
-                // Auto-retry with backoff
-                const delay = calculateBackoff(retryCount);
+                // Auto-retry with backoff, never sooner than the server asked (Retry-After).
+                const delay = Math.max(calculateBackoff(retryCount), Number(error?.retryAfterMs) || 0);
                 console.debug(`${logPrefix} Retrying in ${delay}ms...`);
                 await sleep(delay);
                 if (destroyed || !sentinel.isConnected) return false;

@@ -83,3 +83,25 @@ test('more-info same-ID replacement rejects stale refresh by modal identity',asy
   await h.P.open(1,'movie');h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(1,'movie');pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,1]);
 });
+test('more-info download bars keep separate downloads apart for everyone (projected group tokens, Seerr ids for admins)',t=>{
+  const internal={};
+  const h=createHarness({JE:{internals:{moreInfoModal:internal},escapeHtml:s=>String(s),t:k=>k}});t.after(()=>h.close());
+  h.load('jellyseerr/moreinfo/more-info-modal-badges.js');
+  // What a member gets: no downloadId, one opaque group token per download (two rows of one season pack).
+  const projected=[{status:'downloading',size:100,sizeLeft:50,group:'g1',episode:{seasonNumber:1,episodeNumber:1}},{status:'downloading',size:100,sizeLeft:50,group:'g1',episode:{seasonNumber:1,episodeNumber:2}},{status:'downloading',size:200,sizeLeft:20,group:'g2'}];
+  assert.equal(internal.buildDownloadBars(projected,[{status:'downloading',size:400,sizeLeft:300,group:'g3'}]).querySelectorAll('.je-download-row').length,3);
+  // An administrator's raw Seerr rows.
+  assert.equal(internal.buildDownloadBars([{size:1,sizeLeft:0,downloadId:'a'},{size:1,sizeLeft:0,downloadId:'b'},{size:1,sizeLeft:0,downloadId:'a'}]).querySelectorAll('.je-download-row').length,2);
+});
+
+test('a title the modal can\'t load says so in a toast, never a blocking browser dialog', t => {
+  const toasts = [];
+  const alerts = [];
+  const h = createHarness({ JE: { t: key => `t:${key}`, escapeHtml: s => String(s).replace(/</g, '&lt;'), toast: (html, ms) => toasts.push([html, ms]), seerrStatus: { MEDIA: {} } } });
+  t.after(() => h.close());
+  h.window.alert = message => alerts.push(message);
+  h.load('jellyseerr/moreinfo/more-info-modal-data.js');
+  h.JE.internals.moreInfoModal.showError('jellyseerr_modal_load_failed');
+  assert.deepEqual(toasts, [['t:jellyseerr_modal_load_failed', 5000]]);
+  assert.deepEqual(alerts, []);
+});

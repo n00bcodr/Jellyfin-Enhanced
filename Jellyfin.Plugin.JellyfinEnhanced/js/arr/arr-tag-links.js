@@ -165,7 +165,10 @@
                 processedItems.add(itemId);
 
             } catch (err) {
-                console.error(`${logPrefix} Error adding tag links:`, err);
+                // An item the server won't hand out (an HTTP answer such as 404/503: a page that isn't available)
+                // has nothing to add to; only real failures are errors.
+                if ((typeof Response !== 'undefined' && err instanceof Response) || typeof err?.status === 'number') console.debug(`${logPrefix} Item not readable (${err.status}).`);
+                else console.error(`${logPrefix} Error adding tag links:`, err);
             } finally {
                 isAddingLinks = false;
             }

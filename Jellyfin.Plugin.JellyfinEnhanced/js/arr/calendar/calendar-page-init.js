@@ -224,9 +224,18 @@
    */
   function handleViewShow(e) {
     const targetPage = e.target;
-    if (state.pageVisible && targetPage && targetPage.id !== "je-calendar-page") {
-      hidePage();
+    if (!targetPage || targetPage.id === "je-calendar-page") return;
+    // Jellyfin's router answering our own route (a hash change to #/calendar inside the app, e.g. typed
+    // into the address bar): its page is "Page not found", so the calendar takes its place.
+    if (window.location.hash === "#/calendar") {
+      if (state.pageVisible) {
+        targetPage.classList.add("hide");
+      } else {
+        showPage();
+      }
+      return;
     }
+    if (state.pageVisible) hidePage();
   }
 
   /**
@@ -330,6 +339,7 @@
     showPage,
     hidePage,
     refresh: loadAllData,
+    retry: P.retry,
     setViewMode: P.setViewMode,
     shiftPeriod: P.shiftPeriod,
     goToday: P.goToday,

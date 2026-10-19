@@ -215,7 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
+            var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
             try
@@ -261,7 +261,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
@@ -342,7 +342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (tmdbIds == null || tmdbIds.Count == 0) return new Dictionary<string, MdblistCacheEntry>();
 
-            var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
             var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);

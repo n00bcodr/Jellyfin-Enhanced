@@ -161,6 +161,21 @@
     }
 
     /**
+     * The wait a response asks for before trying again (Retry-After: seconds or an HTTP date), in
+     * milliseconds, or 0 when it names none.
+     * @param {Response} response
+     * @returns {number}
+     */
+    function retryAfterMs(response) {
+        const value = response?.headers?.get?.('Retry-After');
+        if (!value) return 0;
+        const seconds = Number(value);
+        if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000));
+        const at = Date.parse(value);
+        return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
+    }
+
+    /**
      * Check if an error/status is retryable
      * @param {*} error
      * @param {number} [status]
@@ -216,6 +231,8 @@
                 lastStatus = response.status;
                 lastError = /** @type {any} */ (new Error(`HTTP ${response.status}`));
                 lastError.status = response.status;
+                // A busy server (429) or a check still running (504) says when to come back.
+                lastError.retryAfterMs = retryAfterMs(response);
 
                 // Capture body so callers can read structured error details (e.g. quota messages).
                 try {
@@ -253,7 +270,11 @@
 
             // Wait before retry (except on last attempt)
             if (attempt < retryConfig.maxAttempts) {
-                const delay = calculateBackoff(attempt, retryConfig);
+                // Never sooner than the server asked; a wait past the time budget is left to the caller
+                // (the error carries retryAfterMs), rather than a retry the server already said is early.
+                const asked = Number(lastError?.retryAfterMs) || 0;
+                if (asked > 0 && performance.now() - startTime + asked > retryConfig.timeoutBudgetMs) break;
+                const delay = Math.max(calculateBackoff(attempt, retryConfig), asked);
                 if (metrics.enabled) {
                     console.debug(`${logPrefix} Retry ${attempt}/${retryConfig.maxAttempts} for ${url} in ${delay}ms`);
                 }

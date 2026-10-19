@@ -135,8 +135,11 @@
       externalLinksHtml = `<div class="je-request-external-links" data-tmdb-id="${escapeHtml(String(item.tmdbId))}" data-tvdb-id="${escapeHtml(String(item.tvdbId || ""))}" data-media-type="${escapeHtml(item.type || "")}">${seerrLinkHtml}</div>`;
     }
 
-    const titleMediaIdAttr = item.jellyfinMediaId ? ` data-media-id="${escapeHtml(item.jellyfinMediaId)}"` : '';
-    const titleClass = item.jellyfinMediaId ? 'je-request-title je-request-title-link' : 'je-request-title';
+    // A title that isn't in the library opens its native details page when the server offers it.
+    const nativeTitle = !item.jellyfinMediaId && Number(item.tmdbId) > 0 && window.JellyfinEnhanced?.titleDetails?.available?.() === true;
+    const titleMediaIdAttr = item.jellyfinMediaId ? ` data-media-id="${escapeHtml(item.jellyfinMediaId)}"`
+      : nativeTitle ? ` data-tmdb-id="${escapeHtml(String(Number(item.tmdbId)))}" data-media-type="${item.type === 'tv' ? 'tv' : 'movie'}"` : '';
+    const titleClass = item.jellyfinMediaId || nativeTitle ? 'je-request-title je-request-title-link' : 'je-request-title';
 
     return `
             <div class="je-request-card${item.isOrphaned ? ' je-request-card-orphaned' : ''}">

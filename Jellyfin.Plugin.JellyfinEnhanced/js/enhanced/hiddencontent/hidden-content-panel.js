@@ -158,15 +158,20 @@
                 const removedId = (card.dataset.jellyfinRemoved === '1')
                     ? (hasTmdbId ? item.tmdbId : card.dataset.resolvedTmdbId)
                     : '';
+                // The title's native details page when offered, else the more-info modal.
+                const openAbsent = (id, type) => {
+                    if (JE.titleDetails?.show) JE.titleDetails.show(id, type);
+                    else JE.jellyseerrMoreInfo.open(id, type);
+                };
                 if (hasJellyfinId && removedId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
-                    JE.jellyseerrMoreInfo.open(parseInt(removedId, 10), hasTmdbId ? mediaType : (card.dataset.resolvedMediaType || mediaType));
+                    openAbsent(parseInt(removedId, 10), hasTmdbId ? mediaType : (card.dataset.resolvedMediaType || mediaType));
                     if (onNavigate) onNavigate();
                 } else if (hasJellyfinId) {
                     if (onNavigate) onNavigate();
                 } else if (hasTmdbId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();
-                    JE.jellyseerrMoreInfo.open(parseInt(item.tmdbId, 10), mediaType);
+                    openAbsent(parseInt(item.tmdbId, 10), mediaType);
                     if (onNavigate) onNavigate();
                 } else if (!hasJellyfinId) {
                     e.preventDefault();

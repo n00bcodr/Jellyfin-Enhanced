@@ -9,7 +9,8 @@
 
     internal.injectStyles = function() {
         JE.core.ui.injectCss('je-spoiler-guard-styles', `
-            .je-spoiler-blur-btn.je-spoiler-blur-on .detailButton-icon {
+            .je-spoiler-blur-btn.je-spoiler-blur-on .detailButton-icon,
+            .je-spoiler-pending-detail.je-spoiler-pending-on .detailButton-icon {
                 color: #d6c8ff;
             }
             .je-more-info-modal .je-more-info-secondary-actions {

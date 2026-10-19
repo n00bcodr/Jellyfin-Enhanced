@@ -78,13 +78,13 @@ The enabled features determine which permissions the audit checks. A linked Seer
     | 4K movies | **Enable 4K Requests** is on (default off) | `REQUEST_4K` or `REQUEST_4K_MOVIE` |
     | 4K series | **Enable 4K TV Requests** is on (default off) | `REQUEST_4K` or `REQUEST_4K_TV` |
     | Advanced options | **Show advanced request options** is on (default off) and request capability is present | Specifically `REQUEST_ADVANCED` |
-    | Other users' requests | **Enable Requests Page** is on (default off) | `REQUEST_VIEW` or `MANAGE_REQUESTS` |
+    | Other users' requests | **Enable Requests Page** is on (default off) and **Filter Downloads by User Requests** is off (default on) | `REQUEST_VIEW` or `MANAGE_REQUESTS` |
     | Create issues | **Show "Report Issue" button on items** is on (default off) | `CREATE_ISSUES` or `MANAGE_ISSUES` |
     | Issue indicator | **Show open issue indicator** is on (default off) | `VIEW_ISSUES` or `MANAGE_ISSUES` |
 
 !!! tip "Own requests may be enough"
 
-    An own-requests-only warning can be intentional. Ordinary linked users can still use the Requests page for their own requests without permission to view other users' requests. Grant broader access only if that is your intended policy.
+    An own-requests-only warning can be intentional. Ordinary linked users can still use the Requests page for their own requests without permission to view other users' requests. Grant broader access only if that is your intended policy. With **Filter Downloads by User Requests** on, the Requests page shows non-admins only their own requests even when they hold these permissions.
 
 ### Limits of an OK result
 

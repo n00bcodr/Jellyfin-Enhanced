@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -57,13 +58,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         private static bool IsBlockedIp(IPAddress addr, bool allowLinkLocal)
         {
-            // normalize IPv6-mapped IPv4 (literal or DNS-resolved) so the block
-            // list still catches `[::ffff:169.254.169.254]`.
-            if (addr.IsIPv4MappedToIPv6)
-            {
-                addr = addr.MapToIPv4();
-            }
+            // Normalise the IPv6 forms that carry an IPv4 address (literal or DNS-resolved) so the
+            // IPv4 rules below still apply: IPv4-mapped `::ffff:a.b.c.d`, NAT64 well-known prefix
+            // `64:ff9b::a.b.c.d` (RFC 6052) and the deprecated IPv4-compatible `::a.b.c.d`.
+            addr = EmbeddedIPv4(addr) ?? addr;
             if (_blockedIPs.Contains(addr)) return true;
+            // fe80::/10 is the IPv6 link-local range: same rule as 169.254.0.0/16 below.
+            if (addr.AddressFamily == AddressFamily.InterNetworkV6 && addr.IsIPv6LinkLocal) return !allowLinkLocal;
             // 169.254.0.0/16 — AWS metadata + Windows APIPA + ECS metadata + custom probes
             var bytes = addr.GetAddressBytes();
             if (bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254)
@@ -76,6 +77,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             return false;
         }
 
+        private static IPAddress? EmbeddedIPv4(IPAddress addr)
+        {
+            if (addr.AddressFamily != AddressFamily.InterNetworkV6) return null;
+            if (addr.IsIPv4MappedToIPv6) return addr.MapToIPv4();
+            var b = addr.GetAddressBytes();
+            var nat64 = b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b && b.Skip(4).Take(8).All(x => x == 0);
+            // ::a.b.c.d, but not :: and ::1 (unspecified / loopback).
+            var compatible = b.Take(12).All(x => x == 0) && (b[12] | b[13] | b[14]) != 0;
+            return nat64 || compatible ? new IPAddress(new[] { b[12], b[13], b[14], b[15] }) : null;
+        }
+
         private static bool AreResolvedAddressesAllowed(string host, IPAddress[] addresses)
         {
             var allowLinkLocal = _containerHostAliases.Contains(host);
@@ -85,6 +97,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// The checks that need no DNS: absolute http(s) URL, not a blocked metadata host, and a
+        /// literal IP that is not blocked. A hostname passes here; its addresses are checked when the
+        /// connection is made (see <see cref="AreAddressesAllowed"/>).
+        /// </summary>
+        public static bool PassesStaticChecks(string? url) => TrySyncChecks(url, out _) != false;
+
+        /// <summary>
+        /// True when every address <paramref name="host"/> resolved to may be contacted. Used at
+        /// connect time so the address that is checked is the address that is used (no DNS rebinding).
+        /// </summary>
+        public static bool AreAddressesAllowed(string host, IPAddress[] addresses)
+        {
+            var normalized = (host ?? string.Empty).TrimEnd('.').ToLowerInvariant();
+            if (_blockedHosts.Contains(normalized)) return false;
+            return addresses.Length > 0 && AreResolvedAddressesAllowed(normalized, addresses);
         }
 
         public static bool IsAllowedUrl(string? url)

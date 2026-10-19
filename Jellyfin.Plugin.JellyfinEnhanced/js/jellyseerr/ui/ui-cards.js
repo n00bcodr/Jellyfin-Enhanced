@@ -179,6 +179,9 @@
         }
         const isAvailable = Boolean(jellyfinMediaId)
             && (cardEffectiveStatus === MediaStatus.AVAILABLE || cardEffectiveStatus === MediaStatus.PARTIALLY_AVAILABLE);
+        // Only the 4K copy is here: the card is in the library through it.
+        const fourK = !isAvailable ? JE.seerrStatus.libraryCopyId({ jellyfinMediaId4k: item?.mediaInfo?.jellyfinMediaId4k, status4k: item?.mediaInfo?.status4k }) : null;
+        if (fourK) return { isAvailable: true, jellyfinMediaId: fourK };
         return { isAvailable, jellyfinMediaId };
     }
 
@@ -636,6 +639,14 @@
      * @param {Object} state - The card's state
      */
     function goToJellyfinItem(state) {
+        // With native details on, Seerr's library id isn't taken on trust: the server names the copy
+        // this viewer can open (or the title's native page when there is none).
+        const item = state.item || {};
+        const tmdbId = parseInt(item.id, 10);
+        if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
+            JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+            return;
+        }
         try {
             if (typeof Emby !== 'undefined' && Emby.Page?.showItem) {
                 Emby.Page.showItem(state.jellyfinMediaId);
@@ -752,6 +763,27 @@
     }
 
     /**
+     * True when titles that aren't in the library open on Jellyfin's own details page
+     * (JE.titleDetails; experimental). It takes precedence over the More Info modal setting.
+     * @returns {boolean} Native details are offered.
+     */
+    function nativeDetailsOn() {
+        return JE.titleDetails?.available?.() === true;
+    }
+
+    /**
+     * Opens a title that isn't in the library: Jellyfin's own details page when offered,
+     * otherwise the More Info modal.
+     * @param {number} tmdbId TMDB id.
+     * @param {string} mediaType "movie" or "tv".
+     * @returns {void}
+     */
+    function openAbsentTitle(tmdbId, mediaType) {
+        if (JE.titleDetails?.open?.(tmdbId, mediaType)) return;
+        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
+    }
+
+    /**
      * Title link click (capture phase on the link, so it runs before anything
      * inside the link and before the link's own bubble-phase handlers).
      * @param {MouseEvent} e
@@ -766,7 +798,14 @@
         const isExternalJellyseerrLink = href && /^https?:\/\//i.test(href);
 
         if (isLibraryLink) {
-            // Allow default behavior for library links
+            // With native details on, Seerr's library id is checked for this viewer first (the copy
+            // they can open, else the title's page); otherwise the link is followed as before.
+            const tmdbId = parseInt(item.id, 10);
+            if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
+                e.preventDefault();
+                e.stopPropagation();
+                JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+            }
             return;
         }
 
@@ -778,14 +817,14 @@
             return;
         }
 
-        // If using modal, prevent default and open modal
-        if (state.useMoreInfoModal && JE.jellyseerrMoreInfo) {
+        // Native details page (when offered) or the modal: prevent default and open it
+        if (nativeDetailsOn() || (state.useMoreInfoModal && JE.jellyseerrMoreInfo)) {
             e.preventDefault();
             e.stopPropagation();
             const tmdbId = parseInt(moreInfoLink.dataset.tmdbId);
             const mediaType = moreInfoLink.dataset.mediaType;
             if (tmdbId && mediaType) {
-                JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType);
             }
             return;
         }
@@ -846,11 +885,11 @@
             goToJellyfinItem(state);
         } else if (item.mediaType === 'collection') {
             ui.showCollectionRequestModal(item.id, item.name || item.title, item);
-        } else if (state.useMoreInfoModal && JE.jellyseerrMoreInfo) {
+        } else if (nativeDetailsOn() || (state.useMoreInfoModal && JE.jellyseerrMoreInfo)) {
             const tmdbId = parseInt(item.id);
             const mediaType = item.mediaType;
             if (tmdbId && mediaType) {
-                JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType);
             }
         }
     }
@@ -898,13 +937,13 @@
                 && performance.now() - state.tapNavigatedAt < TAP_CLICK_FOLLOW_MS;
             state.tapNavigatedAt = 0;
             if (!followsTap) goToJellyfinItem(state);
-        } else if (state.posterOpensModal) {
+        } else if (state.posterOpensModal || (nativeDetailsOn() && state.item.mediaType !== 'collection')) {
             e.preventDefault();
             e.stopPropagation();
             const tmdbId = parseInt(state.item.id);
             const mediaType = state.item.mediaType;
             if (tmdbId && mediaType) {
-                JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType);
             }
         }
     }
@@ -941,7 +980,8 @@
 
     /**
      * Delegated keyboard activation of a focused poster: Enter / Space toggles
-     * the overview (or goes to Jellyfin when the poster links there).
+     * the overview (or goes to Jellyfin when the poster links there). With native
+     * details on, Enter opens the title's page and Space keeps the overview.
      * @param {HTMLElement} container
      * @param {KeyboardEvent} e
      */
@@ -953,6 +993,9 @@
         e.preventDefault();
         if (state.linksAvailableToJellyfin) {
             goToJellyfinItem(state);
+        } else if (e.key === 'Enter' && nativeDetailsOn() && state.item.mediaType !== 'collection' && parseInt(state.item.id, 10) > 0) {
+            // Enter opens the title like a poster click; Space still shows the overview (Request).
+            openAbsentTitle(parseInt(state.item.id, 10), state.item.mediaType);
         } else if (!state.overview) {
             createOverview(state);
         } else {

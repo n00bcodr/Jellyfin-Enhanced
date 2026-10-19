@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JE arr browser fixture</title>
+<style>
+/* Host baseline: jellyfin-web src/styles/fonts.scss (93%, layout-mobile 90%) and
+   src/styles/site.scss (line-height 1.35). Box sizing: the host's MUI CssBaseline:
+   https://github.com/mui/material-ui/blob/master/packages/mui-material/src/CssBaseline/CssBaseline.js
+   https://github.com/jellyfin/jellyfin-web/blob/master/src/styles/fonts.scss
+   https://github.com/jellyfin/jellyfin-web/blob/master/src/styles/site.scss
+   Do not hide horizontal overflow: the spec must detect it. */
+html { font-size: 93%; box-sizing: border-box; line-height: 1.35; text-size-adjust: 100%; }
+html.layout-mobile { font-size: 90%; }
+*, *::before, *::after { box-sizing: inherit; }
+@font-face { font-family: Fixture; src: url(/tests/browser/fonts/LiberationSans-Regular.ttf); }
+@font-face { font-family: Fixture; src: url(/tests/browser/fonts/LiberationSans-Bold.ttf); font-weight: 700; }
+@font-face { font-family: Symbols; src: url(/Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2); }
+body { margin: 0; background: #141414; color: white; font-family: Fixture, sans-serif; }
+button, input, select { font: inherit; }
+.material-icons { font-family: Symbols; font-weight: normal; font-style: normal; font-size: 24px; line-height: 1; display: inline-block; white-space: nowrap; font-feature-settings: 'liga'; }
+.hide { display: none !important; }
+.skinHeader { position: fixed; inset: 0 0 auto; display: flex; justify-content: flex-end; padding: 8px; z-index: 999; background: #141414; }
+.headerRight { display: flex; }
+/* Host icon buttons/details actions; JE arr rules are loaded from production below. */
+.paper-icon-button-light { font-size: 24px; padding: .5em; border: 0; background: transparent; color: inherit; }
+.detailButton { min-width: 3.5em; min-height: 3.5em; background: transparent; color: inherit; border: 0; }
+#itemDetailPage { padding: 80px 16px 24px; }
+.mainDetailButtons { display: flex; gap: 8px; }
+* { animation: none !important; transition: none !important; }
+</style></head><body>
+<header class="skinHeader"><div class="headerRight"></div></header>
+<div class="mainAnimatedPages"><div id="itemDetailPage" class="mainAnimatedPage">
+<h1 class="itemName">Importing Film</h1><div class="mainDetailButtons"></div>
+<div class="detailPagePrimaryContent"><div class="detailSection"></div></div>
+</div></div>
+<script>
+/** Boots production modules in manifest order against a local mock Jellyfin host. */
+async function bootArrFixture() {
+    const params = new URLSearchParams(location.search);
+    const admin = params.get('user') !== 'member';
+    // Phase 3 (request controls): ?ask=1 loads js/arr/ask/ and turns ArrRequestsEnabled on; ?view=season
+    // adds a season's native episode list; ?tv=1 is jellyfin-web's TV layout.
+    const ask = params.get('ask') === '1';
+    document.documentElement.classList.add(params.get('tv') === '1' ? 'layout-tv' : innerWidth <= 600 ? 'layout-mobile' : 'layout-desktop');
+    if (params.get('view') === 'season') {
+        const row = n => '<div class="listItem listItem-largeImage listItem-withContentWrapper" data-type="Episode" data-id="' + 'e'.repeat(31) + n + '">'
+            + '<div class="listItem-content"><div class="listItemImage listItemImage-large"></div><div class="listItemBody">'
+            + '<div class="listItemBodyText"><bdi>' + n + '. Episode ' + n + '</bdi></div>'
+            + '<div class="secondary listItemMediaInfo listItemBodyText"><div class="mediaInfoItem">45m</div></div></div></div></div>';
+        document.querySelector('#itemDetailPage').insertAdjacentHTML('beforeend',
+            '<div id="childrenContent"><div class="itemsContainer vertical-list">' + row(1) + row(3) + '</div></div>');
+    }
+    const user = { Id: admin ? 'a'.repeat(32) : 'b'.repeat(32), Policy: { IsAdministrator: admin } };
+    window.ApiClient = {
+        getCurrentUserId: () => user.Id, getCurrentUser: async () => user,
+        accessToken: () => 'fixture-token', serverId: () => 'fixture-server', serverAddress: () => location.origin,
+        getUrl: (path, query) => location.origin + '/' + path.replace(/^\//, '') + (query ? '?' + new URLSearchParams(query) : ''),
+        getItem: async () => ({ Id: 'c'.repeat(32), Name: 'Importing Film', Type: 'Movie', ProviderIds: { Tmdb: '2' } })
+    };
+    const root = '/Jellyfin.Plugin.JellyfinEnhanced/js/';
+    const translations = await fetch(root + 'locales/en.json').then(r => r.json());
+    window.JellyfinEnhanced = {
+        core: {}, helpers: {}, currentSettings: { isAdmin: admin },
+        pluginConfig: { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase2Enabled: true,
+            ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrManageDrawerEnabled: true,
+            ArrNotificationsEnabled: true, ArrSeerrModalStatus: true, ArrStatusPosterBadges: true, ArrRequestsEnabled: ask },
+        /** Translates real English locale strings, refusing missing keys. */
+        t(key, params = {}) {
+            if (!(key in translations)) throw new Error('Missing English string: ' + key);
+            return Object.entries(params).reduce((s, [k, v]) => s.split('{' + k + '}').join(String(v)), translations[key]);
+        }
+    };
+    const shared = ['core/navigation.js', 'core/session.js', 'core/lifecycle.js', 'core/dom-observer.js',
+        'core/ui-kit.js', 'core/api-client.js', 'enhanced/config.js', 'enhanced/helpers.js', 'enhanced/header-actions.js'];
+    const manifest = await fetch(root + 'component-scripts.json').then(r => r.json());
+    const arrDirs = ask ? /^arr\/(live|status|manage|hub|notify|admin|ask)\// : /^arr\/(live|status|manage|hub|notify|admin)\//;
+    for (const path of manifest.filter(p => shared.includes(p) || arrDirs.test(p))) {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = root + path; script.onload = resolve; script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+    JellyfinEnhanced.initializeArrStatus();
+    document.body.dataset.arrReady = 'true';
+}
+bootArrFixture();
+</script></body></html>

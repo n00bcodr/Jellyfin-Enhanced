@@ -188,6 +188,8 @@ Generated_Code/
 # Visual Studio version. Backup files are not needed, because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# ...but not JE's own backup service source.
+!Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/
 UpgradeLog*.XML
 UpgradeLog*.htm
 

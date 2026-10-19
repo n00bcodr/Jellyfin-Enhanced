@@ -364,3 +364,59 @@ test('collection request modal escapes titles, skips owned movies and stops at t
   assert.deepEqual(h.calls.map(call => call[1].body.mediaId), [2]);
   assert.equal(dialogs.length, 1);
 });
+
+test('an issue list Seerr refuses with 403 (no permission to view issues) is not an error and is not asked again until the user changes', async t => {
+  let calls = 0;
+  const h = setup(t, { get: async url => { if (String(url).includes('/issue')) calls++; throw Object.assign(new Error('HTTP 403'), { status: 403 }); } });
+  const errors = [];
+  const original = h.window.console.error;
+  h.window.console.error = (...args) => errors.push(args);
+  t.after(() => { h.window.console.error = original; });
+  assert.deepEqual(plain(await h.api.fetchIssuesForMedia(903, 'tv')), { results: [], forbidden: true });
+  assert.deepEqual(plain(await h.api.fetchIssuesForMedia(904, 'tv')), { results: [], forbidden: true });
+  assert.equal(calls, 1);
+  assert.deepEqual(errors, []);
+  h.switchUser();
+  await h.api.fetchIssuesForMedia(903, 'tv');
+  assert.equal(calls, 2);
+});
+
+test('a user Seerr does not let view issues never asks for the issue list (a page load makes no failing request)', async t => {
+  const urls = [];
+  let status = { active: true, userFound: true, canViewIssues: false };
+  const h = setup(t, { get: async url => {
+    urls.push(String(url));
+    if (String(url).includes('/user-status')) return status;
+    return { results: [{ id: 1, media: { tmdbId: 903, mediaType: 'tv' } }] };
+  } });
+  const issueCalls = () => urls.filter(u => u.includes('/issue')).length;
+  assert.deepEqual(plain(await h.api.fetchIssuesForMedia(903, 'tv')), { results: [], forbidden: true });
+  assert.equal(issueCalls(), 0);
+  // Another user who may view issues: asked, and the media's issues come back.
+  status = { active: true, userFound: true, canViewIssues: true };
+  h.switchUser();
+  assert.equal((await h.api.fetchIssuesForMedia(903, 'tv')).results.length, 1);
+  assert.equal(issueCalls(), 1);
+  // A server that doesn't say (older answer): asked, as before.
+  status = { active: true, userFound: true };
+  h.switchUser();
+  assert.equal((await h.api.fetchIssuesForMedia(903, 'tv')).results.length, 1);
+  assert.equal(issueCalls(), 2);
+});
+
+test("the search page's Seerr icon offers its double-click filter only where it works (not in Requests & downloads JE mode)", t => {
+  const h = uiSetup(t);
+  h.document.body.insertAdjacentHTML('beforeend', '<div id="searchPage"><div class="searchFields"><div class="inputContainer"></div></div></div>');
+  h.JE.core.ui = { addTouchTapListener() {} }; h.JE.cdn = h.JE.cdn || { selfhst: p => p };
+  h.load('jellyseerr/ui/ui-results.js');
+  let toggles = 0;
+  h.JE.jellyseerrUI.updateJellyseerrIcon(true, true, false, () => toggles++);
+  const icon = h.document.getElementById('jellyseerr-search-icon');
+  assert.equal(icon.title, 'jellyseerr_icon_active_tooltip');
+  // JE mode: JE's row replaces Seerr's and the filter does nothing, so the tooltip doesn't describe it.
+  h.JE.internals.arrAskSearch = { replacesSeerr: () => true };
+  h.JE.jellyseerrUI.updateJellyseerrIcon(true, true, false, () => toggles++);
+  assert.equal(icon.title, 'jellyseerr_icon_active_je_tooltip');
+  assert.ok(icon.classList.contains('is-active'));
+  assert.ok(!icon.classList.contains('is-filter-active'));
+});

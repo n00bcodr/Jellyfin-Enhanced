@@ -93,6 +93,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // Cache for Seerr user lookups (JellyfinUserId -> full Seerr user payload, null = negative cache)
         private static readonly Dictionary<string, (JellyseerrUser? User, DateTime CachedAt)> _userCache = new();
         private static readonly object _userCacheLock = new();
+        private static long _userCacheGeneration;
 
         // Cache for Seerr proxy responses (discovery/search endpoints)
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
@@ -186,6 +187,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             "apple-touch-icon.png"
         }, StringComparer.OrdinalIgnoreCase);
 
+        private readonly Services.Arr.ArrClientFactory? _arrClientFactory;
+        private readonly Services.Arr.ArrStateStore? _arrState;
+        private readonly Services.Arr.Live.IArrFeedAudience? _feedAudience;
+        private readonly Services.Acquire.ArrInstanceLibraries? _instanceLibraries;
+        private readonly Services.Acquire.TitleAliases? _titleAliases;
+
         public JellyfinEnhancedController(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -216,8 +223,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             INetworkManager networkManager,
             Services.SpoilerExistingTitlesApplier spoilerExistingApplier,
             MediaBrowser.Model.Tasks.ITaskManager taskManager,
-            IPluginManager pluginManager)
+            IPluginManager pluginManager,
+            Services.Arr.ArrClientFactory arrClientFactory,
+            Services.Arr.ArrStateStore arrState,
+            Services.Arr.Live.IArrFeedAudience feedAudience,
+            Services.Acquire.ArrInstanceLibraries instanceLibraries,
+            Services.Acquire.TitleAliases titleAliases)
         {
+            _instanceLibraries = instanceLibraries;
+            _titleAliases = titleAliases ?? (arrState != null ? new Services.Acquire.TitleAliases(arrState, null) : null);
+            _arrClientFactory = arrClientFactory;
+            _arrState = arrState;
+            _feedAudience = feedAudience;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _userManager = userManager;
@@ -320,7 +337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
                 return null;
@@ -332,6 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             bool cacheEnabled = !config.JellyseerrDisableCache && !bypassCache;
             if (cacheEnabled)
             {
@@ -362,7 +380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request);
                     var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -386,7 +404,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             {
                                 lock (_userCacheLock)
                                 {
-                                    _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
                                 }
                             }
                             return user;
@@ -419,7 +438,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         lock (_userCacheLock)
                         {
-                            _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                            if (generation == Interlocked.Read(ref _userCacheGeneration))
+                                _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
                         }
                     }
 
@@ -434,7 +454,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userCacheLock)
                 {
-                    _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
+                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                        _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
                 }
             }
 
@@ -445,7 +466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            var apiKey = config?.JellyseerrApiKey ?? string.Empty;
+            var apiKey = config?.GetJellyseerrApiKey() ?? string.Empty;
 
             // Jellyseerr requires dashless UUIDs — dashed format causes empty email and UNIQUE constraint errors
             var normalizedUserId = jellyfinUserId.Replace("-", "");
@@ -551,10 +572,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return blockedIds.Contains(normalizedId);
         }
 
+        /// <summary>Clears Seerr user lookups and fences cache writes from reads already running.</summary>
         internal static void ClearUserCaches()
         {
             lock (_userCacheLock)
             {
+                Interlocked.Increment(ref _userCacheGeneration);
                 _userCache.Clear();
             }
 
@@ -564,9 +587,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>Clears Seerr answers and user lookups when its settings are saved.</summary>
         public static void ClearAllSeerrCachesOnConfigChange()
         {
             ClearUserCaches();
+            SeerrAskedProofCache.Shared.Clear();
             lock (_responseCacheLock)
             {
                 _responseCache.Clear();
@@ -580,20 +605,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // also flush the cached status probe so admins see fresh
             // reachability immediately after fixing config.
             lock (_seerrStatusCacheLock) { _seerrStatusCache = null; }
-            // Arr instance URLs/keys may have just changed too — drop the merged
-            // queue/history caches rather than waiting out their TTL.
-            lock (_arrQueueCacheLock) { _arrQueueCache = null; }
-            lock (_arrHistoryCacheLock) { _arrHistoryCache = null; }
+            // Arr queue/history/calendar/links come from ArrStateStore, which starts over by itself
+            // for an instance whose URL or key changed (its client is rebuilt).
         }
 
         /// <summary>
         /// The Seerr user id for a Jellyfin user when it is in the user-id cache
-        /// (unexpired, cache not disabled), without contacting Seerr; null otherwise.
+        /// (unexpired, cache not disabled, user not import-blocked), without contacting Seerr; null otherwise.
         /// </summary>
         private static string? TryGetCachedJellyseerrUserId(string jellyfinUserId)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config != null && config.JellyseerrDisableCache)
+            if (config != null && (config.JellyseerrDisableCache || IsJellyseerrImportBlocked(jellyfinUserId, config)))
             {
                 return null;
             }
@@ -615,6 +638,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
 
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             // Check cache first (unless disabled)
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId != null)
@@ -629,7 +653,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 lock (_userIdCacheLock)
                 {
-                    _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                    if (generation == Interlocked.Read(ref _userCacheGeneration))
+                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
                 }
             }
 
@@ -776,12 +801,107 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Response.Headers["Retry-After"] = "2";
                     return StatusCode(504, new { error = true, code = "parental_pending", message = "Parental rating lookups for this page are still running; retry shortly." });
                 }
-                return Content(result.Body, "application/json");
+                return ProjectForCaller(result.Body);
             }
             catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
                 return StatusCode(499); // browser went away (also reachable from the response-cache path)
             }
+        }
+
+        /// <summary>Refusal for a Seerr request write after requests moved to Jellyfin Enhanced (no Seerr call is made).</summary>
+        private IActionResult RequestsHandledByJe()
+            => StatusCode(409, new { error = true, code = "requests_in_je", message = "Requests are handled by Jellyfin Enhanced now." });
+
+        /// <summary>
+        /// Lets one Seerr request write through, or refuses it: while requests move from Seerr to Jellyfin
+        /// Enhanced (409 <c>migration_busy</c>) and once Jellyfin Enhanced handles requests (409
+        /// <c>requests_in_je</c>). The pass is held until the write is done, so a move starts only after the
+        /// writes already in flight finished; the handling is read live after entering.
+        /// </summary>
+        /// <param name="refusal">The refusal to return when no pass is given.</param>
+        /// <returns>The pass to dispose when the write is done (null when no fence is registered), or null with a refusal.</returns>
+        private IDisposable? EnterSeerrRequestWrite(out IActionResult? refusal)
+        {
+            refusal = null;
+            var fence = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.Requests.SeerrRequestWriteFence)) as Services.Acquire.Requests.SeerrRequestWriteFence;
+            var pass = fence?.TryEnterWrite();
+            if (fence != null && pass == null)
+            {
+                refusal = StatusCode(409, new { error = true, code = "migration_busy", message = "Requests are moving to Jellyfin Enhanced right now; try again in a moment." });
+                return null;
+            }
+            if (Services.Acquire.Requests.SharedRequestFacts.LedgerAuthority(JellyfinEnhanced.Instance?.Configuration))
+            {
+                pass?.Dispose();
+                refusal = RequestsHandledByJe();
+                return null;
+            }
+            return pass;
+        }
+
+        /// <summary>
+        /// Sends a Seerr body to the caller: its library links kept to what they may open
+        /// (<see cref="ProjectLibraryCopiesForCaller"/>), then its download rows projected for them
+        /// (<see cref="ProjectDownloadsForCaller"/>). The response cache keeps Seerr's own body.
+        /// </summary>
+        private IActionResult ProjectForCaller(string body)
+        {
+            if (!ProjectLibraryCopiesForCaller(body, out var visible))
+                return StatusCode(502, new { error = true, code = "invalid_upstream", message = "Seerr sent an answer that couldn't be read." });
+            return ProjectDownloadsForCaller(visible);
+        }
+
+        /// <summary>
+        /// Seerr names the Jellyfin item of every title it knows, whichever library holds it: each named item
+        /// is checked against Jellyfin for the caller, so titles from libraries they can't open (or above their
+        /// parental limit, or behind a blocked tag) don't reach them with their ids (see
+        /// <see cref="Helpers.Jellyseerr.SeerrLibraryAccessProjector"/>). Applies to administrators too (a
+        /// restricted administrator account is still restricted); without a caller every named item counts
+        /// as hidden.
+        /// </summary>
+        private bool ProjectLibraryCopiesForCaller(string body, out string projected)
+        {
+            projected = body;
+            if (_libraryManager == null) return true;
+            var userId = UserHelper.GetCurrentUserId(User);
+            var user = userId is { } id && id != Guid.Empty ? _userManager?.GetUserById(id) : null;
+            return Helpers.Jellyseerr.SeerrLibraryAccessProjector.TryProject(
+                body,
+                item => LibraryCopyFor(item, user),
+                (type, tmdb) => user == null ? null : FindLibraryItemByTmdb(user, type, tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture))?.Id,
+                out projected);
+        }
+
+        /// <summary>A Jellyfin item id Seerr names, or null when the item exists but <paramref name="user"/> can't open it.</summary>
+        private string? VisibleJellyfinId(string? id, Jellyfin.Database.Implementations.Entities.User? user)
+        {
+            if (_libraryManager == null || id == null || !Guid.TryParse(id, out var item) || item == Guid.Empty) return id;
+            return LibraryCopyFor(item, user) == Helpers.Jellyseerr.SeerrLibraryCopy.Hidden ? null : id;
+        }
+
+        /// <summary>How a Jellyfin item Seerr names looks to <paramref name="user"/> (null: hidden whenever it exists).</summary>
+        private Helpers.Jellyseerr.SeerrLibraryCopy LibraryCopyFor(Guid item, Jellyfin.Database.Implementations.Entities.User? user)
+        {
+            if (user != null && _libraryManager.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(item, user) != null)
+                return Helpers.Jellyseerr.SeerrLibraryCopy.Visible;
+            return _libraryManager.GetItemById(item) != null
+                ? Helpers.Jellyseerr.SeerrLibraryCopy.Hidden
+                : Helpers.Jellyseerr.SeerrLibraryCopy.Missing;
+        }
+
+        /// <summary>
+        /// Sends a Seerr body to the caller: administrators get it as Seerr sent it; everyone else gets the
+        /// download rows without release names, download ids or arr ids (status, size, ETA, episode and an
+        /// opaque group only). A body that can't be read is not passed on. The response cache keeps Seerr's
+        /// own body, so the projection runs per caller on every answer, cached or fresh.
+        /// </summary>
+        private IActionResult ProjectDownloadsForCaller(string body)
+        {
+            if (IsAdminUser()) return Content(body, "application/json");
+            if (!Helpers.Jellyseerr.SeerrDownloadStatusProjector.TryProject(body, DateTimeOffset.UtcNow, out var projected))
+                return StatusCode(502, new { error = true, code = "invalid_upstream", message = "Seerr sent an answer that couldn't be read." });
+            return Content(projected, "application/json");
         }
 
         private async Task<bool> IsRequestBodyParentalBlockedAsync(string body, string jellyfinUserId)
@@ -847,7 +967,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null)
+        /// <summary>
+        /// A request was made, answered or removed through Jellyfin Enhanced: the Requests &amp;
+        /// downloads read model of Seerr's requests reads them again in about a second (it is a
+        /// no-op while that feature is off).
+        /// </summary>
+        private void SeerrRequestsChanged()
+        {
+            try
+            {
+                (HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.SeerrRequestReadModel)) as Services.Acquire.SeerrRequestReadModel)?.RequestRefresh();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Shutting down.
+            }
+        }
+
+        // Phase 3 uses the ledger edition policy; Jellyfin administrator status alone does not grant Seerr 4K.
+        private async Task<bool> LegacyCanRequest4kAsync(Configuration.PluginConfiguration config, bool movie, JellyseerrPermission permissions)
+        {
+            var bits = JellyseerrPermission.REQUEST_4K | (movie ? JellyseerrPermission.REQUEST_4K_MOVIE : JellyseerrPermission.REQUEST_4K_TV);
+            var permission = JellyseerrPermissionHelper.HasPermission(permissions, JellyseerrPermission.ADMIN) || JellyseerrPermissionHelper.HasAnyPermission(permissions, bits);
+            if (!permission || !Services.Acquire.Requests.RequestPolicy.EditionEnabled(config, movie)) return false;
+            var url = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+            if (url == null) return false;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+                var uri = url.TrimEnd('/') + "/api/v1/settings/main";
+                using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, uri, config.GetJellyseerrApiKey());
+                using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                var (body, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, uri, timeout.Token).ConfigureAwait(false);
+                if (error != null || body == null) return false;
+                using var settings = JsonDocument.Parse(body);
+                var enabled = settings.RootElement.TryGetProperty(movie ? "movie4kEnabled" : "series4kEnabled", out var value) && value.ValueKind == JsonValueKind.True;
+                return Services.Acquire.Requests.RequestPolicy.Can4k(JellyfinEnhanced.Instance?.Configuration ?? config, movie, "seerr", false, false, enabled, permission);
+            }
+            catch (Exception) { return false; }
+        }
+
+        // upstreamNotFound: the JSON to answer when Seerr itself answers 404 (never for the proxy's own 404s, e.g. "unlinked").
+        private async Task<IActionResult> ProxyJellyseerrRequest(string apiPath, HttpMethod method, string? content = null, string? upstreamNotFound = null)
+        {
+            if (method == HttpMethod.Get || !apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                return await ProxyJellyseerrRequestCore(apiPath, method, content, upstreamNotFound);
+            // After the hand-over to Jellyfin Enhanced (phase 3, JE request handling) JE never writes a request
+            // to Seerr again: new asks, approvals and cancels go through JE's own request API. While a move runs
+            // the write waits outside (refused); one already running holds the move off until it is done.
+            using var write = EnterSeerrRequestWrite(out var refusal);
+            if (refusal != null) return refusal;
+            return await ProxyJellyseerrRequestCore(apiPath, method, content, upstreamNotFound);
+        }
+
+        private async Task<IActionResult> ProxyJellyseerrRequestCore(string apiPath, HttpMethod method, string? content, string? upstreamNotFound)
         {
             // Propagate client disconnects (superseded search queries, page
             // navigations) to the upstream Seerr/TMDB call so we stop doing
@@ -856,7 +1030,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("Seerr integration is not configured or enabled.");
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
@@ -920,6 +1094,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             }
 
+            if (config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && method == HttpMethod.Post && apiPath == "/api/v1/request" && content != null)
+            {
+                try
+                {
+                    using var input = JsonDocument.Parse(content);
+                    if (input.RootElement.TryGetProperty("is4k", out var edition) && edition.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                        return BadRequest(Services.Acquire.Requests.RequestOutcome.Refused("invalid_input", 400));
+                    if (input.RootElement.TryGetProperty("is4k", out var fourK) && fourK.ValueKind == JsonValueKind.True)
+                    {
+                        var movie = input.RootElement.TryGetProperty("mediaType", out var type) && type.GetString() == "movie";
+                        if (!await LegacyCanRequest4kAsync(config, movie, seerrUser!.Permissions).ConfigureAwait(false))
+                            return StatusCode(403, Services.Acquire.Requests.RequestOutcome.Refused("requests_4k_required"));
+                    }
+                }
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException) { return BadRequest(Services.Acquire.Requests.RequestOutcome.Refused("invalid_input", 400)); }
+            }
+
             // Enforce Seerr permissions for write operations and sensitive reads.
             // Jellyfin admins bypass all permission checks (they can do anything in Seerr).
             // For non-admins, validate before proxying so we return a clear 403 rather than
@@ -962,8 +1153,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             || apiPath.StartsWith("/api/v1/issue/", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(apiPath, "/api/v1/issue", StringComparison.OrdinalIgnoreCase)))
                         {
-                            if (!JellyseerrPermissionHelper.HasAnyPermission(perms,
-                                JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES))
+                            if (!CanViewIssues(false, seerrUser))
                                 return StatusCode(403, new { code = "no_issue_view_permission", message = "You do not have permission to view issues in Seerr." });
                         }
 
@@ -1068,7 +1258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     for (var attempt = 1; attempt <= attempts; attempt++)
                     {
                         using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            method, requestUri, config.JellyseerrApiKey, jellyseerrUserId, content);
+                            method, requestUri, config.GetJellyseerrApiKey(), jellyseerrUserId, content);
                         if (content != null && attempt == 1) _logger.Debug($"Request body: {content}");
 
                         using var response = await httpClient.SendAsync(request, ct);
@@ -1114,10 +1304,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             EvictMovieTvCacheForRequest(content);
                         }
+                        if (method != HttpMethod.Get && apiPath.StartsWith("/api/v1/request", StringComparison.OrdinalIgnoreCase))
+                        {
+                            SeerrRequestsChanged();
+                        }
                         return method == HttpMethod.Get
                             ? await ApplyParentalFilterAsync(json, apiPath, jellyfinUserId)
-                            : Content(json, "application/json");
+                            : ProjectForCaller(json);
                     }
+
+                    if (upstreamNotFound != null && error is { Code: Helpers.Jellyseerr.SeerrErrorCode.UpstreamError, HttpStatus: 404 })
+                        return Content(upstreamNotFound, "application/json");
 
                     _logger.Warning($"Seerr request failed for user {ResolveUserDisplay(jellyfinUserId)} at {trimmedUrl}: code={error!.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
 
@@ -1183,7 +1380,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private async Task<bool> ProbeJellyseerrStatusAsync()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrApiKey) || string.IsNullOrEmpty(config.JellyseerrUrls))
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.GetJellyseerrApiKey()) || string.IsNullOrEmpty(config.JellyseerrUrls))
             {
                 return false;
             }
@@ -1198,7 +1395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 try
                 {
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request);
                     var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                     if (error == null)
@@ -1249,6 +1446,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return Forbid();
             }
+
+            // The config page shows saved keys masked; a masked value means "test the saved key"
+            // (only against a saved Seerr URL, so the key can't be pointed at another server).
+            var submittedKey = apiKey;
+            apiKey = ResolveSubmittedSecret(apiKey, nameof(PluginConfiguration.JellyseerrApiKey), url, SavedSeerrUrls());
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)) && JellyfinEnhanced.Instance?.Secrets?.IsAvailable == false)
+                return StatusCode(503, new { ok = false, code = "SecretsUnavailable", message = "Saved keys can't be read right now (secrets.json is unreadable; see the server log). Type the key to test." });
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)))
+                return BadRequest(new { ok = false, code = "KeyNotForThisUrl", message = "The saved API key is only used with the saved Seerr URL. Type the key again to test this address." });
 
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
@@ -1313,6 +1519,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return Forbid();
             }
+
+            var submittedKey = apiKey;
+            apiKey = ResolveSubmittedSecret(apiKey, nameof(PluginConfiguration.JellyseerrApiKey), url, SavedSeerrUrls());
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)) && JellyfinEnhanced.Instance?.Secrets?.IsAvailable == false)
+                return StatusCode(503, new { ok = false, code = "SecretsUnavailable", message = "Saved keys can't be read right now (secrets.json is unreadable; see the server log). Type the key to test." });
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)))
+                return BadRequest(new { ok = false, code = "KeyNotForThisUrl", message = "The saved API key is only used with the saved Seerr URL. Type the key again to test this address." });
 
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = "Missing url or apiKey" });
@@ -1391,7 +1604,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!string.IsNullOrEmpty(jellyseerrUserId))
             {
                 var seerrUser = await GetJellyseerrUser(jellyfinUserId!);
-                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser)));
+                return Ok(LinkedSeerrUserStatus(jellyseerrUserId, CanRequestAdvanced(IsAdminUser(), seerrUser), CanViewIssues(IsAdminUser(), seerrUser)));
             }
 
             // User not found — could be server unreachable, HTML challenge from
@@ -1425,7 +1638,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static object? TryBuildSeerrUserStatusWithoutLookup(Configuration.PluginConfiguration? config, string? jellyfinUserId, bool isAdmin)
         {
             if (config == null || !config.JellyseerrEnabled ||
-                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
+                string.IsNullOrEmpty(config.GetJellyseerrApiKey()) ||
                 string.IsNullOrEmpty(config.JellyseerrUrls))
             {
                 return new { active = false, userFound = false, reason = "disabled" };
@@ -1444,18 +1657,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId == null) return null;
 
-            // canRequestAdvanced: an admin always may; anyone else needs their
-            // Seerr user (permissions), which must already be in the user cache
-            // for this answer to need no Seerr round trip.
-            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true);
+            // canRequestAdvanced and canViewIssues: an admin always may; anyone
+            // else needs their Seerr user (permissions), which must already be in
+            // the user cache for this answer to need no Seerr round trip.
+            if (isAdmin) return LinkedSeerrUserStatus(cachedId, true, true);
             return TryGetCachedJellyseerrUser(jellyfinUserId, out var seerrUser)
-                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser))
+                ? LinkedSeerrUserStatus(cachedId, CanRequestAdvanced(false, seerrUser), CanViewIssues(false, seerrUser))
                 : null;
         }
 
         /// <summary>The <c>jellyseerr/user-status</c> answer for a linked user.</summary>
-        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced)
-            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced };
+        private static object LinkedSeerrUserStatus(string jellyseerrUserId, bool canRequestAdvanced, bool canViewIssues)
+            => new { active = true, userFound = true, jellyseerrUserId = jellyseerrUserId, reason = "linked", canRequestAdvanced, canViewIssues };
+
+        /// <summary>
+        /// Whether the issue list and issues may be read through the Seerr proxy
+        /// (its 403 gate): Jellyfin admins always, anyone else with Seerr's
+        /// admin, view-issues or manage-issues permission. Without a Seerr user to
+        /// judge by, the proxy doesn't refuse (Seerr decides), so neither does this.
+        /// Pages read it from <c>jellyseerr/user-status</c> so they don't ask for
+        /// an issue list they would be refused.
+        /// </summary>
+        private static bool CanViewIssues(bool isAdmin, JellyseerrUser? seerrUser)
+            => isAdmin || seerrUser == null
+                || JellyseerrPermissionHelper.HasPermission(seerrUser.Permissions, JellyseerrPermission.ADMIN)
+                || JellyseerrPermissionHelper.HasAnyPermission(seerrUser.Permissions, JellyseerrPermission.VIEW_ISSUES | JellyseerrPermission.MANAGE_ISSUES);
 
         /// <summary>
         /// Whether the request modals may offer the advanced options (server,
@@ -1504,7 +1730,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled ||
-                string.IsNullOrEmpty(config.JellyseerrApiKey) ||
+                string.IsNullOrEmpty(config.GetJellyseerrApiKey()) ||
                 string.IsNullOrEmpty(config.JellyseerrUrls))
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
 
@@ -1700,7 +1926,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return StatusCode(503, new { error = "Seerr integration is not configured or enabled." });
             }
@@ -1715,7 +1941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             var requestUri = $"{jellyseerrUrl.TrimEnd('/')}/api/v1/settings/{type}";
-            using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+            using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
             using var response = await httpClient.SendAsync(request);
             var (json, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -1732,10 +1958,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(error.HttpStatus > 0 ? error.HttpStatus : 502, error.ToResponseShape());
             }
 
-            // Pass through Seerr's own array shape unmodified; the frontend
-            // reads the fields it needs (name, hostname, port, apiKey,
-            // useSsl, baseUrl, is4k) rather than us re-serializing here.
-            return Content(json ?? "[]", "application/json");
+            // Pass through Seerr's own array shape; the frontend reads the fields
+            // it needs (name, hostname, port, useSsl, baseUrl, is4k, id). Each
+            // real arr API key is swapped for a short-lived server-side handle:
+            // the key never reaches the browser, and saving the imported
+            // instance (or testing it) resolves the handle on the server.
+            return Content(ReplaceImportedArrKeys(json), "application/json");
+        }
+
+        /// <summary>
+        /// Replaces every <c>apiKey</c> in Seerr's arr settings array with an import handle from the
+        /// secrets store. Anything unparseable becomes an empty array rather than leaking through.
+        /// </summary>
+        internal static string ReplaceImportedArrKeys(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return "[]";
+            System.Text.Json.Nodes.JsonNode? root;
+            try { root = System.Text.Json.Nodes.JsonNode.Parse(json); }
+            catch (System.Text.Json.JsonException) { return "[]"; }
+            if (root is not System.Text.Json.Nodes.JsonArray rows) return "[]";
+            var store = JellyfinEnhanced.Instance?.Secrets;
+            foreach (var row in rows.OfType<System.Text.Json.Nodes.JsonObject>())
+            {
+                var key = row["apiKey"] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var k) ? k : null;
+                // Bound to the arr's own address (as the config page rebuilds it), so the handle
+                // only works for that server.
+                var host = row["hostname"]?.GetValueKind() == System.Text.Json.JsonValueKind.String ? row["hostname"]!.GetValue<string>() : null;
+                var port = row["port"]?.GetValueKind() == System.Text.Json.JsonValueKind.Number ? row["port"]!.GetValue<int>() : 0;
+                var ssl = row["useSsl"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
+                var boundUrl = string.IsNullOrEmpty(host) || port <= 0 ? null : (ssl ? "https://" : "http://") + host + ":" + port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                row["apiKey"] = string.IsNullOrEmpty(key) || store == null || boundUrl == null ? string.Empty : store.AddPending(key, boundUrl);
+            }
+            return rows.ToJsonString();
         }
 
         /// <summary>
@@ -2012,7 +2266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                      $"?take=20&skip=0&sortDirection=asc&requestedBy={seerrUserId}&mediaType={mediaType}";
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.JellyseerrApiKey, seerrUserId);
+                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey(), seerrUserId);
                     using var response = await httpClient.SendAsync(request);
                     var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                     if (error != null)
@@ -2115,7 +2369,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
             }
@@ -2142,7 +2396,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Content(Services.MovieCollectionsBatch.Serialize(requested, results), "application/json");
             }
 
-            var tmdbKey = config.TMDB_API_KEY;
+            var tmdbKey = config.GetTmdbApiKey();
             // The client's TmdbEnabled flag (GetPublicConfig) gated the TMDB fallback.
             var tmdbEnabled = !string.IsNullOrWhiteSpace(tmdbKey);
             var aborted = HttpContext.RequestAborted;
@@ -2244,7 +2498,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public Task<IActionResult> GetMovieRatingsCombined(int tmdbId)
         {
-            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get);
+            // Seerr answers 404 for a movie nobody rates yet (an unreleased one): no ratings, as for series below.
+            return ProxyJellyseerrRequest($"/api/v1/movie/{tmdbId}/ratingscombined", HttpMethod.Get, upstreamNotFound: "null");
         }
 
         [HttpGet("jellyseerr/tv/{tmdbId}/similar")]
@@ -2261,11 +2516,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/recommendations?page={page}", HttpMethod.Get);
         }
 
+        /// <summary>A series' Rotten Tomatoes ratings; <c>null</c> when it has none.</summary>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <returns>The ratings, null, or the proxy's error.</returns>
         [HttpGet("jellyseerr/tv/{tmdbId}/ratings")]
         [Authorize]
         public Task<IActionResult> GetTvRatingsCombined(int tmdbId)
         {
-            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get);
+            // Seerr answers 404 when Rotten Tomatoes doesn't know a series: no ratings, which is an answer
+            // (the page would otherwise log a failed request for every such series). The proxy's own 404
+            // (a viewer without a Seerr account) stays as it is.
+            return ProxyJellyseerrRequest($"/api/v1/tv/{tmdbId}/ratings", HttpMethod.Get, upstreamNotFound: "null");
         }
 
         [HttpGet("jellyseerr/discover/tv/network/{networkId}")]
@@ -2302,7 +2563,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 return StatusCode(503, "Seerr integration is not configured or enabled.");
             }
-            if (string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (string.IsNullOrEmpty(config.GetTmdbApiKey()))
             {
                 return StatusCode(503, "TMDB API key is not configured.");
             }
@@ -2325,7 +2586,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                var response = await _tmdbResponseCache.GetAsync("discover/tv", query, config.TMDB_API_KEY, HttpContext.RequestAborted);
+                var response = await _tmdbResponseCache.GetAsync("discover/tv", query, config.GetTmdbApiKey(), HttpContext.RequestAborted);
                 if (!response.IsSuccess)
                 {
                     _logger.Warning($"TMDB discover/tv for company {studioId} (page {page}) returned {response.StatusCode}.");
@@ -2762,14 +3023,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // Get TMDB API key from configuration
                 var config = JellyfinEnhanced.Instance?.Configuration;
-                if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+                if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
                 {
                     _logger.Warning("TMDB API key not configured in plugin settings");
                     return null;
                 }
 
                 // _logger.Debug($"Fetching TMDB person data from: https://api.themoviedb.org/3/person/{tmdbPersonId}");
-                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.TMDB_API_KEY, cancellationToken);
+                var response = await _tmdbResponseCache.GetAsync($"person/{tmdbPersonId}", string.Empty, config.GetTmdbApiKey(), cancellationToken);
 
                 if (!response.IsSuccess)
                 {
@@ -3130,7 +3391,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return BadRequest(new { error = "Jellyseerr integration is not enabled" });
                 }
 
-                if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                if (string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
                 {
                     return BadRequest(new { error = "Jellyseerr URL or API key not configured" });
                 }
@@ -3157,7 +3418,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Info($"[Manual User Import] Importing {userIds.Count} Jellyfin users...");
 
                 var importResult = await Helpers.Jellyseerr.JellyseerrUserImportHelper.BulkImportAsync(
-                    userIds, urls, config.JellyseerrApiKey, _httpClientFactory, _logger);
+                    userIds, urls, config.GetJellyseerrApiKey(), _httpClientFactory, _logger);
 
                 // only flush user caches when at least one user
                 // was actually imported. Previously a 0-imported "success" (all
@@ -3216,7 +3477,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var config = JellyfinEnhanced.Instance?.Configuration;
-                if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+                if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
                 {
                     return null;
                 }
@@ -3231,7 +3492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         var requestUri = $"{trimmedUrl.TrimEnd('/')}/api/v1/request?take=500&skip=0&sort=added";
                         using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestUri, config.JellyseerrApiKey, userId);
+                            HttpMethod.Get, requestUri, config.GetJellyseerrApiKey(), userId);
                         using var response = await httpClient.SendAsync(request);
                         var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
                         if (error != null)
@@ -3361,7 +3622,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public async Task<IActionResult> GetJellyseerrPartialRequestsSetting()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 // previously returned 200+false, which made the
                 // frontend silently flip the request modal to whole-season
@@ -3383,7 +3644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Info($"Fetching Seerr partial requests setting from: {requestUri}");
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.JellyseerrApiKey);
+                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
                     using var response = await httpClient.SendAsync(request);
                     var (responseContent, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -3440,6 +3701,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return Forbid();
             }
 
+            apiKey = ResolveSubmittedSecret(apiKey, nameof(PluginConfiguration.TMDB_API_KEY));
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 return BadRequest(new { ok = false, message = "API key is missing" });
@@ -3561,6 +3823,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new JsonResult(BuildPublicConfig(config));
         }
 
+        /// <summary>True in the Jellyfin 12 build, which registers the native details facade; a 10.11 build never offers it.</summary>
+#if JF12
+        internal const bool NativeAbsentDetailsCapable = true;
+#else
+        internal const bool NativeAbsentDetailsCapable = false;
+#endif
+
         /// <summary>
         /// The public config payload. Shared by /public-config and /bootstrap so the
         /// field list lives in one place. Redaction of the Seerr URLs is keyed on the
@@ -3571,11 +3840,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Expose whether TMDB is configured as a boolean so all users
             // (including non-admin) can use TMDB-dependent features like
             // Reviews and Elsewhere without leaking the actual API key.
-            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.TMDB_API_KEY);
+            var tmdbEnabled = !string.IsNullOrWhiteSpace(config.GetTmdbApiKey());
 
             // Same reasoning as tmdbEnabled above -- expose only whether an
             // MDBList key is configured, never the key itself.
-            var mdblistEnabled = !string.IsNullOrWhiteSpace(config.MdblistApiKey);
+            var mdblistEnabled = !string.IsNullOrWhiteSpace(config.GetMdblistApiKey());
 
             // Only authenticated callers see internal Seerr URLs — they're used by
             // client-side deep links and would otherwise leak network topology to
@@ -3654,7 +3923,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.HideReviewsFromHiddenUsers,
                 config.HideReviewsFromDisabledUsers,
                 config.ShowAwards,
-                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey),
+                DoesTheDogDieEnabled = config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey()),
                 MdblistEnabled = mdblistEnabled,
                 config.MdblistRatingsEnabled,
                 config.MdblistRatingsShowOnItemDetails,
@@ -3732,6 +4001,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowElsewhereOnJellyseerr,
                 config.JellyseerrUseMoreInfoModal,
                 config.JellyseerrAvailablePosterLinksToJellyfin,
+                // Native details for not-in-library titles: the capability (a Jellyfin 12 build with the
+                // facade registered), the admin switch and Seerr set up (the pages' metadata source);
+                // anything else means the modal.
+                NativeAbsentDetails = new
+                {
+                    Enabled = NativeAbsentDetailsCapable && config.NativeAbsentDetailsEnabled
+                        && config.JellyseerrEnabled && !string.IsNullOrWhiteSpace(config.JellyseerrUrls) && !string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()),
+                    ContractVersion = 1,
+                },
                 config.AddRequestedMediaToWatchlist,
                 config.SyncJellyseerrWatchlist,
                 config.JellyseerrAutoImportUsers,
@@ -3761,6 +4039,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ArrLinksEnabled,
                 config.ShowArrLinksAsText,
                 config.ArrLinksShowStatusSingle,
+
+                // Requests & downloads, phase 1 (status on pages): one derived switch (master and
+                // phase on) and the poster-badge toggle; nothing about the instances themselves.
+                ArrStatusEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled,
+                ArrStatusPosterBadges = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrStatusPosterBadges,
+                ArrRequestsHubEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrRequestsHubEnabled,
+                ArrManageDrawerEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrManageDrawerEnabled,
+                ArrSeerrModalStatus = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrSeerrModalStatus,
+                // Phase 2 notifications (bell, Notify me, Remind, "Requests & alerts" panel).
+                ArrNotificationsEnabled = Services.Acquire.Notify.NotifyFlags.Enabled(config),
+                // Phase 3 request controls (Request, Get it, request sheet): on with a request backend only.
+                ArrRequestsEnabled = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend is "je" or "seerr",
+                // Jellyfin Enhanced handles requests (JE mode): Seerr's request buttons open JE's request sheet instead.
+                ArrRequestsJeMode = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled && config.ArrRequestBackend == "je",
+                // Kids don't get the JE-mode search row (the search route refuses them too).
+                config.ArrKidsHideSearch,
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -4112,7 +4406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
             {
                 return StatusCode(503, "TMDB API key is not configured.");
             }
@@ -4163,7 +4457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // bundle: a cold title lookup (or one of its release dates /
                 // watch providers / reviews) fetches the whole set in one
                 // TMDB call, which the details page's sibling requests join.
-                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.TMDB_API_KEY, HttpContext.RequestAborted, bundle: true);
+                var response = await _tmdbResponseCache.GetAsync(apiPath, queryString.ToString(), config.GetTmdbApiKey(), HttpContext.RequestAborted, bundle: true);
 
                 if (response.IsSuccess)
                 {
@@ -4215,7 +4509,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Response.Headers["Cache-Control"] = "no-store";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.TMDB_API_KEY))
+            if (config == null || string.IsNullOrEmpty(config.GetTmdbApiKey()))
             {
                 return StatusCode(503, "TMDB API key is not configured.");
             }
@@ -4231,7 +4525,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest("Invalid region.");
             }
 
-            var apiKey = config.TMDB_API_KEY;
+            var apiKey = config.GetTmdbApiKey();
             var callerId = UserHelper.GetCurrentUserId(User)?.ToString();
             var restricted = _parentalFilter.TryGetRestrictedPolicy(callerId, out _);
             var aborted = HttpContext.RequestAborted;
@@ -4569,23 +4863,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private bool DoesTheDogDieActive(out PluginConfiguration? config)
         {
             config = JellyfinEnhanced.Instance?.Configuration;
-            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.DoesTheDogDieApiKey);
+            return config != null && config.DoesTheDogDieEnabled && !string.IsNullOrWhiteSpace(config.GetDoesTheDogDieApiKey());
         }
 
-        /// <summary>DoesTheDogDie content warnings for a title, by TMDB id.</summary>
+        // Read current state for EVERY projection, including a hit in the shared upstream cache.
+        // A reveal revision is viewer/title/policy-bound and deliberately never persisted as consent.
+        private (bool Guarded, string Revision, bool Readable) DoesTheDogDiePolicy(Guid viewer, string mediaType, string tmdbId)
+        {
+            var config = JellyfinEnhanced.Instance!.Configuration;
+            // A settings file confirmed absent means nothing is guarded for this viewer. One that can't be inspected or
+            // read is unknown (guarded, no reveal): the tag strip's null covers both, and File.Exists can't tell them apart.
+            var presence = config.SpoilerBlurEnabled
+                ? _userConfigurationManager.UserConfigurationPresence(viewer.ToString("N"), Services.SpoilerBlurImageFilter.SpoilerBlurFileName)
+                : false;
+            var state = presence == false ? new UserSpoilerBlur() : presence == true ? LoadSpoilerStateForTagStrip(viewer) : null;
+            var guarded = config.SpoilerBlurEnabled && (state == null || state.PendingTmdb.ContainsKey($"{mediaType}:{tmdbId}"));
+            if (config.SpoilerBlurEnabled && state != null && !guarded)
+            {
+                var ids = _itemRepository.GetItemIdsByProviders(new Dictionary<string, string> { ["Tmdb"] = tmdbId },
+                    new[] { mediaType == "movie" ? BaseItemKind.Movie : BaseItemKind.Series });
+                guarded = ids.Any(id => mediaType == "movie" ? _spoilerResolver.IsMovieInSpoilerScope(state, id)
+                    : state.Series.ContainsKey(id.ToString("N")));
+            }
+            var fingerprint = viewer.ToString("N") + "|" + mediaType + "|" + tmdbId + "|" + config.SpoilerBlurEnabled
+                + "|" + guarded + "|" + JsonSerializer.Serialize(state);
+            return (guarded, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint))), state != null);
+        }
+
+        /// <summary>DoesTheDogDie warnings, hidden for a guarded title until this viewer explicitly reveals them.</summary>
         [HttpGet("ddd/{mediaType}/{tmdbId}")]
         [Authorize]
-        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken)
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> GetDoesTheDogDie(string mediaType, string tmdbId, CancellationToken cancellationToken,
+            [FromQuery] bool reveal = false, [FromQuery] string? policyRevision = null)
         {
+            Response.Headers["Cache-Control"] = "private, no-store";
             if (!DoesTheDogDieActive(out _)) return StatusCode(503, "DoesTheDogDie is not enabled.");
             if (mediaType != "movie" && mediaType != "tv") return BadRequest("mediaType must be 'movie' or 'tv'.");
-            if (string.IsNullOrWhiteSpace(tmdbId) || !tmdbId.All(char.IsDigit)) return BadRequest("tmdbId must be a positive integer.");
+            if (!int.TryParse(tmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var numericId) || numericId <= 0)
+                return BadRequest("tmdbId must be a positive integer.");
+            tmdbId = numericId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var viewer = ArrCaller.PersonId(User);
+            if (viewer == null || _userManager.GetUserById(viewer.Value) is not { } user || user.HasPermission(PermissionKind.IsDisabled)) return Forbid();
 
             try
             {
-                var result = await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
-                if (result.Confirmed) SetExternalDataCacheHeaders();
-                return Ok(result);
+                bool CanShow((bool Guarded, string Revision, bool Readable) p) => p.Readable && (!p.Guarded || (reveal && policyRevision == p.Revision));
+                var before = DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId);
+                var result = CanShow(before)
+                    ? await _doesTheDogDieService.GetWarningsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false)
+                    : new Model.DddCacheEntry();
+                // Protection may have changed while the external lookup was in flight. A request refused at the start
+                // answers with that refusal (an unreadable settings file is quarantined by the read, so the second
+                // look would see defaults and report a guard this request never applied).
+                var policy = CanShow(before) ? DoesTheDogDiePolicy(viewer.Value, mediaType, tmdbId) : before;
+                var show = CanShow(before) && CanShow(policy);
+                return Ok(new {
+                    policy.Guarded, PolicyRevision = policy.Revision,
+                    Found = show && result.Found, Confirmed = show && result.Confirmed,
+                    ItemId = show ? result.ItemId : 0, Name = show ? result.Name : string.Empty,
+                    Topics = show ? result.Topics : new List<Model.DddTopicStat>(),
+                    FetchedAtUnixMs = show ? result.FetchedAtUnixMs : 0
+                });
             }
             catch (OperationCanceledException)
             {
@@ -4671,15 +5010,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (!IsAdminUser()) return Forbid();
 
+            // A masked value is the saved key: test that instead of a typed override.
+            apiKey = ResolveSubmittedSecret(apiKey, nameof(PluginConfiguration.MdblistApiKey));
             var effectiveKey = !string.IsNullOrWhiteSpace(apiKey)
                 ? apiKey
-                : JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
+                : JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(effectiveKey))
             {
                 return StatusCode(503, "MDBList API key is not configured.");
             }
 
-            var status = await _mdblistService.GetAccountStatusAsync(cancellationToken, forceRefresh: true, apiKeyOverride: apiKey).ConfigureAwait(false);
+            var status = await _mdblistService.GetAccountStatusAsync(cancellationToken, forceRefresh: true, apiKeyOverride: string.IsNullOrWhiteSpace(apiKey) ? null : apiKey).ConfigureAwait(false);
             if (status == null)
             {
                 return StatusCode(502, "Could not reach MDBList to check account status (key may be invalid).");
@@ -4892,6 +5233,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // admin gates. Falls back to the role claim if the user lookup
         // fails (which would be a programmer error since `[Authorize]`
         // gates every admin endpoint).
+        /// <summary>
+        /// The credential a configuration-page Test button means: a typed value as is, a masked saved
+        /// value (or an unsaved Import-from-Seerr handle) resolved server-side, so saved keys never
+        /// have to travel to the browser. "" when nothing usable was submitted.
+        /// </summary>
+        private static string ResolveSubmittedSecret(string? submitted, string? storeName, string? targetUrl = null, IEnumerable<string?>? savedUrls = null)
+        {
+            var store = JellyfinEnhanced.Instance?.Secrets;
+            if (store != null) return store.ResolveSubmitted(submitted, storeName, targetUrl, savedUrls);
+            submitted = Services.Secrets.SecretValue.FromWire(submitted);
+            return string.IsNullOrWhiteSpace(submitted) || Services.Secrets.SecretValue.IsPlaceholder(submitted) ? string.Empty : submitted.Trim();
+        }
+
+        /// <summary>The configured Seerr URLs (newline or comma separated).</summary>
+        private static IEnumerable<string?> SavedSeerrUrls()
+            => (JellyfinEnhanced.Instance?.Configuration?.JellyseerrUrls ?? string.Empty)
+                .Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
         private bool IsAdminUser()
         {
             if (User.IsInRole("Administrator")) return true;
@@ -4946,7 +5305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("SonarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Sonarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.SonarrInstances ?? "").Substring(0, Math.Min(200, (config.SonarrInstances ?? "").Length))}");
+                        + DescribeCorruptList(config.SonarrInstances));
             }
             if (config.IsRadarrInstancesCorrupt())
             {
@@ -4956,8 +5315,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (firstSeen)
                     _logger.Error("RadarrInstances config is corrupt JSON — instance list is effectively empty. "
                         + "Endpoints will return no Radarr data until the admin opens the config page and resets it. "
-                        + $"Raw value (first 200 chars): {(config.RadarrInstances ?? "").Substring(0, Math.Min(200, (config.RadarrInstances ?? "").Length))}");
+                        + DescribeCorruptList(config.RadarrInstances));
             }
+        }
+
+        // Never the value itself: an unreadable instance list may contain API keys.
+        internal static string DescribeCorruptList(string? value)
+        {
+            if (string.Equals(value, Services.Secrets.SecretsMigration.CorruptListMarker, StringComparison.Ordinal))
+                return "Its original text was moved to the secrets store (see the Stored credentials docs).";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(value ?? string.Empty);
+            return $"Stored value: {bytes.Length} bytes, SHA-256 {Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..12].ToLowerInvariant()}.";
         }
 
         private bool TryResolveBrandingFilePath(string requestedFileName, out string normalizedFileName, out string filePath)
@@ -9272,22 +9640,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         [HttpGet("arr/validate/sonarr")]
         [Authorize]
-        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
+        public async Task<IActionResult> ValidateSonarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey, [FromQuery] string? instanceId = null)
         {
-            return await ValidateArrService("Sonarr", url, apiKey);
+            return await ValidateArrService("Sonarr", url, apiKey, instanceId);
         }
 
         [HttpGet("arr/validate/radarr")]
         [Authorize]
-        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey)
+        public async Task<IActionResult> ValidateRadarr([FromQuery] string url, [FromHeader(Name = "X-Arr-ApiKey")] string apiKey, [FromQuery] string? instanceId = null)
         {
-            return await ValidateArrService("Radarr", url, apiKey);
+            return await ValidateArrService("Radarr", url, apiKey, instanceId);
         }
 
-        private async Task<IActionResult> ValidateArrService(string serviceName, string url, string apiKey)
+        private async Task<IActionResult> ValidateArrService(string serviceName, string url, string apiKey, string? instanceId)
         {
             if (!IsAdminUser())
                 return Forbid();
+
+            // Saved instance keys reach the page masked; with the instance id the server tests the saved key.
+            // Only against the saved URL of that instance, so a masked key can't be pointed elsewhere.
+            var savedInstance = Services.Arr.ArrRegistryMigration.IsValidId(instanceId) ? new Services.Arr.ArrInstanceRegistry().Get(Guid.Parse(instanceId!).ToString("D")) : null;
+            var submittedKey = apiKey;
+            apiKey = ResolveSubmittedSecret(apiKey,
+                savedInstance != null ? Services.Secrets.SecretsStore.ArrKeyName(savedInstance.Id) : null,
+                url, savedInstance != null ? new[] { savedInstance.Url } : Array.Empty<string?>());
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)) && JellyfinEnhanced.Instance?.Secrets?.IsAvailable == false)
+                return StatusCode(503, new { ok = false, code = "SecretsUnavailable", message = "Saved keys can't be read right now (secrets.json is unreadable; see the server log). Type the key to test." });
+            if (string.IsNullOrWhiteSpace(apiKey) && Services.Secrets.SecretValue.IsPlaceholder(Services.Secrets.SecretValue.FromWire(submittedKey)))
+                return BadRequest(new { ok = false, code = "KeyNotForThisUrl", message = $"The saved API key is only used with this instance's saved URL. Type the key again to test a different {serviceName} address." });
 
             if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
                 return BadRequest(new { ok = false, message = $"Missing {serviceName} URL or API key" });
@@ -9295,32 +9675,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!IsAllowedUrl(url))
                 return BadRequest(new { ok = false, message = "Invalid URL" });
 
-            var http = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
-            http.DefaultRequestHeaders.Clear();
-            http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
-            http.Timeout = TimeSpan.FromSeconds(10);
-
+            // Same transport as every other arr call (no redirects, address pinned at connect) and the
+            // reply must really be this app: a Radarr URL in a Sonarr slot used to pass on any 200.
+            var kind = serviceName == "Sonarr" ? Services.Arr.ArrKind.Sonarr : Services.Arr.ArrKind.Radarr;
+            var factory = _arrClientFactory ?? new Services.Arr.ArrClientFactory(_httpClientFactory, new Services.Arr.ArrInstanceRegistry());
+            var client = factory.ForUnsaved(kind, url.Trim(), apiKey);
+            Services.Arr.ArrResult<(Services.Arr.ArrSystemStatus Status, Services.Arr.ArrCapabilities Capabilities)> result;
             try
             {
-                using var resp = await http.GetAsync($"{url.TrimEnd('/')}/api/v3/system/status");
-                if (resp.IsSuccessStatusCode)
-                    return Ok(new { ok = true });
-
-                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
-                    resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                    return StatusCode(401, new { ok = false, message = $"API key is invalid or unauthorized for {serviceName}" });
-
-                return StatusCode((int)resp.StatusCode, new { ok = false, message = $"{serviceName} returned an error (status {(int)resp.StatusCode})" });
+                result = await client.GetSystemStatusAsync(refresh: true, HttpContext.RequestAborted);
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException)
             {
-                return StatusCode(504, new { ok = false, message = $"Connection to {serviceName} timed out. Check the URL is correct." });
+                return StatusCode(499);
             }
-            catch (Exception ex)
+
+            if (result.Ok)
             {
-                _logger.Warning($"{serviceName} validate failed for {url}: {ex.Message}");
-                return StatusCode(502, new { ok = false, message = $"Could not reach {serviceName}. Check the URL is correct and the server is running." });
+                var (status, capabilities) = result.Value;
+                return Ok(new { ok = true, appName = status.AppName, version = status.Version, supported = capabilities.Supported, warnings = capabilities.Warnings });
             }
+
+            var error = result.Error!;
+            _logger.Warning($"{serviceName} validate failed for {url}: {error.Kind} {error.HttpStatus}");
+            return error.Kind switch
+            {
+                Services.Arr.ArrErrorKind.Unauthorized => StatusCode(401, new { ok = false, code = error.Kind.ToString(), message = $"API key is invalid or unauthorized for {serviceName}" }),
+                Services.Arr.ArrErrorKind.Timeout => StatusCode(504, new { ok = false, code = error.Kind.ToString(), message = $"Connection to {serviceName} timed out. Check the URL is correct." }),
+                Services.Arr.ArrErrorKind.Unreachable or Services.Arr.ArrErrorKind.ConnectionLost
+                    => StatusCode(502, new { ok = false, code = error.Kind.ToString(), message = $"Could not reach {serviceName}. Check the URL is correct and the server is running." }),
+                Services.Arr.ArrErrorKind.WrongApp or Services.Arr.ArrErrorKind.InvalidResponse or Services.Arr.ArrErrorKind.Redirect or Services.Arr.ArrErrorKind.BlockedUrl
+                    => StatusCode(502, new { ok = false, code = error.Kind.ToString(), message = error.Message }),
+                _ => StatusCode(error.HttpStatus >= 400 ? error.HttpStatus : 502, new { ok = false, code = error.Kind.ToString(), message = $"{serviceName} returned an error: {error.Message}" }),
+            };
         }
 
         [HttpGet("arr/identify-url")]
@@ -9444,6 +9831,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        // ==================== Arr links (served from ArrStateStore's library index) ====================
+        //
+        // Every lookup below is an in-memory index hit: the library index of each instance is one
+        // /movie or /series read, refreshed in the background (ArrStateStore), instead of one upstream
+        // call per id and instance. All of these routes are admin-only and need Arr Links enabled.
+
+        /// <summary>
+        /// The 403 every arr page route returns when its feature is switched off on the server, so
+        /// a disabled page can't be read through its route.
+        /// </summary>
+        private ObjectResult ArrFeatureDisabled(string feature)
+            => StatusCode(403, new { error = true, code = "feature_disabled", message = feature + " is turned off in the Jellyfin Enhanced settings." });
+
         [HttpGet("arr/series-slug")]
         [Authorize]
         public async Task<IActionResult> GetSeriesSlug([FromQuery] int tvdbId)
@@ -9455,11 +9855,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "tvdbId must be a positive integer" });
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, new { error = "Plugin configuration not available" });
+            if (!config.ArrLinksEnabled)
+                return ArrFeatureDisabled("Arr Links");
 
             WarnIfArrInstancesCorrupt(config);
-            var instances = config.GetEnabledSonarrInstances();
+            var instances = _arrState.Instances(Services.Arr.ArrKind.Sonarr);
             if (instances.Count == 0)
             {
                 if (config.IsSonarrInstancesCorrupt())
@@ -9467,15 +9869,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return NotFound(new { error = "Sonarr is not configured" });
             }
 
-            var outcome = await FetchSeriesInfoFromInstance(instances[0], tvdbId, HttpContext.RequestAborted);
-            if (outcome.Error != null)
-                return StatusCode(502, new { error = $"Sonarr fetch failed: {outcome.Error}" });
-            if (outcome.Match == null)
-                return NotFound(new { error = "Series not found in Sonarr" });
+            using var scope = _arrState.BeginRequest("arr/series-slug");
+            var read = await _arrState.GetLibraryAsync(instances[0], HttpContext.RequestAborted).ConfigureAwait(false);
+            if (read.Value == null)
+                return StatusCode(502, new { error = $"Sonarr fetch failed: {Services.Arr.ArrLegacyViews.ShortReason(read.Error!)}" });
 
-            // Legacy endpoint: extract titleSlug from the enriched response. Preserve the historical
-            // contract — return 404 rather than 200+null if the upstream response lacks titleSlug.
-            var titleSlug = (string?)((dynamic)outcome.Match).titleSlug;
+            // Legacy endpoint: 404 rather than 200+null when the series (or its slug) is missing.
+            var titleSlug = read.Value.SeriesByTvdb(tvdbId)?.TitleSlug;
             if (string.IsNullOrEmpty(titleSlug))
                 return NotFound(new { error = "Series not found in Sonarr" });
             return Ok(new { titleSlug });
@@ -9492,17 +9892,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "tvdbId must be a positive integer" });
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, new { error = "Plugin configuration not available" });
+            if (!config.ArrLinksEnabled)
+                return ArrFeatureDisabled("Arr Links");
 
             WarnIfArrInstancesCorrupt(config);
-            var instances = config.GetEnabledSonarrInstances();
+            var instances = _arrState.Instances(Services.Arr.ArrKind.Sonarr);
             if (instances.Count == 0)
                 return Ok(BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0));
 
-            var ct = HttpContext.RequestAborted;
-            var outcomes = await Task.WhenAll(instances.Select(i => FetchSeriesInfoFromInstance(i, tvdbId, ct)));
-            return Ok(BuildArrLookupResult(instances, outcomes));
+            using var scope = _arrState.BeginRequest("arr/series-slugs");
+            var libraries = await ReadLibrariesAsync(instances, HttpContext.RequestAborted).ConfigureAwait(false);
+            return Ok(BuildArrLookupResult(instances, libraries, lib => lib.SeriesByTvdb(tvdbId), (i, s) => Services.Arr.ArrLegacyViews.SeriesMatch(i, (Services.Arr.ArrSeriesEntry?)s)));
         }
 
         /// <summary>
@@ -9521,48 +9923,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new { matches = Array.Empty<object>(), errors = errList };
         }
 
+        /// <summary>The library index of every instance (same order), read in parallel from the store.</summary>
+        private async Task<Services.Arr.ArrSnapshotRead<Services.Arr.ArrLibrarySnapshot>[]> ReadLibrariesAsync(IReadOnlyList<Services.Arr.ArrConnection> instances, CancellationToken ct)
+            => await Task.WhenAll(instances.Select(i => _arrState!.GetLibraryAsync(i, ct))).ConfigureAwait(false);
+
         /// <summary>
-        /// Folds per-instance lookup outcomes (same order as <paramref name="instances"/>) into
-        /// the <c>{ matches, errors }</c> shape shared by the single and batch arr link endpoints.
+        /// Folds per-instance index lookups (same order as <paramref name="instances"/>) into the
+        /// <c>{ matches, errors }</c> shape shared by the single and batch arr link endpoints. An
+        /// instance whose latest read failed reports the error, even while the index read before
+        /// still answers the lookup (so a revoked key or a down instance is not hidden behind cached
+        /// links); an index that is there but older than its freshness target is still used (a
+        /// refresh is already running).
         /// </summary>
-        private static object BuildArrLookupResult(IReadOnlyList<ArrInstance> instances, IReadOnlyList<ArrFetchOutcome> outcomes)
+        private object BuildArrLookupResult(
+            IReadOnlyList<Services.Arr.ArrConnection> instances,
+            IReadOnlyList<Services.Arr.ArrSnapshotRead<Services.Arr.ArrLibrarySnapshot>> libraries,
+            Func<Services.Arr.ArrLibrarySnapshot, object?> find,
+            Func<Services.Arr.ArrConnection, object?, object?> shape)
         {
+            var isAdmin = IsAdminUser();
             var matches = new List<object>();
             var errors = new List<object>();
-            for (int i = 0; i < outcomes.Count; i++)
+            for (int i = 0; i < instances.Count; i++)
             {
-                if (outcomes[i].Match != null) matches.Add(outcomes[i].Match!);
-                if (outcomes[i].Error != null)
-                    errors.Add(new { instanceName = instances[i].Name, reason = outcomes[i].Error });
+                var read = libraries[i];
+                if (read.Error != null)
+                {
+                    errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], read.Error, isAdmin, withSource: false));
+                }
+                if (read.Value == null) continue;
+                if (shape(instances[i], find(read.Value)) is { } match) matches.Add(match);
             }
 
             return new { matches, errors };
         }
 
         // Batch arr link lookup limits. The Requests page shows 20 cards, so 100 leaves room for
-        // other callers while bounding the upstream fan-out of a single request.
+        // other callers. (Lookups are in-memory now; the cap keeps the query string bounded.)
         private const int ArrLinksBatchMaxIds = 100;
-
-        // Upstream calls in flight per Radarr/Sonarr instance, shared by every concurrent
-        // arr/links request (the page sends a small visible-cards batch next to the rest).
-        // 8 matches what the old per-card path reached: up to 8 browser requests through
-        // JE's request pool, each querying every instance once. Lower values make a slow
-        // instance (e.g. a 4K Radarr at ~1 s per lookup) take several rounds per page.
-        private const int ArrLinksPerInstanceConcurrency = 8;
-
-        // One gate per instance URL, process-wide, so parallel batches (two tabs, visible +
-        // rest chunks) cannot multiply the load on an instance. Entries are tiny and keyed by
-        // configured URLs, so the map stays as small as the instance list.
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _arrLinksInstanceGates =
-            new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Batch form of <c>arr/movie-instances</c> + <c>arr/series-slugs</c> for pages that
-        /// show many items at once (the Requests page). Radarr/Sonarr v3 only filter
-        /// <c>/movie</c> and <c>/series</c> by a single tmdbId/tvdbId (the unfiltered lists are
-        /// whole-library dumps), so this still makes one upstream call per id and instance, but
-        /// with bounded per-instance concurrency and a handful of browser requests per page.
-        /// Each value is exactly what the matching single endpoint returns for that id.
+        /// show many items at once (the Requests page). Each value is exactly what the matching
+        /// single endpoint returns for that id. Served from the library index: no upstream call
+        /// per id (the old route made one per id and instance).
         /// </summary>
         /// <param name="tmdbIds">Comma-separated positive TMDB movie ids (Radarr).</param>
         /// <param name="tvdbIds">Comma-separated positive TVDB series ids (Sonarr).</param>
@@ -9581,36 +9985,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = $"At most {ArrLinksBatchMaxIds} ids per request" });
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, new { error = "Plugin configuration not available" });
+            if (!config.ArrLinksEnabled)
+                return ArrFeatureDisabled("Arr Links");
 
             WarnIfArrInstancesCorrupt(config);
             var ct = HttpContext.RequestAborted;
-
-            var moviesTask = LookupArrLinksBatchAsync(
-                movieIds,
-                movieIds.Count > 0 ? config.GetEnabledRadarrInstances() : new List<ArrInstance>(),
-                () => BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0),
-                FetchMovieInfoFromInstance,
-                ct);
-            var seriesTask = LookupArrLinksBatchAsync(
-                seriesIds,
-                seriesIds.Count > 0 ? config.GetEnabledSonarrInstances() : new List<ArrInstance>(),
-                () => BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0),
-                FetchSeriesInfoFromInstance,
-                ct);
+            using var scope = _arrState.BeginRequest("arr/links");
             try
             {
-                await Task.WhenAll(moviesTask, seriesTask).ConfigureAwait(false);
+                var movies = await LookupArrLinksBatchAsync(
+                    movieIds,
+                    movieIds.Count > 0 ? _arrState.Instances(Services.Arr.ArrKind.Radarr) : Array.Empty<Services.Arr.ArrConnection>(),
+                    () => BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0),
+                    (lib, id) => lib.MovieByTmdb(id),
+                    (i, m) => Services.Arr.ArrLegacyViews.MovieMatch(i, (Services.Arr.ArrMovieEntry?)m),
+                    ct).ConfigureAwait(false);
+                var series = await LookupArrLinksBatchAsync(
+                    seriesIds,
+                    seriesIds.Count > 0 ? _arrState.Instances(Services.Arr.ArrKind.Sonarr) : Array.Empty<Services.Arr.ArrConnection>(),
+                    () => BuildNoArrInstancesResult("Sonarr", config.IsSonarrInstancesCorrupt(), config.GetSonarrInstances().Count > 0),
+                    (lib, id) => lib.SeriesByTvdb(id),
+                    (i, s) => Services.Arr.ArrLegacyViews.SeriesMatch(i, (Services.Arr.ArrSeriesEntry?)s),
+                    ct).ConfigureAwait(false);
+                return Ok(new { movies, series });
             }
-            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 // Browser went away (navigated off, aborted a superseded lookup) -
                 // expected under normal use, not a failure worth logging.
                 return StatusCode(499);
             }
-
-            return Ok(new { movies = await moviesTask.ConfigureAwait(false), series = await seriesTask.ConfigureAwait(false) });
         }
 
         /// <summary>
@@ -9627,20 +10033,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .ToList();
         }
 
-        /// <summary>
-        /// Looks every id up on every instance with at most
-        /// <see cref="ArrLinksPerInstanceConcurrency"/> calls in flight per instance (across all
-        /// batch requests), and returns id → <c>{ matches, errors }</c>. Once an instance times
-        /// out, fails at the network level or rejects the API key, its remaining lookups in this
-        /// batch report the same error instead of waiting out the timeout once per id. Per-id
-        /// HTTP errors (e.g. a 500 for one movie) are not generalised. FetchAndMapAsync makes a
-        /// single attempt (no retry/backoff), so a failing instance costs one call per id.
-        /// </summary>
-        private static async Task<Dictionary<string, object>> LookupArrLinksBatchAsync(
+        /// <summary>id → <c>{ matches, errors }</c> for every id, from one index read per instance.</summary>
+        private async Task<Dictionary<string, object>> LookupArrLinksBatchAsync(
             IReadOnlyList<int> ids,
-            IReadOnlyList<ArrInstance> instances,
+            IReadOnlyList<Services.Arr.ArrConnection> instances,
             Func<object> noInstancesResult,
-            Func<ArrInstance, int, CancellationToken, Task<ArrFetchOutcome>> fetch,
+            Func<Services.Arr.ArrLibrarySnapshot, int, object?> find,
+            Func<Services.Arr.ArrConnection, object?, object?> shape,
             CancellationToken ct)
         {
             var result = new Dictionary<string, object>(ids.Count);
@@ -9654,56 +10053,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return result;
             }
 
-            var gates = instances
-                .Select(i => _arrLinksInstanceGates.GetOrAdd(i.Url.Trim().TrimEnd('/'), _ => new SemaphoreSlim(ArrLinksPerInstanceConcurrency)))
-                .ToArray();
-            // Per-instance sticky failure (null = healthy); written by whichever lookup hits it first.
-            var failed = new string?[instances.Count];
-
-            async Task<ArrFetchOutcome> LookupOne(int instanceIndex, int id)
-            {
-                var gate = gates[instanceIndex];
-                await gate.WaitAsync(ct).ConfigureAwait(false);
-                try
-                {
-                    var sticky = Volatile.Read(ref failed[instanceIndex]);
-                    if (sticky != null)
-                        return new ArrFetchOutcome { Error = sticky };
-
-                    var outcome = await fetch(instances[instanceIndex], id, ct).ConfigureAwait(false);
-                    if (outcome.Error != null && IsInstanceWideArrError(outcome.Error))
-                        Volatile.Write(ref failed[instanceIndex], outcome.Error);
-                    return outcome;
-                }
-                finally
-                {
-                    gate.Release();
-                }
-            }
-
-            var perId = ids
-                .Select(id => Task.WhenAll(Enumerable.Range(0, instances.Count).Select(i => LookupOne(i, id))))
-                .ToArray();
-            var outcomes = await Task.WhenAll(perId).ConfigureAwait(false);
-
-            for (int n = 0; n < ids.Count; n++)
-                result[ids[n].ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, outcomes[n]);
+            var libraries = await ReadLibrariesAsync(instances, ct).ConfigureAwait(false);
+            foreach (var id in ids)
+                result[id.ToString(System.Globalization.CultureInfo.InvariantCulture)] = BuildArrLookupResult(instances, libraries, lib => find(lib, id), shape);
             return result;
         }
 
-        // Errors from FetchAndMapAsync that describe the instance rather than the id looked up.
-        private static bool IsInstanceWideArrError(string error)
-            => error == "timeout"
-                || error == "network error"
-                || error == "URL rejected by SSRF guard"
-                || error.StartsWith("authentication failed", StringComparison.Ordinal);
-
-        private struct ArrFetchOutcome
-        {
-            public object? Match;
-            public string? Error;
-        }
-
+        /// <summary>
+        /// Fetches and maps one Shoko endpoint (the calendar's anime source). Sonarr and Radarr are
+        /// read through <see cref="Services.Arr.ArrStateStore"/> instead.
+        /// </summary>
         private async Task<(T Result, string? Error)> FetchAndMapAsync<T>(
             ArrInstance instance,
             string endpointPath,
@@ -9720,14 +10079,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var url = instance.Url.TrimEnd('/');
-                // Arr (Sonarr/Radarr) instances are commonly fronted by reverse proxies that
-                // 301/302 between http↔https or trailing-slash variants. Use the default
-                // factory client so redirects are followed — the Seerr-specific named client
-                // (SeerrHttpHelper.NamedClient, AllowAutoRedirect=false) is only appropriate
-                // for Seerr where a 302 to a login URL is a security signal, not a normal
-                // canonicalization.
                 // DefaultRequestHeaders mutations remain thread-unsafe for pooled instances,
-                // so the API key continues to be set per-request via HttpRequestMessage below.
+                // so the API key is set per-request via HttpRequestMessage below.
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = timeout;
 
@@ -9738,9 +10091,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                     || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
-                    // Before the FetchAndMapAsync consolidation this path only surfaced via the
-                    // response envelope, so a bad API key would leave no server-side trail. Log
-                    // at Error to keep diagnosability on par with the exception branches below.
                     _logger.Error($"Authentication failed for {contextLabel} from {instance.Name}: HTTP {(int)response.StatusCode}");
                     return (emptyResult, $"authentication failed ({(int)response.StatusCode})");
                 }
@@ -9778,47 +10128,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        private static dynamic? SingleItemOrNull(dynamic? data)
-        {
-            if (data is Newtonsoft.Json.Linq.JArray arr)
-                return arr.Count > 0 ? arr[0] : null;
-            return data;
-        }
-
-        private async Task<ArrFetchOutcome> FetchSeriesInfoFromInstance(ArrInstance instance, int tvdbId, CancellationToken ct)
-        {
-            var (match, error) = await FetchAndMapAsync<object?>(
-                instance,
-                $"/api/v3/series?tvdbId={tvdbId}",
-                data =>
-                {
-                    var item = SingleItemOrNull(data);
-                    if (item == null) return null;
-                    var titleSlug = (string?)item.titleSlug;
-                    // Treat empty/missing titleSlug as "no match" rather than returning a record
-                    // that would render a broken `/series/null` link on the frontend. The legacy
-                    // single-instance endpoint already had this guard; preserve it here.
-                    if (string.IsNullOrEmpty(titleSlug)) return null;
-                    return new
-                    {
-                        instanceName = instance.Name,
-                        instanceUrl = instance.Url,
-                        titleSlug,
-                        urlMappings = instance.UrlMappings,
-                        episodeFileCount = (int?)item.statistics?.episodeFileCount ?? 0,
-                        episodeCount = (int?)item.statistics?.episodeCount ?? 0,
-                        percentOfEpisodes = (double?)item.statistics?.percentOfEpisodes ?? 0,
-                        sizeOnDisk = (long?)item.statistics?.sizeOnDisk ?? 0,
-                        rootFolderPath = GetRootFolderFromPath((string?)item.path)
-                    };
-                },
-                emptyResult: null,
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: $"Sonarr series (TVDB {tvdbId})",
-                ct: ct).ConfigureAwait(false);
-            return new ArrFetchOutcome { Match = match, Error = error };
-        }
-
         [HttpGet("arr/movie-instances")]
         [Authorize]
         public async Task<IActionResult> GetMovieInstances([FromQuery] int tmdbId)
@@ -9830,45 +10139,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "tmdbId must be a positive integer" });
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, new { error = "Plugin configuration not available" });
+            if (!config.ArrLinksEnabled)
+                return ArrFeatureDisabled("Arr Links");
 
             WarnIfArrInstancesCorrupt(config);
-            var instances = config.GetEnabledRadarrInstances();
+            var instances = _arrState.Instances(Services.Arr.ArrKind.Radarr);
             if (instances.Count == 0)
                 return Ok(BuildNoArrInstancesResult("Radarr", config.IsRadarrInstancesCorrupt(), config.GetRadarrInstances().Count > 0));
 
-            var ct = HttpContext.RequestAborted;
-            var outcomes = await Task.WhenAll(instances.Select(i => FetchMovieInfoFromInstance(i, tmdbId, ct)));
-            return Ok(BuildArrLookupResult(instances, outcomes));
+            using var scope = _arrState.BeginRequest("arr/movie-instances");
+            var libraries = await ReadLibrariesAsync(instances, HttpContext.RequestAborted).ConfigureAwait(false);
+            return Ok(BuildArrLookupResult(instances, libraries, lib => lib.MovieByTmdb(tmdbId), (i, m) => Services.Arr.ArrLegacyViews.MovieMatch(i, (Services.Arr.ArrMovieEntry?)m)));
         }
-
-        private async Task<ArrFetchOutcome> FetchMovieInfoFromInstance(ArrInstance instance, int tmdbId, CancellationToken ct)
-        {
-            var (match, error) = await FetchAndMapAsync<object?>(
-                instance,
-                $"/api/v3/movie?tmdbId={tmdbId}",
-                data =>
-                {
-                    var item = SingleItemOrNull(data);
-                    if (item == null) return null;
-                    return new
-                    {
-                        instanceName = instance.Name,
-                        instanceUrl = instance.Url,
-                        urlMappings = instance.UrlMappings,
-                        hasFile = (bool?)item.hasFile ?? false,
-                        sizeOnDisk = (long?)item.sizeOnDisk ?? 0,
-                        rootFolderPath = GetRootFolderFromPath((string?)item.path)
-                    };
-                },
-                emptyResult: null,
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: $"Radarr movie (TMDB {tmdbId})",
-                ct: ct).ConfigureAwait(false);
-            return new ArrFetchOutcome { Match = match, Error = error };
-        }
-
         // ==================== Active Streams ====================
 
         [HttpGet("active-streams/sessions")]
@@ -10151,17 +10435,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
-        /// Non-admin users can only see downloads/history for items they requested via Seerr,
-        /// unless the admin has disabled per-user filtering. Returns Blocked=true when the
-        /// caller should be shown an empty result (no Seerr link, no linked account, or no
-        /// requests to filter by) rather than the unfiltered arr queue/history.
+        /// With "Only show downloads users asked for" on, non-admin users see downloads/history only
+        /// for items they requested via Seerr (on top of the library-access rule every non-admin
+        /// row passes, see <see cref="ArrAudienceFilter"/>). Returns Blocked=true when the caller
+        /// should be shown an empty result (no Seerr link, no linked account, or no requests to
+        /// filter by) rather than the unfiltered arr queue/history.
         /// </summary>
         private async Task<(bool Blocked, HashSet<(int TmdbId, string MediaType)>? Allowed)> GetAllowedRequestsForCurrentUserAsync(PluginConfiguration config)
         {
             if (IsAdminUser() || !config.DownloadsFilterByUserRequests)
                 return (false, null);
 
-            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
                 return (true, null);
 
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
@@ -10179,244 +10464,256 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return (false, new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType))));
         }
 
-        // Merged, unfiltered (all-instances) results are cached process-wide for a short TTL
-        // tied to the admin's own poll interval — per-user visibility (DownloadsFilterByUserRequests /
-        // DownloadsHistoryAdminOnly) is always applied fresh, AFTER the cache read, so nothing
-        // user-specific is ever stored in these caches.
-        private static (List<object> Items, List<object> Errors, DateTime CachedAt)? _arrQueueCache;
-        private static readonly object _arrQueueCacheLock = new();
-        private static (List<dynamic> Items, DateTime CachedAt)? _arrHistoryCache;
-        private static readonly object _arrHistoryCacheLock = new();
-
-        private static TimeSpan GetArrPollCacheTtl(PluginConfiguration config)
+        private static List<T> FilterByAllowedRequests<T>(IEnumerable<T> items, HashSet<(int TmdbId, string MediaType)>? allowedRequests, Func<T, string> source, Func<T, int?> tmdbId)
         {
-            return TimeSpan.FromSeconds(Math.Clamp(config.DownloadsPollIntervalSeconds, 5, 300));
-        }
-
-        private static List<object> FilterQueueItemsByAllowedRequests(List<object> items, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
-        {
-            if (allowedRequests == null) return items;
-            var filtered = new List<object>();
-            foreach (dynamic item in items)
+            if (allowedRequests == null) return items.ToList();
+            return items.Where(item =>
             {
-                string mediaType = item.source == nameof(ArrType.Sonarr) ? "tv" : "movie";
-                int? tmdbId = item.tmdbId;
-                if (tmdbId.HasValue && allowedRequests.Contains((tmdbId.Value, mediaType)))
-                    filtered.Add(item);
-            }
-            return filtered;
+                var mediaType = source(item) == nameof(ArrType.Sonarr) ? "tv" : "movie";
+                return tmdbId(item) is int id && allowedRequests.Contains((id, mediaType));
+            }).ToList();
         }
 
-        private static List<dynamic> FilterHistoryItemsByAllowedRequests(List<dynamic> items, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
+        /// <summary>
+        /// The caller, when their own Seerr requests could show them more of the queue or history
+        /// than the audience alone does: the request filter is off (its list is the proof when it is
+        /// on), the request read model isn't running (the integration or phase 1 off; the audience
+        /// asks it otherwise), Seerr is set up, and the caller is a member who could lose titles
+        /// Jellyfin doesn't have yet (content limits, or not every library). Null otherwise. Nothing
+        /// is read here: the requests are read only when some row actually waits on them
+        /// (<see cref="GetAskedProofAsync"/>).
+        /// </summary>
+        private Jellyfin.Database.Implementations.Entities.User? AskedProofCandidate(PluginConfiguration config, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
         {
-            if (allowedRequests == null) return items;
-            var filtered = new List<dynamic>();
-            foreach (var item in items)
-            {
-                string mediaType = item.source == nameof(ArrType.Sonarr) ? "tv" : "movie";
-                int? tmdbId = item.tmdbId;
-                if (tmdbId.HasValue && allowedRequests.Contains((tmdbId.Value, mediaType)))
-                    filtered.Add(item);
-            }
-            return filtered;
+            if (allowedRequests != null || IsAdminUser() || Services.Acquire.SeerrRequestReadModel.IsActive(config)) return null;
+            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
+                return null;
+            return ArrCaller.Human(User, _userManager) is { } user && Services.Arr.Live.ArrFeedAudience.NeedsAskedProof(user) ? user : null;
         }
 
+        /// <summary>
+        /// The titles <paramref name="user"/> asked for in Seerr, read the legacy way, through
+        /// <see cref="SeerrAskedProofCache"/>: shared by the queue and history routes, reused for
+        /// about a poll interval, and never waited on for more than a moment (no answer in time =
+        /// null, and the rows that needed it stay hidden this time).
+        /// </summary>
+        private Task<IReadOnlySet<(int TmdbId, string MediaType)>?> GetAskedProofAsync(PluginConfiguration config, Jellyfin.Database.Implementations.Entities.User user)
+        {
+            var jellyfinUserId = user.Id.ToString();
+            return SeerrAskedProofCache.Shared.GetAsync(jellyfinUserId + "|" + config.JellyseerrUrls.Trim(), async () =>
+            {
+                var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(jellyseerrUserId)) return null;
+                var userRequests = await GetJellyseerrRequestsForUser(jellyseerrUserId).ConfigureAwait(false);
+                return userRequests == null ? null : new HashSet<(int, string)>(userRequests.Select(r => (r.TmdbId, r.MediaType)));
+            });
+        }
+
+        /// <summary>
+        /// The queue or history records of one instance a non-administrator may see: each record's
+        /// title (the movie, or the episode / season / series a Sonarr row is about) must pass the
+        /// change feed's audience rule for that instance, the same rule live updates use (Jellyfin's
+        /// own check for titles it has, so hidden libraries, parental limits and hidden episodes of
+        /// a visible series stay hidden; titles not in Jellyfin yet by the instance's linked
+        /// libraries, or for the user who asked for them: the request read model, or
+        /// <paramref name="askedProof"/>). A record without a TMDB (movie) or TVDB (series) id is
+        /// never shown; neither is anything to a caller who isn't a Jellyfin user. Served from
+        /// memory and Jellyfin's library (no arr call); answers are cached per user. Keys left out
+        /// only for want of that proof go into <paramref name="absent"/> when given.
+        /// </summary>
+        private IReadOnlyList<T> ArrAudienceFilter<T>(Services.Arr.ArrConnection instance, IReadOnlyList<T> records, Func<T, (int? Tmdb, int? Tvdb, int? Season, int? Episode)> ids, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            var mask = ArrAudienceMask(instance, records, ids, askedProof, absent);
+            var kept = new List<T>(records.Count);
+            for (var i = 0; i < records.Count; i++)
+            {
+                if (mask[i]) kept.Add(records[i]);
+            }
+            return kept;
+        }
+
+        // Per record: may the caller see it (see ArrAudienceFilter). Each title key is asked once.
+        private bool[] ArrAudienceMask<T>(Services.Arr.ArrConnection instance, IReadOnlyList<T> records, Func<T, (int? Tmdb, int? Tvdb, int? Season, int? Episode)> ids, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            var mask = new bool[records.Count];
+            if (records.Count == 0) return mask;
+            if (_feedAudience == null || ArrCaller.PersonId(User) is not Guid userId) return mask;
+            var radarr = instance.Kind == Services.Arr.ArrKind.Radarr;
+            var keys = new string?[records.Count];
+            var asked = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<string>? askedFor = null;
+            for (var i = 0; i < records.Count; i++)
+            {
+                var (tmdb, tvdb, season, episode) = ids(records[i]);
+                keys[i] = radarr
+                    ? (tmdb is > 0 ? Services.Arr.Live.ArrTitleKey.Movie(tmdb.Value) : null)
+                    : tvdb is not > 0 ? null
+                    : season is not int s ? Services.Arr.Live.ArrTitleKey.Series(tvdb.Value)
+                    : episode is int e ? Services.Arr.Live.ArrTitleKey.Episode(tvdb.Value, s, e)
+                    : Services.Arr.Live.ArrTitleKey.Season(tvdb.Value, s);
+                if (keys[i] is not { } key) continue;
+                asked.Add(key);
+                // Seerr knows a request by its TMDB id (a series' too); the audience by the title key.
+                if (askedProof != null && tmdb is int t && askedProof.Contains((t, radarr ? "movie" : "tv")))
+                    (askedFor ??= new HashSet<string>(StringComparer.Ordinal)).Add(radarr ? key : Services.Arr.Live.ArrTitleKey.Series(tvdb!.Value));
+            }
+            if (asked.Count == 0) return mask;
+            var visible = new HashSet<string>(
+                _feedAudience.Visible(userId, false, asked.Select(k => new Services.Arr.Live.ArrFeedChange(k, 0, instance.Id)).ToList(), askedFor, absent),
+                StringComparer.Ordinal);
+            for (var i = 0; i < records.Count; i++) mask[i] = keys[i] is { } key && visible.Contains(key);
+            return mask;
+        }
+
+        // How many history records are put to the audience at a time while the newest visible
+        // ones are looked for.
+        private const int HistoryAudienceBatch = 100;
+
+        /// <summary>
+        /// The history records of one instance a non-administrator may see, as far as the history
+        /// window can use them: only the records the page shows (imported, failed), newest first, put
+        /// to the audience in batches until <see cref="HistoryWindowSize"/> visible items (a Sonarr
+        /// season pack is one) are found, plus the older records of those items (a pack's count).
+        /// Older items can't make the window, so their records are never decided. Returned in the
+        /// ring's order. Keys left out only for want of proof of asking go into <paramref name="absent"/> when given.
+        /// </summary>
+        private IReadOnlyList<Services.Arr.ArrHistoryEntry> ArrHistoryForAudience(Services.Arr.ArrConnection instance, IReadOnlyList<Services.Arr.ArrHistoryEntry> records, HashSet<(int TmdbId, string MediaType)>? allowedRequests, IReadOnlySet<(int TmdbId, string MediaType)>? askedProof, ICollection<string>? absent = null)
+        {
+            records = FilterByAllowedRequests(records, allowedRequests, _ => instance.Kind == Services.Arr.ArrKind.Sonarr ? nameof(ArrType.Sonarr) : nameof(ArrType.Radarr), r => r.TmdbId);
+            static (int? Tmdb, int? Tvdb, int? Season, int? Episode) Ids(Services.Arr.ArrHistoryEntry r) => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber);
+            var sonarr = instance.Kind == Services.Arr.ArrKind.Sonarr;
+            // The item a record belongs to, as ArrLegacyViews.HistoryItems groups them.
+            string Item(int i) => sonarr && !string.IsNullOrEmpty(records[i].DownloadId) ? "d:" + records[i].DownloadId : "r:" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var shown = Enumerable.Range(0, records.Count)
+                .Where(i => Services.Arr.ArrLegacyViews.MapHistoryEventType(records[i].EventType) != null)
+                .OrderByDescending(i => records[i].Date ?? DateTime.MinValue)
+                .ThenBy(i => i)
+                .ToList();
+            var kept = new List<int>();
+            var items = new HashSet<string>(StringComparer.Ordinal);
+            DateTime? edge = null;      // the date of the last item the window can still take
+            var pos = 0;
+            while (pos < shown.Count && !(edge is { } e && (records[shown[pos]].Date ?? DateTime.MinValue) < e))
+            {
+                var batch = shown.GetRange(pos, Math.Min(HistoryAudienceBatch, shown.Count - pos));
+                pos += batch.Count;
+                var mask = ArrAudienceMask(instance, batch.Select(i => records[i]).ToList(), Ids, askedProof, absent);
+                for (var b = 0; b < batch.Count; b++)
+                {
+                    if (!mask[b]) continue;
+                    kept.Add(batch[b]);
+                    if (items.Add(Item(batch[b])) && items.Count == HistoryWindowSize) edge = records[batch[b]].Date ?? DateTime.MinValue;
+                }
+            }
+            // The older records of packs already found still count towards them.
+            var rest = shown.Skip(pos).Where(i => items.Contains(Item(i))).ToList();
+            if (rest.Count > 0)
+            {
+                var mask = ArrAudienceMask(instance, rest.Select(i => records[i]).ToList(), Ids, askedProof, absent);
+                for (var b = 0; b < rest.Count; b++)
+                {
+                    if (mask[b]) kept.Add(rest[b]);
+                }
+            }
+            kept.Sort();
+            return kept.Select(i => records[i]).ToList();
+        }
+
+        /// <summary>
+        /// Config-level problems shown next to the per-instance errors: a corrupt instance list, or
+        /// every instance of a kind switched off.
+        /// </summary>
+        private static List<object> ArrConfigErrors(PluginConfiguration config, int sonarrUsable, int radarrUsable)
+        {
+            var errors = new List<object>();
+            if (config.IsSonarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "config corrupt — see server logs" });
+            else if (sonarrUsable == 0 && config.GetSonarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "all Sonarr instances are disabled" });
+            if (config.IsRadarrInstancesCorrupt())
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "config corrupt — see server logs" });
+            else if (radarrUsable == 0 && config.GetRadarrInstances().Count > 0)
+                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "all Radarr instances are disabled" });
+            return errors;
+        }
+
+        /// <summary>
+        /// The download queue of every enabled instance (all rows; served from ArrStateStore, which
+        /// polls the arrs while the page is open). Per-user visibility is applied fresh per request.
+        /// </summary>
         [HttpGet("arr/queue")]
         [Authorize]
         public async Task<IActionResult> GetDownloadQueue()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, "Plugin configuration not available");
+            if (!config.DownloadsPageEnabled)
+                return ArrFeatureDisabled("The Requests page");
+            // The page hides its downloads section when this is off; don't serve it either.
+            if (!config.ShowDownloadsInRequests)
+                return Ok(new { items = new List<object>(), errors = new List<object>() });
 
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
                 return Ok(new { items = new List<object>(), errors = new List<object>() });
 
             WarnIfArrInstancesCorrupt(config);
-            var sonarrInstances = config.GetEnabledSonarrInstances();
-            var radarrInstances = config.GetEnabledRadarrInstances();
+            using var scope = _arrState.BeginRequest("arr/queue");
+            var ct = HttpContext.RequestAborted;
+            var instances = _arrState.Instances(Services.Arr.ArrKind.Sonarr).Concat(_arrState.Instances(Services.Arr.ArrKind.Radarr)).ToList();
+            var reads = await Task.WhenAll(instances.Select(i => _arrState.GetQueueAsync(i, ct))).ConfigureAwait(false);
 
-            var ttl = GetArrPollCacheTtl(config);
-            List<object>? rawItems = null;
-            List<object>? errors = null;
-            lock (_arrQueueCacheLock)
+            var isAdmin = IsAdminUser();
+            var errors = ArrConfigErrors(config, instances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), instances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
+            for (int i = 0; i < instances.Count; i++)
             {
-                if (_arrQueueCache.HasValue && DateTime.UtcNow - _arrQueueCache.Value.CachedAt < ttl)
-                {
-                    rawItems = _arrQueueCache.Value.Items;
-                    errors = _arrQueueCache.Value.Errors;
-                }
+                if (reads[i].Value is { Truncated: true } queue)
+                    _logger.Warning($"Download queue of {instances[i].Name} has {queue.TotalRecords} rows; only the first {queue.Records.Count} are shown.");
+                if (reads[i].Error is { } error)
+                    errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], error, isAdmin));
             }
-
-            if (rawItems == null || errors == null)
+            List<Services.Arr.ArrLegacyQueueItem> QueueRows(IReadOnlySet<(int TmdbId, string MediaType)>? proof, ICollection<string>? absent)
             {
-                var ct = HttpContext.RequestAborted;
-                var sonarrTasks = sonarrInstances.Select(i => FetchSonarrQueue(i, ct)).ToList();
-                var radarrTasks = radarrInstances.Select(i => FetchRadarrQueue(i, ct)).ToList();
-
-                var sonarrResults = await Task.WhenAll(sonarrTasks);
-                var radarrResults = await Task.WhenAll(radarrTasks);
-
-                rawItems = new List<object>();
-                errors = new List<object>();
-                if (config.IsSonarrInstancesCorrupt())
-                    errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "config corrupt — see server logs" });
-                else if (sonarrInstances.Count == 0 && config.GetSonarrInstances().Count > 0)
-                    errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "all Sonarr instances are disabled" });
-                if (config.IsRadarrInstancesCorrupt())
-                    errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "config corrupt — see server logs" });
-                else if (radarrInstances.Count == 0 && config.GetRadarrInstances().Count > 0)
-                    errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "all Radarr instances are disabled" });
-                for (int i = 0; i < sonarrResults.Length; i++)
+                var rows = new List<Services.Arr.ArrLegacyQueueItem>();
+                for (int i = 0; i < instances.Count; i++)
                 {
-                    rawItems.AddRange(sonarrResults[i].Items);
-                    if (sonarrResults[i].Error != null)
-                        errors.Add(new { instanceName = sonarrInstances[i].Name, source = "Sonarr", reason = sonarrResults[i].Error });
+                    if (reads[i].Expired || reads[i].Value is not { } queue) continue;
+                    var records = isAdmin ? queue.Records : ArrAudienceFilter(instances[i], queue.Records, r => (r.TmdbId, r.TvdbId, r.SeasonNumber, r.EpisodeNumber), proof, absent);
+                    rows.AddRange(Services.Arr.ArrLegacyViews.QueueItems(instances[i], new Services.Arr.ArrQueueSnapshot { Records = records, TotalRecords = queue.TotalRecords, Truncated = queue.Truncated }));
                 }
-                for (int i = 0; i < radarrResults.Length; i++)
-                {
-                    rawItems.AddRange(radarrResults[i].Items);
-                    if (radarrResults[i].Error != null)
-                        errors.Add(new { instanceName = radarrInstances[i].Name, source = "Radarr", reason = radarrResults[i].Error });
-                }
-
-                lock (_arrQueueCacheLock)
-                {
-                    _arrQueueCache = (rawItems, errors, DateTime.UtcNow);
-                }
+                return rows;
             }
+            // The caller's Seerr requests are read only when a row waits on them (cached, bounded wait).
+            var proofCandidate = isAdmin ? null : AskedProofCandidate(config, allowedRequests);
+            var waiting = proofCandidate != null ? new HashSet<string>(StringComparer.Ordinal) : null;
+            var rawItems = QueueRows(allowedRequests, waiting);
+            if (waiting is { Count: > 0 } && await GetAskedProofAsync(config, proofCandidate!) is { } askedProof)
+                rawItems = QueueRows(askedProof, null);
 
-            var items = FilterQueueItemsByAllowedRequests(rawItems, allowedRequests);
+            var items = FilterByAllowedRequests(rawItems, allowedRequests, x => x.Source, x => x.TmdbId);
             return Ok(new { items, errors });
-        }
-
-        private static string? PosterFromImages(dynamic images)
-        {
-            if (images == null) return null;
-            foreach (var img in images)
-            {
-                if ((string?)img.coverType == "poster")
-                    return (string?)img.remoteUrl ?? (string?)img.url;
-            }
-            return null;
-        }
-
-        private Task<(List<object> Items, string? Error)> FetchSonarrQueue(ArrInstance instance, CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<object>>(
-                instance,
-                "/api/v3/queue?includeEpisode=true&includeSeries=true&sortKey=timeleft&sortDirection=ascending&pageSize=1000",
-                data =>
-                {
-                    var items = new List<object>();
-                    if (data?.records == null) return items;
-                    foreach (var record in data.records)
-                    {
-                        int? tmdbId = record.series?.tmdbId;
-
-                        items.Add(new
-                        {
-                            id = (string?)record.id?.ToString(),
-                            source = nameof(ArrType.Sonarr),
-                            instanceName = instance.Name,
-                            title = (string?)record.series?.title ?? "Unknown",
-                            subtitle = $"S{record.episode?.seasonNumber:D2}E{record.episode?.episodeNumber:D2} - {record.episode?.title}",
-                            seasonNumber = (int?)record.episode?.seasonNumber,
-                            episodeNumber = (int?)record.episode?.episodeNumber,
-                            status = ResolveQueueStatus((string?)record.status, (string?)record.trackedDownloadState, (string?)record.trackedDownloadStatus),
-                            progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
-                            totalSize = (long?)record.size,
-                            sizeRemaining = (long?)record.sizeleft,
-                            timeRemaining = (string?)record.timeleft,
-                            posterUrl = PosterFromImages(record.series?.images),
-                            tmdbId = tmdbId
-                        });
-                    }
-                    return items;
-                },
-                emptyResult: new List<object>(),
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: "Sonarr queue",
-                ct: ct);
-        }
-
-        private Task<(List<object> Items, string? Error)> FetchRadarrQueue(ArrInstance instance, CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<object>>(
-                instance,
-                "/api/v3/queue?includeMovie=true&pageSize=1000",
-                data =>
-                {
-                    var items = new List<object>();
-                    if (data?.records == null) return items;
-                    foreach (var record in data.records)
-                    {
-                        int? tmdbId = record.movie?.tmdbId;
-
-                        items.Add(new
-                        {
-                            id = (string?)record.id?.ToString(),
-                            source = nameof(ArrType.Radarr),
-                            instanceName = instance.Name,
-                            title = (string?)record.movie?.title ?? "Unknown",
-                            subtitle = (string?)record.movie?.year?.ToString(),
-                            seasonNumber = (int?)null,
-                            episodeNumber = (int?)null,
-                            status = ResolveQueueStatus((string?)record.status, (string?)record.trackedDownloadState, (string?)record.trackedDownloadStatus),
-                            progress = CalculateProgress((double?)record.size, (double?)record.sizeleft),
-                            totalSize = (long?)record.size,
-                            sizeRemaining = (long?)record.sizeleft,
-                            timeRemaining = (string?)record.timeleft,
-                            posterUrl = PosterFromImages(record.movie?.images),
-                            tmdbId = tmdbId
-                        });
-                    }
-                    return items;
-                },
-                emptyResult: new List<object>(),
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: "Radarr queue",
-                ct: ct);
-        }
-
-        private static double CalculateProgress(double? size, double? sizeleft)
-        {
-            if (size == null || size == 0) return 0;
-            if (sizeleft == null) return 100;
-            return Math.Round((1 - (sizeleft.Value / size.Value)) * 100, 1);
-        }
-
-        /// <summary>
-        /// The Sonarr/Radarr queue "status" field (queued/downloading/paused/completed/...)
-        /// only describes the transfer, not the import. Once the transfer finishes it sticks
-        /// at "completed" even while Sonarr/Radarr is still importing (or stuck waiting for
-        /// manual intervention). trackedDownloadState/trackedDownloadStatus carry that finer
-        /// signal — this folds them in so the client sees "importing"/"warning"/"failed"
-        /// instead of a frozen "completed".
-        /// </summary>
-        private static string ResolveQueueStatus(string? status, string? trackedDownloadState, string? trackedDownloadStatus)
-        {
-            if (string.Equals(trackedDownloadStatus, "warning", StringComparison.OrdinalIgnoreCase))
-                return "warning";
-
-            switch (trackedDownloadState?.ToLowerInvariant())
-            {
-                case "importpending":
-                case "importing":
-                    return "importing";
-                case "failedpending":
-                case "failed":
-                    return "failed";
-            }
-
-            return status ?? "Unknown";
         }
 
         // History is intentionally a bounded window, not a full archive browser — pagination
         // is over this fixed-size merged/sorted pool, not the arr instances' entire history.
         private const int HistoryWindowSize = 200;
 
+        /// <summary>
+        /// The history the Requests page pages through: the user's own titles (when filtered), newest
+        /// first, then the newest <see cref="HistoryWindowSize"/>. Filtered first, so other people's
+        /// events never push the user's own out of the window.
+        /// </summary>
+        internal static List<Services.Arr.ArrLegacyHistoryItem> HistoryWindow(IEnumerable<Services.Arr.ArrLegacyHistoryItem> merged, HashSet<(int TmdbId, string MediaType)>? allowedRequests)
+            => FilterByAllowedRequests(merged.OrderByDescending(i => i.Date ?? DateTime.MinValue), allowedRequests, x => x.Source, x => x.TmdbId)
+                .Take(HistoryWindowSize)
+                .ToList();
+
+        /// <summary>
+        /// Recently imported/failed downloads of every enabled instance (served from ArrStateStore's
+        /// history ring). Instances whose history can't be read are reported in <c>errors</c>
+        /// instead of looking like "no history".
+        /// </summary>
         [HttpGet("arr/history")]
         [Authorize]
         public async Task<IActionResult> GetDownloadHistory([FromQuery] int take = 20, [FromQuery] int skip = 0)
@@ -10425,193 +10722,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             skip = Math.Max(0, skip);
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, "Plugin configuration not available");
+            if (!config.DownloadsPageEnabled)
+                return ArrFeatureDisabled("The Requests page");
 
-            if (!config.DownloadsShowHistory)
-                return Ok(new { items = new List<object>(), totalPages = 0, visible = false });
+            if (!config.DownloadsShowHistory || !config.ShowDownloadsInRequests)
+                return Ok(new { items = new List<object>(), totalPages = 0, visible = false, errors = new List<object>() });
 
             if (config.DownloadsHistoryAdminOnly && !IsAdminUser())
-                return Ok(new { items = new List<object>(), totalPages = 0, visible = false });
+                return Ok(new { items = new List<object>(), totalPages = 0, visible = false, errors = new List<object>() });
 
             var (blocked, allowedRequests) = await GetAllowedRequestsForCurrentUserAsync(config);
             if (blocked)
-                return Ok(new { items = new List<object>(), totalPages = 0, visible = true });
+                return Ok(new { items = new List<object>(), totalPages = 0, visible = true, errors = new List<object>() });
 
-            var sonarrInstances = config.GetEnabledSonarrInstances();
-            var radarrInstances = config.GetEnabledRadarrInstances();
+            WarnIfArrInstancesCorrupt(config);
+            using var scope = _arrState.BeginRequest("arr/history");
+            var ct = HttpContext.RequestAborted;
+            var instances = _arrState.Instances(Services.Arr.ArrKind.Sonarr).Concat(_arrState.Instances(Services.Arr.ArrKind.Radarr)).ToList();
+            var reads = await Task.WhenAll(instances.Select(i => _arrState.GetHistoryAsync(i, ct))).ConfigureAwait(false);
 
-            var ttl = GetArrPollCacheTtl(config);
-            List<dynamic>? rawItems = null;
-            lock (_arrHistoryCacheLock)
+            var isAdmin = IsAdminUser();
+            var errors = ArrConfigErrors(config, instances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), instances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
+            for (int i = 0; i < instances.Count; i++)
             {
-                if (_arrHistoryCache.HasValue && DateTime.UtcNow - _arrHistoryCache.Value.CachedAt < ttl)
-                    rawItems = _arrHistoryCache.Value.Items;
+                if (reads[i].Error is { } error)
+                    errors.Add(Services.Arr.ArrLegacyViews.InstanceError(instances[i], error, isAdmin));
             }
-
-            if (rawItems == null)
+            List<Services.Arr.ArrLegacyHistoryItem> HistoryRows(IReadOnlySet<(int TmdbId, string MediaType)>? proof, ICollection<string>? absent)
             {
-                var ct = HttpContext.RequestAborted;
-                var sonarrTasks = sonarrInstances.Select(i => FetchSonarrHistory(i, ct)).ToList();
-                var radarrTasks = radarrInstances.Select(i => FetchRadarrHistory(i, ct)).ToList();
-
-                var sonarrResults = await Task.WhenAll(sonarrTasks);
-                var radarrResults = await Task.WhenAll(radarrTasks);
-
-                var merged = new List<dynamic>();
-                foreach (var result in sonarrResults) merged.AddRange(result.Items);
-                foreach (var result in radarrResults) merged.AddRange(result.Items);
-
-                rawItems = merged
-                    .OrderByDescending(i => (DateTime?)i.date ?? DateTime.MinValue)
-                    .Take(HistoryWindowSize)
-                    .ToList();
-
-                lock (_arrHistoryCacheLock)
+                var rows = new List<Services.Arr.ArrLegacyHistoryItem>();
+                for (int i = 0; i < instances.Count; i++)
                 {
-                    _arrHistoryCache = (rawItems, DateTime.UtcNow);
+                    if (reads[i].Value is not { } history) continue;
+                    // Per record, before a season pack's episodes are grouped: an episode the
+                    // caller can't see leaves the pack's count too. Only as much of the ring as
+                    // the window can show is decided.
+                    var records = isAdmin ? history.Records : ArrHistoryForAudience(instances[i], history.Records, allowedRequests, proof, absent);
+                    rows.AddRange(Services.Arr.ArrLegacyViews.HistoryItems(instances[i], new Services.Arr.ArrHistorySnapshot { Records = records, Watermark = history.Watermark, FullReadAt = history.FullReadAt, FullReadDue = history.FullReadDue }));
                 }
+                return rows;
             }
+            // The caller's Seerr requests are read only when a row waits on them (cached, bounded wait).
+            var proofCandidate = isAdmin ? null : AskedProofCandidate(config, allowedRequests);
+            var waiting = proofCandidate != null ? new HashSet<string>(StringComparer.Ordinal) : null;
+            var merged = HistoryRows(allowedRequests, waiting);
+            if (waiting is { Count: > 0 } && await GetAskedProofAsync(config, proofCandidate!) is { } askedProof)
+                merged = HistoryRows(askedProof, null);
 
-            var filtered = FilterHistoryItemsByAllowedRequests(rawItems, allowedRequests);
+            var filtered = HistoryWindow(merged, allowedRequests);
             var totalPages = filtered.Count == 0 ? 0 : (int)Math.Ceiling(filtered.Count / (double)take);
             var page = filtered.Skip(skip).Take(take).ToList();
 
-            return Ok(new { items = page, totalPages, visible = true });
-        }
-
-        private Task<(List<dynamic> Items, string? Error)> FetchSonarrHistory(ArrInstance instance, CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<dynamic>>(
-                instance,
-                $"/api/v3/history?pageSize={HistoryWindowSize}&sortKey=date&sortDirection=descending&includeSeries=true&includeEpisode=true",
-                data =>
-                {
-                    var entries = new List<(string Title, int? Season, int? Episode, string? EpisodeTitle, string EventType, DateTime? Date, string? DownloadId, string? Poster, int? TmdbId)>();
-                    if (data?.records == null) return new List<dynamic>();
-                    foreach (var record in data.records)
-                    {
-                        string? eventType = MapHistoryEventType((string?)record.eventType);
-                        if (eventType == null) continue;
-
-                        entries.Add((
-                            (string?)record.series?.title ?? "Unknown",
-                            (int?)record.episode?.seasonNumber,
-                            (int?)record.episode?.episodeNumber,
-                            (string?)record.episode?.title,
-                            eventType,
-                            (DateTime?)record.date,
-                            (string?)record.downloadId,
-                            PosterFromImages(record.series?.images),
-                            (int?)record.series?.tmdbId
-                        ));
-                    }
-
-                    // Sonarr emits one history record per episode, even for a single season-pack
-                    // grab — group them back into one card by the shared downloadId so a partial
-                    // import (some episodes imported, some failed) reads as one event, not N.
-                    var items = new List<dynamic>();
-                    var groups = entries
-                        .Select((e, idx) => new { Entry = e, Key = string.IsNullOrEmpty(e.DownloadId) ? $"__single_{idx}" : e.DownloadId! })
-                        .GroupBy(x => x.Key, x => x.Entry);
-
-                    foreach (var group in groups)
-                    {
-                        var groupEntries = group.ToList();
-                        var first = groupEntries[0];
-
-                        if (groupEntries.Count == 1)
-                        {
-                            items.Add(new
-                            {
-                                source = nameof(ArrType.Sonarr),
-                                instanceName = instance.Name,
-                                title = first.Title,
-                                subtitle = $"S{first.Season:D2}E{first.Episode:D2} - {first.EpisodeTitle}",
-                                eventType = first.EventType,
-                                date = first.Date,
-                                posterUrl = first.Poster,
-                                tmdbId = first.TmdbId
-                            });
-                            continue;
-                        }
-
-                        var importedCount = groupEntries.Count(e => e.EventType == "imported");
-                        var failedCount = groupEntries.Count(e => e.EventType == "failed");
-                        var episodeNumbers = groupEntries.Where(e => e.Episode.HasValue).Select(e => e.Episode!.Value).OrderBy(n => n).ToList();
-                        var groupDate = groupEntries.Where(e => e.Date.HasValue).Select(e => e.Date!.Value).DefaultIfEmpty(DateTime.MinValue).Max();
-
-                        items.Add(new
-                        {
-                            source = nameof(ArrType.Sonarr),
-                            instanceName = instance.Name,
-                            title = first.Title,
-                            subtitle = episodeNumbers.Count > 0
-                                ? $"S{first.Season:D2} · E{episodeNumbers[0]:D2}-E{episodeNumbers[^1]:D2}"
-                                : $"S{first.Season:D2}",
-                            eventType = importedCount > 0 && failedCount > 0 ? "partial" : (failedCount > 0 ? "failed" : "imported"),
-                            date = (DateTime?)groupDate,
-                            posterUrl = first.Poster,
-                            tmdbId = first.TmdbId,
-                            episodeCount = groupEntries.Count,
-                            importedCount = importedCount,
-                            failedCount = failedCount
-                        });
-                    }
-                    return items;
-                },
-                emptyResult: new List<dynamic>(),
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: "Sonarr history",
-                ct: ct);
-        }
-
-        private Task<(List<dynamic> Items, string? Error)> FetchRadarrHistory(ArrInstance instance, CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<dynamic>>(
-                instance,
-                $"/api/v3/history?pageSize={HistoryWindowSize}&sortKey=date&sortDirection=descending&includeMovie=true",
-                data =>
-                {
-                    var items = new List<dynamic>();
-                    if (data?.records == null) return items;
-                    foreach (var record in data.records)
-                    {
-                        string? eventType = MapHistoryEventType((string?)record.eventType);
-                        if (eventType == null) continue;
-
-                        items.Add(new
-                        {
-                            source = nameof(ArrType.Radarr),
-                            instanceName = instance.Name,
-                            title = (string?)record.movie?.title ?? "Unknown",
-                            subtitle = (string?)record.movie?.year?.ToString(),
-                            eventType = eventType,
-                            date = (DateTime?)record.date,
-                            posterUrl = PosterFromImages(record.movie?.images),
-                            tmdbId = (int?)record.movie?.tmdbId
-                        });
-                    }
-                    return items;
-                },
-                emptyResult: new List<dynamic>(),
-                timeout: TimeSpan.FromSeconds(10),
-                contextLabel: "Radarr history",
-                ct: ct);
-        }
-
-        /// <summary>
-        /// Only the two terminal, user-relevant history events are surfaced — everything else
-        /// (grabbed, renamed, deleted, ignored, ...) is noise for a "recently downloaded" list.
-        /// </summary>
-        private static string? MapHistoryEventType(string? eventType)
-        {
-            return eventType?.ToLowerInvariant() switch
-            {
-                "downloadfolderimported" => "imported",
-                "downloadfailed" => "failed",
-                _ => null,
-            };
+            return Ok(new { items = page, totalPages, visible = true, errors });
         }
 
         [HttpGet("arr/requests")]
@@ -10625,8 +10789,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
+            // Only the Requests page and the Calendar (its "requested" filter) read this list.
+            if (!config.DownloadsPageEnabled && !config.CalendarPageEnabled)
+                return ArrFeatureDisabled("The Requests page");
 
-            if (string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+            if (!config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
             {
                 return Ok(new { requests = new List<object>(), totalPages = 0, totalResults = 0 });
             }
@@ -10707,7 +10874,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     try
                     {
                         using var requestsRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                            HttpMethod.Get, requestsUri, config.JellyseerrApiKey);
+                            HttpMethod.Get, requestsUri, config.GetJellyseerrApiKey());
                         using var response = await client.SendAsync(requestsRequest);
                         var (urlJson, urlError) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestsUri);
                         if (urlError == null && urlJson != null)
@@ -10776,6 +10943,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (results != null)
                 {
                     var requestAborted = HttpContext.RequestAborted;
+                    // A request's Jellyfin item is named only when the caller can open it (Seerr names it
+                    // whichever library holds it, and REQUEST_VIEW lists other people's requests).
+                    var requestViewer = Guid.TryParse(jellyfinUserId, out var requestViewerId) ? _userManager.GetUserById(requestViewerId) : null;
                     // Enrich all requests in parallel for better performance
                     var enrichmentTasks = results.Select(async req =>
                     {
@@ -10802,7 +10972,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
-                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.JellyseerrApiKey);
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.GetJellyseerrApiKey());
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
@@ -10876,7 +11046,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         var tvdbId = media?["tvdbId"]?.Value<int?>();
                         var isOrphaned = IsOrphanedRequest(mediaStatus, createdAtStr)
-                            && await IsMissingFromArrAsync(type, tmdbId, tvdbId, requestAborted);
+                            && await IsMissingFromArrAsync(type, tmdbId, tvdbId, createdAtStr, requestAborted);
 
                         return new
                         {
@@ -10901,7 +11071,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             requestedBy = displayName ?? username ?? "Unknown",
                             requestedByAvatar = avatarUrl,
                             createdAt = createdAtStr,
-                            jellyfinMediaId = media?["jellyfinMediaId"]?.Value<string>(),
+                            jellyfinMediaId = VisibleJellyfinId(media?["jellyfinMediaId"]?.Value<string>(), requestViewer),
                             digitalReleaseDate = digitalReleaseDate,
                             theatricalReleaseDate = theatricalReleaseDate,
                             initialAirDate = initialAirDate,
@@ -10996,29 +11166,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
-        private static readonly ConcurrentDictionary<string, (bool Missing, DateTime Expires)> OrphanCheckCache = new();
-
-        // True only when every enabled Radarr/Sonarr instance answered and none has the title.
-        private async Task<bool> IsMissingFromArrAsync(string? type, int? tmdbId, int? tvdbId, CancellationToken ct)
+        // True only when every enabled Radarr/Sonarr instance's library index is loaded and current,
+        // was read after the request's 10-minute grace period ended, and none has the title (served
+        // from ArrStateStore: no upstream call per row). An index read before the grace period ended
+        // can't tell (the title may have been added since): a refresh is asked for and the answer is no.
+        internal async Task<bool> IsMissingFromArrAsync(string? type, int? tmdbId, int? tvdbId, string? createdAt, CancellationToken ct)
         {
             var isTv = type == "tv";
             var id = isTv ? tvdbId : tmdbId;
-            if (!id.HasValue || id <= 0) return false;
+            if (!id.HasValue || id <= 0 || _arrState == null) return false;
+            if (!DateTimeOffset.TryParse(createdAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var created)) return false;
 
-            var key = $"{(isTv ? "tv" : "movie")}:{id}";
-            if (OrphanCheckCache.TryGetValue(key, out var cached) && cached.Expires > DateTime.UtcNow) return cached.Missing;
-
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null) return false;
-            var instances = isTv ? config.GetEnabledSonarrInstances() : config.GetEnabledRadarrInstances();
+            var instances = _arrState.Instances(isTv ? Services.Arr.ArrKind.Sonarr : Services.Arr.ArrKind.Radarr);
             if (instances.Count == 0) return false;
 
-            var outcomes = await Task.WhenAll(instances.Select(i => isTv
-                ? FetchSeriesInfoFromInstance(i, id.Value, ct)
-                : FetchMovieInfoFromInstance(i, id.Value, ct)));
-            var missing = outcomes.All(o => o.Error == null && o.Match == null);
-            OrphanCheckCache[key] = (missing, DateTime.UtcNow.AddMinutes(5));
-            return missing;
+            var reads = await ReadLibrariesAsync(instances, ct).ConfigureAwait(false);
+            foreach (var read in reads)
+            {
+                if (read.Value == null || read.Error != null) return false;
+                var found = isTv ? (object?)read.Value.SeriesByTvdb(id.Value) : read.Value.MovieByTmdb(id.Value);
+                if (found != null) return false;
+            }
+            var graceEnd = created.AddMinutes(10);
+            var trusted = true;
+            for (int i = 0; i < instances.Count; i++)
+            {
+                if (reads[i].LoadedAt is { } loadedAt && loadedAt >= graceEnd) continue;
+                _arrState.RequestRefresh(instances[i].Id, Services.Arr.ArrSnapshotKind.Library);
+                trusted = false;
+            }
+            return trusted;
         }
 
         // Approved, not yet available, and older than the grace period (10 min) for Radarr to pick it up.
@@ -11054,14 +11231,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var action = HttpContext.Request.Path.Value?.Contains("/approve", StringComparison.OrdinalIgnoreCase) == true ? "approve" : "decline";
 
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.JellyseerrApiKey))
+            if (config is { DownloadsPageEnabled: false })
+                return ArrFeatureDisabled("The Requests page");
+            if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
                 return StatusCode(503, new { error = true, message = "Seerr not configured." });
+            // Held until the POST below is done (a move waits for it); refused during a move and in JE mode.
+            using var write = EnterSeerrRequestWrite(out var refusal);
+            if (refusal != null)
+                return refusal;
 
             var jellyfinUserId = UserHelper.GetCurrentUserId(User)?.ToString();
             if (string.IsNullOrEmpty(jellyfinUserId))
                 return BadRequest(new { message = "Jellyfin User ID not found." });
 
-            var jellyseerrUser = await GetJellyseerrUser(jellyfinUserId);
+            var jellyseerrUser = config.ArrIntegrationEnabled && config.ArrPhase1Enabled && config.ArrPhase3Enabled
+                ? await GetJellyseerrUser(jellyfinUserId, bypassCache: true, allowAutoImport: false)
+                : await GetJellyseerrUser(jellyfinUserId);
             if (jellyseerrUser == null)
                 return NotFound(new { message = "Current user is not linked to a Seerr account." });
 
@@ -11083,7 +11268,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var requestUri = $"{jellyseerrUrl}/api/v1/request/{requestId}/{action}";
             var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             using var httpRequest = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                HttpMethod.Post, requestUri, config.JellyseerrApiKey, jellyseerrUser.Id.ToString());
+                HttpMethod.Post, requestUri, config.GetJellyseerrApiKey(), jellyseerrUser.Id.ToString());
             using var response = await client.SendAsync(httpRequest);
             var (_, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
 
@@ -11094,6 +11279,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     IsAdminUser() ? error.ToAdminResponseShape() : error.ToResponseShape());
             }
 
+            SeerrRequestsChanged();
             return Ok(new { success = true });
         }
 
@@ -11102,8 +11288,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public async Task<IActionResult> GetCalendarEvents()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            if (config == null || _arrState == null)
                 return StatusCode(500, "Plugin configuration not available");
+            if (!config.CalendarPageEnabled)
+                return ArrFeatureDisabled("The Calendar page");
 
             var events = new List<ArrItem>();
 
@@ -11136,6 +11324,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 (startDate, endDate) = (endDate, startDate);
             }
 
+            // The viewer's own first and last day (their time zone): date-only releases are kept by day.
+            static string? Day(Microsoft.Extensions.Primitives.StringValues value)
+                => System.Text.RegularExpressions.Regex.IsMatch(value.ToString(), "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(50)) ? value.ToString() : null;
+            var startDay = Request.Query.TryGetValue("startDay", out var startDayValue) ? Day(startDayValue) : null;
+            var endDay = Request.Query.TryGetValue("endDay", out var endDayValue) ? Day(endDayValue) : null;
+            if (startDay != null && endDay != null && string.CompareOrdinal(startDay, endDay) > 0) (startDay, endDay) = (endDay, startDay);
+
             // cap the requested range to prevent an authed
             // user from passing start=1900..end=2099 and triggering 200 years
             // worth of arr-side calendar fetches + dedup loops.
@@ -11146,9 +11341,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Info($"Calendar range capped from {(int)requestedRange} days to {maxCalendarRangeDays} days.");
                 endDate = startDate.AddDays(maxCalendarRangeDays);
             }
-
-            var startIso = startDate.ToUniversalTime().ToString("o");
-            var endIso = endDate.ToUniversalTime().ToString("o");
 
             DateTime? ParseDate(object? value)
             {
@@ -11191,28 +11383,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return null;
             }
 
-            void AddRelease(Dictionary<string, DateTime> releases, string type, object? value)
-            {
-                var parsed = ParseDate(value);
-                if (!parsed.HasValue)
-                {
-                    return;
-                }
-
-                if (!releases.TryGetValue(type, out var existing) || parsed.Value < existing)
-                {
-                    releases[type] = parsed.Value;
-                }
-            }
-
-            // Fetch calendar events from all configured instances in parallel
+            // Sonarr/Radarr events come from ArrStateStore's calendar window (no upstream call for
+            // ranges inside it); Shoko is still read live.
             WarnIfArrInstancesCorrupt(config);
-            var sonarrInstances = config.GetEnabledSonarrInstances();
-            var radarrInstances = config.GetEnabledRadarrInstances();
+            using var arrScope = _arrState.BeginRequest("arr/calendar");
             var ct = HttpContext.RequestAborted;
-
-            var sonarrTasks = sonarrInstances.Select(i => FetchSonarrCalendar(i, startIso, endIso, ParseDate, ct)).ToList();
-            var radarrTasks = radarrInstances.Select(i => FetchRadarrCalendar(i, startIso, endIso, startDate, endDate, ParseDate, AddRelease, ct)).ToList();
+            var arrInstances = _arrState.Instances(Services.Arr.ArrKind.Sonarr).Concat(_arrState.Instances(Services.Arr.ArrKind.Radarr)).ToList();
+            var calendarTasks = arrInstances.Select(i => _arrState.GetCalendarAsync(i, startDate, endDate, ct)).ToList();
+            var isAdmin = IsAdminUser();
 
             // Shoko is single-instance (flat ShokoUrl/ShokoApiKey fields, no JSON instance list),
             // so it fans out alongside sonarrTasks/radarrTasks as at most one extra task rather
@@ -11220,7 +11398,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // an error without attempting a fetch; both empty means Shoko isn't in use at all —
             // same as zero Sonarr/Radarr instances — and produces no error.
             var shokoUrlSet = !string.IsNullOrWhiteSpace(config.ShokoUrl);
-            var shokoKeySet = !string.IsNullOrWhiteSpace(config.ShokoApiKey);
+            var shokoKeySet = !string.IsNullOrWhiteSpace(config.GetShokoApiKey());
             string? shokoConfigError = (shokoUrlSet != shokoKeySet)
                 ? "Shoko URL and API key must both be set"
                 : null;
@@ -11235,34 +11413,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             Task<(List<ArrItem> Items, string? Error)>? shokoTask = config.IsShokoConfigured()
                 ? FetchShokoCalendar(
-                    new ArrInstance { Name = "Shoko", Url = config.ShokoUrl, ApiKey = config.ShokoApiKey, UrlMappings = config.ShokoUrlMappings ?? "" },
+                    new ArrInstance { Name = "Shoko", Url = config.ShokoUrl, ApiKey = config.GetShokoApiKey(), UrlMappings = config.ShokoUrlMappings ?? "" },
                     startDate, endDate, shokoIncludedTypes, ParseDate, ct)
                 : null;
 
-            var sonarrCalResults = await Task.WhenAll(sonarrTasks);
-            var radarrCalResults = await Task.WhenAll(radarrTasks);
+            var calendarReads = await Task.WhenAll(calendarTasks).ConfigureAwait(false);
             var shokoCalResult = shokoTask != null ? await shokoTask : (Items: new List<ArrItem>(), Error: null);
 
-            var errors = new List<object>();
-            if (config.IsSonarrInstancesCorrupt())
-                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "config corrupt — see server logs" });
-            else if (sonarrInstances.Count == 0 && config.GetSonarrInstances().Count > 0)
-                errors.Add(new { instanceName = "Sonarr", source = "Sonarr", reason = "all Sonarr instances are disabled" });
-            if (config.IsRadarrInstancesCorrupt())
-                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "config corrupt — see server logs" });
-            else if (radarrInstances.Count == 0 && config.GetRadarrInstances().Count > 0)
-                errors.Add(new { instanceName = "Radarr", source = "Radarr", reason = "all Radarr instances are disabled" });
-            for (int i = 0; i < sonarrCalResults.Length; i++)
+            var errors = ArrConfigErrors(config, arrInstances.Count(i => i.Kind == Services.Arr.ArrKind.Sonarr), arrInstances.Count(i => i.Kind == Services.Arr.ArrKind.Radarr));
+            for (int i = 0; i < arrInstances.Count; i++)
             {
-                events.AddRange(sonarrCalResults[i].Items);
-                if (sonarrCalResults[i].Error != null)
-                    errors.Add(new { instanceName = sonarrInstances[i].Name, source = "Sonarr", reason = sonarrCalResults[i].Error });
-            }
-            for (int i = 0; i < radarrCalResults.Length; i++)
-            {
-                events.AddRange(radarrCalResults[i].Items);
-                if (radarrCalResults[i].Error != null)
-                    errors.Add(new { instanceName = radarrInstances[i].Name, source = "Radarr", reason = radarrCalResults[i].Error });
+                if (calendarReads[i].Value is { } calendar)
+                    events.AddRange(Services.Arr.ArrLegacyViews.CalendarItems(arrInstances[i], calendar, startDate, endDate, startDay, endDay));
+                if (calendarReads[i].Error is { } error)
+                    errors.Add(Services.Arr.ArrLegacyViews.InstanceError(arrInstances[i], error, isAdmin));
             }
             if (shokoConfigError != null)
                 errors.Add(new { instanceName = "Shoko", source = "Shoko", reason = shokoConfigError });
@@ -11276,344 +11440,168 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // read, and then the subsequent access filter would hide the event entirely — even
             // though instance-A had the same episode in an accessible root folder.
             var providerKeys = events
-                .SelectMany(ProviderHelper.GetAllProviders)
+                .SelectMany(evt => ProviderHelper.GetAllProviders(evt, _titleAliases))
                 .Distinct()
                 .ToList();
 
-            var itemMap = await _dbContextFactory.GetItemIdsByProvidersBatchAsync(providerKeys, _libraryManager);
+            // Every Jellyfin copy per key (a title can be in two libraries); one pick for everyone
+            // first, then, for a caller the access filter applies to, the copy that caller may open.
+            var itemCandidates = await _dbContextFactory.GetItemIdCandidatesByProvidersBatchAsync(providerKeys, _libraryManager);
+            var itemMap = itemCandidates.ToDictionary(kv => kv.Key, kv => kv.Value[0]);
 
             foreach (var evt in events)
             {
-                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt), itemMap);
+                evt.ItemId = ProviderHelper.GetBestItemId(ProviderHelper.GetProviders(evt, _titleAliases), itemMap);
                 evt.ItemEpisodeId = ProviderHelper.GetBestItemId(ProviderHelper.GetEpisodeProviders(evt), itemMap);
             }
 
-            // Build access info now so the dedup step can consult it.
-            HashSet<Guid>? accessibleIds = null;
-            Dictionary<string, bool>? rootFolderAccessMap = null;
-            if (config.CalendarFilterByLibraryAccess)
+            // Who may see each event (Calendar "filter by library access" on; administrators see
+            // everything). An event Jellyfin has (itemId, and itemEpisodeId for an episode it has)
+            // is Jellyfin's own check for the caller: library access and parental limits, down to
+            // the single episode. An event not in Jellyfin yet is decided by the
+            // library its instance lands it in (ArrInstanceLibraries: the instance's linked
+            // libraries, else its folder through the path mappings): shown when the caller may open
+            // that library, hidden when they may not or when it can't be told (no library holds the
+            // folder, or two instances share an unmapped root). No signed-in user, no events.
+            // Users with parental limits keep seeing titles not in Jellyfin yet in libraries they
+            // can open: there is no rating to check before Jellyfin has the title.
+            // The arr's own path (no linked libraries, no mapping for the title) needs every
+            // instance's root folders, from the system snapshots in memory: the answer never waits
+            // for them. When one was needed and isn't there (or is over an hour old), one background
+            // read is started for the next request, which counts as nobody watching (it doesn't keep
+            // the arrs' system facts refreshed on users' behalf).
+            var rootsConsulted = false;
+            var calendarPerson = ArrCaller.Human(User, _userManager);
+            var parentalCalendar = Services.Acquire.ArrInstanceLibraries.AbsentParentalEnabled && calendarPerson != null && Services.SeerrParentalFilter.PolicyFor(calendarPerson).IsRestricted;
+            var filterByAccess = (config.CalendarFilterByLibraryAccess && !isAdmin) || Services.Acquire.ArrInstanceLibraries.AbsentParentalEnabled;
+            Jellyfin.Database.Implementations.Entities.User? calendarUser = filterByAccess ? calendarPerson : null;
+            if (filterByAccess && calendarUser == null)
+                return Ok(new { events = new List<ArrItem>(), errors });
+
+            var instancesById = arrInstances.ToDictionary(i => i.Id, StringComparer.OrdinalIgnoreCase);
+            // For a title Jellyfin has: is there a copy (series or movie, and for an episode Jellyfin
+            // has, that episode in the same copy) the caller may open? Every copy counts, not one
+            // picked for everyone: the same show can be in "TV" and in a library the caller can't
+            // open, and Jellyfin can hide one episode (its own rating or tags) of a series the caller
+            // may open. Episodes are found by their ids or their season and episode number.
+            // A visible event then points at the caller's own copy (links, watched state).
+            Dictionary<ArrItem, bool>? jellyfinVerdicts = null;
+            if (calendarUser != null)
             {
-                var calendarUserId = UserHelper.GetCurrentUserId(User);
-                if (calendarUserId.HasValue)
+                var seenItems = new Dictionary<Guid, BaseItem?>();
+                BaseItem? Seen(Guid id)
                 {
-                    var calendarUserForFilter = _userManager.GetUserById(calendarUserId.Value);
-                    if (calendarUserForFilter != null)
+                    if (!seenItems.TryGetValue(id, out var item))
+                        seenItems[id] = item = _libraryManager.GetItemById<BaseItem>(id, calendarUser);
+                    return item;
+                }
+                Guid? SeriesOf(Guid id) => (_libraryManager.GetItemById<BaseItem>(id) as MediaBrowser.Controller.Entities.TV.Episode)?.SeriesId;
+
+                // A season's episodes in one series copy, whoever may see them (one query per copy and
+                // season); null when they can't be read.
+                var seasonsInCopies = new Dictionary<(Guid Series, int Season), List<MediaBrowser.Controller.Entities.TV.Episode>?>();
+                Guid? EpisodeInCopy(Guid seriesId, int season, int number)
+                {
+                    var key = (seriesId, season);
+                    if (!seasonsInCopies.TryGetValue(key, out var episodes))
                     {
-                        var uniqueItemIds = events
-                            .Select(e => e.ItemId)
-                            .Where(id => id.HasValue)
-                            .Select(id => id!.Value)
-                            .Distinct()
-                            .ToList();
-
-                        accessibleIds = new HashSet<Guid>();
-                        foreach (var id in uniqueItemIds)
+                        try
                         {
-                            if (_libraryManager.GetItemById<BaseItem>(id, calendarUserForFilter) != null)
-                                accessibleIds.Add(id);
+                            episodes = _libraryManager.GetItemList(new InternalItemsQuery
+                            {
+                                AncestorIds = new[] { seriesId },
+                                Recursive = true,
+                                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                                ParentIndexNumber = season,
+                            }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToList();
                         }
-
-                        rootFolderAccessMap = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-                        foreach (var evt in events.Where(e => e.ItemId.HasValue && !string.IsNullOrEmpty(e.RootFolderPath)))
+                        catch (Exception)
                         {
-                            var isAccessible = accessibleIds.Contains(evt.ItemId!.Value);
-                            if (isAccessible || !rootFolderAccessMap.ContainsKey(evt.RootFolderPath!))
-                                rootFolderAccessMap[evt.RootFolderPath!] = isAccessible;
+                            episodes = null;
                         }
+                        seasonsInCopies[key] = episodes;
+                    }
+                    // Can't tell whether the episode is hidden: this copy doesn't make it visible.
+                    if (episodes == null) return Guid.Empty;
+                    // A multi-episode file covers every episode in its range.
+                    return episodes.FirstOrDefault(e => e.IndexNumber is int first
+                        && new Services.Acquire.EpisodeRange(first, e.IndexNumberEnd).Contains(number))?.Id;
+                }
+
+                jellyfinVerdicts = new Dictionary<ArrItem, bool>(ReferenceEqualityComparer.Instance);
+                foreach (var evt in events)
+                {
+                    var copy = ProviderHelper.PickCallerCopy(evt, itemCandidates, Seen, SeriesOf,
+                        title => EpisodeInCopy(title, evt.SeasonNumber!.Value, evt.EpisodeNumber!.Value), _titleAliases);
+                    if (!copy.InJellyfin) continue;
+                    jellyfinVerdicts[evt] = copy.Visible;
+                    if (copy.Visible)
+                    {
+                        evt.ItemId = copy.ItemId;
+                        evt.ItemEpisodeId = copy.EpisodeId;
                     }
                 }
             }
 
-            // Returns true when the filter is off, or when we have positive evidence the user can
-            // access this event. "No information" defaults to true (same as the final filter).
+            int ParentalTmdbId(ArrItem evt)
+            {
+                if (evt.TmdbId > 0) return evt.TmdbId.Value;
+                if (evt.TvdbId is not > 0) return 0;
+                var indexed = evt.InstanceId == null ? null : _arrState.PeekLibrary(evt.InstanceId)?.SeriesByTvdb(evt.TvdbId.Value)?.TmdbId;
+                if (indexed > 0) return indexed.Value;
+                var key = Services.Acquire.TitleKey.ForSeries(evt.TvdbId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), null, null)!;
+                return _titleAliases?.Of(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
+            }
+
+            if (parentalCalendar && calendarUser != null)
+            {
+                var absent = events.Where(e => jellyfinVerdicts?.ContainsKey(e) != true)
+                    .Select(e => (Type: e.Source == nameof(ArrType.Radarr) ? "movie" : "tv", Id: ParentalTmdbId(e))).Where(e => e.Id > 0).Distinct().Take(100);
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                budget.CancelAfter(TimeSpan.FromSeconds(8));
+                using var lookups = new SemaphoreSlim(16);
+                await Task.WhenAll(absent.Select(async e =>
+                {
+                    try
+                    {
+                        await lookups.WaitAsync(budget.Token).ConfigureAwait(false);
+                        try { await (_parentalFilter?.MaySeeAbsentAsync(e.Type, e.Id, calendarUser.Id.ToString("N"), budget.Token) ?? Task.FromResult(false)).ConfigureAwait(false); }
+                        finally { lookups.Release(); }
+                    }
+                    catch (OperationCanceledException) { /* Unverified rows remain hidden. */ }
+                })).ConfigureAwait(false);
+            }
+
+            // True when the filter is off (or the caller is an administrator), or the caller may see the event.
             bool IsAccessible(ArrItem evt)
             {
-                if (accessibleIds == null) return true;
-                if (evt.ItemId.HasValue)
-                    return accessibleIds.Contains(evt.ItemId.Value);
-                if (!string.IsNullOrEmpty(evt.RootFolderPath)
-                    && rootFolderAccessMap != null
-                    && rootFolderAccessMap.TryGetValue(evt.RootFolderPath, out var a))
-                    return a;
-                return true;
+                if (calendarUser == null || jellyfinVerdicts == null) return true;
+                if (jellyfinVerdicts.TryGetValue(evt, out var visible)) return visible;
+                if (parentalCalendar && _parentalFilter?.MaySeeAbsent(evt.Source == nameof(ArrType.Radarr) ? "movie" : "tv", ParentalTmdbId(evt), calendarUser.Id.ToString("N"), out _) != true) return false;
+                // Shoko (no instance) keeps its own rule: only titles already in the user's Shoko
+                // collection, matched to Jellyfin when Jellyfin has them.
+                if (evt.Source == nameof(ArrType.Shoko)) return true;
+                if (_instanceLibraries == null || evt.InstanceId == null || !instancesById.TryGetValue(evt.InstanceId, out var instance)) return false;
+                var key = Services.Acquire.TitleAliases.FromProviderIds(instance.Kind == Services.Arr.ArrKind.Radarr, evt.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture), evt.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture), null).FirstOrDefault();
+                if (key != null && _titleAliases?.AskedBy(key, calendarUser.Id) == true) return true;
+                var target = _instanceLibraries.Resolve(instance, evt.ArrPath);
+                rootsConsulted |= target.Via == "same_path" || target.Problem is Services.Acquire.ArrLibraryProblem.RootsUnknown or Services.Acquire.ArrLibraryProblem.SharedRoot or Services.Acquire.ArrLibraryProblem.NotInLibrary;
+                return Services.Acquire.ArrInstanceLibraries.CanOpen(calendarUser, target, _instanceLibraries.Libraries());
             }
 
-            // Deduplicate events across instances. Tie-break priority:
-            //   1. Accessible to the current user (prevents H4 hide-accessible-event bug).
-            //   2. HasFile=true (if one instance has the file downloaded, show that).
-            // The losing candidate's InstanceName is preserved in AlsoInInstances so the UI
-            // can show "also in: X, Y" context instead of silently erasing other instances.
-            // normalize ReleaseDate to a calendar-day
-            // bucket before using it in the dedup key. Different Sonarr/Radarr
-            // versions emit different precision (`...000Z` vs `Z`, airDate vs
-            // airDateUtc fallbacks with TZ drift); using the raw string fails
-            // dedup and surfaces duplicate events on a per-instance basis.
-            static string NormalizeDateForDedup(string? raw)
+            // Deduplicate events across instances (CalendarDedup): an event the caller may see wins, then
+            // one with the file; "also in" lists only instances whose event the caller may see.
+            events = Services.Arr.CalendarDedup.Deduplicate(events, IsAccessible);
+
+            // A lone candidate the caller may not see is hidden too (dedup only prefers visible ones).
+            if (calendarUser != null)
+                events = events.Where(IsAccessible).ToList();
+            if (rootsConsulted)
             {
-                if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-                if (DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-                        out var dto))
-                {
-                    return dto.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-                }
-                // Fallback: strip everything after the first 10 chars when it
-                // already looks like an ISO date prefix.
-                return raw.Length >= 10 ? raw.Substring(0, 10) : raw;
-            }
-
-            var deduped = new Dictionary<string, ArrItem>();
-            foreach (var evt in events)
-            {
-                string dedupeKey;
-                var normalizedDate = NormalizeDateForDedup(evt.ReleaseDate);
-                if (evt.Source == nameof(ArrType.Sonarr))
-                {
-                    var seriesKey = evt.TvdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"sonarr|{seriesKey}|S{evt.SeasonNumber}E{evt.EpisodeNumber}|{normalizedDate}";
-                }
-                else if (evt.Source == nameof(ArrType.Shoko))
-                {
-                    // Never cross-matched against sonarr|/radarr| keys.
-                    dedupeKey = $"shoko|{evt.ShokoSeriesId}|{evt.ShokoEpisodeId}|{normalizedDate}";
-                }
-                else
-                {
-                    var movieKey = evt.TmdbId?.ToString() ?? $"title:{evt.Title}";
-                    dedupeKey = $"radarr|{movieKey}|{evt.ReleaseType}|{normalizedDate}";
-                }
-
-                if (!deduped.TryGetValue(dedupeKey, out var existing))
-                {
-                    deduped[dedupeKey] = evt;
-                    continue;
-                }
-
-                var existingAccess = IsAccessible(existing);
-                var newAccess = IsAccessible(evt);
-                ArrItem winner, loser;
-                if (newAccess && !existingAccess)
-                {
-                    winner = evt; loser = existing;
-                }
-                else if (newAccess == existingAccess && !existing.HasFile && evt.HasFile)
-                {
-                    winner = evt; loser = existing;
-                }
-                else
-                {
-                    winner = existing; loser = evt;
-                }
-
-                if (!ReferenceEquals(winner, existing))
-                {
-                    deduped[dedupeKey] = winner;
-                }
-
-                // Merge loser's instance name into winner's AlsoInInstances (dedup & skip self).
-                if (!string.IsNullOrEmpty(loser.InstanceName)
-                    && !string.Equals(loser.InstanceName, winner.InstanceName, StringComparison.Ordinal))
-                {
-                    winner.AlsoInInstances ??= new List<string>();
-                    if (!winner.AlsoInInstances.Contains(loser.InstanceName))
-                        winner.AlsoInInstances.Add(loser.InstanceName);
-                }
-                // Preserve loser's own AlsoInInstances entries too.
-                if (loser.AlsoInInstances != null)
-                {
-                    winner.AlsoInInstances ??= new List<string>();
-                    foreach (var name in loser.AlsoInInstances)
-                    {
-                        if (!string.Equals(name, winner.InstanceName, StringComparison.Ordinal)
-                            && !winner.AlsoInInstances.Contains(name))
-                            winner.AlsoInInstances.Add(name);
-                    }
-                }
-            }
-            events = deduped.Values.ToList();
-
-            // Final safety-net access filter (defense in depth — dedup above already respects this,
-            // but if the filter is on and a lone candidate is inaccessible, it must still be hidden).
-            if (config.CalendarFilterByLibraryAccess && accessibleIds != null)
-            {
-                events = events.Where(e =>
-                {
-                    if (e.ItemId.HasValue)
-                        return accessibleIds.Contains(e.ItemId.Value);
-                    if (!string.IsNullOrEmpty(e.RootFolderPath)
-                        && rootFolderAccessMap != null
-                        && rootFolderAccessMap.TryGetValue(e.RootFolderPath, out var hasAccess))
-                        return hasAccess;
-                    return true;
-                }).ToList();
+                foreach (var instance in arrInstances) _ = _arrState.WarmSystem(instance);
             }
 
             return Ok(new { events, errors });
-        }
-
-        private Task<(List<ArrItem> Items, string? Error)> FetchSonarrCalendar(
-            ArrInstance instance, string startIso, string endIso,
-            Func<object?, DateTime?> parseDate, CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<ArrItem>>(
-                instance,
-                $"/api/v3/calendar?includeSeries=true&unmonitored=true&start={startIso}&end={endIso}",
-                data =>
-                {
-                    var items = new List<ArrItem>();
-                    if (data == null) return items;
-                    foreach (var episode in data)
-                    {
-                        var airDate = parseDate((string?)episode.airDateUtc ?? (string?)episode.airDate);
-                        if (!airDate.HasValue) continue;
-
-                        string? seriesPosterUrl = null;
-                        string? seriesBackdropUrl = null;
-                        if (episode.series?.images != null)
-                        {
-                            foreach (var img in episode.series.images)
-                            {
-                                var coverType = (string?)img.coverType;
-                                var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                if (string.IsNullOrWhiteSpace(imageUrl)) continue;
-                                if (seriesBackdropUrl == null && (coverType == "fanart" || coverType == "banner"))
-                                    seriesBackdropUrl = imageUrl;
-                                else if (seriesPosterUrl == null && coverType == "poster")
-                                    seriesPosterUrl = imageUrl;
-                            }
-                        }
-
-                        var seasonNumber = (int?)episode.seasonNumber ?? 0;
-                        var episodeNumber = (int?)episode.episodeNumber ?? 0;
-                        var episodeTitle = (string?)episode.title ?? "Unknown Episode";
-
-                        items.Add(new ArrItem
-                        {
-                            Id = (string?)episode.id?.ToString(),
-                            Source = nameof(ArrType.Sonarr),
-                            InstanceName = instance.Name,
-                            Type = "Series",
-                            Title = (string?)episode.series?.title ?? "Unknown Series",
-                            Subtitle = $"S{seasonNumber:D2}E{episodeNumber:D2} - {episodeTitle}",
-                            ReleaseDate = airDate.Value.ToUniversalTime().ToString("o"),
-                            ReleaseType = "Episode",
-                            HasFile = (bool?)episode.hasFile ?? false,
-                            Monitored = (bool?)episode.monitored ?? false,
-                            SeriesId = (int?)episode.seriesId,
-                            SeasonNumber = seasonNumber,
-                            EpisodeNumber = episodeNumber,
-                            EpisodeTitle = episodeTitle,
-                            Overview = (string?)episode.overview,
-                            TvdbId = (int?)episode.series?.tvdbId,
-                            ImdbId = (string?)episode.series?.imdbId,
-                            TmdbId = (int?)episode.series?.tmdbId,
-                            PosterUrl = seriesPosterUrl,
-                            BackdropUrl = seriesBackdropUrl,
-                            EpisodeTvdbId = (int?)episode.tvdbId,
-                            EpisodeImdbId = (string?)episode.imdbId,
-                            RootFolderPath = GetRootFolderFromPath((string?)episode.series?.path)
-                        });
-                    }
-                    return items;
-                },
-                emptyResult: new List<ArrItem>(),
-                // aligned with Radarr (15s) — was 30s, which doubled
-                // the worst-case calendar latency under one slow instance.
-                timeout: TimeSpan.FromSeconds(15),
-                contextLabel: "Sonarr calendar",
-                ct: ct);
-        }
-
-        private Task<(List<ArrItem> Items, string? Error)> FetchRadarrCalendar(
-            ArrInstance instance, string startIso, string endIso,
-            DateTime startDate, DateTime endDate,
-            Func<object?, DateTime?> parseDate,
-            Action<Dictionary<string, DateTime>, string, object?> addRelease,
-            CancellationToken ct)
-        {
-            return FetchAndMapAsync<List<ArrItem>>(
-                instance,
-                $"/api/v3/calendar?unmonitored=true&start={startIso}&end={endIso}",
-                data =>
-                {
-                    var items = new List<ArrItem>();
-                    if (data == null) return items;
-                    foreach (var movie in data)
-                    {
-                        var releaseDates = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-
-                        string? posterUrl = null;
-                        string? backdropUrl = null;
-                        if (movie.images != null)
-                        {
-                            foreach (var img in movie.images)
-                            {
-                                var coverType = (string?)img.coverType;
-                                var imageUrl = (string?)img.remoteUrl ?? (string?)img.url;
-                                if (string.IsNullOrWhiteSpace(imageUrl)) continue;
-                                if (posterUrl == null && coverType == "poster") { posterUrl = imageUrl; continue; }
-                                if (backdropUrl == null && (coverType == "fanart" || coverType == "backdrop"))
-                                    backdropUrl = imageUrl;
-                            }
-                        }
-
-                        addRelease(releaseDates, "CinemaRelease", (string?)movie.inCinemas);
-                        addRelease(releaseDates, "PhysicalRelease", (string?)movie.physicalRelease);
-                        addRelease(releaseDates, "DigitalRelease", (string?)movie.digitalRelease);
-
-                        if (movie.releases != null)
-                        {
-                            foreach (var release in movie.releases)
-                            {
-                                var releaseDate = (object?)release.releaseDate ?? release.date;
-                                var type = Convert.ToString(release.type)?.ToLowerInvariant();
-                                var isPhysical = (bool?)release.isPhysical ?? false;
-                                if (isPhysical) addRelease(releaseDates, "PhysicalRelease", releaseDate);
-                                else if (type == "digital") addRelease(releaseDates, "DigitalRelease", releaseDate);
-                                else if (type == "theatrical" || type == "cinema" || type == "theater")
-                                    addRelease(releaseDates, "CinemaRelease", releaseDate);
-                            }
-                        }
-
-                        if (releaseDates.Count == 0) continue;
-
-                        var movieTitle = (string?)movie.title ?? (string?)movie.originalTitle ?? "Unknown";
-                        string? movieYear = null;
-                        var yearValue = (object?)movie.year;
-                        if (yearValue != null) movieYear = Convert.ToString(yearValue);
-
-                        foreach (var kvp in releaseDates)
-                        {
-                            var releaseUtc = kvp.Value.ToUniversalTime();
-                            if (releaseUtc < startDate || releaseUtc > endDate) continue;
-                            items.Add(new ArrItem
-                            {
-                                Id = $"{movie.id}-{kvp.Key}",
-                                Source = nameof(ArrType.Radarr),
-                                InstanceName = instance.Name,
-                                Type = "Movie",
-                                Title = movieTitle,
-                                Subtitle = movieYear,
-                                ReleaseDate = releaseUtc.ToString("o"),
-                                ReleaseType = kvp.Key,
-                                HasFile = (bool?)movie.hasFile ?? false,
-                                Monitored = (bool?)movie.monitored ?? false,
-                                PosterUrl = posterUrl,
-                                BackdropUrl = backdropUrl,
-                                TmdbId = (int?)movie.tmdbId,
-                                ImdbId = (string?)movie.imdbId,
-                                RootFolderPath = GetRootFolderFromPath((string?)movie.path)
-                            });
-                        }
-                    }
-                    return items;
-                },
-                emptyResult: new List<ArrItem>(),
-                // aligned with Sonarr (15s) — was 10s, which timed
-                // out busy Radarr instances behind slow proxies.
-                timeout: TimeSpan.FromSeconds(15),
-                contextLabel: "Radarr calendar",
-                ct: ct);
         }
 
         private Task<(List<ArrItem> Items, string? Error)> FetchShokoCalendar(
@@ -11647,7 +11635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         items.Add(new ArrItem
                         {
-                            Id = shokoEpisodeId?.ToString() ?? $"shoko-{shokoSeriesId}-{episodeType}-{episodeNumber}",
+                            Id = Services.Arr.ArrLegacyViews.RowId(ArrType.Shoko, null, shokoEpisodeId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? $"shoko-{shokoSeriesId}-{episodeType}-{episodeNumber}"),
                             Source = nameof(ArrType.Shoko),
                             InstanceName = "Shoko",
                             Type = "Series",
@@ -11662,7 +11650,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             EpisodeNumber = episodeNumber,
                             ShokoSeriesId = shokoSeriesId,
                             ShokoEpisodeId = shokoEpisodeId,
-                            RootFolderPath = null
                         });
                     }
                     return items;
@@ -11674,30 +11661,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ct: ct);
         }
 
-        private static string? GetRootFolderFromPath(string? path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return null;
-
-            var trimmed = path.TrimEnd('/');
-            var lastSlash = trimmed.LastIndexOf('/');
-            if (lastSlash <= 0)
-                return trimmed;
-
-            return trimmed.Substring(0, lastSlash);
-        }
+        /// <summary>
+        /// Most distinct item ids one calendar user-data request may name (a big library's month
+        /// of events names a few hundred). More is refused before any lookup.
+        /// </summary>
+        internal const int MaxCalendarUserDataIds = 2000;
 
         [HttpPost("arr/calendar/user-data")]
         [Authorize]
+        // A year of events with their ids (the page sends a few hundred bytes per event).
+        [BodyLimit(1024 * 1024)]
         public IActionResult GetCalendarUserDataForEvents([FromBody] CalendarUserDataRequest request)
         {
-            var userId = UserHelper.GetCurrentUserId(User);
-            if (userId == null)
-                return Unauthorized("User not found");
+            if (JellyfinEnhanced.Instance?.Configuration is { CalendarPageEnabled: false })
+                return ArrFeatureDisabled("The Calendar page");
 
-            var user = _userManager.GetUserById(userId.Value);
+            // The caller's own favourites and watched state: a person only (an API key has none).
+            var user = ArrCaller.Human(User, _userManager);
             if (user == null)
-                return Unauthorized("User not found");
+                return StatusCode(403, new { error = true, code = "user_required", message = "Sign in as a Jellyfin user." });
 
             var results = new List<object>();
 
@@ -11712,22 +11694,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .Select(id => id!.Value)
                     .Distinct()
                     .ToList();
+                // Bounded work per request, refused whole (never silently cut short).
+                if (ids.Count > MaxCalendarUserDataIds)
+                    return BadRequest(new { error = true, code = "too_many_ids", message = $"At most {MaxCalendarUserDataIds} item ids per request.", limit = MaxCalendarUserDataIds });
 
+                // Which ids Jellyfin has at all: one query (no user, so nothing is decided by it).
+                // Only those go through Jellyfin's own per-user check (library access and parental
+                // limits), one by one: a query by ItemIds with a user skips the library restriction,
+                // and on Jellyfin 12 setting User in the initialiser skips the parental filter too.
+                // An unknown id costs nothing more (a per-id lookup of one is a database read each).
+                // Ids the caller can't open get no flags (their user data is never read).
+                var known = ids.Count == 0
+                    ? new HashSet<Guid>()
+                    : _libraryManager.GetItemList(new InternalItemsQuery { ItemIds = ids.ToArray() }).Select(i => i.Id).ToHashSet();
                 var itemsById = new Dictionary<Guid, BaseItem>();
-                if (ids.Count > 0)
+                foreach (var id in ids)
                 {
-                    var items = _libraryManager.GetItemList(new InternalItemsQuery
-                    {
-                        User = user,
-                        ItemIds = ids.ToArray(),
-                        Recursive = true
-                    });
-
-                    foreach (var item in items)
-                    {
-                        if (!itemsById.ContainsKey(item.Id))
-                            itemsById[item.Id] = item;
-                    }
+                    if (known.Contains(id) && _libraryManager.GetItemById<BaseItem>(id, user) is { } item)
+                        itemsById[id] = item;
                 }
 
                 // Process each event using pre-fetched items
@@ -12162,8 +12146,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var itemIds = _itemRepository.GetItemIdsByProviders(providers, includeItemTypes);
 
+            // Only an item the caller can open: the repository lookup sees every library, so a
+            // match outside the caller's libraries or parental limits is left out (an unknown or
+            // API-key caller gets the first match, as before, since it has no library view).
+            var callerId = ArrCaller.PersonId(User);
+            var caller = callerId is Guid uid ? _userManager.GetUserById(uid) : null;
+            if (caller != null)
+            {
+                itemIds = itemIds.Where(id => _libraryManager.GetItemById(id) is { } candidate && candidate.IsVisibleStandalone(caller)).ToList();
+            }
+
             if (itemIds.Count == 0)
-                return BadRequest("No provider ids supplied or no items found");
+            {
+                // Nothing supplied is a bad request; nothing found (a title not in the library, the
+                // calendar's everyday case) is an empty answer, not an error.
+                return providers == null || providers.Count == 0
+                    ? BadRequest("No provider ids supplied")
+                    : NoContent();
+            }
 
             return Ok(itemIds.FirstOrDefault());
         }

@@ -4,6 +4,13 @@
 // Client-paged spec over JE.discoveryBase — the base owns the chunked
 // pagination, filter/sort controls, infinite scroll and lifecycle wiring;
 // this module keeps the TMDB person resolution and the credits fetch.
+// On the person page of someone the library doesn't have (native details,
+// a synthetic person id) the row is the page's filmography: it renders
+// whatever the person-discovery switch says, most popular titles first. It
+// comes from the server's filmography route, filtered there for the viewer
+// (library copies they can open, absent titles whose page would open for
+// them; no Seerr account needed), and keeps its library titles whatever the
+// exclude-library-items setting says.
 (function(JE) {
     'use strict';
 
@@ -138,6 +145,45 @@
     }
 
     /**
+     * The TMDB id of a person page made for someone the library doesn't have
+     * (a synthetic person id, see js/jellyseerr/nativedetails), or 0.
+     * @param {string} itemId
+     * @returns {number}
+     */
+    function syntheticPersonTmdb(itemId) {
+        const parts = JE.titleDetails?.parse?.(itemId);
+        return parts && parts.kind === 'person' ? parts.tmdbId : 0;
+    }
+
+    /**
+     * The name and TMDB id of a synthetic person page: the id carries the TMDB id
+     * and the page's own item the name (JE's person route knows library people only).
+     * @param {string} itemId
+     * @param {number} tmdbId
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<{name: string, tmdbId: string}|null>}
+     */
+    async function syntheticPersonInfo(itemId, tmdbId, signal) {
+        const item = JE.helpers?.getItemCached
+            ? await JE.helpers.getItemCached(itemId)
+            : await ApiClient.getItem(ApiClient.getCurrentUserId(), itemId);
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        return item?.Name ? { name: item.Name, tmdbId: String(tmdbId) } : null;
+    }
+
+    /**
+     * 1 for an appearance rather than a role (a talk show, news or reality series, or playing
+     * themselves), else 0.
+     * @param {any} credit
+     * @returns {number}
+     */
+    function appearance(credit) {
+        const genres = Array.isArray(credit?.genreIds) ? credit.genreIds : [];
+        if (genres.some(g => g === 10767 || g === 10763 || g === 10764)) return 1;
+        return /^(self|himself|herself|themselves)\b/i.test(String(credit?.character || '')) ? 1 : 0;
+    }
+
+    /**
      * Fetches person credits from Seerr
      * @param {number} personId
      * @param {AbortSignal} [signal]
@@ -168,6 +214,28 @@
     }
 
     /**
+     * The filmography of someone the library doesn't have, from the server's
+     * native-details route (filtered there for the viewer: library copies
+     * carry the Jellyfin id the viewer can open). Null when the person isn't
+     * for this viewer (404): no section rather than a retry that can't help.
+     * Other failures throw, so the discovery base offers a retry.
+     * @param {number} tmdbId
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<Array<any>|null>}
+     */
+    async function fetchFilmography(tmdbId, signal) {
+        try {
+            const response = await fetchWithManagedRequest(`/JellyfinEnhanced/native-details/person/${tmdbId}/filmography`, { signal });
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            return Array.isArray(response?.results) ? response.results : [];
+        } catch (error) {
+            if (error?.name === 'AbortError') throw error;
+            if (error?.status === 404) return null;
+            throw error;
+        }
+    }
+
+    /**
      * Resolves the full deduped credits list + section title for the base.
      * @param {{id: string, signal: AbortSignal}} ctx
      * @returns {Promise<{items: Array<any>, title: string}|null>}
@@ -178,6 +246,23 @@
         if (signal.aborted) return null;
         if (!isPerson) return null;
 
+        const synthetic = syntheticPersonTmdb(itemId);
+        if (synthetic) {
+            // The server decides who gets this list (no Seerr account needed in
+            // Jellyfin Enhanced request mode) and which of its titles they see.
+            const [personInfo, results] = await Promise.all([
+                syntheticPersonInfo(itemId, synthetic, signal).catch((error) => { if (error?.name === 'AbortError') throw error; return null; }),
+                fetchFilmography(synthetic, signal)
+            ]);
+            if (signal.aborted || !personInfo?.name || !results) return null;
+            console.debug(`${logPrefix} Filmography of ${personInfo.name}: ${results.length} titles`);
+            // What they are known for first (most voted), talk shows, news, reality and appearances
+            // as themselves after their roles (the server's order; kept if it is ever missing).
+            const ordered = results.filter(item => item?.id && item?.mediaType)
+                .sort((a, b) => (appearance(a) - appearance(b)) || ((Number(b?.voteCount) || 0) - (Number(a?.voteCount) || 0)));
+            return { items: ordered, title: JE.t('native_details_filmography') };
+        }
+
         const personInfoPromise = getPersonInfo(itemId, signal);
         const statusPromise = JE.jellyseerrAPI?.checkUserStatus();
 
@@ -186,6 +271,19 @@
         if (signal.aborted) return null;
 
         if (!status?.active || !personInfo?.name) return null;
+
+        // No Seerr account (Jellyfin Enhanced request mode): the server's filmography, filtered there
+        // for the viewer. The person's TMDB id comes from the library (searching needs Seerr).
+        if (status.userFound === false) {
+            const tmdb = parseInt(personInfo.tmdbId, 10);
+            if (!JE.discoveryFilter.useNativeFeeds?.(status) || !(tmdb > 0)) return null;
+            const results = await fetchFilmography(tmdb, signal);
+            if (signal.aborted || !results) return null;
+            return {
+                items: results.filter(item => item?.id && item?.mediaType),
+                title: JE.t('discovery_more_from_person', { person: personInfo.name })
+            };
+        }
 
         // Get TMDB person ID
         const tmdbPersonId = personInfo.tmdbId
@@ -224,6 +322,12 @@
         logLabel: 'Person Discovery',
         configKey: 'JellyseerrShowPersonDiscovery',
         getIdFromUrl: JE.discoveryBase.idFromDetailUrl,
+        // A synthetic person page has no other titles: its filmography is this row,
+        // library titles included.
+        enabledFor: (id) => syntheticPersonTmdb(id) > 0,
+        keepLibraryItems: (id) => syntheticPersonTmdb(id) > 0,
+        // Its order (roles before appearances, best known first) holds when movies and series mix.
+        keepListOrder: (id) => syntheticPersonTmdb(id) > 0,
         pageSize: 40,
         resolveItems
     });
