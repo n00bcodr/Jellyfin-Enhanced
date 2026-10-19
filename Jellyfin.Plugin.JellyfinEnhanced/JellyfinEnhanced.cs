@@ -378,6 +378,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // it, registration could write to an already-replaced object and
             // SaveConfiguration would persist empty credentials while the
             // backend row exists.
+            // The administrator's default display language passes the display-language gate on every save and restore (it
+            // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
+            // ships no bundle for is stored as Auto.
+            if (configuration is PluginConfiguration gated)
+            {
+                gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
+            }
+
             lock (AnalyticsCredentialLock)
             {
                 if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)

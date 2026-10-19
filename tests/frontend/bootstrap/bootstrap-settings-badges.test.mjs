@@ -459,19 +459,43 @@ async function languagePanel(t, initial = 'en', target = 'fr') {
   return { ...h, held, transition, timers };
 }
 // Dashcrash §7 (integration rebuild): the language panel saves only a supported language tag; anything else is Auto.
-for (const [chosen, saved] of [['zz-ZZ', ''], ['fr', 'fr'], ['', '']]) test(`choosing ${JSON.stringify(chosen)} in the language panel saves ${JSON.stringify(saved)}`, async t => {
-  const h = panel(t, { config: { ...badges, SupportedLanguages: ['en', 'fr'] }, settings: { displayLanguage: 'en' } });
+// Stage 1 fix round 3 (RBS1-R3-2): by the shared policy (a shipped bundle, exactly or by base language), saved in canonical
+// case, whatever the browser knows.
+for (const [chosen, saved] of [['zz-ZZ', ''], ['fr', 'fr'], ['', ''], ['haw-AU', ''], ['kok-GB', ''], ['ja', ''], ['pt-br', 'pt-BR']]) test(`choosing ${JSON.stringify(chosen)} in the language panel saves ${JSON.stringify(saved)}`, async t => {
+  const h = panel(t, { config: badges, settings: { displayLanguage: 'en' } });
   h.window.fetch = async () => ({ ok: false });
   h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr', 'zz-ZZ'] : [];
   h.load('enhanced/settingspanel/ui-panel-language.js');
   h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
   await tick();
   const select = h.document.getElementById('displayLanguageSelect');
-  for (const code of ['', 'zz-ZZ', 'fr']) if (![...select.options].some(o => o.value === code)) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
+  for (const code of ['', chosen]) if (![...select.options].some(o => o.value === code)) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
   h.window.ApiClient.ajax = async request => { if (request.type === 'POST') h.writes.push(request); return []; };
   await h.choose('displayLanguageSelect', chosen);
   assert.equal(select.value, chosen);
   assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, saved);
+});
+
+// The panel shows what the server stored once the save is answered, and offers only languages the policy accepts: a
+// locale newer than this build on GitHub is listed only when it resolves to a shipped bundle (en-AU; not ja or haw).
+for (const [chosen, stored] of [['haw-AU', ''], ['kok-GB', ''], ['en-AU', 'en-AU']]) test(`after choosing ${chosen} the panel shows the stored ${JSON.stringify(stored)}`, async t => {
+  const h = panel(t, { config: badges, settings: { displayLanguage: 'fr' } });
+  h.wire();
+  h.window.fetch = async () => ({ ok: true, json: async () => ['ja.json', 'haw.json', 'en-AU.json', 'fr.json'].map(name => ({ name })) });
+  h.window.ApiClient.ajax = async request => request.url.includes('/locales') ? ['en-US', 'fr'] : [];
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+  await tick();
+  const select = h.document.getElementById('displayLanguageSelect');
+  const offered = [...select.options].map(o => o.value);
+  assert.ok(offered.includes('en-AU') && offered.includes('fr'), offered.join());
+  assert.ok(!offered.includes('ja') && !offered.includes('haw'), offered.join());
+  if (!offered.includes(chosen)) select.appendChild(Object.assign(h.document.createElement('option'), { value: chosen, textContent: chosen }));
+  h.window.ApiClient.ajax = async request => { if (request.type !== 'POST') return []; h.writes.push(request); return { success: true, consents: {}, displayLanguage: stored }; };
+  await h.choose('displayLanguageSelect', chosen);
+  await tick();
+  assert.equal(select.value, stored);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), stored);
 });
 
 function expectReload(h, expected) {

@@ -2323,6 +2323,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/language-policy.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/locales/ar.json",
       "category": "js"
     },
@@ -10423,6 +10427,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.language-policy.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs"
+    },
+    {
       "literal": "config.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
@@ -10504,6 +10512,10 @@
     },
     {
       "literal": "mdblist-ratings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
+    },
+    {
+      "literal": "s folder>/settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Backup/JeBackupService.cs"
     },
     {
@@ -10867,10 +10879,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 627,
+    "files": 628,
     "routes": 292,
     "configuration_properties": 638,
-    "storage_references": 91,
+    "storage_references": 93,
     "scheduled_tasks": 15,
     "locales": 33
   }

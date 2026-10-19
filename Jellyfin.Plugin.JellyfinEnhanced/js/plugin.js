@@ -1073,50 +1073,18 @@
     function seedDisplayLanguage(userId) {
         if (!userId) return;
         const languageKey = `${userId}-language`;
-        // A complete language tag in canonical case (`pt-br` → `pt-BR`), or '' for a literal "undefined"/"null" or a
-        // malformed value (`en-12`, `en-US-US`): JE.languageCode's rule (translations.js), copied for when that module
-        // didn't load.
-        const languageCode = (raw) => {
-            if (typeof raw !== 'string') return '';
-            const code = raw.trim();
-            const match = /^([A-Za-z]{2,3})(?:-([A-Za-z]{4}))?(?:-([A-Za-z]{2}|[0-9]{3}))?((?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$/.exec(code);
-            if (!code || /^(undefined|null|nan|true|false)$/i.test(code) || !match) return '';
-            const variants = match[4].split('-').filter(Boolean).map(v => v.toLowerCase());
-            if (new Set(variants).size !== variants.length) return '';
-            const normalized = [match[1].toLowerCase(),
-                match[2] ? match[2][0].toUpperCase() + match[2].slice(1).toLowerCase() : '',
-                match[3] ? match[3].toUpperCase() : '', ...variants].filter(Boolean).join('-');
-            try {
-                if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
-            } catch (e) {
-                return '';
-            }
-            return normalized;
-        };
-        // What JE writes is also a supported language (JE.supportedLanguageCode in translations.js; the same rule here
-        // when that module didn't load): one JE ships (exactly or its base language) or one the browser has data for.
-        const supportedCode = (raw) => {
-            if (typeof JE.supportedLanguageCode === 'function') return JE.supportedLanguageCode(raw);
-            const code = languageCode(raw);
-            if (!code) return '';
-            const lower = code.toLowerCase(), base = lower.split('-')[0];
-            const shipped = Array.isArray(JE.pluginConfig?.SupportedLanguages) ? JE.pluginConfig.SupportedLanguages : [];
-            if (shipped.some(c => typeof c === 'string' && (c.toLowerCase() === lower || c.toLowerCase() === base))) return code;
-            try {
-                return Intl.DateTimeFormat.supportedLocalesOf([code]).length > 0 ? code : '';
-            } catch (e) {
-                return '';
-            }
-        };
+        // The display-language rule is the translations module's (JE.languageCode / JE.supportedLanguageCode: the policy data
+        // shared with the server). Without that module nothing is written or removed: one rule, one implementation.
+        if (typeof JE.languageCode !== 'function' || typeof JE.supportedLanguageCode !== 'function') return;
         // A stringified "undefined" or "null", or a malformed value, in the shared key is no one's choice (and can make
         // Intl throw): it goes, so Jellyfin and JE fall back to the user's or the browser's language (or the
         // administrator's default below). A valid tag someone chose there is never touched.
         const stored = localStorage.getItem(languageKey);
-        if (stored !== null && stored.trim() !== '' && !languageCode(stored)) localStorage.removeItem(languageKey);
+        if (stored !== null && stored.trim() !== '' && !JE.languageCode(stored)) localStorage.removeItem(languageKey);
         // Only seed the admin's default language if the user has no language set yet.
         // This prevents overwriting the user's own language choice on every page load.
         if (localStorage.getItem(languageKey) === null) {
-            const desiredLanguage = supportedCode(JE.currentSettings?.displayLanguage);
+            const desiredLanguage = JE.supportedLanguageCode(JE.currentSettings?.displayLanguage);
             if (desiredLanguage) localStorage.setItem(languageKey, desiredLanguage);
         }
     }

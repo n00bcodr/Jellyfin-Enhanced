@@ -130,6 +130,20 @@ public class AdminUserSettingsTests
         foreach(var banned in new[]{"autoSeasonRequests","autoMovieRequests","listSwapIn","emailVerified","showFileSizes"})
             Assert.Equal(400,f.Patch("display","\""+banned+"\":true").Status);
     }
+    // Stage 1 fix round 3 (RBS1-R3-1): an administrator's display change rewrites the person's settings.json, and that write
+    // passes the display-language gate like every other: an older file's malformed or unshipped language is stored as Auto.
+    [Theory]
+    [InlineData("en-US-US", "")][InlineData("haw-AU", "")][InlineData("pt-br", "pt-BR")][InlineData("en-AU", "en-AU")]
+    public void ADisplayChangeStoresThePersonsDisplayLanguageThroughTheGate(string stored, string expected)
+    {
+        using var f = new Fixture(); var id=f.R.Member.ToString("N");
+        var path=f.Files.Write(id,"{\"DisplayLanguage\":\""+stored+"\",\"ShowFileSizes\":true,\"FuturePreference\":7}");
+        Assert.Equal(200,f.Patch("display","\"listStatus\":false").Status);
+        var file=JsonDocument.Parse(File.ReadAllText(path)).RootElement;
+        Assert.Equal(expected,file.GetProperty("DisplayLanguage").GetString());
+        Assert.True(file.GetProperty("ShowFileSizes").GetBoolean()); Assert.Equal(7,file.GetProperty("FuturePreference").GetInt32());
+        Assert.False(file.GetProperty("ListStatus").GetBoolean());
+    }
     [Fact]
     public void CorruptSettingsAreUnavailableAndNeverReplacedOrQuarantined()
     {

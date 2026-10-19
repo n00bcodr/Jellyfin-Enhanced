@@ -250,8 +250,9 @@
     });
     settingsEffects.set('language-mirror', ({ state, reason }) => {
         if (reason !== 'saved' && reason !== 'read') return;
-        // Only a real, supported language tag is mirrored: a stored "undefined" or "null", a malformed or an unsupported
-        // value mirrors as Auto (''). Without the translations module's check nothing is written.
+        // What the server stored is mirrored (a save's answer sets it as persisted; reads hand out the gated value). The
+        // same rule again here: a stored "undefined" or "null", a malformed value or a language JE ships no bundle for
+        // mirrors as Auto (''). Without the translations module's check nothing is written.
         if (typeof JE.supportedLanguageCode !== 'function') return;
         const language = JE.supportedLanguageCode(resolveSettings(state.persisted).displayLanguage);
         const key = `${ApiClient.getCurrentUserId()}-language`;
@@ -402,6 +403,9 @@
                         data: entry.consentKey ? JSON.stringify({ Field: entry.consentKey[0].toUpperCase() + entry.consentKey.slice(1), Value: entry.document[entry.consentKey] }) : serialized,
                         contentType: 'application/json' });
                     entry.consents = response?.consents || response?.Consents;
+                    // The display language as the server stored it (its gate's answer): what the shared key mirrors.
+                    const stored = response?.displayLanguage ?? response?.DisplayLanguage;
+                    if (typeof stored === 'string') entry.displayLanguage = stored;
                     if (isActiveDocument(state)) state.serialized = entry.consentKey ? undefined : serialized;
                 });
                 state.chain = save.catch(() => {});
@@ -414,6 +418,7 @@
                 const previousPersisted = state.persisted;
                 if (succeeded) {
                     state.persisted = entry.consentKey ? { ...previousPersisted, [entry.consentKey]: entry.document[entry.consentKey] } : entry.document;
+                    if (entry.displayLanguage !== undefined) state.persisted.displayLanguage = entry.displayLanguage;
                     for (const key of consentKeys) {
                         const pascal = key[0].toUpperCase() + key.slice(1);
                         const value = entry.consents && Object.hasOwn(entry.consents, pascal) ? entry.consents[pascal] : entry.consents?.[key];

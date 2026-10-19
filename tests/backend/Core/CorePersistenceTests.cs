@@ -14,9 +14,11 @@ public class CorePersistenceTests
     {
         using var f = new CoreFixture();
         var id = Guid.Parse(User);
-        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new JellyfinEnhancedUserSettings { DisplayLanguage = "日本語", AutoPauseEnabled = true });
+        // A Unicode value round-trips (in a field without a rule: the display language passes the language gate, stage 1
+        // fix round 3, so it would be stored as Auto).
+        f.Manager.SaveUserConfiguration(id.ToString("D").ToUpperInvariant(), "settings.json", new JellyfinEnhancedUserSettings { LastOpenedTab = "日本語", AutoPauseEnabled = true });
         var reopened = new UserConfigurationManager(f.Paths.Object, f.Logger);
-        Assert.Equal("日本語", reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").DisplayLanguage);
+        Assert.Equal("日本語", reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(User, "settings.json").LastOpenedTab);
         Assert.False(reopened.GetUserConfiguration<JellyfinEnhancedUserSettings>(Guid.NewGuid().ToString("N"), "settings.json").AutoPauseEnabled);
         Assert.Same(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(id.ToString("D").ToUpperInvariant(), "settings.json"));
         Assert.NotSame(f.Manager.GetUserFileLock(User, "settings.json"), reopened.GetUserFileLock(User, "other.json"));

@@ -135,6 +135,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             => PersonalConsents.ToDictionary(c => c.Field, c => c.Get(settings), StringComparer.Ordinal);
 
         /// <summary>
+        /// The display-language gate (stage 1 fix round 3): every writer that puts a person's settings.json in place stores its
+        /// <c>DisplayLanguage</c> as <see cref="LanguageTags.Sanitize"/> leaves it, whatever else it writes. Typed writers
+        /// (a save, the first-read seed, a reset, the consent operation), document writers (an administrator's display change)
+        /// and any read-modify-write pass it in <see cref="SaveUserConfiguration"/>; a JE backup restore and the start-up
+        /// folder migration, which put files in place themselves, pass it through <see cref="GateSettingsFile"/>. Changes the
+        /// document in place (the property in any case; a JSON null stays, it reads as Auto) and returns whether it did.
+        /// </summary>
+        public static bool GateSettingsDocument(JObject document)
+        {
+            var changed = false;
+            foreach (var property in document.Properties()
+                .Where(p => string.Equals(p.Name, nameof(JellyfinEnhancedUserSettings.DisplayLanguage), StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                if (property.Value.Type == JTokenType.Null) continue;
+                var stored = property.Value.Type == JTokenType.String ? (string?)property.Value : null;
+                var gated = LanguageTags.Sanitize(stored);
+                if (stored == gated) continue;
+                property.Value = gated;
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        /// <summary>
+        /// A settings.json document as bytes, through <see cref="GateSettingsDocument"/>: the same bytes when its display
+        /// language passes (or it is no JSON object, which every reader treats as unusable anyway), else the document with only
+        /// that field changed (every other field, date-like strings and decimals included, kept as written).
+        /// </summary>
+        public static byte[] GateSettingsBytes(byte[] bytes)
+        {
+            JObject document;
+            try
+            {
+                using var text = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                using var reader = new JsonTextReader(text) { DateParseHandling = DateParseHandling.None, FloatParseHandling = FloatParseHandling.Decimal };
+                if (JToken.ReadFrom(reader) is not JObject parsed || reader.Read()) return bytes;
+                document = parsed;
+            }
+            catch (JsonException)
+            {
+                return bytes;
+            }
+
+            return GateSettingsDocument(document) ? System.Text.Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(document, Formatting.Indented)) : bytes;
+        }
+
+        /// <summary>
+        /// Puts a settings.json file that was placed without <see cref="SaveUserConfiguration"/> (the start-up folder migration)
+        /// through the gate, rewriting it atomically only when it changes. The caller holds the bracket it was placed in.
+        /// </summary>
+        private void GateSettingsFile(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var bytes = File.ReadAllBytes(path);
+                var gated = GateSettingsBytes(bytes);
+                if (ReferenceEquals(gated, bytes)) return;
+                var temp = path + ".tmp." + Guid.NewGuid().ToString("N");
+                File.WriteAllBytes(temp, gated);
+                File.Move(temp, path, overwrite: true);
+                _logger.Info($"Stored the display language of '{path}' as the shared language policy accepts it.");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning($"Could not check the display language of '{path}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
         /// the stored settings are read (strictly: a corrupt file is never overwritten), every personal consent is kept from
         /// them whoever saves (<see cref="KeepPersonalConsents"/>), the display language is a supported tag or Auto
@@ -147,8 +218,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
                 KeepPersonalConsents(settings, existing);
-                // A display language JE stores is a supported language tag, else Auto: never "undefined", "null" or a
-                // malformed value the client would mirror into Jellyfin's shared language key (dashcrash §7).
+                // A display language JE stores is a tag of a shipped bundle, else Auto: never "undefined", "null", a malformed
+                // value or a language without a bundle the client would mirror into Jellyfin's shared language key (dashcrash
+                // §7). The same gate as SaveUserConfiguration's, applied here too so the comparison and the answer see it.
                 settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
 
                 var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
@@ -192,6 +264,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 var settings = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
                 consent.Set(settings, value);
+                // The stored document passes the display-language gate (SaveUserConfiguration); the answer says what it stored.
+                settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
                 SaveUserConfiguration(userId, SettingsFileName, settings);
                 return settings;
             }
@@ -461,6 +535,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     token = JToken.FromObject(config);
                 }
 
+                if (string.Equals(fileName, SettingsFileName, StringComparison.OrdinalIgnoreCase) && token is JObject settingsDocument)
+                {
+                    GateSettingsDocument(settingsDocument);
+                }
+
                 var jsonToSave = JsonConvert.SerializeObject(token, Formatting.Indented);
 
                 File.WriteAllText(tempPath, jsonToSave);
@@ -611,6 +690,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             if (!Directory.Exists(_configBaseDir)) return;
 
             var allDirs = Directory.GetDirectories(_configBaseDir);
+            // Folders whose settings.json this migration put in place: they pass the display-language gate afterwards.
+            var placed = new HashSet<string>(StringComparer.Ordinal);
             var migrated = 0;
             var renamed  = 0;
             var failed   = 0;
@@ -635,6 +716,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 try
                 {
+                    placed.Add(dstDir);
                     if (!Directory.Exists(dstDir))
                     {
                         Directory.Move(srcDir, dstDir);
@@ -716,6 +798,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     failed++;
                     _logger.Error($"Failed to migrate user dir '{srcName}': {ex}");
                 }
+            }
+
+            foreach (var dir in placed)
+            {
+                GateSettingsFile(Path.Combine(dir, SettingsFileName));
             }
 
             if (renamed + migrated + failed > 0)

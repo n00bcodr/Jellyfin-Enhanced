@@ -167,23 +167,39 @@ test('JE.languageCode accepts language tags only', t => {
 });
 
 // Dashcrash §7 (integration rebuild): what JE WRITES (the shared `${userId}-language` key, its own displayLanguage) is
-// a valid language tag that is also supported: a language JE ships (exactly, or its base language) or one the browser
-// has locale data for. Anything else is '' (Auto). Empty stays Auto.
-test('JE.supportedLanguageCode accepts only supported language tags', t => {
+// a valid language tag that resolves to a locale bundle JE ships (exactly, or its base language). Anything else is ''
+// (Auto). Empty stays Auto. Stage 1 fix round 3 (RBS1-R3-2): the shipped bundles are data carried by translations.js
+// (generated from js/locales with the server's js/language-policy.json), not what the browser happens to know, and not
+// the public configuration (translations load before it arrives).
+test('JE.supportedLanguageCode accepts only tags of a shipped bundle', t => {
   const h = setup(t, async () => jsonResponse({}));
   const write = h.JE.supportedLanguageCode;
   assert.equal(typeof write, 'function');
-  h.JE.pluginConfig = { SupportedLanguages: ['en', 'en-GB', 'pr', 'gsw', 'pt-BR'] };
   assert.equal(write('en-au'), 'en-AU');   // a region of a shipped language
-  assert.equal(write('PT-br'), 'pt-BR');
+  assert.equal(write('PT-br'), 'pt-BR');   // a shipped bundle exactly
   assert.equal(write('pr'), 'pr');         // JE's own locale, unknown to Intl
-  assert.equal(write('ja'), 'ja');         // not shipped, but the browser knows it (a newer remote locale)
   for (const value of [undefined, null, '', '  ', 'undefined', 'null', 'NULL', 'nan', 'en_US', 'en-', 'e', '../en', 42, {}]) assert.equal(write(value), '', String(value));
-  for (const unsupported of ['xx', 'zz-ZZ', 'qaa']) assert.equal(write(unsupported), '', unsupported);
-  // Without the server's list only the browser's locale data counts.
-  h.JE.pluginConfig = {};
-  assert.equal(write('pr'), '');
-  assert.equal(write('en-AU'), 'en-AU');
+  // The browser knows these (Intl falls back to the language), JE ships no bundle for them.
+  for (const unsupported of ['xx', 'zz-ZZ', 'qaa', 'ja', 'haw-AU', 'kok-GB', 'zh-Hant']) assert.equal(write(unsupported), '', unsupported);
+  // Nothing in the public configuration changes the rule.
+  h.JE.pluginConfig = { SupportedLanguages: ['ja'] };
+  assert.equal(write('ja'), '');
+  assert.equal(write('pr'), 'pr');
+});
+
+test('the browser never decides which languages are tags or accepted (no Intl lookups)', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  // A browser that claims every locale, and one that refuses them all.
+  const everything = { DateTimeFormat: { supportedLocalesOf: list => [].concat(list) }, getCanonicalLocales: list => [].concat(list) };
+  const nothing = { DateTimeFormat: { supportedLocalesOf: () => [] }, getCanonicalLocales: () => { throw new RangeError('Incorrect locale information provided'); } };
+  for (const intl of [everything, nothing]) {
+    h.window.Intl = intl;
+    assert.equal(h.JE.supportedLanguageCode('haw-AU'), '');
+    assert.equal(h.JE.supportedLanguageCode('ja'), '');
+    assert.equal(h.JE.supportedLanguageCode('pr'), 'pr');
+    assert.equal(h.JE.supportedLanguageCode('en-AU'), 'en-AU');
+    assert.equal(h.JE.languageCode('zh-hant-tw'), 'zh-Hant-TW');
+  }
 });
 
 // Stage 1 fix round 2 (RBS1-BEH-R2-2): the complete tag's syntax first (language, then optional script, region and
@@ -191,6 +207,11 @@ test('JE.supportedLanguageCode accepts only supported language tags', t => {
 // also read by ApiDisplayLanguageTests), so the client and server rules are the same.
 const LANGUAGE_TABLE = JSON.parse(readFileSync(new URL('../../backend/Api/language-tags.json', import.meta.url), 'utf8'));
 const SHIPPED = readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
+// Every shipped bundle is accepted as itself, and nothing in the table depends on the browser's locale data.
+test('every shipped bundle is a language JE writes', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  assert.deepEqual(SHIPPED.filter(code => h.JE.supportedLanguageCode(code) !== code), []);
+});
 test('JE.languageCode follows the shared language-tag table', t => {
   const h = setup(t, async () => jsonResponse({}));
   const wrong = LANGUAGE_TABLE.syntax.filter(([raw, expected]) => h.JE.languageCode(raw) !== expected).map(([raw, expected]) => `${raw} → ${h.JE.languageCode(raw)} (expected ${expected})`);
@@ -198,7 +219,6 @@ test('JE.languageCode follows the shared language-tag table', t => {
 });
 test('JE.supportedLanguageCode follows the shared write table with the shipped languages', t => {
   const h = setup(t, async () => jsonResponse({}));
-  h.JE.pluginConfig = { SupportedLanguages: SHIPPED };
   const wrong = LANGUAGE_TABLE.write.filter(([raw, expected]) => h.JE.supportedLanguageCode(raw) !== expected).map(([raw, expected]) => `${raw} → ${h.JE.supportedLanguageCode(raw)} (expected ${expected})`);
   assert.deepEqual(wrong, []);
 });

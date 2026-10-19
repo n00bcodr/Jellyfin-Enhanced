@@ -11,9 +11,11 @@ using Moq;
 namespace JE.Tests;
 
 // Dashcrash §7 (integration rebuild): JE never stores an invalid display language. A person's DisplayLanguage, and the
-// administrator's default as each person's first or reset setting, is a supported language tag (a language JE ships,
-// exactly or by its base language, or a culture the server knows) or Auto (""): never a literal "undefined" or "null",
-// a malformed or an unsupported value, which the client would otherwise mirror into Jellyfin's shared language key.
+// administrator's default as each person's first or reset setting, is a language tag that resolves to a locale bundle JE
+// ships (exactly, or its base language) or Auto (""): never a literal "undefined" or "null", a malformed value or a
+// language JE has no bundle for, which the client would otherwise mirror into Jellyfin's shared language key. Stage 1 fix
+// round 3 (RBS1-R3-2): the rule is data (js/language-policy.json, generated from js/locales), the same on the client; no
+// culture the server happens to know makes a language acceptable.
 [Collection("Plugin singleton")]
 public class ApiDisplayLanguageTests
 {
@@ -119,21 +121,40 @@ public class ApiDisplayLanguageTests
         Assert.Empty(wrong);
     }
 
+    // Stage 1 fix round 3 (RBS1-R3-2): the server's shipped languages are the policy file, which lists exactly the locale
+    // files (tests/runner/tests/test_language_policy.py checks it is current) and the locale bundles the build embeds.
     [Fact]
-    public void ThePublicConfigurationListsTheLanguagesJeShips()
+    public void TheServersShippedLanguagesAreThePolicyFileAndTheBundlesTheBuildEmbeds()
+    {
+        var root = Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "js");
+        using var policy = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "language-policy.json")));
+        var listed = policy.RootElement.GetProperty("shipped").EnumerateArray().Select(e => e.GetString()!).ToList();
+        var files = Directory.GetFiles(Path.Combine(root, "locales"), "*.json")
+            .Select(p => Path.GetFileNameWithoutExtension(p)!).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+        Assert.Equal(files, listed);
+        Assert.Equal(listed, Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags.Bundled);
+        const string Prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
+        var embedded = typeof(Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags).Assembly.GetManifestResourceNames()
+            .Where(n => n.StartsWith(Prefix, StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal))
+            .Select(n => n[Prefix.Length..^".json".Length]).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+        Assert.Equal(listed, embedded);
+    }
+
+    [Fact]
+    public void ThePanelListsTheShippedLanguagesAndThePublicConfigurationCarriesNoSecondList()
     {
         using var f = new ApiPluginFixture();
         var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger);
         var controller = ApiAssetTests.Controller(f.Core, maintenance);
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
-        var languages = document.RootElement.GetProperty("SupportedLanguages").EnumerateArray().Select(e => e.GetString()).ToList();
+        // The client carries the policy itself (translations.js, generated from the same file): no list to drift from it.
+        Assert.False(document.RootElement.TryGetProperty("SupportedLanguages", out _));
         var shipped = Directory.GetFiles(Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "js", "locales"), "*.json")
             .Select(Path.GetFileNameWithoutExtension).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
-        Assert.Equal(shipped, languages);
-        Assert.Contains("en", languages);
-        Assert.Contains("pr", languages);
-        // The panel's list is the same, without the base English.
+        Assert.Contains("en", shipped);
+        Assert.Contains("pr", shipped);
+        // The panel's list is the shipped bundles, without the base English.
         Assert.Equal(shipped.Where(c => c != "en"), Assert.IsAssignableFrom<IEnumerable<string>>(Assert.IsType<OkObjectResult>(controller.GetAvailableLocales()).Value));
     }
 }

@@ -467,7 +467,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 var temp = target + ".tmp." + Guid.NewGuid().ToString("N");
                 try
                 {
-                    File.WriteAllBytes(temp, bytes);
+                    // A person's settings.json passes the display-language gate (a backup from an older version may hold
+                    // "en-US-US"); every other field, and every other file, is written as the backup holds it.
+                    File.WriteAllBytes(temp, IsPersonalSettings(entry.Substring(DataPrefix.Length)) ? UserConfigurationManager.GateSettingsBytes(bytes) : bytes);
                     // People's settings files among them: put in place inside their version's bracket (the automatic-write
                     // check reads consents from them).
                     UserConfigurationManager.AllSettingsVersion.Mutate(() => File.Move(temp, target, overwrite: true));
@@ -858,6 +860,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         }
 
         private static bool IsUserFolderName(string name) => name.Length == 32 && name.All(Uri.IsHexDigit);
+
+        // "<person's folder>/settings.json" (the folder names the backup lists are the canonical ids).
+        private static bool IsPersonalSettings(string relative)
+        {
+            var parts = relative.Split('/');
+            return parts.Length == 2 && IsUserFolderName(parts[0]) && string.Equals(parts[1], UserConfigurationManager.SettingsFileName, StringComparison.OrdinalIgnoreCase);
+        }
 
         private sealed class SealedBox
         {

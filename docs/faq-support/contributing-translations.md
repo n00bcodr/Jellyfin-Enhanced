@@ -51,7 +51,15 @@ When Weblate is unavailable, maintainers can update locale JSON in the repositor
     node scripts/validate-translations.js validate
     ```
 
-5. Fix errors and review warnings, then submit a pull request describing the language and changes.
+5. For a new language file, regenerate the language list JE accepts, and include both changed files in the pull request:
+
+    ```bash
+    python3 scripts/generate_language_policy.py
+    ```
+
+    It updates `js/language-policy.json` and its copy in `js/enhanced/translations.js`. Until then, the language can't be saved as anyone's choice, and the test suite reports the list as out of date.
+
+6. Fix errors and review warnings, then submit a pull request describing the language and changes.
 
 A passing check does not replace reviewing grammar, meaning, or layout.
 
@@ -82,7 +90,7 @@ Merged translations normally reach your installed plugin with a plugin release. 
 
     For a regional choice such as `fr-CA`, JE uses included French (`fr`) if Canadian French is not included. If no matching included translation can be loaded, JE tries the regional translation from the repository and may then use English without trying the repository's base-language translation.
 
-    The language menu lists translations included with your plugin and checks GitHub for newly added languages. Seeing a new language in the menu does not mean the translations you already have were updated from the repository.
+    The language menu lists translations included with your plugin and checks GitHub for newly added languages. A newly added language is offered only when it is a regional variant of an included one: JE saves a language only when your plugin includes its translation, exactly or by its base language, so a wholly new language becomes available with the plugin release that includes it. Seeing a new language in the menu does not mean the translations you already have were updated from the repository.
 
     **Refresh Translation Cache** asks all clients to clear their saved translations on their next page load. This scheduled task runs when Jellyfin starts by default.
 

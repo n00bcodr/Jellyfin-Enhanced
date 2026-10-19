@@ -49,7 +49,10 @@
                             files.forEach(f => {
                                 if (f.name.endsWith('.json') && f.name !== 'en.json') {
                                     const code = f.name.replace('.json', '');
-                                    if (!serverSet.has(code.toLowerCase())) {
+                                    // Only a language the shared policy accepts (a shipped bundle, exactly or by base
+                                    // language): anything else would be saved as Auto.
+                                    const accepted = typeof JE.supportedLanguageCode === 'function' && JE.supportedLanguageCode(code) !== '';
+                                    if (accepted && !serverSet.has(code.toLowerCase())) {
                                         localeCodes.push(code);
                                     }
                                 }
@@ -115,12 +118,12 @@
             listen(displayLanguageSelect, 'change', async (e) => {
                 const newLang = e.target.value;
 
-                // The store mirrors the persisted document and schedules its session-owned reload. Anything that isn't a
-                // language tag (a stringified "undefined" or "null") is saved as Auto, never written to the shared language key.
-                // Only a supported language tag is saved; anything else is Auto ('').
+                // The store mirrors the persisted document (what the server stored) and schedules its session-owned reload.
+                // Only a tag of a shipped bundle is saved, in canonical case; anything else ("undefined", "null", a malformed
+                // value, a language JE ships no bundle for) is Auto (''), never written to the shared language key.
                 const languageTag = typeof JE.supportedLanguageCode === 'function' ? JE.supportedLanguageCode(newLang) : '';
                 try {
-                    await JE.updateSettings({ displayLanguage: languageTag ? newLang : '' }, { throwOnError: true });
+                    await JE.updateSettings({ displayLanguage: languageTag }, { throwOnError: true });
                 } catch (err) {
                     if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: language settings save failed', err);
                     return;

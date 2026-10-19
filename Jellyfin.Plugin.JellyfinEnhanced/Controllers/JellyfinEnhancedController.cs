@@ -3979,9 +3979,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleFont,
                 config.DefaultSubtitleTextEffect,
                 config.DisableCustomSubtitleStyles,
-                config.DefaultLanguage,
-                // The languages JE ships: the client writes only a supported language into Jellyfin's shared key.
-                SupportedLanguages = LanguageTags.Bundled,
+                // As the display-language gate stores it (a value saved before the gate existed is handed out as Auto). The
+                // client carries the same policy itself (js/enhanced/translations.js), so no language list is sent.
+                DefaultLanguage = LanguageTags.Sanitize(config.DefaultLanguage),
                 // Overlay positions
                 config.QualityTagsPosition,
                 config.GenreTagsPosition,
@@ -5433,6 +5433,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var userConfig = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            // Handed out as the display-language gate stores it: a file written before the gate existed (or restored by an
+            // older version) never gives the client a language to mirror into Jellyfin's shared key. The file isn't rewritten.
+            userConfig.DisplayLanguage = LanguageTags.Sanitize(userConfig.DisplayLanguage);
 
             // IsAdmin reflects the CALLER's admin status (not the target user's, in the
             // rare admin-viewing-another-user's-settings case allowed by
@@ -5501,7 +5504,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
-                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(userConfiguration) });
+                // The display language as stored (the gate's answer), which the client mirrors instead of what it sent.
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(userConfiguration), displayLanguage = userConfiguration.DisplayLanguage });
             }
             catch (Exception ex)
             {
@@ -5549,7 +5553,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value);
-                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings) });
+                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage });
             }
             catch (ArgumentException)
             {

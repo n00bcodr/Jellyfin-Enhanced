@@ -16,67 +16,61 @@
         return code;
     }
 
-    // A complete language tag: a 2-3 letter language, then an optional 4-letter script, an optional region (2 letters or
-    // 3 digits) and variants (5-8 letters or digits, or a digit and 3 more), each variant once. The server's
-    // Helpers/LanguageTags.Canonical and the copy in plugin.js use the same expression (shared table:
-    // tests/backend/Api/language-tags.json).
-    const LANGUAGE_TAG = /^([A-Za-z]{2,3})(?:-([A-Za-z]{4}))?(?:-([A-Za-z]{2}|[0-9]{3}))?((?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$/;
+    // The display-language rule, the same data as the server's (js/language-policy.json, Helpers/LanguageTags.cs): what JE
+    // stores, seeds or writes into Jellyfin's shared language key is a language tag that resolves to a locale bundle JE
+    // ships, exactly or by its base language. Carried here because translations load before the public configuration.
+    // BEGIN language-policy: generated from js/language-policy.json by scripts/generate_language_policy.py (do not edit)
+    const LANGUAGE_POLICY = {
+        "space": " \t\n\r\f\u000b",
+        "reserved": ["undefined", "null", "nan", "true", "false"],
+        "tag": "^(?<language>[A-Za-z]{2,3})(?:-(?<script>[A-Za-z]{4}))?(?:-(?<region>[A-Za-z]{2}|[0-9]{3}))?(?<variants>(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$",
+        "shipped": ["ar", "bg", "ca", "cs", "da", "de", "en", "en-GB", "en-US", "es", "et", "fa", "fi", "fr", "gsw", "he", "hu", "it", "ko", "ml", "nl", "no", "pl", "pr", "pt", "pt-BR", "ru", "sk", "sv", "tr", "uk", "zh-CN", "zh-HK"]
+    };
+    // END language-policy
+    const LANGUAGE_TAG = new RegExp(LANGUAGE_POLICY.tag);
+    const SHIPPED_LANGUAGES = new Set(LANGUAGE_POLICY.shipped.map(code => code.toLowerCase()));
+
+    /** The value without the policy's space characters at either end (ASCII only, as on the server). */
+    function trimSpace(value) {
+        let start = 0, end = value.length;
+        while (start < end && LANGUAGE_POLICY.space.includes(value[start])) start++;
+        while (end > start && LANGUAGE_POLICY.space.includes(value[end - 1])) end--;
+        return value.slice(start, end);
+    }
 
     /**
      * A complete language tag in canonical case (`en-au` → `en-AU`, `zh-hant-tw` → `zh-Hant-TW`), or '' for anything
      * else: a literal "undefined" or "null" (a value stringified by mistake), an empty or malformed value (`en-12`,
-     * `en-US-US`), or one Intl refuses.
+     * `en-US-US`). The policy's syntax rule only: whether JE ships the language isn't checked (reading stays lenient).
      * @param {*} raw A stored or configured value.
      * @returns {string} The tag, or ''.
      */
     function languageCode(raw) {
         if (typeof raw !== 'string') return '';
-        const code = raw.trim();
-        if (!code || /^(undefined|null|nan|true|false)$/i.test(code)) return '';
+        const code = trimSpace(raw);
+        if (LANGUAGE_POLICY.reserved.includes(code.toLowerCase())) return '';
         const match = LANGUAGE_TAG.exec(code);
-        if (!match) return '';
-        const variants = match[4].split('-').filter(Boolean).map(v => v.toLowerCase());
-        if (new Set(variants).size !== variants.length) return '';
-        const normalized = [match[1].toLowerCase(),
-            match[2] ? match[2][0].toUpperCase() + match[2].slice(1).toLowerCase() : '',
-            match[3] ? match[3].toUpperCase() : '', ...variants].filter(Boolean).join('-');
-        try {
-            if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
-        } catch (e) {
-            return '';
-        }
-        return normalized;
+        if (!match || match[0].length !== code.length) return '';
+        const { language, script, region, variants } = match.groups;
+        const list = (variants || '').split('-').filter(Boolean).map(v => v.toLowerCase());
+        if (new Set(list).size !== list.length) return '';
+        return [language.toLowerCase(), script ? script[0].toUpperCase() + script.slice(1).toLowerCase() : '',
+            region ? region.toUpperCase() : '', ...list].filter(Boolean).join('-');
     }
 
     JE.languageCode = languageCode;
 
     /**
-     * Whether JE can show a language: one it ships (exactly, or its base language: the server's list) or one the browser
-     * has locale data for (a newer remote locale is a real language).
-     * @param {string} code A tag from {@link languageCode}.
-     * @returns {boolean} Supported.
-     */
-    function isSupportedLanguage(code) {
-        const lower = code.toLowerCase(), base = lower.split('-')[0];
-        const shipped = Array.isArray(JE.pluginConfig?.SupportedLanguages) ? JE.pluginConfig.SupportedLanguages : [];
-        if (shipped.some(c => typeof c === 'string' && (c.toLowerCase() === lower || c.toLowerCase() === base))) return true;
-        try {
-            return typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat?.supportedLocalesOf === 'function'
-                && Intl.DateTimeFormat.supportedLocalesOf([code]).length > 0;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    /**
      * The language tag JE may WRITE (Jellyfin's shared `${userId}-language` key, its own displayLanguage): a tag
-     * {@link languageCode} accepts that is also supported, else '' (Auto). Reading stays lenient (languageCode).
+     * {@link languageCode} accepts whose bundle JE ships (exactly, or its base language), else '' (Auto). Never what the
+     * browser happens to know (the server stores the same: a save answers what it stored).
      * @param {*} raw A stored, configured or chosen value.
      * @returns {string} The tag, or ''.
      */
     function supportedLanguageCode(raw) {
         const code = languageCode(raw);
-        return code && isSupportedLanguage(code) ? code : '';
+        const lower = code.toLowerCase();
+        return code && (SHIPPED_LANGUAGES.has(lower) || SHIPPED_LANGUAGES.has(lower.split('-')[0])) ? code : '';
     }
 
     JE.supportedLanguageCode = supportedLanguageCode;

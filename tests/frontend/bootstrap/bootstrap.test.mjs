@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, plain, deferred } from '../helpers/harness.mjs';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
 const payload = (extra = {}) => ({ UserId: 'user-a', Version: '1.2.3', PublicConfig: {}, PrivateConfig: null,
@@ -16,7 +16,7 @@ async function until(predicate) {
 }
 // Script transport is simulated; plugin.js, config.js and session.js execute unchanged.
 // Optional feature callbacks are spies to verify the bootstrap dispatch contract.
-function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage = {}, expectedConsoleErrors = [] } = {}) {
+function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage = {}, expectedConsoleErrors = [], translationsModule = true } = {}) {
   let userId = 'user-a';
   const calls = [], scripts = [], initialized = [];
   let translationLoads = 0;
@@ -45,7 +45,11 @@ function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage 
     scripts.push(node);
     queueMicrotask(() => {
       const path = new URL(node.src).pathname;
-      if (path.endsWith('/translations.js')) h.window.JellyfinEnhanced.loadTranslations = async () => { translationLoads++; return { greeting: 'Hello' }; };
+      if (path.endsWith('/translations.js')) {
+        // The real module (its language rule, which the seed writes by), with the locale load simulated.
+        if (translationsModule) h.load('enhanced/translations.js');
+        h.window.JellyfinEnhanced.loadTranslations = async () => { translationLoads++; return { greeting: 'Hello' }; };
+      }
       else if (path.endsWith('/bundle.js')) {
         if (bundle === 'error') { node.onerror(); return; }
         if (bundle === 'ok') {
@@ -151,18 +155,28 @@ for (const [stored, admin, expected] of [['undefined', 'pt-br', 'pt-BR'], ['null
   assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
 });
 
-// Dashcrash §7 (integration rebuild): the bootstrap seed writes the shared native key only with a valid, supported
-// language tag; an absent, empty, junk, malformed or unsupported configured value seeds nothing, and a malformed browser
-// language is never copied in.
-for (const [configured, list, expected] of [
-  [undefined, undefined, null], ['', undefined, null], ['en-AU', undefined, 'en-AU'], ['en-au', ['en'], 'en-AU'],
-  ['undefined', undefined, null], ['null', undefined, null], ['en_US!', undefined, null], ['english', undefined, null],
-  ['zz-ZZ', undefined, null], ['xx', ['en', 'pr'], null], ['pr', ['en', 'pr'], 'pr']
-]) test(`the seed writes ${expected} for a configured language ${JSON.stringify(configured)} (${list ? 'list ' + list : 'no list'})`, async t => {
-  const config = { ...(configured === undefined ? {} : { DefaultLanguage: configured }), ...(list ? { SupportedLanguages: list } : {}) };
+// Dashcrash §7 (integration rebuild): the bootstrap seed writes the shared native key only with a valid language tag of a
+// shipped bundle; an absent, empty, junk, malformed or unshipped configured value seeds nothing, and a malformed browser
+// language is never copied in. Stage 1 fix round 3 (RBS1-R3-2): the rule is the translations module's (shared data with
+// the server), whatever the public configuration or the browser says.
+for (const [configured, expected] of [
+  [undefined, null], ['', null], ['en-AU', 'en-AU'], ['en-au', 'en-AU'], ['undefined', null], ['null', null], ['en_US!', null],
+  ['english', null], ['zz-ZZ', null], ['xx', null], ['pr', 'pr'], ['haw-AU', null], ['kok-GB', null], ['ja', null]
+]) test(`the seed writes ${expected} for a configured language ${JSON.stringify(configured)}`, async t => {
+  const config = { ...(configured === undefined ? {} : { DefaultLanguage: configured }), SupportedLanguages: ['ja', 'haw', 'kok', 'xx'] };
   const h = setup(t, { data: payload({ PublicConfig: config }) });
   await until(() => h.plugin.initialized);
   assert.equal(h.window.localStorage.getItem('user-a-language'), expected);
+});
+
+// One rule, one implementation: without the translations module the seed writes nothing (no seed, no removal).
+test('without the translations module the seed neither seeds nor removes a language', async t => {
+  const h = setup(t, { translationsModule: false, data: payload({ PublicConfig: { DefaultLanguage: 'fr' } }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+  const junk = setup(t, { translationsModule: false, data: payload({ PublicConfig: {} }), storage: { 'user-a-language': 'en_US!' } });
+  await until(() => junk.plugin.initialized);
+  assert.equal(junk.window.localStorage.getItem('user-a-language'), 'en_US!');
 });
 
 for (const browser of ['undefined', 'null', 'en_US!', '']) test(`a malformed browser language (${JSON.stringify(browser)}) is never written to the shared key`, async t => {
@@ -296,13 +310,11 @@ test('a household contact that starts a sentence starts with a capital ("the adm
   assert.equal(t1('ready', { title: 'iCarly' }), 'iCarly is ready', 'only the contact is touched, never a title');
 });
 
-// Stage 1 fix round 2 (RBS1-BEH-R2-2): the seed's own copy of the rule (used when translations.js didn't load, as
-// here) follows the table the server and translations.js use (tests/backend/Api/language-tags.json): the complete tag
-// first, then the shipped-language match.
+// Stage 1 fix round 2 (RBS1-BEH-R2-2) / fix round 3: the seed follows the table the server and translations.js use
+// (tests/backend/Api/language-tags.json): the complete tag first, then the shipped-bundle match.
 const LANGUAGE_TABLE = JSON.parse(readFileSync(new URL('../../backend/Api/language-tags.json', import.meta.url), 'utf8'));
-const SHIPPED = readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
 for (const [raw, expected] of LANGUAGE_TABLE.write) test(`the seed writes ${JSON.stringify(expected || null)} for a configured language ${JSON.stringify(raw)} (shared table)`, async t => {
-  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: raw, SupportedLanguages: SHIPPED } }) });
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: raw } }) });
   await until(() => h.plugin.initialized);
   assert.equal(h.window.localStorage.getItem('user-a-language'), expected || null);
 });
