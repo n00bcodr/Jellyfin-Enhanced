@@ -685,7 +685,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (_store.Generation != generation || !_ledger.Database.Available) break;
                     var asked = _ledger.Find(want.Id) ?? want;
                     var finals = new List<NotifyFinal>();
-                    var later = false;
                     foreach (var approver in approvers)
                     {
                         var ask = TitleParams(key.Title, null);
@@ -699,15 +698,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         if (asked.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", asked.Input.Seasons.Order());
                         if (asked.Input.Variant == "4k") ask["variant"] = "4k";
                         var verdict = _dispatcher.Final(Alert(approver, NotifyKind.Approval, NotifyDispatcher.AskEventPrefix + asked.Id, key.Title.ToString(), null, ask, n.At));
-                        if (verdict.Verdict is NotifyVerdict.Off or NotifyVerdict.Wait)
+                        switch (verdict.Effect)
                         {
-                            later = true;
-                            break;
+                            case NotifyEffect.Leave:
+                            case NotifyEffect.Postpone:
+                                // Switched off, or something to wait for: the notice is left (with the rest) for a later round.
+                                return told;
+                            case NotifyEffect.Suppress:
+                                // Not for this administrator: the notice is taken with the others' rows.
+                                break;
+                            case NotifyEffect.Act:
+                                finals.Add(verdict);
+                                break;
                         }
-                        finals.Add(verdict);
                     }
-                    if (later) break;
-                    var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? finals.Where(f => f.Sends && Add(tx, f) != null).ToList() : new List<NotifyFinal>(), new List<NotifyFinal>()).Result;
+                    var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? finals.Where(f => Add(tx, f) != null).ToList() : new List<NotifyFinal>(), new List<NotifyFinal>()).Result;
                     foreach (var f in created) Announce(f);
                     told += created.Count;
                     continue;
@@ -729,11 +734,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Told at all? The final gate before the slow steps: one it refuses now (the request moved on, the requester gone
                 // or with the kind off, too old) ends here; notifications switched off leave it and the rest for a later round.
                 var early = _dispatcher.Final(Alert(want.UserId, kind, eventKey, key.Title.ToString(), null, p, n.At));
-                if (early.Verdict == NotifyVerdict.Off) break;
-                if (early.Verdict == NotifyVerdict.Refuse)
+                switch (early.Effect)
                 {
-                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
-                    continue;
+                    case NotifyEffect.Leave:
+                        return told;
+                    case NotifyEffect.Suppress:
+                        _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                        continue;
+                    case NotifyEffect.Postpone:
+                    case NotifyEffect.Act:
+                        // Decided again after the slow steps.
+                        break;
                 }
                 if (_titleMeta != null && ActiveViewer(want.UserId) is { } viewer
                     && (await _titleMeta(new[] { key.ToString() }, viewer, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } meta)
@@ -751,15 +762,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // fair between people, expiring from the notice's own time), so it never holds the ledger's page.
                 if (_store.Generation != generation || !_ledger.Database.Available) break;
                 var final = _dispatcher.Final(Alert(want.UserId, kind, eventKey, key.Title.ToString(), null, p, n.At));
-                if (final.Verdict == NotifyVerdict.Off) break;
-                if (final.Verdict == NotifyVerdict.Wait)
+                switch (final.Effect)
                 {
-                    var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
-                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
-                    continue;
+                    case NotifyEffect.Leave:
+                        return told;
+                    case NotifyEffect.Postpone:
+                    {
+                        var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
+                        _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
+                        continue;
+                    }
+
+                    case NotifyEffect.Suppress:
+                        _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                        continue;
+                    case NotifyEffect.Act:
+                        if (Notify(final, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
+                        else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                        continue;
                 }
-                if (Notify(final, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
-                else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
             }
             return told;
         }
@@ -824,28 +845,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Before its preparation: one the final gate refuses now (too old, the requester gone or with the kind off, the
                 // request moved on) is dropped at once; notifications switched off leave it and the rest.
                 var early = _dispatcher.Final(WaitAlert(wait, payload));
-                if (early.Verdict == NotifyVerdict.Off) break;
-                if (early.Verdict == NotifyVerdict.Refuse)
+                switch (early.Effect)
                 {
-                    _store.DropAlertWait(wait, generation);
-                    continue;
+                    case NotifyEffect.Leave:
+                        return told;
+                    case NotifyEffect.Suppress:
+                        _store.DropAlertWait(wait, generation);
+                        continue;
+                    case NotifyEffect.Postpone:
+                    case NotifyEffect.Act:
+                        // Decided again after its preparation.
+                        break;
                 }
                 if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key && _dispatcher.OutcomeInput(key, wait.EventKey, payload) is { } input)
                     await _policy.PrepareVisibilityAsync(wait.User, input, cancellationToken).ConfigureAwait(false);
                 if (_store.Generation != generation) break;
                 var final = _dispatcher.Final(WaitAlert(wait, payload));
-                if (final.Verdict == NotifyVerdict.Off) break;
-                if (final.Verdict == NotifyVerdict.Wait)
+                switch (final.Effect)
                 {
-                    _store.RetryAlertWait(wait, final.Until!.Value, generation);
-                    continue;
+                    case NotifyEffect.Leave:
+                        return told;
+                    case NotifyEffect.Postpone:
+                        _store.RetryAlertWait(wait, final.Until!.Value, generation);
+                        continue;
+                    case NotifyEffect.Suppress:
+                        _store.DropAlertWait(wait, generation);
+                        continue;
+                    case NotifyEffect.Act:
+                        if (Notify(final, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation)) told++;
+                        else _store.DropAlertWait(wait, generation);
+                        continue;
                 }
-                if (!Notify(final, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation))
-                {
-                    _store.DropAlertWait(wait, generation);
-                    continue;
-                }
-                told++;
             }
             return told;
         }
@@ -1050,15 +1080,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // before its send). The kind switched off, an arrival too old to announce, a title they can't open or hid (Hidden
             // Content, on any copy of it): handled with no notification. Hidden Content that can't be read now, or notifications
             // switched off meanwhile: nothing written, looked at again (when they are back on, the first sweep looks again).
-            var since = arrived is DateTime at ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)) : (DateTimeOffset?)null;
+            // Its origin: when the copy arrived; unknown, this look (it became ready now).
+            var since = arrived is DateTime at ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)) : now;
             var final = _dispatcher.Final(Alert(viewer.UserId, NotifyKind.Ready, eventKey, key.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p, since));
-            if (final.Verdict is NotifyVerdict.Off or NotifyVerdict.Wait) return;
-            if (final.Verdict == NotifyVerdict.Refuse)
+            switch (final.Effect)
             {
-                Written(key, _store.InTransaction(generation, Handle, false).Done);
-                return;
+                case NotifyEffect.Leave:
+                case NotifyEffect.Postpone:
+                    // Nothing written: looked at again.
+                    return;
+                case NotifyEffect.Suppress:
+                    Written(key, _store.InTransaction(generation, Handle, false).Done);
+                    return;
+                case NotifyEffect.Act:
+                    if (!Notify(final, Handle, generation)) Written(key, _store.Generation == generation);
+                    return;
             }
-            if (!Notify(final, Handle, generation)) Written(key, _store.Generation == generation);
         }
 
         // A request's part that arrived after it was asked for (so a first look that came late still tells it).
@@ -1146,7 +1183,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // A joining id's copies are checked too when the batch is sent.
             var written = _store.InTransaction(generation, tx =>
             {
-                var wanted = new List<(int Season, int Episode, Guid Id)>();
+                var wanted = new List<(int Season, int Episode, Guid Id, DateTimeOffset At)>();
                 var noted = new HashSet<Guid>();
                 foreach (var (number, (id, added)) in arrivals)
                 {
@@ -1161,7 +1198,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     }
                     if (!fresh) continue;
                     if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor) continue;
-                    wanted.Add((number.Season, number.Episode, id));
+                    // Its own arrival travels with it to the flush (4f round 10): when Jellyfin added it, else this look.
+                    var arrival = added is DateTime when && when <= now.UtcDateTime ? new DateTimeOffset(DateTime.SpecifyKind(when, DateTimeKind.Utc)) : now;
+                    wanted.Add((number.Season, number.Episode, id, arrival));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
                 if (wanted.Count > 0 && prefs.Episodes)
@@ -1248,6 +1287,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             public int E { get; set; }
 
             public string? I { get; set; }
+
+            /// <summary>When it arrived (Unix ms; 4f round 10). Null in a batch made before: the batch's own start.</summary>
+            public long? A { get; set; }
         }
 
         private sealed class BatchState
@@ -1318,7 +1360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // Keep every series item the interest sees and any joining id needed to check its copies at send time.
-        private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
+        private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id, DateTimeOffset At)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
         {
             var existing = tx.Batch(user, batchKey);
             var state = existing is { } b ? Deserialize<BatchState>(b.Episodes) ?? new BatchState() : new BatchState();
@@ -1328,10 +1370,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (batchKey != BatchKey(key, only4k) && !state.Keys.Contains(key.ToString(), StringComparer.Ordinal)) state.Keys.Add(key.ToString());
             state.Series ??= seriesItem?.ToString("N", CultureInfo.InvariantCulture);
-            foreach (var (s, e, id) in episodes)
+            foreach (var (s, e, id, at) in episodes)
             {
                 if (state.Episodes.Any(x => x.S == s && x.E == e)) continue;
-                state.Episodes.Add(new BatchEntry { S = s, E = e, I = id.ToString("N", CultureInfo.InvariantCulture) });
+                state.Episodes.Add(new BatchEntry { S = s, E = e, I = id.ToString("N", CultureInfo.InvariantCulture), A = at.ToUnixTimeMilliseconds() });
             }
             var first = existing?.FirstAt ?? now;
             // The window runs from the first episode, so a slow trickle can't hold the message back for ever.
@@ -1478,7 +1520,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seasons = episodes.Select(x => x.S).Distinct().OrderBy(s => s).ToList();
             p["count"] = episodes.Count.ToString(CultureInfo.InvariantCulture);
             p["seasons"] = string.Join(", ", seasons);
-            p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E)));
+            // Each episode with its own arrival (4f round 10): the gate holds each to the catch-up limit, and drops only those past it.
+            var started = _store.Batch(user, key)?.FirstAt ?? now;
+            DateTimeOffset Arrived(BatchEntry x) => x.A is long ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : started;
+            p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E) { At = Arrived(x) }));
+            // The batch's origin: its newest episode's arrival (it is too old to tell only when every episode is).
+            var since = episodes.Count > 0 ? episodes.Max(Arrived) : started;
             if (only4k) p["variant"] = "4k";
             if (episodes.Count == 1)
             {
@@ -1510,20 +1557,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // The final gate on what is about to be told (the same decision every channel makes right before its send): the
             // kind switched off, the person gone, nothing left they can open or haven't hidden: dropped; Hidden Content that
             // can't be read now: kept for a later round (bounded); notifications switched off meanwhile: left as it is.
-            var final = _dispatcher.Final(Alert(user, NotifyKind.Episodes, eventKey, title.ToString(), itemId, p));
-            if (final.Verdict == NotifyVerdict.Off) return false;
-            if (final.Verdict == NotifyVerdict.Wait)
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Episodes, eventKey, title.ToString(), itemId, p, since));
+            switch (final.Effect)
             {
-                WaitBatch(user, key, json, final.At, generation);
-                return false;
+                case NotifyEffect.Leave:
+                    return false;
+                case NotifyEffect.Postpone:
+                    WaitBatch(user, key, json, final.At, generation);
+                    return false;
+                case NotifyEffect.Suppress:
+                    DropBatch(user, key, json, generation);
+                    return false;
+                case NotifyEffect.Act:
+                    if (Notify(final, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
+                    if (_store.Generation != generation) throw new BatchChangedException();
+                    return false;
             }
-            if (final.Verdict == NotifyVerdict.Refuse)
-            {
-                DropBatch(user, key, json, generation);
-                return false;
-            }
-            if (Notify(final, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
-            if (_store.Generation != generation) throw new BatchChangedException();
+
             return false;
         }
 
@@ -1629,15 +1679,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // change), and the change is seen. Notifications switched off meanwhile: nothing of this list is seen yet.
                     var id = r.Id.ToString(CultureInfo.InvariantCulture);
                     var eventKey = "declined|" + server + "|" + id;
-                    var final = _dispatcher.Final(Alert(requester, NotifyKind.Declined, eventKey, r.Key.Title.ToString(), null, p));
-                    if (final.Verdict == NotifyVerdict.Off) return false;
-                    if (final.Verdict == NotifyVerdict.Wait)
+                    // Its origin: when Seerr shows it was declined (4f round 10), held to the catch-up limit like JE's own.
+                    var declinedAt = r.UpdatedAt is DateTime updated ? new DateTimeOffset(DateTime.SpecifyKind(updated, DateTimeKind.Utc)) : now;
+                    var final = _dispatcher.Final(Alert(requester, NotifyKind.Declined, eventKey, r.Key.Title.ToString(), null, p, declinedAt));
+                    switch (final.Effect)
                     {
-                        var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id,
-                            r.UpdatedAt is DateTime updated ? new DateTimeOffset(DateTime.SpecifyKind(updated, DateTimeKind.Utc)) : now, final.Until!.Value, 0);
-                        _store.InTransaction(tx => tx.AddAlertWait(wait));
+                        case NotifyEffect.Leave:
+                            return false;
+                        case NotifyEffect.Postpone:
+                        {
+                            var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id, declinedAt, final.Until!.Value, 0);
+                            _store.InTransaction(tx => tx.AddAlertWait(wait));
+                            break;
+                        }
+
+                        case NotifyEffect.Suppress:
+                            // Ended: the change is seen with the rest of the list.
+                            break;
+                        case NotifyEffect.Act:
+                            Notify(final, null);
+                            break;
                     }
-                    else if (final.Sends) Notify(final, null);
                 }
                 if (r.Status == SeerrRequestStatus.Pending && fresh)
                 {
@@ -1650,9 +1712,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         OutcomeParams(p, r);
                         // The final gate: an administrator who can see the title (not one with a parental limit or without its
                         // library), still one and active, while the request still waits for an OK.
-                        var final = _dispatcher.Final(Alert(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p));
-                        if (final.Verdict == NotifyVerdict.Off) return false;
-                        if (final.Sends) Notify(final, null);
+                        // Its origin: when the request was made in Seerr (4f round 10).
+                        var askedAt = r.CreatedAt is DateTime made ? new DateTimeOffset(DateTime.SpecifyKind(made, DateTimeKind.Utc)) : now;
+                        var askKey = "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture);
+                        var final = _dispatcher.Final(Alert(admin, NotifyKind.Approval, askKey, r.Key?.Title.ToString(), null, p, askedAt));
+                        switch (final.Effect)
+                        {
+                            case NotifyEffect.Leave:
+                                return false;
+                            case NotifyEffect.Postpone:
+                            {
+                                // Seerr's list can't be read now: the ask waits in the wait queue (its own retries, at most a day,
+                                // expiring from the ask's own time), as a Seerr decline does; the change is seen.
+                                var wait = new AlertWait("seerr-ask", server + "|" + r.Id.ToString(CultureInfo.InvariantCulture) + "|" + NotifyValues.Id(admin), admin, NotifyKind.Approval,
+                                    r.Key?.Title.ToString() ?? string.Empty, askKey, JsonSerializer.Serialize(p), r.Id.ToString(CultureInfo.InvariantCulture), askedAt, final.Until!.Value, 0);
+                                _store.InTransaction(tx => tx.AddAlertWait(wait));
+                                break;
+                            }
+
+                            case NotifyEffect.Suppress:
+                                // Not for this administrator: the change is seen with the rest of the list.
+                                break;
+                            case NotifyEffect.Act:
+                                Notify(final, null);
+                                break;
+                        }
                     }
                 }
             }
@@ -1825,6 +1909,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             if (!Enabled) return new RemindOutcome("disabled");
             if (viewer.IsAdmin) return new RemindOutcome("admin");
+            // The reminder's origin: when it was asked for (4f round 10), before anything is awaited.
+            var pressed = _now();
             var status = await _status.CurrentAsync(viewer, itemId, itemId.HasValue ? null : key, cancellationToken).ConfigureAwait(false);
             if (status == null) return new RemindOutcome("not_found");
             if (!status.Attention) return new RemindOutcome("not_stuck");
@@ -1856,9 +1942,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var finals = new List<NotifyFinal>();
             foreach (var admin in _users.Admins())
             {
-                var final = _dispatcher.Final(Alert(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p));
-                if (final.Verdict == NotifyVerdict.Off) return new RemindOutcome("disabled");
-                if (final.Sends) finals.Add(final);
+                var final = _dispatcher.Final(Alert(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p, pressed));
+                switch (final.Effect)
+                {
+                    case NotifyEffect.Leave:
+                    case NotifyEffect.Postpone:
+                        // Nothing told and the reminder isn't spent: it can be asked for again.
+                        return new RemindOutcome("disabled");
+                    case NotifyEffect.Suppress:
+                        // Not for this administrator: the reminder is spent with the others' rows.
+                        break;
+                    case NotifyEffect.Act:
+                        finals.Add(final);
+                        break;
+                }
             }
             var created = _store.InTransaction(tx =>
             {
@@ -1924,7 +2021,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             // The "told" marker and every administrator's alert commit together: a stop
                             // (or a failure) before the alerts exist leaves the outage to tell next round.
                             var p = new Dictionary<string, string> { ["instance"] = instance.Name, ["minutes"] = ((int)(now - start).TotalMinutes).ToString(CultureInfo.InvariantCulture) };
-                            var told = TellAdmins(Admins(), NotifyKind.InstanceDown, "down|" + instance.Id + "|" + since, null, p, tx =>
+                            var told = TellAdmins(Admins(), NotifyKind.InstanceDown, "down|" + instance.Id + "|" + since, null, p, now, tx =>
                             {
                                 if (tx.Meta("down-told:" + instance.Id) != null) return false;
                                 tx.SetMeta("down-told:" + instance.Id, since);
@@ -1940,7 +2037,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // Clearing the outage and telling it ended commit together.
                     var told = _store.Meta("down-told:" + instance.Id);
                     var p = new Dictionary<string, string> { ["instance"] = instance.Name };
-                    var cleared = TellAdmins(told == null ? Array.Empty<Guid>() : Admins(), NotifyKind.InstanceUp, "up|" + instance.Id + "|" + told, null, p, tx =>
+                    var cleared = TellAdmins(told == null ? Array.Empty<Guid>() : Admins(), NotifyKind.InstanceUp, "up|" + instance.Id + "|" + told, null, p, now, tx =>
                     {
                         if (tx.Meta("down-told:" + instance.Id) != told) return false;
                         tx.SetMeta(downKey, null);
@@ -1964,7 +2061,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (!item.Params.TryGetValue("used", out var usedText) || !int.TryParse(usedText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var used)) continue;
                     var free = item.Params.TryGetValue("free", out var freeText) && long.TryParse(freeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) ? bytes : 0;
                     var p = new Dictionary<string, string> { ["instance"] = item.Instance ?? string.Empty, ["path"] = item.Title, ["percent"] = (100 - used).ToString(CultureInfo.InvariantCulture), ["free"] = NotifyTexts.Size(free) };
-                    if (!TellAdmins(Admins(), NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, p, null)) return;
+                    if (!TellAdmins(Admins(), NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, p, now, null)) return;
                     continue;
                 }
                 // A download's occurrence is when the arr added it (its "since" is when JE first saw the
@@ -1978,9 +2075,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 var payload = AttentionPayload(item);
                 foreach (var admin in Admins())
                 {
-                    var final = _dispatcher.Final(Alert(admin, NotifyKind.Attention, eventKey, item.Key, null, payload));
-                    if (final.Verdict == NotifyVerdict.Off) return;
-                    if (final.Sends) Notify(final, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+                    // A condition as this check observed it: its origin is the check.
+                    var final = _dispatcher.Final(Alert(admin, NotifyKind.Attention, eventKey, item.Key, null, payload, now));
+                    switch (final.Effect)
+                    {
+                        case NotifyEffect.Leave:
+                            return;
+                        case NotifyEffect.Postpone:
+                        case NotifyEffect.Suppress:
+                            // Nothing queued: the next check observes the row again.
+                            break;
+                        case NotifyEffect.Act:
+                            Notify(final, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+                            break;
+                    }
                 }
             }
             StuckDigest(attention, Admins, now);
@@ -1988,15 +2096,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // One administrators' alert for each administrator the final gate lets it go to now, in one transaction with the event's
         // "handled" state (<paramref name="first"/>, which commits even when nobody is told); false (nothing written) when
-        // notifications were switched off meanwhile.
-        private bool TellAdmins(IReadOnlyList<Guid> admins, string kind, string eventKey, string? titleKey, IReadOnlyDictionary<string, string> payload, Func<NotifyTransaction, bool>? first)
+        // notifications were switched off meanwhile (or something must be waited for: the next check sees it again). Its origin
+        // is the check that observed it (<paramref name="observed"/>).
+        private bool TellAdmins(IReadOnlyList<Guid> admins, string kind, string eventKey, string? titleKey, IReadOnlyDictionary<string, string> payload, DateTimeOffset observed, Func<NotifyTransaction, bool>? first)
         {
             var finals = new List<NotifyFinal>();
             foreach (var admin in admins)
             {
-                var final = _dispatcher.Final(Alert(admin, kind, eventKey, titleKey, null, payload));
-                if (final.Verdict == NotifyVerdict.Off) return false;
-                if (final.Sends) finals.Add(final);
+                var final = _dispatcher.Final(Alert(admin, kind, eventKey, titleKey, null, payload, observed));
+                switch (final.Effect)
+                {
+                    case NotifyEffect.Leave:
+                    case NotifyEffect.Postpone:
+                        return false;
+                    case NotifyEffect.Suppress:
+                        // Not for this administrator: the event is handled with the others' rows.
+                        break;
+                    case NotifyEffect.Act:
+                        finals.Add(final);
+                        break;
+                }
             }
             NotifyAll(finals, first ?? (_ => true));
             return true;
@@ -2089,7 +2208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 ["hours"] = ((int)stuckFor.TotalHours).ToString(CultureInfo.InvariantCulture),
                 ["items"] = string.Join("; ", items.Take(10)) + (items.Count > 10 ? $"; and {items.Count - 10} more" : string.Empty),
             };
-            TellAdmins(items.Count > 0 ? admins() : Array.Empty<Guid>(), NotifyKind.StuckDigest, "stuck|" + day, null, p, tx =>
+            TellAdmins(items.Count > 0 ? admins() : Array.Empty<Guid>(), NotifyKind.StuckDigest, "stuck|" + day, null, p, now, tx =>
             {
                 if (tx.Meta("digest-day") == day) return false;
                 tx.SetMeta("digest-day", day);
@@ -2100,7 +2219,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // ================================================================== creating notifications
 
         /// <summary>An alert as the final gate is asked about it (its identifiers; the gate reads everything else itself).</summary>
-        private static NotifyAlert Alert(Guid user, string kind, string? eventKey, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset? since = null)
+        /// <remarks><paramref name="since"/>: its origin, when what it tells happened (4f round 10: every alert carries one; the gate
+        /// holds it to the catch-up limit).</remarks>
+        private static NotifyAlert Alert(Guid user, string kind, string? eventKey, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset since)
             => new(user, kind, titleKey, itemId, eventKey, payload) { Since = since };
 
         /// <summary>
@@ -2117,7 +2238,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// </remarks>
         internal bool Notify(NotifyFinal final, Func<NotifyTransaction, bool>? first, long? generation = null)
         {
-            if (!final.Sends || final.Alert.EventKey == null) return false;
+            switch (final.Effect)
+            {
+                case NotifyEffect.Act:
+                    break;
+                case NotifyEffect.Leave:
+                case NotifyEffect.Postpone:
+                case NotifyEffect.Suppress:
+                    // Only a verdict to tell makes a notification (its caller acts on the others).
+                    return false;
+            }
+
+            if (final.Alert.EventKey == null) return false;
             var id = _store.InTransaction(generation, tx => first != null && !first(tx) ? null : Add(tx, final), null).Result;
             if (id == null) return false;
             Announce(final);
@@ -2137,9 +2269,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // A notification and its deliveries, as the final gate decided them; null when the person already has it.
         private static long? Add(NotifyTransaction tx, NotifyFinal final)
-            => final.Sends && final.Alert.EventKey is { } eventKey
+        {
+            switch (final.Effect)
+            {
+                case NotifyEffect.Act:
+                    break;
+                case NotifyEffect.Leave:
+                case NotifyEffect.Postpone:
+                case NotifyEffect.Suppress:
+                    return null;
+            }
+
+            return final.Alert.EventKey is { } eventKey
                 ? tx.Add(final.Alert.User, eventKey, final.Alert.Kind, final.Alert.TitleKey, final.ItemId, final.Payload, final.Deliveries, final.At)
                 : null;
+        }
 
         // After a notification committed: the user's open pages and the dispatcher hear of it.
         private void Announce(NotifyFinal final)
@@ -2156,8 +2300,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public bool SendTest(Guid user)
         {
             var now = _now();
-            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>()));
-            return final.Sends && Notify(final, null);
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));
+            switch (final.Effect)
+            {
+                case NotifyEffect.Act:
+                    return Notify(final, null);
+                case NotifyEffect.Leave:
+                case NotifyEffect.Postpone:
+                case NotifyEffect.Suppress:
+                    return false;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -2167,8 +2321,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public bool TrySendTest(Guid user, TimeSpan every)
         {
             var now = _now();
-            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>()));
-            return final.Sends && Notify(final, tx => tx.ClaimMark(user, "test", now, every));
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now));
+            switch (final.Effect)
+            {
+                case NotifyEffect.Act:
+                    return Notify(final, tx => tx.ClaimMark(user, "test", now, every));
+                case NotifyEffect.Leave:
+                case NotifyEffect.Postpone:
+                case NotifyEffect.Suppress:
+                    return false;
+            }
+
+            return false;
         }
 
         // Title, year and poster for a title: Jellyfin's name for the item, else the arrs', else Seerr's.

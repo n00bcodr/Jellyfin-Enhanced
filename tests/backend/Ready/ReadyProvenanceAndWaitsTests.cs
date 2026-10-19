@@ -173,6 +173,10 @@ public class ReadyProvenanceAndWaitsTests
     {
         public IntegrationNotificationsTests.Rig Rig { get; }
         public FakeReadyPrivacy Privacy { get; } = new();
+
+        /// <summary>Jellyfin's sessions (native Ready messages).</summary>
+        public FakeReadySessionHost Sessions { get; } = new();
+
         public NotifyDispatcher Dispatcher { get; }
         public NotificationService Service { get; }
         public IntegrationRequestLedgerTests.Policy Policy { get; } = new();
@@ -187,8 +191,7 @@ public class ReadyProvenanceAndWaitsTests
             Rig = rig;
             rig.Config.ArrPhase4Enabled = true;
             rig.Phones(rig.Emma, rig.Kid);
-            var sessions = new FakeReadySessionHost();
-            var channel = new ReadyNativeChannel(new ReadyPlaylistStore(rig.Db), new ReadySessionMessages(sessions, () => rig.Arr.Now.UtcDateTime), Privacy, rig.View, null, () => rig.Arr.Now);
+            var channel = new ReadyNativeChannel(new ReadyPlaylistStore(rig.Db), new ReadySessionMessages(Sessions, () => rig.Arr.Now.UtcDateTime), Privacy, rig.View, null, () => rig.Arr.Now);
             foreach (var (viewer, role) in new[] { (rig.Admin, "Admin"), (rig.Kid, "Kid"), (rig.Emma, "Kid") })
                 Policy.People[viewer.UserId] = new(viewer.UserId, role, true, role == "Admin", role == "Admin", true, "p1", "je", "inst", "g1", 1000, 7, 0, "{}");
             if (jeMode)

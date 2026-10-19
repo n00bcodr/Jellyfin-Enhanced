@@ -192,7 +192,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     internal sealed record DueDelivery(long Id, long NotificationId, Guid UserId, string Channel, int Attempts, string Kind, string? TitleKey, string? ItemId, string Payload, DateTimeOffset CreatedAt, long Generation = 0, string? EventKey = null);
 
     /// <summary>An episode number and its visible file at batch flush, rechecked at delivery.</summary>
-    internal sealed record NotifyEpisode(Guid ItemId, int Season, int Episode);
+    internal sealed record NotifyEpisode(Guid ItemId, int Season, int Episode)
+    {
+        /// <summary>When it arrived (4f round 10: each member of a batch keeps its own; one past the catch-up limit isn't told).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public DateTimeOffset? At { get; init; }
+    }
 
     /// <summary>A failed delivery as administrators see it.</summary>
     public sealed class DeliveryFailure

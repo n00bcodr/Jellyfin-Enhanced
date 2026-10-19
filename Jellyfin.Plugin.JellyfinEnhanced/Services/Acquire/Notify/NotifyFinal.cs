@@ -59,6 +59,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     }
 
     /// <summary>
+    /// What an action site does with a verdict (4f round 10): the same at every site (a send and its settling, a native
+    /// message's claim, a bell row, a wait added or retried, a notice or batch consumed), from one table,
+    /// <see cref="NotifyFinal.EffectOf"/>.
+    /// </summary>
+    internal enum NotifyEffect
+    {
+        /// <summary>Nothing is done: what is queued stays pending (and the source unconsumed) until notifications are back.</summary>
+        Leave,
+
+        /// <summary>Not now: held until <see cref="NotifyFinal.Until"/> (or left for a later round to decide again).</summary>
+        Postpone,
+
+        /// <summary>Ended for good: never told (a delivery suppressed, the source consumed with no notification).</summary>
+        Suppress,
+
+        /// <summary>Done: sent, or the notification made.</summary>
+        Act,
+    }
+
+    /// <summary>
     /// The final gate's verdict on one alert (4f round 9), with everything the action needs: what it says (narrowed), its link,
     /// and for a send the configuration and preferences the gate read (the transport: server, topic, address). Made only by
     /// the gate; used right away, with no await before the action (the network send itself excepted).
@@ -91,6 +111,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>True when it may be told now.</summary>
         public bool Sends => Verdict == NotifyVerdict.Send;
+
+        /// <summary>What every action site does with this verdict (the one table, <see cref="EffectOf"/>).</summary>
+        public NotifyEffect Effect => EffectOf(Verdict);
+
+        /// <summary>
+        /// THE verdict → effect table (4f round 10): notifications off as a whole leave everything as it is (Off → Leave),
+        /// a wait postpones (Wait → Postpone), a refusal suppresses (Refuse → Suppress), a send acts (Send → Act). Every action
+        /// site switches over <see cref="Effect"/>; none reads the verdict itself (tests: NotifyGateWalk).
+        /// </summary>
+        internal static NotifyEffect EffectOf(NotifyVerdict verdict) => verdict switch
+        {
+            NotifyVerdict.Off => NotifyEffect.Leave,
+            NotifyVerdict.Wait => NotifyEffect.Postpone,
+            NotifyVerdict.Refuse => NotifyEffect.Suppress,
+            NotifyVerdict.Send => NotifyEffect.Act,
+            _ => throw new ArgumentOutOfRangeException(nameof(verdict)),
+        };
 
         /// <summary>What it says, narrowed to what the recipient may be told (an episodes batch to the episodes left).</summary>
         public IReadOnlyDictionary<string, string> Payload { get; private init; } = new Dictionary<string, string>();
