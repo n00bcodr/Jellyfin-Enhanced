@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
@@ -53,13 +54,14 @@ function answer(params, { total = 120, rows, coverage } = {}) {
   };
 }
 
-function setup(t, { reply } = {}) {
+function setup(t, { reply, globals } = {}) {
   const calls = [];
   const userChange = new Map();
   let epoch = 0;
   const h = createHarness({
     html: '<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage"></div></div>',
     url: 'http://jellyfin.test/web/index.html#/requests?tab=activity',
+    globals,
     apiClient: { getCurrentUserId: () => USER, serverAddress: () => 'http://jellyfin.test' },
     JE: {
       pluginConfig: { ArrStatusEnabled: true, ArrRequestsHubEnabled: true, ArrManageDrawerEnabled: true },
@@ -145,34 +147,39 @@ test('the history opens on page 1 of every event with the counts, the pager and 
   assert.ok(history.querySelector('.je-history-chips[role="group"][aria-label="Event"]'));
 });
 
+// The pause is the page's own time (a manual clock, tests/frontend/helpers/fake-clock.mjs): with real timers a busy
+// machine stretched the 120 ms wait past the 300 ms pause and the first word was read on its own (rebuild fix round 4).
 test('typing searches 300 ms after the last key, once, with the caret and focus kept across redraws', async t => {
-  const h = setup(t);
+  const clock = fakeClock();
+  const h = setup(t, { globals: clock.globals });
   h.JE.initializeArrStatus();
-  await until(() => h.input());
+  await clock.until(() => h.input());
   h.type('du');
-  await wait(120);
+  await clock.advance(120);
   h.type('dune');
+  const typed = clock.now();
   h.input().setSelectionRange(2, 2);
-  await wait(150);
+  await clock.advance(150);
   assert.equal(h.calls.length, 1, 'nothing read before the pause');
-  await until(() => h.calls.length === 2);
+  await clock.until(() => h.calls.length === 2);
+  assert.equal(clock.now() - typed, 300, 'read when the pause after the last key ends');
   assert.equal(h.calls[1].params.get('q'), 'dune');
   assert.equal(h.calls[1].params.get('page'), '1');
-  await until(() => titles(h)[0]?.startsWith('dune|'));
+  await clock.until(() => titles(h)[0]?.startsWith('dune|'));
   // The same search box, still focused, the caret where it was.
   assert.equal(h.document.activeElement, h.input());
   assert.equal(h.input().value, 'dune');
   assert.equal(h.input().selectionStart, 2);
-  await wait(350);
+  await clock.advance(350);
   assert.equal(h.calls.length, 2, 'one read for one pause');
   // Enter searches at once; spaces around the words don't make a new search.
   h.type(' dune ');
   h.input().dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await wait(20);
+  await clock.advance(20);
   assert.equal(h.calls.length, 2);
   h.type('dune 2');
   h.input().dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await until(() => h.calls.length === 3);
+  await clock.until(() => h.calls.length === 3);
   assert.equal(h.calls[2].params.get('q'), 'dune 2');
 });
 
