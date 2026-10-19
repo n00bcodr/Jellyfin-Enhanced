@@ -170,3 +170,78 @@ for (const is4k of [false, true]) {
     await expect(page.locator('#movie-folder option')).toHaveCount(1);
   });
 }
+
+test.describe('TV layout remote navigation', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.evaluate(() => document.documentElement.classList.add('layout-tv'));
+  });
+
+  test('request dialog select opens an in-dialog list and Back closes only the list', async ({ page }) => {
+    await page.evaluate(() => {
+      const api = JellyfinEnhanced.jellyseerrModal;
+      const request = api.create({ title: 'Advanced request', subtitle: 'Fixture', bodyHtml: api.createAdvancedOptionsHTML('movie'), onSave: () => {}, onClose: () => { closeCount++; } });
+      request.show();
+      api.populateAdvancedOptions(request.modalElement, { servers: [
+        { id: 1, name: 'Alpha', isDefault: true, is4k: false, activeProfileId: 10, activeDirectory: '/movies',
+          qualityProfiles: [{ id: 10, name: 'HD' }, { id: 11, name: 'Remux' }], rootFolders: [{ path: '/movies', freeSpace: 0 }] }
+      ] }, 'movie', false);
+    });
+    const select = page.locator('#movie-quality');
+    await expect(select).toHaveValue('10');
+    await select.focus();
+    await page.keyboard.press('Enter');
+    const options = page.locator('.jellyseerr-tv-picker-option');
+    await expect(options).toHaveText(['Select Quality...', 'HD', 'Remux']);
+    await expect(options.nth(1)).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(options).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(select).toBeFocused();
+    expect(await page.evaluate(() => closeCount)).toBe(0);
+
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');
+    await expect(options).toHaveCount(0);
+    await expect(select).toHaveValue('11');
+    await expect(page.getByRole('dialog')).toBeVisible();
+  });
+
+  test('pause screen keeps the remote keys away from the player behind it', async ({ page }) => {
+    await page.evaluate(() => {
+      JellyfinEnhanced.session = { onUserChange: () => {} };
+      JellyfinEnhanced.currentSettings = { pauseScreenEnabled: true };
+      JellyfinEnhanced.helpers.onBodyMutation = () => ({ unsubscribe: () => {} });
+      localStorage.setItem('jellyfin_credentials', JSON.stringify({ Servers: [{ Id: 'server-a', UserId: 'user-a', AccessToken: 'test' }] }));
+      window.ApiClient = { serverId: () => 'server-a', getCurrentUserId: () => 'user-a' };
+      window.reachedPlayer = 0;
+      document.addEventListener('keydown', () => { window.reachedPlayer++; });
+    });
+    await page.addScriptTag({ url: '/Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/player/pausescreen.js' });
+    await page.evaluate(() => {
+      JellyfinEnhanced.initializePauseScreen();
+      JellyfinEnhanced.pauseScreenInstance.showOverlay();
+    });
+    const content = page.locator('#pause-screen-content');
+    const close = page.locator('#pause-screen-close-btn');
+    await expect(content).toBeFocused();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(close).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(content).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(close).toBeFocused();
+    expect(await page.evaluate(() => window.reachedPlayer)).toBe(0);
+
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#pause-screen-overlay')).toHaveAttribute('aria-hidden', 'true');
+    expect(await page.evaluate(() => window.reachedPlayer)).toBe(0);
+
+    await page.evaluate(() => JellyfinEnhanced.pauseScreenInstance.showOverlay());
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pause-screen-overlay')).toHaveAttribute('aria-hidden', 'true');
+    expect(await page.evaluate(() => window.reachedPlayer)).toBe(0);
+  });
+});
