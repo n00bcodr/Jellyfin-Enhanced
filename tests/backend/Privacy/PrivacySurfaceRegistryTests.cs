@@ -112,7 +112,7 @@ public class PrivacySurfaceRegistryTests
             [Guid.Parse(data.Roles["episode:show-e2"])] = Guid.Parse(data.Roles["series:show"]),
         };
         var checkedEndpoints = new HashSet<string>();
-        foreach (var shot in data.Shots)
+        foreach (var shot in data.Shots.Where(s => !s.Socket))
         {
             var entry = PrivacySurfaceRegistry.Entries.Single(e => Key(e) == shot.Endpoint);
             var value = PrivacyHostShapeModelTests.Value(shot);
@@ -144,7 +144,7 @@ public class PrivacySurfaceRegistryTests
         foreach (var endpoint in new[] { "UserLibrary.GetItem", "Library.GetAncestors", "UserLibrary.GetLocalTrailers", "UserLibrary.GetSpecialFeatures",
             "Library.GetThemeSongs", "Library.GetThemeMedia", "Image.GetItemImageInfos", "MediaInfo.GetPlaybackInfo", "UserViews.GetUserViews",
             "Library.GetMediaFolders", "Genres.GetGenres", "Persons.GetPersons", "LiveTv.GetLiveTvChannels", "LiveTv.GetChannel", "Session.GetSessions",
-            "LiveTv.GetTimers", "User.AuthenticateUserByName", "ActivityLog.GetLogEntries" })
+            "LiveTv.GetTimers", "LiveTv.GetSeriesTimers", "User.AuthenticateUserByName", "ActivityLog.GetLogEntries" })
             Assert.Contains(endpoint, checkedEndpoints);
     }
 

@@ -3,7 +3,7 @@
   {
    "Bitrate": 6496,
    "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-   "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+   "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
    "Formats": [],
    "GenPtsInput": false,
    "HasSegments": false,
@@ -70,5 +70,5 @@
    "VideoType": "VideoFile"
   }
  ],
- "PlaySessionId": "5da8b2ca373f44dc970fce20300d5d60"
+ "PlaySessionId": "6dece7aa73c547869c45cb5c3f953219"
 }

@@ -29,7 +29,9 @@ namespace JE.Tests;
 /// rule), deserialized into the host's own types. Sessions carry another account's NowPlayingItem / NowViewingItem
 /// (and 10.11's NowPlayingQueueFullItems), theme songs and videos are Audio/Video extras owned through
 /// ThemeMediaResult.OwnerId, local trailers and featurettes are the host's own extras, channels carry CurrentProgram and
-/// timers ProgramInfo. Each cell runs Hidden Content's and Spoiler Guard's action filters around the action and then the
+/// timers ProgramInfo; a session playing a Live TV channel carries the channel's CurrentProgram inside its NowPlayingItem,
+/// over REST and over the dashboard's WebSocket ("Session.WebSocket" shots: the first "Sessions" message, projected by
+/// the session listener's projection). Each cell runs Hidden Content's and Spoiler Guard's action filters around the action and then the
 /// final gate, with the rule saved before the request or while the action runs. Expectations come from this file's oracle
 /// (which names each title's family and which endpoints open an item), never from the production registry. A cell whose
 /// subject the captured answer does not contain is not generated.
@@ -43,7 +45,7 @@ public class PrivacyHostShapeModelTests
     public const string HostName = "12.2";
 #endif
 
-    public sealed record Shot(string File, string Endpoint, string Method, string Path, string Viewer);
+    public sealed record Shot(string File, string Endpoint, string Method, string Path, string Viewer, bool Socket = false);
 
     internal sealed record Manifest(Dictionary<string, string> Roles, Dictionary<string, string> Owners, List<Shot> Shots);
 
@@ -56,7 +58,8 @@ public class PrivacyHostShapeModelTests
         var owners = root["owners"]!.AsObject().ToDictionary(p => p.Key, p => p.Value!.ToString());
         var shots = root["shots"]!.AsArray().Select(s => s!.AsObject())
             .Where(s => (int)s["status"]! == 200 && Exists(s["file"]!.ToString()))
-            .Select(s => new Shot(s["file"]!.ToString(), s["endpoint"]!.ToString(), s["method"]!.ToString(), s["path"]!.ToString(), s["viewer"]!.ToString()))
+            .Select(s => new Shot(s["file"]!.ToString(), s["endpoint"]!.ToString(), s["method"]!.ToString(), s["path"]!.ToString(), s["viewer"]!.ToString(),
+                s["socket"]?.GetValue<bool>() == true))
             .ToList();
         return new(roles, owners, shots);
     });
@@ -84,7 +87,7 @@ public class PrivacyHostShapeModelTests
         "UserLibrary.GetItem", "UserLibrary.GetItemLegacy", "Library.GetAncestors", "Videos.GetAdditionalPart",
         "UserLibrary.GetLocalTrailers", "UserLibrary.GetLocalTrailersLegacy", "UserLibrary.GetSpecialFeatures", "UserLibrary.GetSpecialFeaturesLegacy",
         "Image.GetItemImageInfos", "MediaInfo.GetPlaybackInfo", "MediaInfo.GetPostedPlaybackInfo", "LiveTv.GetChannel", "LiveTv.GetProgram",
-        "LiveTv.GetRecording", "LiveTv.GetTimer", "Library.GetThemeMedia", "Library.GetThemeSongs", "Library.GetThemeVideos",
+        "LiveTv.GetRecording", "LiveTv.GetTimer", "LiveTv.GetSeriesTimer", "LiveTv.GetDefaultTimer", "Library.GetThemeMedia", "Library.GetThemeSongs", "Library.GetThemeVideos",
     ];
 
     /// <summary>A rule, the role it names, and the text that identifies its subject (Hidden Content) or family secrets (Spoiler Guard).</summary>
@@ -246,6 +249,8 @@ public class PrivacyHostShapeModelTests
     /// <summary>The host's declared answer type of the endpoint (from the host's own endpoint table).</summary>
     public static Type Declared(string endpoint)
     {
+        // The dashboard's live session updates carry the same sessions as the REST answer.
+        if (endpoint == "Session.WebSocket") return typeof(List<SessionInfoDto>);
         var declared = PrivacySurfaceModelTests.HostEndpoints.FirstOrDefault(e => e.Host == HostName && e.Controller + "." + e.Action == endpoint)?.Declared
             ?? PrivacySurfaceModelTests.TitleEndpoints[endpoint];
         return declared switch
@@ -260,6 +265,8 @@ public class PrivacyHostShapeModelTests
             "PlaybackInfoResponse" => typeof(PlaybackInfoResponse),
             "IEnumerable<RecommendationDto>" => typeof(List<RecommendationDto>),
             "QueryResult<TimerInfoDto>" => typeof(QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto>),
+            "QueryResult<SeriesTimerInfoDto>" => typeof(QueryResult<MediaBrowser.Model.LiveTv.SeriesTimerInfoDto>),
+            "SeriesTimerInfoDto" => typeof(MediaBrowser.Model.LiveTv.SeriesTimerInfoDto),
             "QueryResult<ActivityLogEntry>" => typeof(QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>),
             "TimerInfoDto" => typeof(MediaBrowser.Model.LiveTv.TimerInfoDto),
             "AuthenticationResult" => typeof(MediaBrowser.Controller.Authentication.AuthenticationResult),
@@ -301,8 +308,9 @@ public class PrivacyHostShapeModelTests
     public static Guid? Opened(Shot shot)
     {
         if (!Opens.Contains(shot.Endpoint)) return null;
-        // An opened timer is its programme's own page.
-        if (shot.Endpoint == "LiveTv.GetTimer") return Value(shot) is MediaBrowser.Model.LiveTv.TimerInfoDto { ProgramId: { } program } && Guid.TryParse(program, out var id) ? id : null;
+        // An opened timer (or series timer, or a new timer's defaults) is its programme's own page.
+        if (shot.Endpoint is "LiveTv.GetTimer" or "LiveTv.GetSeriesTimer" or "LiveTv.GetDefaultTimer")
+            return Value(shot) is MediaBrowser.Model.LiveTv.BaseTimerInfoDto { ProgramId: { } program } && Guid.TryParse(program, out var id) ? id : null;
         var route = Route(shot);
         foreach (var key in new[] { "itemId", "channelId", "programId", "timerId" })
             if (route.TryGetValue(key, out var id) && Guid.TryParse(id?.ToString(), out var guid)) return guid;
@@ -333,6 +341,15 @@ public class PrivacyHostShapeModelTests
     internal static async Task<(IActionResult Result, string Body)> Deliver(Rig rig, Shot shot, Action? inFlight = null)
     {
         var viewer = shot.Viewer == "viewer" ? rig.Viewer : rig.Admin;
+        if (shot.Socket)
+        {
+            // The session listener builds the update, then projects it for the connection's viewer (a rule saved in between applies).
+            var update = (List<SessionInfoDto>)Value(shot);
+            inFlight?.Invoke();
+            var sent = rig.Gate().ProjectSessions(update, viewer);
+            await Task.CompletedTask;
+            return (new ObjectResult(sent), JsonSerializer.Serialize(sent, typeof(IReadOnlyList<SessionInfoDto>), Json));
+        }
         var context = Context(shot, viewer);
         var result = new ObjectResult(Value(shot));
         var filters = new List<IFilterMetadata>();
@@ -397,10 +414,10 @@ public class PrivacyHostShapeModelTests
         var cells = Cells().Select(c => ((string)c[0], (string)c[1], (string)c[2])).ToArray();
         Assert.Equal(cells.Length, cells.Distinct().Count());
         // The families whose real shape decided the round-16 findings, plus Live TV's nested members.
-        foreach (var file in new[] { "Session.GetSessions.admin.json", "Library.GetThemeSongs.movie.json", "Library.GetThemeSongs.series.json",
+        foreach (var file in new[] { "Session.GetSessions.admin.json", "Session.WebSocket.admin.json", "Session.WebSocket.viewer.json", "Library.GetThemeSongs.movie.json", "Library.GetThemeSongs.series.json",
             "Library.GetThemeVideos.movie.json", "Library.GetThemeMedia.movie.json", "Library.GetThemeMedia.series.json", "Library.GetThemeSongs.episode-inherited.json",
             "UserLibrary.GetSpecialFeatures.series.json", "UserLibrary.GetSpecialFeatures.movie.json", "UserLibrary.GetLocalTrailers.movie.json",
-            "LiveTv.GetLiveTvChannels.json", "LiveTv.GetChannel.json", "UserLibrary.GetItem.channel.json", "LiveTv.GetTimers.json", "ActivityLog.GetLogEntries.json",
+            "LiveTv.GetLiveTvChannels.json", "LiveTv.GetChannel.json", "UserLibrary.GetItem.channel.json", "LiveTv.GetTimers.json", "LiveTv.GetSeriesTimers.json", "ActivityLog.GetLogEntries.json",
             "Items.GetItems.json", "TvShows.GetEpisodes.json", "Search.GetSearchHints.json" })
             Assert.Contains(cells, c => c.Item1 == file);
         foreach (var rule in Rules) foreach (var moment in Moments) Assert.Contains(cells, c => c.Item2 == rule.Id && c.Item3 == moment);
@@ -411,5 +428,11 @@ public class PrivacyHostShapeModelTests
         var sessions = Assert.IsType<List<SessionInfoDto>>(Value(Data.Shots.Single(s => s.File == "Session.GetSessions.admin.json")));
         Assert.Contains(sessions, s => s.UserId == G(Data.Roles["user:viewer"]) && s.NowPlayingItem?.Id == G(Data.Roles["movie:hidden"]));
         Assert.Contains(sessions, s => s.NowPlayingItem?.Id == G(Data.Roles["episode:show-e1"]));
+        // A session playing a Live TV channel: the programme airing now is nested in the now-playing channel (REST and WebSocket).
+        foreach (var file in new[] { "Session.GetSessions.admin.json", "Session.WebSocket.admin.json", "Session.WebSocket.viewer.json" })
+        {
+            var live = Assert.IsType<List<SessionInfoDto>>(Value(Data.Shots.Single(s => s.File == file)));
+            Assert.Contains(live, s => s.NowPlayingItem?.Id == G(Data.Roles["channel:r17"]) && s.NowPlayingItem.CurrentProgram?.Id == G(Data.Roles["program:now"]));
+        }
     }
 }

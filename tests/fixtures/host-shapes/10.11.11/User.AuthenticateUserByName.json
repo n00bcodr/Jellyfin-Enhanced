@@ -1,5 +1,5 @@
 {
- "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+ "ServerId": "328f6bf95a114a819a373a5f04361690",
  "SessionInfo": {
   "AdditionalUsers": [],
   "ApplicationVersion": "1",
@@ -9,13 +9,13 @@
    "SupportsMediaControl": false,
    "SupportsPersistentIdentifier": true
   },
-  "Client": "d46r17-capture",
-  "DeviceId": "d46r17-capture-play-a",
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-play-a",
   "DeviceName": "cli",
   "HasCustomDeviceName": false,
-  "Id": "2c99ab836c9bc831c5aaf69e4b22aaaf",
+  "Id": "73dd043f5d36dc69a5945864529a31b5",
   "IsActive": true,
-  "LastActivityDate": "2026-10-19T10:34:04.2641781Z",
+  "LastActivityDate": "2026-10-19T12:34:15.6145241Z",
   "LastPlaybackCheckIn": "0001-01-01T00:00:00.0000000Z",
   "NowPlayingQueue": [],
   "NowPlayingQueueFullItems": [],
@@ -28,11 +28,11 @@
   },
   "PlayableMediaTypes": [],
   "RemoteEndPoint": "127.0.0.1",
-  "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+  "ServerId": "328f6bf95a114a819a373a5f04361690",
   "SupportedCommands": [],
   "SupportsMediaControl": false,
   "SupportsRemoteControl": false,
-  "UserId": "b83667cc409247dca2138464cdaf5acf",
+  "UserId": "ee8ed913b9af4a0a8247d06f3247aed5",
   "UserName": "real-viewer"
  },
  "User": {
@@ -57,9 +57,9 @@
   "HasConfiguredEasyPassword": false,
   "HasConfiguredPassword": true,
   "HasPassword": true,
-  "Id": "b83667cc409247dca2138464cdaf5acf",
-  "LastActivityDate": "2026-10-19T10:33:48.1620153Z",
-  "LastLoginDate": "2026-10-19T10:33:48.1620153Z",
+  "Id": "ee8ed913b9af4a0a8247d06f3247aed5",
+  "LastActivityDate": "2026-10-19T12:34:10.0848954Z",
+  "LastLoginDate": "2026-10-19T12:34:10.0848954Z",
   "Name": "real-viewer",
   "Policy": {
    "AccessSchedules": [],
@@ -105,6 +105,6 @@
    "RemoteClientBitrateLimit": 0,
    "SyncPlayAccess": "CreateAndJoinGroups"
   },
-  "ServerId": "9fa6545aefdc47bcbf137321aff6310d"
+  "ServerId": "328f6bf95a114a819a373a5f04361690"
  }
 }

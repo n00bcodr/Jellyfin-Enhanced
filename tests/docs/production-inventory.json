@@ -1051,6 +1051,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyAnswerGraph.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyIdentity.cs",
       "category": "Services"
     },
@@ -9690,7 +9694,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 541,
+    "files": 542,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,

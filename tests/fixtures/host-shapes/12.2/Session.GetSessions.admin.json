@@ -8,20 +8,20 @@
    "SupportsMediaControl": false,
    "SupportsPersistentIdentifier": true
   },
-  "Client": "d46r17-capture",
-  "DeviceId": "d46r17-capture-play-a",
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-play-a",
   "DeviceName": "cli",
   "HasCustomDeviceName": false,
-  "Id": "3de036b67d78ec1722903e3a447caeaf",
+  "Id": "0ea9a88451eb9122b4d96f1bec135e41",
   "IsActive": true,
-  "LastActivityDate": "2026-10-19T10:33:32.8174931Z",
-  "LastPlaybackCheckIn": "2026-10-19T10:33:32.7344223Z",
+  "LastActivityDate": "2026-10-19T12:34:03.6345003Z",
+  "LastPlaybackCheckIn": "2026-10-19T12:34:03.4936818Z",
   "NowPlayingItem": {
    "BackdropImageTags": [],
    "ChannelId": null,
    "Chapters": [],
    "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-   "DateCreated": "2026-10-19T09:31:51.8853454Z",
+   "DateCreated": "2026-10-19T12:23:07.3069854Z",
    "EnableMediaSourceDisplay": true,
    "ExternalUrls": [],
    "GenreItems": [],
@@ -30,11 +30,11 @@
    "Id": "99e9b37dd2d610f20696f697f6af6edf",
    "ImageBlurHashes": {
     "Primary": {
-     "ad4590b53a4b0fc6037569e18bb85d35": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+     "0e5539767ac713f1280e32e5ce8173a1": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
     }
    },
    "ImageTags": {
-    "Primary": "ad4590b53a4b0fc6037569e18bb85d35"
+    "Primary": "0e5539767ac713f1280e32e5ce8173a1"
    },
    "IsFolder": false,
    "LocalTrailerCount": 0,
@@ -100,7 +100,7 @@
    "ChannelId": null,
    "Chapters": [],
    "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-   "DateCreated": "2026-10-19T09:31:51.8853454Z",
+   "DateCreated": "2026-10-19T12:23:07.3069854Z",
    "EnableMediaSourceDisplay": true,
    "ExternalUrls": [],
    "GenreItems": [],
@@ -109,11 +109,11 @@
    "Id": "f54a9a67c8bff46ec62af9ca063c8eaf",
    "ImageBlurHashes": {
     "Primary": {
-     "65635162663887124951b841068b3327": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+     "25f7c65ab5f829729dd3374cae09091b": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
     }
    },
    "ImageTags": {
-    "Primary": "65635162663887124951b841068b3327"
+    "Primary": "25f7c65ab5f829729dd3374cae09091b"
    },
    "IsFolder": false,
    "LocalTrailerCount": 1,
@@ -165,20 +165,116 @@
    "SupportsMediaControl": false,
    "SupportsPersistentIdentifier": true
   },
-  "Client": "d46r17-capture",
-  "DeviceId": "d46r17-capture-play-b",
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-play-c",
   "DeviceName": "cli",
   "HasCustomDeviceName": false,
-  "Id": "277f53862603bbad6510846d7b786352",
+  "Id": "fdcc952b021728c8fc79400d6d7ae949",
   "IsActive": true,
-  "LastActivityDate": "2026-10-19T10:33:32.7806754Z",
-  "LastPlaybackCheckIn": "2026-10-19T10:33:32.7806755Z",
+  "LastActivityDate": "2026-10-19T12:34:03.5907535Z",
+  "LastPlaybackCheckIn": "2026-10-19T12:34:03.5907535Z",
+  "NowPlayingItem": {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "ChannelType": "TV",
+   "Chapters": [],
+   "CurrentProgram": {
+    "BackdropImageTags": [],
+    "ChannelId": "d62b34b608b68954cf34042239720060",
+    "ChannelName": "D46 R17 Channel",
+    "Chapters": [],
+    "DateCreated": "2026-10-19T12:24:34.2107743Z",
+    "EnableMediaSourceDisplay": true,
+    "EndDate": "2026-10-19T18:00:00.0000000Z",
+    "ExternalUrls": [],
+    "GenreItems": [],
+    "Genres": [],
+    "Id": "eeaa430c6b878c210066b9b74aaad046",
+    "ImageBlurHashes": {},
+    "ImageTags": {},
+    "LocalTrailerCount": 0,
+    "MediaType": "Video",
+    "Name": "D46 R17 Program Now",
+    "Overview": "Secret plot r17 program now",
+    "ParentId": "d62b34b608b68954cf34042239720060",
+    "ProviderIds": {
+     "ProgramEtag": "xmltv-sha256-v1:E4084A36439F65B24E97E52DEF24B92CBA44A6875B13D32364C883D8F3775AA3"
+    },
+    "RunTimeTicks": 288000000000,
+    "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+    "SpecialFeatureCount": 0,
+    "StartDate": "2026-10-19T10:00:00.0000000Z",
+    "Studios": [],
+    "Taglines": [],
+    "Type": "Program"
+   },
+   "DateCreated": "2026-10-19T12:24:34.1350248Z",
+   "EnableMediaSourceDisplay": true,
+   "ExternalUrls": [],
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "d62b34b608b68954cf34042239720060",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "IsFolder": false,
+   "LocalTrailerCount": 0,
+   "LocationType": "Remote",
+   "MediaType": "Video",
+   "Name": "D46 R17 Channel",
+   "ParentId": "54c4e8dbdc43511d9b3a452c48adf58a",
+   "ProviderIds": {
+    "ExternalServiceId": "Emby"
+   },
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "SpecialFeatureCount": 0,
+   "Studios": [],
+   "Taglines": [],
+   "Type": "TvChannel"
+  },
+  "NowPlayingQueue": [],
+  "PlayState": {
+   "CanSeek": true,
+   "IsMuted": false,
+   "IsPaused": false,
+   "MediaSourceId": "d62b34b608b68954cf34042239720060",
+   "PlayMethod": "DirectPlay",
+   "PlaybackOrder": "Default",
+   "PositionTicks": 30000000,
+   "RepeatMode": "RepeatNone"
+  },
+  "PlayableMediaTypes": [],
+  "PlaylistItemId": "p0",
+  "RemoteEndPoint": "127.0.0.1",
+  "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+  "SupportedCommands": [],
+  "SupportsMediaControl": false,
+  "SupportsRemoteControl": false,
+  "UserId": "c799f011678d4423bd7c07d24c672de8",
+  "UserName": "real-viewer"
+ },
+ {
+  "AdditionalUsers": [],
+  "ApplicationVersion": "1",
+  "Capabilities": {
+   "PlayableMediaTypes": [],
+   "SupportedCommands": [],
+   "SupportsMediaControl": false,
+   "SupportsPersistentIdentifier": true
+  },
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-play-b",
+  "DeviceName": "cli",
+  "HasCustomDeviceName": false,
+  "Id": "206457a60a186db55547d5ba1ccff400",
+  "IsActive": true,
+  "LastActivityDate": "2026-10-19T12:34:03.5397685Z",
+  "LastPlaybackCheckIn": "2026-10-19T12:34:03.5397685Z",
   "NowPlayingItem": {
    "BackdropImageTags": [],
    "ChannelId": null,
    "Chapters": [],
    "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-   "DateCreated": "2026-10-19T09:31:51.8853454Z",
+   "DateCreated": "2026-10-19T12:23:07.3069854Z",
    "EnableMediaSourceDisplay": true,
    "ExternalUrls": [],
    "GenreItems": [],
@@ -187,11 +283,11 @@
    "Id": "6770089c05c9ff11ce37ffc0fba72b0d",
    "ImageBlurHashes": {
     "Primary": {
-     "4b288e085ccc42b821e3ebd836a043b5": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+     "0fa5fb61dcaa2b01f5c4611b127b2c20": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
     }
    },
    "ImageTags": {
-    "Primary": "4b288e085ccc42b821e3ebd836a043b5"
+    "Primary": "0fa5fb61dcaa2b01f5c4611b127b2c20"
    },
    "IndexNumber": 1,
    "IsFolder": false,
@@ -247,7 +343,6 @@
    "SeasonName": "Season 1",
    "SeriesId": "b970e608063e6608f89a0b31a5dae2a8",
    "SeriesName": "D46 R17 Show",
-   "SeriesStudio": "",
    "ServerId": "0202511b0eac4284ab045b3ba556d72e",
    "SpecialFeatureCount": 0,
    "Studios": [],
@@ -287,13 +382,13 @@
    "SupportsMediaControl": false,
    "SupportsPersistentIdentifier": true
   },
-  "Client": "d46r17-capture",
-  "DeviceId": "d46r17-capture-admin",
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-admin",
   "DeviceName": "cli",
   "HasCustomDeviceName": false,
-  "Id": "aebf444b165918c6aa8fb0a47bfef9dd",
+  "Id": "78ed1ba2718db205ed2e3df657d6c312",
   "IsActive": true,
-  "LastActivityDate": "2026-10-19T10:33:32.3688257Z",
+  "LastActivityDate": "2026-10-19T12:34:02.9630697Z",
   "LastPlaybackCheckIn": "0001-01-01T00:00:00.0000000Z",
   "NowPlayingQueue": [],
   "PlayState": {

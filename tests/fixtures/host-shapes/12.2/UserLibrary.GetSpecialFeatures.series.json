@@ -6,10 +6,10 @@
   "ChannelId": null,
   "Chapters": [],
   "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-  "DateCreated": "2026-10-19T09:31:51.8853454Z",
+  "DateCreated": "2026-10-19T12:23:07.3069854Z",
   "DisplayPreferencesId": "d82491aa65daa4655f5f038d41ec6127",
   "EnableMediaSourceDisplay": true,
-  "Etag": "fb083f3a27f8e91921cd6370675ec5b0",
+  "Etag": "49ea9e9c1b138bd23725d0e1034c910f",
   "ExternalUrls": [],
   "ExtraType": "Unknown",
   "GenreItems": [],
@@ -18,11 +18,11 @@
   "Id": "1b2d894b80636473701e32d8f6c30b1c",
   "ImageBlurHashes": {
    "Primary": {
-    "1af71ac060b0c0fc5489943611c0bb1e-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+    "d388a0138a684b1e5b9f3f7761edc970-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
    }
   },
   "ImageTags": {
-   "Primary": "1af71ac060b0c0fc5489943611c0bb1e-jeu082365608004"
+   "Primary": "d388a0138a684b1e5b9f3f7761edc970-jeu082365608004"
   },
   "IsFolder": false,
   "LocalTrailerCount": 0,
@@ -33,7 +33,7 @@
    {
     "Bitrate": 6496,
     "Container": "mp4",
-    "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+    "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
     "Formats": [],
     "GenPtsInput": false,
     "HasSegments": false,

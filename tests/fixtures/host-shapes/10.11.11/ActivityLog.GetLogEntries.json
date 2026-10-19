@@ -1,249 +1,60 @@
 {
  "Items": [
   {
-   "Date": "2026-10-19T10:33:48.7542923Z",
-   "Id": 205,
+   "Date": "2026-10-19T12:34:10.2342733Z",
+   "Id": 43,
+   "ItemId": "d62b34b608b68954cf34042239720060",
+   "Name": "real-viewer is playing D46 R17 Channel on cli",
+   "Severity": "Information",
+   "Type": "VideoPlayback",
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
+  },
+  {
+   "Date": "2026-10-19T12:34:10.1829057Z",
+   "Id": 42,
    "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
    "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
    "Severity": "Information",
    "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
   },
   {
-   "Date": "2026-10-19T10:33:48.3657893Z",
-   "Id": 204,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:32:09.2160255Z",
-   "Id": 194,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer has finished playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlaybackStopped",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:32:03.3656188Z",
-   "Id": 190,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:32:03.3071368Z",
-   "Id": 189,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:26:19.6571286Z",
-   "Id": 161,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:26:19.3409465Z",
-   "Id": 157,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:26:19.2862217Z",
-   "Id": 156,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:25:29.9566536Z",
-   "Id": 144,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:25:29.6734456Z",
-   "Id": 140,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:25:29.6174056Z",
-   "Id": 139,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:24:59.6925468Z",
-   "Id": 127,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:24:59.3998431Z",
-   "Id": 123,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:24:59.3429594Z",
-   "Id": 122,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:24:58.0467384Z",
-   "Id": 112,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:24:57.9695031Z",
-   "Id": 111,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:22:10.7055977Z",
-   "Id": 86,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:22:10.6472267Z",
-   "Id": 85,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:22:09.2652718Z",
-   "Id": 75,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T10:22:09.2068214Z",
-   "Id": 74,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T09:53:15.1546795Z",
-   "Id": 59,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer has finished playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlaybackStopped",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T09:44:24.24692Z",
-   "Id": 55,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T09:44:24.1978288Z",
-   "Id": 54,
-   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
-   "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T09:43:48.0244244Z",
+   "Date": "2026-10-19T12:34:10.119199Z",
    "Id": 41,
-   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-   "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
-   "Severity": "Information",
-   "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
-  },
-  {
-   "Date": "2026-10-19T09:43:47.9774472Z",
-   "Id": 40,
    "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
    "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
    "Severity": "Information",
    "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
   },
   {
-   "Date": "2026-10-19T09:43:15.2624185Z",
-   "Id": 27,
+   "Date": "2026-10-19T12:25:29.518228Z",
+   "Id": 25,
+   "ItemId": "d62b34b608b68954cf34042239720060",
+   "Name": "real-viewer is playing D46 R17 Channel on cli",
+   "Severity": "Information",
+   "Type": "VideoPlayback",
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
+  },
+  {
+   "Date": "2026-10-19T12:25:29.3251628Z",
+   "Id": 24,
    "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
    "Name": "real-viewer is playing D46 R17 Show (1991) - Secret ending r17 E1 on cli",
    "Severity": "Information",
    "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
   },
   {
-   "Date": "2026-10-19T09:43:15.1283074Z",
-   "Id": 26,
+   "Date": "2026-10-19T12:25:29.1821354Z",
+   "Id": 23,
    "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
    "Name": "real-viewer is playing D46 R17 Hidden (1991) on cli",
    "Severity": "Information",
    "Type": "VideoPlayback",
-   "UserId": "b83667cc409247dca2138464cdaf5acf"
+   "UserId": "ee8ed913b9af4a0a8247d06f3247aed5"
   }
  ],
  "StartIndex": 0,
- "TotalRecordCount": 27
+ "TotalRecordCount": 6
 }

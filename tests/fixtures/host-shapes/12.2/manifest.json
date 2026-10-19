@@ -1,7 +1,7 @@
 {
- "captured": "2026-10-19T18:33:42+0800",
+ "captured": "2026-10-19T20:34:09+0800",
  "host": "12.2",
- "note": "Captured by .notes/tools/d46-r17/capture-r17.py from an owned rig-only lab with no privacy rule set.",
+ "note": "Captured by .notes/tools/d46-r18/capture-r18.py from an owned rig-only lab with no privacy rule set.",
  "owners": {
   "guardedFeature": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "guardedSong": "f54a9a67c8bff46ec62af9ca063c8eaf",
@@ -13,7 +13,7 @@
   "showVideo": "b970e608063e6608f89a0b31a5dae2a8"
  },
  "roles": {
-  "channel:r17": "2b1589698d56aa3f7e6af0a3de171c68",
+  "channel:r17": "d62b34b608b68954cf34042239720060",
   "episode:show-e1": "6770089c05c9ff11ce37ffc0fba72b0d",
   "episode:show-e2": "a8be74a03a35ac05db2077507004bc8d",
   "extra:guardedFeature:0": "2ab5420e73034a76aa58a3cc852d975d",
@@ -27,11 +27,12 @@
   "movie:guarded": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "movie:hidden": "99e9b37dd2d610f20696f697f6af6edf",
   "movie:plain": "be7f1a11579d285bc676f6484b2dd389",
-  "program:later": "a900b05ea9806e4ba14305701c18a270",
-  "program:now": "e5e3d6d980668efff7a9beaeaea78d74",
+  "program:later": "295bc478a9e121d11faae8991506642e",
+  "program:now": "eeaa430c6b878c210066b9b74aaad046",
   "season:show-s1": "4b1ac6fd256eed7cba781bc31c409ed2",
   "series:show": "b970e608063e6608f89a0b31a5dae2a8",
-  "timer:later": "7892b9d800e8d6ab0090b056aaead5c4",
+  "seriestimer:later": "253fd18da786312c84468818acd5875b",
+  "timer:later": "f4d9c4a7edcbe6788a7068f55e724daf",
   "user:admin": "7ef882cd307344279240d0eca8333a9f",
   "user:viewer": "c799f011678d4423bd7c07d24c672de8"
  },
@@ -49,6 +50,24 @@
    "file": "Session.GetSessions.viewer.json",
    "method": "GET",
    "path": "/Sessions",
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
+   "endpoint": "Session.WebSocket",
+   "file": "Session.WebSocket.admin.json",
+   "method": "WS",
+   "path": "/socket SessionsStart",
+   "socket": true,
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Session.WebSocket",
+   "file": "Session.WebSocket.viewer.json",
+   "method": "WS",
+   "path": "/socket SessionsStart",
+   "socket": true,
    "status": 200,
    "viewer": "viewer"
   },
@@ -208,7 +227,7 @@
    "endpoint": "LiveTv.GetLiveTvPrograms",
    "file": "LiveTv.GetLiveTvPrograms.json",
    "method": "GET",
-   "path": "/LiveTv/Programs?channelIds=2b1589698d56aa3f7e6af0a3de171c68&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/LiveTv/Programs?channelIds=d62b34b608b68954cf34042239720060&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "admin"
   },
@@ -240,7 +259,7 @@
    "endpoint": "LiveTv.GetChannel",
    "file": "LiveTv.GetChannel.json",
    "method": "GET",
-   "path": "/LiveTv/Channels/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/LiveTv/Channels/d62b34b608b68954cf34042239720060",
    "status": 200,
    "viewer": "admin"
   },
@@ -248,7 +267,7 @@
    "endpoint": "LiveTv.GetProgram",
    "file": "LiveTv.GetProgram.json",
    "method": "GET",
-   "path": "/LiveTv/Programs/e5e3d6d980668efff7a9beaeaea78d74",
+   "path": "/LiveTv/Programs/eeaa430c6b878c210066b9b74aaad046",
    "status": 200,
    "viewer": "admin"
   },
@@ -264,7 +283,31 @@
    "endpoint": "LiveTv.GetTimer",
    "file": "LiveTv.GetTimer.json",
    "method": "GET",
-   "path": "/LiveTv/Timers/7892b9d800e8d6ab0090b056aaead5c4",
+   "path": "/LiveTv/Timers/f4d9c4a7edcbe6788a7068f55e724daf",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetSeriesTimers",
+   "file": "LiveTv.GetSeriesTimers.json",
+   "method": "GET",
+   "path": "/LiveTv/SeriesTimers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetSeriesTimer",
+   "file": "LiveTv.GetSeriesTimer.json",
+   "method": "GET",
+   "path": "/LiveTv/SeriesTimers/253fd18da786312c84468818acd5875b",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetDefaultTimer",
+   "file": "LiveTv.GetDefaultTimer.json",
+   "method": "GET",
+   "path": "/LiveTv/Timers/Defaults?programId=295bc478a9e121d11faae8991506642e",
    "status": 200,
    "viewer": "admin"
   },
@@ -328,7 +371,7 @@
    "endpoint": "UserLibrary.GetItem",
    "file": "UserLibrary.GetItem.channel.json",
    "method": "GET",
-   "path": "/Items/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/Items/d62b34b608b68954cf34042239720060",
    "status": 200,
    "viewer": "admin"
   },
@@ -616,7 +659,7 @@
    "endpoint": "LiveTv.GetRecordingGroup",
    "file": "LiveTv.GetRecordingGroup.json",
    "method": "GET",
-   "path": "/LiveTv/Recordings/Groups/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/LiveTv/Recordings/Groups/d62b34b608b68954cf34042239720060",
    "status": 404,
    "viewer": "admin"
   },

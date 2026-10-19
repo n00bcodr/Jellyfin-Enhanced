@@ -5,10 +5,10 @@
  "ChannelId": null,
  "Chapters": [],
  "Container": "mov,mp4,m4a,3gp,3g2,mj2",
- "DateCreated": "2026-10-19T09:31:51.8853454Z",
+ "DateCreated": "2026-10-19T12:23:07.3069854Z",
  "DisplayPreferencesId": "26dd4a82b00c839c498471cdba80a99c",
  "EnableMediaSourceDisplay": true,
- "Etag": "c511b9a43311bd37f1aa4d1eb6e71173",
+ "Etag": "b0858803adb12009f7321edb024a00e6",
  "ExternalUrls": [],
  "GenreItems": [],
  "Genres": [],
@@ -16,11 +16,11 @@
  "Id": "6770089c05c9ff11ce37ffc0fba72b0d",
  "ImageBlurHashes": {
   "Primary": {
-   "4b288e085ccc42b821e3ebd836a043b5-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+   "0fa5fb61dcaa2b01f5c4611b127b2c20-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
   }
  },
  "ImageTags": {
-  "Primary": "4b288e085ccc42b821e3ebd836a043b5-jeu082365608004"
+  "Primary": "0fa5fb61dcaa2b01f5c4611b127b2c20-jeu082365608004"
  },
  "IndexNumber": 1,
  "IsFolder": false,
@@ -32,7 +32,7 @@
   {
    "Bitrate": 6496,
    "Container": "mp4",
-   "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+   "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
    "Formats": [],
    "GenPtsInput": false,
    "HasSegments": false,
@@ -152,7 +152,6 @@
  "SeasonName": "Season 1",
  "SeriesId": "b970e608063e6608f89a0b31a5dae2a8",
  "SeriesName": "D46 R17 Show",
- "SeriesStudio": "",
  "ServerId": "0202511b0eac4284ab045b3ba556d72e",
  "SortName": "001 - 0001 - Secret ending r17 E1",
  "SpecialFeatureCount": 0,

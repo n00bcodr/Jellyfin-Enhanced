@@ -6,10 +6,10 @@
   "ChannelId": null,
   "Chapters": [],
   "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-  "DateCreated": "2026-10-19T09:31:51.8853454Z",
+  "DateCreated": "2026-10-19T12:23:07.3069854Z",
   "DisplayPreferencesId": "98407be06d631d265a0f6048c91e7414",
   "EnableMediaSourceDisplay": true,
-  "Etag": "12e9c4298ba5b967f8295893c386883c",
+  "Etag": "1069555ca476bd687d377042baee641b",
   "ExternalUrls": [],
   "ExtraType": "Trailer",
   "GenreItems": [],
@@ -18,11 +18,11 @@
   "Id": "280c2acd9057d41848a571f05b07c704",
   "ImageBlurHashes": {
    "Primary": {
-    "debd26fc27b8ea6c866cc9299a196c42-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+    "475d75b6844ca48db96f91777f85ff4e-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
    }
   },
   "ImageTags": {
-   "Primary": "debd26fc27b8ea6c866cc9299a196c42-jeu082365608004"
+   "Primary": "475d75b6844ca48db96f91777f85ff4e-jeu082365608004"
   },
   "IsFolder": false,
   "LocalTrailerCount": 0,
@@ -33,7 +33,7 @@
    {
     "Bitrate": 6496,
     "Container": "mp4",
-    "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+    "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
     "Formats": [],
     "GenPtsInput": false,
     "HasSegments": false,

@@ -7,10 +7,10 @@
    "ChannelId": null,
    "Chapters": [],
    "Container": "mov,mp4,m4a,3gp,3g2,mj2",
-   "DateCreated": "2026-10-19T09:31:51.8853454Z",
+   "DateCreated": "2026-10-19T12:23:07.3069854Z",
    "DisplayPreferencesId": "d82491aa65daa4655f5f038d41ec6127",
    "EnableMediaSourceDisplay": true,
-   "Etag": "d24ef4224daac5c1617f24524b53a73a",
+   "Etag": "74eb4039ef9b45a181db3bb29ebf2302",
    "ExternalUrls": [],
    "ExtraType": "ThemeVideo",
    "GenreItems": [],
@@ -19,11 +19,11 @@
    "Id": "3610114dce5c237d34bb12ef88c8167f",
    "ImageBlurHashes": {
     "Primary": {
-     "50dc3a51f8d35f9c584b51211a2bcc7c-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+     "1963d211daf6296c5aa750bbbdc9d4ba-jeu082365608004": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
     }
    },
    "ImageTags": {
-    "Primary": "50dc3a51f8d35f9c584b51211a2bcc7c-jeu082365608004"
+    "Primary": "1963d211daf6296c5aa750bbbdc9d4ba-jeu082365608004"
    },
    "IsFolder": false,
    "LocalTrailerCount": 0,
@@ -34,7 +34,7 @@
     {
      "Bitrate": 6496,
      "Container": "mp4",
-     "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+     "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
      "Formats": [],
      "GenPtsInput": false,
      "HasSegments": false,
@@ -146,7 +146,6 @@
    "People": [],
    "PlayAccess": "Full",
    "PrimaryImageAspectRatio": 1.7777777777777777,
-   "ProductionYear": 1991,
    "ProviderIds": {},
    "RemoteTrailers": [],
    "RunTimeTicks": 20000000,
