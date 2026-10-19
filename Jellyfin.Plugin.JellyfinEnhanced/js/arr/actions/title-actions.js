@@ -33,24 +33,48 @@
     }
 
     /** The route a continuation belongs to: the view, the shown item and a shared-title link. */
-    function routeKey() {
-        const [path, query] = window.location.hash.replace(/^#!?/, '').split('?');
+    function routeKey(hash = window.location.hash) {
+        const [path, query] = hash.replace(/^#!?/, '').split('?');
         const params = new URLSearchParams(query || '');
         return [path, params.get('id') || '', params.get('jeTitle') || ''].join('|');
     }
 
+    // The lifecycle (D53, ended is forever): it moves on with every route change, user switch and the
+    // action bar going off, and never comes back. A modal's own history entry on the same route is not
+    // a route change. Browsers fire popstate during a hash change and core/navigation fires je:navigate
+    // during pushState, so each step is seen even when the route comes back at once. hashchange carries
+    // its own new URL for hosts that only queue their events.
+    let lifecycle = 0;
+    let shown = routeKey();
+    /** Moves the lifecycle on when the route is not the one last seen; returns it. */
+    function observe(route = routeKey()) {
+        if (route !== shown) { shown = route; lifecycle++; }
+        return lifecycle;
+    }
+    /** Ends every operation started so far (a user switch, the feature going off, disposal). */
+    function end() { lifecycle++; }
+    window.addEventListener('popstate', () => observe());
+    window.addEventListener('je:navigate', () => observe());
+    window.addEventListener('hashchange', event => { observe(routeKey(new URL(event.newURL || window.location.href).hash)); observe(); });
+    JE.session?.onUserChange?.('title-actions-lifecycle', end);
+
     /**
      * One owner generation (D53): the session, the mount (`mount()` says the owning host is still
-     * this one) and the route. Every setup/action continuation checks `current()` after each await.
-     * Two owners use it. The OFFER is whatever showed a choice (a sheet, row or menu); a press counts
-     * only while it is current. The OPERATION starts when the person submits: it belongs to the
+     * this one) and the lifecycle it started in. Every setup/action continuation checks `current()`
+     * after each await. Once it isn't current it never is again, even if the page, card or user comes
+     * back. Two owners use it. The OFFER is whatever showed a choice (a sheet, row or menu); a press
+     * counts only while it is current. The OPERATION starts when the person submits: it belongs to the
      * session, the route and the owning row/card, not to the offer, so it survives the offer closing.
      */
     function generation(mount = () => true) {
         const session = JE.createSessionAction();
-        const route = routeKey();
-        const current = () => session.current() && routeKey() === route && mount() !== false;
-        return { current, route, bind: callback => (...args) => current() ? callback(...args) : false, onCancel: session.onCancel };
+        const born = observe();
+        let ended = false;
+        const current = () => {
+            if (!ended && (observe() !== born || !session.current() || mount() === false)) ended = true;
+            return !ended;
+        };
+        return { current, bind: callback => (...args) => current() ? callback(...args) : false, onCancel: session.onCancel };
     }
 
     /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
@@ -243,5 +267,5 @@
         }
         return action.current() ? out : [];
     }
-    Object.assign(A, { context, fromKey, routeKey, generation, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
+    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
 })(window.JellyfinEnhanced);

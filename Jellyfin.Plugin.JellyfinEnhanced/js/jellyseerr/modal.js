@@ -200,7 +200,7 @@
         };
 
         // A modal opened for an operation that is no longer current (another page, mount or user) only closes.
-        modalElement.addEventListener('click', (e) => { if (!submitted.current()) { e.stopImmediatePropagation(); close(); } }, true);
+        JE.rejectEnded(modalElement, () => !submitted.current(), close);
 
         // Event listeners for closing the modal
         cancelBtn.addEventListener('click', () => history.back());

@@ -142,6 +142,9 @@
         current = { backdrop, opener, action, owner, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
         dismiss.onclick = () => close();
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
+        // An open offer that has ended (its page, row, card or user went) takes no more presses: it only closes.
+        // Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
+        JE.rejectEnded(backdrop, () => current?.lease === lease && !action.current(), () => close(false));
         sheet.addEventListener('keydown', e => {
             if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
             if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;

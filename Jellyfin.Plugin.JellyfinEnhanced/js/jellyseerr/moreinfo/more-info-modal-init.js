@@ -32,7 +32,7 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope) {
         }
 
         // Render modal immediately
-        showModal(data, mediaType, scope);
+        showModal(data, mediaType, scope, submitted);
         const openedModal = state.currentModal;
 
         // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
@@ -111,7 +111,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 /**
  * Show the modal with media information
  */
-function showModal(data, mediaType, scope) {
+function showModal(data, mediaType, scope, submitted) {
     // Replace the current modal without canceling this open operation.
     closeCurrentModal();
 
@@ -129,6 +129,9 @@ function showModal(data, mediaType, scope) {
     modal.dataset.tmdbId = String(data.id || '');
     modal.dataset.mediaType = mediaType;
     modal.jeActionScope = data.jeActionScope;
+
+    // Opened for a title action: once that operation ends, the window takes no more input and closes.
+    if (submitted) JE.rejectEnded(modal, () => !submitted.current(), () => moreInfoModal.close());
 
     // Add event listeners
     modal.addEventListener('click', (e) => {

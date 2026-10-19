@@ -11,6 +11,7 @@
     let observer;
     let frame;
     let disposed = false;
+    let active = false;
     let touch = null;
     let consumed = null;
     let receiving = null;
@@ -47,10 +48,15 @@
     /** True when the layout is jellyfin-web's desktop one (phones use layout-mobile, TVs layout-tv). */
     const desktopLayout = () => document.documentElement.classList.contains('layout-desktop');
 
-    /** Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale. */
+    /**
+     * Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale.
+     * The card's mount is the one it has now: recycled for another title (even back to this one) is another.
+     */
     async function openCard(card, opener) {
         const c = cardContext(card); if (!c || !enabled()) return;
-        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cardContext(card)?.key === c.key);
+        mountCard(card);
+        const mounted = cards.get(card);
+        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === mounted && cardContext(card)?.key === c.key);
         try {
             if (!await A.admit(c, owner)) return;
             const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
@@ -415,7 +421,9 @@
     function scan() {
         queued = false;
         if (disposed) return;
-        if (!enabled()) { A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); return; }
+        // The action bar going off ends every operation it started, for good.
+        if (!enabled()) { if (active) { active = false; A.end(); } A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); return; }
+        active = true;
         document.querySelectorAll(CARD).forEach(mountCard);
         for (const [root, host] of hosts) {
             if (!host.action.current() || !hostShows(root, host.c)) { hosts.delete(root); continue; }
@@ -518,7 +526,7 @@
     }
     /** Releases the global observer and queued paint when the owning document is disposed. */
     function dispose() {
-        disposed = true; observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
+        disposed = true; A.end(); observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
         cancelTouch(); A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards();
     }
     Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose });

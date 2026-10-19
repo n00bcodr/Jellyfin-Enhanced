@@ -496,3 +496,71 @@ for (const [needs, expected] of [[70, []], [100, ['je-actions-fit-1']], [160, ['
     }
   });
 }
+
+// D46S2-R4-2: ended is forever. Leaving the page and coming back (the page kept by the view cache) does not
+// revive the operation an open confirmation, or a write queued behind another, belongs to.
+// The host's frame callbacks (the reconciliation pass) are held while away and run after coming back, as for a
+// retained card: nothing re-scans the page meanwhile, so no cell can pass by a timing accident.
+const awayAndBack = async h => {
+  const delivered = async () => { await new Promise(resolve => setTimeout(resolve, 0)); await settle(); };
+  const frame = h.window.requestAnimationFrame; const held = [];
+  // A pass already queued runs first, on the page, before leaving.
+  await new Promise(resolve => frame.call(h.window, resolve)); await settle();
+  h.window.requestAnimationFrame = fn => held.push(fn);
+  try {
+    h.navigate(); await delivered();
+    h.navigate('#/details?id=x'); await delivered();
+  } finally { h.window.requestAnimationFrame = frame; held.forEach(fn => frame.call(h.window, fn)); }
+  await delivered();
+};
+
+for (const id of ['guard', 'hide', 'report']) {
+  test(`${id}: away and back while its confirmation is open → accepting writes nothing`, async t => {
+    const h = prepare(t, id); await settle();
+    (await openSheet(h, id)).click(); await settle();
+    await awayAndBack(h);
+    await ACTIONS[id].finish(h);
+    assert.equal(ACTIONS[id].none(h), true, id);
+  });
+}
+
+test('Guard: accepted, then away and back while the write waits in the Spoiler Guard queue → no DELETE', async t => {
+  const h = prepare(t, 'guard'); await settle();
+  h.load('enhanced/spoilerguard/ids.js');
+  h.load('enhanced/spoilerguard/state.js');
+  Object.assign(h.guard, { isTmdbKnown: () => true, isTmdbEnabled: () => true, whenLoaded: async () => {}, bindStateView() {},
+    confirmDisableSpoiler: () => { const d = deferred(); h.confirms.push(d); return d.promise; } });
+  (await openSheet(h, 'guard')).click(); await settle();
+  const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other'); await settle();
+  h.confirms.at(-1).resolve(true); await settle();
+  await awayAndBack(h);
+  busy.resolve({}); await settle();
+  assert.equal(h.calls.filter(([method, path]) => method === 'DELETE' && path.includes('/spoiler-blur/pending/movie/603')).length, 0);
+});
+
+test('Hide: accepted, then away and back while the write waits in the Hidden Content queue → no PUT', async t => {
+  for (const stale of [true, false]) {
+    const h = prepare(t, 'hide'); await settle();
+    (await openSheet(h, 'hide')).click(); await settle();
+    const confirm = h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide');
+    assert.ok(confirm, 'Hide asks first');
+    const busy = deferred(); h.hidden.enqueuePersistence(() => busy.promise);
+    confirm.click(); await settle();
+    if (stale) await awayAndBack(h);
+    // The queued write gets every chance to go out before counting (the control's does).
+    busy.resolve(); for (let i = 0; i < 3; i++) { await new Promise(resolve => setTimeout(resolve, 0)); await settle(); }
+    assert.equal(h.writes.filter(w => w[1] === 'hide').length, stale ? 0 : 1, stale ? 'stale' : 'control');
+  }
+});
+
+test('the real Guard dialog refuses its accept after away and back and closes', async t => {
+  const h = prepare(t, 'guard'); await settle();
+  h.load('enhanced/spoilerguard/dialog.js');
+  Object.assign(h.guard, { whenLoaded: async () => {}, getUserPrefs: () => ({}), isDisableSnoozed: () => false, setDisableSnooze: () => h.writes.push(['snooze']) });
+  (await openSheet(h, 'guard')).click(); await settle();
+  const dialog = h.document.querySelector('.je-spoiler-confirm-dialog');
+  assert.ok(dialog);
+  await awayAndBack(h);
+  dialog.querySelector('.je-spoiler-confirm-accept')?.click(); await settle();
+  assert.deepEqual(h.writes, []);
+});

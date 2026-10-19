@@ -29,6 +29,20 @@
     };
 
     /**
+     * UI opened for an operation (a form, sheet, drawer or window) only closes once `ended()`: a click,
+     * middle-click or form submission inside `root` is cancelled whole first, its default included (no
+     * link opens, no form submits, no native control acts), and then `close()` runs.
+     */
+    JE.rejectEnded = function (root, ended, close) {
+        const reject = event => {
+            if (!ended()) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            close(event);
+        };
+        for (const type of ['click', 'auxclick', 'submit']) root.addEventListener(type, reject, true);
+    };
+
+    /**
      * Captures identity before a gesture, confirmation, timer or asynchronous lookup. With
      * `{ submitted: true }`, an owner whose write follows a confirmation or an await also stays bound
      * to the operation that dispatched its control, so its existing check before the write covers it.

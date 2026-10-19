@@ -497,7 +497,7 @@
         state.sheet = sheet;
         state.onKey = (e) => onKey(state, e);
         // A sheet opened for an operation that is no longer current (another page, mount or user) only closes.
-        backdrop.addEventListener('click', (e) => { if (!state.submitted.current()) { e.preventDefault(); e.stopImmediatePropagation(); finish(state, null); } }, true);
+        JE.rejectEnded(backdrop, () => !state.submitted.current(), () => finish(state, null));
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(state, null); });
         document.addEventListener('keydown', state.onKey, true);
         refresh(state);

@@ -197,7 +197,8 @@
         const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel };
         current = { target, overlay, root, opener, action, submitted, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
-        root.addEventListener('click', event => { if (current !== opening || !opening.action.current()) { event.stopImmediatePropagation(); ended(opening); } }, true);
+        // A stale drawer takes no input: a link in it opens nothing (D46S2-R4-3), and an ended operation closes it.
+        JE.rejectEnded(overlay, () => current !== opening || !opening.action.current(), () => ended(opening));
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
