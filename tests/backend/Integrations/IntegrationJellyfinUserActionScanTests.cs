@@ -32,23 +32,74 @@ namespace JE.Tests
             var scanned = JellyfinUserActions.Scan(api.Path);
             var bracketed = scanned.Where(a => a.Key != JellyfinUserKey.None).ToList();
             Assert.NotEmpty(bracketed);
-            var problems = bracketed.Where(a => a.Reaches == null && !ControllerOnly.Contains(a.Controller + "." + a.Action)).Select(a => a.Controller + "." + a.Action + ": bracketed (" + a.Why + ") but its code reaches no user change").ToList();
+            var problems = bracketed.Where(a => a.Reaches == null && !ControllerOnly.Contains(a.Controller + "." + a.Action) && a.Why?.StartsWith("unresolved callback ", StringComparison.Ordinal) != true)
+                .Select(a => a.Controller + "." + a.Action + ": bracketed (" + a.Why + ") but its code reaches no user change").ToList();
             // The password change reaches the sign-in that can lock the account out, and the policy change its update.
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "UpdateUserPassword", Reaches: "IUserManager.ResetPassword" or "IUserManager.AuthenticateUser" or "IUserManager.ChangePassword" });
             Assert.Contains(scanned, a => a is { Controller: "UserController", Action: "AuthenticateUserByName", Reaches: "ISessionManager.AuthenticateNewSession" });
-            // GET actions don't change users, except the wizard's first-user read, which creates them.
-            problems.AddRange(scanned.Where(a => a.Reaches != null && a.Verbs.All(v => v is "GET" or "HEAD") && a.Action != "GetFirstUser").Select(a => a.Controller + "." + a.Action + ": a GET that reaches " + a.Reaches));
+            // GET actions don't change users, except the wizard's first-user read, which creates them, and (round 10) the GETs
+            // that log the request's person's session activity (a reviewed person-scoped save).
+            problems.AddRange(scanned.Where(a => a.Reaches != null && a.Verbs.All(v => v is "GET" or "HEAD") && a.Action != "GetFirstUser" && !JellyfinUserActions.PersonScoped.ContainsKey(a.Reaches)).Select(a => a.Controller + "." + a.Action + ": a GET that reaches " + a.Reaches));
+            // Round 10: nothing stays unresolved with a user contract in Jellyfin's own code (each would bracket a write for everyone).
+            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved ", StringComparison.Ordinal) == true && !a.Why.StartsWith("unresolved callback ", StringComparison.Ordinal)).Select(a => a.Controller + "." + a.Action + ": " + a.Why));
+            // Round 11: an unresolved callback (a plugin's event handler) brackets a write for the request's person, never a
+            // GET, never everyone (IntegrationJellyfinApiUserActionTests holds the list).
+            problems.AddRange(scanned.Where(a => a.Why?.StartsWith("unresolved callback ", StringComparison.Ordinal) == true && (a.Key != JellyfinUserKey.User || a.Verbs.All(v => v is "GET" or "HEAD")))
+                .Select(a => a.Controller + "." + a.Action + ": an unresolved callback bracketed " + a.Key));
+            Assert.Contains(scanned, a => a is { Controller: "MediaInfoController", Action: "GetPostedPlaybackInfo", Key: JellyfinUserKey.User });
             if (problems.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", problems));
         }
 
-        // Reading the assembly is a one-time cost per process, done in the background before the first request.
+        // Reading the assemblies is a one-time cost per process, done in the background before the first request. Round 10:
+        // the code read is Jellyfin.Api and the server assemblies next to it (where its interfaces are implemented).
         [Fact]
         public void ReadingJellyfinsAssemblyIsCheap()
         {
             using var api = JellyfinApiAssembly.Load();
+            var files = JellyfinUserActions.CodeOf(api.Path).Select(Path.GetFileName).ToList();
+            Assert.Equal("Jellyfin.Api.dll", files[0]);
+            Assert.Contains("MediaBrowser.Controller.dll", files);
+            Assert.Contains("Emby.Server.Implementations.dll", files);
+            Assert.Contains("Jellyfin.Server.Implementations.dll", files);
+            Assert.DoesNotContain(files, f => f!.StartsWith("System.", StringComparison.Ordinal) || f.StartsWith("Microsoft.", StringComparison.Ordinal));
             var timer = System.Diagnostics.Stopwatch.StartNew();
             Assert.True(JellyfinUserActions.Scan(api.Path).Count > 300);
-            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), "read in " + timer.Elapsed);
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), "read in " + timer.Elapsed);
+        }
+
+        // Round 19: the classifier reads the complete ancestry of Jellyfin's types (the bases and interfaces they have in .NET
+        // and in Jellyfin's libraries) from the metadata of the assemblies next to them, as in a running Jellyfin (the pinned
+        // copy holds the image's whole /jellyfin: tests/backend/jellyfin_api.py). Every step is read: no type of Jellyfin's
+        // falls back to the fail-closed reading (a possible fill of any slot, a possible delegate).
+        [Fact]
+        public void JellyfinsAncestryIsReadWhole()
+        {
+            using var api = JellyfinApiAssembly.Load();
+            Assert.Empty(JellyfinUserActions.AncestryGaps(api.Path));
+        }
+
+        // Round 10: a reviewed person-scoped member (JellyfinUserActions.PersonScoped) is held to what it was reviewed for:
+        // in Jellyfin's own code, GetSession's calls reach only LogSessionActivity's save of that user (its activity date
+        // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call other than a callback,
+        // which brackets the same person) fails here.
+        [Fact]
+        public void APersonScopedMemberReachesOnlyTheReviewedChange()
+        {
+            using var api = JellyfinApiAssembly.Load();
+            var reached = JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession");
+            Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, reached.Where(r => !r.StartsWith("callback ", StringComparison.Ordinal)));
+            // Round 11: the plugin event handlers its session code can raise (unresolved callbacks) bracket that same person,
+            // as the review does; nothing else. Round 17 (a delegate invoked is judged by where it came from): on 12.2 also
+            // the provider-id validator ProviderIdsExtensions.IsValidProviderId runs, taken from a dictionary by TryGetValue
+            // (the reading doesn't follow a collection's values). Reviewed (12.2 MediaBrowser.Model, decompiled): the
+            // dictionary is private, static and read-only, filled only by its initializer with the IMDb regex, positive-number
+            // and GUID checks. A callback, so the same person.
+            // Round 21 (open-world inputs): also the callbacks a public helper on its way may be handed from outside the code
+            // read (the reading doesn't tell one call of a method from another). All callbacks: the same person.
+            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.True(
+                r.StartsWith("callback delegate ", StringComparison.Ordinal) || r == "callback Func<String,Boolean> of unknown origin in ProviderIdsExtensions.IsValidProviderId"
+                || r.EndsWith(" from outside the code read", StringComparison.Ordinal), r));
+            Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 
         // Deny by default: a member of IUserManager this JE doesn't know (a Jellyfin update) counts as a change; only the

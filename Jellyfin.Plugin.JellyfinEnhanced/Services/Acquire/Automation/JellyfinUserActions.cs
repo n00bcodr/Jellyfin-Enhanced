@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -30,24 +31,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// <param name="Action">The action's method name.</param>
     /// <param name="Verbs">Its HTTP methods ("*": any).</param>
     /// <param name="Key">The bracket it runs inside.</param>
-    /// <param name="Why">Why it is bracketed ("user controller", "reaches IUserManager.UpdatePolicyAsync", "reviewed"); null when it isn't.</param>
+    /// <param name="Why">Why it is bracketed ("user controller", "reaches IUserManager.UpdatePolicyAsync", "unresolved IFoo.Bar", "reviewed"); null when it isn't.</param>
     /// <param name="Reaches">The user change or sign-in its code reaches ("IUserManager.UpdatePolicyAsync"), whatever else applies; null: none.</param>
-    public sealed record JellyfinUserAction(string Controller, string Action, IReadOnlyList<string> Verbs, JellyfinUserKey Key, string? Why, string? Reaches);
+    /// <param name="Via">The calls from the action to what it reaches (or, unresolved, to what couldn't be followed), for review; null: neither.</param>
+    public sealed record JellyfinUserAction(string Controller, string Action, IReadOnlyList<string> Verbs, JellyfinUserKey Key, string? Why, string? Reaches, IReadOnlyList<string>? Via = null)
+    {
+        /// <summary>The assembly that declares the action's method (the controller's, or a base controller's: round 21).</summary>
+        public string? Module { get; init; }
+
+        /// <summary>The action method's metadata token in <see cref="Module"/> (what reflection's MetadataToken gives).</summary>
+        public int Token { get; init; }
+    }
 
     /// <summary>
-    /// 4a review round 9: which controller actions can create, delete, change, lock or authenticate a Jellyfin user, read
-    /// from the code of the assembly that defines them (Jellyfin.Api, or a plugin's), so a Jellyfin update that adds or
-    /// renames one is bracketed without a change here. DENY BY DEFAULT: an action is bracketed when
+    /// 4a review rounds 9 and 10: which controller actions can create, delete, change, lock or authenticate a Jellyfin user,
+    /// read from the code (System.Reflection.Metadata: nothing is loaded or run), so a Jellyfin update that adds or renames
+    /// one is bracketed without a change here. DENY BY DEFAULT: an action is bracketed when
     /// <list type="bullet">
     /// <item><description>it is on Jellyfin's user, Quick Connect or start-up controller and isn't GET-only;</description></item>
-    /// <item><description>its code (its async state machine, lambdas and every method of its assembly it calls) calls a member of
-    /// <see cref="Mutates"/>: everything on IUserManager except its reviewed reads, the session manager's sign-ins, Quick
-    /// Connect's authorization, the authentication and password-reset providers, and a write to a user entity;</description></item>
+    /// <item><description>its code reaches a member of <see cref="Mutates"/> (everything on IUserManager except its reviewed reads,
+    /// the session manager's sign-ins, Quick Connect's authorization, the authentication and password-reset providers, and
+    /// a write to a user entity), following its async state machine, its lambdas, and every call ACROSS the Jellyfin server
+    /// assemblies (round 10): a call through an interface or a virtual method goes to every implementation or override
+    /// those assemblies have (round 17: a slot .NET declares too), a delegate field to what its stores (a constructor's, an
+    /// initializer's) put in it, an event to the handlers subscribed to it, and (round 17) a delegate invoked to what its
+    /// provenance shows: a parameter to what the callers hand it, a call's result to what the callee returns, a local or an
+    /// array element to what was stored in it, one handed to code outside the code read as run there; provenance the reading
+    /// can't establish (handed in from outside, a collection's value, an array other code filled, an unknown) is an
+    /// unresolved callback (fail closed). Round 18: each rule lives in one place and applies in every combination: one
+    /// target resolver for every transfer (Targets), one "running a method" edge set on every method node (Running: body,
+    /// type initializer, module initializer), one provenance model for every delegate value (Flow → Sources: invoked,
+    /// stored in a field, handed to a method, returned), tested as a generated cross-product (IntegrationJellyfinUserMatrixTests).
+    /// Round 19: the model's inputs are complete. One fill rule for every slot (SlotFills: ECMA-335 interface and virtual
+    /// method resolution) over each type's COMPLETE ancestry (LineageOf: the bases and interfaces outside the code read are
+    /// read from their assemblies' metadata, found by the assembly a reference names, never loaded); a step that can't be
+    /// read fails closed. Every recursive provenance is a monotone fixed point (Summaries: what a method returns as a
+    /// function of its arguments; Up: the parameters callers feed, solved as strongly connected groups), never cut by a
+    /// depth or a step budget. Round 21: identity is exact. A type is its defining assembly and full name (TypeId: through
+    /// the reference that names it and type forwarders); a method is matched by its whole signature (Same: calling
+    /// convention, generic arity, return and parameter types, each taken into the implementing type's generic context),
+    /// a match that is certain ending a search and one that isn't (a type that can't be read, a modifier that differs)
+    /// kept; slots outside the code read are followed through their metadata's MethodImpl tables (ImplIndex). Inputs are
+    /// open: a method code outside the code read can call (ExternallyCallable) has what that code hands it too, whatever its
+    /// callers in the code read hand it; a delegate field it can write, what it stores. The actions are MVC's own
+    /// (MvcController, MvcActions: inherited ones included), held to a real MVC application model by the tests;</description></item>
+    /// <item><description>it isn't a GET and its code reaches a call that can't be followed whose contract can carry a user (an
+    /// interface nothing read implements): it is bracketed for everyone (a GET isn't: it would hold automation on every
+    /// page view);</description></item>
+    /// <item><description>it isn't a GET and its code reaches a callback that can't be followed (round 11: a delegate nothing in the
+    /// code read stores or that is handed in from outside it, or an unresolved member handing one back), whatever its
+    /// type: it is bracketed for the request's person (its userId argument, else the signed-in person), everyone's when
+    /// there is none. Not for everyone: on 12.2 and 10.11.11 that would hold every automatic check during playback
+    /// starts, favourites, ratings and user-data saves (Q-4AF11-1);</description></item>
     /// <item><description>or it is on the <see cref="Reviewed"/> list.</description></item>
     /// </list>
-    /// The assembly's metadata is read once (System.Reflection.Metadata, no code loaded or run), then each action is a
-    /// dictionary lookup. An assembly that can't be read brackets every one of its actions that isn't GET, globally.
-    /// JE's own actions are left to the brackets inside them.
+    /// The code read is the controller's assembly, with the Jellyfin server assemblies (Jellyfin.*, MediaBrowser.*, Emby.*)
+    /// of its folder when that is Jellyfin's, else every assembly of its folder and Jellyfin's. It is read once (in the
+    /// background for Jellyfin.Api), then each action is a dictionary lookup. An assembly that can't be read brackets every
+    /// one of its actions that isn't GET, globally. JE's own actions are left to the brackets inside them.
+    /// <para>
+    /// Known limits (docs/arr/arr-features.md, "Known limits"): this is static analysis of the metadata. It can't see
+    /// reflection (internal members included: Jellyfin's InternalsVisibleTo names only its own test assemblies, which a server
+    /// doesn't have, Q-4AFIX21-1), dynamic code (code generated at run time, a service resolved by name from a service locator), code
+    /// outside the assemblies read (another plugin's, another process) or (round 19, Q-4AFIX19-1) a method of theirs that
+    /// .NET's code calls back on an object handed to it (a stream's Write in a copy); a change made there is covered by Jellyfin's
+    /// user events after it commits (JellyfinUserChangeVersion). Stated limits (round 17, each pinned by a test): lifecycle
+    /// slots declared outside the code read (Dispose, DisposeAsync, Finalize, ToString, Equals, GetHashCode, GetType) aren't
+    /// followed into implementations; a compiler-generated state machine is followed from the method that creates it (a
+    /// lazy sequence created by one action and enumerated by another counts where it is created); a generic parameter's
+    /// field (`T`) is followed to what the code read stores in it, not counted as handed in from outside. It may
+    /// over-bracket (round 18): an array handed to other code (which may write it) has unknown elements; (round 19) a type
+    /// whose ancestry can't be read whole may fill any slot it has a method for, and a type that can't be read may be a
+    /// delegate (AncestryGaps lists them; none for Jellyfin 12.2 and 10.11.11 with their own files).
+    /// </para>
     /// </summary>
     public static class JellyfinUserActions
     {
@@ -55,8 +111,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         public static readonly IReadOnlySet<string> UserControllers = new HashSet<string>(StringComparer.Ordinal) { "UserController", "QuickConnectController", "StartupController" };
 
         /// <summary>Actions bracketed whatever their code shows ("Controller.Action"): none are needed for 12.2 and 10.11, whose
-        /// user-changing actions all reach a <see cref="Mutates"/> member; kept for one that only does so through another assembly.</summary>
+        /// user-changing actions all reach a <see cref="Mutates"/> member; kept for one whose change the code can't show.</summary>
         public static readonly IReadOnlySet<string> Reviewed = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Members followed into that change a user's record but no authority the automatic-write check reads ("Type.Member",
+        /// the declaring type's simple name), each reviewed in the 12.2 and 10.11.11 sources. A call of one isn't followed.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> NotAuthority = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // Round 17 (reviewed in 12.2 and 10.11.11, Jellyfin.Database.Implementations PessimisticLockBehavior.DbLock):
+            // Dispose runs the Action DbLock's own EnterWrite/EnterRead factories gave it (ExitWriteLock / ExitReadLock of
+            // the database lock) or nothing (the shared no-lock instance). It changes no user; following it through every
+            // `using` of a database lock would bracket ordinary actions (playback pings, display preferences) for nothing.
+            ["DbLock.Dispose"] = "releases the database read/write lock",
+        };
+
+        /// <summary>
+        /// Members whose user change is only ever to the person the request is for: its <c>userId</c> argument, else the
+        /// signed-in person (the bracket's own key), whatever the action ("Type.Member", the declaring type's simple name).
+        /// An action reaching a user change only through one of these is bracketed for that person, not for everyone.
+        /// Each is reviewed in the 12.2 and 10.11.11 sources, and IntegrationJellyfinUserDispatchTests holds what its code
+        /// reaches to the reviewed change.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> PersonScoped = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // GetSession(…, userId) reads the user of userId, else of the signed-in person, and hands it to
+            // ISessionManager.LogSessionActivity, which saves that user whole (IUserManager.UpdateUserAsync, at most once a
+            // minute) with its LastActivityDate moved. 12.2 and 10.11 copy every value and permission of the object handed
+            // in, so the save can write back what was read at the start of the request: a change, bracketed for that person.
+            ["RequestHelpers.GetSession"] = "IUserManager.UpdateUserAsync (LogSessionActivity's activity-date save of the request's person)",
+        };
 
         // IUserManager's members that only read (everything else on it changes or authenticates a user).
         private static readonly HashSet<string> UserManagerReads = new(StringComparer.Ordinal)
@@ -71,7 +156,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         // A user entity's members that only read.
         private static readonly HashSet<string> UserEntityReads = new(StringComparer.Ordinal) { "HasPermission", "GetPreference", "GetPreferenceValues", "GetPreferenceValue", "IsParentalScheduleAllowed", "IsFolderGrouped" };
 
-        private static readonly ConcurrentDictionary<string, Lazy<AssemblyActions?>> Assemblies = new(StringComparer.Ordinal);
+        private static readonly ConcurrentDictionary<string, Lazy<CodeSet?>> Assemblies = new(StringComparer.Ordinal);
 
         /// <summary>
         /// Whether a call of <paramref name="member"/> on <paramref name="type"/> (full name, generic arity included) can create,
@@ -80,7 +165,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// </summary>
         /// <param name="type">The declaring type's full name.</param>
         /// <param name="member">The member's metadata name (<c>set_X</c> for a property setter).</param>
-        public static bool Mutates(string type, string member) => type switch
+        // Round 17: object-lifecycle members (disposal, finalization, identity and text) change no user on any of the types
+        // below; a virtual call to such a slot declared outside the code read (IDisposable, object) reaches them on every
+        // implementation, so without this every `using` would count as a user change.
+        private static readonly HashSet<string> LifecycleMembers = new(StringComparer.Ordinal)
+        {
+            "Dispose", "DisposeAsync", "Finalize", "ToString", "Equals", "GetHashCode", "GetType",
+        };
+
+        public static bool Mutates(string type, string member) => !LifecycleMembers.Contains(member) && type switch
         {
             "MediaBrowser.Controller.Library.IUserManager" or "Jellyfin.Server.Implementations.Users.UserManager" => !UserManagerReads.Contains(member) && !member.StartsWith("get_", StringComparison.Ordinal),
             "MediaBrowser.Controller.Session.ISessionManager" or "Emby.Server.Implementations.Session.SessionManager" => member.StartsWith("Authenticate", StringComparison.Ordinal),
@@ -91,6 +184,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             _ => false,
         };
 
+        // A member of the types Mutates classifies whole that it doesn't count (their reviewed reads), or one reviewed as
+        // touching no authority: not followed any further.
+        private static bool ReviewedRead(string type, string member) => type switch
+        {
+            "MediaBrowser.Controller.Library.IUserManager" or "Jellyfin.Server.Implementations.Users.UserManager" => true,
+            "MediaBrowser.Controller.QuickConnect.IQuickConnect" or "Emby.Server.Implementations.QuickConnect.QuickConnectManager" => true,
+            "MediaBrowser.Controller.Authentication.IAuthenticationProvider" or "MediaBrowser.Controller.Authentication.IPasswordResetProvider" => true,
+            "Jellyfin.Database.Implementations.Entities.User" or "Jellyfin.Data.Entities.User" => true,
+            "Jellyfin.Database.Implementations.Entities.Permission" or "Jellyfin.Data.Entities.Permission" => true,
+            _ => NotAuthority.ContainsKey(Simple(type) + "." + member),
+        };
+
+        private static string Simple(string type) => type[(Math.Max(type.LastIndexOf('.'), type.LastIndexOf('+')) + 1)..];
+
         /// <summary>
         /// The bracket the action of <paramref name="method"/> on <paramref name="controller"/> runs inside. The first call for
         /// an assembly reads it (see <see cref="Warm"/>); an assembly that can't be read brackets every request that isn't a
@@ -99,14 +206,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="method">The action's method.</param>
         /// <param name="controller">The controller's type name.</param>
         /// <param name="requestMethod">The request's HTTP method (for an assembly that can't be read).</param>
-        public static JellyfinUserKey KeyOf(MethodInfo method, string controller, string requestMethod)
+        public static JellyfinUserKey KeyOf(MethodInfo method, string controller, string requestMethod) => KeyOf(method, method.ReflectedType, controller, requestMethod);
+
+        /// <summary>
+        /// The bracket the action of <paramref name="method"/> on the controller type <paramref name="controller"/> runs inside.
+        /// Round 21: the method may be declared by a base controller in another assembly (MVC's inherited actions); the
+        /// controller's assembly is the one read.
+        /// </summary>
+        /// <param name="method">The action's method (as MVC hands it: possibly a base controller's).</param>
+        /// <param name="controller">The controller type.</param>
+        /// <param name="requestMethod">The request's HTTP method (for an assembly that can't be read).</param>
+        public static JellyfinUserKey KeyOf(MethodInfo method, Type controller, string requestMethod) => KeyOf(method, controller, controller.Name, requestMethod);
+
+        private static JellyfinUserKey KeyOf(MethodInfo method, Type? type, string controller, string requestMethod)
         {
             // JE's own actions bracket their user changes themselves, keyed by the user (maintenance mode's policy writes;
             // IntegrationAutomationBracketScanTests holds every one to it), so their requests aren't bracketed again: a
             // page's bootstrap, which can end an expired maintenance window, would otherwise move everyone's version.
             if (method.Module.Assembly == typeof(JellyfinUserActions).Assembly) return JellyfinUserKey.None;
-            var actions = method.Module.Assembly is { } assembly ? Of(assembly) : null;
-            if (actions?.Classify(method.MetadataToken, controller) is { } action) return action.Key;
+            // Round 21: the controller's assembly is read (its code and the code read with it); the action is found by the
+            // assembly that declares its method and the method's token (an inherited action's method is its base's).
+            var actions = (type?.Assembly ?? method.Module.Assembly) is { } assembly ? Of(assembly) : null;
+            if (actions?.Classify(method.Module.Assembly.GetName().Name ?? string.Empty, method.MetadataToken, controller) is { } action) return action.Key;
             return string.Equals(requestMethod, "GET", StringComparison.OrdinalIgnoreCase) || string.Equals(requestMethod, "HEAD", StringComparison.OrdinalIgnoreCase)
                 ? JellyfinUserKey.None
                 : JellyfinUserKey.Global;
@@ -124,16 +245,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
         /// <summary>Every controller action of the assembly at <paramref name="path"/>, classified (tests and diagnostics).</summary>
         /// <param name="path">The assembly file.</param>
-        public static IReadOnlyList<JellyfinUserAction> Scan(string path) => AssemblyActions.Read(path).All();
+        public static IReadOnlyList<JellyfinUserAction> Scan(string path) => CodeSet.Read(path).All();
 
-        private static AssemblyActions? Of(Assembly assembly)
+        /// <summary>
+        /// The calls the code read with the assembly at <paramref name="path"/> can't follow and doesn't count, because their
+        /// contract carries no user and hands back no code to run (code outside it that is handed none): recorded for review
+        /// (tests and diagnostics). Unresolved delegates always count (round 11).
+        /// </summary>
+        /// <param name="path">The controller assembly.</param>
+        public static IReadOnlyList<string> Uncounted(string path) => CodeSet.Read(path).Contained;
+
+        /// <summary>
+        /// Everything the code of <paramref name="member"/> ("Type.Member", the declaring type's simple name) reaches in the
+        /// code read with the assembly at <paramref name="path"/>: the user changes, reviewed person changes, counted
+        /// unresolved calls and ("callback …") unresolved callbacks (tests: a reviewed member is held to what it was reviewed for).
+        /// </summary>
+        /// <param name="path">The controller assembly.</param>
+        /// <param name="member">The member.</param>
+        public static IReadOnlyList<string> ReachedFrom(string path, string member) => CodeSet.Read(path, member).Reached;
+
+        /// <summary>
+        /// Round 19: the ancestry steps the reading of the assembly at <paramref name="path"/> couldn't read (a base, an
+        /// interface or a type outside the code read whose assembly isn't found or doesn't define it), for review: each makes
+        /// its types possible fills of any slot, and a type that can't be read a possible delegate (fail closed).
+        /// </summary>
+        /// <param name="path">The controller assembly.</param>
+        public static IReadOnlyList<string> AncestryGaps(string path) => CodeSet.Read(path).Gaps;
+
+        /// <summary>The assembly files read with the one at <paramref name="path"/> (it comes first).</summary>
+        /// <param name="path">The controller assembly.</param>
+        public static IReadOnlyList<string> CodeOf(string path) => CodeSet.Files(path);
+
+        private static CodeSet? Of(Assembly assembly)
         {
             if (assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location)) return null;
-            return Assemblies.GetOrAdd(assembly.Location, path => new Lazy<AssemblyActions?>(() =>
+            return Assemblies.GetOrAdd(assembly.Location, path => new Lazy<CodeSet?>(() =>
             {
                 try
                 {
-                    return AssemblyActions.Read(path);
+                    return CodeSet.Read(path);
                 }
                 catch (Exception e) when (e is IOException or BadImageFormatException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
                 {
@@ -142,15 +292,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             })).Value;
         }
 
-        // One assembly's methods: what each calls in the assembly, which reach a Mutates member, and each action's verbs.
-        private sealed class AssemblyActions
+        // The code of a controller assembly and the assemblies read with it: every method, what it calls (across them, with
+        // dispatch resolved), whether it reaches a Mutates member or a call that can't be followed, and the controller
+        // assembly's actions, classified. Only the actions are kept once read.
+        private sealed class CodeSet
         {
             private static readonly OpCode[] OneByte = new OpCode[0x100];
             private static readonly OpCode[] TwoByte = new OpCode[0x100];
 
-            private readonly Dictionary<int, Method> _methods = new();
+            // Round 21: by the declaring assembly and token of the action's method (an inherited action's is its base's, and
+            // several controllers can inherit it), and every (controller, action) as MVC finds them.
+            private readonly Dictionary<(string Assembly, int Token), JellyfinUserAction> _actions = new(new AssemblyTokenComparer());
+            private readonly List<JellyfinUserAction> _listed = new();
 
-            static AssemblyActions()
+            static CodeSet()
             {
                 foreach (var field in typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static))
                 {
@@ -161,161 +316,3502 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 }
             }
 
-            private sealed class Method
+            public JellyfinUserAction? Classify(string assembly, int token, string controller)
+                => _actions.TryGetValue((assembly, token), out var action) ? action with { Controller = controller, Key = KeyFor(action, controller), Why = WhyFor(action, controller) } : null;
+
+            public IReadOnlyList<JellyfinUserAction> All() => _listed.ToList();
+
+            private sealed class AssemblyTokenComparer : IEqualityComparer<(string Assembly, int Token)>
             {
-                public required string Type { get; init; }
-                public required string Name { get; init; }
-                public required bool Action { get; init; }
-                public required IReadOnlyList<string> Verbs { get; init; }
-                public required bool UserId { get; init; }
-                public List<int> Calls { get; } = new();
-                public string? Reaches { get; set; }
+                public bool Equals((string Assembly, int Token) x, (string Assembly, int Token) y) => x.Token == y.Token && string.Equals(x.Assembly, y.Assembly, StringComparison.OrdinalIgnoreCase);
+
+                public int GetHashCode((string Assembly, int Token) obj) => HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Assembly), obj.Token);
             }
 
-            public static AssemblyActions Read(string path)
-            {
-                using var stream = File.OpenRead(path);
-                using var pe = new PEReader(stream, PEStreamOptions.PrefetchEntireImage);
-                var md = pe.GetMetadataReader();
-                var result = new AssemblyActions();
-                var types = new Dictionary<string, TypeDefinitionHandle>(StringComparer.Ordinal);
-                foreach (var handle in md.TypeDefinitions) types[FullName(md, handle)] = handle;
+            /// <summary>The calls nothing read could follow whose contract can carry no user (recorded for review).</summary>
+            public IReadOnlyList<string> Contained { get; private set; } = Array.Empty<string>();
 
-                foreach (var typeHandle in md.TypeDefinitions)
+            /// <summary>What the member asked for reaches (see <see cref="Read(string, string?)"/>).</summary>
+            public IReadOnlyList<string> Reached { get; private set; } = Array.Empty<string>();
+
+            /// <summary>The ancestry steps that couldn't be read (each brackets as a possible fill of any slot).</summary>
+            public IReadOnlyList<string> Gaps { get; private set; } = Array.Empty<string>();
+
+            // Everything a member's code reaches, by the calls (not through the member's own PersonScoped stop).
+            private List<string> From(string member)
+            {
+                var seen = new HashSet<int>();
+                var queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].Type >= 0 && _nodes[n].Name == member));
+                var reached = new SortedSet<string>(StringComparer.Ordinal);
+                while (queue.Count > 0)
                 {
-                    var type = md.GetTypeDefinition(typeHandle);
-                    var typeName = FullName(md, typeHandle);
-                    var controller = Controller(md, type, types);
+                    var n = queue.Dequeue();
+                    if (!seen.Add(n)) continue;
+                    var node = _nodes[n];
+                    if (node.Type < 0 && (node.Reaches ?? node.PersonReaches ?? node.Unresolved ?? (node.Callback is { } callback ? "callback " + callback : null)) is { } what) reached.Add(what);
+                    foreach (var callee in node.Calls) queue.Enqueue(callee);
+                }
+
+                return reached.ToList();
+            }
+
+            // Once classified, only the actions are kept (the reading is done once per assembly).
+            private void Drop()
+            {
+                _types.Clear();
+                _typesByName.Clear();
+                _nodes.Clear();
+                _nodeOf.Clear();
+                _stores.Clear();
+                _loads.Clear();
+                _fieldNodes.Clear();
+                _fieldTypes.Clear();
+                _modules.Clear();
+                _implementers = null;
+                _derived = null;
+                _moduleInitializers.Clear();
+                _frameworkSlots.Clear();
+                _stateMachines.Clear();
+                _stateMachineNames.Clear();
+                _shapes.Clear();
+                _capableFields.Clear();
+                _sites.Clear();
+                _sitesOf.Clear();
+                _returns.Clear();
+                _invokes.Clear();
+                _upDone.Clear();
+                _summaries.Clear();
+                _readers.Clear();
+                _refs.Clear();
+                _lineages.Clear();
+                _typeIds.Clear();
+                _resolved.Clear();
+                _moduleByAssembly.Clear();
+                _forwarded.Clear();
+                _typeOfRow.Clear();
+                _signatures.Clear();
+                _codeImpls.Clear();
+                _implIndex = null;
+                _implsOfBody.Clear();
+                _transfers.Clear();
+                _addressTaken.Clear();
+                _openInternals.Clear();
+                _visibleTo.Clear();
+                _fieldAttributes.Clear();
+                _assemblyFiles = null;
+                _outsides.Clear();
+                foreach (var (key, weak) in Outsides)
+                    if (!weak.TryGetTarget(out _)) Outsides.TryRemove(key, out _);
+                _incomplete = null;
+                _slotFills.Clear();
+            }
+
+            private static bool Writes(JellyfinUserAction action) => action.Verbs.Any(v => v is not ("GET" or "HEAD"));
+
+            private static string? WhyFor(JellyfinUserAction action, string controller)
+                => UserControllers.Contains(controller) && Writes(action) ? "user controller"
+                    : action.Reaches is { } reaches ? "reaches " + reaches + (PersonScoped.TryGetValue(reaches, out var change) ? ": " + change : string.Empty)
+                    : Reviewed.Contains(controller + "." + action.Action) ? "reviewed"
+                    : action.Why is { } unresolved && Writes(action) ? unresolved
+                    : null;
+
+            private static JellyfinUserKey KeyFor(JellyfinUserAction action, string controller)
+            {
+                var why = WhyFor(action, controller);
+                if (why == null) return JellyfinUserKey.None;
+                // A callback nothing could follow (round 11): the request's person, everyone's when there is none (the
+                // bracket's own fallback). Any other call nothing could follow: the person it touches isn't known.
+                if (why.StartsWith("unresolved callback ", StringComparison.Ordinal)) return JellyfinUserKey.User;
+                if (why.StartsWith("unresolved ", StringComparison.Ordinal)) return JellyfinUserKey.Global;
+                return action.Key == JellyfinUserKey.User ? JellyfinUserKey.User : JellyfinUserKey.Global;
+            }
+
+            // ------------------------------------------------------------------ which files
+
+            private static bool ServerName(string name)
+                => (name.StartsWith("Jellyfin.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("MediaBrowser.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Emby.", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(name, "jellyfin", StringComparison.OrdinalIgnoreCase))
+                   && !name.StartsWith("Jellyfin.Plugin.", StringComparison.OrdinalIgnoreCase);
+
+            private static bool Framework(string name)
+                => name.StartsWith("System.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase)
+                   || name is "netstandard" or "mscorlib" or "WindowsBase";
+
+            // The controller assembly; then its folder's Jellyfin server assemblies when that is Jellyfin's folder (it holds
+            // MediaBrowser.Controller), else every assembly of its folder but the framework's and the Jellyfin server
+            // assemblies of the folder Jellyfin runs from. One file per assembly name, the first found.
+            internal static IReadOnlyList<string> Files(string path)
+            {
+                var full = Path.GetFullPath(path);
+                var files = new List<string> { full };
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFileNameWithoutExtension(full) };
+                var folder = Path.GetDirectoryName(full);
+                void Add(string? directory, Func<string, bool> wanted)
+                {
+                    if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
+                    foreach (var file in Directory.EnumerateFiles(directory, "*.dll").OrderBy(f => f, StringComparer.Ordinal))
+                    {
+                        var name = Path.GetFileNameWithoutExtension(file);
+                        if (wanted(name) && names.Add(name)) files.Add(file);
+                    }
+                }
+
+                var own = typeof(JellyfinUserActions).Assembly.GetName().Name ?? string.Empty;
+                if (folder != null && File.Exists(Path.Combine(folder, "MediaBrowser.Controller.dll")))
+                {
+                    Add(folder, ServerName);
+                    return files;
+                }
+
+                Add(folder, name => !Framework(name) && !string.Equals(name, own, StringComparison.OrdinalIgnoreCase));
+                Add(Path.GetDirectoryName(typeof(MediaBrowser.Controller.Library.IUserManager).Assembly.Location), ServerName);
+                return files;
+            }
+
+            // Round 19: the folders an assembly outside the code read is looked for in first (the code read's: Jellyfin's
+            // own holds its third-party libraries), before the runtime's (AssemblyFile).
+            private static IEnumerable<string> Folders(string path)
+            {
+                var folder = Path.GetDirectoryName(Path.GetFullPath(path));
+                if (!string.IsNullOrEmpty(folder)) yield return folder;
+                var jellyfin = Path.GetDirectoryName(typeof(MediaBrowser.Controller.Library.IUserManager).Assembly.Location);
+                if (!string.IsNullOrEmpty(jellyfin) && !string.Equals(jellyfin, folder, StringComparison.Ordinal)) yield return jellyfin;
+            }
+
+            // ------------------------------------------------------------------ the model
+
+            private sealed class Module
+            {
+                public required MetadataReader Md { get; init; }
+                public required PEReader Pe { get; init; }
+
+                // Round 21: the assembly it is (its simple name: one per name in the code read, as in one load context).
+                public required string Assembly { get; init; }
+            }
+
+            private sealed class TypeInfo
+            {
+                public required string Name { get; init; }
+
+                // Round 21: the assembly that DEFINES it (after type forwarders): a type is its (assembly, full name).
+                public string Assembly { get; init; } = string.Empty;
+
+                public bool Interface { get; init; }
+
+                // Round 21: a type a reference names that can't be read (its assembly isn't found, or doesn't define it): a
+                // placeholder with no members, of unknown kind; whatever names it has an incomplete ancestry (fail closed).
+                public bool Unreadable { get; init; }
+
+                // Round 19: the base type and the interfaces the type itself lists. Round 21: as signatures (a generic
+                // instantiation keeps its arguments, in the type's own generic context), each naming the assembly its
+                // reference names. An interface, System.Object and <Module> have no base.
+                public SigType? Base { get; init; }
+                public List<SigType> Interfaces { get; } = new();
+                public List<int> Methods { get; } = new();
+                public int Module { get; init; } = -1;
+                public TypeAttributes Attributes { get; init; }
+                public int Arity { get; init; }
+
+                // The code read's types: the enclosing type of a nested one (visibility), and its definition row.
+                public int Declaring { get; set; } = -1;
+                public int Row { get; init; }
+
+                // Round 19: a type outside the code read, read for its ancestry and (round 21) its slot metadata only (no
+                // method nodes): the assembly file's metadata it is read from.
+                public bool External { get; init; }
+                public Outside? Source { get; init; }
+            }
+
+            private sealed class Node
+            {
+                public string Name { get; init; } = string.Empty;
+                public string Method { get; init; } = string.Empty;
+                public int Params { get; init; }
+                public int Type { get; init; } = -1;
+                public int Module { get; init; } = -1;
+                public int Token { get; init; }
+                public bool Virtual { get; init; }
+                public bool Abstract { get; init; }
+                public bool NewSlot { get; init; }
+                public bool Static { get; init; }
+                public MethodAttributes Attributes { get; init; }
+                public List<int> Calls { get; } = new();
+                public string? Reaches { get; set; }
+                public string? PersonReaches { get; set; }
+                public string? Unresolved { get; set; }
+                public string? Callback { get; set; }
+                public int Via { get; set; } = -1;
+                public int PersonVia { get; set; } = -1;
+                public int UnresolvedVia { get; set; } = -1;
+                public int CallbackVia { get; set; } = -1;
+
+                // Round 17: it has IL (abstract, extern and runtime-implemented methods have none).
+                public bool HasBody { get; init; }
+            }
+
+            private readonly List<TypeInfo> _types = new();
+            private readonly Dictionary<string, List<int>> _typesByName = new(StringComparer.Ordinal);
+            private readonly List<Node> _nodes = new();
+            private readonly Dictionary<(int Module, int Token), int> _nodeOf = new();
+            private readonly Dictionary<string, int> _terminals = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> _unresolved = new(StringComparer.Ordinal);
+            // Round 18: every store of a delegate field, with the stored value's provenance in the storing method.
+            private readonly Dictionary<string, List<(int Node, Prov Value)>> _stores = new(StringComparer.Ordinal);
+            private readonly List<(int Node, string Field)> _loads = new();
+            private readonly Dictionary<string, int> _fieldNodes = new(StringComparer.Ordinal);
+            private readonly SortedSet<string> _contained = new(StringComparer.Ordinal);
+            private readonly List<Module> _modules = new();
+            private readonly Dictionary<string, string> _fieldTypes = new(StringComparer.Ordinal);
+            private int _empty = -1;
+            private Dictionary<int, List<int>>? _implementers;
+            private Dictionary<int, List<int>>? _derived;
+
+            // Round 19: the complete ancestry of every type (LineageOf). Round 21: every type is its (defining assembly, full
+            // name) (_typeIds), whatever reference names it: a reference (the assembly it names, the name) is resolved once
+            // (_resolved) through the code read's modules (_moduleByAssembly) and type forwarders (_forwarded), then the
+            // metadata of the assembly files outside the code read (AssemblyFile: the code read's folders, then the
+            // runtime's). _refs: each name the code read references, with every assembly a reference names it in (an
+            // unqualified name is every one of them: Candidates). A step that can't be read is a gap: the type's ancestry is
+            // incomplete, and it may fill any slot (_incomplete, fail closed).
+            private readonly Dictionary<string, int> _typeIds = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> _resolved = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, int> _moduleByAssembly = new(StringComparer.OrdinalIgnoreCase);
+            private readonly List<Dictionary<string, string>> _forwarded = new();
+            private readonly Dictionary<string, HashSet<string>> _refs = new(StringComparer.Ordinal);
+            private readonly Dictionary<(int Module, int Row), int> _typeOfRow = new();
+            private readonly Dictionary<int, Lineage> _lineages = new();
+            private readonly SortedSet<string> _gaps = new(StringComparer.Ordinal);
+            private readonly List<string> _folders = new();
+            private Dictionary<string, string>? _assemblyFiles;
+            private List<int>? _incomplete;
+            private int _readTypes;
+
+            // Round 21: each code-read method's signature (decoded when first compared); the MethodImpl entries of the code
+            // read (each body with the slot its declaration names), and the index of every MethodImpl (code read and the
+            // types outside it in the code read's ancestries) by the slots they fill.
+            private readonly Dictionary<int, MethodSignature<SigType>> _signatures = new();
+            private readonly List<(int Type, int Body, SigType Parent, string Name, MethodSignature<SigType> Signature)> _codeImpls = new();
+            private Dictionary<string, List<(MethodRef Body, List<Slot> Declared)>>? _implIndex;
+            private readonly Dictionary<MethodRef, List<Slot>> _implsOfBody = new();
+
+            // Round 21 (open-world inputs): the methods whose address the code read takes (a delegate or pointer to them can be
+            // invoked by whoever holds it), the modules whose internals another assembly may call (InternalsVisibleTo an
+            // assembly outside the code read), and each code-read type's fields (externally writable ones are stored from
+            // outside the code read too).
+            private readonly HashSet<int> _addressTaken = new();
+            private readonly HashSet<int> _openInternals = new();
+            private readonly List<List<string>> _visibleTo = new();
+            private readonly Dictionary<(int Type, string Name), FieldAttributes> _fieldAttributes = new();
+
+            // Round 21: each transfer's targets and owner, by (module, token, dispatch).
+            private readonly Dictionary<(int Module, int Token, bool Dispatch), (List<int> Targets, int? Owner)> _transfers = new();
+
+            // Round 21: the files outside the code read opened for their members while reading (closed at the end).
+            private readonly Dictionary<string, PEReader?> _open = new(StringComparer.Ordinal);
+
+            // Round 19: each slot's fills (SlotFills), once. Round 21: by the slot's exact identity (Slot.Key).
+            private readonly Dictionary<string, List<int>> _slotFills = new(StringComparer.Ordinal);
+
+            // Each module's initializer (`<Module>`'s .cctor): the runtime runs it before any of the module's code.
+            private readonly Dictionary<int, int> _moduleInitializers = new();
+
+            // Round 17: shared nodes for virtual slots declared outside the code read (null: nothing read fills it).
+            private readonly Dictionary<string, int?> _frameworkSlots = new(StringComparer.Ordinal);
+
+            // The compiler-generated state machines: the types the code read's [*StateMachine] attributes name (round 21:
+            // in the attribute's own assembly).
+            private readonly List<(int Module, string Name)> _stateMachineNames = new();
+            private readonly HashSet<int> _stateMachines = new();
+
+            // Round 17: delegate invocation by provenance (see Invocations): each method or call's shape; the call sites a
+            // delegate can go into or come out of, and each method's sites; what each method returns; every invocation.
+            private readonly Dictionary<(int Module, int Token), Shape> _shapes = new();
+            private readonly Dictionary<(int Module, int Token), bool> _capableFields = new();
+            private readonly List<Site> _sites = new();
+            private readonly Dictionary<int, List<int>> _sitesOf = new();
+            private readonly Dictionary<int, Prov> _returns = new();
+            private readonly List<(int Node, Prov Receiver, string Type)> _invokes = new();
+            private readonly Dictionary<(int Node, int Arg), Src> _upDone = new();
+
+            // Round 19: what each method returns as a function of its arguments, to a fixed point (Summaries); who reads
+            // whose (to iterate); the delegate fields whose node is made but not yet filled.
+            private readonly Dictionary<int, Summary> _summaries = new();
+            private readonly Dictionary<int, HashSet<int>> _readers = new();
+            private readonly Queue<string> _pendingFields = new();
+
+            public static CodeSet Read(string path) => Read(path, null);
+
+            // With member: also everything that member's own code reaches (a Mutates member, a reviewed person's change, a
+            // counted unresolved call), before the graph is dropped.
+            public static CodeSet Read(string path, string? member)
+            {
+                var set = new CodeSet();
+                var modules = new List<Module>();
+                try
+                {
+                    foreach (var file in Files(path))
+                    {
+                        try
+                        {
+                            var pe = new PEReader(new MemoryStream(File.ReadAllBytes(file)), PEStreamOptions.PrefetchEntireImage);
+                            if (!pe.HasMetadata) { pe.Dispose(); continue; }
+                            var md = pe.GetMetadataReader();
+                            modules.Add(new Module { Pe = pe, Md = md, Assembly = AssemblyName(md) ?? Path.GetFileNameWithoutExtension(file) });
+                        }
+                        catch (BadImageFormatException) when (modules.Count > 0)
+                        {
+                            // A native library in the folder: not code to read (the controller's own assembly must be).
+                        }
+                    }
+
+                    set._modules.AddRange(modules);
+                    set._folders.AddRange(Folders(path));
+                    for (var m = 0; m < modules.Count; m++) set.Index(modules[m], m);
+                    set._readTypes = set._types.Count;
+                    set.Linked();
+                    set.Running();
+                    for (var m = 0; m < modules.Count; m++) set.Bodies(modules[m], m);
+                    set.Delegates();
+                    set.Propagate();
+                    set.Actions(modules[0]);
+                    set.Contained = set._contained.ToList();
+                    set.Gaps = set._gaps.ToList();
+                    if (member != null) set.Reached = set.From(member);
+                    set.Drop();
+                }
+                finally
+                {
+                    foreach (var module in modules) module.Pe.Dispose();
+                    foreach (var open in set._open.Values) open?.Dispose();
+                    set._open.Clear();
+                }
+
+                return set;
+            }
+
+            // Every type and method, by name. Round 21: every type by its (assembly, full name), with its base and interfaces
+            // as signatures; every MethodImpl entry with the slot its declaration names (resolved once all are indexed).
+            private void Index(Module module, int m)
+            {
+                var md = module.Md;
+                var self = module.Assembly;
+                _moduleByAssembly.TryAdd(self, m);
+                // Round 19: where each type the module names but doesn't define is (the assembly its reference names). Round
+                // 21: every assembly a reference names it in.
+                foreach (var reference in md.TypeReferences)
+                    if (Scope(md, reference) is { } assembly)
+                    {
+                        var name = FullName(md, reference);
+                        if (!_refs.TryGetValue(name, out var scopes)) _refs[name] = scopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        scopes.Add(assembly);
+                    }
+
+                // The types it forwards to other assemblies, and the assemblies whose code may call its internals.
+                var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var handle in md.ExportedTypes)
+                {
+                    var exported = md.GetExportedType(handle);
+                    var implementation = exported.Implementation;
+                    while (implementation.Kind == HandleKind.ExportedType) implementation = md.GetExportedType((ExportedTypeHandle)implementation).Implementation;
+                    if (implementation.Kind == HandleKind.AssemblyReference) forwarded.TryAdd(ExportedName(md, exported), md.GetString(md.GetAssemblyReference((AssemblyReferenceHandle)implementation).Name));
+                }
+
+                _forwarded.Add(forwarded);
+                _visibleTo.Add(md.IsAssembly ? VisibleTo(md, md.GetAssemblyDefinition().GetCustomAttributes()) : new List<string>());
+                foreach (var handle in md.TypeDefinitions)
+                {
+                    var type = md.GetTypeDefinition(handle);
+                    var info = new TypeInfo
+                    {
+                        Name = FullName(md, handle),
+                        Assembly = self,
+                        Interface = (type.Attributes & TypeAttributes.Interface) != 0,
+                        Module = m,
+                        Base = type.BaseType.IsNil ? null : TypeSig(md, type.BaseType),
+                        Attributes = type.Attributes,
+                        Arity = type.GetGenericParameters().Count,
+                        Row = MetadataTokens.GetRowNumber(handle),
+                    };
+                    foreach (var implementation in type.GetInterfaceImplementations()) info.Interfaces.Add(TypeSig(md, md.GetInterfaceImplementation(implementation).Interface));
+                    var id = Register(info, Key(self, info.Name));
+                    _typeOfRow[(m, info.Row)] = id;
+                    foreach (var fieldHandle in type.GetFields())
+                    {
+                        var field = md.GetFieldDefinition(fieldHandle);
+                        _fieldAttributes[(id, md.GetString(field.Name))] = field.Attributes;
+                    }
+
                     foreach (var methodHandle in type.GetMethods())
                     {
                         var method = md.GetMethodDefinition(methodHandle);
                         var name = md.GetString(method.Name);
-                        var attributes = method.Attributes;
-                        var action = controller && (attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.Public && (attributes & MethodAttributes.Static) == 0
-                            && (attributes & MethodAttributes.SpecialName) == 0 && !HasAttribute(md, method.GetCustomAttributes(), "NonActionAttribute");
-                        var entry = new Method
+                        var node = new Node
                         {
-                            Type = typeName,
-                            Name = name,
-                            Action = action,
-                            Verbs = action ? Verbs(md, method.GetCustomAttributes()) : Array.Empty<string>(),
-                            UserId = method.GetParameters().Select(p => md.GetString(md.GetParameter(p).Name)).Any(p => string.Equals(p, "userId", StringComparison.OrdinalIgnoreCase)),
+                            Name = Simple(info.Name) + "." + name,
+                            Method = name,
+                            Params = ParamCount(md, method.Signature),
+                            Type = id,
+                            Module = m,
+                            Token = MetadataTokens.GetToken(methodHandle),
+                            // Round 11: virtual whether or not it is final. A sealed override is a virtual method marked
+                            // final: it can't be overridden again, but it fills its base's slot, so a call through that slot
+                            // reaches it.
+                            Virtual = (method.Attributes & MethodAttributes.Virtual) != 0,
+                            Abstract = (method.Attributes & MethodAttributes.Abstract) != 0,
+                            NewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
+                            Static = (method.Attributes & MethodAttributes.Static) != 0,
+                            Attributes = method.Attributes,
+                            HasBody = method.RelativeVirtualAddress != 0,
                         };
-                        result._methods[MetadataTokens.GetToken(methodHandle)] = entry;
-                        if (method.RelativeVirtualAddress != 0) result.Body(md, pe.GetMethodBody(method.RelativeVirtualAddress), entry, types);
+                        foreach (var machine in StateMachines(md, method.GetCustomAttributes())) _stateMachineNames.Add((m, machine));
+                        _nodeOf[(m, MetadataTokens.GetToken(methodHandle))] = _nodes.Count;
+                        info.Methods.Add(_nodes.Count);
+                        _nodes.Add(node);
+                    }
+
+                    if (info.Name == "<Module>")
+                        foreach (var n in info.Methods)
+                            if (_nodes[n].Method == ".cctor") _moduleInitializers[m] = n;
+
+                    // Rounds 12–13: an explicit override. A type's MethodImpl table maps a body to the slot it fills (an
+                    // `.override`), whatever the body is called: C# uses it for covariant returns and explicit interface
+                    // implementations, other .NET languages for any override under any name. Round 21: the slot by its exact
+                    // identity (the declaring type a reference names, the name, the whole signature), resolved once every
+                    // module is indexed (ImplIndex).
+                    foreach (var implHandle in type.GetMethodImplementations())
+                    {
+                        var impl = md.GetMethodImplementation(implHandle);
+                        if (impl.MethodBody.Kind != HandleKind.MethodDefinition
+                            || !_nodeOf.TryGetValue((m, MetadataTokens.GetToken(impl.MethodBody)), out var body)
+                            || Declaration(md, impl.MethodDeclaration) is not { } slot) continue;
+                        _codeImpls.Add((id, body, slot.Parent, slot.Name, slot.Signature));
+                    }
+                }
+            }
+
+            // Round 21: what needs every module indexed: each nested type's enclosing type, the compiler-generated state
+            // machines (in their own assembly), and whether a module's internals are visible to an assembly outside the code
+            // read that is THERE (InternalsVisibleTo naming an assembly next to it or in the runtime: Jellyfin's assemblies
+            // aren't strong-named, so it can call them). Jellyfin 12.2's and 10.11.11's name only their own test and fuzz
+            // assemblies, which a server doesn't have: calling their internals from anywhere else takes reflection, a stated
+            // limit (Q-4AFIX21-1).
+            private void Linked()
+            {
+                for (var m = 0; m < _modules.Count; m++)
+                {
+                    var md = _modules[m].Md;
+                    foreach (var handle in md.TypeDefinitions)
+                    {
+                        var declaring = md.GetTypeDefinition(handle).GetDeclaringType();
+                        if (!declaring.IsNil && _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(handle)), out var t) && _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(declaring)), out var outer)) _types[t].Declaring = outer;
+                    }
+
+                    if (_visibleTo[m].Any(friend => !_moduleByAssembly.ContainsKey(friend) && AssemblyFile(friend) != null)) _openInternals.Add(m);
+                }
+
+                foreach (var (m, name) in _stateMachineNames)
+                    if (_typeIds.TryGetValue(Key(_modules[m].Assembly, name), out var machine)) _stateMachines.Add(machine);
+            }
+
+            // The assemblies an InternalsVisibleTo attribute names (simple names).
+            private static List<string> VisibleTo(MetadataReader md, CustomAttributeHandleCollection attributes)
+            {
+                var names = new List<string>();
+                foreach (var handle in attributes)
+                {
+                    var attribute = md.GetCustomAttribute(handle);
+                    if (AttributeFullName(md, attribute) != "System.Runtime.CompilerServices.InternalsVisibleToAttribute") continue;
+                    var blob = md.GetBlobReader(attribute.Value);
+                    if (blob.Length < 3 || blob.ReadUInt16() != 1) continue;
+                    if (blob.ReadSerializedString() is { } friend) names.Add(friend.Split(',')[0].Trim());
+                }
+
+                return names;
+            }
+
+            // Round 18: running a method runs its declaring type's static constructor and its module's initializer first (the
+            // runtime runs each once, before the first use; an edge on every use over-approximates). ONE edge set on the
+            // method node itself, so every way of reaching a method (a call, an override or implementation it dispatches to,
+            // a slot .NET declares, a delegate or method pointer to it, a field holding one) reaches them the same way.
+            private void Running()
+            {
+                for (var n = 0; n < _nodes.Count; n++)
+                {
+                    var node = _nodes[n];
+                    if (node.Type < 0) continue;
+                    foreach (var i in _types[node.Type].Methods)
+                        if (i != n && _nodes[i].Method == ".cctor") node.Calls.Add(i);
+                    if (_moduleInitializers.TryGetValue(node.Module, out var initializer) && initializer != n) node.Calls.Add(initializer);
+                }
+            }
+
+            // Every body: its calls, the delegates it creates, stores and loads, and the events it subscribes to.
+            private void Bodies(Module module, int m)
+            {
+                var md = module.Md;
+                foreach (var typeHandle in md.TypeDefinitions)
+                {
+                    foreach (var methodHandle in md.GetTypeDefinition(typeHandle).GetMethods())
+                    {
+                        var method = md.GetMethodDefinition(methodHandle);
+                        var node = _nodeOf[(m, MetadataTokens.GetToken(methodHandle))];
                         // An async method or iterator runs in its state machine's MoveNext.
                         foreach (var machine in StateMachines(md, method.GetCustomAttributes()))
-                            if (types.TryGetValue(machine, out var machineType))
-                                entry.Calls.AddRange(md.GetTypeDefinition(machineType).GetMethods().Where(m => md.GetString(md.GetMethodDefinition(m).Name) == "MoveNext").Select(m => MetadataTokens.GetToken(m)));
+                            if (_typeIds.TryGetValue(Key(_modules[m].Assembly, machine), out var t))
+                                _nodes[node].Calls.AddRange(_types[t].Methods.Where(n => _nodes[n].Method == "MoveNext"));
+                        if (method.RelativeVirtualAddress != 0) Body(md, m, module.Pe.GetMethodBody(method.RelativeVirtualAddress), node);
+                    }
+                }
+            }
+
+            private void Body(MetadataReader md, int m, MethodBodyBlock body, int node)
+            {
+                var il = body.GetILReader();
+                // Round 17: where every value on the stack came from (Flow), for every delegate value the body invokes, stores,
+                // hands on or returns. Round 18: the one provenance model (the old "what was pushed last" and "what the body
+                // made before the call" heuristics are gone).
+                var flow = new Flow(body);
+                var self = ShapeOf(md, m, MetadataTokens.MethodDefinitionHandle(_nodes[node].Token));
+                // A `constrained.` prefix applies to the next instruction (a call, callvirt or method pointer): it dispatches.
+                var constrained = false;
+                while (il.RemainingBytes > 0)
+                {
+                    var start = il.Offset;
+                    flow.Arrive(start);
+                    var first = il.ReadByte();
+                    var code = first == 0xfe ? TwoByte[il.ReadByte()] : OneByte[first];
+                    var value = code.Value;
+                    var prefixed = constrained;
+                    constrained = false;
+                    // Whether the case below applied the instruction's stack effect (otherwise its pops and pushes, unknown).
+                    var stacked = true;
+                    switch (code.OperandType)
+                    {
+                        case OperandType.InlineMethod:
+                        {
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            var dispatch = value == OpCodes.Callvirt.Value || value == OpCodes.Ldvirtftn.Value || prefixed;
+                            // Round 21: what a transfer's token resolves to depends on nothing else (read-only lists, shared).
+                            var transferKey = (m, MetadataTokens.GetToken(handle), dispatch);
+                            if (!_transfers.TryGetValue(transferKey, out var transfer)) _transfers[transferKey] = transfer = (Targets(md, m, handle, dispatch), MethodOwner(md, m, handle));
+                            var targets = transfer.Targets;
+                            _nodes[node].Calls.AddRange(targets);
+                            // Round 15: an access to a type by name (a static call, newobj, a method pointer naming it) runs its
+                            // static constructor and its module's initializer; what the call RUNS gets them from Running().
+                            if (transfer.Owner is { } owner) _nodes[node].Calls.AddRange(TypeInitializers(owner).Concat(ModuleInitializers(owner)).Where(i => i != node));
+                            Call(flow, node, value, ShapeOf(md, m, handle), targets);
+                            break;
+                        }
+                        case OperandType.InlineField:
+                        {
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            if (value == OpCodes.Ldsfld.Value || value == OpCodes.Stsfld.Value || value == OpCodes.Ldsflda.Value)
+                                _nodes[node].Calls.AddRange(TypeInitializers(FieldOwner(md, m, handle)).Where(i => i != node));
+                            // Round 16: the runtime runs a module's initializer before any access to its types, methods or
+                            // data, a field included.
+                            _nodes[node].Calls.AddRange(ModuleInitializers(FieldOwner(md, m, handle)).Where(i => i != node));
+                            var field = DelegateField(md, m, handle);
+                            // A delegate field's value is what the field can hold (its field node: what the code read stores
+                            // there, a generic parameter's field `T` included: the stated limit of FieldNode); a field whose
+                            // type can't hold a delegate holds none; anything else (an object field) is unknown.
+                            Value Loaded() => field != null ? Value.FieldOf(field) : !CapableField(md, m, handle) ? Value.None : Value.Unknown;
+                            if (value == OpCodes.Ldfld.Value || value == OpCodes.Ldsfld.Value)
+                            {
+                                if (value == OpCodes.Ldfld.Value) flow.Pop();
+                                flow.Push(Loaded());
+                                if (field != null) _loads.Add((node, field));
+                            }
+                            else if (value == OpCodes.Stfld.Value || value == OpCodes.Stsfld.Value)
+                            {
+                                // The stored value's provenance (resolved when the body is read), whatever it is.
+                                var stored = flow.Pop();
+                                if (value == OpCodes.Stfld.Value) flow.Pop();
+                                flow.Escapes.Add(stored);
+                                if (field != null) flow.Stores.Add((field, stored));
+                            }
+                            else
+                            {
+                                // An address (ldflda, ldsflda): a delegate field's is followed (what is written through it is
+                                // stored there; what is read is its value); anything else, unknown.
+                                if (value == OpCodes.Ldflda.Value) flow.Pop();
+                                flow.Push(field != null ? flow.Address(field) : Value.Unknown);
+                                if (field != null) _loads.Add((node, field));
+                            }
+
+                            break;
+                        }
+                        case OperandType.InlineNone:
+                            if (value is >= 0x02 and <= 0x05) flow.Push(Value.Arg(value - 0x02));
+                            else if (value is >= 0x06 and <= 0x09) flow.Push(Value.Local(value - 0x06));
+                            else if (value is >= 0x0a and <= 0x0d) flow.Store(flow.Locals, value - 0x0a, flow.Pop());
+                            else if (value == OpCodes.Ldnull.Value) flow.Push(Value.None);
+                            else if (value == OpCodes.Dup.Value) flow.Push(flow.Peek());
+                            else if (value == OpCodes.Ret.Value)
+                            {
+                                if (!self.Void)
+                                {
+                                    var returned = flow.Pop();
+                                    flow.Escapes.Add(returned);
+                                    if (self.CapableReturn) flow.Returns.Add(returned);
+                                }
+                            }
+                            else if (value == OpCodes.Ldelem_Ref.Value) flow.LoadElement();
+                            else if (value == OpCodes.Stelem_Ref.Value) flow.StoreElement();
+                            else if (value == OpCodes.Ldind_Ref.Value) flow.Push(flow.Pop().Through());
+                            else if (value == OpCodes.Stind_Ref.Value) flow.StoreIndirect();
+                            else stacked = false;
+                            break;
+                        case OperandType.ShortInlineVar:
+                        case OperandType.InlineVar:
+                        {
+                            var index = code.OperandType == OperandType.ShortInlineVar ? il.ReadByte() : il.ReadUInt16();
+                            if (value == OpCodes.Ldarg_S.Value || value == OpCodes.Ldarg.Value) flow.Push(Value.Arg(index));
+                            else if (value == OpCodes.Ldloc_S.Value || value == OpCodes.Ldloc.Value) flow.Push(Value.Local(index));
+                            else if (value == OpCodes.Starg_S.Value || value == OpCodes.Starg.Value) flow.Store(flow.Args, index, flow.Pop());
+                            else if (value == OpCodes.Stloc_S.Value || value == OpCodes.Stloc.Value) flow.Store(flow.Locals, index, flow.Pop());
+                            else
+                            {
+                                // An address taken (ldarga, ldloca): anything can be written through it, and what it holds
+                                // (an array) escapes.
+                                var argument = value == OpCodes.Ldarga_S.Value || value == OpCodes.Ldarga.Value;
+                                flow.Escapes.Add(argument ? Value.Arg(index) : Value.Local(index));
+                                flow.Store(argument ? flow.Args : flow.Locals, index, Value.Unknown);
+                                flow.Push(Value.Unknown);
+                            }
+
+                            break;
+                        }
+                        case OperandType.InlineType:
+                        {
+                            // Round 16: a type token is an access to the type's module (its initializer runs first).
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            _nodes[node].Calls.AddRange(ModuleInitializers(TypeToken(md, m, handle)).Where(i => i != node));
+                            // castclass, isinst, box, unbox.any: the same value.
+                            if (value == OpCodes.Castclass.Value || value == OpCodes.Isinst.Value || value == OpCodes.Unbox_Any.Value || value == OpCodes.Box.Value) flow.Push(flow.Pop());
+                            else if (value == OpCodes.Newarr.Value)
+                            {
+                                flow.Pop();
+                                flow.Push(Value.Array(start));
+                            }
+                            else if (value == OpCodes.Ldelem.Value) flow.LoadElement();
+                            else if (value == OpCodes.Stelem.Value) flow.StoreElement();
+                            else if (value == OpCodes.Ldobj.Value) flow.Push(flow.Pop().Through());
+                            else if (value == OpCodes.Stobj.Value) flow.StoreIndirect();
+                            else
+                            {
+                                if (value == OpCodes.Constrained.Value) constrained = true;
+                                stacked = false;
+                            }
+
+                            break;
+                        }
+                        case OperandType.InlineTok:
+                        {
+                            // ldtoken: a type, method or field of a module (its initializer runs first).
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            var owner = handle.Kind switch
+                            {
+                                HandleKind.MethodDefinition or HandleKind.MethodSpecification => MethodOwner(md, m, handle),
+                                HandleKind.FieldDefinition => FieldOwner(md, m, handle),
+                                HandleKind.MemberReference => ParentType(md, m, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                                _ => TypeToken(md, m, handle),
+                            };
+                            _nodes[node].Calls.AddRange(ModuleInitializers(owner).Where(i => i != node));
+                            stacked = false;
+                            break;
+                        }
+                        case OperandType.ShortInlineBrTarget:
+                        case OperandType.InlineBrTarget:
+                        {
+                            var delta = code.OperandType == OperandType.ShortInlineBrTarget ? il.ReadSByte() : il.ReadInt32();
+                            // leave empties the stack; any other branch pops its operands first.
+                            if (value == OpCodes.Leave.Value || value == OpCodes.Leave_S.Value) flow.Clear();
+                            else flow.Generic(code);
+                            flow.Branch(start, il.Offset + delta);
+                            break;
+                        }
+                        case OperandType.ShortInlineI:
+                            il.Offset += 1;
+                            stacked = false;
+                            break;
+                        case OperandType.InlineI8 or OperandType.InlineR:
+                            il.Offset += 8;
+                            stacked = false;
+                            break;
+                        case OperandType.InlineSig:
+                        {
+                            var handle = MetadataTokens.EntityHandle(il.ReadInt32());
+                            // Round 15: an indirect call (calli) always counts as a possible change, judged by its
+                            // signature like an unresolved callback: the pointer can come from anywhere (a temporary, a
+                            // parameter, a return value). The pointers the reading saw being made (ldftn, a tracked
+                            // pointer field) are followed too, so what they reach is still reported. Jellyfin 12.2 and
+                            // 10.11.11 have no calli.
+                            var signature = handle.Kind == HandleKind.StandaloneSignature ? md.GetStandaloneSignature((StandaloneSignatureHandle)handle).DecodeMethodSignature(Names.Instance, null) : (MethodSignature<string>?)null;
+                            if (value == OpCodes.Calli.Value)
+                            {
+                                var contract = signature is { } s && UserContract(MethodTypes(md, s), null);
+                                _nodes[node].Calls.Add(Unresolved("indirect call in " + _nodes[node].Name + " (a pointer the reading didn't see being made)", true, callback: !contract));
+                            }
+
+                            if (signature is { } sig)
+                            {
+                                flow.Pop();
+                                // The arguments go to code the reading can't see: an array among them escapes.
+                                for (var i = sig.ParameterTypes.Length + (sig.Header.IsInstance && !sig.Header.HasExplicitThis ? 1 : 0); i > 0; i--) flow.Escapes.Add(flow.Pop());
+                                if (sig.ReturnType != "System.Void") flow.Push(Value.Unknown);
+                            }
+                            else flow.Break();
+
+                            break;
+                        }
+                        case OperandType.InlineSwitch:
+                        {
+                            // The count, then that many branch targets (read the count first: it moves the offset).
+                            var count = il.ReadInt32();
+                            var deltas = new int[count];
+                            for (var i = 0; i < count; i++) deltas[i] = il.ReadInt32();
+                            flow.Pop();
+                            foreach (var delta in deltas) flow.Branch(start, il.Offset + delta);
+                            break;
+                        }
+                        default:
+                            il.Offset += 4;
+                            // A string is no delegate.
+                            if (value == OpCodes.Ldstr.Value) flow.Push(Value.None);
+                            else stacked = false;
+                            break;
+                    }
+
+                    if (!stacked) flow.Generic(code);
+                    // After an unconditional transfer the next instruction's stack is a branch's snapshot, or empty.
+                    if (code.FlowControl is FlowControl.Branch or FlowControl.Return or FlowControl.Throw || value == OpCodes.Jmp.Value) flow.End();
+                }
+
+                Settle(flow, node, self);
+            }
+
+            // Round 17: a call's stack effect, and what it does with delegates. A delegate's Invoke (BeginInvoke,
+            // DynamicInvoke) runs its receiver; a call leaving the code read may run the delegates it is handed (Task.Run,
+            // a framework callback); a call into the code read hands its arguments to the callee's parameters, and its
+            // result is what the callee returns (a site, recorded where a delegate can go in or come out). Round 18: a method
+            // pointer is the methods the resolver returned for it (a delegate made from it, the same); every argument escapes
+            // (an array handed to a call can be written there), except a delegate field's address handed to code outside
+            // the code read (Interlocked.CompareExchange, Volatile.Write: an event's add and remove), which stores the other
+            // arguments in the field and returns its value or theirs.
+            private void Call(Flow flow, int node, short value, Shape shape, List<int> targets)
+            {
+                if (value == OpCodes.Ldftn.Value || value == OpCodes.Ldvirtftn.Value)
+                {
+                    // A pointer to a delegate's Invoke (`new Action(callback.Invoke)`) runs that delegate when invoked.
+                    var receiver = value == OpCodes.Ldvirtftn.Value ? flow.Pop() : shape.Invoke != null ? flow.Peek() : null;
+                    if (shape.Invoke != null && receiver != null) flow.Invokes.Add((receiver, shape.Invoke));
+                    // Round 21: a delegate or pointer made from a method can be invoked by whoever holds it, with anything.
+                    foreach (var t in targets)
+                        if (_nodes[t].Type >= 0) _addressTaken.Add(t);
+                    flow.Push(Value.Pointer(targets));
+                    return;
+                }
+
+                if (value == OpCodes.Jmp.Value)
+                {
+                    // jmp: the callee runs with this method's own arguments.
+                    var own = new Value[Math.Max(shape.Pops, 0)];
+                    for (var i = 0; i < own.Length; i++) own[i] = Value.Arg(i);
+                    Record(flow, node, shape, targets, own);
+                    return;
+                }
+
+                if (shape.Pops < 0)
+                {
+                    flow.Break();
+                    return;
+                }
+
+                Value[] args;
+                if (value == OpCodes.Newobj.Value)
+                {
+                    // The new object is the constructor's `this` (argument 0), not popped.
+                    args = new Value[shape.Params + 1];
+                    for (var i = shape.Params; i >= 1; i--) args[i] = flow.Pop();
+                    args[0] = Value.None;
+                }
+                else
+                {
+                    args = new Value[shape.Pops];
+                    for (var i = args.Length - 1; i >= 0; i--) args[i] = flow.Pop();
+                }
+
+                // Leaving the code read: nothing read, or only members without IL (extern, runtime-implemented).
+                var outside = targets.All(t => _nodes[t].Type >= 0 && !_nodes[t].HasBody && !_nodes[t].Abstract);
+                var addresses = outside ? args.Where(a => a.Kind == ValueKind.Address).Select(a => a.Name!).ToList() : null;
+                foreach (var a in args)
+                    if (addresses is not { Count: > 0 } || a.Kind != ValueKind.Address) flow.Escapes.Add(a);
+                foreach (var field in addresses ?? Enumerable.Empty<string>())
+                    foreach (var a in args)
+                        if (a.Kind != ValueKind.Address) flow.Stores.Add((field, a));
+                if (shape.Invoke != null && args.Length > 0) flow.Invokes.Add((args[0], shape.Invoke));
+                else if (outside && shape.Delegates != null && !(shape.ParentType >= 0 && ReviewedReadAt(shape.ParentType, shape.Name)))
+                    for (var i = 0; i < args.Length && i < shape.Delegates.Length; i++)
+                        if (shape.Delegates[i] is { } type) flow.Invokes.Add((args[i], type));
+                var site = Record(flow, node, shape, targets, args);
+                if (value == OpCodes.Newobj.Value)
+                    // A delegate made from a method pointer is the pointer's methods; a new object of any other type isn't a
+                    // delegate.
+                    flow.Push(!shape.DelegateCtor ? Value.None : args[^1].Kind == ValueKind.Pointer ? args[^1] : Value.Unknown);
+                else if (!shape.Void)
+                    flow.Push(shape.Combine ? Value.Union(args[0], args[^1])
+                        : !shape.CapableReturn ? Value.None
+                        : addresses is { Count: > 0 } ? args.Select(a => a.Kind == ValueKind.Address ? a.Through() : a).Aggregate(Value.Union)
+                        : site >= 0 ? Value.Result(site) : Value.Unknown);
+            }
+
+            private int Record(Flow flow, int node, Shape shape, List<int> targets, Value[] args)
+            {
+                if (shape.Capable == null && !shape.CapableReturn) return -1;
+                var id = _sites.Count;
+                _sites.Add(new Site(node, targets));
+                foreach (var t in targets.Distinct())
+                {
+                    if (!_sitesOf.TryGetValue(t, out var list)) _sitesOf[t] = list = new List<int>();
+                    list.Add(id);
+                }
+
+                var given = new Value?[args.Length];
+                for (var i = 0; i < args.Length; i++)
+                    if (shape.Capable != null && i < shape.Capable.Length && shape.Capable[i]) given[i] = args[i];
+                flow.Sites.Add((id, given));
+                return id;
+            }
+
+            // Round 17: the body read, what it recorded becomes provenance (locals, arguments written to and array elements
+            // resolved within the body). A body the stack couldn't follow records only unknowns (fail closed). Round 18:
+            // its delegate-field stores too, each with the stored value's provenance, and an unknown store for every
+            // delegate field whose address escaped to code that may write anything through it.
+            private void Settle(Flow flow, int node, Shape self)
+            {
+                if (flow.Invokes.Count == 0 && flow.Sites.Count == 0 && flow.Stores.Count == 0 && flow.Addressed.Count == 0 && !self.CapableReturn) return;
+                var within = flow.Broken ? null : flow.Within();
+                Prov Of(Value v) => within == null ? Prov.Untracked : within.Of(v);
+                foreach (var (receiver, type) in flow.Invokes) _invokes.Add((node, Of(receiver), type));
+                foreach (var (site, given) in flow.Sites) _sites[site].Args = given.Select(g => g == null ? null : Of(g)).ToArray();
+                foreach (var (field, stored) in flow.Stores) Store(field, node, Of(stored));
+                foreach (var (address, stored) in flow.Indirect)
+                    foreach (var field in Of(address).Addresses ?? Enumerable.Empty<string>())
+                        Store(field, node, Of(stored));
+                foreach (var field in within?.EscapedAddresses ?? flow.Addressed)
+                    Store(field, node, Prov.Untracked);
+                if (self.CapableReturn)
+                {
+                    var returns = new Prov();
+                    foreach (var r in flow.Returns) returns.Add(Of(r));
+                    if (flow.Broken) returns.Unknown = true;
+                    _returns[node] = returns;
+                }
+            }
+
+            private void Store(string field, int node, Prov stored)
+            {
+                if (!_stores.TryGetValue(field, out var stores)) _stores[field] = stores = new List<(int, Prov)>();
+                stores.Add((node, stored));
+            }
+
+            // Round 18: THE target resolver. Every transfer the IL loop reads asks it which methods may run: a call, callvirt,
+            // newobj, jmp, a method pointer (ldftn, ldvirtftn: what a delegate made from it runs), with or without a
+            // `constrained.` prefix; a delegate's own Invoke is judged by the delegate's provenance, whose methods were
+            // resolved here where the pointer was made. The nodes: the method, and with dispatch every implementation or
+            // override (an override of a code-read slot, an implementation of an interface member, static ones included,
+            // and the fills of a slot .NET declares, see FrameworkSlot); a Mutates member's terminal; nothing for a reviewed
+            // read or a call outside the code read (the framework's); an unresolved node for a Jellyfin member nothing read
+            // declares or implements. Dispatch: callvirt, ldvirtftn, any constrained call or pointer (C# 11 calls a static
+            // abstract member as `constrained. T call I::M`, an interface member on a type parameter as `constrained. T
+            // callvirt`), and any call or pointer whose target is an interface member the code read declares (Follow).
+            // Running what it returns is the method nodes' own edge set (Running): body, type initializer, module initializer.
+            // Round 21: a member reference is resolved by its EXACT identity: the type it names (assembly and full name,
+            // through forwarders) and its whole signature, on that type or the nearest base declaring it (ResolveMember).
+            private List<int> Targets(MetadataReader md, int m, EntityHandle handle, bool dispatch)
+            {
+                switch (handle.Kind)
+                {
+                    case HandleKind.MethodSpecification:
+                        return Targets(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method, dispatch);
+                    case HandleKind.MethodDefinition:
+                    {
+                        var target = _nodeOf[(m, MetadataTokens.GetToken(handle))];
+                        return Follow(_nodes[target].Type, _nodes[target].Method, new List<int> { target }, dispatch);
+                    }
+                    case HandleKind.MemberReference:
+                    {
+                        var member = md.GetMemberReference((MemberReferenceHandle)handle);
+                        if (member.GetKind() != MemberReferenceKind.Method) return new List<int>();
+                        var called = md.GetString(member.Name);
+                        if (ParentType(md, m, member.Parent) is not { } parent) return new List<int>();
+                        var signature = member.DecodeMethodSignature(SigTypes.Instance, null);
+                        var resolved = ResolveMember(parent, called, signature);
+                        var found = resolved.Where(r => r.Read).Select(r => r.Node).Distinct().ToList();
+                        var outside = resolved.Where(r => !r.Read).ToList();
+                        if (found.Count == 0 && !MutatesAt(parent, called) && !ReviewedReadAt(parent, called))
+                        {
+                            // Round 17: a dispatched call to a slot declared outside the code read (a framework interface or
+                            // base class) still runs the implementations and overrides the code read has: one shared slot
+                            // node per declaration reaches them. Round 18: for every dispatching transfer (a constrained call
+                            // included), and a static slot (a static abstract member .NET declares) by its static fills.
+                            // Round 21: the slot is the method the reference resolves to (its declaring type's), else the
+                            // reference as written (a type that can't be read: its fills are the fail-closed ones).
+                            if (dispatch && FrameworkSlots(outside.Count > 0 ? outside.Select(SlotOf) : new[] { new Slot(parent, called, signature, !signature.Header.IsInstance) }) is { Count: > 0 } slots) return slots;
+                            if (!JellyfinType(_types[parent].Name)) return found;
+                            var strings = member.DecodeMethodSignature(Names.Instance, null);
+                            var contract = UserContract(MethodTypes(md, strings), null);
+                            return new List<int> { Unresolved(Simple(_types[parent].Name) + "." + called + " (not in the code read)", contract || HandsBackCallback(strings), callback: !contract) };
+                        }
+
+                        var targets = Follow(parent, called, found, dispatch);
+                        // A possible match outside the code read too (a signature that can't be compared exactly): its slot.
+                        if (dispatch && outside.Count > 0 && !MutatesAt(parent, called) && !ReviewedReadAt(parent, called)) targets.AddRange(FrameworkSlots(outside.Select(SlotOf)));
+                        return targets;
+                    }
+                    default:
+                        return new List<int>();
+                }
+            }
+
+            private List<int> FrameworkSlots(IEnumerable<Slot> slots)
+                => slots.Select(FrameworkSlot).Where(n => n != null).Select(n => n!.Value).Distinct().ToList();
+
+            // The type a member reference's parent names (a generic instantiation's generic type): its id, or null when it
+            // names none (a module, an array's built-in methods).
+            private int? ParentType(MetadataReader md, int m, EntityHandle parent)
+            {
+                switch (parent.Kind)
+                {
+                    case HandleKind.TypeDefinition:
+                        return _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(parent)), out var t) ? t : null;
+                    case HandleKind.MethodDefinition:
+                        return _nodeOf.TryGetValue((m, MetadataTokens.GetToken(parent)), out var n) ? _nodes[n].Type : null;
+                    case HandleKind.TypeReference:
+                    case HandleKind.TypeSpecification:
+                    {
+                        var type = TypeSig(md, parent);
+                        if (type.Kind == SigKind.Instance) type = type.Element!;
+                        return type.Kind == SigKind.Named ? TypeId(type.Name, type.Scope!) : null;
+                    }
+                    default:
+                        return null;
+                }
+            }
+
+            private static bool JellyfinType(string type) => type.StartsWith("MediaBrowser.", StringComparison.Ordinal) || type.StartsWith("Jellyfin.", StringComparison.Ordinal) || type.StartsWith("Emby.", StringComparison.Ordinal);
+
+            // A resolved call: a Mutates member ends there (reached), a reviewed read ends there (nothing), anything else is
+            // followed, through dispatch where the runtime may run another method: a virtual call (callvirt, ldvirtftn), and
+            // any call or method pointer to an INTERFACE member, static ones included (C# 11 calls a static abstract or
+            // static virtual member as `constrained. T call I::M`). A plain call to a class method runs that method only
+            // (`base.M()`).
+            private List<int> Follow(int type, string name, List<int> found, bool dispatch)
+            {
+                if (MutatesAt(type, name)) return new List<int> { Terminal(Simple(_types[type].Name) + "." + name) };
+                if (PersonScopedAt(type, name)) return new List<int> { Terminal(Simple(_types[type].Name) + "." + name, person: true) };
+                if (ReviewedReadAt(type, name)) return new List<int>();
+                var targets = new List<int>(found);
+                foreach (var target in found.ToList())
+                    if (dispatch || (_nodes[target].Type >= 0 && _types[_nodes[target].Type].Interface))
+                        targets.AddRange(Dispatch(target));
+                return targets;
+            }
+
+            // Round 21 (4a-r21-1): THE member resolution. A method of a type by name and WHOLE signature (ECMA-335 II.10.3:
+            // its generic arity, calling convention, return and parameter types, each type by its assembly and name), on the
+            // type or the nearest base declaring it (over its complete ancestry; a base's signature taken into the type's
+            // generic context): a match that is certain ends the search; one that can't be compared exactly (a type that
+            // can't be read, a custom modifier that differs) is kept and the search goes on. An interface's member may be a
+            // base interface's. Code read or outside it (a method outside the code read is metadata only: never a body).
+            private List<MethodRef> ResolveMember(int type, string name, MethodSignature<SigType> signature)
+            {
+                var found = new List<MethodRef>();
+                if (_types[type].Unreadable) return found;
+                if (Matches(type, null, name, signature, null, found)) return found;
+                if (name is ".ctor" or ".cctor") return found;
+                var lineage = LineageOf(type);
+                for (var i = 0; i < lineage.Bases.Count; i++)
+                    if (Matches(lineage.Bases[i], lineage.BaseArgs[i], name, signature, null, found)) return found;
+                if (found.Count == 0 && _types[type].Interface)
+                    foreach (var (face, args) in lineage.Interfaces)
+                        Matches(face, args, name, signature, null, found);
+                return found;
+            }
+
+            // Adds a type's methods of that name whose signature (in the context `args` takes it to) matches `signature` (in
+            // the context `context` takes it to); true when one matches exactly.
+            private bool Matches(int type, SigType[]? args, string name, MethodSignature<SigType> signature, SigType[]? context, List<MethodRef> found, Func<MethodRef, bool>? wanted = null)
+            {
+                var exact = false;
+                foreach (var r in MethodsOf(type))
+                {
+                    if (NameOf(r) != name || (wanted != null && !wanted(r))) continue;
+                    var match = Same(SigOf(r), args, signature, context);
+                    if (match == Match.No) continue;
+                    found.Add(r);
+                    exact |= match == Match.Exact;
+                }
+
+                return exact;
+            }
+
+            // Where a dispatched call of target can go: the fills of its slot (SlotFills), whatever they reach (Mapped). An
+            // abstract or interface member nothing fills is unresolved.
+            private IEnumerable<int> Dispatch(int target)
+            {
+                var node = _nodes[target];
+                if (node.Type < 0) return Array.Empty<int>();
+                var type = _types[node.Type];
+                if (!type.Interface && !node.Virtual) return Array.Empty<int>();
+                var fills = SlotFills(SlotOf(new MethodRef(node.Type, target, -1))).Where(n => n != target).ToList();
+                if (fills.Count == 0 && (node.Abstract || type.Interface))
+                {
+                    var contract = UserContract(node);
+                    return new[] { Unresolved(node.Name + " (nothing read implements it)", contract || HandsBackCallback(node), callback: !contract) };
+                }
+
+                return Mapped(fills);
+            }
+
+            // A fill reached by dispatch counts as a call of it: a Mutates member is reached (its terminal), a reviewed change
+            // to the request's person likewise, a reviewed read is nothing; anything else is followed.
+            private List<int> Mapped(IEnumerable<int> fills)
+            {
+                var mapped = new List<int>();
+                foreach (var n in fills)
+                {
+                    var type = _nodes[n].Type;
+                    var method = _nodes[n].Method;
+                    if (MutatesAt(type, method)) mapped.Add(Terminal(Simple(_types[type].Name) + "." + method));
+                    else if (PersonScopedAt(type, method)) mapped.Add(Terminal(Simple(_types[type].Name) + "." + method, person: true));
+                    else if (!ReviewedReadAt(type, method)) mapped.Add(n);
+                }
+
+                return mapped.Distinct().ToList();
+            }
+
+            // Round 19 (4a-r19-1, 4a-r19-2): THE fill rule, for every slot, declared in the code read or outside it (a virtual
+            // or abstract member of a class, an interface member, static ones included). ECMA-335 II.10.3 and II.12.2 over
+            // each type's COMPLETE ancestry (LineageOf: bases and interfaces outside the code read included, read from their
+            // metadata): a type fills an interface slot it implements (directly, through a base class or an interface's
+            // bases) with its own method of that name and signature, else the nearest base's (an implementation inherited
+            // from a class that doesn't itself declare the interface); a class's virtual slot is filled by every
+            // descendant's override (not a new slot), framework intermediate bases included (a sink deriving from
+            // MemoryStream overrides Stream.Write); and any MethodImpl entry naming the slot fills it whatever its name.
+            // Every fill fills its own slot in turn (overrides of overrides, an override of an inherited implementation, an
+            // explicit entry naming it), each slot once. An instance slot is filled by virtual methods, a static slot by
+            // static ones. A compiler-generated state machine is no fill (see FrameworkSlot). Abstract fills aren't returned
+            // (nothing runs there), but their slots are followed.
+            // Round 21 (4a-r21-1..3): a slot is its declaring type (assembly and name), name and WHOLE signature; a method
+            // fills it when its signature, taken into the implementing type's generic context (the instantiation of the
+            // slot's type its ancestry shows: IProgress<int> makes Report(!0) Report(int)), matches: a certain match ends the
+            // search up the bases, one that can't be compared exactly is kept and the search goes on (never the first only).
+            // The fills outside the code read (metadata only: never a body) are followed for their own slots: an override
+            // chain through MethodImpls outside the code read (Root.Make → Parent.Make → a code-read Child.Make) reaches the
+            // code read's end of it. The instantiation the CALL names isn't read (variance: an IProgress<object> called as an
+            // IProgress<string> is a fill), and a type whose ancestry can't be read whole may fill any slot (fail closed).
+            private List<int> SlotFills(Slot slot)
+            {
+                var key = slot.Key;
+                if (_slotFills.TryGetValue(key, out var cached)) return cached;
+                var fills = new List<int>();
+                var seen = new HashSet<MethodRef>();
+                var slots = new HashSet<string>(StringComparer.Ordinal) { key };
+                var queue = new Queue<Slot>();
+                queue.Enqueue(slot);
+                while (queue.Count > 0)
+                {
+                    foreach (var r in DirectFills(queue.Dequeue()))
+                    {
+                        if (!seen.Add(r) || _stateMachines.Contains(r.Type)) continue;
+                        if (r.Read && !_nodes[r.Node].Abstract) fills.Add(r.Node);
+                        var own = SlotOf(r);
+                        if (slots.Add(own.Key)) queue.Enqueue(own);
                     }
                 }
 
-                result.Propagate();
-                return result;
+                return _slotFills[key] = fills;
             }
 
-            public JellyfinUserAction? Classify(int token, string controller)
+            // The methods (code read or outside it) that fill one slot directly (SlotFills follows them on).
+            private IEnumerable<MethodRef> DirectFills(Slot slot)
             {
-                if (!_methods.TryGetValue(token, out var method)) return null;
-                var verbs = method.Verbs.Count == 0 ? new[] { "*" } : method.Verbs;
-                var writes = verbs.Any(v => v is not ("GET" or "HEAD"));
-                var why = UserControllers.Contains(controller) && writes ? "user controller"
-                    : method.Reaches is { } reaches ? "reaches " + reaches
-                    : Reviewed.Contains(controller + "." + method.Name) ? "reviewed"
-                    : null;
-                var key = why == null ? JellyfinUserKey.None : method.UserId ? JellyfinUserKey.User : JellyfinUserKey.Global;
-                return new JellyfinUserAction(controller, method.Name, verbs, key, why, method.Reaches);
+                // An interface slot, a class's, or (its type can't be read) both.
+                var info = _types[slot.Type];
+                bool? kind = info.Unreadable ? null : info.Interface;
+                if (kind != false)
+                    foreach (var t in Implementers(slot.Type))
+                        foreach (var r in Implementations(t, slot))
+                            yield return r;
+
+                if (kind != true)
+                {
+                    foreach (var t in Derived(slot.Type))
+                        foreach (var args in ArgsIn(t, slot.Type, interfaces: false))
+                        {
+                            var found = new List<MethodRef>();
+                            Matches(t, null, slot.Name, slot.Signature, args, found, r => Fills(r, slot.Static) && !NewSlotOf(r));
+                            foreach (var r in found) yield return r;
+                        }
+                }
+
+                foreach (var r in ImplsFor(slot)) yield return r;
             }
 
-            public IReadOnlyList<JellyfinUserAction> All()
-                => _methods.Where(m => m.Value.Action).Select(m => Classify(m.Key, Simple(m.Value.Type))!).ToList();
-
-            private static string Simple(string type) => type[(Math.Max(type.LastIndexOf('.'), type.LastIndexOf('+')) + 1)..];
-
-            // Reaching a Mutates member, from callee to caller, until nothing changes.
-            private void Propagate()
+            // A type's fills of an interface slot by name and signature: its own methods, else the nearest base's (a certain
+            // match ends the search; one that can't be compared exactly doesn't), for each instantiation of the interface its
+            // ancestry has. (MethodImpl entries: ImplsFor.)
+            private IEnumerable<MethodRef> Implementations(int t, Slot slot)
             {
-                var callers = new Dictionary<int, List<int>>();
-                foreach (var (token, method) in _methods)
-                    foreach (var callee in method.Calls)
+                var lineage = LineageOf(t);
+                foreach (var args in ArgsIn(t, slot.Type, interfaces: true))
+                {
+                    var found = new List<MethodRef>();
+                    if (!Matches(t, null, slot.Name, slot.Signature, args, found, r => Fills(r, slot.Static)))
+                        for (var i = 0; i < lineage.Bases.Count; i++)
+                            if (Matches(lineage.Bases[i], lineage.BaseArgs[i], slot.Name, slot.Signature, args, found, r => Fills(r, slot.Static))) break;
+                    foreach (var r in found) yield return r;
+                }
+            }
+
+            // An instance slot is filled by virtual methods, a static slot by static ones.
+            private bool Fills(MethodRef r, bool isStatic)
+            {
+                var attributes = AttributesOf(r);
+                return isStatic ? (attributes & MethodAttributes.Static) != 0 : (attributes & (MethodAttributes.Virtual | MethodAttributes.Static)) == MethodAttributes.Virtual;
+            }
+
+            private bool NewSlotOf(MethodRef r) => (AttributesOf(r) & MethodAttributes.NewSlot) != 0;
+
+            // The instantiations of type `of` in t's ancestry (its arguments in t's generic context; null: not generic), or
+            // (t's ancestry can't be read whole and doesn't show it) one whose arguments are unknown.
+            private List<SigType[]?> ArgsIn(int t, int of, bool interfaces)
+            {
+                var lineage = LineageOf(t);
+                var found = new List<SigType[]?>();
+                if (interfaces)
+                {
+                    foreach (var (face, args) in lineage.Interfaces)
+                        if (face == of) found.Add(args);
+                }
+                else
+                {
+                    for (var i = 0; i < lineage.Bases.Count; i++)
+                        if (lineage.Bases[i] == of) found.Add(lineage.BaseArgs[i]);
+                }
+
+                if (found.Count == 0) found.Add(Unknown);
+                return found;
+            }
+
+            // Round 21: the MethodImpl entries filling a slot (any type's, code read or in the code read's ancestries outside
+            // it): the slot their declaration resolves to is this one (its type, name and signature).
+            private IEnumerable<MethodRef> ImplsFor(Slot slot)
+            {
+                var index = ImplIndex();
+                if (!index.TryGetValue(slot.Name, out var entries)) yield break;
+                foreach (var (body, declared) in entries)
+                    if (declared.Any(d => d.Type == slot.Type && d.Static == slot.Static && Same(d.Signature, null, slot.Signature, null) != Match.No))
+                        yield return body;
+            }
+
+            // Every MethodImpl entry by the slots its declaration names: the code read's, and those of every type outside it
+            // in the code read's ancestries (read from their metadata: a covariant override chain or an interface implemented
+            // under another name there). A declaration is resolved to the method it names (its declaring type's: a reference
+            // through a derived type names the base's slot); one that can't be resolved stays as written.
+            private Dictionary<string, List<(MethodRef Body, List<Slot> Declared)>> ImplIndex()
+            {
+                if (_implIndex != null) return _implIndex;
+                _implIndex = new Dictionary<string, List<(MethodRef, List<Slot>)>>(StringComparer.Ordinal);
+                void Add(MethodRef body, int parent, string name, MethodSignature<SigType> signature)
+                {
+                    var resolved = parent >= 0 ? ResolveMember(parent, name, signature) : new List<MethodRef>();
+                    var declared = resolved.Count > 0 ? resolved.Select(SlotOf).ToList() : parent >= 0 ? new List<Slot> { new(parent, name, signature, !signature.Header.IsInstance) } : new List<Slot>();
+                    if (!_implIndex.TryGetValue(name, out var entries)) _implIndex[name] = entries = new List<(MethodRef, List<Slot>)>();
+                    entries.Add((body, declared));
+                    if (!_implsOfBody.TryGetValue(body, out var slots)) _implsOfBody[body] = slots = new List<Slot>();
+                    slots.AddRange(declared);
+                }
+
+                foreach (var (type, body, parent, name, signature) in _codeImpls)
+                    Add(new MethodRef(type, body, -1), TypeOfSig(parent), name, signature);
+                var outside = new HashSet<int>();
+                for (var t = 0; t < _readTypes; t++)
+                {
+                    var lineage = LineageOf(t);
+                    outside.UnionWith(lineage.Bases.Where(b => _types[b].External));
+                    outside.UnionWith(lineage.Interfaces.Select(i => i.Id).Where(i => _types[i].External));
+                }
+
+                foreach (var t in outside.OrderBy(t => t))
+                    foreach (var (body, parent, name, signature) in ExternalImpls(t))
+                        Add(new MethodRef(t, -1, body), TypeOfSig(parent), name, signature);
+                return _implIndex;
+            }
+
+            // The code read's types implementing an interface (through their complete ancestry), and those whose ancestry
+            // can't be read whole (fail closed).
+            private List<int> Implementers(int face)
+            {
+                if (_implementers == null)
+                {
+                    _implementers = new Dictionary<int, List<int>>();
+                    for (var t = 0; t < _readTypes; t++)
                     {
-                        if (!callers.TryGetValue(callee, out var list)) callers[callee] = list = new List<int>();
-                        list.Add(token);
+                        if (_types[t].Interface) continue;
+                        foreach (var i in LineageOf(t).Interfaces.Select(i => i.Id).Distinct())
+                        {
+                            if (!_implementers.TryGetValue(i, out var list)) _implementers[i] = list = new List<int>();
+                            list.Add(t);
+                        }
+                    }
+                }
+
+                var found = _implementers.TryGetValue(face, out var listed) ? listed : new List<int>();
+                return found.Concat(Incomplete().Where(t => !_types[t].Interface)).Distinct().ToList();
+            }
+
+            // The code read's types deriving from a class (through their complete ancestry), and those whose ancestry can't
+            // be read whole (fail closed).
+            private List<int> Derived(int type)
+            {
+                if (_derived == null)
+                {
+                    _derived = new Dictionary<int, List<int>>();
+                    for (var t = 0; t < _readTypes; t++)
+                        foreach (var b in LineageOf(t).Bases.Distinct())
+                        {
+                            if (!_derived.TryGetValue(b, out var list)) _derived[b] = list = new List<int>();
+                            list.Add(t);
+                        }
+                }
+
+                var found = _derived.TryGetValue(type, out var listed) ? listed : new List<int>();
+                return found.Concat(Incomplete()).Distinct().ToList();
+            }
+
+            private List<int> Incomplete()
+                => _incomplete ??= Enumerable.Range(0, _readTypes).Where(t => LineageOf(t).Incomplete).ToList();
+
+            // A Mutates member reached (or a reviewed change to the request's own person, PersonScoped).
+            private int Terminal(string reaches, bool person = false)
+            {
+                if (_terminals.TryGetValue(reaches, out var node)) return node;
+                _terminals[reaches] = _nodes.Count;
+                _nodes.Add(person ? new Node { Name = reaches, PersonReaches = reaches } : new Node { Name = reaches, Reaches = reaches });
+                return _nodes.Count - 1;
+            }
+
+            // A call that can't be followed. A delegate whose target stays unresolved always counts (round 11: what a
+            // callback does isn't in its type). Any other call counts (its callers are unresolved) when its contract can
+            // carry a user: a parameter or result type that is a user, a user id, or the user, session or sign-in services
+            // (see UserContract), or when it hands back a delegate (a callback the code read can't see into). One whose
+            // contract can't (a provider's name, a media item's delete) runs code outside the code read that is handed no
+            // user and gives back no code to run: it is recorded for review, and not followed. A callback (callback: a
+            // delegate, or what hands one back, with no user in its contract) touches someone the code read can't name:
+            // its action is bracketed for the request's person, everyone's only when there is none (Q-4AF11-1); a call
+            // whose contract carries a user, for everyone.
+            private int Unresolved(string what, bool couldReach = true, bool callback = false)
+            {
+                if (!couldReach)
+                {
+                    _contained.Add(what);
+                    if (_empty < 0)
+                    {
+                        _empty = _nodes.Count;
+                        _nodes.Add(new Node { Name = "(nothing)" });
                     }
 
-                var queue = new Queue<int>(_methods.Where(m => m.Value.Reaches != null).Select(m => m.Key));
+                    return _empty;
+                }
+
+                if (_unresolved.TryGetValue(what, out var node)) return node;
+                _unresolved[what] = _nodes.Count;
+                _nodes.Add(callback ? new Node { Name = what, Callback = what } : new Node { Name = what, Unresolved = what });
+                return _nodes.Count - 1;
+            }
+
+            // Each delegate field loaded: a node standing for what it can hold, then every delegate invocation (Invocations).
+            // Round 19: what each method returns is summarized first, to a fixed point (Summaries); the field nodes are filled
+            // from a work list (a field fed by another makes that one's node), never cut by a depth.
+            private void Delegates()
+            {
+                // Round 21: the MethodImpl index first (ExternallyCallable reads which static methods fill a slot).
+                ImplIndex();
+                Summaries();
+                foreach (var (node, field) in _loads) _nodes[node].Calls.Add(FieldNode(field));
+                while (_pendingFields.Count > 0) FieldEdges(_pendingFields.Dequeue());
+                Invocations();
+            }
+
+            private int FieldNode(string field)
+            {
+                if (_fieldNodes.TryGetValue(field, out var existing)) return existing;
+                var id = _nodes.Count;
+                _fieldNodes[field] = id;
+                var (owner, name) = FieldOf(field);
+                _nodes.Add(new Node { Name = "delegate " + Simple(_types[owner].Name) + "." + name });
+                _pendingFields.Enqueue(field);
+                return id;
+            }
+
+            // Round 18: what a delegate field can hold is what its stores put there, each by the stored value's provenance
+            // (Sources: the same model as an invocation's): the methods a delegate made from a pointer runs, the delegate
+            // fields it was loaded from, a parameter's value at each call site (in that caller, argument by argument), what
+            // a call returns. Where the provenance is lost (handed in from outside the code read, an unknown, a container
+            // that escaped) the field holds an unresolved callback: the methods that read it run it, not the one that stored
+            // it. Unresolved too: a field nothing in the code read stores.
+            private void FieldEdges(string field)
+            {
+                var id = _fieldNodes[field];
+                var stores = _stores.GetValueOrDefault(field);
+                // Round 11: a delegate whose target stays unresolved counts whatever its type (Q-4AF11-1): a Func<Task> carries
+                // no user, but the closure behind it can hold the user manager and a user id. One whose type can carry a
+                // user stays a call for everyone (round 10).
+                var fieldType = _fieldTypes.GetValueOrDefault(field, string.Empty);
+                var callback = !UserContract(new[] { fieldType }, null);
+                // Round 17: a field typed by a generic parameter (`T`) holds a delegate only in some constructed uses
+                // (ValueTuple items, anonymous types and event arguments are `T` fields too): it is followed to the delegates
+                // the code read is seen storing in it, and what is lost on the way (stored from outside the code read, or
+                // a value of another type) isn't counted (a stated limit; Jellyfin's user events cover it).
+                var generic = fieldType.StartsWith("!", StringComparison.Ordinal);
+                if (!generic && (stores == null || stores.Count == 0)) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
+                // Round 21 (open-world inputs): a field code outside the code read can write (a public or protected field of a
+                // visible type that isn't read-only, any field of a type outside the code read) holds what it stores too.
+                else if (!generic && OpenField(field)) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (stored from outside the code read)", callback: callback));
+                foreach (var (storer, stored) in stores ?? new List<(int, Prov)>())
+                {
+                    var sources = Sources(stored, storer);
+                    foreach (var n in sources.Nodes ?? Enumerable.Empty<int>()) _nodes[id].Calls.Add(n);
+                    foreach (var f in sources.Fields ?? Enumerable.Empty<string>())
+                        if (f != field) _nodes[id].Calls.Add(FieldNode(f));
+                    if (!generic)
+                        foreach (var (_, where) in sources.Lost ?? Enumerable.Empty<(int, string)>())
+                            _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (" + where + ")", callback: callback));
+                }
+            }
+
+            // From each Mutates member (and each unresolved call) back to every caller, until nothing changes.
+            private void Propagate()
+            {
+                var callers = new List<int>?[_nodes.Count];
+                for (var n = 0; n < _nodes.Count; n++)
+                    foreach (var callee in _nodes[n].Calls)
+                        (callers[callee] ??= new List<int>()).Add(n);
+                var queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].Reaches != null));
                 while (queue.Count > 0)
                 {
-                    var token = queue.Dequeue();
-                    if (!callers.TryGetValue(token, out var list)) continue;
-                    foreach (var caller in list)
+                    var n = queue.Dequeue();
+                    foreach (var caller in callers[n] ?? Enumerable.Empty<int>())
                     {
-                        var method = _methods[caller];
-                        if (method.Reaches != null) continue;
-                        method.Reaches = _methods[token].Reaches;
+                        if (_nodes[caller].Reaches != null) continue;
+                        _nodes[caller].Reaches = _nodes[n].Reaches;
+                        _nodes[caller].Via = n;
+                        queue.Enqueue(caller);
+                    }
+                }
+
+                queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].PersonReaches != null));
+                while (queue.Count > 0)
+                {
+                    var n = queue.Dequeue();
+                    foreach (var caller in callers[n] ?? Enumerable.Empty<int>())
+                    {
+                        if (_nodes[caller].PersonReaches != null) continue;
+                        _nodes[caller].PersonReaches = _nodes[n].PersonReaches;
+                        _nodes[caller].PersonVia = n;
+                        queue.Enqueue(caller);
+                    }
+                }
+
+                queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].Unresolved != null));
+                while (queue.Count > 0)
+                {
+                    var n = queue.Dequeue();
+                    foreach (var caller in callers[n] ?? Enumerable.Empty<int>())
+                    {
+                        if (_nodes[caller].Unresolved != null) continue;
+                        _nodes[caller].Unresolved = _nodes[n].Unresolved;
+                        _nodes[caller].UnresolvedVia = n;
+                        queue.Enqueue(caller);
+                    }
+                }
+
+                queue = new Queue<int>(Enumerable.Range(0, _nodes.Count).Where(n => _nodes[n].Callback != null));
+                while (queue.Count > 0)
+                {
+                    var n = queue.Dequeue();
+                    foreach (var caller in callers[n] ?? Enumerable.Empty<int>())
+                    {
+                        if (_nodes[caller].Callback != null) continue;
+                        _nodes[caller].Callback = _nodes[n].Callback;
+                        _nodes[caller].CallbackVia = n;
                         queue.Enqueue(caller);
                     }
                 }
             }
 
-            // The calls a body makes (call, callvirt, newobj, ldftn, ldvirtftn, jmp): methods of this assembly are followed,
-            // others are checked against Mutates.
-            private void Body(MetadataReader md, MethodBodyBlock body, Method method, Dictionary<string, TypeDefinitionHandle> types)
+            // The calls from node to what it reaches: 0 a user change, 1 a reviewed change to the request's person, 2 a call
+            // that couldn't be followed, 3 a callback that couldn't.
+            private List<string> CallPath(int node, int kind)
             {
-                var il = body.GetILReader();
-                while (il.RemainingBytes > 0)
+                var path = new List<string>();
+                for (var (n, depth) = (node, 0); n >= 0 && depth < 64; depth++)
                 {
-                    var first = il.ReadByte();
-                    var code = first == 0xfe ? TwoByte[il.ReadByte()] : OneByte[first];
-                    switch (code.OperandType)
+                    path.Add(_nodes[n].Name);
+                    n = kind switch { 0 => _nodes[n].Via, 1 => _nodes[n].PersonVia, 2 => _nodes[n].UnresolvedVia, _ => _nodes[n].CallbackVia };
+                }
+
+                return path;
+            }
+
+            // The controller assembly's actions, classified (the controller rule and the review list apply at the lookup). Round
+            // 21 (4a-r21-5): MVC's OWN discovery, not a method list of our own. A controller is what ASP.NET Core's
+            // ControllerFeatureProvider takes: a public top-level class, not abstract, not an open generic, without
+            // [NonController] on it or a base, named *Controller (any case) or with [Controller] on it or a base (ControllerBase
+            // has it). Its actions are DefaultApplicationModelProvider's: its public instance methods INCLUDING inherited ones
+            // (from any base, another assembly's included; an overridden one only as its override, a hidden one still), less
+            // special names, generic methods, abstract ones, [NonAction] on it or anything it overrides, object's members and
+            // IDisposable's Dispose. Each is classified once, by its declaring assembly and token (a base's action is the
+            // same method on every controller inheriting it); one declared outside the code read can't be read: fail closed.
+            private void Actions(Module module)
+            {
+                ImplIndex();
+                for (var t = 0; t < _readTypes; t++)
+                {
+                    if (_types[t].Module != 0 || !MvcController(t)) continue;
+                    var controller = Simple(_types[t].Name);
+                    foreach (var method in MvcActions(t))
                     {
-                        case OperandType.InlineMethod:
-                            Called(md, MetadataTokens.EntityHandle(il.ReadInt32()), method, types);
-                            break;
-                        case OperandType.InlineNone:
-                            break;
-                        case OperandType.ShortInlineBrTarget or OperandType.ShortInlineI or OperandType.ShortInlineVar:
-                            il.Offset += 1;
-                            break;
-                        case OperandType.InlineVar:
-                            il.Offset += 2;
-                            break;
-                        case OperandType.InlineI8 or OperandType.InlineR:
-                            il.Offset += 8;
-                            break;
-                        case OperandType.InlineSwitch:
-                            // The count, then that many branch targets (read the count first: it moves the offset).
-                            var targets = il.ReadInt32();
-                            il.Offset += 4 * targets;
-                            break;
-                        default:
-                            il.Offset += 4;
-                            break;
+                        var action = Classified(method, controller);
+                        _listed.Add(action with { Controller = controller, Key = KeyFor(action, controller), Why = WhyFor(action, controller) });
                     }
                 }
             }
 
-            private void Called(MetadataReader md, EntityHandle handle, Method method, Dictionary<string, TypeDefinitionHandle> types)
+            // An action's method, classified (kept by its declaring assembly and token; the controller rule applies at the lookup).
+            private JellyfinUserAction Classified(MethodRef method, string controller)
             {
+                var assembly = method.Read ? _modules[_nodes[method.Node].Module].Assembly : _types[method.Type].Assembly;
+                var token = method.Read ? _nodes[method.Node].Token : MembersOf(method.Type)!.Methods[method.Index].Token;
+                if (_actions.TryGetValue((assembly, token), out var known)) return known;
+                var verbs = VerbsOf(method);
+                JellyfinUserAction action;
+                if (!method.Read)
+                {
+                    action = new JellyfinUserAction(controller, NameOf(method), verbs.Count == 0 ? new[] { "*" } : verbs, JellyfinUserKey.Global,
+                        "unresolved " + Simple(_types[method.Type].Name) + "." + NameOf(method) + " (an action declared outside the code read)", null);
+                }
+                else
+                {
+                    var node = _nodes[method.Node];
+                    var md = _modules[node.Module].Md;
+                    var userId = md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token)).GetParameters()
+                        .Select(p => md.GetString(md.GetParameter(p).Name)).Any(p => string.Equals(p, "userId", StringComparison.OrdinalIgnoreCase));
+                    // A change to anyone: the person of its userId argument, else everyone. Only a reviewed change to the
+                    // request's own person: that person (userId, else the signed-in person). Neither, but a call that
+                    // couldn't be followed: everyone, for a write; only a callback that couldn't (round 11): the
+                    // request's person, everyone when there is none.
+                    var reaches = node.Reaches ?? node.PersonReaches;
+                    var unresolved = reaches == null && node.Unresolved != null ? "unresolved " + node.Unresolved
+                        : reaches == null && node.Callback != null ? "unresolved callback " + node.Callback
+                        : null;
+                    var key = node.Reaches == null && node.PersonReaches != null || userId ? JellyfinUserKey.User : JellyfinUserKey.Global;
+                    action = new JellyfinUserAction(controller, node.Method, verbs.Count == 0 ? new[] { "*" } : verbs, key, unresolved, reaches,
+                        node.Reaches != null ? CallPath(method.Node, 0) : node.PersonReaches != null ? CallPath(method.Node, 1) : node.Unresolved != null ? CallPath(method.Node, 2) : node.Callback != null ? CallPath(method.Node, 3) : null);
+                }
+
+                action = action with { Module = assembly, Token = token };
+                _actions[(assembly, token)] = action;
+                return action;
+            }
+
+            // ASP.NET Core's ControllerFeatureProvider.IsController.
+            private bool MvcController(int t)
+            {
+                var info = _types[t];
+                if (info.Interface || (info.Attributes & TypeAttributes.VisibilityMask) != TypeAttributes.Public || (info.Attributes & TypeAttributes.Abstract) != 0 || info.Arity > 0
+                    || info.Base is { Kind: SigKind.Named, Name: "System.ValueType" or "System.Enum" }) return false;
+                var lineage = LineageOf(t);
+                var chain = lineage.Bases.Prepend(t).ToList();
+                if (chain.Any(c => HasTypeAttribute(c, "Microsoft.AspNetCore.Mvc.NonControllerAttribute"))) return false;
+                // An ancestry that can't be read whole: a controller (an extra entry is harmless; a missing one falls back).
+                return Simple(info.Name).EndsWith("Controller", StringComparison.OrdinalIgnoreCase) || chain.Any(c => HasTypeAttribute(c, "Microsoft.AspNetCore.Mvc.ControllerAttribute")) || lineage.Incomplete;
+            }
+
+            // DefaultApplicationModelProvider's actions of a controller: reflection's public instance methods of the type (its
+            // own, then each base's that a nearer one doesn't override), then MVC's IsAction.
+            private List<MethodRef> MvcActions(int t)
+            {
+                var lineage = LineageOf(t);
+                var chain = new List<(int Type, SigType[]? Args)> { (t, null) };
+                for (var i = 0; i < lineage.Bases.Count; i++) chain.Add((lineage.Bases[i], lineage.BaseArgs[i]));
+                var collected = new List<(MethodRef Method, SigType[]? Args)>();
+                foreach (var (type, args) in chain)
+                    foreach (var method in MethodsOf(type).ToList())
+                    {
+                        var attributes = AttributesOf(method);
+                        if ((attributes & MethodAttributes.MemberAccessMask) != MethodAttributes.Public || (attributes & MethodAttributes.Static) != 0) continue;
+                        if (type != t && (attributes & MethodAttributes.Virtual) != 0 && collected.Any(c => Overrides(c.Method, c.Args, method, args))) continue;
+                        collected.Add((method, args));
+                    }
+
+                return collected.Select(c => c.Method).Where(IsAction).ToList();
+            }
+
+            // DefaultApplicationModelProvider.IsAction (public and instance already).
+            private bool IsAction(MethodRef method)
+            {
+                if ((AttributesOf(method) & (MethodAttributes.SpecialName | MethodAttributes.Abstract)) != 0 || SigOf(method).GenericParameterCount > 0) return false;
+                var chain = OverrideChain(method);
+                if (chain.Any(m => HasMethodAttribute(m, "Microsoft.AspNetCore.Mvc.NonActionAttribute"))) return false;
+                var definition = chain[^1];
+                if (_types[definition.Type].Name == "System.Object") return false;
+                return !IsDisposeImplementation(definition);
+            }
+
+            // Whether derived (in a nearer type, its signature in the controller's context by derivedArgs) overrides
+            // overridden (likewise): a virtual method that isn't a new slot, of the same name and signature, or a MethodImpl
+            // naming it.
+            private bool Overrides(MethodRef derived, SigType[]? derivedArgs, MethodRef overridden, SigType[]? overriddenArgs)
+            {
+                var attributes = AttributesOf(derived);
+                if ((attributes & MethodAttributes.Virtual) == 0) return false;
+                if (_implsOfBody.TryGetValue(derived, out var slots) && slots.Any(s => s.Type == overridden.Type && s.Name == NameOf(overridden) && Same(s.Signature, null, SigOf(overridden), null) == Match.Exact)) return true;
+                return (attributes & MethodAttributes.NewSlot) == 0 && NameOf(derived) == NameOf(overridden) && Same(SigOf(derived), derivedArgs, SigOf(overridden), overriddenArgs) == Match.Exact;
+            }
+
+            // The method, then the one it overrides, and so on to its base definition (reflection's GetBaseDefinition).
+            private List<MethodRef> OverrideChain(MethodRef method)
+            {
+                var chain = new List<MethodRef> { method };
+                while (chain.Count < 64 && Overridden(chain[^1]) is { } next && !chain.Contains(next)) chain.Add(next);
+                return chain;
+            }
+
+            // The method a virtual method overrides: the nearest base's of the same name and signature (not for a new slot), or
+            // the one its MethodImpl names.
+            private MethodRef? Overridden(MethodRef method)
+            {
+                var attributes = AttributesOf(method);
+                if ((attributes & MethodAttributes.Virtual) == 0) return null;
+                if (_implsOfBody.TryGetValue(method, out var slots))
+                    foreach (var slot in slots)
+                        if (!_types[slot.Type].Interface && MethodOf(slot) is { } declared && declared != method) return declared;
+                if ((attributes & MethodAttributes.NewSlot) != 0) return null;
+                var lineage = LineageOf(method.Type);
+                for (var i = 0; i < lineage.Bases.Count; i++)
+                    foreach (var candidate in MethodsOf(lineage.Bases[i]))
+                        if ((AttributesOf(candidate) & MethodAttributes.Virtual) != 0 && NameOf(candidate) == NameOf(method) && Same(SigOf(candidate), lineage.BaseArgs[i], SigOf(method), null) == Match.Exact)
+                            return candidate;
+                return null;
+            }
+
+            // The method a slot is (its type's of that name and signature).
+            private MethodRef? MethodOf(Slot slot)
+            {
+                foreach (var method in MethodsOf(slot.Type))
+                    if (NameOf(method) == slot.Name && Same(SigOf(method), null, slot.Signature, null) == Match.Exact) return method;
+                return null;
+            }
+
+            // MVC's IsIDisposableMethod: the base definition implements IDisposable.Dispose for its declaring type (that
+            // type's interface map: a MethodImpl, else a public virtual method of that name and signature when the type
+            // declares the interface itself, else its base's map).
+            private bool IsDisposeImplementation(MethodRef definition)
+            {
+                if (NameOf(definition) != "Dispose") return false;
+                var lineage = LineageOf(definition.Type);
+                var disposable = lineage.Interfaces.Select(i => i.Id).FirstOrDefault(i => _types[i].Name == "System.IDisposable", -1);
+                if (disposable < 0 || MethodsOf(disposable).Where(m => NameOf(m) == "Dispose").Select(m => (MethodRef?)m).FirstOrDefault() is not { } dispose) return false;
+                var slot = SlotOf(dispose);
+                var chain = new List<(int Type, SigType[]? Args)> { (definition.Type, null) };
+                for (var i = 0; i < lineage.Bases.Count; i++) chain.Add((lineage.Bases[i], lineage.BaseArgs[i]));
+                for (var x = 0; x < chain.Count; x++)
+                {
+                    foreach (var method in MethodsOf(chain[x].Type))
+                        if (_implsOfBody.TryGetValue(method, out var slots) && slots.Any(s => s.Type == slot.Type && s.Name == slot.Name)) return method == definition;
+                    if (!LineageOf(chain[x].Type).Own.Contains(disposable)) continue;
+                    for (var y = x; y < chain.Count; y++)
+                        foreach (var method in MethodsOf(chain[y].Type))
+                            if (NameOf(method) == "Dispose" && (AttributesOf(method) & (MethodAttributes.Virtual | MethodAttributes.MemberAccessMask)) == (MethodAttributes.Virtual | MethodAttributes.Public)
+                                && Same(SigOf(method), chain[y].Args, slot.Signature, null) == Match.Exact) return method == definition;
+                    return false;
+                }
+
+                return false;
+            }
+
+            // The HTTP methods of an action: its route attributes and (inherited) those of the methods it overrides.
+            private List<string> VerbsOf(MethodRef method)
+            {
+                var verbs = new SortedSet<string>(StringComparer.Ordinal);
+                foreach (var m in OverrideChain(method))
+                    foreach (var name in MethodAttributeNames(m))
+                        if (VerbAttributes.TryGetValue(name, out var verb)) verbs.Add(verb);
+                return verbs.ToList();
+            }
+
+            private bool HasMethodAttribute(MethodRef method, string name) => MethodAttributeNames(method).Contains(name);
+
+            // A method's custom attributes (full names): the code read's from its module, one outside it from its metadata.
+            private IEnumerable<string> MethodAttributeNames(MethodRef method)
+            {
+                if (!method.Read) return MembersOf(method.Type)!.Methods[method.Index].AttributeNames;
+                var node = _nodes[method.Node];
+                var md = _modules[node.Module].Md;
+                return md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token)).GetCustomAttributes()
+                    .Select(a => AttributeFullName(md, md.GetCustomAttribute(a))).Where(n => n != null).Select(n => n!).ToList();
+            }
+
+            private bool HasTypeAttribute(int type, string name)
+            {
+                var info = _types[type];
+                if (info.Unreadable) return false;
+                if (info.External) return MembersOf(type)?.TypeAttributes.Contains(name) == true;
+                var md = _modules[info.Module].Md;
+                return md.GetTypeDefinition(MetadataTokens.TypeDefinitionHandle(info.Row)).GetCustomAttributes().Any(a => AttributeFullName(md, md.GetCustomAttribute(a)) == name);
+            }
+
+            // ------------------------------------------------------------------ delegate provenance (rounds 17–18)
+
+            // What a value on the stack (or in a local, an argument written to, an array's element) can be, as far as
+            // delegates go: unknown; none (null, a number, a string, anything whose type can't hold a delegate); a method
+            // pointer or a delegate made from one (the methods the target resolver returned); a delegate field's value; a
+            // delegate field's address; the method's own argument; a local; what a call returned (its site); a fresh array
+            // (its allocation) or one of its elements; or either of two.
+            private enum ValueKind { Unknown, None, Pointer, Field, Address, Arg, Local, Result, Array, Element, Union }
+
+            private sealed class Value
+            {
+                public static readonly Value Unknown = new(ValueKind.Unknown, 0), None = new(ValueKind.None, 0);
+                private static readonly Value[] Args = Enumerable.Range(0, 32).Select(i => new Value(ValueKind.Arg, i)).ToArray();
+                private static readonly Value[] Locals = Enumerable.Range(0, 64).Select(i => new Value(ValueKind.Local, i)).ToArray();
+
+                private Value(ValueKind kind, int index) => (Kind, Index) = (kind, index);
+
+                public ValueKind Kind { get; }
+
+                public int Index { get; }
+
+                public Value? A { get; private init; }
+
+                public Value? B { get; private init; }
+
+                // A pointer's methods.
+                public IReadOnlyList<int>? Nodes { get; private init; }
+
+                // A field's or an address's delegate field ("Type::Name").
+                public string? Name { get; private init; }
+
+                public static Value Arg(int i) => i < Args.Length ? Args[i] : new Value(ValueKind.Arg, i);
+
+                public static Value Local(int i) => i < Locals.Length ? Locals[i] : new Value(ValueKind.Local, i);
+
+                public static Value Result(int site) => new(ValueKind.Result, site);
+
+                public static Value Pointer(IReadOnlyList<int> nodes) => new(ValueKind.Pointer, 0) { Nodes = nodes };
+
+                public static Value FieldOf(string field) => new(ValueKind.Field, 0) { Name = field };
+
+                public static Value AddressOf(string field) => new(ValueKind.Address, 0) { Name = field };
+
+                public static Value Array(int allocation) => new(ValueKind.Array, allocation);
+
+                public static Value Element(Value array) => new(ValueKind.Element, 0) { A = array };
+
+                // Both kept (an unknown included): an array among them can still escape.
+                public static Value Union(Value a, Value b) => ReferenceEquals(a, b) ? a : new Value(ValueKind.Union, 0) { A = a, B = b };
+
+                // What is read through an address (ldind.ref, ldobj): a delegate field's address gives its value; any other,
+                // unknown.
+                public Value Through() => Kind == ValueKind.Address ? FieldOf(Name!) : Unknown;
+            }
+
+            // Provenance resolved within a body: unknown, none, the methods (pointers), delegate fields, fresh arrays and
+            // delegate-field addresses it can be, the arguments it came from, the call sites whose results it is.
+            private sealed class Prov
+            {
+                public static readonly Prov Untracked = new() { Unknown = true };
+
+                public bool Unknown { get; set; }
+
+                public bool None { get; set; }
+
+                public HashSet<int>? Methods { get; private set; }
+
+                public HashSet<string>? Fields { get; private set; }
+
+                public HashSet<int>? Arrays { get; private set; }
+
+                public HashSet<string>? Addresses { get; private set; }
+
+                public HashSet<int>? Args { get; private set; }
+
+                public HashSet<int>? Results { get; private set; }
+
+                public int Size => (Unknown ? 1 : 0) + (None ? 1 : 0) + (Methods?.Count ?? 0) + (Fields?.Count ?? 0) + (Arrays?.Count ?? 0) + (Addresses?.Count ?? 0) + (Args?.Count ?? 0) + (Results?.Count ?? 0);
+
+                // Something other than the body's own fresh arrays (an array of that is one the reading can't see into).
+                public bool Foreign => Unknown || None || Methods != null || Fields != null || Addresses != null || Args != null || Results != null;
+
+                public void AddMethods(IEnumerable<int> nodes) => (Methods ??= new HashSet<int>()).UnionWith(nodes);
+
+                public void AddField(string field) => (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
+
+                public void AddArray(int allocation) => (Arrays ??= new HashSet<int>()).Add(allocation);
+
+                public void AddAddress(string field) => (Addresses ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
+
+                public void AddArg(int i) => (Args ??= new HashSet<int>()).Add(i);
+
+                public void AddResult(int site) => (Results ??= new HashSet<int>()).Add(site);
+
+                public void Add(Prov other)
+                {
+                    if (ReferenceEquals(other, this)) return;
+                    Unknown |= other.Unknown;
+                    None |= other.None;
+                    if (other.Methods != null) AddMethods(other.Methods);
+                    if (other.Fields != null) foreach (var f in other.Fields) AddField(f);
+                    if (other.Arrays != null) foreach (var a in other.Arrays) AddArray(a);
+                    if (other.Addresses != null) foreach (var a in other.Addresses) AddAddress(a);
+                    if (other.Args != null) foreach (var a in other.Args) AddArg(a);
+                    if (other.Results != null) foreach (var r in other.Results) AddResult(r);
+                }
+            }
+
+            // A call site where a delegate can go in (a parameter that can hold one) or come out (a result that can): its
+            // caller, where it goes, and (once the caller's body is settled) what it hands each such parameter.
+            private sealed class Site
+            {
+                public Site(int caller, List<int> targets) => (Caller, Targets) = (caller, targets);
+
+                public int Caller { get; }
+
+                public List<int> Targets { get; }
+
+                public Prov?[]? Args { get; set; }
+            }
+
+            // A method or call as the stack sees it: what it pops and pushes, whether it runs a delegate, and which of its
+            // arguments (`this` first) and result can hold a delegate.
+            private sealed class Shape
+            {
+                public string Parent { get; init; } = string.Empty;
+
+                // Round 21: the declaring type's id (a reference: the type it names), -1 when it names none.
+                public int ParentType { get; init; } = -1;
+
+                public string Name { get; init; } = string.Empty;
+
+                public int Params { get; init; }
+
+                public int Pops { get; init; }
+
+                public bool Void { get; init; } = true;
+
+                // A delegate's Invoke, BeginInvoke or DynamicInvoke: the delegate's type.
+                public string? Invoke { get; init; }
+
+                public bool DelegateCtor { get; init; }
+
+                // Delegate.Combine or Remove: the result is (part of) its arguments.
+                public bool Combine { get; init; }
+
+                public bool[]? Capable { get; init; }
+
+                public bool CapableReturn { get; init; }
+
+                // By argument: the delegate type handed (code outside the code read may run it).
+                public string?[]? Delegates { get; init; }
+            }
+
+            private Shape ShapeOf(MetadataReader md, int m, EntityHandle handle)
+            {
+                if (handle.Kind == HandleKind.MethodSpecification) return ShapeOf(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method);
+                var key = (m, MetadataTokens.GetToken(handle));
+                if (_shapes.TryGetValue(key, out var shape)) return shape;
+                MethodSignature<string> signature;
+                string parent, instance, name;
+                int parentType;
                 switch (handle.Kind)
                 {
                     case HandleKind.MethodDefinition:
-                        method.Calls.Add(MetadataTokens.GetToken(handle));
+                    {
+                        var method = md.GetMethodDefinition((MethodDefinitionHandle)handle);
+                        signature = method.DecodeSignature(Names.Instance, null);
+                        parent = instance = FullName(md, method.GetDeclaringType());
+                        name = md.GetString(method.Name);
+                        parentType = _nodeOf.TryGetValue(key, out var n) ? _nodes[n].Type : -1;
                         break;
-                    case HandleKind.MethodSpecification:
-                        Called(md, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method, method, types);
+                    }
+                    case HandleKind.MemberReference when md.GetMemberReference((MemberReferenceHandle)handle) is { } member && member.GetKind() == MemberReferenceKind.Method:
+                        signature = member.DecodeMethodSignature(Names.Instance, null);
+                        parent = ParentName(md, member.Parent) ?? string.Empty;
+                        instance = member.Parent.Kind == HandleKind.TypeSpecification ? md.GetTypeSpecification((TypeSpecificationHandle)member.Parent).DecodeSignature(Names.Instance, null) : parent;
+                        name = md.GetString(member.Name);
+                        parentType = ParentType(md, m, member.Parent) ?? -1;
+                        break;
+                    default:
+                        // Not a method the stack can size: the body can't be followed (fail closed).
+                        return _shapes[key] = new Shape { Pops = -1 };
+                }
+
+                var instanceCall = signature.Header.IsInstance && !signature.Header.HasExplicitThis;
+                var types = (instanceCall ? new[] { parent } : Array.Empty<string>()).Concat(signature.ParameterTypes).ToArray();
+                var capable = types.Select((t, i) => !(instanceCall && i == 0) && Capable(t)).ToArray();
+                var system = parent is "System.Delegate" or "System.MulticastDelegate";
+                var isDelegate = !system && DelegateType(parent);
+                string?[]? delegates = system || isDelegate ? null : types.Select((t, i) => !(instanceCall && i == 0) && Delegate(t) ? t : null).ToArray();
+                return _shapes[key] = new Shape
+                {
+                    Parent = parent,
+                    ParentType = parentType,
+                    Name = name,
+                    Params = signature.ParameterTypes.Length,
+                    Pops = types.Length,
+                    Void = signature.ReturnType == "System.Void",
+                    Invoke = (isDelegate && name is "Invoke" or "BeginInvoke") || (system && name == "DynamicInvoke") ? instance : null,
+                    DelegateCtor = isDelegate && name == ".ctor",
+                    Combine = system && (name is "Combine" or "Remove") && signature.ParameterTypes.Length == 2,
+                    Capable = capable.Any(c => c) ? capable : null,
+                    CapableReturn = Capable(signature.ReturnType),
+                    Delegates = delegates != null && delegates.Any(d => d != null) ? delegates : null,
+                };
+            }
+
+            private bool CapableField(MetadataReader md, int m, EntityHandle handle)
+            {
+                var key = (m, MetadataTokens.GetToken(handle));
+                if (_capableFields.TryGetValue(key, out var capable)) return capable;
+                var type = handle.Kind switch
+                {
+                    HandleKind.FieldDefinition => md.GetFieldDefinition((FieldDefinitionHandle)handle).DecodeSignature(Names.Instance, null),
+                    HandleKind.MemberReference => md.GetMemberReference((MemberReferenceHandle)handle).DecodeFieldSignature(Names.Instance, null),
+                    _ => "System.Object",
+                };
+                return _capableFields[key] = Capable(type);
+            }
+
+            // Whether a value of this type can be a delegate: a delegate type, or a type every delegate is (object, Delegate,
+            // ICloneable, ISerializable), or a generic parameter.
+            private bool Capable(string type)
+            {
+                if (type.EndsWith('&') || type.EndsWith("[]", StringComparison.Ordinal) || type.EndsWith('*')) return false;
+                if (type.StartsWith('!')) return true;
+                return type is "System.Object" or "System.ICloneable" or "System.Runtime.Serialization.ISerializable" || Delegate(type);
+            }
+
+            private bool Delegate(string type)
+            {
+                if (type.EndsWith('&') || type.EndsWith("[]", StringComparison.Ordinal) || type.EndsWith('*') || type.StartsWith('!')) return false;
+                var head = type.Split('<')[0];
+                return DelegateType(head);
+            }
+
+            // One body's abstract evaluation stack (provenance only), read in a single forward pass: a snapshot at each
+            // forward branch's target, merged where paths meet; an exception handler starts with one unknown (the
+            // exception), a finally or fault with none; after an unconditional transfer the stack is the next instruction's
+            // snapshot, or empty (ECMA-335 III.1.7.5). Anything inconsistent (a pop of an empty stack, heights that disagree,
+            // values carried round a backward branch, a call the stack can't size) breaks the body: everything it records is
+            // then unknown (fail closed). Round 18: it records the delegate-field stores, the array element stores (by
+            // array), stores through addresses, and every value that ESCAPES (handed to a call, stored in a field or another
+            // array, returned, its address taken): an array that escapes may be written where the reading doesn't follow, so
+            // its elements are unknown.
+            private sealed class Flow
+            {
+                // The opcodes that pop a value without letting it escape (a test, a comparison, an array access or length).
+                private static readonly HashSet<short> Inert = new HashSet<short>
+                {
+                    OpCodes.Pop.Value, OpCodes.Ldlen.Value, OpCodes.Ceq.Value, OpCodes.Cgt.Value, OpCodes.Cgt_Un.Value, OpCodes.Clt.Value, OpCodes.Clt_Un.Value,
+                }.Concat(Enumerable.Range(OpCodes.Ldelem_I1.Value, OpCodes.Stelem_Ref.Value - OpCodes.Ldelem_I1.Value + 1).Select(v => (short)v)).ToHashSet();
+
+                // The stack height each instruction was read with, plus one (0: not read yet), by offset.
+                private readonly int[] _heights;
+                private Dictionary<int, List<Value>>? _snapshots;
+                private List<Value> _stack = new();
+                private bool _fallsThrough = true;
+
+                public Flow(MethodBodyBlock body)
+                {
+                    _heights = new int[body.Size + 1];
+                    foreach (var region in body.ExceptionRegions)
+                    {
+                        _snapshots ??= new Dictionary<int, List<Value>>();
+                        _snapshots[region.HandlerOffset] = region.Kind is ExceptionRegionKind.Catch or ExceptionRegionKind.Filter ? new List<Value> { Value.Unknown } : new List<Value>();
+                        if (region.Kind == ExceptionRegionKind.Filter) _snapshots[region.FilterOffset] = new List<Value> { Value.Unknown };
+                    }
+                }
+
+                public bool Broken { get; private set; }
+
+                public Dictionary<int, List<Value>> Locals { get; } = new();
+
+                public Dictionary<int, List<Value>> Args { get; } = new();
+
+                public List<(Value Array, Value Element)> Elements { get; } = new();
+
+                public List<(string Field, Value Value)> Stores { get; } = new();
+
+                public List<(Value Address, Value Value)> Indirect { get; } = new();
+
+                public List<Value> Escapes { get; } = new();
+
+                // The delegate fields whose address the body took.
+                public HashSet<string> Addressed { get; } = new(StringComparer.Ordinal);
+
+                public List<(Value Receiver, string Type)> Invokes { get; } = new();
+
+                public List<(int Site, Value?[] Args)> Sites { get; } = new();
+
+                public List<Value> Returns { get; } = new();
+
+                public void Arrive(int offset)
+                {
+                    if (_snapshots != null && _snapshots.TryGetValue(offset, out var snapshot))
+                    {
+                        if (!_fallsThrough) _stack = snapshot.ToList();
+                        else if (snapshot.Count != _stack.Count) Broken = true;
+                        else for (var i = 0; i < _stack.Count; i++) _stack[i] = Value.Union(_stack[i], snapshot[i]);
+                    }
+                    else if (!_fallsThrough) _stack = new List<Value>();
+
+                    _fallsThrough = true;
+                    if (offset < _heights.Length) _heights[offset] = _stack.Count + 1;
+                    else Broken = true;
+                }
+
+                public void End() => _fallsThrough = false;
+
+                public void Break() => Broken = true;
+
+                public void Clear() => _stack.Clear();
+
+                public void Push(Value value) => _stack.Add(value);
+
+                public Value Address(string field)
+                {
+                    Addressed.Add(field);
+                    return Value.AddressOf(field);
+                }
+
+                public Value Peek()
+                {
+                    if (_stack.Count > 0) return _stack[^1];
+                    Broken = true;
+                    return Value.Unknown;
+                }
+
+                public Value Pop()
+                {
+                    var top = Peek();
+                    if (_stack.Count > 0) _stack.RemoveAt(_stack.Count - 1);
+                    return top;
+                }
+
+                public void Store(Dictionary<int, List<Value>> slots, int index, Value value)
+                {
+                    if (!slots.TryGetValue(index, out var stored)) slots[index] = stored = new List<Value>();
+                    stored.Add(value);
+                }
+
+                // ldelem: the index, then the array.
+                public void LoadElement()
+                {
+                    Pop();
+                    Push(Value.Element(Pop()));
+                }
+
+                // stelem: the value, the index, the array.
+                public void StoreElement()
+                {
+                    var element = Pop();
+                    Pop();
+                    Elements.Add((Pop(), element));
+                }
+
+                // stind.ref, stobj: the value, then the address.
+                public void StoreIndirect()
+                {
+                    var stored = Pop();
+                    Indirect.Add((Pop(), stored));
+                    Escapes.Add(stored);
+                }
+
+                // A branch: a forward target takes a snapshot (merged with others); a backward one must meet the height it
+                // was read with, and carry nothing (its values would need a second pass).
+                public void Branch(int from, int target)
+                {
+                    if (target <= from)
+                    {
+                        if (target < 0 || _heights[target] != _stack.Count + 1 || _stack.Count > 0) Broken = true;
+                        return;
+                    }
+
+                    _snapshots ??= new Dictionary<int, List<Value>>();
+                    if (!_snapshots.TryGetValue(target, out var snapshot)) _snapshots[target] = _stack.ToList();
+                    else if (snapshot.Count != _stack.Count) Broken = true;
+                    else for (var i = 0; i < snapshot.Count; i++) snapshot[i] = Value.Union(snapshot[i], _stack[i]);
+                }
+
+                // An instruction with no effect on delegates: its pops (which escape, but for a test, a comparison or an
+                // array access), then its pushes (a number is no delegate; anything else is unknown).
+                public void Generic(OpCode code)
+                {
+                    var pops = code.StackBehaviourPop switch
+                    {
+                        StackBehaviour.Pop0 => 0,
+                        StackBehaviour.Pop1 or StackBehaviour.Popi or StackBehaviour.Popref => 1,
+                        StackBehaviour.Pop1_pop1 or StackBehaviour.Popi_pop1 or StackBehaviour.Popi_popi or StackBehaviour.Popi_popi8 or StackBehaviour.Popi_popr4
+                            or StackBehaviour.Popi_popr8 or StackBehaviour.Popref_pop1 or StackBehaviour.Popref_popi => 2,
+                        StackBehaviour.Popi_popi_popi or StackBehaviour.Popref_popi_popi or StackBehaviour.Popref_popi_popi8 or StackBehaviour.Popref_popi_popr4
+                            or StackBehaviour.Popref_popi_popr8 or StackBehaviour.Popref_popi_popref or StackBehaviour.Popref_popi_pop1 => 3,
+                        _ => -1,
+                    };
+                    if (pops < 0) Broken = true;
+                    var inert = code.FlowControl == FlowControl.Cond_Branch || Inert.Contains(code.Value);
+                    for (var i = 0; i < pops; i++)
+                    {
+                        var popped = Pop();
+                        if (!inert) Escapes.Add(popped);
+                    }
+
+                    switch (code.StackBehaviourPush)
+                    {
+                        case StackBehaviour.Push0:
+                            break;
+                        case StackBehaviour.Pushi or StackBehaviour.Pushi8 or StackBehaviour.Pushr4 or StackBehaviour.Pushr8:
+                            Push(Value.None);
+                            break;
+                        case StackBehaviour.Push1 or StackBehaviour.Pushref:
+                            Push(Value.Unknown);
+                            break;
+                        default:
+                            Broken = true;
+                            break;
+                    }
+                }
+
+                // What locals, arguments written to and array elements can hold, and which arrays and field addresses
+                // escaped, to a fixed point (they feed each other).
+                public Within Within()
+                {
+                    var within = new Within();
+                    foreach (var i in Locals.Keys) within.LocalProv[i] = new Prov();
+                    foreach (var i in Args.Keys) within.ArgProv[i] = new Prov();
+                    bool changed;
+                    do
+                    {
+                        changed = false;
+                        foreach (var (i, stored) in Locals) foreach (var v in stored) changed |= within.Into(within.LocalProv[i], v);
+                        foreach (var (i, stored) in Args) foreach (var v in stored) changed |= within.Into(within.ArgProv[i], v);
+                        foreach (var (array, element) in Elements)
+                        {
+                            var into = within.Of(array);
+                            // Stored in an array the body didn't make (or may not have): the value escapes with it.
+                            if (into.Foreign) changed |= within.Escape(element);
+                            foreach (var a in into.Arrays ?? Enumerable.Empty<int>()) changed |= within.Into(within.ElementOf(a), element);
+                        }
+
+                        foreach (var v in Escapes) changed |= within.Escape(v);
+                        // An array kept in an array that escaped escapes too.
+                        foreach (var a in within.Escaped.ToList())
+                            foreach (var inner in within.ElementOf(a).Arrays?.ToList() ?? new List<int>())
+                                changed |= within.Escaped.Add(inner);
+                    }
+                    while (changed);
+                    return within;
+                }
+            }
+
+            private sealed class Within
+            {
+                public Dictionary<int, Prov> LocalProv { get; } = new();
+
+                public Dictionary<int, Prov> ArgProv { get; } = new();
+
+                // By allocation: what the body stored in that array.
+                public Dictionary<int, Prov> ElementProv { get; } = new();
+
+                public HashSet<int> Escaped { get; } = new();
+
+                public HashSet<string> EscapedAddresses { get; } = new(StringComparer.Ordinal);
+
+                public Prov ElementOf(int allocation) => ElementProv.TryGetValue(allocation, out var prov) ? prov : ElementProv[allocation] = new Prov();
+
+                // A value escaped: its arrays and delegate-field addresses; true when that grew.
+                public bool Escape(Value value)
+                {
+                    var prov = Of(value);
+                    var changed = false;
+                    foreach (var a in prov.Arrays ?? Enumerable.Empty<int>()) changed |= Escaped.Add(a);
+                    foreach (var f in prov.Addresses ?? Enumerable.Empty<string>()) changed |= EscapedAddresses.Add(f);
+                    return changed;
+                }
+
+                public Prov Of(Value value)
+                {
+                    var prov = new Prov();
+                    Into(prov, value);
+                    return prov;
+                }
+
+                // Adds what value can be to prov; true when prov grew.
+                public bool Into(Prov prov, Value value) => Into(prov, value, null);
+
+                private bool Into(Prov prov, Value value, HashSet<Value>? seen)
+                {
+                    var before = prov.Size;
+                    switch (value.Kind)
+                    {
+                        case ValueKind.Unknown:
+                            prov.Unknown = true;
+                            break;
+                        case ValueKind.None:
+                            prov.None = true;
+                            break;
+                        case ValueKind.Pointer:
+                            if (value.Nodes!.Count == 0) prov.None = true;
+                            else prov.AddMethods(value.Nodes);
+                            break;
+                        case ValueKind.Field:
+                            prov.AddField(value.Name!);
+                            break;
+                        case ValueKind.Address:
+                            prov.AddAddress(value.Name!);
+                            break;
+                        case ValueKind.Array:
+                            prov.AddArray(value.Index);
+                            break;
+                        case ValueKind.Arg:
+                            prov.AddArg(value.Index);
+                            if (ArgProv.TryGetValue(value.Index, out var written)) prov.Add(written);
+                            break;
+                        case ValueKind.Local:
+                            // A local nothing stores (read before any store; the runtime zeroes it): null.
+                            if (LocalProv.TryGetValue(value.Index, out var local)) prov.Add(local);
+                            else prov.None = true;
+                            break;
+                        case ValueKind.Result:
+                            prov.AddResult(value.Index);
+                            break;
+                        case ValueKind.Element:
+                        {
+                            // An element of an array the body made and kept to itself: what the body stored in it; of any
+                            // other (an argument, a field's, a call's result, one that escaped): unknown.
+                            var array = Of(value.A!);
+                            if (array.Foreign) prov.Unknown = true;
+                            foreach (var a in array.Arrays ?? Enumerable.Empty<int>())
+                                if (Escaped.Contains(a)) prov.Unknown = true;
+                                else prov.Add(ElementOf(a));
+                            break;
+                        }
+                        case ValueKind.Union:
+                            seen ??= new HashSet<Value>(ReferenceEqualityComparer.Instance);
+                            if (!seen.Add(value)) break;
+                            Into(prov, value.A!, seen);
+                            Into(prov, value.B!, seen);
+                            break;
+                    }
+
+                    return prov.Size > before;
+                }
+            }
+
+            // Where a delegate value can come from, resolved across methods: the methods it may run (a pointer's, or a
+            // synthetic node: an unresolved call it came out of), the delegate fields it was loaded from, and where its
+            // provenance is lost (the method, and why). Found: anything was seen at all (none included).
+            private sealed class Src
+            {
+                public bool Found { get; set; }
+
+                public HashSet<int>? Nodes { get; private set; }
+
+                public HashSet<string>? Fields { get; private set; }
+
+                public HashSet<(int Node, string Where)>? Lost { get; private set; }
+
+                public void AddNodes(IEnumerable<int> nodes)
+                {
+                    Found = true;
+                    (Nodes ??= new HashSet<int>()).UnionWith(nodes);
+                }
+
+                public void AddField(string field)
+                {
+                    Found = true;
+                    (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
+                }
+
+                public void Lose(int node, string where)
+                {
+                    Found = true;
+                    (Lost ??= new HashSet<(int, string)>()).Add((node, where));
+                }
+
+                public void Add(Src other) => Merge(other);
+
+                // Adds other's sources; true when anything was new.
+                public bool Merge(Src other)
+                {
+                    if (ReferenceEquals(other, this)) return false;
+                    var grew = other.Found && !Found;
+                    Found |= other.Found;
+                    if (other.Nodes != null) foreach (var n in other.Nodes) grew |= (Nodes ??= new HashSet<int>()).Add(n);
+                    if (other.Fields != null) foreach (var f in other.Fields) grew |= (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(f);
+                    if (other.Lost != null) foreach (var l in other.Lost) grew |= (Lost ??= new HashSet<(int, string)>()).Add(l);
+                    return grew;
+                }
+            }
+
+            // Round 19: what a method returns, as a function of its arguments: what it returns whatever they are (Src, its
+            // losses attributed where the summary is used), and which of its own arguments it may return.
+            private sealed class Summary
+            {
+                public Src Src { get; } = new();
+
+                public HashSet<int> Args { get; } = new();
+            }
+
+            // Round 18: every delegate invocation read, judged by where its delegate came from (Sources, the same model as a
+            // delegate field's stores). What the reading made or loaded from a delegate field is followed already (its edge
+            // is where it was made or loaded, so the reading stays as precise per action as before); where the provenance is
+            // lost (handed in from outside the code read, an unknown, an escaped container), an unresolved callback judged by
+            // the delegate's type (round 11), at the method where it is lost: the one handed it from outside, or the one
+            // holding the unknown.
+            private void Invocations()
+            {
+                foreach (var (node, receiver, type) in _invokes)
+                    foreach (var (at, where) in Sources(receiver, node).Lost ?? Enumerable.Empty<(int, string)>())
+                        Attach(at, type, where);
+            }
+
+            // The sources of a value's provenance in the method that holds it (a store's or an invocation's): what it is in
+            // that method (Walk), and for each of the method's own arguments it may be, what the callers hand it (Up).
+            private Src Sources(Prov prov, int node)
+            {
+                var (sources, args) = Walk(prov, node, node, -1);
+                foreach (var i in args) sources.Add(Up(node, i));
+                return sources;
+            }
+
+            // Round 19 (4a-r19-3): what a provenance in method m can be, across methods, as a monotone union (no cut, no depth
+            // bound, no edge dropped): the methods (pointers), delegate fields and losses it reaches (losses attributed to
+            // `at`; a summary keeps them unattributed, at -1), and which of m's own arguments it may be. What a call returns is
+            // its target's Summary, with the target's arguments bound to that site's (each (site, argument) once: the union
+            // is the same however often it is reached). reader: the method whose summary this is (it reads the targets').
+            private (Src Sources, HashSet<int> Args) Walk(Prov prov, int m, int at, int reader)
+            {
+                var sources = new Src();
+                var args = new HashSet<int>();
+                var seen = new HashSet<Prov>(ReferenceEqualityComparer.Instance);
+                var bound = new HashSet<(int Site, int Arg)>();
+                var stack = new Stack<Prov>();
+                stack.Push(prov);
+                while (stack.Count > 0)
+                {
+                    var p = stack.Pop();
+                    if (!seen.Add(p)) continue;
+                    if (p.None || p.Arrays != null || p.Addresses != null) sources.Found = true;
+                    if (p.Methods != null) sources.AddNodes(p.Methods);
+                    if (p.Fields != null) foreach (var f in p.Fields) sources.AddField(f);
+                    if (p.Unknown) sources.Lose(at, "of unknown origin in " + _nodes[m].Name);
+                    if (p.Args != null) args.UnionWith(p.Args);
+                    foreach (var s in p.Results ?? Enumerable.Empty<int>())
+                    {
+                        var site = _sites[s];
+                        if (site.Targets.Count == 0)
+                        {
+                            sources.Lose(at, "returned from outside the code read in " + _nodes[m].Name);
+                            continue;
+                        }
+
+                        foreach (var t in site.Targets.Distinct())
+                        {
+                            var target = _nodes[t];
+                            if (target.Type < 0)
+                            {
+                                // A user change or an unresolved call: what it hands back is that node (reached already by the
+                                // call; a field holding it reaches it too). A shared slot's result isn't followed.
+                                if (target.Reaches != null || target.PersonReaches != null || target.Unresolved != null || target.Callback != null) sources.AddNodes(new[] { t });
+                                else sources.Lose(at, "returned by " + target.Name);
+                                continue;
+                            }
+
+                            // An abstract target's implementations are targets too.
+                            if (target.Abstract) continue;
+                            if (_summaries.TryGetValue(t, out var summary))
+                            {
+                                if (reader >= 0)
+                                {
+                                    if (!_readers.TryGetValue(t, out var readers)) _readers[t] = readers = new HashSet<int>();
+                                    readers.Add(reader);
+                                }
+
+                                if (summary.Src.Found) sources.Found = true;
+                                if (summary.Src.Nodes != null) sources.AddNodes(summary.Src.Nodes);
+                                if (summary.Src.Fields != null) foreach (var f in summary.Src.Fields) sources.AddField(f);
+                                if (summary.Src.Lost != null) foreach (var (_, where) in summary.Src.Lost) sources.Lose(at, where);
+                                foreach (var j in summary.Args)
+                                    if (bound.Add((s, j))) stack.Push(Given(site, j));
+                            }
+                            else if (target.HasBody) sources.Found = true;
+                            else sources.Lose(at, "of unknown origin in " + target.Name);
+                        }
+                    }
+                }
+
+                return (sources, args);
+            }
+
+            // Round 19: every method's Summary, to the least fixed point: each starts empty, a method whose summary grew
+            // re-reads its readers (Walk records them), until nothing changes (sets only grow; finite, so it ends). A
+            // recursive return, one through a cycle of methods and one rotating its arguments are all followed to the end.
+            private void Summaries()
+            {
+                foreach (var t in _returns.Keys) _summaries[t] = new Summary();
+                var queue = new Queue<int>(_returns.Keys);
+                var queued = new HashSet<int>(_returns.Keys);
+                while (queue.Count > 0)
+                {
+                    var t = queue.Dequeue();
+                    queued.Remove(t);
+                    var (sources, args) = Walk(_returns[t], t, -1, t);
+                    var summary = _summaries[t];
+                    var grew = summary.Src.Merge(sources);
+                    foreach (var a in args) grew |= summary.Args.Add(a);
+                    if (grew && _readers.TryGetValue(t, out var readers))
+                        foreach (var r in readers)
+                            if (queued.Add(r)) queue.Enqueue(r);
+                }
+            }
+
+            private static Prov Given(Site site, int arg) => site.Args is { } args && arg < args.Length && args[arg] is { } given ? given : Prov.Untracked;
+
+            // What the callers hand a method's argument: each call site's value, read in its caller, argument by argument
+            // (4a-r18-1: never "what the caller made before the call"). No caller in the code read: handed in from outside
+            // (lost at the method). Round 19: a union system over (method, argument), solved whole: the parameters that feed
+            // each other form a strongly connected group (Tarjan, iterative: no depth bound), all with the same sources (the
+            // union of every member's and of what feeds the group); when nothing outside the group feeds it, it was handed in
+            // from outside the code read (4a-behaviour-r17-2).
+            private Src Up(int node, int arg)
+            {
+                var root = (node, arg);
+                if (_upDone.TryGetValue(root, out var done)) return done;
+                var index = new Dictionary<(int, int), int>();
+                var low = new Dictionary<(int, int), int>();
+                var local = new Dictionary<(int, int), (Src Sources, List<(int, int)> Feeds)>();
+                var group = new Stack<(int, int)>();
+                var open = new HashSet<(int, int)>();
+                var work = new Stack<((int Node, int Arg) Key, int Next)>();
+                void Enter((int Node, int Arg) key)
+                {
+                    low[key] = index.Count;
+                    index[key] = index.Count;
+                    group.Push(key);
+                    open.Add(key);
+                    local[key] = Callers(key.Node, key.Arg);
+                    work.Push((key, 0));
+                }
+
+                Enter(root);
+                while (work.Count > 0)
+                {
+                    var (key, next) = work.Pop();
+                    var feeds = local[key].Feeds;
+                    if (next < feeds.Count)
+                    {
+                        work.Push((key, next + 1));
+                        var feed = feeds[next];
+                        if (_upDone.ContainsKey(feed)) continue;
+                        if (!index.ContainsKey(feed)) Enter(feed);
+                        else if (open.Contains(feed)) low[key] = Math.Min(low[key], index[feed]);
+                        continue;
+                    }
+
+                    if (low[key] == index[key])
+                    {
+                        var members = new List<(int, int)>();
+                        (int, int) member;
+                        do
+                        {
+                            member = group.Pop();
+                            open.Remove(member);
+                            members.Add(member);
+                        }
+                        while (member != key);
+                        var all = new Src();
+                        foreach (var m in members)
+                        {
+                            all.Add(local[m].Sources);
+                            foreach (var feed in local[m].Feeds)
+                                if (_upDone.TryGetValue(feed, out var fed)) all.Add(fed);
+                        }
+
+                        if (!all.Found) all.Lose(key.Node, "handed to " + _nodes[key.Node].Name + " from outside the code read (its callers are a cycle no code read enters)");
+                        foreach (var m in members) _upDone[m] = all;
+                    }
+
+                    if (work.Count > 0)
+                    {
+                        var parent = work.Peek().Key;
+                        low[parent] = Math.Min(low[parent], low[key]);
+                    }
+                }
+
+                return _upDone[root];
+            }
+
+            // One parameter's own sources: what each call site hands it, read in the caller (Walk), and the caller's arguments
+            // that value may be (which feed it: Up solves them together).
+            // Round 21 (4a-r21-4, open-world inputs): a method code outside the code read can call (ExternallyCallable) has
+            // whatever its outside callers hand it too: its callers in the code read never narrow that.
+            private (Src Sources, List<(int, int)> Feeds) Callers(int node, int arg)
+            {
+                var sources = new Src();
+                var feeds = new List<(int, int)>();
+                var none = !_sitesOf.TryGetValue(node, out var sites) || sites.Count == 0;
+                if (none || ExternallyCallable(node)) sources.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read");
+                if (none) return (sources, feeds);
+
+                foreach (var s in sites!)
+                {
+                    var site = _sites[s];
+                    var (found, args) = Walk(Given(site, arg), site.Caller, site.Caller, -1);
+                    sources.Add(found);
+                    foreach (var a in args) feeds.Add((site.Caller, a));
+                }
+
+                return (sources, feeds);
+            }
+
+            // An unresolved callback at the method where the delegate's provenance is lost, judged by the delegate's type.
+            private void Attach(int node, string type, string where)
+            {
+                var callback = !UserContract(new[] { type }, null);
+                _nodes[node].Calls.Add(Unresolved(ShortType(type) + " " + where, callback: callback));
+            }
+
+            private static string ShortType(string type)
+                => System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(Unescape(type), @"[A-Za-z_][A-Za-z0-9_]*\.", string.Empty), @"`\d+", string.Empty);
+
+            // A name from a signature (Names) as the metadata writes it.
+            private static string Unescape(string name) => name.Replace('\u2039', '<').Replace('\u203a', '>');
+
+            // ------------------------------------------------------------------ what a call's contract can carry
+
+            // The types that are a user or carry authority over one: the user entity and its permissions, a user's policy,
+            // configuration and DTO, the user, sign-in, password-reset and Quick Connect services, and Jellyfin's user events.
+            private static readonly HashSet<string> UserTypes = new(StringComparer.Ordinal)
+            {
+                "Jellyfin.Database.Implementations.Entities.User", "Jellyfin.Data.Entities.User", "Jellyfin.Database.Implementations.Entities.Permission", "Jellyfin.Data.Entities.Permission",
+                "MediaBrowser.Model.Users.UserPolicy", "MediaBrowser.Model.Configuration.UserConfiguration", "MediaBrowser.Model.Dto.UserDto",
+                "MediaBrowser.Controller.Library.IUserManager", "MediaBrowser.Controller.QuickConnect.IQuickConnect",
+                "MediaBrowser.Controller.Authentication.IAuthenticationProvider", "MediaBrowser.Controller.Authentication.IPasswordResetProvider",
+                "MediaBrowser.Controller.Authentication.AuthenticationRequest", "MediaBrowser.Controller.Authentication.AuthenticationResult",
+            };
+
+            private static readonly string[] UserNamespaces = { "Jellyfin.Data.Events.Users.", "MediaBrowser.Model.Users." };
+
+            // Whether types (a signature's, with their generic arguments) can carry a user: one of the user types, or a Guid
+            // that is a user id (its parameter name says so; unnamed, any Guid counts).
+            private static bool UserContract(IEnumerable<string> types, IReadOnlyList<string?>? names)
+            {
+                var index = 0;
+                foreach (var type in types)
+                {
+                    var name = names != null && index < names.Count ? names[index] : null;
+                    index++;
+                    foreach (var part in type.Split(new[] { '<', '>', ',', '[', ']', '&', '*', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (UserTypes.Contains(part) || UserNamespaces.Any(n => part.StartsWith(n, StringComparison.Ordinal))) return true;
+                        if (part == "System.Guid" && (name == null || name.Contains("user", StringComparison.OrdinalIgnoreCase))) return true;
+                    }
+                }
+
+                return false;
+            }
+
+            // A method of the code read: its declaring type, its result and parameters, with their names.
+            private bool UserContract(Node node)
+            {
+                if (node.Module < 0) return true;
+                var md = _modules[node.Module].Md;
+                var method = md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token));
+                var signature = method.DecodeSignature(Names.Instance, null);
+                var names = new string?[signature.ParameterTypes.Length];
+                foreach (var p in method.GetParameters())
+                {
+                    var parameter = md.GetParameter(p);
+                    if (parameter.SequenceNumber > 0 && parameter.SequenceNumber <= names.Length) names[parameter.SequenceNumber - 1] = md.GetString(parameter.Name);
+                }
+
+                return UserContract(new[] { _types[node.Type].Name }, null) || UserContract(new[] { signature.ReturnType }, null) || UserContract(signature.ParameterTypes, names);
+            }
+
+            private static IEnumerable<string> MethodTypes(MetadataReader md, MethodSignature<string> signature) => signature.ParameterTypes.Prepend(signature.ReturnType);
+
+            // Round 11: whether a member outside the code read hands back code to run: its result (a Task's included) or a
+            // by-reference parameter is a delegate.
+            private bool HandsBackCallback(MethodSignature<string> signature)
+                => CarriesDelegate(signature.ReturnType) || signature.ParameterTypes.Any(t => t.EndsWith('&') && CarriesDelegate(t));
+
+            private bool HandsBackCallback(Node node)
+                => node.Module >= 0 && HandsBackCallback(_modules[node.Module].Md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token)).DecodeSignature(Names.Instance, null));
+
+            private bool CarriesDelegate(string type)
+                => type.Split(new[] { '<', '>', ',', '[', ']', '&', '*', ' ' }, StringSplitOptions.RemoveEmptyEntries).Any(DelegateType);
+
+            // Type names from signatures (generic arguments included).
+            private sealed class Names : ISignatureTypeProvider<string, object?>
+            {
+                public static readonly Names Instance = new();
+
+                public string GetArrayType(string elementType, ArrayShape shape) => elementType + "[]";
+
+                public string GetByReferenceType(string elementType) => elementType + "&";
+
+                public string GetFunctionPointerType(MethodSignature<string> signature) => "fnptr";
+
+                public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments) => genericType + "<" + string.Join(",", typeArguments) + ">";
+
+                public string GetGenericMethodParameter(object? genericContext, int index) => "!!" + index;
+
+                public string GetGenericTypeParameter(object? genericContext, int index) => "!" + index;
+
+                public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired) => unmodifiedType;
+
+                public string GetPinnedType(string elementType) => elementType;
+
+                public string GetPointerType(string elementType) => elementType + "*";
+
+                public string GetPrimitiveType(PrimitiveTypeCode typeCode) => "System." + typeCode;
+
+                public string GetSZArrayType(string elementType) => elementType + "[]";
+
+                // Round 19: a compiler-generated name's angle brackets (`<>c`, `<>f__AnonymousDelegate0`) are escaped, so the
+                // signature's own brackets (generic arguments) are the only ones a split on them sees (Unescape restores them).
+                public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => Escape(FullName(reader, handle));
+
+                public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => Escape(FullName(reader, handle));
+
+                private static string Escape(string name) => name.Replace('<', '\u2039').Replace('>', '\u203a');
+
+                public string GetTypeFromSpecification(MetadataReader reader, object? genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
+                    => reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
+            }
+
+            // ------------------------------------------------------------------ metadata helpers
+
+            private static int ParamCount(MetadataReader md, BlobHandle signature)
+            {
+                var blob = md.GetBlobReader(signature);
+                var header = blob.ReadSignatureHeader();
+                if (header.Kind != SignatureKind.Method && header.Kind != SignatureKind.Property) return 0;
+                if (header.IsGeneric) blob.ReadCompressedInteger();
+                return blob.ReadCompressedInteger();
+            }
+
+            // A field of a delegate type ("owner id::Name": round 21, the owner by its exact identity), or null.
+            private string? DelegateField(MetadataReader md, int m, EntityHandle handle)
+            {
+                int? owner;
+                string name;
+                BlobHandle signature;
+                switch (handle.Kind)
+                {
+                    case HandleKind.FieldDefinition:
+                        var field = md.GetFieldDefinition((FieldDefinitionHandle)handle);
+                        owner = _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(field.GetDeclaringType())), out var t) ? t : null;
+                        name = md.GetString(field.Name);
+                        signature = field.Signature;
                         break;
                     case HandleKind.MemberReference:
                         var member = md.GetMemberReference((MemberReferenceHandle)handle);
-                        var name = md.GetString(member.Name);
-                        var parent = ParentName(md, member.Parent);
-                        // A method of this assembly's generic type, instantiated: every method of that name on it.
-                        if (parent != null && types.TryGetValue(parent, out var own))
-                            method.Calls.AddRange(md.GetTypeDefinition(own).GetMethods().Where(m => md.GetString(md.GetMethodDefinition(m).Name) == name).Select(m => MetadataTokens.GetToken(m)));
-                        else if (parent != null && method.Reaches == null && Mutates(parent, name))
-                            method.Reaches = parent[(parent.LastIndexOf('.') + 1)..] + "." + name;
+                        if (member.GetKind() != MemberReferenceKind.Field) return null;
+                        owner = ParentType(md, m, member.Parent);
+                        name = md.GetString(member.Name);
+                        signature = member.Signature;
                         break;
+                    default:
+                        return null;
                 }
+
+                if (owner == null) return null;
+                var blob = md.GetBlobReader(signature);
+                if (blob.ReadSignatureHeader().Kind != SignatureKind.Field) return null;
+                var code = blob.ReadSignatureTypeCode();
+                while (code is SignatureTypeCode.RequiredModifier or SignatureTypeCode.OptionalModifier)
+                {
+                    blob.ReadTypeHandle();
+                    code = blob.ReadSignatureTypeCode();
+                }
+
+                // Round 15: a function pointer (`delegate*`) is stored and invoked (calli) like a delegate. Round 17: so is a
+                // field typed by a generic parameter (`T`): it can hold a delegate in a constructed use.
+                if (code is not (SignatureTypeCode.FunctionPointer or SignatureTypeCode.GenericTypeParameter or SignatureTypeCode.GenericMethodParameter))
+                {
+                    if (code == SignatureTypeCode.GenericTypeInstance) code = blob.ReadSignatureTypeCode();
+                    if (code is not (SignatureTypeCode.TypeHandle or (SignatureTypeCode)0x12 or (SignatureTypeCode)0x11)) return null;
+                    var type = TypeOfSig(TypeSig(md, blob.ReadTypeHandle()));
+                    if (type < 0 || !IsDelegate(type)) return null;
+                }
+
+                var key = owner.Value + "::" + name;
+                if (!_fieldTypes.ContainsKey(key))
+                    _fieldTypes[key] = handle.Kind == HandleKind.FieldDefinition
+                        ? md.GetFieldDefinition((FieldDefinitionHandle)handle).DecodeSignature(Names.Instance, null)
+                        : md.GetMemberReference((MemberReferenceHandle)handle).DecodeFieldSignature(Names.Instance, null);
+                return key;
+            }
+
+            // A delegate field's owner and name.
+            private static (int Owner, string Name) FieldOf(string field)
+            {
+                var split = field.IndexOf("::", StringComparison.Ordinal);
+                return (int.Parse(field[..split], System.Globalization.CultureInfo.InvariantCulture), field[(split + 2)..]);
+            }
+
+            // Round 21: whether code outside the code read can store in a delegate field: any field of a type outside the code
+            // read (the code read can name only one it may access), or a public or protected one of a visible type (and, when
+            // the module's internals are visible to an assembly outside the code read, an internal one) that isn't read-only.
+            private bool OpenField(string field)
+            {
+                var (owner, name) = FieldOf(field);
+                if (_types[owner].External || _types[owner].Unreadable) return true;
+                if (!_fieldAttributes.TryGetValue((owner, name), out var attributes)) return true;
+                if ((attributes & (FieldAttributes.InitOnly | FieldAttributes.Literal)) != 0) return false;
+                var access = attributes & FieldAttributes.FieldAccessMask;
+                var internals = _openInternals.Contains(_types[owner].Module);
+                return Visible(owner, internals) && (access is FieldAttributes.Public or FieldAttributes.Family or FieldAttributes.FamORAssem
+                    || (internals && access is FieldAttributes.Assembly or FieldAttributes.FamANDAssem));
+            }
+
+            // Round 19: a delegate type is one whose base is System.MulticastDelegate (ECMA-335 II.14.6), wherever it is
+            // defined: the code read's, or .NET's and a library's read from their metadata (TimerCallback, RequestDelegate).
+            // One that can't be read may be a delegate (fail closed). A primitive (a signature's own code) is none. Round 21:
+            // a name from a signature (no assembly) is every type the code read may mean by it (Candidates): a delegate if
+            // any is.
+            private bool DelegateType(string name)
+            {
+                name = Unescape(name);
+                if (name.StartsWith("System.Func`", StringComparison.Ordinal) || name.StartsWith("System.Action", StringComparison.Ordinal)
+                    || name is "System.Predicate`1" or "System.Comparison`1" or "System.Converter`2" or "System.EventHandler" or "System.EventHandler`1" or "System.Delegate" or "System.MulticastDelegate")
+                    return true;
+                if (Primitives.Contains(name) || name.StartsWith('!')) return false;
+                var candidates = Candidates(name);
+                if (candidates.Count == 0)
+                {
+                    _gaps.Add(name + " in an assembly it doesn't name can't be read: it may be a delegate");
+                    return true;
+                }
+
+                return candidates.Any(IsDelegate);
+            }
+
+            // Round 21: a type by its identity: its base is System.MulticastDelegate; one that can't be read may be one.
+            private bool IsDelegate(int type)
+            {
+                var info = _types[type];
+                if (info.Unreadable)
+                {
+                    _gaps.Add(info.Name + " in " + info.Assembly + " can't be read: it may be a delegate");
+                    return true;
+                }
+
+                return info.Base is { Kind: SigKind.Named, Name: "System.MulticastDelegate" };
+            }
+
+            // The names a signature gives its primitive types (Names.GetPrimitiveType), and a function pointer's.
+            private static readonly HashSet<string> Primitives = Enum.GetNames<PrimitiveTypeCode>().Select(n => "System." + n).Append("fnptr").ToHashSet(StringComparer.Ordinal);
+
+            // Round 21: MVC's route attributes by their full names (exact identity).
+            private static readonly Dictionary<string, string> VerbAttributes = new(StringComparer.Ordinal)
+            {
+                ["Microsoft.AspNetCore.Mvc.HttpGetAttribute"] = "GET", ["Microsoft.AspNetCore.Mvc.HttpPostAttribute"] = "POST", ["Microsoft.AspNetCore.Mvc.HttpPutAttribute"] = "PUT",
+                ["Microsoft.AspNetCore.Mvc.HttpDeleteAttribute"] = "DELETE", ["Microsoft.AspNetCore.Mvc.HttpPatchAttribute"] = "PATCH", ["Microsoft.AspNetCore.Mvc.HttpHeadAttribute"] = "HEAD",
+                ["Microsoft.AspNetCore.Mvc.HttpOptionsAttribute"] = "OPTIONS", ["Microsoft.AspNetCore.Mvc.AcceptVerbsAttribute"] = "*",
+            };
+
+            // The state machine types named by [AsyncStateMachine], [IteratorStateMachine] or [AsyncIteratorStateMachine].
+            private static IEnumerable<string> StateMachines(MetadataReader md, CustomAttributeHandleCollection attributes)
+            {
+                foreach (var handle in attributes)
+                {
+                    var attribute = md.GetCustomAttribute(handle);
+                    if (AttributeFullName(md, attribute) is not ("System.Runtime.CompilerServices.AsyncStateMachineAttribute" or "System.Runtime.CompilerServices.IteratorStateMachineAttribute"
+                        or "System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute")) continue;
+                    var blob = md.GetBlobReader(attribute.Value);
+                    if (blob.Length < 3 || blob.ReadUInt16() != 1) continue;
+                    // A serialized System.Type: its assembly-qualified name, ours unqualified.
+                    if (blob.ReadSerializedString() is { } type) yield return type.Split(',')[0].Trim();
+                }
+            }
+
+            // An attribute's type, by its full name.
+            private static string? AttributeFullName(MetadataReader md, CustomAttribute attribute)
+            {
+                EntityHandle type = attribute.Constructor.Kind switch
+                {
+                    HandleKind.MemberReference => md.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent,
+                    HandleKind.MethodDefinition => md.GetMethodDefinition((MethodDefinitionHandle)attribute.Constructor).GetDeclaringType(),
+                    _ => default,
+                };
+                return type.Kind switch
+                {
+                    HandleKind.TypeReference => FullName(md, (TypeReferenceHandle)type),
+                    HandleKind.TypeDefinition => FullName(md, (TypeDefinitionHandle)type),
+                    _ => null,
+                };
+            }
+
+            // Round 17: the shared node for a virtual slot declared outside the code read: it reaches every method of the code
+            // read that fills it. Null when nothing read fills it. Round 19: the fills are the one fill rule's (SlotFills:
+            // the complete ancestry, an inherited implementation, a framework intermediate base, static slots by static
+            // methods), reached as a call of them would be (Mapped). Round 21: the slot by its exact identity.
+            private int? FrameworkSlot(Slot slot)
+            {
+                // A stated limit: object-lifecycle slots (disposal, finalization, ToString/Equals/GetHashCode) declared
+                // outside the code read aren't followed into implementations. A call site can't tell WHICH object it
+                // disposes, so the slot would reach every Dispose in Jellyfin and their event chains, bracketing ordinary
+                // actions (playback pings, display preferences) for nothing; Jellyfin's own lifecycle members change no user
+                // (reviewed in 12.2 and 10.11.11; pinned sets). Jellyfin's user events cover a plugin that would.
+                if (LifecycleMembers.Contains(slot.Name)) return null;
+                var key = slot.Key;
+                if (_frameworkSlots.TryGetValue(key, out var cached)) return cached;
+                // A compiler-generated state machine (the type an async method's or iterator's [*StateMachine] attribute
+                // names) is no fill: its code is followed from the method that creates it, the only code that can hand one
+                // out, so a hand-written enumerator is followed through IEnumerator.MoveNext and the state machines of
+                // Jellyfin's iterators aren't (each foreach would otherwise reach every one of them). Stated limit: a lazy
+                // sequence created by one action and enumerated by another counts where it is created.
+                var fills = Mapped(SlotFills(slot));
+                if (fills.Count == 0)
+                {
+                    _frameworkSlots[key] = null;
+                    return null;
+                }
+
+                var id = _nodes.Count;
+                _nodes.Add(new Node { Name = "slot " + Simple(_types[slot.Type].Name) + "." + slot.Name });
+                _frameworkSlots[key] = id;
+                _nodes[id].Calls.AddRange(fills);
+                return id;
+            }
+
+            // ------------------------------------------------------------------ the complete ancestry (round 19), exact identity (round 21)
+
+            // A type's complete ancestry: its base classes (nearest first, each with its type arguments in the type's own
+            // generic context) and every interface it implements (its own, its bases', their base interfaces, each
+            // instantiation), whether or not the code read defines them; Own: the interfaces the type itself lists (and their
+            // bases); Incomplete: a step couldn't be read.
+            private sealed class Lineage
+            {
+                public List<int> Bases { get; } = new();
+
+                public List<SigType[]?> BaseArgs { get; } = new();
+
+                public List<(int Id, SigType[]? Args)> Interfaces { get; } = new();
+
+                public HashSet<int> Own { get; } = new();
+
+                public bool Incomplete { get; set; }
+            }
+
+            private Lineage LineageOf(int t)
+            {
+                if (_lineages.TryGetValue(t, out var cached)) return cached;
+                var lineage = new Lineage();
+                _lineages[t] = lineage;
+                var visited = new HashSet<int> { t };
+                SigType[]? args = null;
+                for (var current = t; _types[current].Base is { } b;)
+                {
+                    var (definition, baseArgs) = Split(b, args);
+                    var next = definition == null ? -1 : TypeId(definition.Name, definition.Scope!);
+                    if (next < 0 || _types[next].Unreadable)
+                    {
+                        lineage.Incomplete = true;
+                        _gaps.Add(_types[current].Name + ": its base " + Unread(definition));
+                        break;
+                    }
+
+                    // A cycle is malformed metadata: the chain read so far.
+                    if (!visited.Add(next)) break;
+                    lineage.Bases.Add(next);
+                    lineage.BaseArgs.Add(baseArgs);
+                    current = next;
+                    args = baseArgs;
+                }
+
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var queue = new Queue<(int Type, SigType[]? Args)>();
+                queue.Enqueue((t, null));
+                for (var i = 0; i < lineage.Bases.Count; i++) queue.Enqueue((lineage.Bases[i], lineage.BaseArgs[i]));
+                while (queue.Count > 0)
+                {
+                    var (current, currentArgs) = queue.Dequeue();
+                    foreach (var face in _types[current].Interfaces)
+                    {
+                        var (definition, faceArgs) = Split(face, currentArgs);
+                        var id = definition == null ? -1 : TypeId(definition.Name, definition.Scope!);
+                        if (id < 0 || _types[id].Unreadable)
+                        {
+                            lineage.Incomplete = true;
+                            _gaps.Add(_types[current].Name + ": its interface " + Unread(definition));
+                        }
+                        else if (seen.Add(id + "|" + ArgsKey(faceArgs)))
+                        {
+                            lineage.Interfaces.Add((id, faceArgs));
+                            queue.Enqueue((id, faceArgs));
+                        }
+                    }
+                }
+
+                // The interfaces the type lists itself, with their base interfaces (a re-declaration: II.12.2).
+                var own = new Queue<int>();
+                foreach (var face in _types[t].Interfaces)
+                    if (TypeOfSig(face) is >= 0 and var id && !_types[id].Unreadable && lineage.Own.Add(id)) own.Enqueue(id);
+                while (own.Count > 0)
+                    foreach (var face in _types[own.Dequeue()].Interfaces)
+                        if (TypeOfSig(face) is >= 0 and var id && !_types[id].Unreadable && lineage.Own.Add(id)) own.Enqueue(id);
+                return lineage;
+            }
+
+            // A base or interface as a signature names it: its generic type and its arguments taken into the context `args`
+            // (the arguments of the type that names it, in the original type's context; null: that type's own).
+            private static (SigType? Definition, SigType[]? Args) Split(SigType type, SigType[]? args)
+                => type.Kind switch
+                {
+                    SigKind.Named => (type, null),
+                    SigKind.Instance when type.Element!.Kind == SigKind.Named => (type.Element, type.Args!.Select(a => Subst(a, args)).ToArray()),
+                    _ => (null, null),
+                };
+
+            private static string ArgsKey(SigType[]? args) => args == null ? string.Empty : string.Join(",", args.Select(a => a.Key));
+
+            private static string Unread(SigType? type) => (type == null || type.Name.Length == 0 ? "(a type it can't name)" : type.Name) + " in " + (type?.Scope ?? "an assembly it doesn't name") + " can't be read";
+
+            private static string Key(string assembly, string name) => assembly.ToLowerInvariant() + "\u0001" + name;
+
+            private int Register(TypeInfo info, string? key)
+            {
+                var id = _types.Count;
+                _types.Add(info);
+                if (key != null) _typeIds[key] = id;
+                if (!_typesByName.TryGetValue(info.Name, out var same)) _typesByName[info.Name] = same = new List<int>();
+                same.Add(id);
+                return id;
+            }
+
+            // Round 21 (4a-r21-2): a type by the reference that names it (its full name and the assembly the reference names):
+            // the code read's type of that assembly, else the one the assembly's metadata defines (following its type
+            // forwarders), each by its (defining assembly, full name), so two assemblies' types of one name stay two. One that
+            // can't be read is a placeholder (Unreadable). Resolved once per (assembly, name).
+            private int TypeId(string name, string scope)
+            {
+                var key = Key(scope, name);
+                if (_resolved.TryGetValue(key, out var known)) return known;
+                var id = ResolveType(name, scope);
+                _resolved[key] = id;
+                return id;
+            }
+
+            private int ResolveType(string name, string scope)
+            {
+                var hops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (var assembly = scope; hops.Add(assembly);)
+                {
+                    if (_typeIds.TryGetValue(Key(assembly, name), out var defined)) return defined;
+                    if (_moduleByAssembly.TryGetValue(assembly, out var m))
+                    {
+                        if (_forwarded[m].TryGetValue(name, out var next))
+                        {
+                            assembly = next;
+                            continue;
+                        }
+
+                        break;
+                    }
+
+                    if (AssemblyFile(assembly) is not { } file || ReadOutside(file) is not { } outside) break;
+                    if (outside.Types.TryGetValue(name, out var shape))
+                    {
+                        if (_typeIds.TryGetValue(Key(outside.Assembly, name), out var already)) return already;
+                        var info = new TypeInfo { Name = name, Assembly = outside.Assembly, Interface = shape.Interface, Base = shape.Base, External = true, Source = outside, Row = shape.Row, Attributes = shape.Attributes, Arity = shape.Arity };
+                        info.Interfaces.AddRange(shape.Interfaces);
+                        return Register(info, Key(outside.Assembly, name));
+                    }
+
+                    if (!outside.Forwarded.TryGetValue(name, out var forwardedTo)) break;
+                    assembly = forwardedTo;
+                }
+
+                return Register(new TypeInfo { Name = name, Assembly = scope, Unreadable = true }, null);
+            }
+
+            // The type a signature names (a generic instantiation's generic type), or -1.
+            private int TypeOfSig(SigType type)
+            {
+                if (type.Kind == SigKind.Instance) type = type.Element!;
+                return type.Kind == SigKind.Named ? TypeId(type.Name, type.Scope!) : -1;
+            }
+
+            // Round 21: an unqualified name (a signature's string form) is every type the code read may mean by it: its own
+            // types of that name and the type of that name in each assembly a reference names it in (fail closed: a question
+            // about it is answered for all of them).
+            private List<int> Candidates(string name)
+            {
+                var found = new HashSet<int>();
+                if (_typesByName.TryGetValue(name, out var known))
+                    foreach (var t in known)
+                        if (t < _readTypes) found.Add(t);
+                if (_refs.TryGetValue(name, out var scopes))
+                    foreach (var scope in scopes) found.Add(TypeId(name, scope));
+                return found.ToList();
+            }
+
+            // An assembly's file by simple name: the code read's folders first (Jellyfin's holds its libraries), then the
+            // runtime's (the trusted platform assemblies, the runtime's folder).
+            private string? AssemblyFile(string name)
+            {
+                if (_assemblyFiles == null)
+                {
+                    _assemblyFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var folder in _folders.Where(Directory.Exists))
+                        foreach (var file in Directory.EnumerateFiles(folder, "*.dll").OrderBy(f => f, StringComparer.Ordinal))
+                            _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                    foreach (var file in (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                        _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                    var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+                    if (Directory.Exists(runtime))
+                        foreach (var file in Directory.EnumerateFiles(runtime, "*.dll").OrderBy(f => f, StringComparer.Ordinal))
+                            _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                }
+
+                return _assemblyFiles.GetValueOrDefault(name);
+            }
+
+            // What an assembly outside the code read says about its types, METADATA ONLY: each type's kind, base type and
+            // interfaces (as signatures), the types it forwards, and (round 21) when asked, a type's members: its methods'
+            // names, attributes, signatures and custom attributes, and its MethodImpl table (Members). Never a body, never
+            // loaded. Shared by the readings running or close together (keyed by the file's path, size and time), held only by
+            // them (a weak reference: Jellyfin reads its controllers once, and keeps none of this afterwards).
+            private sealed record OutsideType(bool Interface, SigType? Base, SigType[] Interfaces, int Row, TypeAttributes Attributes, int Arity);
+
+            private sealed class Outside
+            {
+                public required string Path { get; init; }
+
+                public required string Assembly { get; init; }
+
+                public Dictionary<string, OutsideType> Types { get; } = new(StringComparer.Ordinal);
+
+                public Dictionary<string, string> Forwarded { get; } = new(StringComparer.Ordinal);
+
+                // By type row, read when first asked (under a lock: readings may share it).
+                public Dictionary<int, Members?> Members { get; } = new();
+            }
+
+            private sealed record OutsideMethod(string Name, MethodAttributes Attributes, MethodSignature<SigType> Signature, int Token, string[] AttributeNames);
+
+            private sealed class Members
+            {
+                public List<OutsideMethod> Methods { get; } = new();
+
+                public List<(int Body, SigType Parent, string Name, MethodSignature<SigType> Signature)> Impls { get; } = new();
+
+                public HashSet<string> TypeAttributes { get; } = new(StringComparer.Ordinal);
+            }
+
+            private static readonly ConcurrentDictionary<(string Path, long Length, DateTime Written), WeakReference<Outside>> Outsides = new();
+
+            // The assemblies outside the code read this reading uses (it holds them while it runs), and their members.
+            private readonly Dictionary<string, Outside?> _outsides = new(StringComparer.Ordinal);
+            private readonly Dictionary<int, Members?> _members = new();
+
+            private Outside? ReadOutside(string path)
+            {
+                if (_outsides.TryGetValue(path, out var held)) return held;
+                FileInfo info;
+                try
+                {
+                    info = new FileInfo(path);
+                    if (!info.Exists) return null;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    return null;
+                }
+
+                var key = (info.FullName, info.Length, info.LastWriteTimeUtc);
+                if (!Outsides.TryGetValue(key, out var weak) || !weak.TryGetTarget(out var outside))
+                {
+                    outside = ReadOutsideNow(info.FullName);
+                    if (outside != null) Outsides[key] = new WeakReference<Outside>(outside);
+                }
+
+                return _outsides[path] = outside;
+            }
+
+            private static Outside? ReadOutsideNow(string path)
+            {
+                try
+                {
+                    using var pe = new PEReader(File.OpenRead(path));
+                    if (!pe.HasMetadata) return null;
+                    var md = pe.GetMetadataReader();
+                    var outside = new Outside { Path = path, Assembly = AssemblyName(md) ?? System.IO.Path.GetFileNameWithoutExtension(path) };
+                    foreach (var handle in md.TypeDefinitions)
+                    {
+                        var type = md.GetTypeDefinition(handle);
+                        var interfaces = type.GetInterfaceImplementations().Select(i => TypeSig(md, md.GetInterfaceImplementation(i).Interface)).ToArray();
+                        outside.Types.TryAdd(FullName(md, handle), new OutsideType((type.Attributes & TypeAttributes.Interface) != 0, type.BaseType.IsNil ? null : TypeSig(md, type.BaseType), interfaces,
+                            MetadataTokens.GetRowNumber(handle), type.Attributes, type.GetGenericParameters().Count));
+                    }
+
+                    foreach (var handle in md.ExportedTypes)
+                    {
+                        var exported = md.GetExportedType(handle);
+                        var implementation = exported.Implementation;
+                        while (implementation.Kind == HandleKind.ExportedType) implementation = md.GetExportedType((ExportedTypeHandle)implementation).Implementation;
+                        if (implementation.Kind == HandleKind.AssemblyReference)
+                            outside.Forwarded.TryAdd(ExportedName(md, exported), md.GetString(md.GetAssemblyReference((AssemblyReferenceHandle)implementation).Name));
+                    }
+
+                    return outside;
+                }
+                catch (Exception e) when (e is BadImageFormatException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                {
+                    return null;
+                }
+            }
+
+            // Round 21 (4a-r21-3): the members of a type outside the code read (slot metadata only), read from its file's
+            // metadata when first asked. Null when they can't be read (a gap: searches through it go on past it).
+            private Members? MembersOf(int t)
+            {
+                if (_members.TryGetValue(t, out var held)) return held;
+                var info = _types[t];
+                if (!info.External || info.Source is not { } outside) return _members[t] = null;
+                Members? members;
+                lock (outside)
+                {
+                    outside.Members.TryGetValue(info.Row, out members);
+                }
+
+                if (members == null)
+                {
+                    members = ReadMembers(outside.Path, info.Row);
+                    if (members == null) _gaps.Add(info.Name + " in " + info.Assembly + ": its members can't be read");
+                    else
+                        lock (outside)
+                        {
+                            members = outside.Members.TryAdd(info.Row, members) ? members : outside.Members[info.Row];
+                        }
+                }
+
+                return _members[t] = members;
+            }
+
+            private Members? ReadMembers(string path, int row)
+            {
+                try
+                {
+                    if (!_open.TryGetValue(path, out var pe))
+                    {
+                        pe = new PEReader(File.OpenRead(path));
+                        _open[path] = pe;
+                    }
+
+                    if (pe == null || !pe.HasMetadata) return null;
+                    var md = pe.GetMetadataReader();
+                    var type = md.GetTypeDefinition(MetadataTokens.TypeDefinitionHandle(row));
+                    var members = new Members();
+                    foreach (var a in type.GetCustomAttributes())
+                        if (AttributeFullName(md, md.GetCustomAttribute(a)) is { } name) members.TypeAttributes.Add(name);
+                    var index = new Dictionary<int, int>();
+                    foreach (var handle in type.GetMethods())
+                    {
+                        var method = md.GetMethodDefinition(handle);
+                        index[MetadataTokens.GetRowNumber(handle)] = members.Methods.Count;
+                        var attributes = method.GetCustomAttributes().Select(a => AttributeFullName(md, md.GetCustomAttribute(a))).Where(n => n != null).Select(n => n!).ToArray();
+                        members.Methods.Add(new OutsideMethod(md.GetString(method.Name), method.Attributes, method.DecodeSignature(SigTypes.Instance, null), MetadataTokens.GetToken(handle), attributes));
+                    }
+
+                    foreach (var handle in type.GetMethodImplementations())
+                    {
+                        var impl = md.GetMethodImplementation(handle);
+                        if (impl.MethodBody.Kind != HandleKind.MethodDefinition || !index.TryGetValue(MetadataTokens.GetRowNumber(impl.MethodBody), out var body)
+                            || Declaration(md, impl.MethodDeclaration) is not { } slot) continue;
+                        members.Impls.Add((body, slot.Parent, slot.Name, slot.Signature));
+                    }
+
+                    return members;
+                }
+                catch (Exception e) when (e is BadImageFormatException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                {
+                    _open[path] = null;
+                    return null;
+                }
+            }
+
+            private IEnumerable<(int Body, SigType Parent, string Name, MethodSignature<SigType> Signature)> ExternalImpls(int t)
+                => MembersOf(t)?.Impls ?? Enumerable.Empty<(int, SigType, string, MethodSignature<SigType>)>();
+
+            private static string ExportedName(MetadataReader md, ExportedType exported)
+            {
+                var name = md.GetString(exported.Name);
+                if (exported.Implementation.Kind == HandleKind.ExportedType) return ExportedName(md, md.GetExportedType((ExportedTypeHandle)exported.Implementation)) + "+" + name;
+                var space = md.GetString(exported.Namespace);
+                return space.Length == 0 ? name : space + "." + name;
+            }
+
+            private static string? AssemblyName(MetadataReader md) => md.IsAssembly ? md.GetString(md.GetAssemblyDefinition().Name) : null;
+
+            // The assembly a type reference names (through its declaring types' references); null: the module itself.
+            private static string? Scope(MetadataReader md, TypeReferenceHandle handle)
+            {
+                var scope = md.GetTypeReference(handle).ResolutionScope;
+                while (scope.Kind == HandleKind.TypeReference) scope = md.GetTypeReference((TypeReferenceHandle)scope).ResolutionScope;
+                return scope.Kind == HandleKind.AssemblyReference ? md.GetString(md.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) : null;
+            }
+
+            // A type definition, reference or specification as a signature (Named: its full name and the assembly the
+            // reference names, the module's own for a definition).
+            private static SigType TypeSig(MetadataReader md, EntityHandle handle) => handle.Kind switch
+            {
+                HandleKind.TypeDefinition => SigTypes.Instance.GetTypeFromDefinition(md, (TypeDefinitionHandle)handle, 0),
+                HandleKind.TypeReference => SigTypes.Instance.GetTypeFromReference(md, (TypeReferenceHandle)handle, 0),
+                HandleKind.TypeSpecification => md.GetTypeSpecification((TypeSpecificationHandle)handle).DecodeSignature(SigTypes.Instance, null),
+                _ => SigType.Wildcard,
+            };
+
+            // ------------------------------------------------------------------ method identity (round 21)
+
+            // A method, of the code read (Node) or outside it (Index into its type's Members): metadata only.
+            private readonly record struct MethodRef(int Type, int Node, int Index)
+            {
+                public bool Read => Node >= 0;
+            }
+
+            // A slot: its declaring type (by identity), name, whole signature (in the declaring type's generic context), and
+            // whether it is static.
+            private readonly record struct Slot(int Type, string Name, MethodSignature<SigType> Signature, bool Static)
+            {
+                public string Key => Type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + Name + "|" + (Static ? "s" : "i") + "|" + SigKey(Signature);
+            }
+
+            private Slot SlotOf(MethodRef method) => new(method.Type, NameOf(method), SigOf(method), (AttributesOf(method) & MethodAttributes.Static) != 0);
+
+            private IEnumerable<MethodRef> MethodsOf(int t)
+            {
+                var info = _types[t];
+                if (!info.External) return info.Methods.Select(n => new MethodRef(t, n, -1));
+                var members = MembersOf(t);
+                return members == null ? Enumerable.Empty<MethodRef>() : Enumerable.Range(0, members.Methods.Count).Select(i => new MethodRef(t, -1, i));
+            }
+
+            private string NameOf(MethodRef method) => method.Read ? _nodes[method.Node].Method : MembersOf(method.Type)!.Methods[method.Index].Name;
+
+            private MethodAttributes AttributesOf(MethodRef method) => method.Read ? _nodes[method.Node].Attributes : MembersOf(method.Type)!.Methods[method.Index].Attributes;
+
+            private MethodSignature<SigType> SigOf(MethodRef method)
+            {
+                if (!method.Read) return MembersOf(method.Type)!.Methods[method.Index].Signature;
+                if (_signatures.TryGetValue(method.Node, out var signature)) return signature;
+                var node = _nodes[method.Node];
+                signature = _modules[node.Module].Md.GetMethodDefinition(MetadataTokens.MethodDefinitionHandle(node.Token)).DecodeSignature(SigTypes.Instance, null);
+                return _signatures[method.Node] = signature;
+            }
+
+            // The slot a MethodImpl entry names: the type a reference names, its name and whole signature.
+            private static (SigType Parent, string Name, MethodSignature<SigType> Signature)? Declaration(MetadataReader md, EntityHandle declaration)
+            {
+                switch (declaration.Kind)
+                {
+                    case HandleKind.MethodDefinition:
+                        var definition = md.GetMethodDefinition((MethodDefinitionHandle)declaration);
+                        return (TypeSig(md, definition.GetDeclaringType()), md.GetString(definition.Name), definition.DecodeSignature(SigTypes.Instance, null));
+                    case HandleKind.MemberReference:
+                        var member = md.GetMemberReference((MemberReferenceHandle)declaration);
+                        if (member.Parent.Kind is not (HandleKind.TypeReference or HandleKind.TypeDefinition or HandleKind.TypeSpecification)) return null;
+                        return (TypeSig(md, member.Parent), md.GetString(member.Name), member.DecodeMethodSignature(SigTypes.Instance, null));
+                    default:
+                        return null;
+                }
+            }
+
+            // A type as a signature names it. Named: a definition or reference (full name; the assembly a reference names, the
+            // module's own for a definition); a primitive; a generic instantiation (its generic type and arguments); arrays,
+            // by-references and pointers (their element); a function pointer; a type's or a method's generic parameter (its
+            // index); a type with a custom modifier (its modifier, required or not); Wildcard: a type that isn't known (a
+            // generic parameter of a type whose instantiation can't be read).
+            private enum SigKind { Named, Primitive, Instance, SzArray, Array, ByReference, Pointer, FunctionPointer, TypeParameter, MethodParameter, Modified, Wildcard }
+
+            private sealed class SigType
+            {
+                public static readonly SigType Wildcard = new(SigKind.Wildcard);
+
+                private string? _key;
+
+                public SigType(SigKind kind) => Kind = kind;
+
+                public SigKind Kind { get; }
+
+                public string Name { get; init; } = string.Empty;
+
+                public string? Scope { get; init; }
+
+                public SigType? Element { get; init; }
+
+                public SigType[]? Args { get; init; }
+
+                public int Index { get; init; }
+
+                public string Key => _key ??= Kind switch
+                {
+                    SigKind.Named => "[" + Scope + "]" + Name,
+                    SigKind.Primitive => Name,
+                    SigKind.Instance => Element!.Key + "<" + string.Join(",", Args!.Select(a => a.Key)) + ">",
+                    SigKind.SzArray => Element!.Key + "[]",
+                    SigKind.Array => Element!.Key + "[" + new string(',', Math.Max(Index - 1, 0)) + "]",
+                    SigKind.ByReference => Element!.Key + "&",
+                    SigKind.Pointer => Element!.Key + "*",
+                    SigKind.FunctionPointer => "fnptr",
+                    SigKind.TypeParameter => "!" + Index,
+                    SigKind.MethodParameter => "!!" + Index,
+                    SigKind.Modified => Element!.Key + (Index == 1 ? " modreq(" : " modopt(") + Name + ")",
+                    _ => "?",
+                };
+            }
+
+            private sealed class SigTypes : ISignatureTypeProvider<SigType, object?>
+            {
+                public static readonly SigTypes Instance = new();
+
+                private static readonly Dictionary<PrimitiveTypeCode, SigType> Primitive = Enum.GetValues<PrimitiveTypeCode>().Distinct().ToDictionary(c => c, c => new SigType(SigKind.Primitive) { Name = "System." + c });
+
+                public SigType GetArrayType(SigType elementType, ArrayShape shape) => new(SigKind.Array) { Element = elementType, Index = shape.Rank };
+
+                public SigType GetByReferenceType(SigType elementType) => new(SigKind.ByReference) { Element = elementType };
+
+                public SigType GetFunctionPointerType(MethodSignature<SigType> signature) => new(SigKind.FunctionPointer);
+
+                public SigType GetGenericInstantiation(SigType genericType, ImmutableArray<SigType> typeArguments) => new(SigKind.Instance) { Element = genericType, Args = typeArguments.ToArray() };
+
+                public SigType GetGenericMethodParameter(object? genericContext, int index) => new(SigKind.MethodParameter) { Index = index };
+
+                public SigType GetGenericTypeParameter(object? genericContext, int index) => new(SigKind.TypeParameter) { Index = index };
+
+                public SigType GetModifiedType(SigType modifier, SigType unmodifiedType, bool isRequired) => new(SigKind.Modified) { Element = unmodifiedType, Name = modifier.Name, Index = isRequired ? 1 : 0 };
+
+                public SigType GetPinnedType(SigType elementType) => elementType;
+
+                public SigType GetPointerType(SigType elementType) => new(SigKind.Pointer) { Element = elementType };
+
+                public SigType GetPrimitiveType(PrimitiveTypeCode typeCode) => Primitive[typeCode];
+
+                public SigType GetSZArrayType(SigType elementType) => new(SigKind.SzArray) { Element = elementType };
+
+                public SigType GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind)
+                    => new(SigKind.Named) { Name = FullName(reader, handle), Scope = AssemblyName(reader) ?? string.Empty };
+
+                public SigType GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
+                    => new(SigKind.Named) { Name = FullName(reader, handle), Scope = CodeSet.Scope(reader, handle) ?? AssemblyName(reader) ?? string.Empty };
+
+                public SigType GetTypeFromSpecification(MetadataReader reader, object? genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
+                    => reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
+            }
+
+            // Arguments for a context that can't be read: every type parameter is a Wildcard.
+            private static readonly SigType[] Unknown = Array.Empty<SigType>();
+
+            // A type with the type parameters of its context replaced by `args` (null: its own context, unchanged; a parameter
+            // past them: a Wildcard).
+            private static SigType Subst(SigType type, SigType[]? args)
+            {
+                if (args == null) return type;
+                return type.Kind switch
+                {
+                    SigKind.TypeParameter => type.Index < args.Length ? args[type.Index] : SigType.Wildcard,
+                    SigKind.Instance => new SigType(SigKind.Instance) { Element = Subst(type.Element!, args), Args = type.Args!.Select(a => Subst(a, args)).ToArray() },
+                    SigKind.SzArray or SigKind.Array or SigKind.ByReference or SigKind.Pointer or SigKind.Modified
+                        => new SigType(type.Kind) { Element = Subst(type.Element!, args), Name = type.Name, Index = type.Index },
+                    _ => type,
+                };
+            }
+
+            private static string SigKey(MethodSignature<SigType> signature)
+                => signature.Header.RawValue.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + signature.GenericParameterCount + ":" + signature.ReturnType.Key
+                   + "(" + string.Join(",", signature.ParameterTypes.Select(p => p.Key)) + ")";
+
+            // How two signatures compare: certainly not the same, possibly the same (a type that can't be read, a type parameter
+            // whose argument isn't known, a custom modifier that differs, function pointers), or certainly the same.
+            private enum Match { No, Possible, Exact }
+
+            private static Match Min(Match a, Match b) => a < b ? a : b;
+
+            // Two method signatures, each taken into a common context by its arguments (ECMA-335 II.10.3: calling convention,
+            // generic arity, return type and parameter types).
+            private Match Same(MethodSignature<SigType> a, SigType[]? aArgs, MethodSignature<SigType> b, SigType[]? bArgs)
+            {
+                if (a.Header.IsInstance != b.Header.IsInstance || a.Header.CallingConvention != b.Header.CallingConvention
+                    || a.GenericParameterCount != b.GenericParameterCount || a.ParameterTypes.Length != b.ParameterTypes.Length) return Match.No;
+                var match = Same(Subst(a.ReturnType, aArgs), Subst(b.ReturnType, bArgs));
+                for (var i = 0; i < a.ParameterTypes.Length && match != Match.No; i++) match = Min(match, Same(Subst(a.ParameterTypes[i], aArgs), Subst(b.ParameterTypes[i], bArgs)));
+                return match;
+            }
+
+            // Two types: each named type by its identity (assembly and full name through forwarders: a reference in
+            // System.Runtime and the definition in System.Private.CoreLib are one type).
+            private Match Same(SigType a, SigType b)
+            {
+                if (a.Kind == SigKind.Wildcard || b.Kind == SigKind.Wildcard) return Match.Possible;
+                if (a.Kind == SigKind.Modified || b.Kind == SigKind.Modified)
+                {
+                    var (innerA, modifiersA) = Unmodified(a);
+                    var (innerB, modifiersB) = Unmodified(b);
+                    var inner = Same(innerA, innerB);
+                    return inner == Match.No ? Match.No : modifiersA == modifiersB ? inner : Match.Possible;
+                }
+
+                switch (a.Kind)
+                {
+                    case SigKind.Named or SigKind.Primitive when b.Kind is SigKind.Named or SigKind.Primitive:
+                    {
+                        if (a.Name != b.Name) return Match.No;
+                        if (a.Kind == SigKind.Primitive || b.Kind == SigKind.Primitive || string.Equals(a.Scope, b.Scope, StringComparison.OrdinalIgnoreCase)) return Match.Exact;
+                        var ta = TypeId(a.Name, a.Scope!);
+                        var tb = TypeId(b.Name, b.Scope!);
+                        if (_types[ta].Unreadable || _types[tb].Unreadable) return Match.Possible;
+                        return ta == tb ? Match.Exact : Match.No;
+                    }
+
+                    case SigKind.Instance when b.Kind == SigKind.Instance:
+                    {
+                        if (a.Args!.Length != b.Args!.Length) return Match.No;
+                        var match = Same(a.Element!, b.Element!);
+                        for (var i = 0; i < a.Args.Length && match != Match.No; i++) match = Min(match, Same(a.Args[i], b.Args[i]));
+                        return match;
+                    }
+
+                    case SigKind.SzArray or SigKind.ByReference or SigKind.Pointer when b.Kind == a.Kind:
+                        return Same(a.Element!, b.Element!);
+                    case SigKind.Array when b.Kind == SigKind.Array:
+                        return a.Index == b.Index ? Same(a.Element!, b.Element!) : Match.No;
+                    case SigKind.TypeParameter or SigKind.MethodParameter when b.Kind == a.Kind:
+                        return a.Index == b.Index ? Match.Exact : Match.No;
+                    case SigKind.FunctionPointer when b.Kind == SigKind.FunctionPointer:
+                        return Match.Possible;
+                    default:
+                        return Match.No;
+                }
+            }
+
+            private static (SigType Inner, string Modifiers) Unmodified(SigType type)
+            {
+                var modifiers = new List<string>();
+                while (type.Kind == SigKind.Modified)
+                {
+                    modifiers.Add((type.Index == 1 ? "req " : "opt ") + type.Name);
+                    type = type.Element!;
+                }
+
+                return (type, string.Join(";", modifiers));
+            }
+
+            // ------------------------------------------------------------------ Jellyfin's own types by identity (round 21)
+
+            // A member of one of Jellyfin's types (Mutates, the reviewed reads, PersonScoped) is that type only when a Jellyfin
+            // server assembly defines it: a type of the same name elsewhere is followed like any other.
+            private bool Jellyfins(int type) => !_types[type].Unreadable && ServerName(_types[type].Assembly);
+
+            private bool MutatesAt(int type, string member) => Jellyfins(type) && Mutates(_types[type].Name, member);
+
+            private bool ReviewedReadAt(int type, string member) => Jellyfins(type) && ReviewedRead(_types[type].Name, member);
+
+            private bool PersonScopedAt(int type, string member) => Jellyfins(type) && PersonScoped.ContainsKey(Simple(_types[type].Name) + "." + member);
+
+            // ------------------------------------------------------------------ open-world inputs (round 21)
+
+            // Round 21 (4a-r21-4): whether code outside the code read can call a method of the code read, handing it anything:
+            // a virtual method (through its slot: an interface or base outside the code read, or one of the code read's that
+            // another assembly can see); a method whose address the code read takes (a delegate or pointer to it can be
+            // invoked by whoever holds it); a public constructor (dependency injection and MVC build any type they are given
+            // through one, an internal one included); a public or protected member of a visible type (another assembly's
+            // code, a plugin's); an internal one of a module whose internals are visible to an assembly outside the code read
+            // (InternalsVisibleTo: Jellyfin's assemblies aren't strong-named); a static method a MethodImpl makes a static
+            // abstract slot's fill (generic code calls it).
+            private bool ExternallyCallable(int n)
+            {
+                var node = _nodes[n];
+                if (node.Type < 0) return false;
+                if (node.Virtual || _addressTaken.Contains(n)) return true;
+                var access = node.Attributes & MethodAttributes.MemberAccessMask;
+                if (node.Method == ".ctor" && access == MethodAttributes.Public) return true;
+                if (Visible(node.Type, false) && access is MethodAttributes.Public or MethodAttributes.Family or MethodAttributes.FamORAssem) return true;
+                if (_openInternals.Contains(node.Module) && Visible(node.Type, true) && access is MethodAttributes.Public or MethodAttributes.Family or MethodAttributes.FamORAssem or MethodAttributes.Assembly or MethodAttributes.FamANDAssem) return true;
+                return node.Static && _implsOfBody.ContainsKey(new MethodRef(node.Type, n, -1));
+            }
+
+            // Whether another assembly can name a code-read type (internals: one its internals are visible to).
+            private bool Visible(int t, bool internals)
+            {
+                for (var current = t; current >= 0; current = _types[current].Declaring)
+                {
+                    var visibility = _types[current].Attributes & TypeAttributes.VisibilityMask;
+                    var visible = visibility is TypeAttributes.Public or TypeAttributes.NestedPublic or TypeAttributes.NestedFamily or TypeAttributes.NestedFamORAssem
+                        || (internals && visibility is TypeAttributes.NotPublic or TypeAttributes.NestedAssembly or TypeAttributes.NestedFamANDAssem);
+                    if (!visible) return false;
+                }
+
+                return true;
+            }
+
+            // A type's static constructors in the code read (the runtime runs one before the type's first use). Round 21: the
+            // type by its identity (a type outside the code read has none the reading follows).
+            private IEnumerable<int> TypeInitializers(int? type)
+            {
+                if (type is not { } t || t < 0 || t >= _readTypes) yield break;
+                foreach (var n in _types[t].Methods)
+                    if (_nodes[n].Method == ".cctor") yield return n;
+            }
+
+            // The initializer of the module that defines a type (the runtime runs one before any access to the module).
+            private IEnumerable<int> ModuleInitializers(int? type)
+            {
+                if (type is { } t && t >= 0 && t < _readTypes && _moduleInitializers.TryGetValue(_types[t].Module, out var init)) yield return init;
+            }
+
+            // The type a called method or method pointer belongs to.
+            private int? MethodOwner(MetadataReader md, int m, EntityHandle handle) => handle.Kind switch
+            {
+                HandleKind.MethodSpecification => MethodOwner(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method),
+                HandleKind.MethodDefinition => _nodeOf.TryGetValue((m, MetadataTokens.GetToken(handle)), out var n) && _nodes[n].Type >= 0 ? _nodes[n].Type : null,
+                HandleKind.MemberReference => ParentType(md, m, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                _ => null,
+            };
+
+            // The type a field belongs to.
+            private int? FieldOwner(MetadataReader md, int m, EntityHandle handle) => handle.Kind switch
+            {
+                HandleKind.FieldDefinition => _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(md.GetFieldDefinition((FieldDefinitionHandle)handle).GetDeclaringType())), out var t) ? t : null,
+                HandleKind.MemberReference => ParentType(md, m, md.GetMemberReference((MemberReferenceHandle)handle).Parent),
+                _ => null,
+            };
+
+            // The type a type token names (an array's, a by-reference's or a pointer's element type; a generic
+            // instantiation's generic type).
+            private int? TypeToken(MetadataReader md, int m, EntityHandle handle)
+            {
+                if (handle.Kind == HandleKind.TypeDefinition) return _typeOfRow.TryGetValue((m, MetadataTokens.GetRowNumber(handle)), out var t) ? t : null;
+                if (handle.Kind is not (HandleKind.TypeReference or HandleKind.TypeSpecification)) return null;
+                var type = TypeSig(md, handle);
+                while (type.Kind is SigKind.SzArray or SigKind.Array or SigKind.ByReference or SigKind.Pointer or SigKind.Modified) type = type.Element!;
+                var id = TypeOfSig(type);
+                return id >= 0 ? id : null;
             }
 
             private static string? ParentName(MetadataReader md, EntityHandle parent) => parent.Kind switch
@@ -337,69 +3833,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 {
                     HandleKind.TypeReference => FullName(md, (TypeReferenceHandle)type),
                     HandleKind.TypeDefinition => FullName(md, (TypeDefinitionHandle)type),
-                    _ => null,
-                };
-            }
-
-            // A public class that MVC would treat as a controller: named *Controller, or deriving from ControllerBase.
-            private static bool Controller(MetadataReader md, TypeDefinition type, Dictionary<string, TypeDefinitionHandle> types)
-            {
-                if ((type.Attributes & TypeAttributes.VisibilityMask) != TypeAttributes.Public || (type.Attributes & (TypeAttributes.Abstract | TypeAttributes.Interface)) != 0) return false;
-                if (md.GetString(type.Name).EndsWith("Controller", StringComparison.Ordinal)) return true;
-                for (var (baseType, depth) = (type.BaseType, 0); !baseType.IsNil && depth < 16; depth++)
-                {
-                    var name = ParentName(md, baseType);
-                    if (name is "Microsoft.AspNetCore.Mvc.ControllerBase" or "Microsoft.AspNetCore.Mvc.Controller") return true;
-                    if (name == null || !types.TryGetValue(name, out var own)) return false;
-                    baseType = md.GetTypeDefinition(own).BaseType;
-                }
-
-                return false;
-            }
-
-            private static readonly Dictionary<string, string> VerbAttributes = new(StringComparer.Ordinal)
-            {
-                ["HttpGetAttribute"] = "GET", ["HttpPostAttribute"] = "POST", ["HttpPutAttribute"] = "PUT", ["HttpDeleteAttribute"] = "DELETE",
-                ["HttpPatchAttribute"] = "PATCH", ["HttpHeadAttribute"] = "HEAD", ["HttpOptionsAttribute"] = "OPTIONS", ["AcceptVerbsAttribute"] = "*",
-            };
-
-            private static IReadOnlyList<string> Verbs(MetadataReader md, CustomAttributeHandleCollection attributes)
-            {
-                var verbs = new SortedSet<string>(StringComparer.Ordinal);
-                foreach (var handle in attributes)
-                    if (VerbAttributes.TryGetValue(AttributeName(md, md.GetCustomAttribute(handle)) ?? string.Empty, out var verb)) verbs.Add(verb);
-                return verbs.ToList();
-            }
-
-            private static bool HasAttribute(MetadataReader md, CustomAttributeHandleCollection attributes, string name)
-                => attributes.Any(a => AttributeName(md, md.GetCustomAttribute(a)) == name);
-
-            // The state machine types named by [AsyncStateMachine], [IteratorStateMachine] or [AsyncIteratorStateMachine].
-            private static IEnumerable<string> StateMachines(MetadataReader md, CustomAttributeHandleCollection attributes)
-            {
-                foreach (var handle in attributes)
-                {
-                    var attribute = md.GetCustomAttribute(handle);
-                    if (AttributeName(md, attribute) is not ("AsyncStateMachineAttribute" or "IteratorStateMachineAttribute" or "AsyncIteratorStateMachineAttribute")) continue;
-                    var blob = md.GetBlobReader(attribute.Value);
-                    if (blob.Length < 3 || blob.ReadUInt16() != 1) continue;
-                    // A serialized System.Type: its assembly-qualified name, ours unqualified.
-                    if (blob.ReadSerializedString() is { } type) yield return type.Split(',')[0].Trim();
-                }
-            }
-
-            private static string? AttributeName(MetadataReader md, CustomAttribute attribute)
-            {
-                EntityHandle type = attribute.Constructor.Kind switch
-                {
-                    HandleKind.MemberReference => md.GetMemberReference((MemberReferenceHandle)attribute.Constructor).Parent,
-                    HandleKind.MethodDefinition => md.GetMethodDefinition((MethodDefinitionHandle)attribute.Constructor).GetDeclaringType(),
-                    _ => default,
-                };
-                return type.Kind switch
-                {
-                    HandleKind.TypeReference => md.GetString(md.GetTypeReference((TypeReferenceHandle)type).Name),
-                    HandleKind.TypeDefinition => md.GetString(md.GetTypeDefinition((TypeDefinitionHandle)type).Name),
                     _ => null,
                 };
             }

@@ -56,19 +56,208 @@ public class IntegrationJellyfinApiUserActionTests
         ["ImageController.DeleteUserImageByIndexLegacy"] = "user",
     };
 
+    // 4a review round 10: the actions that save the request's person through RequestHelpers.GetSession (its userId
+    // argument, else the signed-in person): ISessionManager.LogSessionActivity saves that user whole, with its activity date
+    // moved, from the object read at the start of the request (JellyfinUserActions.PersonScoped). Round 9 read
+    // Jellyfin.Api alone and stopped at the session manager's interface; following it into Emby.Server.Implementations
+    // finds the save. Bracketed for that person only.
+    private static readonly string[] SessionActivity =
+    {
+        "PlaystateController.MarkPlayedItem",
+        "PlaystateController.MarkPlayedItemLegacy",
+        "PlaystateController.MarkUnplayedItem",
+        "PlaystateController.MarkUnplayedItemLegacy",
+        "PlaystateController.OnPlaybackProgress",
+        "PlaystateController.OnPlaybackProgressLegacy",
+        "PlaystateController.OnPlaybackStart",
+        "PlaystateController.OnPlaybackStartLegacy",
+        "PlaystateController.OnPlaybackStopped",
+        "PlaystateController.OnPlaybackStoppedLegacy",
+        "PlaystateController.ReportPlaybackProgress",
+        "PlaystateController.ReportPlaybackStart",
+        "PlaystateController.ReportPlaybackStopped",
+        "SessionController.DisplayContent",
+        "SessionController.Play",
+        "SessionController.PostCapabilities",
+        "SessionController.PostFullCapabilities",
+        "SessionController.ReportViewing",
+        "SessionController.SendFullGeneralCommand",
+        "SessionController.SendGeneralCommand",
+        "SessionController.SendMessageCommand",
+        "SessionController.SendPlaystateCommand",
+        "SessionController.SendSystemCommand",
+        "SyncPlayController.SyncPlayBuffering",
+        "SyncPlayController.SyncPlayCreateGroup",
+        "SyncPlayController.SyncPlayGetGroup",
+        "SyncPlayController.SyncPlayGetGroups",
+        "SyncPlayController.SyncPlayJoinGroup",
+        "SyncPlayController.SyncPlayLeaveGroup",
+        "SyncPlayController.SyncPlayMovePlaylistItem",
+        "SyncPlayController.SyncPlayNextItem",
+        "SyncPlayController.SyncPlayPause",
+        "SyncPlayController.SyncPlayPing",
+        "SyncPlayController.SyncPlayPreviousItem",
+        "SyncPlayController.SyncPlayQueue",
+        "SyncPlayController.SyncPlayReady",
+        "SyncPlayController.SyncPlayRemoveFromPlaylist",
+        "SyncPlayController.SyncPlaySeek",
+        "SyncPlayController.SyncPlaySetIgnoreWait",
+        "SyncPlayController.SyncPlaySetNewQueue",
+        "SyncPlayController.SyncPlaySetPlaylistItem",
+        "SyncPlayController.SyncPlaySetRepeatMode",
+        "SyncPlayController.SyncPlaySetShuffleMode",
+        "SyncPlayController.SyncPlayStop",
+        "SyncPlayController.SyncPlayUnpause",
+    };
+
+    // 4a review round 11 (4a-security-r11-2, Q-4AF11-1): the non-GET actions whose code reaches a callback the code read
+    // can't resolve, whatever its type: a delegate handed in from outside Jellyfin's assemblies (the first one found per
+    // action, each an event a plugin can subscribe to: SubtitleManager.SubtitleDownloadFailure 46, ApplicationHost.HasPendingRestartChanged 15,
+    // BaseConfigurationManager.NamedConfigurationUpdating 11, LyricManager.LyricDownloadFailure 6, the Live TV timer
+    // events 6, ServerConfigurationManager.ConfigurationUpdating 1, the collection events 3, on 12.2). 88 on 12.2, the same
+    // 88 plus LibraryStructureController.RenameVirtualFolder (12.2's reaches IUserManager.UpdateUserAsync, above) on
+    // 10.11.11; round 21 adds OpenWorld (below) to both: 93 on 12.2, 94 on 10.11.11. Round 21 also changes which callback
+    // is found first for many (an event the code read subscribes to is handed in from outside too: a plugin can subscribe).
+    // Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
+    // session's end, so they are bracketed for the request's person (16 by their userId argument, the rest the signed-in
+    // person), never for everyone.
+    private static readonly string[] Callbacks =
+    {
+        "BackupController.StartRestoreBackup",
+        "CollectionController.AddToCollection",
+        "CollectionController.CreateCollection",
+        "CollectionController.RemoveFromCollection",
+        "ConfigurationController.UpdateBrandingConfiguration",
+        "ConfigurationController.UpdateConfiguration",
+        "ConfigurationController.UpdateNamedConfiguration",
+        "DevicesController.DeleteDevice",
+        "ImageController.DeleteCustomSplashscreen",
+        "ImageController.DeleteItemImage",
+        "ImageController.DeleteItemImageByIndex",
+        "ImageController.SetItemImage",
+        "ImageController.SetItemImageByIndex",
+        "ImageController.UpdateItemImageIndex",
+        "ImageController.UploadCustomSplashscreen",
+        "ItemLookupController.ApplySearchCriteria",
+        "ItemLookupController.GetBookRemoteSearchResults",
+        "ItemLookupController.GetBoxSetRemoteSearchResults",
+        "ItemLookupController.GetMovieRemoteSearchResults",
+        "ItemLookupController.GetMusicAlbumRemoteSearchResults",
+        "ItemLookupController.GetMusicArtistRemoteSearchResults",
+        "ItemLookupController.GetMusicVideoRemoteSearchResults",
+        "ItemLookupController.GetPersonRemoteSearchResults",
+        "ItemLookupController.GetSeriesRemoteSearchResults",
+        "ItemLookupController.GetTrailerRemoteSearchResults",
+        "ItemRefreshController.RefreshItem",
+        "ItemsController.UpdateItemUserData",
+        "ItemsController.UpdateItemUserDataLegacy",
+        "ItemUpdateController.UpdateItem",
+        "ItemUpdateController.UpdateItemContentType",
+        "LibraryController.DeleteItem",
+        "LibraryController.DeleteItems",
+        "LibraryController.PostUpdatedMedia",
+        "LibraryController.PostUpdatedMovies",
+        "LibraryController.PostUpdatedSeries",
+        "LibraryController.RefreshLibrary",
+        "LibraryStructureController.AddMediaPath",
+        "LibraryStructureController.AddVirtualFolder",
+        "LibraryStructureController.RemoveMediaPath",
+        "LibraryStructureController.RemoveVirtualFolder",
+        "LibraryStructureController.UpdateLibraryOptions",
+        "LibraryStructureController.UpdateMediaPath",
+        "LiveTvController.AddListingProvider",
+        "LiveTvController.AddTunerHost",
+        "LiveTvController.CancelSeriesTimer",
+        "LiveTvController.CancelTimer",
+        "LiveTvController.CreateSeriesTimer",
+        "LiveTvController.CreateTimer",
+        "LiveTvController.DeleteListingProvider",
+        "LiveTvController.DeleteRecording",
+        "LiveTvController.DeleteTunerHost",
+        "LiveTvController.GetPrograms",
+        "LiveTvController.SetChannelMapping",
+        "LiveTvController.UpdateSeriesTimer",
+        "LiveTvController.UpdateTimer",
+        "LyricsController.DeleteLyrics",
+        "LyricsController.DownloadRemoteLyrics",
+        "LyricsController.UploadLyrics",
+        "MediaInfoController.GetPostedPlaybackInfo",
+        "MediaInfoController.OpenLiveStream",
+        "PackageController.InstallPackage",
+        "PackageController.SetRepositories",
+        "PlaylistsController.AddItemToPlaylist",
+        "PlaylistsController.CreatePlaylist",
+        "PlaylistsController.MoveItem",
+        "PlaylistsController.RemoveItemFromPlaylist",
+        "PlaylistsController.RemoveUserFromPlaylist",
+        "PlaylistsController.UpdatePlaylist",
+        "PlaylistsController.UpdatePlaylistUser",
+        "PluginsController.UninstallPlugin",
+        "PluginsController.UninstallPluginByVersion",
+        "RemoteImageController.DownloadRemoteImage",
+        "ScheduledTasksController.StartTask",
+        "ScheduledTasksController.UpdateTask",
+        "SessionController.ReportSessionEnded",
+        "SubtitleController.DeleteSubtitle",
+        "SubtitleController.DownloadRemoteSubtitles",
+        "SubtitleController.UploadSubtitle",
+        "UserLibraryController.DeleteUserItemRating",
+        "UserLibraryController.DeleteUserItemRatingLegacy",
+        "UserLibraryController.MarkFavoriteItem",
+        "UserLibraryController.MarkFavoriteItemLegacy",
+        "UserLibraryController.UnmarkFavoriteItem",
+        "UserLibraryController.UnmarkFavoriteItemLegacy",
+        "UserLibraryController.UpdateUserItemRating",
+        "UserLibraryController.UpdateUserItemRatingLegacy",
+        "VideosController.DeleteAlternateSources",
+        "VideosController.MergeVersions",
+    };
+
+    // 4a review round 21 (open-world inputs: what code outside the code read can hand a method it can call, its callers in
+    // the code read never narrow): the non-GET actions newly bracketed for the request's person, each by an unresolved
+    // callback (12.2 and 10.11.11 alike). Three are where a plugin's code runs inside the request: a handler subscribed to
+    // DeviceManager.DeviceOptionsUpdated (UpdateDeviceOptions raises it), the close function a plugin's live-TV tuner hands
+    // ExclusiveLiveStream's public constructor (CloseLiveStream runs it), a plugin's BasePlugin<T>.ConfigurationChanged handler
+    // (UpdatePluginConfiguration raises it). Three are public helpers the reading can't tell apart by caller (it isn't
+    // context-sensitive): TranscodeManager.KillTranscodingJobs keeps its deleteFiles delegate in a closure
+    // (StopEncodingProcess), TranscodingJob.StartKillTimer hands its callback to a Timer (PingPlaybackSession), and on
+    // 10.11.11 ReadOnlyListExtension.FindIndex invokes its predicate (OpenLiveStream, through the subtitle stream scores; 12.2's
+    // OpenLiveStream was bracketed already, Callbacks).
+    private static readonly string[] OpenWorld =
+    {
+        "DevicesController.UpdateDeviceOptions",
+        "HlsSegmentController.StopEncodingProcess",
+        "MediaInfoController.CloseLiveStream",
+        "PlaystateController.PingPlaybackSession",
+        "PluginsController.UpdatePluginConfiguration",
+    };
+
     private static readonly Dictionary<string, Dictionary<string, string>> Reviewed = new(StringComparer.Ordinal)
     {
-        // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync).
-        ["jf12"] = new(Common, StringComparer.Ordinal) { ["LibraryStructureController.RenameVirtualFolder"] = "global" },
-        // 10.11: the easy (PIN) password still exists.
-        ["jf10"] = new(Common, StringComparer.Ordinal) { ["UserController.UpdateUserEasyPassword"] = "user" },
+        // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync); adding a user
+        // to a session and removing one log the session's activity too.
+        ["jf12"] = With(SessionActivity.Concat(Callbacks).Concat(OpenWorld).Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
+        // 10.11: the easy (PIN) password still exists; renaming a library reaches only the callbacks. Round 18: OpenLiveStream
+        // reached none on 10.11.11 (its old callback, NamedConfigurationUpdating through a recording's onStarted, was an
+        // artefact of the retired "delegates the caller made before the call" rule). Round 21: it is bracketed again, by the
+        // open-world rule (ReadOnlyListExtension.FindIndex, public, may be handed any predicate: OpenWorld above).
+        ["jf10"] = With(SessionActivity.Concat(Callbacks).Concat(OpenWorld).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
     };
+
+    private static Dictionary<string, string> With(IEnumerable<string> person, params (string Action, string Key)[] more)
+    {
+        var all = new Dictionary<string, string>(Common, StringComparer.Ordinal);
+        foreach (var action in person) all.Add(action, "user");
+        foreach (var (action, key) in more) all.Add(action, key);
+        return all;
+    }
 
     // A non-GET action whose name or controller suggests it touches users or signs someone in.
     private static readonly Regex LooksLikeAUserAction = new(@"Authenticat|Password|Policy|Login|Logon|Lockout|QuickConnect|Startup|User(?!Data|Item|View|Library|Rating|Played|Favorite)|Account|Permission", RegexOptions.CultureInvariant);
 
     // Reviewed non-GET actions (12.2 and 10.11.11) whose name matches but that change no user: a playlist's shares
-    // (IPlaylistManager), and the extra users of a playback session (ISessionManager's session state).
+    // (IPlaylistManager; bracketed for the callbacks they reach, round 11), and on 10.11 the extra users of a playback
+    // session (ISessionManager's session state; 12.2 also logs the session's activity, so it is bracketed there).
     private static readonly HashSet<string> NotUserChanges = new(StringComparer.Ordinal)
     {
         "PlaylistsController.UpdatePlaylistUser", "PlaylistsController.RemoveUserFromPlaylist",
@@ -89,7 +278,8 @@ public class IntegrationJellyfinApiUserActionTests
             var other = Guid.NewGuid();
             var args = new Dictionary<string, object?>();
             if (action.HasUserId) args["userId"] = person;
-            var context = JellyfinUserBracketHarness.Context(action.Controller, action.Method, action.Verbs[0] == "*" ? "POST" : action.Verbs[0], args);
+            // Signed in as someone else when the action names its person (the userId argument decides), else as the person.
+            var context = JellyfinUserBracketHarness.Context(action.Controller, action.Method, action.Verbs[0] == "*" ? "POST" : action.Verbs[0], args, action.HasUserId ? Guid.NewGuid() : person);
             var seen = await JellyfinUserBracketHarness.Observe(context, person, other);
             var expected = reviewed.GetValueOrDefault(action.Name, "none");
             if (seen != expected) problems.Add(action.Name + " [" + string.Join(",", action.Verbs) + "]: bracket " + seen + ", reviewed " + expected);

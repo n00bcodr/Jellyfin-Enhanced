@@ -19,6 +19,8 @@ namespace JE.Tests;
 /// registered decision reads, the stamp only the version samplers; every version source of a gathered fact is sampled
 /// into its own slot of the stamp, from its own sampler, checked settled and compared; a person's fact and its version
 /// are both read for the requester; every registered reader is used; the gathered facts are exactly the versioned ones.
+/// Round 10 (4a-security-r10-1): a person's fact may also be read for the approver, and then the stamp samples that
+/// person's version for the approver too, into a slot of its own, checked settled and compared.
 /// </summary>
 public class IntegrationAutomationFactRegistryTests
 {
@@ -49,8 +51,15 @@ public class IntegrationAutomationFactRegistryTests
         ["secrets"] = ("Secrets", "AutomationWriteGate._secrets"),
     };
 
-    // The version sources kept per person: their fact and their sample must both be read for the requester.
+    // The version sources kept per person: their fact and their sample must both be read for the requester (or, below,
+    // the approver).
     private static readonly HashSet<string> PerPerson = new(StringComparer.Ordinal) { "person_settings", "jellyfin_user" };
+
+    // Round 10: a per-person source read for the approver, and the stamp's slot that samples it for them.
+    private static readonly Dictionary<string, (string Slot, string Sampler)> ApproverSampled = new(StringComparer.Ordinal)
+    {
+        ["jellyfin_user"] = ("ApproverJellyfin", "IRequestPolicy.PermissionVersion"),
+    };
 
     // The steps of the check, by method: the gather, the stamp, the decision (Final and everything it calls but the
     // stamp), and Check itself (the configuration read before the stamp).
@@ -102,14 +111,25 @@ public class IntegrationAutomationFactRegistryTests
                     problems.Add(fact.Id + ": " + reader + " is registered but the " + step + " never reads it");
             }
 
-        // A person's gathered fact is read for the requester.
+        // A person's gathered fact is read for the requester, or the approver (whose version the stamp then samples too).
         var gather = methods.Single(m => m.Identifier.ValueText == "Gather");
+        var forTheApprover = new HashSet<string>(StringComparer.Ordinal);
         foreach (var fact in registry.Where(f => f.Read == AutomationFactRead.Versioned && f.Version != null && PerPerson.Contains(f.Version)))
             foreach (var read in reads.In(gather, model).Where(r => fact.Readers.Contains(r.Name)))
-                if (!ForTheRequester(read, walk))
-                    problems.Add(fact.Id + ": " + read.Name + " is read for someone other than the requester (" + read.Line + ")");
+                switch (PersonOf(read, walk))
+                {
+                    case "requester":
+                        break;
+                    case "approver":
+                        forTheApprover.Add(fact.Version!);
+                        break;
+                    default:
+                        problems.Add(fact.Id + ": " + read.Name + " is read for someone other than the requester or the approver (" + read.Line + ")");
+                        break;
+                }
 
         problems.AddRange(StampProblems(walk, gate, model, reads, registry));
+        problems.AddRange(ApproverStampProblems(walk, gate, model, reads, forTheApprover));
         return problems;
     }
 
@@ -148,7 +168,7 @@ public class IntegrationAutomationFactRegistryTests
                 yield return source + ": the stamp's " + how.Slot + " slot holds " + wrong.Key + "'s sample (" + args[slot] + ")";
             if (PerPerson.Contains(source))
                 foreach (var read in reads.In(args[slot].Expression, model).Where(r => r.Name == how.Sampler))
-                    if (!ForTheRequester(read, walk)) yield return source + ": the stamp samples it for someone other than the requester (" + read.Line + ")";
+                    if (PersonOf(read, walk) != "requester") yield return source + ": the stamp samples it for someone other than the requester (" + read.Line + ")";
             if (!compared.Contains(how.Slot)) yield return source + ": the stamp doesn't compare it (" + how.Slot + ")";
             if (source is not ("configuration" or "generation") && !checkedSettled.Contains(how.Slot)) yield return source + ": the stamp doesn't check it settled (" + how.Slot + ")";
         }
@@ -173,15 +193,52 @@ public class IntegrationAutomationFactRegistryTests
     private static IEnumerable<string> Calls(SyntaxNode node, SemanticModel model)
         => node.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>().Select(c => model.GetSymbolInfo(c).Symbol).OfType<IMethodSymbol>().Select(m => m.ContainingType?.Name + "." + m.Name);
 
-    // The read's person (its Guid argument) is the write's requester.
-    private static bool ForTheRequester(Read read, WriteGateWalk walk)
+    // Round 10: every per-person source read for the approver is sampled for the approver into its own slot, from its own
+    // sampler, checked settled and compared.
+    private static IEnumerable<string> ApproverStampProblems(WriteGateWalk walk, ClassDeclarationSyntax gate, SemanticModel model, Reads reads, IEnumerable<string> sources)
     {
-        if (read.Node is not InvocationExpressionSyntax call) return false;
+        var stampOf = gate.Members.OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.ValueText == "StampOf");
+        var record = gate.DescendantNodes().OfType<RecordDeclarationSyntax>().Single(r => r.Identifier.ValueText == "Stamp");
+        var slots = record.ParameterList!.Parameters.Select(p => p.Identifier.ValueText).ToList();
+        var args = stampOf.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().Single(c => model.GetTypeInfo(c).Type?.Name == "Stamp").ArgumentList!.Arguments;
+        var compared = Compared(record.DescendantNodes().OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.ValueText == "Same"), model);
+        var checkedSettled = record.DescendantNodes().OfType<PropertyDeclarationSyntax>().Single(p => p.Identifier.ValueText == "Settled").DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .Where(c => model.GetSymbolInfo(c).Symbol is IMethodSymbol { Name: "Settled", ContainingType.Name: "FactVersion" } && c.ArgumentList.Arguments.Count == 1)
+            .Select(c => model.GetSymbolInfo(c.ArgumentList.Arguments[0].Expression).Symbol?.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var source in sources.Distinct())
+        {
+            if (!ApproverSampled.TryGetValue(source, out var how)) { yield return source + ": read for the approver, but no stamp slot samples it for them"; continue; }
+            var slot = slots.IndexOf(how.Slot);
+            if (slot < 0 || slot >= args.Count) { yield return source + ": the stamp has no " + how.Slot + " slot for the approver"; continue; }
+            var samples = reads.In(args[slot].Expression, model).Where(r => r.Name == how.Sampler).ToList();
+            if (samples.Count == 0) yield return source + ": the stamp's " + how.Slot + " slot isn't sampled from " + how.Sampler + " for the approver (" + args[slot] + ")";
+            foreach (var sample in samples.Where(r => PersonOf(r, walk) != "approver"))
+                yield return source + ": the stamp samples it for someone other than the approver (" + sample.Line + ")";
+            if (!compared.Contains(how.Slot)) yield return source + ": the stamp doesn't compare it for the approver (" + how.Slot + ")";
+            if (!checkedSettled.Contains(how.Slot)) yield return source + ": the stamp doesn't check it settled for the approver (" + how.Slot + ")";
+        }
+    }
+
+    // Whose the read is (its Guid arguments): "requester" (the write's Requester), "approver" (its Approver, through a
+    // pattern or a local), or null (anyone else, or a mix).
+    private static string? PersonOf(Read read, WriteGateWalk walk)
+    {
+        if (read.Node is not InvocationExpressionSyntax call) return null;
         var flow = new SemanticFlow(walk);
         var people = call.ArgumentList.Arguments.Where(a => read.Model.GetTypeInfo(a.Expression).Type?.ToDisplayString() is "System.Guid" or "System.Guid?").ToList();
-        return people.Count > 0 && people.All(a => flow.Roots(a.Expression, read.Model) is var roots && roots.Count > 0
-            && roots.Any(r => r is IPropertySymbol { Name: "Requester", ContainingType.Name: "AutomationWrite" })
-            && roots.All(r => r is IPropertySymbol { Name: "Requester", ContainingType.Name: "AutomationWrite" } or IParameterSymbol { Type.Name: "AutomationWrite" }));
+        if (people.Count == 0) return null;
+        string? person = null;
+        foreach (var argument in people)
+        {
+            var roots = flow.Roots(argument.Expression, read.Model);
+            var named = roots.OfType<IPropertySymbol>().Where(r => r.ContainingType.Name == "AutomationWrite" && r.Name is "Requester" or "Approver").Select(r => r.Name).Distinct().ToList();
+            if (named.Count != 1 || !roots.All(r => r is IPropertySymbol { Name: "Requester" or "Approver", ContainingType.Name: "AutomationWrite" } or IParameterSymbol { Type.Name: "AutomationWrite" })) return null;
+            var found = named[0] == "Requester" ? "requester" : "approver";
+            if (person != null && person != found) return null;
+            person = found;
+        }
+
+        return person;
     }
 
     // The fact reads under a node, by symbols.
@@ -322,9 +379,9 @@ public class IntegrationAutomationFactRegistryTests
         // The disk verdicts gathered (a swap after the read would be missed) instead of read in the decision.
         ["disk_gathered"] = ("if (w.Input != null && _policy != null) _policy.WarmDisk(w.Input);", "if (w.Input != null && _policy != null) _ = _policy.Disk(w.Input, config);", "gather: IRequestPolicy.Disk is read here, not in its registered step"),
         // A version source no longer sampled.
-        ["permission_version_not_sampled"] = ("_policy?.PermissionVersion(write.Requester) ?? 0", "0L", "jellyfin_user: the stamp doesn't sample it"),
+        ["permission_version_not_sampled"] = ("_policy?.PermissionVersion(write.Requester) ?? 0", "0L", "jellyfin_user: the stamp's Jellyfin slot isn't sampled from IRequestPolicy.PermissionVersion"),
         // A version source sampled but not compared.
-        ["secrets_not_compared"] = ("&& Jellyfin == other.Jellyfin && Secrets == other.Secrets;", "&& Jellyfin == other.Jellyfin;", "secrets: the stamp doesn't compare it"),
+        ["secrets_not_compared"] = ("&& Jellyfin == other.Jellyfin && Secrets == other.Secrets && ", "&& Jellyfin == other.Jellyfin && ", "secrets: the stamp doesn't compare it"),
         // A read made outside the check's steps.
         ["read_outside_the_steps"] = ("public static IReadOnlyList<string> Gates { get; } = Ordered.Select(g => g.Id).ToArray();",
             "public static IReadOnlyList<string> Gates { get; } = Ordered.Select(g => g.Id).ToArray();\n        internal bool Planted(Guid u) => _store?.HasGrant(u) == true;",
@@ -352,10 +409,20 @@ public class IntegrationAutomationFactRegistryTests
         // A person's version sampled for someone else.
         ["permission_version_for_someone_else"] = ("_policy?.PermissionVersion(write.Requester) ?? 0", "_policy?.PermissionVersion(write.Approver ?? Guid.Empty) ?? 0", "jellyfin_user: the stamp samples it for someone other than the requester"),
         // A slot filled from another source's sampler: the Jellyfin slot holds the consent version (r9's wrong-source class, in the stamp).
-        ["wrong_sampler_in_a_slot"] = ("_policy?.PermissionVersion(write.Requester) ?? 0", "_consents?.Version(write.Requester) ?? 0", "jellyfin_user: the stamp doesn't sample it"),
+        ["wrong_sampler_in_a_slot"] = ("_policy?.PermissionVersion(write.Requester) ?? 0", "_consents?.Version(write.Requester) ?? 0", "jellyfin_user: the stamp's Jellyfin slot isn't sampled from IRequestPolicy.PermissionVersion"),
         ["swapped_slots"] = ("_consents?.Version(write.Requester) ?? 0,\n                _policy?.PermissionVersion(write.Requester) ?? 0", "_policy?.PermissionVersion(write.Requester) ?? 0,\n                _consents?.Version(write.Requester) ?? 0", "person_settings: the stamp's Person slot isn't sampled from IAutomationConsents.Version"),
         // A version no longer checked settled.
         ["permission_version_not_checked_settled"] = ("FactVersion.Settled(Jellyfin) && ", "", "jellyfin_user: the stamp doesn't check it settled"),
+        // Round 10 (4a-security-r10-1): the approver's facts are read, and their version must be stamped for them: not at all,
+        ["approver_version_not_sampled"] = ("write.Approver is { } approver ? _policy?.PermissionVersion(approver) ?? 0 : 0", "0L", "jellyfin_user: the stamp's ApproverJellyfin slot isn't sampled from IRequestPolicy.PermissionVersion for the approver"),
+        // the requester's in the approver's slot,
+        ["approver_version_for_the_requester"] = ("write.Approver is { } approver ? _policy?.PermissionVersion(approver) ?? 0 : 0", "write.Approver is { } approver ? _policy?.PermissionVersion(write.Requester) ?? 0 : 0", "jellyfin_user: the stamp samples it for someone other than the approver"),
+        // not compared,
+        ["approver_version_not_compared"] = (" && ApproverJellyfin == other.ApproverJellyfin", "", "jellyfin_user: the stamp doesn't compare it for the approver"),
+        // not checked settled;
+        ["approver_version_not_checked_settled"] = ("\n                && FactVersion.Settled(ApproverJellyfin)", "", "jellyfin_user: the stamp doesn't check it settled for the approver"),
+        // and the approver's facts read for someone else.
+        ["approver_facts_for_someone_else"] = ("_policy.Evaluate(approver, w.Input)", "_policy.Evaluate(Guid.Empty, w.Input)", "authority: IRequestPolicy.Evaluate is read for someone other than the requester or the approver"),
     };
 
     // Helpers a plant uses, added to the gate too.

@@ -61,6 +61,7 @@ public class IntegrationAutomationWriteGateTests
         new("mode_shadow", "recipe_mode", AutomationHolds.RecipePaused),
         new("mode_off", "recipe_mode", AutomationHolds.RecipePaused),
         new("opt_out", "consent", AutomationHolds.UserOptedOut),
+        new("requester_disabled", "authority", "identity_changed"),
         new("mode_ask", "approval", AutomationHolds.ApprovalRequired),
         new("trust_revoked", "approval", AutomationHolds.ApprovalRequired),
         new("breaker_open", "breaker", AutomationHolds.BreakerOpen),
@@ -101,7 +102,7 @@ public class IntegrationAutomationWriteGateTests
 
     /// <summary>Cells whose flip can't be made on the site at all (nothing to change there): listed, not run.</summary>
     internal static bool Runnable(string site, string flip)
-        => !(Legacy(site) && flip is "opt_out" or "trust_revoked" or "breaker_open" or "low_disk" or "disk_guard_on" or "budget_zero" or "phase4_off");
+        => !(Legacy(site) && flip is "opt_out" or "trust_revoked" or "breaker_open" or "low_disk" or "disk_guard_on" or "budget_zero" or "phase4_off" or "requester_disabled");
 
     public static IEnumerable<object[]> Cells()
         => from site in Sites from flip in Flips where Runnable(site, flip.Id) select new object[] { site, flip.Id };
@@ -375,6 +376,7 @@ public class IntegrationAutomationWriteGateTests
             case "mode_off": e.Mode(recipe, AutomationMode.Off); break;
             case "opt_out": e.Consent.Map[(user, recipe)] = false; break;
             case "mode_ask": e.Mode(recipe, AutomationMode.Ask); break;
+            case "requester_disabled": e.R.Policy.Disable(user); break;
             case "trust_revoked": e.Trusted.Trusted.Remove(user); break;
             case "breaker_open":
                 for (var i = 0; i < AutomationStore.BreakerThreshold; i++) e.Store.Failure(target(), "backend_unavailable", e.R.Now);
@@ -538,6 +540,7 @@ public class IntegrationAutomationWriteGateTests
             {
                 case "engine_off": c.ArrPhase4AutomationEnabled = false; break;
                 case "mode_ask": e.Mode(recipe, AutomationMode.Ask); break;
+            case "requester_disabled": e.R.Policy.Disable(user); break;
                 case "mode_shadow": e.Mode(recipe, AutomationMode.Shadow); break;
                 case "mode_off": e.Mode(recipe, AutomationMode.Off); break;
                 case "legacy_switch_off": c.AutoMovieRequestEnabled = false; break;

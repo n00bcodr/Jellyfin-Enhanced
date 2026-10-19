@@ -68,6 +68,51 @@ public class IntegrationAutomationBracketScanTests
 
     private static readonly string[] FileChanges = { "Move", "Copy", "Delete", "WriteAllText", "WriteAllBytes", "WriteAllLines", "AppendAllText", "AppendAllLines", "Replace", "Create", "CreateText", "AppendText", "OpenWrite" };
 
+    // Round 10 (4a-security-r10-3): every file change in the plugin, whichever source file makes it. File and Directory's
+    // own (above, plus WriteAllTextAsync and the like, and File.Open), a FileInfo's or DirectoryInfo's, and a FileStream or
+    // StreamWriter opened on a path.
+    private static readonly string[] AsyncFileChanges = { "WriteAllTextAsync", "WriteAllBytesAsync", "WriteAllLinesAsync", "AppendAllTextAsync", "AppendAllLinesAsync" };
+    private static readonly string[] InfoChanges = { "MoveTo", "CopyTo", "Delete", "Create", "CreateText", "AppendText", "OpenWrite", "Replace", "Open" };
+    private static readonly string[] Streams = { "FileStream", "StreamWriter" };
+
+    // Where people's settings can be: anything built from Jellyfin's data folder, its plugins folder or the plugin
+    // configurations folder (JE's own configuration folder, with each person's folder, is inside them).
+    private static readonly HashSet<string> SettingsArea = new(StringComparer.Ordinal)
+    {
+        "IApplicationPaths.ProgramDataPath", "IApplicationPaths.PluginsPath", "IApplicationPaths.PluginConfigurationsPath", "IApplicationPaths.DataPath",
+        "BasePlugin.DataFolderPath", "IPlugin.DataFolderPath",
+    };
+
+    // Reviewed: the files and folders JE writes inside that area that are nobody's settings, each by the member that
+    // names it. A path built from one of these is that file (or a file in that folder), not a person's settings.
+    internal static readonly Dictionary<string, string> NotPeoplesSettings = new(StringComparer.Ordinal)
+    {
+        ["SecretsStore._path"] = "the secrets file (the secrets source: its own version, checked as secrets above)",
+        ["AcquireDatabase._path"] = "the request database and its copies (the automation source, checked as automation above)",
+        ["ArrAuditLog._path"] = "the Sonarr/Radarr audit log",
+        ["ArrStateStore._cacheDirectory"] = "the arr instances' warm-start library caches (arr-cache/*.library.json)",
+        ["CatchUpLogService._livePath"] = "the catch-up log",
+        ["CatchUpLogService._rotatedPath"] = "the catch-up log's previous file",
+        ["MaintenanceModeService._stateFilePath"] = "maintenance mode's state",
+        ["MdblistService.CacheFilePath"] = "the MDBList ratings cache",
+        ["NativeDetailsArtwork.KeyFile"] = "the native details artwork grant key",
+        ["NativeDetailsPolicy.EpochFile"] = "the native details sign-out epochs",
+        ["PosterTagVariantToken._secretPath"] = "the poster tag variant token secret",
+        ["TagCacheService.CacheFilePath"] = "the tag cache",
+        ["TmdbResponseCache._diskPath"] = "the TMDB response cache",
+        ["UsageEventCounterService.CacheFilePath"] = "the usage counters",
+        ["WhatsNewService.SnapshotFilePath"] = "the What's New settings snapshot",
+        ["WhatsNewService.WhatsNewFilePath"] = "the What's New state",
+        ["WikidataAwardsService.CacheFilePath"] = "the Wikidata awards cache",
+        ["JeBackupService.DefaultFolderName"] = "the backups folder (backup zips and pre-restore copies)",
+    };
+
+    // Reviewed writers whose path is built in place from the data folder (no member names the file), by method.
+    internal static readonly Dictionary<string, string> NotPeoplesSettingsWriters = new(StringComparer.Ordinal)
+    {
+        ["JellyfinEnhanced.CheckPluginPages"] = "the Plugin Pages plugin's own config.json (configurations/Jellyfin.Plugin.PluginPages)",
+    };
+
     // One writer: what it is, the source it needs, and the expression its key must match (null: any).
     private sealed record Writer(SyntaxNode Node, SemanticModel Model, string What, string Source, ExpressionSyntax? Target);
 
@@ -86,6 +131,7 @@ public class IntegrationAutomationBracketScanTests
 
     private static IEnumerable<Writer> Writers(WriteGateWalk walk)
     {
+        var area = new Area(walk);
         foreach (var (tree, model) in walk.Sources())
         {
             var file = Relative(tree);
@@ -103,11 +149,13 @@ public class IntegrationAutomationBracketScanTests
                 // A restore's copy into the live database.
                 if (file == Database && method.Name == "BackupDatabase" && Enclosing(call) == "ReplaceWith")
                     yield return new Writer(call, model, "the restore's copy", "automation", null);
-                // People's settings files: the path changed (a move's or copy's destination) is the key.
-                if (file is Users or Backup && space == "System.IO" && method.ContainingType!.Name is "File" or "Directory" && FileChanges.Contains(method.Name)
-                    && !Temporary(call, method) && !(file == Users && SharedFiles.ContainsKey(Enclosing(call) ?? string.Empty))
-                    && !(file == Backup && Enclosing(call) != "Restore"))
-                    yield return new Writer(call, model, "a settings file change", "person_settings", method.Name is "Move" or "Copy" or "Replace" && args.Count > 1 ? args[1].Expression : args.FirstOrDefault()?.Expression);
+                // People's settings files, wherever the change is made: the path changed (a move's or copy's destination) is
+                // the key. In UserConfigurationManager and a restore every file change counts (round 8); elsewhere one whose
+                // path is built from the settings area (round 10), followed through helpers and their callers' arguments.
+                if (FileChange(call, method, model) is { } changed && !Temporary(changed)
+                    && !(file == Users && SharedFiles.ContainsKey(Enclosing(call) ?? string.Empty))
+                    && (file is Users || (file == Backup && Enclosing(call) == "Restore") || (!ReviewedWriter(call, model) && area.Settings(changed, model))))
+                    yield return new Writer(call, model, "a settings file change", "person_settings", changed);
                 // A Jellyfin user change or sign-in: the user (its id, or the user itself) is the key.
                 if (method.ContainingType is { } type && JellyfinUserActions.Mutates(Metadata(type), method.MetadataName))
                     yield return new Writer(call, model, "a Jellyfin user change (" + type.Name + "." + method.Name + ")", "jellyfin_user", args.FirstOrDefault()?.Expression);
@@ -115,6 +163,12 @@ public class IntegrationAutomationBracketScanTests
                 if (file == Secrets && space == "System.IO" && method.ContainingType!.Name == "File" && FileChanges.Contains(method.Name) && !Temporary(call, method))
                     yield return new Writer(call, model, "a secrets file change", "secrets", null);
             }
+            // A FileStream or StreamWriter opened on a path in the settings area.
+            foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().Where(c => c is ImplicitObjectCreationExpressionSyntax || c is ObjectCreationExpressionSyntax { Type: var t } && Streams.Any(n => t.ToString().EndsWith(n, StringComparison.Ordinal))))
+                if (model.GetTypeInfo(creation).Type is INamedTypeSymbol { Name: "FileStream" or "StreamWriter", ContainingNamespace: var ns } && ns.ToDisplayString() == "System.IO"
+                    && creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression is { } path && model.GetTypeInfo(path).Type?.SpecialType == SpecialType.System_String
+                    && !Temporary(path) && (file is Users || (!ReviewedWriter(creation, model) && area.Settings(path, model))))
+                    yield return new Writer(creation, model, "a settings file change", "person_settings", path);
             // A Jellyfin user entity's members set.
             foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
                 if (model.GetSymbolInfo(assign.Left).Symbol is IPropertySymbol { ContainingType: { } owner, SetMethod: { } setter } && JellyfinUserActions.Mutates(Metadata(owner), setter.MetadataName))
@@ -145,7 +199,7 @@ public class IntegrationAutomationBracketScanTests
             IdentifierNameSyntax id => id.Identifier.ValueText,
             _ => string.Empty,
         };
-        return name == "BackupDatabase" || UserChanges.Contains(name) || (file is Users or Backup or Secrets && FileChanges.Contains(name));
+        return name == "BackupDatabase" || UserChanges.Contains(name) || FileChanges.Contains(name) || AsyncFileChanges.Contains(name) || InfoChanges.Contains(name);
     }
 
     // The names of every member JellyfinUserActions.Mutates counts on IUserManager, ISessionManager, IQuickConnect, the
@@ -168,8 +222,38 @@ public class IntegrationAutomationBracketScanTests
     {
         var args = call.ArgumentList.Arguments;
         var target = method.Name is "Move" or "Copy" or "Replace" ? (args.Count > 1 ? args[1] : null) : args.FirstOrDefault();
-        return target?.Expression is IdentifierNameSyntax { Identifier.ValueText: var id } && (id.Contains("temp", StringComparison.OrdinalIgnoreCase) || id.Contains("tmp", StringComparison.OrdinalIgnoreCase));
+        return target != null && Temporary(target.Expression);
     }
+
+    private static bool ReviewedWriter(SyntaxNode node, SemanticModel model)
+        => node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() is { } method && model.GetDeclaredSymbol(method) is { } symbol && NotPeoplesSettingsWriters.ContainsKey(Name(symbol));
+
+    private static bool Temporary(ExpressionSyntax target)
+        => target is IdentifierNameSyntax { Identifier.ValueText: var id } && (id.Contains("temp", StringComparison.OrdinalIgnoreCase) || id.Contains("tmp", StringComparison.OrdinalIgnoreCase));
+
+    // The path a file change changes (a move's, copy's or replace's destination; a FileInfo's own path for its delete,
+    // create or open), or null when the call isn't one.
+    private static ExpressionSyntax? FileChange(InvocationExpressionSyntax call, IMethodSymbol method, SemanticModel model)
+    {
+        if (method.ContainingNamespace?.ToDisplayString() != "System.IO") return null;
+        var args = call.ArgumentList.Arguments;
+        switch (method.ContainingType?.Name)
+        {
+            case "File" or "Directory" when FileChanges.Contains(method.Name) || AsyncFileChanges.Contains(method.Name) || (method.Name == "Open" && method.ContainingType.Name == "File"):
+                if (method.Name == "Open" && !Writes(args.Skip(1), model)) return null;
+                return method.Name is "Move" or "Copy" or "Replace" && args.Count > 1 ? args[1].Expression : args.FirstOrDefault()?.Expression;
+            case "FileInfo" or "DirectoryInfo" or "FileSystemInfo" when InfoChanges.Contains(method.Name):
+                if (method.Name == "Open" && !Writes(args, model)) return null;
+                return method.Name is "MoveTo" or "CopyTo" or "Replace" ? args.FirstOrDefault()?.Expression : (call.Expression as MemberAccessExpressionSyntax)?.Expression;
+            default:
+                return null;
+        }
+    }
+
+    // A File.Open or FileInfo.Open that can write (any mode but Open, or any access but Read).
+    private static bool Writes(IEnumerable<ArgumentSyntax> args, SemanticModel model)
+        => args.Select(a => model.GetSymbolInfo(a.Expression).Symbol).OfType<IFieldSymbol>().Any(f => f.ContainingType.Name is "FileMode" && f.Name != "Open" || f.ContainingType.Name is "FileAccess" && f.Name != "Read")
+           || !args.Any();
 
     private static string? Enclosing(SyntaxNode node) => node.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText;
 
@@ -185,6 +269,111 @@ public class IntegrationAutomationBracketScanTests
     private static string Line(SyntaxNode node) => node.SyntaxTree.GetText().Lines[node.GetLocation().GetLineSpan().StartLinePosition.Line].ToString().Trim();
 
     private static string Name(ISymbol symbol) => symbol.ContainingType?.Name + "." + symbol.Name;
+
+    /// <summary>
+    /// Round 10 (4a-security-r10-3): whether a path is built from the settings area. Its symbols are followed (through
+    /// locals, helpers and <c>this.</c>, as <see cref="SemanticFlow"/> does) and then further: a parameter to the argument
+    /// every caller passes (constructor initializers too), a field or property to everything assigned to it. A path built
+    /// from a reviewed member naming a file that is nobody's settings (<see cref="NotPeoplesSettings"/>) stops there.
+    /// </summary>
+    private sealed class Area(WriteGateWalk walk)
+    {
+        private const int MaxDepth = 16;
+        private readonly SemanticFlow _flow = new(walk);
+        private readonly Dictionary<ISymbol, bool> _known = new(SymbolEqualityComparer.Default);
+
+        private static bool Reviewed(ISymbol symbol) => NotPeoplesSettings.ContainsKey(Name(symbol));
+
+        public bool Settings(ExpressionSyntax path, SemanticModel model) => In(path, model, new HashSet<ISymbol>(SymbolEqualityComparer.Default), 0);
+
+        private bool In(ExpressionSyntax expression, SemanticModel model, HashSet<ISymbol> seen, int depth)
+        {
+            var roots = _flow.Roots(expression, model, Reviewed);
+            return !roots.Any(Reviewed) && roots.Any(root => In(root, seen, depth + 1));
+        }
+
+        private bool In(ISymbol symbol, HashSet<ISymbol> seen, int depth)
+        {
+            if (SettingsArea.Contains(Name(symbol)) || symbol is IPropertySymbol property && property.ExplicitInterfaceImplementations.Concat(Overridden(property)).Any(p => SettingsArea.Contains(Name(p)))) return true;
+            if (_known.TryGetValue(symbol, out var known)) return known;
+            if (depth > MaxDepth || !seen.Add(symbol)) return false;
+            var found = false;
+            foreach (var (value, model) in Values(symbol))
+                if (In(value, model, seen, depth))
+                {
+                    found = true;
+                    break;
+                }
+
+            if (seen.Count == 1) _known[symbol] = found;
+            return found;
+        }
+
+        private static IEnumerable<IPropertySymbol> Overridden(IPropertySymbol property)
+        {
+            for (var p = property.OverriddenProperty; p != null; p = p.OverriddenProperty) yield return p;
+            foreach (var type in property.ContainingType.AllInterfaces)
+                foreach (var member in type.GetMembers(property.Name).OfType<IPropertySymbol>())
+                    if (SymbolEqualityComparer.Default.Equals(property.ContainingType.FindImplementationForInterfaceMember(member), property)) yield return member;
+        }
+
+        // What a symbol can hold, in the plugin: a parameter's arguments at every call (constructor calls and initializers
+        // included), a field's or property's initializer and every assignment.
+        private IEnumerable<(ExpressionSyntax Value, SemanticModel Model)> Values(ISymbol symbol)
+        {
+            switch (symbol)
+            {
+                case IParameterSymbol { ContainingSymbol: IMethodSymbol method } parameter:
+                    foreach (var (args, model) in Calls(method))
+                    {
+                        var argument = args.FirstOrDefault(a => a.NameColon?.Name.Identifier.ValueText == parameter.Name) ?? (parameter.Ordinal < args.Count && args[parameter.Ordinal].NameColon == null ? args[parameter.Ordinal] : null);
+                        if (argument != null) yield return (argument.Expression, model);
+                    }
+                    break;
+                case IFieldSymbol or IPropertySymbol:
+                    foreach (var reference in symbol.DeclaringSyntaxReferences)
+                    {
+                        var syntax = reference.GetSyntax();
+                        var initializer = syntax switch
+                        {
+                            VariableDeclaratorSyntax { Initializer.Value: var v } => v,
+                            PropertyDeclarationSyntax { Initializer.Value: var v } => v,
+                            _ => null,
+                        };
+                        if (initializer != null) yield return (initializer, walk.ModelOf(syntax.SyntaxTree));
+                    }
+                    foreach (var (use, model) in walk.References(symbol))
+                        if (use.Parent is AssignmentExpressionSyntax assignment && assignment.Left == use) yield return (assignment.Right, model);
+                    break;
+            }
+        }
+
+        // Every call of a plugin method or constructor, as its argument list.
+        private IEnumerable<(SeparatedSyntaxList<ArgumentSyntax> Args, SemanticModel Model)> Calls(IMethodSymbol method)
+        {
+            var target = method.OriginalDefinition;
+            if (method.MethodKind != MethodKind.Constructor)
+            {
+                foreach (var (use, model) in walk.References(method))
+                    if (use is InvocationExpressionSyntax call) yield return (call.ArgumentList.Arguments, model);
+                yield break;
+            }
+
+            foreach (var (tree, model) in walk.Sources())
+                foreach (var node in tree.GetRoot().DescendantNodes())
+                {
+                    var args = node switch
+                    {
+                        ObjectCreationExpressionSyntax { Type: var type } creation when type.ToString().EndsWith(target.ContainingType.Name, StringComparison.Ordinal) => creation.ArgumentList,
+                        ImplicitObjectCreationExpressionSyntax implicitCreation => implicitCreation.ArgumentList,
+                        ConstructorInitializerSyntax initializer when initializer.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText == target.ContainingType.Name => initializer.ArgumentList,
+                        _ => null,
+                    };
+                    if (args != null && model.GetSymbolInfo(node).Symbol is IMethodSymbol called && SymbolEqualityComparer.Default.Equals(called.OriginalDefinition, target))
+                        yield return (args.Arguments, model);
+                }
+        }
+    }
 
     // Whether code runs inside its bracket.
     private sealed class Scan(WriteGateWalk walk)
@@ -326,6 +515,21 @@ public class IntegrationAutomationBracketScanTests
         Assert.Contains(writers, w => w.Source == "person_settings" && w.Target != null);
         Assert.Contains(writers, w => w.Source == "jellyfin_user");
         Assert.Contains(writers, w => w.Source == "secrets");
+        // Round 10: the settings writers are found in every source file, and the reviewed non-settings files still exist
+        // (a renamed one would otherwise drop out of the review unnoticed).
+        Assert.Contains(writers, w => w.Source == "person_settings" && Relative(w.Node.SyntaxTree) == Backup);
+        var declared = WriteGateWalk.Plugin.Sources().SelectMany(t => t.Tree.GetRoot().DescendantNodes().OfType<TypeDeclarationSyntax>())
+            .SelectMany(type => type.Members.SelectMany(m => m switch
+            {
+                FieldDeclarationSyntax f => f.Declaration.Variables.Select(v => v.Identifier.ValueText),
+                PropertyDeclarationSyntax p => new[] { p.Identifier.ValueText },
+                MethodDeclarationSyntax d => new[] { d.Identifier.ValueText },
+                _ => Array.Empty<string>(),
+            }).Select(n => type.Identifier.ValueText + "." + n)).ToHashSet(StringComparer.Ordinal);
+        // (A type this target compiles out, such as a Jellyfin 12-only service on 10.11, has nothing to check.)
+        var types = declared.Select(n => n[..n.IndexOf('.')]).ToHashSet(StringComparer.Ordinal);
+        Assert.All(NotPeoplesSettings.Keys.Concat(NotPeoplesSettingsWriters.Keys).Where(n => types.Contains(n[..n.IndexOf('.')])), name => Assert.True(declared.Contains(name), name + " is reviewed but not in the plugin"));
+        Assert.Contains(NotPeoplesSettings.Keys, n => types.Contains(n[..n.IndexOf('.')]));
     }
 
     // Each case writes a versioned source outside its bracket, or inside the wrong one (the copy must still compile),
@@ -386,7 +590,53 @@ public class IntegrationAutomationBracketScanTests
             "await JellyfinUserVersions.Mutate(user.Id, () => _userManager.UpdatePolicyAsync(user.Id, dto.Policy)).ConfigureAwait(false);",
             "await JellyfinUserVersions.Mutate(Guid.Empty, () => _userManager.UpdatePolicyAsync(user.Id, dto.Policy)).ConfigureAwait(false);",
             "a Jellyfin user change (IUserManager.UpdatePolicyAsync): inside another key's bracket"),
+        // Round 10 (4a-security-r10-3): a settings file written from another source file. Round 9 looked for settings-file
+        // changes in UserConfigurationManager.cs and JeBackupService.cs only. Here another service writes a person's
+        // settings.json directly, by a path it builds from the plugin's own configuration folder,
+        ["settings_written_by_another_service"] = ("Services/WhatsNewService.cs",
+            "private string SnapshotFilePath =>",
+            "internal void Planted(string userId) => File.WriteAllText(Path.Combine(_configBaseDir, userId, \"settings.json\"), \"{}\");\n        private string SnapshotFilePath =>",
+            "a settings file change: outside any bracket"),
+        // and the same through a FileStream.
+        ["settings_stream_by_another_service"] = ("Services/WhatsNewService.cs",
+            "private string SnapshotFilePath =>",
+            "internal void Planted(string userId) { using var stream = new FileStream(Path.Combine(_configBaseDir, userId, \"settings.json\"), FileMode.Create); stream.WriteByte(1); }\n        private string SnapshotFilePath =>",
+            "a settings file change: outside any bracket"),
     };
+
+    // Round 10 (4a-security-r10-3, the reviewer's mutation): the bracketed File.Move replaced by a call to a helper in
+    // another source file, outside the bracket. The helper's destination is its parameter: the scan follows it to the
+    // argument every caller passes (the person's settings path) and finds the write unbracketed.
+    private const string Publisher = "\nnamespace Jellyfin.Plugin.JellyfinEnhanced.Configuration { internal static class SettingsPublisher { public static void Publish(string source, string destination) => System.IO.File.Move(source, destination, true); } }";
+    private const string BracketedMove = "VersionOf(userId, fileName).Mutate(() =>\n                {\n                    File.Move(tempPath, configPath, overwrite: true);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });";
+
+    private static WriteGateWalk Published(string replacement) => WriteGateWalk.Plugin
+        .With(Users, source =>
+        {
+            Assert.Equal(1, source.Split(BracketedMove).Length - 1);
+            return source.Replace(BracketedMove, replacement, StringComparison.Ordinal);
+        })
+        .With("Helpers/FactVersion.cs", source => source + Publisher);
+
+    [Fact]
+    public void ASettingsFilePublishedFromAnotherSourceFileOutsideTheBracketIsReported()
+    {
+        var walk = Published("SettingsPublisher.Publish(tempPath, configPath);\n                Moved?.Invoke(Normalized(userId), fileName);");
+        var errors = walk.Errors(Users);
+        if (errors.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", errors));
+        var problems = Unbracketed(walk);
+        Assert.Contains(problems, p => p.StartsWith("Helpers/FactVersion.cs:", StringComparison.Ordinal) && p.Contains("a settings file change: outside any bracket", StringComparison.Ordinal));
+    }
+
+    // The same helper called inside the person's bracket passes: the scan follows the helper, it doesn't reject it.
+    [Fact]
+    public void ASettingsFilePublishedFromAnotherSourceFileInsideTheBracketPasses()
+    {
+        var walk = Published("VersionOf(userId, fileName).Mutate(() =>\n                {\n                    SettingsPublisher.Publish(tempPath, configPath);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });");
+        var errors = walk.Errors(Users);
+        if (errors.Count > 0) throw new Xunit.Sdk.XunitException(string.Join("\n", errors));
+        Assert.Empty(Unbracketed(walk));
+    }
 
     // Helpers a plant uses, added to the file too.
     private static readonly Dictionary<string, (string Text, string Added)> Helpers = new(StringComparer.Ordinal)

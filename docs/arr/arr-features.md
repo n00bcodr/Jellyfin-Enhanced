@@ -1423,7 +1423,8 @@ either is off, the automatic requests above behave exactly as described there. W
   the send was being counted against its budget. The last check is made inside the connection itself, as each
   automatic write is handed over to be sent, so nothing can wait between its answer and the send. It first reads
   everything it needs from storage (budgets, the instance's breaker, eligibility grants, whether the person is a
-  Jellyfin administrator, the person's opt-out, whether Seerr's key is stored); those reads can wait, for example while
+  Jellyfin administrator, the person's opt-out, whether Seerr's key is stored, and the requester's and the approver's
+  current rights); those reads can wait, for example while
   a backup is being restored. Only then does it read the settings, and whatever is in memory (free space and whether it
   is known, both from the same reading of the instance's disk facts; the person's household role), and decide. Every
   change to something it read from storage is marked as under way before it can be seen and as done after, even when
@@ -1434,7 +1435,17 @@ either is off, the automatic requests above behave exactly as described there. W
   Jellyfin's own code when the server starts, so an action a Jellyfin update adds is covered as well. If any such change was
   under way or happened while the check was reading, it reads again, or the request waits a moment and is checked
   again. A kill switch, budget, opt-out or administrator change made while the check was reading therefore still stops
-  the send, as does low disk space reported meanwhile. It also counts the
+  the send, as does low disk space reported meanwhile. An OK is only as good as the person who gave it is now: if
+  whoever approved an automatic request has since been demoted, lost the Manager role, been disabled, locked out or
+  deleted, or can no longer see the title (or, for a request they edited, is no longer an administrator), nothing is
+  sent; the request goes back to waiting for an OK. The person it is for is checked the same way (still an enabled
+  user who may ask and sees the title). A migrated Manager's eligibility grant counts only while they are a Manager.
+  Jellyfin's actions are followed into Jellyfin's own server code (an interface to its implementation, an override to
+  every class that replaces it, sealed, covariant-return and explicit ones included, a stored callback to what was
+  stored), so a change made several calls deep, such as a session's activity save, counts too. A callback Jellyfin's
+  code hands control to without
+  showing what it runs (an event another plugin can listen to) counts as a possible change for the person the action
+  is for (its user, else whoever is signed in; everyone when nobody is). It also counts the
   budgets again with their limits as they are at that moment (the write's own place counted once): a limit lowered to
   0 while a request was on its way stops it, and the place it had taken is given back. A request held by a full
   budget waits until every full window has room again (when the hourly and the daily window are both full, until the
@@ -1443,6 +1454,87 @@ either is off, the automatic requests above behave exactly as described there. W
   On the recording side, a recipe compares every setting its request depends on (including *Free automatic requests*, eligibility and
   the instance it would go to) right before it records the request or a *Shadow* decision, and starts over if any
   changed, so a request is never recorded under settings that no longer apply.
+
+#### Known limits of the user-change check
+
+Jellyfin Enhanced finds the actions that can change or sign in a user by reading Jellyfin's code when the server starts
+(the code is read, not run). What that guarantees:
+
+- Every action of Jellyfin's own server code that reaches a user change or a sign-in runs inside the check's bracket,
+  whichever way the compiled code hands control on: a direct call; a virtual or interface call (static interface members
+  included) to every implementation and override (sealed, covariant-return and explicit ones, whatever the replacing
+  method is called), interfaces and base classes .NET itself declares included (a progress report, an observer, a
+  hand-written enumerator). Implementations are found over each type's complete ancestry, the way the runtime finds
+  them: a method a class inherits from a base that doesn't itself declare the interface, an override with a .NET class
+  in between (a stream deriving from `MemoryStream` that overrides `Stream.Write`), an abstract re-declaration on the
+  way, an interface a derived class implements again, generic variance, a default interface method. A method is matched
+  by its whole signature, as the runtime matches it (a nearer method of the same name and parameter count with other
+  parameter types, a generic method or a by-reference parameter doesn't hide the one that matches), and a type by the
+  assembly that defines it and its name (two libraries' types of the same name stay two). The bases and interfaces outside
+  Jellyfin's code are read from the assemblies Jellyfin runs with, their slot tables included (a chain of covariant
+  overrides, an interface implemented under another name), from their metadata only: nothing is loaded or run. A delegate or function pointer is judged by where it came from: what was stored in it (events
+  Jellyfin's own code subscribes to included), what the callers handed the method that runs it, what the call that gave
+  it back returns, what a local or an array held, followed to the end however it recurses (a method that passes it to
+  itself, a cycle of methods, calls that rotate their arguments, chains of any depth); delegate types .NET or a library
+  declares (a timer's callback) count like Jellyfin's own. The callers Jellyfin's code shows aren't taken to be all the
+  callers: a method other code can call (a public or protected method of a type other assemblies see, a public constructor
+  that dependency injection uses, a virtual method, a method a delegate is made from) can be handed anything by that code
+  too, so a controller built by dependency injection with a callback still counts it even when Jellyfin's own code also
+  builds it with a harmless one; likewise a delegate field other code can write. A delegate handed to .NET code that may
+  run it (`Task.Run`); and the
+  static constructors and module initializers the runtime runs on a type's or module's first use. An indirect call
+  through a pointer, and a callback the reading can't see into (one handed in from outside Jellyfin's code, one taken
+  out of a collection or out of an array other code filled, one whose source it can't follow), count as a possible
+  change. These rules apply in every combination, because each is applied in one place: one answer to "which methods
+  can this run" for every way of handing control on (a constrained call to a member .NET declares included), the same
+  static constructor and module initializer for every method that can run, and the same reading of where a delegate
+  came from wherever it is used (invoked, stored in a field, handed to a method, returned). The tests check this as a
+  generated grid: every combination of how control is handed on, what kind of method runs, where its user change is
+  and where the delegate comes from, each way of finding an implementation, each kind of recursion, look-alike methods
+  and types and callers on both sides included (4,988 combinations), each compiled, read and run for real. The actions
+  are the ones ASP.NET Core itself finds (its own rules for what a controller and an action are, actions a controller
+  inherits from a base, in another assembly too, included), checked against the application model ASP.NET Core builds for
+  Jellyfin 12.2's and 10.11.11's own controllers; an inherited action declared outside the code that is read counts as a
+  possible change for everyone when it isn't a GET. For each
+  supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
+  newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
+  has been reviewed.
+- The reading errs towards bracketing: a call through an interface or a base class counts every implementation the
+  code has, whichever type a generic call is actually made with, and a delegate taken out of an array that other code
+  filled counts as one it can't see into, so an action can be bracketed although what it really runs changes nobody.
+  A type whose bases or interfaces can't be read (an assembly missing from Jellyfin's folder) counts as a possible
+  implementation of anything it has a method for, and a type that can't be read at all as a possible delegate; with
+  Jellyfin's own files in place (12.2 and 10.11.11 are checked) every step is read. It is never left out when one
+  could. A public helper that every caller in Jellyfin's code hands a harmless callback still counts what another plugin
+  could hand it, because the reading doesn't tell one call of a method from another.
+- An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in
+  from outside) is bracketed for the person it is for: 93 actions on 12.2 and 94 on 10.11.11, among them starting
+  playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
+  in the household whenever anyone did one of those.
+
+Three shapes the reading deliberately doesn't follow, because following them would bracket ordinary actions (playback,
+display preferences, backups) for nothing; Jellyfin's own code changes no user through them, and the tests pin each one:
+
+- Disposal, finalizers, and an object's text, equality and hash code, when called through a type .NET declares
+  (`IDisposable`, `object`): a `using` can't tell which object it disposes, so following it reached every disposal in
+  Jellyfin.
+- The code of an async method or an iterator counts where it is created: a lazy sequence one action creates and
+  another enumerates counts for the action that created it.
+- A delegate kept in a field typed by a generic parameter (a `Slot<T>`, a tuple's item) is followed to what Jellyfin's
+  code stores there; one stored there from outside that code isn't.
+
+A user change made through one of them is covered afterwards, as below.
+
+What reading the code can't see: code found or called by reflection (Jellyfin's internal members included: the only
+assemblies Jellyfin lets call them are its own test assemblies, which a server doesn't have) or created while the server runs, a service looked up by name
+at run time, code outside Jellyfin's server (another plugin's own code, another process), and a method of Jellyfin's that
+.NET's own code calls back on an object Jellyfin handed it (a stream's `Write` during a copy .NET makes; a delegate
+handed to .NET counts as run there). A user change made there
+through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
+covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
+that person's version when it does, so the next check reads the change. A check already deciding in the moment between
+the change being saved and Jellyfin's announcement can still use what it read before. A change written straight into
+Jellyfin's database, bypassing Jellyfin, isn't covered.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
