@@ -193,8 +193,8 @@
             const caps = await JE.arrAsk.me();
             if (!action.current()) return [];
             if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series')) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
-                run: opener => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
-                    initialSeason: c.season, initialEpisode: c.episode }, { opener }) });
+                run: (opener, submitted) => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
+                    initialSeason: c.season, initialEpisode: c.episode }, { opener, operation: submitted }) });
         } else if (c.absent && !JE.arrAsk?.enabled?.() && JE.pluginConfig?.JellyseerrEnabled && JE.jellyseerrMoreInfo?.open) {
             out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), run: () => JE.jellyseerrMoreInfo.open(c.tmdbId, c.type, { season: c.season, episode: c.episode }) });
         }
@@ -220,7 +220,7 @@
         if (JE.pluginConfig?.ArrManageDrawerEnabled && JE.arrManage && titleStatus?.admin) {
             if (!source('manage', '.je-manage-open, .je-arr-modal-manage', 'requests', JE.t('arr_manage_button'), 'tune'))
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
-                    state: JE.t('title_actions_admin'), run: () => JE.arrManage.open({ key: c.key }) });
+                    state: JE.t('title_actions_admin'), run: (_opener, submitted) => JE.arrManage.open({ key: c.key }, { operation: submitted }) });
         }
         const proof = admissions.get(c);
         // Open goes to the accessible actual copy; never offered on that copy's own page.

@@ -345,17 +345,20 @@
      * Opens the request sheet for a title (closing any other). A series given without its seasons
      * has them read first.
      * @param {Object} title Title (see the file comment).
-     * @param {{opener?: HTMLElement, variant?: string, caps?: Object, quota?: Object|null}} [options] Options.
+     * @param {{opener?: HTMLElement, variant?: string, caps?: Object, quota?: Object|null, operation?: Object}} [options] Options;
+     *     operation: the one a title action submitted (else the dispatched press, if any). The sheet opens and asks only
+     *     while it is current; without one, as before.
      * @returns {Promise<Object|null>} The ask result, or null when closed without one.
      */
     async function open(title, options) {
         const action = JE.createSessionAction();
+        const submitted = JE.captureSubmitted(options?.operation);
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
         const opener = options?.opener || document.activeElement;
         const kind = title.kind === 'movie' ? 'movie' : 'series';
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
         const caps = options?.caps || await JE.arrAsk.me();
-        if (!action.current()) return null;
+        if (!action.current() || !submitted.current()) return null;
         if (!JE.arrAsk.canAsk(caps, kind)) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return null;
@@ -368,7 +371,7 @@
             // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
             JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
         ]);
-        if (!action.current() || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
+        if (!action.current() || !submitted.current() || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
         if (shown?.initialSeason != null && !(shown.seasons || []).some(s => s.season === shown.initialSeason)) {
             JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')); return null;
         }
@@ -378,7 +381,7 @@
         }
         close();
         return new Promise((resolve) => {
-            current = build(shown, kind, caps, quota, { ...options, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+            current = build(shown, kind, caps, quota, { ...options, submitted, blocks: { [variant]: blockOf(check) } }, opener, resolve);
         });
     }
 
@@ -423,7 +426,7 @@
         const contact = JE.arrAsk.contact(caps);
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
-            title, kind, caps, quota, opener, resolve, action: JE.createSessionAction(), busy: false, done: false, ...returnPoints(opener),
+            title, kind, caps, quota, opener, resolve, action: JE.createSessionAction(), submitted: options?.submitted || JE.captureSubmitted(), busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
             choice: title.initialEpisode != null ? 'episodes' : title.initialSeason != null ? 'pick' : null,
             picked: new Set(title.initialSeason != null ? [title.initialSeason] : []),
@@ -493,6 +496,8 @@
         state.backdrop = backdrop;
         state.sheet = sheet;
         state.onKey = (e) => onKey(state, e);
+        // A sheet opened for an operation that is no longer current (another page, mount or user) only closes.
+        backdrop.addEventListener('click', (e) => { if (!state.submitted.current()) { e.preventDefault(); e.stopImmediatePropagation(); finish(state, null); } }, true);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(state, null); });
         document.addEventListener('keydown', state.onKey, true);
         refresh(state);
@@ -795,6 +800,8 @@
      */
     async function submit(state) {
         if (state.busy || state.done || !state.action.current()) return;
+        // The ask belongs to the operation that opened the sheet (if any); the answer stays the person's.
+        if (!state.submitted.current()) { finish(state, null); return; }
         const input = currentInput(state);
         if (!input) {
             showMessage(state, tr('arr_sheet_pick_none'), true);
@@ -953,9 +960,11 @@
         if (title.kind !== 'movie') return open(title, options);
         if (inflight.has(title.key)) return inflight.get(title.key);
         // Capabilities and allowance are read for this session: a sign-out (and someone else's
-        // sign-in) before the ask goes out drops it instead of asking as the next person.
+        // sign-in) before the ask goes out drops it instead of asking as the next person. So does
+        // the end of the operation a title action submitted (if any): another page or mount.
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
-        const sameSession = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        const submitted = JE.captureSubmitted(options?.operation);
+        const sameSession = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch && submitted.current();
         const run = (async () => {
             const caps = await JE.arrAsk.me();
             if (!sameSession()) return null;
@@ -972,7 +981,7 @@
             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
             return result;
         })();
-        const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
+        const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, operation: submitted.operation, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
         const settled = run.finally(() => inflight.delete(title.key));
         settled.catch(() => {});
         inflight.set(title.key, tracked);
@@ -1167,6 +1176,8 @@
                 const pressed = document.activeElement === b;
                 b.disabled = true;
                 const instanceId = JE.arrAsk.searchInstance(caps, status, status?.key || title.key);
+                // Pressed for a title action (the row's primary): the ask after the family Search is its too.
+                const submitted = JE.captureSubmitted();
                 let words = null;
                 let searched = null;
                 try {
@@ -1179,8 +1190,8 @@
                         // Requests already sent it: search for it again instead of asking.
                         JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
-                    } else {
-                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key)) : await open(title, { opener: b });
+                    } else if (submitted.current()) {
+                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key)) : await open(title, { opener: b, operation: submitted.operation });
                         if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);
                             if (kind === 'movie') JE.arrAsk.toast(said.text);

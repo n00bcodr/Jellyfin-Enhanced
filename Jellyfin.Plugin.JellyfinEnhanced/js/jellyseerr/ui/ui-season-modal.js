@@ -21,6 +21,8 @@
      */
     ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false) {
         if (mediaType !== 'tv') return;
+        // Opened for a title action (if any): the modal opens, and its request goes out, only while that operation is current.
+        const submitted = JE.captureSubmitted();
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);
             refreshModalInterval = null;
@@ -43,6 +45,7 @@
         }
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
+        if (!submitted.current()) return;
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -77,6 +80,7 @@
                 }
             } catch (_) {}
         }
+        if (!submitted.current()) return;
 
         const normalizedTitle = String(showTitle || '').trim();
         const isGenericFallbackTitle = ['this show', 'this movie', 'this collection'].includes(normalizedTitle.toLowerCase());
@@ -115,6 +119,7 @@
             bodyHtml,
             backdropPath: tvDetails.backdropPath,
             buttonText: is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : undefined,
+            operation: submitted.operation,
             onClose: () => {
                 if (refreshModalInterval) {
                     clearInterval(refreshModalInterval);

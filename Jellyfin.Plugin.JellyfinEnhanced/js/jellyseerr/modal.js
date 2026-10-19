@@ -45,9 +45,12 @@
      * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
+     * @param {object} [options.operation] - The operation a title action submitted (else the dispatched press, if any):
+     *   the modal lasts only while it is current, and onSave runs for it. Without one the modal behaves as before.
      * @returns {object} - An object with methods to show and close the modal.
      */
-    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText }) {
+    modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
+        const submitted = JE.captureSubmitted(operation);
         const modalElement = document.createElement('div');
         modalElement.className = 'jellyseerr-season-modal';
         modalElement.setAttribute('role', 'dialog');
@@ -196,12 +199,15 @@
             }, 300);
         };
 
+        // A modal opened for an operation that is no longer current (another page, mount or user) only closes.
+        modalElement.addEventListener('click', (e) => { if (!submitted.current()) { e.stopImmediatePropagation(); close(); } }, true);
+
         // Event listeners for closing the modal
         cancelBtn.addEventListener('click', () => history.back());
         modalElement.addEventListener('click', (e) => { if (e.target === modalElement) history.back(); });
 
-        // Event listener for the primary action button
-        primaryBtn.addEventListener('click', () => onSave(modalElement, primaryBtn, close));
+        // Event listener for the primary action button; the writes onSave starts carry the operation.
+        primaryBtn.addEventListener('click', () => submitted.current() ? submitted.run(() => onSave(modalElement, primaryBtn, close)) : close());
 
         return { modalElement, show, close };
     };

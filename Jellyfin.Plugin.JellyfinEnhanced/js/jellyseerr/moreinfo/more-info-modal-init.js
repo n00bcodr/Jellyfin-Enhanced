@@ -20,10 +20,12 @@
  */
 moreInfoModal.open = async function(tmdbId, mediaType, scope) {
     const generation = ++openGeneration;
+    // Opened for a title action (if any): the window opens only while that operation is current.
+    const submitted = JE.captureSubmitted();
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
-        if (generation !== openGeneration) return;
+        if (generation !== openGeneration || !submitted.current()) return;
         if (!data) {
             internal.showError('jellyseerr_modal_load_failed');
             return;
@@ -59,7 +61,7 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope) {
                 // Silently fail; modal is already shown without ratings
             });
     } catch (error) {
-        if (generation !== openGeneration) return;
+        if (generation !== openGeneration || !submitted.current()) return;
         // Seerr won't answer for this viewer, or the server won't show them the title: said, not an error.
         if (!internal.isExplained?.(error)) console.error('Error opening more info modal:', error);
         internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_load_failed') : 'jellyseerr_modal_load_failed');

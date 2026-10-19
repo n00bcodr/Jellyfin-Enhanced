@@ -685,9 +685,12 @@
      * @returns {Promise<any>}
      */
     api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null) {
+        // The person, and the title action that submitted it (if any), who asked: rechecked before the POST.
+        const action = JE.createSessionAction({ submitted: true });
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
+            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             if (overrideSettings) {
                 console.debug(`${logPrefix} Applying override rule settings:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
@@ -734,9 +737,12 @@
      * @returns {Promise<any>}
      */
     api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null) {
+        // The person, and the title action that submitted it (if any), who asked: rechecked before the POST.
+        const action = JE.createSessionAction({ submitted: true });
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
+            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             if (overrideSettings) {
                 console.debug(`${logPrefix} Applying override rule settings for TV seasons:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
@@ -975,21 +981,24 @@
     api.reportContext = async function(mediaId, mediaType) {
         if (!['movie', 'tv'].includes(mediaType) || !Number.isInteger(Number(mediaId)) || Number(mediaId) <= 0 || Number(mediaId) > 2147483647) throw new TypeError('Invalid provider title');
         const action = JE.createSessionAction();
+        const submitted = JE.captureSubmitted();
         const data = await get(`/${mediaType === 'movie' ? 'movie' : 'tv'}/${mediaId}`);
-        if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+        if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
         return { mediaId: data?.mediaInfo?.id || null };
     };
 
     api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
         const action = JE.createSessionAction();
+        // A report submitted from title actions stays theirs until the POST: another page, mount or user ends it.
+        const submitted = JE.captureSubmitted();
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
 
             // Fetch the correct internal media id from Seerr
 
-            const context = await api.reportContext(mediaId, mediaType);
-            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            const context = await submitted.run(() => api.reportContext(mediaId, mediaType));
+            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
             const internalId = context.mediaId;
             if (!internalId) {
                 throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
@@ -1005,7 +1014,7 @@
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
-            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
             const result = await post('/issue', body);
             if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');

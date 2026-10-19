@@ -110,6 +110,8 @@
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      */
     issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
+        // The operation a title action submitted (if any) lasts through the form and into reportIssue's POST.
+        const submitted = JE.captureSubmitted();
         const action = JE.createSessionAction({ submitted: true });
         // Absent titles can report catalogue/acquisition issues, not problems with a nonexistent file.
         const absent = item?.jeAbsent === true || !!JE.titleDetails?.parse?.(item?.Id);
@@ -174,6 +176,7 @@
             bodyHtml: formHtml,
             backdropUrl: backdropUrl,
             buttonText: JE.t('jellyseerr_report_issue_submit'),
+            operation: submitted.operation,
             onClose: () => releaseAction?.(),
             onSave: async (modalEl, button, closeModal) => {
                 if (!action.current()) return;
@@ -203,7 +206,7 @@
                     button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
-                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode);
+                    const result = await submitted.run(() => JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode));
 
                     if (!action.current()) return;
                     if (result) {

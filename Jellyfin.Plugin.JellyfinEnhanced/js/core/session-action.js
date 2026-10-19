@@ -19,6 +19,16 @@
     };
 
     /**
+     * Takes the operation an owner was invoked for (`explicit`, else the dispatched press) at its entry
+     * point, for work that continues after an await. `current()` is true when invoked natively (none);
+     * `run(next)` hands it on to the next owner (a modal's submit, the write it calls).
+     */
+    JE.captureSubmitted = function (explicit) {
+        const operation = explicit || submitted;
+        return { operation, current: () => !operation || operation.current() !== false, run: next => JE.runSubmitted(operation, next) };
+    };
+
+    /**
      * Captures identity before a gesture, confirmation, timer or asynchronous lookup. With
      * `{ submitted: true }`, an owner whose write follows a confirmation or an await also stays bound
      * to the operation that dispatched its control, so its existing check before the write covers it.
