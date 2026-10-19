@@ -420,7 +420,10 @@ Switching notifications off holds what is queued until they are back on; switchi
 person switching theirs off) drops what was queued for that channel. When four or more alerts for one person are due on
 one channel at once (a backlog after quiet hours or after notifications were off), they go out as one "N new
 notifications" message linking to the bell instead of one push or e-mail each (new alerts wait up to a couple of seconds
-for others that follow, so a backlog that comes in one by one is grouped too). Pointing Jellyfin Enhanced at another Seerr
+for others that follow, so a backlog that comes in one by one is grouped too). The count is decided at the moment the
+summary goes out, from your settings and Hidden Content as they are then: an alert whose title you hid or can no longer
+see is dropped and not counted, alerts that can't be checked right now wait and go later, and when fewer than four are
+left they go one by one. Pointing Jellyfin Enhanced at another Seerr
 server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
 
 Every alert about a title (Ready and new episodes) respects your Hidden Content and library access on every channel: the

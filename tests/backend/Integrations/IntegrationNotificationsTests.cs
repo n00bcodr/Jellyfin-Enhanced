@@ -34,7 +34,8 @@ public class IntegrationNotificationsTests
         /// <summary>Makes the item-name lookup throw (a Jellyfin library query failing mid-scan).</summary>
         public bool FailItemName { get; set; }
 
-        public IReadOnlyList<Guid> Admins() => AdminIds;
+        // A snapshot, as Jellyfin's user manager gives (NotifyUsers.Admins).
+        public IReadOnlyList<Guid> Admins() => AdminIds.ToList();
 
         public bool Exists(Guid userId) => !Gone.Contains(userId);
 

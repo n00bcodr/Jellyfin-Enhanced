@@ -109,7 +109,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // Before a send of an outcome alert: the rating facts its policy input needs are loaded (bounded by the policy; a failed
-        // lookup leaves them unverified, and the decision then waits). Each delivery is prepared right before its own decision.
+        // lookup leaves them unverified, and the decision then waits). Never a decision: each delivery is decided after it (a
+        // single send right after its own; a summary's members after all of theirs, 4f round 8).
         private async Task PrepareOutcomeAsync(DueDelivery delivery, CancellationToken cancellationToken)
         {
             if (_policy == null || delivery.Kind is not (NotifyKind.Declined or NotifyKind.Approved) || TitleKey.Parse(delivery.TitleKey) is not { } key) return;
@@ -240,7 +241,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         }
                         if (list.Count >= SummaryAt)
                         {
-                            attempted += await DeliverSummaryAsync(config!, list, cancellationToken).ConfigureAwait(false);
+                            attempted += await DeliverSummaryAsync(list, cancellationToken).ConfigureAwait(false);
                             continue;
                         }
                         foreach (var delivery in list)
@@ -443,36 +444,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>
-        /// Several alerts due at once for one person on one channel: each is checked as on its own (quiet hours, still
-        /// theirs, channel on); when <see cref="SummaryAt"/> or more may go out, one summary says how many and links to
-        /// the inbox, and each is settled with its outcome; fewer go out one by one. Returns how many were attempted.
+        /// Several alerts due at once for one person on one channel (4f round 8: prepare, then decide, then send). Every
+        /// member's awaited preparation runs first; then one synchronous decision per member from the settings, the person's
+        /// preferences, their rules and the evidence as they are after that last await (quiet hours, still theirs to be told,
+        /// channel on: a member refused is suppressed, one that can't be decided now waits, neither is ever settled as sent);
+        /// then, with no await between that pass and the send, one summary of that pass's survivors when
+        /// <see cref="SummaryAt"/> or more are left (each survivor settled with its outcome), else the survivors one by one, each
+        /// prepared and decided again right before its own send. Notifications switched off meanwhile: none is decided, all
+        /// stay pending. Returns how many were attempted.
         /// </summary>
-        private async Task<int> DeliverSummaryAsync(PluginConfiguration config, IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
+        private async Task<int> DeliverSummaryAsync(IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
         {
-            var ready = new List<(DueDelivery Delivery, NotifyPrefs Prefs, NotifyMessage Message, string? Link)>();
             foreach (var delivery in deliveries)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
-                var (prefs, message, link) = Prepare(config, delivery);
-                if (message != null) ready.Add((delivery, prefs, message, link));
             }
+
+            var config = _config();
+            if (!NotifyFlags.Enabled(config)) return 0;
+            var ready = new List<(DueDelivery Delivery, NotifyPrefs Prefs)>();
+            foreach (var delivery in deliveries)
+            {
+                var (prefs, message, _) = Prepare(config!, delivery);
+                if (message != null) ready.Add((delivery, prefs));
+            }
+
             if (ready.Count < SummaryAt)
             {
                 // One by one, each decided again right before its own send (from the settings and Hidden Content as they are
                 // then: a send takes a while, and what the person hid or changed meanwhile counts).
-                foreach (var (delivery, _, _, _) in ready)
+                foreach (var (delivery, _) in ready)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var now = _config();
                     if (!NotifyFlags.Enabled(now)) break;
                     await DeliverAsync(now!, delivery, cancellationToken).ConfigureAwait(false);
                 }
+
                 return deliveries.Count;
             }
-            var summary = NotifyTexts.Summary(ready.Count);
+
             var first = ready[0];
-            var result = await SendAsync(config, first.Delivery.Channel, first.Prefs, summary, ExternalLink(config, null, null), NotifyKind.Ready, cancellationToken).ConfigureAwait(false);
-            foreach (var (delivery, _, _, _) in ready) Settle(delivery, result.Ok, result.Error);
+            var result = await SendAsync(config!, first.Delivery.Channel, first.Prefs, NotifyTexts.Summary(ready.Count), ExternalLink(config, null, null), NotifyKind.Ready, cancellationToken).ConfigureAwait(false);
+            foreach (var (delivery, _) in ready) Settle(delivery, result.Ok, result.Error);
             return deliveries.Count;
         }
 
