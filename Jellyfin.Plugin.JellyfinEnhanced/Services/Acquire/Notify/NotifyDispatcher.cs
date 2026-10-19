@@ -60,7 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// A dispatcher with explicit configuration and clock (tests). With <paramref name="ledger"/>, an OK of a request
-        /// held (quiet hours, retries) isn't sent once the request was cancelled, declined or removed; with
+        /// held (quiet hours, retries) isn't sent once it isn't OK'd any more (back to waiting, declined, cancelled, removed); with
         /// <paramref name="policy"/>, an ask waiting for an OK isn't sent to an administrator who can no longer see its title.
         /// With <paramref name="native"/>, native Ready messages (phase 4f) go out; without it they end as suppressed.
         /// </summary>
@@ -447,7 +447,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// whose title the administrator can no longer see; a Ready or new-episodes alert, or a request's outcome (declined,
         /// approved), the recipient may not be told about now (<see cref="AlertCheck.Decide"/>: a title they can no longer open
         /// or have hidden, an episodes payload narrowed to what is left; Hidden Content or the title's copies that can't be read
-        /// now: wait); an OK of a request that was cancelled, declined or removed since.
+        /// now: wait); an OK of a request that isn't OK'd any more (back to waiting, declined, cancelled or removed since).
         /// </summary>
         private AlertVerdict Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
         {
@@ -461,11 +461,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _ => false,
             };
             if (kindOff) return new AlertVerdict("The recipient switched these alerts off.");
-            // "Dad OK'd it" held until quiet hours end (or retried): not once the request was cancelled, declined or removed.
+            // "Dad OK'd it" held until quiet hours end (or retried): not once the request isn't OK'd any more, said as it is now.
             if (delivery.Kind == NotifyKind.Approved && _ledger != null && _ledger.Database.Available
                 && delivery.EventKey is { } ok && ok.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal)
-                && _ledger.Find(ok[ApprovedEventPrefix.Length..]) is not { Status: "queued" or "sent" or "stale" or "fulfilled" })
-                return new AlertVerdict("The request was cancelled, declined or removed since it was OK'd.");
+                && _ledger.Find(ok[ApprovedEventPrefix.Length..]) is var want && want is not { Status: "queued" or "sent" or "stale" or "fulfilled" })
+                return new AlertVerdict(NoLongerOkd(want?.Status, want?.Reason));
             if (_users == null) return default;
             if (!_users.IsActive(delivery.UserId)) return new AlertVerdict("The recipient no longer exists or is disabled.");
             if (NotifyKind.IsAdminKind(delivery.Kind))
@@ -479,6 +479,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (_view.Viewer(delivery.UserId) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
             return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId);
         }
+
+        /// <summary>
+        /// Why an OK'd request's "OK'd" alert isn't sent any more, as the request is now (4f round 6, Q-4FFIX5-4): back to
+        /// waiting (it couldn't go to Sonarr or Radarr: no instance, its add defaults no longer valid, ...), declined, cancelled
+        /// or gone.
+        /// </summary>
+        internal static string NoLongerOkd(string? status, string? reason) => status switch
+        {
+            null => "The request was removed since it was OK'd.",
+            "pending" => "The request is waiting again since it was OK'd: it couldn't be sent to Sonarr or Radarr"
+                         + (string.IsNullOrEmpty(reason) ? "." : " (" + reason + ")."),
+            "declined" => "The request was declined since it was OK'd.",
+            "cancelled" => "The request was cancelled since it was OK'd.",
+            _ => "The request isn't OK'd any more (" + status + ").",
+        };
 
         /// <summary>
         /// The one decision whether a recipient may be told about a Ready or new-episodes alert, or their request's outcome, now
@@ -535,20 +550,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
 
             /// <summary>
+            /// The one outcome-alert policy (4f round 6): whether the requester may be told now that their request for a title was
+            /// declined or OK'd, from the title's current visibility to them. A title in the library (any physical copy, every
+            /// copy read, complete): they can open one of its copies now (library access and parental limits, as Jellyfin decides
+            /// it for them). A title not in the library: the request policy's visibility (the libraries it would land in, parental
+            /// limits on its rating; <see cref="Requests.IRequestPolicy.Evaluate"/>, the rule the Requests page's cards follow).
+            /// Either way their Hidden Content hides neither the title (any key, any copy) nor anything of it. Copies or rules that
+            /// can't be read now: wait (never "visible"). Used at production, at every send and on every bell read.
+            /// </summary>
+            public AlertVerdict Outcome(string? titleKey, IReadOnlyDictionary<string, string> payload)
+            {
+                const string Unreadable = "The recipient's Hidden Content or the title's copies can't be read now.";
+                if (TitleKey.Parse(titleKey) is { } key && _owner._view is { } view)
+                {
+                    var aliases = _owner._aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
+                    if (view.TitleCopyIds(key.Title, aliases) is not { } copies) return new AlertVerdict(Unreadable, true);
+                    if (copies.Count > 0)
+                    {
+                        // In the library: the recipient's current access to it (libraries, parental limits), copy by copy.
+                        if (!copies.Any(copy => view.Resolve(copy, _viewer) != null)) return new AlertVerdict("The recipient can no longer open this title.");
+                    }
+                    else if (_owner._policy is { } policy)
+                    {
+                        // Not in the library: what the request policy lets them see of a title nobody has yet.
+                        var input = new Requests.MutationInput { Key = key.Title.ToString() };
+                        if (payload.TryGetValue("variant", out var variant) && variant == "4k") input = input with { Variant = "4k" };
+                        if (!policy.Evaluate(_user, input).Visible) return new AlertVerdict("The recipient may not see this title (library access or parental limits).");
+                    }
+                }
+
+                if (Hides(titleKey) is not { } hidden) return new AlertVerdict(Unreadable, true);
+                return hidden(Guid.Empty) ? new AlertVerdict("The recipient hid this title (Hidden Content).") : default;
+            }
+
+            /// <summary>
             /// Whether an alert about a title may be told now (other kinds: yes). Ready and new-episodes alerts: the recipient
             /// can open it and hasn't hidden it; a batch of new episodes (its <c>episodeItems</c>) is narrowed in
             /// <paramref name="payload"/> to the episodes the recipient can open and hasn't hidden, its count, seasons and wording
             /// set again from what is left: one left is that episode (and <paramref name="itemId"/> becomes it), fewer than the
-            /// batch is never "the whole season". A request's outcome told to the requester (declined, approved; 4f round 5): the
-            /// title isn't hidden (it may not be in the library, so access isn't asked). Synchronous.
+            /// batch is never "the whole season". A request's outcome told to the requester (declined, approved): <see cref="Outcome"/>.
+            /// Synchronous.
             /// </summary>
             public AlertVerdict Decide(string kind, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
             {
-                if (kind is NotifyKind.Declined or NotifyKind.Approved)
-                {
-                    if (Hides(titleKey) is not { } outcome) return new AlertVerdict("The recipient's Hidden Content or the title's copies can't be read now.", true);
-                    return outcome(Guid.Empty) ? new AlertVerdict("The recipient hid this title (Hidden Content).") : default;
-                }
+                if (kind is NotifyKind.Declined or NotifyKind.Approved) return Outcome(titleKey, payload);
                 if (kind is not (NotifyKind.Ready or NotifyKind.Episodes) || _owner._view is not { } view) return default;
                 List<NotifyEpisode>? episodes = null;
                 List<NotifyEpisode>? open = null;

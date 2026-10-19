@@ -76,8 +76,9 @@ public class ReadyGateTests
         var (_, versions) = w.Movie(Sintel, Arrived);
         w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
         await w.Service.SetPlaylistAsync(emma.UserId, true);
-        // JE stops after Jellyfin made the playlist and JE wrote its nonce into it, before the binding was recorded.
-        w.Host.FailAfter = "stamp";
+        // JE stops after Jellyfin made the playlist (its create wrote JE's nonce into it, and JE recorded the second the create
+        // showed), before the binding was recorded.
+        w.Host.FailGet = true;
         Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
         var made = Assert.Single(w.Host.Playlists.Values);
 

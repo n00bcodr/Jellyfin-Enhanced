@@ -33,10 +33,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// 4c1's list Lifecycle lock around a Jellyfin call). Every write is generation- and epoch-checked, and the binding and the
     /// switch are read again after every await.</description></item>
     /// <item><description>Create: the marker, the id Jellyfin will give the playlist, the time and a random nonce are recorded
-    /// first; the playlist is made under a name carrying the marker, the nonce is written into it, it is verified (owner,
-    /// private, no shares, marker, nonce), bound with its creation time, then named. After a crash in between only that id is
-    /// taken, and only while it carries the nonce (and was made then, is empty, the person's, private, the marker): never a
-    /// playlist the person made under that name.</description></item>
+    /// first; the playlist is made under a name carrying the marker, and the create itself writes the nonce into the very
+    /// playlist it allocates and shows its creation second (<see cref="ReadyCreated"/>); what Jellyfin then stores there must
+    /// carry both (else it is never JE's: lost), and be private, empty and the person's; it is bound with that second, then
+    /// named. After a crash in between only that id is taken, and only while it carries the nonce and that second (and was
+    /// made then, is empty, the person's, private, the marker): never a playlist the person made under that name.</description></item>
     /// <item><description>Right before every Jellyfin change the switch, the binding (opted in, this epoch, this playlist), the
     /// person and the playlist as Jellyfin stored it (owner, privacy, marker, nonce, creation time) are checked again, with no
     /// await before the call (<see cref="ReadyGate"/>); a membership write also checks every version it sets against the
@@ -383,28 +384,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 {
                     var name = CreateName(marker);
                     if (!_store.BeginCreate(generation, _server, user, epoch, marker, _host.NewPlaylistId(name), nonce, now)) return "changed";
-                    var (id, refused) = await _host.CreateAsync(user, name, Gate(generation, user, epoch, null, marker, null)).ConfigureAwait(false);
+                    // Ownership is established in the create itself (4f round 6): the host takes the id and creation second of
+                    // the very playlist object Jellyfin's create allocated, and writes JE's nonce into it before Jellyfin's own
+                    // save of it, all inside the create call (ReadyCreated). Nothing learnt by a later lookup is ever
+                    // evidence: a playlist anyone puts in its place under the same folder (the same id), in any second, carries
+                    // no nonce and is never JE's.
+                    var (created, refused) = await _host.CreateAsync(user, name, nonce, Gate(generation, user, epoch, null, marker, null)).ConfigureAwait(false);
                     if (refused != null) return Refused(generation, user, epoch, refused, now);
-                    if (!Still(generation, user, epoch) || id is not Guid madeId) return "changed";
-                    // Ownership comes only from JE's own create: the playlist Jellyfin reports for the create call, read as
-                    // stored right after it (nothing awaited in between) and found to be what the create makes (the person's,
-                    // private, the marker, no nonce, empty, made around the create). Its creation second as Jellyfin stores it is
-                    // that playlist's identity: it is recorded, and the nonce is written only into a playlist with exactly that
-                    // creation second, so one the person put in its
-                    // place under the same id in any other second is never stamped (the create is abandoned; the next look makes
-                    // another). A delete-and-remake inside the same stored second is Jellyfin's limit (D49). The second is the
-                    // precision Jellyfin guarantees: its refresh stores the time again from the playlist's metadata file, to the
-                    // second (ReadyPlaylistInfo.CreatedSecond).
-                    var fresh = _host.Get(madeId);
-                    if (fresh == null || !fresh.PrivateTo(user) || !fresh.HasMarker(marker) || fresh.Nonce != null) return "changed";
-                    var at = fresh.Created.ToUnixTimeMilliseconds();
-                    if (at < now.ToUnixTimeMilliseconds() - 5000 || at > _now().ToUnixTimeMilliseconds() + 5000 || _host.Entries(madeId).Count != 0) return "changed";
-                    if (!_store.NoteCreated(generation, _server, user, epoch, fresh.CreatedMs, _now())) return "changed";
-                    // The nonce goes into the playlist itself before it is bound: only a playlist carrying it is ever JE's.
-                    var stamped = await _host.StampAsync(madeId, nonce, StampGate(generation, user, epoch, marker, nonce, fresh.CreatedSecond)).ConfigureAwait(false);
-                    if (stamped != null || !Still(generation, user, epoch)) return "changed";
-                    made = _host.Get(madeId);
-                    if (made == null || made.CreatedSecond != fresh.CreatedSecond) return "changed";
+                    if (!Still(generation, user, epoch) || created == null) return "changed";
+                    // The create's own second, recorded at once (nothing awaited since the create returned): an interrupted
+                    // create is recovered only at it, with the nonce.
+                    if (!_store.NoteCreated(generation, _server, user, epoch, created.CreatedSecond * 1000, _now())) return "changed";
+                    var stored = _host.Get(created.Id);
+                    if (stored == null) return "changed";
+                    // What Jellyfin stored there now must be what the create made: JE's nonce and exactly the create's second.
+                    // Anything else took its place: it is never stamped, bound, renamed, written or deleted (lost: a new
+                    // playlist only after the person turns it on again, so nothing is made over and over).
+                    if (!string.Equals(stored.Nonce, nonce, StringComparison.Ordinal) || stored.CreatedSecond != created.CreatedSecond || !stored.HasMarker(marker))
+                        return Refused(generation, user, epoch, "provenance", now);
+                    if (!stored.PrivateTo(user) || _host.Entries(created.Id).Count != 0) return "changed";
+                    made = stored;
                 }
 
                 if (made == null || !made.PrivateTo(user) || !made.HasMarker(marker) || !string.Equals(made.Nonce, nonce, StringComparison.Ordinal)) return "changed";
@@ -504,10 +503,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         internal static string CreateName(string marker) => PlaylistName + " (" + marker + ")";
 
         // The playlist an interrupted create made, when the evidence says it is JE's own: the id recorded before the create
-        // call, carrying the create's nonce, exactly the creation second recorded right before the nonce was written (made within
-        // the window after the create), still empty, the person's, private and carrying the marker. A playlist the person made
-        // under that name (the name shows the marker) never carries the nonce, so it's never adopted; a create interrupted
-        // before the nonce was written is left alone too (a new one is made).
+        // call, carrying the nonce the create itself wrote into it, exactly the creation second the create showed (recorded as
+        // soon as it returned; made within the window after the create), still empty, the person's, private and carrying the
+        // marker. A playlist the person made under that name (the name shows the marker) never carries the nonce, so it's never
+        // adopted; a create interrupted before its second was recorded is left alone too (a new one is made).
         private ReadyPlaylistInfo? Interrupted(ReadyBinding b, Guid user)
         {
             if (b.Marker == null || string.IsNullOrEmpty(b.Nonce) || b.CreateId is not Guid id || b.CreateAt is not long at || b.PlaylistCreated is not long stamped) return null;
@@ -534,25 +533,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
                 return Unsafe(stored, now, user) ?? extra?.Invoke(stored);
             };
 
-        // The last check before JE writes its nonce into the playlist it has just made: the binding still names no playlist,
-        // this marker, this nonce and this creation second, and the playlist as stored is the person's, private, carries the
-        // marker, carries no nonce, is empty and is the very playlist read right after the create: exactly its stored creation
-        // second (equality at the precision the host guarantees, never a tolerance across seconds).
-        private ReadyGate StampGate(long generation, Guid user, long epoch, string marker, string nonce, long createdSecond)
-            => stored =>
-            {
-                if (_store.Generation != generation) return "changed";
-                if (!ReadyFlags.Playlist(_config())) return "off";
-                if (_store.Binding(_server, user) is not { OptedIn: true, State: ReadyState.Active, PlaylistId: null } now || now.Epoch != epoch
-                    || !string.Equals(now.Marker, marker, StringComparison.Ordinal) || !string.Equals(now.Nonce, nonce, StringComparison.Ordinal)
-                    || now.PlaylistCreated is not long recorded || ReadyPlaylistInfo.SecondOf(recorded) != createdSecond) return "changed";
-                if (_view.Viewer(user) == null) return "no_user";
-                if (stored == null) return "missing";
-                if (!stored.PrivateTo(user) || !stored.HasMarker(marker) || stored.Nonce != null) return "identity";
-                if (stored.CreatedSecond != createdSecond || _host.Entries(stored.Id).Count != 0) return "identity";
-                return null;
-            };
-
         // A change the gate didn't let through: a missing playlist counts towards a deletion, a playlist that isn't JE's any
         // more is lost (left alone for good), a privacy change stops the writes, anything else (switch off, opt-out, a new
         // epoch, the person gone) just ends this look.
@@ -560,6 +540,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         {
             "missing" => Missing(generation, user, epoch, now),
             "identity" => Lost(generation, user, epoch, now),
+            "provenance" => Lost(generation, user, epoch, now, "provenance"),
             "owner_changed" or "public" or "shared" => Privacy(generation, user, epoch, reason, now),
             _ => reason,
         };
@@ -587,10 +568,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             return "missing";
         }
 
-        private string Lost(long generation, Guid user, long epoch, DateTimeOffset now)
+        private string Lost(long generation, Guid user, long epoch, DateTimeOffset now, string reason = "identity")
         {
-            _store.SetState(generation, _server, user, epoch, ReadyState.Lost, "identity", now);
-            _logger?.Info("Ready playlist: a person's bound playlist isn't the one Jellyfin Enhanced made any more (deleted and made again under the same name); it is left alone, and a new one is made only after they turn it on again.");
+            _store.SetState(generation, _server, user, epoch, ReadyState.Lost, reason, now);
+            _logger?.Info(reason == "provenance"
+                ? "Ready playlist: the playlist Jellyfin Enhanced just made couldn't be confirmed as its own (deleted and made again under the same name, or the create couldn't be observed); it is left alone, and a new one is made only after the person turns it on again."
+                : "Ready playlist: a person's bound playlist isn't the one Jellyfin Enhanced made any more (deleted and made again under the same name); it is left alone, and a new one is made only after they turn it on again.");
             return "lost";
         }
 

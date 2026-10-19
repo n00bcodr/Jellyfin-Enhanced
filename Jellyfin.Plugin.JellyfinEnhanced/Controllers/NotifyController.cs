@@ -218,16 +218,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ItemId = hidden ? null : itemId,
                         CreatedAt = r.At,
                         Read = r.Read,
-                        Params = hidden ? WithoutTitle(parameters) : parameters,
+                        Params = hidden ? Withheld(r.Kind, parameters) : parameters,
                         Link = NotifyDispatcher.InAppLink(hidden ? null : itemId, r.Kind),
                     };
                 }).ToList(),
             });
         }
 
-        // A notification's parameters without the ones that name or picture the title.
-        private static Dictionary<string, string> WithoutTitle(IReadOnlyDictionary<string, string> p)
-            => p.Where(x => x.Key is not ("title" or "year" or "poster" or "image")).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        /// <summary>
+        /// A withheld row's parameters (4f round 6): an allowlisted generic shape, never the stored payload minus a few keys. Only
+        /// what picks the generic wording is kept, each value checked against its fixed form: <c>variant</c> "4k",
+        /// <c>shared</c> "1", and for new episodes a plain <c>count</c>. No title, key, artwork, scope, people or free text (a
+        /// decline reason) ever leaves the server for a row the recipient may not be told about.
+        /// </summary>
+        internal static Dictionary<string, string> Withheld(string kind, IReadOnlyDictionary<string, string> p)
+        {
+            var kept = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (p.TryGetValue("variant", out var variant) && variant == "4k") kept["variant"] = "4k";
+            if (p.TryGetValue("shared", out var shared) && shared == "1") kept["shared"] = "1";
+            if (kind == NotifyKind.Episodes && p.TryGetValue("count", out var count) && count.Length is > 0 and <= 4 && count.All(char.IsAsciiDigit)) kept["count"] = count;
+            return kept;
+        }
 
         /// <summary>Marks some (or all) of the caller's notifications read.</summary>
         [HttpPost("acquire/notify/read")]

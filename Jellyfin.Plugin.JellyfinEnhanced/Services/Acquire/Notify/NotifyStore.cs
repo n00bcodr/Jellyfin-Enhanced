@@ -363,6 +363,35 @@ WHERE d.status='pending' AND d.next_at <= $n ORDER BY d.next_at LIMIT $l", ("$n"
             return (IReadOnlyList<DueDelivery>)result;
         });
 
+        /// <summary>
+        /// Outcome alerts waiting for evidence that is due for another try now (4f round 6), fairly: each person's earliest
+        /// first, then each person's next, and so on (round-robin by person, then by due time), at most <paramref name="limit"/>.
+        /// One person's many waits never hold another person's back.
+        /// </summary>
+        internal IReadOnlyList<AlertWait> DueAlertWaits(DateTimeOffset now, int limit) => _db.Read(c =>
+        {
+            var list = new List<AlertWait>();
+            using var cmd = Command(c, null, @"SELECT source, source_id, user_id, kind, title_key, event_key, payload, request_id, original_at, next_at, tries FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY next_at, source, source_id) AS turn FROM alert_waits WHERE next_at <= $n)
+ORDER BY turn, next_at, source, source_id LIMIT $l", ("$n", Ms(now)), ("$l", limit));
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                if (!Guid.TryParse(r.GetString(2), out var user)) continue;
+                list.Add(new AlertWait(r.GetString(0), r.GetString(1), user, r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6),
+                    r.IsDBNull(7) ? null : r.GetString(7), At(r.GetInt64(8)), At(r.GetInt64(9)), r.GetInt32(10)));
+            }
+            return (IReadOnlyList<AlertWait>)list;
+        });
+
+        /// <summary>The next try of a waiting outcome alert (not after a restore).</summary>
+        internal bool RetryAlertWait(AlertWait wait, DateTimeOffset at, long generation) => WriteIf(generation, (c, t) => Exec(c, t,
+            "UPDATE alert_waits SET next_at=$a, tries=tries+1 WHERE source=$s AND source_id=$i", ("$a", Ms(at)), ("$s", wait.Source), ("$i", wait.SourceId)) == 1, false).Result;
+
+        /// <summary>A waiting outcome alert is never told (too old, moved on, hidden): forgotten (not after a restore).</summary>
+        internal bool DropAlertWait(AlertWait wait, long generation) => WriteIf(generation, (c, t) => Exec(c, t,
+            "DELETE FROM alert_waits WHERE source=$s AND source_id=$i", ("$s", wait.Source), ("$i", wait.SourceId)) == 1, false).Result;
+
         /// <summary>When the next pending delivery is due, or null.</summary>
         public DateTimeOffset? NextDue()
         {
@@ -646,7 +675,7 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
 
         // Phase 4f: the Ready playlist's bindings, entries and native-message attempts are a person's rows too (schema 8 and its
         // start-up ensure always create them).
-        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes", "ready_playlists", "ready_entries", "ready_message_attempts" };
+        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes", "ready_playlists", "ready_entries", "ready_message_attempts", "alert_waits" };
 
         // ------------------------------------------------------------------ SQL helpers
 
@@ -847,6 +876,19 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// </summary>
         public bool TakeRequestNotice(string id)
             => NotifyStore.Exec(Connection, Transaction, "DELETE FROM request_notices WHERE id=$id", ("$id", id)) == 1;
+
+        /// <summary>
+        /// Puts an outcome alert in the wait queue in this transaction (its producer's own record, a ledger notice or a Seerr
+        /// change, is taken in the same one): one row per source and id, the first one kept with its original time.
+        /// </summary>
+        public bool AddAlertWait(AlertWait wait)
+            => NotifyStore.Exec(Connection, Transaction, @"INSERT OR IGNORE INTO alert_waits(source,source_id,user_id,kind,title_key,event_key,payload,request_id,original_at,next_at,tries)
+VALUES($s,$i,$u,$k,$t,$e,$p,$r,$o,$n,$tr)", ("$s", wait.Source), ("$i", wait.SourceId), ("$u", Id(wait.User)), ("$k", wait.Kind), ("$t", wait.TitleKey), ("$e", wait.EventKey),
+                ("$p", wait.Payload), ("$r", wait.RequestId), ("$o", Ms(wait.OriginalAt)), ("$n", Ms(wait.NextAt)), ("$tr", wait.Tries)) >= 0;
+
+        /// <summary>Takes a waiting outcome alert in this transaction (the notification it becomes commits with its removal).</summary>
+        public bool TakeAlertWait(string source, string sourceId)
+            => NotifyStore.Exec(Connection, Transaction, "DELETE FROM alert_waits WHERE source=$s AND source_id=$i", ("$s", source), ("$i", sourceId)) == 1;
 
         /// <summary>Adds a notification and its deliveries; null when the user already has one for <paramref name="eventKey"/>.</summary>
         public long? Add(Guid userId, string eventKey, string kind, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, IReadOnlyList<(string Channel, DateTimeOffset At)> deliveries, DateTimeOffset now)

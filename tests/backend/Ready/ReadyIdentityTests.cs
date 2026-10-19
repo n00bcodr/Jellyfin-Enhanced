@@ -153,7 +153,9 @@ public class ReadyIdentityTests
             Assert.False(string.IsNullOrEmpty(playlist.Nonce));
             Assert.Equal(binding.Nonce, playlist.Nonce);
             Assert.Equal(playlist.Created.ToUnixTimeMilliseconds(), binding.PlaylistCreated);
-            Assert.Equal(1, w.Host.Calls.Count(c => c == "stamp"));
+            // The nonce came with the create itself (4f round 6): no write of it afterwards.
+            Assert.Equal(1, w.Host.Creates);
+            Assert.DoesNotContain("stamp", w.Host.Calls);
 
             // A native rename, a restart and an hour later: still JE's, still updated.
             playlist.Name = "Emma's picks";
@@ -207,11 +209,12 @@ public class ReadyIdentityTests
         w.Movie(Sintel, Arrived);
         w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
         await w.Service.SetPlaylistAsync(emma.UserId, true);
-        // JE stops right after Jellyfin made the playlist, before the nonce was written into it.
+        // JE stops right after Jellyfin's create returned, before it recorded the second the create showed: that create isn't
+        // recovered (a new one is made), whatever its playlist carries.
         w.Host.FailAfter = "create";
         Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
         var made = Assert.Single(w.Host.Playlists.Values);
-        Assert.Null(made.Nonce);
+        Assert.Null(w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistCreated);
 
         // The person deletes it and, within the same minute, makes an empty one under the visible marker name: same id.
         w.Host.Playlists.Remove(made.Id);
@@ -236,8 +239,8 @@ public class ReadyIdentityTests
         var (_, versions) = w.Movie(Sintel, Arrived);
         w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
         await w.Service.SetPlaylistAsync(emma.UserId, true);
-        // JE stops after the nonce was written, before the playlist was bound.
-        w.Host.FailAfter = "stamp";
+        // JE stops after the create (its nonce in the playlist, its second recorded), before the playlist was bound.
+        w.Host.FailGet = true;
         Assert.Equal("native_error", await w.Service.ReconcileAsync(emma.UserId));
         var made = Assert.Single(w.Host.Playlists.Values);
         Assert.NotNull(made.Nonce);
@@ -315,26 +318,6 @@ public class ReadyIdentityTests
         Assert.Equal("identity", await host.SetAsync(id, new[] { Guid.NewGuid() }, owner, _ => null));
         playlists.Verify(p => p.UpdatePlaylist(It.IsAny<PlaylistUpdateRequest>()), Times.Never);
         library.Verify(l => l.DeleteItem(It.IsAny<BaseItem>(), It.IsAny<DeleteOptions>(), It.IsAny<bool>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task TheProductionHostWritesTheNonceIntoThePlaylistItself()
-    {
-        var id = Guid.NewGuid();
-        var owner = Guid.NewGuid();
-        var created = new DateTime(2026, 10, 18, 9, 0, 0, DateTimeKind.Utc);
-        var stored = Make(id, owner, null, created);
-        var cached = Make(id, owner, null, created);
-        var library = new Mock<ILibraryManager>();
-        library.Setup(l => l.RetrieveItem(id)).Returns(stored);
-        library.Setup(l => l.GetItemById(id)).Returns(cached);
-        BaseItem? saved = null;
-        library.Setup(l => l.UpdateItemAsync(It.IsAny<BaseItem>(), It.IsAny<BaseItem>(), ItemUpdateType.MetadataEdit, It.IsAny<CancellationToken>()))
-            .Callback<BaseItem, BaseItem, ItemUpdateType, CancellationToken>((item, _, _, _) => saved = item).Returns(Task.CompletedTask);
-        var host = new JellyfinReadyPlaylistHost(library.Object, Mock.Of<IPlaylistManager>(), Mock.Of<MediaBrowser.Model.IO.IFileSystem>());
-        Assert.Null(await host.StampAsync(id, "n0nce", _ => null));
-        Assert.Same(cached, saved);
-        Assert.Equal(JellyfinReadyPlaylistHost.NoncePrefix + "n0nce", cached.ExternalId);
     }
 
     // ------------------------------------------------------------------ security-2: the final membership check

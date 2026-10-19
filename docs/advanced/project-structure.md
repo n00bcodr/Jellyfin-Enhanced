@@ -480,11 +480,12 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `JE.arrStatus.buildBadge` in **`js/arr/status/`**.
 * **`/Services/Acquire/Ready/`**: Phase-4f private Ready playlist and native Ready messages. `ReadyModels.cs` holds the
   switches (`ReadyFlags`), states and records; `ReadyTables.cs` acquire.db step 8 (one table constant for the migration
-  and the start-up ensure, with the restore-renewal policy); `ReadyPlaylistStore.cs` the bindings (server, owner,
+  and the start-up ensure, with the restore-renewal policy; also `alert_waits`, the notifications' queue of request
+  outcomes waiting for evidence); `ReadyPlaylistStore.cs` the bindings (server, owner,
   playlist id, create marker, epoch), the membership journal, the entries per interest and the native-message attempts;
   `ReadyInterests.cs` a person's own requests (from the request authority) and follows; `ReadyCopySelector.cs` the
   selection through `EditionAvailability` and the final exact-version checks; `ReadyPlaylistHost.cs` the Jellyfin
-  playlist seam; `ReadyPlaylistService.cs` the per-person reconciliation (create by marker, journalled and read-back
+  playlist seam (the create takes its own playlist from Jellyfin's synchronous `ItemAdded` and writes JE's code into it); `ReadyPlaylistService.cs` the per-person reconciliation (create by marker, journalled and read-back
   changes, deletion tombstones, privacy stops) and its bounded event queue; `ReadyJellyfin.cs` the library, watched,
   Hidden Content adapters and the event listeners; `ReadySessionMessages.cs` the session snapshots, the idle classifier
   and the DisplayMessage send; `ReadyNativeChannel.cs` the DisplayMessage channel the notification dispatcher calls.

@@ -75,7 +75,7 @@ public class ReadyPlaylistServiceTests
         x.Movie(Tears, Arrived);
         x.Interests.Add(sam.UserId, "w:1", ReadyInterestKind.Request, Tears);
         await x.Service.SetPlaylistAsync(sam.UserId, true);
-        x.Host.FailAfter = "stamp";
+        x.Host.FailGet = true;
         Assert.Equal("native_error", await x.Service.ReconcileAsync(sam.UserId));
         x.Reopen();
         Assert.Equal("updated", await x.Service.ReconcileAsync(sam.UserId));

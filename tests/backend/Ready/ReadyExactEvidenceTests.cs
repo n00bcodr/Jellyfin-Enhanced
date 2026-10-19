@@ -21,7 +21,7 @@ namespace JE.Tests;
 /// <list type="bullet">
 /// <item><description>Exact: a Ready playlist is JE's only at exactly the creation time Jellyfin stored for JE's own create
 /// (both hosts keep it to the whole second); a replacement stored in any other second is never stamped, written or deleted.
-/// A delete-and-remake inside the same stored second is the stated host limit.</description></item>
+/// Round 6: the same stored second is refused too (the nonce comes with the create itself).</description></item>
 /// <item><description>Complete: a privacy decision sees every physical copy of the title (no display cap); when that can't
 /// be established it fails closed (alerts wait, the playlist leaves the title out).</description></item>
 /// <item><description>Current: the last check before a membership write reads the title's copies and the rules again.</description></item>
@@ -59,12 +59,12 @@ public class ReadyExactEvidenceTests
         var (_, versions) = w.Movie(Sintel, Arrived);
         w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
         await w.Service.SetPlaylistAsync(emma.UserId, true);
-        // Between JE's immediate read after the create and the stamp, the person deletes JE's playlist and makes their own,
-        // empty and private, under the same folder name: Jellyfin gives it the same id and its own creation time.
+        // Between Jellyfin's create returning and JE's first read, the person deletes JE's playlist and makes their own, empty
+        // and private, under the same folder name: Jellyfin gives it the same id and its own creation time.
         FakeReadyPlaylistHost.Native? own = null;
         w.Host.During = call =>
         {
-            if (call != "stamp" || own != null) return;
+            if (call != "created" || own != null) return;
             var made = Assert.Single(w.Host.Playlists.Values);
             w.Host.Playlists.Remove(made.Id);
             w.Now = start.AddMilliseconds(replacedAtMs);
@@ -72,14 +72,15 @@ public class ReadyExactEvidenceTests
             Assert.Equal(made.Id, own.Id);
             Assert.NotEqual(made.Created, own.Created);
         };
-        Assert.Equal("changed", await w.Service.ReconcileAsync(emma.UserId));
+        Assert.Equal("lost", await w.Service.ReconcileAsync(emma.UserId));
         w.Host.During = null;
         Assert.Null(own!.Nonce);
         Assert.Null(w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistId);
         Assert.Equal("nothing", await w.Service.RemoveAsync(emma.UserId));
 
-        // The next look abandons that create and makes another playlist of JE's; the person's stays as it is.
+        // Turned on again: another playlist of JE's; the person's stays as it is.
         w.Now = w.Now.AddMinutes(5);
+        await w.Service.SetPlaylistAsync(emma.UserId, true);
         Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId));
         var fresh = w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistId!.Value;
         Assert.NotEqual(own.Id, fresh);
@@ -94,11 +95,10 @@ public class ReadyExactEvidenceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AReplacementStoredInTheSameSecondIsTheStatedHostLimit(bool fraction)
+    public async Task AReplacementStoredInTheSameSecondIsRefusedToo(bool fraction)
     {
-        // Both hosts guarantee a playlist's creation time to the whole second (their refresh stores it again from
-        // playlist.xml), and Jellyfin's create returns only an id: a delete-and-remake inside the same stored second can't be
-        // told apart from JE's own playlist (D49). Pinned here so a change of that limit is seen.
+        // Round 5's stated limit (a delete-and-remake inside the same stored second) is closed by provenance at the create
+        // (4f round 6): the replacement never carries the nonce JE's create wrote into its own playlist.
         using var w = new ReadyWorld();
         w.Host.KeepFraction = fraction;
         var start = w.Now;
@@ -110,15 +110,16 @@ public class ReadyExactEvidenceTests
         FakeReadyPlaylistHost.Native? own = null;
         w.Host.During = call =>
         {
-            if (call != "stamp" || own != null) return;
+            if (call != "created" || own != null) return;
             var made = Assert.Single(w.Host.Playlists.Values);
             w.Host.Playlists.Remove(made.Id);
             w.Now = start.AddMilliseconds(800);
             own = w.Host.AddOwn(emma.UserId, made.Name);
             Assert.Equal(made.Created.ToUnixTimeSeconds(), own.Created.ToUnixTimeSeconds());
         };
-        await w.Service.ReconcileAsync(emma.UserId);
-        Assert.NotNull(own!.Nonce);
+        Assert.Equal("lost", await w.Service.ReconcileAsync(emma.UserId));
+        Assert.Null(own!.Nonce);
+        Assert.Null(w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistId);
     }
 
     [Theory]
@@ -621,9 +622,12 @@ public class ReadyExactEvidenceTests
         await a.Step(true);
         Assert.DoesNotContain(a.Rig.Inbox(a.Rig.Kid), n => n.Kind == NotifyKind.Approved);
         Assert.False(a.Told("Dune"));
-        Assert.Equal(1L, Notices(a.Rig));
+        // Out of the ledger's page and into the wait queue (4f round 6).
+        Assert.Equal(0L, Notices(a.Rig));
+        Assert.Equal(1L, Convert.ToInt64(a.Rig.Db.Read(c => NotifyStore.Scalar(c, "SELECT COUNT(*) FROM alert_waits", Array.Empty<(string, object?)>(), null))));
 
         a.Privacy.Rules.Remove(kid);
+        a.Rig.Arr.Now = a.Rig.Arr.Now.AddMinutes(6);
         await a.Step(true);
         Assert.Single(a.Rig.Inbox(a.Rig.Kid), n => n.Kind == NotifyKind.Approved);
         Assert.True(a.Told("Dune"));

@@ -44,10 +44,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         IReadOnlyList<Guid> Entries(Guid playlistId);
 
         /// <summary>
-        /// Makes a private video playlist of the owner's, shared with nobody, named <paramref name="name"/>, if
-        /// <paramref name="gate"/> allows it; returns its id, or why it wasn't made.
+        /// Makes a private video playlist of the owner's, shared with nobody, named <paramref name="name"/>, carrying JE's
+        /// <paramref name="nonce"/> from its creation on, if <paramref name="gate"/> allows it. Returns what the create itself
+        /// made (its id and creation second, observed inside the create call before Jellyfin's refresh), or why nothing is
+        /// JE's: <c>provenance</c> when the create's own playlist couldn't be observed (nothing of it is JE's).
         /// </summary>
-        Task<(Guid? Id, string? Refused)> CreateAsync(Guid ownerId, string name, ReadyGate gate);
+        Task<(ReadyCreated? Made, string? Refused)> CreateAsync(Guid ownerId, string name, string nonce, ReadyGate gate);
 
         /// <summary>Gives the playlist its display name (its folder, and so its marker, stays) if the gate allows it; null or why not.</summary>
         Task<string?> RenameAsync(Guid playlistId, Guid ownerId, string name, ReadyGate gate);
@@ -61,13 +63,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>Deletes exactly this playlist (never the owner's other playlists) if the gate allows it; null or why not.</summary>
         Task<string?> DeleteAsync(Guid playlistId, ReadyGate gate);
-
-        /// <summary>
-        /// Writes JE's nonce into the playlist item itself (its <c>ExternalId</c>, <see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>:
-        /// a field no Jellyfin route or editor reads or sets) if the gate allows it; null or why not.
-        /// </summary>
-        Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate);
     }
+
+    /// <summary>
+    /// What JE's own create made, as the create call itself showed it (never a later lookup by id): the id Jellyfin gave the
+    /// playlist and its creation time to the whole second, taken from the very playlist object the create allocated, before
+    /// Jellyfin's refresh saves it again.
+    /// </summary>
+    /// <param name="Id">The playlist's id (Jellyfin's create result, checked against the object it allocated).</param>
+    /// <param name="CreatedSecond">Its creation time as the create set it (its folder's creation time), UTC Unix seconds.</param>
+    public sealed record ReadyCreated(Guid Id, long CreatedSecond);
 
     /// <summary>
     /// The production <see cref="IReadyPlaylistHost"/> over Jellyfin's playlist and library managers. Reads go to what Jellyfin
@@ -79,7 +84,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// (another nonce, creation time or owner: deleted and made again with the same id in between), or its privacy, shares or
     /// name changed in between, nothing is written.
     /// </summary>
-    public sealed class JellyfinReadyPlaylistHost : IReadyPlaylistHost
+    /// <remarks>
+    /// Provenance at the create (4f round 6): Jellyfin's create returns only an id, and a playlist made again under the same
+    /// folder gets the same id, so a later read can't tell JE's playlist from one put in its place. But Jellyfin raises
+    /// <see cref="ILibraryManager.ItemAdded"/> synchronously inside <see cref="IPlaylistManager.CreatePlaylist"/>, with the very
+    /// playlist object the create allocated, before the create's own metadata refresh saves it again (12.2 and 10.11.11: no
+    /// await before <c>Folder.AddChild</c>; probed live). While JE's create call runs, and only on its own call path, the host
+    /// takes that object's id and creation second and writes JE's nonce into it, so Jellyfin's own save of the created
+    /// playlist stores the nonce with it: a playlist anyone makes in its place, in any second, carries no nonce. No such
+    /// event, a second one, or one for another id: nothing of it is JE's.
+    /// </remarks>
+    public sealed class JellyfinReadyPlaylistHost : IReadyPlaylistHost, IDisposable
     {
         /// <summary>
         /// What JE's per-binding nonce is stored under: the playlist item's <c>ExternalId</c> (a plain column of Jellyfin's
@@ -91,6 +106,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// </summary>
         public const string NoncePrefix = "jellyfin-enhanced-ready:";
 
+        // The create JE's own call path is inside (a value flows only along that call path: another request's create never sees it).
+        private static readonly AsyncLocal<CreateScope?> Creating = new();
+
         private readonly ILibraryManager _library;
         private readonly IPlaylistManager _playlists;
         private readonly IFileSystem _fileSystem;
@@ -101,6 +119,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             _library = library;
             _playlists = playlists;
             _fileSystem = fileSystem;
+            _library.ItemAdded += OnItemAdded;
+        }
+
+        /// <inheritdoc />
+        public void Dispose() => _library.ItemAdded -= OnItemAdded;
+
+        /// <summary>One create of JE's while its call into Jellyfin runs: what it expects and what it saw.</summary>
+        internal sealed class CreateScope
+        {
+            internal CreateScope(Guid owner, string name, string nonce)
+            {
+                Owner = owner;
+                Name = name;
+                Nonce = nonce;
+            }
+
+            internal Guid Owner { get; }
+
+            internal string Name { get; }
+
+            internal string Nonce { get; }
+
+            /// <summary>False once JE's call into Jellyfin returned its task: later events are never this create's.</summary>
+            internal bool Open { get; set; } = true;
+
+            /// <summary>How many playlists matching this create were added on its call path (exactly one, or nothing is JE's).</summary>
+            internal int Matches { get; set; }
+
+            internal Guid Id { get; set; }
+
+            internal long CreatedSecond { get; set; }
+        }
+
+        private void OnItemAdded(object? sender, ItemChangeEventArgs e) => Observe(Creating.Value, e.Item);
+
+        /// <summary>
+        /// The create's own playlist as Jellyfin added it, on JE's call path, synchronously and before the create's refresh: its
+        /// id and creation second are taken, and JE's nonce is written into that object (the refresh then saves it with it).
+        /// Anything else (no create of JE's running here, another item, owner or name) is left alone.
+        /// </summary>
+        internal static void Observe(CreateScope? scope, BaseItem? item)
+        {
+            if (scope is not { Open: true } || item is not Playlist playlist || playlist.OwnerUserId != scope.Owner
+                || !string.Equals(playlist.Name, scope.Name, StringComparison.Ordinal)) return;
+            if (++scope.Matches > 1) return;
+            scope.Id = playlist.Id;
+            scope.CreatedSecond = new DateTimeOffset(DateTime.SpecifyKind(playlist.DateCreated, DateTimeKind.Utc)).ToUnixTimeSeconds();
+            playlist.ExternalId = NoncePrefix + scope.Nonce;
         }
 
         /// <inheritdoc />
@@ -137,20 +203,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         }
 
         /// <inheritdoc />
-        public async Task<(Guid? Id, string? Refused)> CreateAsync(Guid ownerId, string name, ReadyGate gate)
+        public async Task<(ReadyCreated? Made, string? Refused)> CreateAsync(Guid ownerId, string name, string nonce, ReadyGate gate)
         {
             if (gate(null) is { } refused) return (null, refused);
-            var result = await _playlists.CreatePlaylist(new PlaylistCreationRequest
+            var scope = new CreateScope(ownerId, name, nonce);
+            Task<PlaylistCreationResult> creating;
+            var outer = Creating.Value;
+            Creating.Value = scope;
+            try
             {
-                Name = name,
-                UserId = ownerId,
-                // An empty playlist can't infer its media type and would default to Audio.
-                MediaType = MediaType.Video,
-                Public = false,
-                // No shares: Jellyfin hands a deleted owner's playlist to its first share.
-                Users = Array.Empty<PlaylistUserPermissions>(),
-            }).ConfigureAwait(false);
-            return (Guid.Parse(result.Id), null);
+                // Jellyfin adds the playlist (and raises ItemAdded) synchronously in this call, before its first await.
+                creating = _playlists.CreatePlaylist(new PlaylistCreationRequest
+                {
+                    Name = name,
+                    UserId = ownerId,
+                    // An empty playlist can't infer its media type and would default to Audio.
+                    MediaType = MediaType.Video,
+                    Public = false,
+                    // No shares: Jellyfin hands a deleted owner's playlist to its first share.
+                    Users = Array.Empty<PlaylistUserPermissions>(),
+                });
+            }
+            finally
+            {
+                scope.Open = false;
+                Creating.Value = outer;
+            }
+
+            var result = await creating.ConfigureAwait(false);
+            var id = Guid.Parse(result.Id);
+            return scope.Matches == 1 && scope.Id == id ? (new ReadyCreated(id, scope.CreatedSecond), null) : (null, "provenance");
         }
 
         /// <inheritdoc />
@@ -166,19 +248,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         {
             if (Checked(playlistId, gate, out _) is { } refused) return refused;
             await _playlists.UpdatePlaylist(new PlaylistUpdateRequest { Id = playlistId, UserId = ownerId, Ids = itemIds.ToArray() }).ConfigureAwait(false);
-            return null;
-        }
-
-        /// <inheritdoc />
-        public async Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate)
-        {
-            var refused = Checked(playlistId, gate, out var cached);
-            if (refused != null || cached == null) return refused ?? "missing";
-            cached.ExternalId = NoncePrefix + nonce;
-            // As BaseItem.UpdateToRepositoryAsync, with the parent read through the library manager: saved to the database
-            // (and the playlist's own metadata file).
-            var parent = cached.ParentId.Equals(Guid.Empty) ? null : _library.GetItemById(cached.ParentId);
-            await _library.UpdateItemAsync(cached, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
             return null;
         }
 

@@ -427,10 +427,17 @@ Every alert about a title (Ready and new episodes) respects your Hidden Content 
 TV message, phone, e-mail, the bell and its pop-ups. It is decided when the alert is made and again right before each
 send, for the whole title: hiding a movie or series on any of its copies (in any library, however many copies there are)
 hides it everywhere, and a title you hid before it arrived makes no alert at all (unhiding it later doesn't announce it).
-A title hidden after its alert was made isn't sent, and the bell keeps the entry without naming it. When several alerts go
-out one by one, each is checked again right before its own send. The same goes for the answer to your own request
-("approved", "declined"): a title you hid is told on no channel. When the title's copies can't all be read at that moment,
-the alert waits as it does for Hidden Content that can't be read (below).
+A title hidden after its alert was made isn't sent, and the bell keeps the entry without naming it: a generic line with
+no title, picture, scope, names or decline reason. When several alerts go out one by one, each is checked again right
+before its own send. The answer to your own request ("approved", "declined") follows the same rule from the title's
+current visibility: a title in the library is told only while you can open one of its copies (library access, parental
+limits) and haven't hidden it; a title not in the library only while the request rules let you see it (the libraries it
+would land in, parental limits on its rating) and you haven't hidden it. With "hide titles" on, a decline's phone and
+e-mail text leave out the reason too. When the title's copies or your Hidden Content can't be read at that moment, the
+answer waits in its own queue: it is looked at again every few minutes whatever else happens (one person's waiting
+answers never hold back anyone else's), and it is dropped unsent three days after the answer was given. An OK that is
+no longer one when its held phone or e-mail would go out (the request went back to waiting, was declined, cancelled or
+removed) isn't sent, and the delivery log says which.
 
 Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends, and right before each
 send: an episode you can no longer open, or one you hid with Hidden Content (the episode itself, its series or the whole
@@ -1617,15 +1624,15 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
   it again until they turn the option on again. Turning the option off stops the updates and keeps the playlist as it
   is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated,
   and it is never deleted: the button becomes *Stop managing it*, which keeps the playlist as it is. A playlist they made
-  themselves is never touched, even one named like the Ready playlist while it was being made: Jellyfin Enhanced only
-  takes the playlist its own create made, read back right after the create, and if another one has taken its place
-  before the code is written it leaves it alone and makes a new one. Jellyfin Enhanced writes
-  a random code into the playlist it makes (a field the person can't set) and only ever updates or deletes the playlist
-  carrying that code and exactly its original creation time (Jellyfin keeps it to the second). Jellyfin gives a playlist
-  made again under the same name the same id; if the person deletes the Ready playlist (for example while the option is
-  off) and makes one of their own with that name, theirs is left alone and the panel says the Ready playlist was replaced;
-  turning the option on again makes a new one. The one case Jellyfin can't tell apart is a playlist deleted and made again
-  within the same second as Jellyfin Enhanced's own create, before its code is written.
+  themselves is never touched, even one named like the Ready playlist while it was being made: Jellyfin Enhanced writes
+  a random code (a field the person can't see or set) into the playlist inside its own create, on the very playlist
+  Jellyfin's create makes, and only ever updates or deletes the playlist carrying that code and exactly its original
+  creation time (Jellyfin keeps it to the second). Jellyfin gives a playlist made again under the same name the same id;
+  if the person deletes the Ready playlist (at any moment, even within the same second as its create, or while the option
+  is off) and makes one of their own with that name, theirs carries no code: it is left alone and the panel says the Ready
+  playlist was replaced; turning the option on again makes a new one. The one case Jellyfin can't tell apart is a
+  playlist deleted and made again while Jellyfin's own create is still saving it (Jellyfin then saves its own playlist
+  over the new one; it has no conditional save).
 - **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
   playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist, carrying its code).
 - **Right before each change** Jellyfin Enhanced checks again that every version it puts in is still one the person can

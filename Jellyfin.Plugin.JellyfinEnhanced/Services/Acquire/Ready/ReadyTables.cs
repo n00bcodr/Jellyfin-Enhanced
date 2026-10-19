@@ -29,7 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// time, the membership journal). <c>ready_entries</c>: one row per interest and content coordinate
         /// (the version chosen, when it became ready, when it leaves, and whether it was watched or expired; several
         /// interests may point at one version). <c>ready_message_attempts</c>: a native message's claim before it is sent and
-        /// whether Jellyfin accepted it (never whether a client showed it).
+        /// whether Jellyfin accepted it (never whether a client showed it). <c>alert_waits</c> (4f round 6): a request's outcome
+        /// (declined, OK'd) whose alert waits for evidence that can't be read now, with its own next try and the outcome's own
+        /// time (<see cref="Notify.NotifyStore.DueAlertWaits"/>).
         /// </summary>
         internal const string Sql = @"
 CREATE TABLE IF NOT EXISTS ready_playlists (
@@ -50,6 +52,13 @@ CREATE TABLE IF NOT EXISTS ready_message_attempts (
     delivery_id INTEGER PRIMARY KEY REFERENCES deliveries(id) ON DELETE CASCADE, user_id TEXT NOT NULL, session TEXT,
     state TEXT NOT NULL, attempted_at INTEGER NOT NULL, accepted_at INTEGER, outcome TEXT);
 CREATE INDEX IF NOT EXISTS ready_message_attempts_user ON ready_message_attempts(user_id, attempted_at);
+CREATE TABLE IF NOT EXISTS alert_waits (
+    source TEXT NOT NULL, source_id TEXT NOT NULL, user_id TEXT NOT NULL, kind TEXT NOT NULL, title_key TEXT NOT NULL,
+    event_key TEXT NOT NULL, payload TEXT NOT NULL, request_id TEXT, original_at INTEGER NOT NULL, next_at INTEGER NOT NULL,
+    tries INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (source, source_id));
+CREATE INDEX IF NOT EXISTS alert_waits_due ON alert_waits(next_at);
+CREATE INDEX IF NOT EXISTS alert_waits_user ON alert_waits(user_id, next_at);
 ";
 
         // Every column each table must have (a partial earlier ensure or a prototype is repaired, never rewritten).
@@ -113,7 +122,7 @@ CREATE INDEX IF NOT EXISTS ready_message_attempts_user ON ready_message_attempts
         internal static IReadOnlyList<string> Objects { get; } = new[]
         {
             "ready_playlists", "ready_playlists_playlist", "ready_playlists_user", "ready_entries", "ready_entries_user",
-            "ready_message_attempts", "ready_message_attempts_user",
+            "ready_message_attempts", "ready_message_attempts_user", "alert_waits", "alert_waits_due", "alert_waits_user",
         };
 
         private static string? Meta(SqliteCommand cmd, string key)
