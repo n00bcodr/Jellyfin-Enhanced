@@ -372,7 +372,7 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 |---|---|---|
 | GET | `user-settings/{userId}/settings.json` | Enhanced settings |
 | POST | `user-settings/{userId}/settings.json` | Replace Enhanced settings |
-| PATCH | `user-settings/{userId}/consent` | Set one personal consent of the signed-in person (`{"Field":"ListSwapIn","Value":bool}`) |
+| PATCH | `user-settings/{userId}/consent` | Set one personal consent of the signed-in person (`{"Field":"AutoSeasonRequests","Value":true}`; fields `AutoSeasonRequests`, `AutoMovieRequests`, `ListSwapIn`) |
 | GET | `user-settings/{userId}/shortcuts.json` | Shortcut list |
 | POST | `user-settings/{userId}/shortcuts.json` | Replace shortcut list |
 | GET | `user-settings/{userId}/elsewhere.json` | Provider preferences |
@@ -388,9 +388,9 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
-A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests, list swap-in) as they stored them. The person's own save may change their automatic request consents; list swap-in is kept by every whole-document save, the person's own included, so a stale browser cannot restore a revoked agreement.
+A save of `settings.json` replaces the whole file. Whoever saves it (the person, or an administrator saving their own or someone else's), the save keeps every personal consent (automatic season requests, automatic movie requests, list swap-in) as stored, so a stale browser cannot restore a revoked agreement.
 
-To change list swap-in, the signed-in person uses `PATCH /JellyfinEnhanced/user-settings/{userId}/consent` with `{"Field":"ListSwapIn","Value":true}` (or `false` to revoke): own person only (`403` for anyone else, administrators included), `400 invalid_consent` for a missing value or an unknown field. The answer and the settings POST's answer carry `consents.ListSwapIn` as stored.
+Only the signed-in person changes a consent, one at a time, with `PATCH /JellyfinEnhanced/user-settings/{userId}/consent` and `{"Field":"AutoMovieRequests","Value":false}`: own person only (`403` for anyone else, administrators included). `Value` is `true` or `false`; for `AutoSeasonRequests` and `AutoMovieRequests` it may also be `null` (follow the administrator's recipe setting). A missing value, `null` for `ListSwapIn` or an unknown field is `400 invalid_consent`. The answer and the settings POST's answer carry `consents` with every consent as stored (`{"AutoSeasonRequests":null,"AutoMovieRequests":false,"ListSwapIn":true}`).
 
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 

@@ -255,8 +255,9 @@ for (const [id, key, value, initial] of [
   const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrAutomationEngineEnabled: true, ArrListsEnabled: true, ArrListStatusEnabled: true }, settings: { [key]: initial } });
   h.wire();
   const held = deferred();
-  h.window.ApiClient.ajax = request => request.type === 'POST' ? held.promise : Promise.resolve([]);
-  if (id !== 'listStatusSelect') h.expectConsoleError(/Failed to save settings.json/);
+  // The automatic-request choice is a consent: it goes through the consent operation (PATCH), never a whole document.
+  h.window.ApiClient.ajax = request => request.type === 'POST' || request.type === 'PATCH' ? held.promise : Promise.resolve([]);
+  if (id !== 'listStatusSelect' && id !== 'autoSeasonRequestsSelect') h.expectConsoleError(/Failed to save settings.json/);
   const input = h.document.getElementById(id);
   if (input.type === 'checkbox') input.checked = value; else input.value = value;
   input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
@@ -612,9 +613,7 @@ for (const [id, key, initial, target, toast] of [
   ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps', null, 'off', 'toast_badge_settings_saved'],
   ['listPlaceholdersSelect', 'listPlaceholders', null, 'off', 'toast_list_settings_saved'],
   ['listStatusSelect', 'listStatus', null, 'off', 'toast_list_settings_saved'],
-  ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved'],
-  ['autoSeasonRequestsSelect', 'autoSeasonRequests', null, 'off', 'toast_auto_requests_saved'],
-  ['autoMovieRequestsSelect', 'autoMovieRequests', null, 'off', 'toast_auto_requests_saved']
+  ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved']
 ]) for (const carried of [false, true]) {
   test(`${key} saved notification follows authoritative ${carried ? 'carried commit' : 'failure'}`, async t => {
     const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrListsEnabled: true,
@@ -637,6 +636,39 @@ for (const [id, key, initial, target, toast] of [
     await later;
     assert.deepEqual(h.toasts, carried ? [tr(toast)] : []);
     if (key === 'acquisitionBadges' && carried) assert.equal(h.resets.at(-1), null, 'carried Show refreshes cards');
+  });
+}
+
+// Consents (one rule for every consent, Q-REBUILD1-1 (b)): a failed choice is never carried by a later whole document,
+// and only the consent operation's own success says saved.
+for (const [id, key, initial, target, toast] of [
+  ['autoSeasonRequestsSelect', 'autoSeasonRequests', null, 'off', 'toast_auto_requests_saved'],
+  ['autoMovieRequestsSelect', 'autoMovieRequests', null, 'off', 'toast_auto_requests_saved'],
+  ['listSwapInSelect', 'listSwapIn', false, 'on', 'toast_list_settings_saved']
+]) for (const consentSaved of [false, true]) {
+  test(`${key} is never carried by a later whole save; its notification follows the consent operation (${consentSaved ? 'saved' : 'failed'})`, async t => {
+    const h = panel(t, { config: { ...badges, ArrListsEnabled: true, ArrListSwapInEnabled: true, ArrAutomationEngineEnabled: true }, settings: { [key]: initial } });
+    const held = [deferred(), deferred()];
+    h.window.ApiClient.ajax = request => {
+      if (request.type === 'GET') return Promise.resolve([]);
+      h.writes.push(request); return held[h.writes.length - 1].promise;
+    };
+    h.wire();
+    const control = h.document.getElementById(id);
+    control.value = target;
+    control.dispatchEvent(new h.window.Event('change', { bubbles: true })); await tick();
+    assert.equal(h.writes[0].type, 'PATCH');
+    assert.equal(h.toasts.length, 0, 'never claim saved before persistence');
+    const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
+    if (consentSaved) held[0].resolve({ consents: { [key[0].toUpperCase() + key.slice(1)]: target === 'on' ? true : false } });
+    else held[0].reject(new Error('consent fails'));
+    await tick();
+    held[1].resolve();
+    await later;
+    const expected = consentSaved ? (target === 'on') : initial;
+    assert.equal(h.JE.currentSettings[key] ?? null, expected);
+    assert.equal(h.writes[1].type, 'POST');
+    assert.deepEqual(h.toasts, consentSaved ? [tr(toast)] : []);
   });
 }
 

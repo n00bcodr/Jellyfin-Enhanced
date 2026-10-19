@@ -253,13 +253,13 @@ public class IntegrationAutomationFactsFirstTests
         var other = Guid.NewGuid();
         var id = person.ToString("N");
         var start = consents.Version(person);
-        users.SaveUserSettings(id, new JellyfinEnhancedUserSettings { AutoMovieRequests = false }, byThePerson: true);
+        users.SetPersonalConsent(id, nameof(JellyfinEnhancedUserSettings.AutoMovieRequests), false);
         var saved = consents.Version(person);
         Assert.True(saved > start);
         Assert.False(consents.Preference(person, AutomationRecipes.AutoMovie));
         // Another file of theirs, or someone else's settings, doesn't move it.
         users.SaveUserConfiguration(id, "bookmarks.json", new { });
-        users.SaveUserSettings(other.ToString("N"), new JellyfinEnhancedUserSettings(), byThePerson: true);
+        users.SaveUserSettings(other.ToString("N"), new JellyfinEnhancedUserSettings());
         Assert.Equal(saved, consents.Version(person));
         // The reset (an administrator) and the removal of a deleted person's folder do.
         users.ResetUserSettings(id, new JellyfinEnhancedUserSettings());

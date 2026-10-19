@@ -7,7 +7,17 @@ namespace JE.Tests;
 
 // A person's automatic movie and season request consents are theirs alone. The legacy settings save replaces the whole
 // settings.json and is open to the owner or an administrator, and the administrators' "reset all users" writes defaults
-// for everyone: neither may set or clear another person's consent. The person's own save does.
+// for everyone: none of them sets or clears a consent. Only the person's own consent operation
+// (PATCH user-settings/{id}/consent) does: one rule for every consent (Q-REBUILD1-1 (b), integration rebuild).
+//
+// Changed from 4a (each was "the person's own whole save sets their automation consent"; now that save keeps it and the
+// consent operation sets it):
+// - APersonsOwnSaveSetsTheirAutomationConsent became APersonsOwnWholeSaveKeepsTheirAutomationConsent (keeps) plus
+//   APersonsConsentOperationSetsTheirAutomationConsent (the same choices through the operation, null included: it follows
+//   the administrator's recipe setting).
+// - The administrator's own-save case became AnAdministratorsOwnConsentOperationSetsTheirOwnAutomationConsent (an
+//   administrator's own whole save keeps it, like everyone's).
+// - The concurrency and lock tests: "the person saves their consent" is the consent operation now (it was their whole save).
 [Collection("Plugin singleton")]
 public class ApiAutomationConsentTests
 {
@@ -49,28 +59,68 @@ public class ApiAutomationConsentTests
     [InlineData(null, true)]
     [InlineData(true, false)]
     [InlineData(true, null)]
-    public void APersonsOwnSaveSetsTheirAutomationConsent(bool? theirs, bool? sent)
+    public void APersonsOwnWholeSaveKeepsTheirAutomationConsent(bool? theirs, bool? sent)
     {
         using var f = new ApiPluginFixture();
         var person = Guid.NewGuid();
         Seed(f, person, theirs);
 
-        Assert.IsType<OkObjectResult>(Controller(f, person, admin: false).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { AutoMovieRequests = sent, AutoSeasonRequests = sent }));
+        Assert.IsType<OkObjectResult>(Controller(f, person, admin: false).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { AutoMovieRequests = sent, AutoSeasonRequests = sent, ShowFileSizes = true }));
 
-        Assert.Equal(sent, Stored(f, person).AutoMovieRequests);
-        Assert.Equal(sent, Stored(f, person).AutoSeasonRequests);
+        Assert.Equal(theirs, Stored(f, person).AutoMovieRequests);
+        Assert.Equal(theirs, Stored(f, person).AutoSeasonRequests);
+        Assert.True(Stored(f, person).ShowFileSizes); // the rest of the save stands
     }
 
-    // An administrator saving their OWN settings is that person.
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(true, false)]
+    [InlineData(true, null)]
+    [InlineData(false, null)]
+    public void APersonsConsentOperationSetsTheirAutomationConsent(bool? theirs, bool? sent)
+    {
+        using var f = new ApiPluginFixture();
+        var person = Guid.NewGuid();
+        Seed(f, person, theirs);
+        var self = Controller(f, person, admin: false);
+
+        Assert.IsType<OkObjectResult>(self.SetUserSettingsConsent(person.ToString("N"), new() { Field = "AutoMovieRequests", Value = sent }));
+        Assert.Equal(sent, Stored(f, person).AutoMovieRequests);
+        Assert.Equal(theirs, Stored(f, person).AutoSeasonRequests); // one field at a time
+        Assert.IsType<OkObjectResult>(self.SetUserSettingsConsent(person.ToString("N"), new() { Field = "AutoSeasonRequests", Value = sent }));
+        Assert.Equal(sent, Stored(f, person).AutoSeasonRequests);
+        Assert.False(Stored(f, person).ShowFileSizes); // nothing else taken from the caller
+    }
+
+    [Theory]
+    [InlineData("AutoMovieRequests")]
+    [InlineData("AutoSeasonRequests")]
+    public void AnAutomationConsentOperationWithoutAValueOrForSomeoneElseChangesNothing(string field)
+    {
+        using var f = new ApiPluginFixture();
+        var person = Guid.NewGuid();
+        Seed(f, person, true);
+
+        Assert.IsType<BadRequestObjectResult>(Controller(f, person, admin: false).SetUserSettingsConsent(person.ToString("N"), new() { Field = field }));
+        Assert.IsType<ForbidResult>(Controller(f, Guid.NewGuid(), admin: true).SetUserSettingsConsent(person.ToString("N"), new() { Field = field, Value = false }));
+        Assert.IsType<BadRequestObjectResult>(Controller(f, person, admin: false).SetUserSettingsConsent(person.ToString("N"), new() { Field = field.ToLowerInvariant(), Value = false }));
+
+        Assert.True(Stored(f, person).AutoMovieRequests);
+        Assert.True(Stored(f, person).AutoSeasonRequests);
+    }
+
+    // An administrator acting on their OWN settings is that person: their consent operation sets it, their whole save keeps it.
     [Fact]
-    public void AnAdministratorsOwnSaveSetsTheirOwnAutomationConsent()
+    public void AnAdministratorsOwnConsentOperationSetsTheirOwnAutomationConsent()
     {
         using var f = new ApiPluginFixture();
         var admin = Guid.NewGuid();
         Seed(f, admin, null);
+        var self = Controller(f, admin, admin: true);
 
-        Assert.IsType<OkObjectResult>(Controller(f, admin, admin: true).SaveUserSettingsSettings(admin.ToString("N"), new JellyfinEnhancedUserSettings { AutoMovieRequests = true }));
-
+        Assert.IsType<OkObjectResult>(self.SaveUserSettingsSettings(admin.ToString("N"), new JellyfinEnhancedUserSettings { AutoMovieRequests = true }));
+        Assert.Null(Stored(f, admin).AutoMovieRequests);
+        Assert.IsType<OkObjectResult>(self.SetUserSettingsConsent(admin.ToString("N"), new() { Field = "AutoMovieRequests", Value = true }));
         Assert.True(Stored(f, admin).AutoMovieRequests);
     }
 
@@ -123,8 +173,13 @@ public class ApiAutomationConsentTests
         {
             if (user == personN && file == "settings.json" && Interlocked.Exchange(ref started, 1) == 0)
             {
-                // The other writer is saving the person's settings now: the person saves their own consent.
-                theirs = Task.Run(() => Controller(f, person, admin: false).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { AutoMovieRequests = wanted, AutoSeasonRequests = wanted }));
+                // The other writer is saving the person's settings now: the person sets their own consents.
+                theirs = Task.Run(() =>
+                {
+                    var self = Controller(f, person, admin: false);
+                    Assert.IsType<OkObjectResult>(self.SetUserSettingsConsent(personN, new() { Field = "AutoMovieRequests", Value = wanted }));
+                    return self.SetUserSettingsConsent(personN, new() { Field = "AutoSeasonRequests", Value = wanted });
+                });
                 landedInside = theirs.Wait(TimeSpan.FromSeconds(1));
             }
         };
@@ -179,7 +234,8 @@ public class ApiAutomationConsentTests
         {
             case "admin-save":
                 admin.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
-                self.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { AutoMovieRequests = false });
+                self.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
+                self.SetUserSettingsConsent(personN, new() { Field = "AutoMovieRequests", Value = false });
                 break;
             case "reset":
                 admin.ResetAllUsersSettings();

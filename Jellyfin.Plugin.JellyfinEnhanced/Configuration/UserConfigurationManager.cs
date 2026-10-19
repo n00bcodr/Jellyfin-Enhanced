@@ -97,49 +97,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Tests: runs as <see cref="SaveUserConfiguration"/> has put the file in place (readers see it), before it returns.</summary>
         internal Action<string, string>? Moved { get; set; }
 
+        /// <summary>One of a person's own consents in their settings.json (what JE may request or do on their behalf).</summary>
+        /// <param name="Field">The settings field (and the consent operation's field name).</param>
+        /// <param name="Get">Reads it.</param>
+        /// <param name="Set">Writes it.</param>
+        /// <param name="FollowsAdministrator">Null is a choice ("follow the administrator"), not only "never chosen".</param>
+        public sealed record PersonalConsent(string Field, Func<JellyfinEnhancedUserSettings, bool?> Get, Action<JellyfinEnhancedUserSettings, bool?> Set, bool FollowsAdministrator);
+
         /// <summary>
-        /// The fields of a person's settings that are their own consents (Phase 4: what JE may request or do on their
-        /// behalf). Only the person sets or clears them: every other writer (an administrator's save of their settings, the
-        /// reset of everyone's) keeps them as stored. Copies them from <paramref name="stored"/> (null: no file yet).
+        /// Every personal consent (Phase 4). Only the person's own consent operation (<see cref="SetPersonalConsent"/>) sets
+        /// or clears one: every whole-document save (the person's own, an administrator's) and every reset keeps them as
+        /// stored (<see cref="KeepPersonalConsents"/>).
+        /// </summary>
+        public static readonly IReadOnlyList<PersonalConsent> PersonalConsents = new[]
+        {
+            // Phase 4a: requests on the person's behalf (null follows the administrator's recipe setting).
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.AutoSeasonRequests), s => s.AutoSeasonRequests, (s, v) => s.AutoSeasonRequests = v, true),
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.AutoMovieRequests), s => s.AutoMovieRequests, (s, v) => s.AutoMovieRequests = v, true),
+            // Phase 4c1: list swap-in (null and false: no).
+            new PersonalConsent(nameof(JellyfinEnhancedUserSettings.ListSwapIn), s => s.ListSwapIn, (s, v) => s.ListSwapIn = v, false),
+        };
+
+        /// <summary>
+        /// Copies every personal consent (<see cref="PersonalConsents"/>) from <paramref name="stored"/> (null: no file yet)
+        /// into <paramref name="settings"/>: a whole document never carries consent intent.
         /// </summary>
         public static void KeepPersonalConsents(JellyfinEnhancedUserSettings settings, JellyfinEnhancedUserSettings? stored)
         {
-            // Phase 4a: requests on the person's behalf.
-            settings.AutoSeasonRequests = stored?.AutoSeasonRequests;
-            settings.AutoMovieRequests = stored?.AutoMovieRequests;
-            KeepExplicitConsents(settings, stored);
+            foreach (var consent in PersonalConsents)
+            {
+                consent.Set(settings, stored == null ? null : consent.Get(stored));
+            }
         }
 
-        /// <summary>
-        /// The consents only the explicit field-level consent operation (<see cref="SetPersonalConsent"/>) sets or clears:
-        /// every whole-document save, the person's own included, and every reset keeps them as stored (phase 4e).
-        /// </summary>
-        public static void KeepExplicitConsents(JellyfinEnhancedUserSettings settings, JellyfinEnhancedUserSettings? stored)
-        {
-            // Phase 4c1: list swap-in.
-            settings.ListSwapIn = stored?.ListSwapIn;
-        }
+        /// <summary>The consents as the settings routes answer them (field name → stored value).</summary>
+        public static Dictionary<string, bool?> ConsentsOf(JellyfinEnhancedUserSettings settings)
+            => PersonalConsents.ToDictionary(c => c.Field, c => c.Get(settings), StringComparer.Ordinal);
 
         /// <summary>
         /// Replaces a person's settings.json with <paramref name="settings"/>, atomically under <see cref="UserSettingsLock"/>:
-        /// the stored settings are read (strictly: a corrupt file is never overwritten), the person's consents are kept from
-        /// them unless the save is the person's own (<see cref="KeepPersonalConsents"/>), the explicit-only consents are kept
-        /// even then (<see cref="KeepExplicitConsents"/>), and the file is written when anything differs.
+        /// the stored settings are read (strictly: a corrupt file is never overwritten), every personal consent is kept from
+        /// them whoever saves (<see cref="KeepPersonalConsents"/>), and the file is written when anything differs.
         /// </summary>
         /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
-        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings, bool byThePerson)
+        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings)
         {
             lock (UserSettingsLock(userId))
             {
                 var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
-                if (byThePerson)
-                {
-                    KeepExplicitConsents(settings, existing);
-                }
-                else
-                {
-                    KeepPersonalConsents(settings, existing);
-                }
+                KeepPersonalConsents(settings, existing);
 
                 var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                 var newJson = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -165,21 +171,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>
-        /// Sets one explicitly named personal consent under the same lock as whole-document saves and resets.
-        /// Unknown fields are rejected inside the lock; no other settings are taken from the caller.
-        /// The controller must authorize the person themselves before calling this operation.
+        /// Sets one explicitly named personal consent (<see cref="PersonalConsents"/>) under the same lock as whole-document
+        /// saves and resets. Unknown fields, and null for a consent where null is no choice, are rejected inside the lock; no
+        /// other settings are taken from the caller. The controller must authorize the person themselves before calling this.
         /// </summary>
-        public JellyfinEnhancedUserSettings SetPersonalConsent(string userId, string field, bool value)
+        public JellyfinEnhancedUserSettings SetPersonalConsent(string userId, string field, bool? value)
         {
             lock (UserSettingsLock(userId))
             {
-                if (!string.Equals(field, nameof(JellyfinEnhancedUserSettings.ListSwapIn), StringComparison.Ordinal))
+                var consent = PersonalConsents.FirstOrDefault(c => string.Equals(c.Field, field, StringComparison.Ordinal))
+                    ?? throw new ArgumentException("Unknown personal consent field.", nameof(field));
+                if (value == null && !consent.FollowsAdministrator)
                 {
-                    throw new ArgumentException("Unknown personal consent field.", nameof(field));
+                    throw new ArgumentException("This consent needs a yes or no.", nameof(value));
                 }
 
                 var settings = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
-                settings.ListSwapIn = value;
+                consent.Set(settings, value);
                 SaveUserConfiguration(userId, SettingsFileName, settings);
                 return settings;
             }

@@ -154,12 +154,14 @@
             JE.updateSettings({ useNativePosterTags: enabled });
             resetAutoCloseTimer();
         });
-        // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit.
+        // Automatic requests per person: "" follows the household (null), "on" / "off" are explicit. They are consents:
+        // only the consent operation saves them (a whole settings save keeps them as stored).
         for (const [id, key] of [['autoSeasonRequestsSelect', 'autoSeasonRequests'], ['autoMovieRequestsSelect', 'autoMovieRequests']]) {
             listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrAutomationEngineEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
-                JE.updateSettings({ [key]: value });
+                JE.setPersonalConsent(key, value, { throwOnError: true })
+                    .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: automatic request preference save failed', err); });
                 resetAutoCloseTimer();
             });
         }

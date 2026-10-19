@@ -5496,18 +5496,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
-                // replaces the whole file) keeps them as stored; the explicit-only consents (list swap-in) are kept by every
-                // whole-document save, the person's own included: those change only through the consent operation below.
+                // Phase 4: the person's consents are their own and change only through the consent operation below. This
+                // save replaces the whole file (the person's own or an administrator's) and keeps every consent as stored.
                 // Read, kept, compared and saved under the person's settings lock.
-                var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
-                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
+                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration);
                 if (saved && changes.Count > 0)
                 {
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
-                return Ok(new { success = true, file = "settings.json", consents = new { userConfiguration.ListSwapIn } });
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(userConfiguration) });
             }
             catch (Exception ex)
             {
@@ -5519,10 +5517,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>An explicit personal consent change. A whole-document save never changes these fields.</summary>
         public sealed class PersonalConsentChange
         {
-            /// <summary>The exact consent field name (currently ListSwapIn).</summary>
+            private bool? _value;
+
+            /// <summary>The exact consent field name (<see cref="UserConfigurationManager.PersonalConsents"/>).</summary>
             public string? Field { get; set; }
-            /// <summary>The intended consent; missing or null is not an explicit choice.</summary>
-            public bool? Value { get; set; }
+
+            /// <summary>
+            /// The intended consent. A missing value is not a choice; null is one only for a consent that can follow the
+            /// administrator (the automatic requests).
+            /// </summary>
+            public bool? Value
+            {
+                get => _value;
+                set { _value = value; Chosen = true; }
+            }
+
+            /// <summary>The body named a value (null included).</summary>
+            [System.Text.Json.Serialization.JsonIgnore]
+            [Newtonsoft.Json.JsonIgnore]
+            public bool Chosen { get; private set; }
         }
 
         /// <summary>Sets one consent for the authenticated person themselves, never on behalf of another user.</summary>
@@ -5535,16 +5548,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null) return authorizationResult;
             if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId) return Forbid();
-            if (change?.Field == null || !change.Value.HasValue)
-                return BadRequest(new { code = "invalid_consent", message = "A consent field and boolean value are required." });
+            if (change?.Field == null || !change.Chosen)
+                return BadRequest(new { code = "invalid_consent", message = "A consent field and value are required." });
             try
             {
-                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value.Value);
-                return Ok(new { success = true, consents = new { settings.ListSwapIn } });
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value);
+                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings) });
             }
             catch (ArgumentException)
             {
-                return BadRequest(new { code = "invalid_consent", message = "Unknown personal consent field." });
+                return BadRequest(new { code = "invalid_consent", message = "Unknown personal consent field, or no choice for it." });
             }
             catch (Exception ex)
             {

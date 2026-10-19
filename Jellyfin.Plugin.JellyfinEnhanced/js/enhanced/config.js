@@ -30,7 +30,10 @@
     // Every file has exactly one persisted document, ordered pending documents and derived view.
     const documents = new Map();
     const panelScopes = new Set();
-    const consentKeys = ['listSwapIn'];
+    // Every personal consent (UserConfigurationManager.PersonalConsents): only the consent operation changes one.
+    const consentKeys = ['autoSeasonRequests', 'autoMovieRequests', 'listSwapIn'];
+    // Consents where null is a choice (follow the administrator), not only "never chosen".
+    const followConsentKeys = ['autoSeasonRequests', 'autoMovieRequests'];
     let identity, reloadRequest;
     JE.internals = JE.internals || {};
 
@@ -350,7 +353,8 @@
 
     /** Queue one explicit personal-consent choice; no display document is sent to the server. */
     JE.setPersonalConsent = (field, value, options = {}) => {
-        if (!consentKeys.includes(field) || typeof value !== 'boolean') return Promise.reject(new Error('Invalid personal consent'));
+        const valid = typeof value === 'boolean' || (value === null && followConsentKeys.includes(field));
+        if (!consentKeys.includes(field) || !valid) return Promise.reject(new Error('Invalid personal consent'));
         return JE.saveUserSettings('settings.json', { [field]: value }, { ...options, consentKey: field });
     };
 
