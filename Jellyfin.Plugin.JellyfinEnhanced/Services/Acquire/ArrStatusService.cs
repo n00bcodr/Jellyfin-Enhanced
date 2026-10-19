@@ -159,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         statuses.Add(StatusComposer.Movie(facts, item, null, c, detail: false));
                         break;
                     case "series":
-                        statuses.Add(StatusComposer.SeriesCard(facts, item, c, HiddenFromViewer(facts, item.ItemId, viewer), SeriesCopiesOf(facts)));
+                        statuses.Add(StatusComposer.SeriesCard(facts, item, c, copies: SeriesCopiesOf(facts)));
                         break;
                     case "season":
                         if (item.SeriesId is not Guid seriesId) break;
@@ -186,7 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var copies = Shown(facts, lookup);
                 statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
-                    : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null), facts));
+                    : StatusComposer.SeriesByKey(facts, copies, c), facts));
             }
             return Cache.Put(cacheKey, Serialize(statuses));
         }
@@ -345,11 +345,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 (now, gather) =>
                 {
                     var result = new List<KeyedStatus>();
+                    var c = Context(now);
                     foreach (var title in titles)
                     {
                         RequestScope? scope = scopes != null && scopes.TryGetValue(title, out var s) ? s : null;
-                        if (Compose(now, gather, title, detail: false, scope) is not { } composed) continue;
-                        result.Add(scope != null ? Scoped(now, gather, composed, scope) : composed);
+                        if (Compose(now, gather, title, detail: false, scope, c) is not { } composed) continue;
+                        result.Add(scope != null ? Scoped(now, gather, composed, scope, c) : composed);
                     }
                     return (IReadOnlyList<KeyedStatus>)result;
                 },
@@ -445,7 +446,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         .Concat(page.HiddenSeasons.Select(n => new JfSeason { Season = n, Hidden = true })).ToList();
                     var hiddenEpisodes = page.HiddenSeriesEpisodes.Select(p => new JfEpisode { Season = p.Season, Episode = p.Episode, Hidden = true }).ToList();
                     status = facts.Copies.Any(x => x.Series != null)
-                        ? StatusComposer.Series(facts, item, hiddenEpisodes, seasons, c, detail: true)
+                        ? StatusComposer.Series(facts, item, hiddenEpisodes, seasons, c, detail: true, copies)
                         : StatusComposer.AbsentSeries(facts, page, c, number => _requests.ForSeason(title, number, viewer));
                     status.AskedSeasons = AskedSeasons(facts);
                     break;
@@ -456,12 +457,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     // The season's episodes the library hides from the viewer (as the season rows leave them out).
                     rows.AddRange(page.HiddenEpisodes.Select(n => new JfEpisode { Season = page.Season ?? 0, Episode = n, Hidden = true }));
                     status = facts.Copies.Any(x => x.Series != null)
-                        ? StatusComposer.Season(facts, item, rows, c, detail: true)
+                        ? StatusComposer.Season(facts, item, rows, c, detail: true, copies)
                         : StatusComposer.AbsentSeason(facts, page, episodeRequests, c);
                     break;
                 default:
                     status = facts.Copies.Any(x => x.Series != null)
-                        ? StatusComposer.Episode(facts, item, c, detail: true)
+                        ? StatusComposer.Episode(facts, item, c, detail: true, copies)
                         : StatusComposer.AbsentEpisode(facts, page, item, episodeRequests, c);
                     break;
             }
@@ -606,18 +607,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             else
             {
-                if (SeriesSearchView(viewer, title) is not { } view) return (null, sent);
-                if (view.Hidden?.Hides(key.Season!.Value, key.Episode!.Value) == true || view.Have.Contains((key.Season!.Value, key.Episode!.Value))) return (null, sent);
+                if (SeriesSearchView(viewer, title) is not { } view || view.Hidden?.Hides(key.Season!.Value, key.Episode!.Value) == true) return (null, sent);
+                // Each standard Sonarr copy through its own binding: one whose copy they can't open is never searched for them,
+                // and the episode is missing for it only when its own copy doesn't play it.
+                foreach (var bound in SearchBindings(viewer, facts, title, c).Where(b => string.IsNullOrEmpty(instanceId) || b.Copy.Instance.Id == instanceId))
+                {
+                    if (bound.Open && view.Have(bound.Jf!.ItemId).Contains((key.Season!.Value, key.Episode!.Value))) continue;
+                    var copy = bound.Copy;
+                    if (StatusComposer.EpisodeFromArr(copy, key.Season!.Value, key.Episode!.Value, copy.Episodes?.Find(key.Season!.Value, key.Episode!.Value), c, facts.Request).Reason == StatusReasonCode.NoReleaseYet)
+                        return (copy.Instance.Id, sent);
+                }
+                return (null, sent);
             }
             foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && (string.IsNullOrEmpty(instanceId) || x.Instance.Id == instanceId)))
             {
-                StatusComposer.CopyState? state = key.IsMovie
-                    ? copy.Movie != null && !copy.Movie.HasFile ? StatusComposer.MovieFromArr(copy, c, facts.Request) : null
-                    : copy.Series != null ? StatusComposer.EpisodeFromArr(copy, key.Season!.Value, key.Episode!.Value, copy.Episodes?.Find(key.Season!.Value, key.Episode!.Value), c, facts.Request) : null;
+                var state = copy.Movie != null && !copy.Movie.HasFile ? StatusComposer.MovieFromArr(copy, c, facts.Request) : null;
                 if (state?.Reason == StatusReasonCode.NoReleaseYet) return (copy.Instance.Id, sent);
             }
             return (null, sent);
         }
+
+        /// <summary>The standard (never 4K) Sonarr copies a family Search may search for the viewer: those bound for them (<see cref="StatusComposer.SeriesBindings"/>).</summary>
+        private IEnumerable<SeriesBinding> SearchBindings(StatusViewer viewer, TitleFacts facts, TitleKey title, ComposeContext c)
+            => StatusComposer.SeriesBindings(facts, Shown(facts, CopiesOf(title, viewer)), c).Where(b => b.Copy.Instance.Role != "4k" && b.Copy.Series != null);
+
+        /// <summary>
+        /// Jellyfin's side of a family Search for one viewer: the episodes they play in one copy they can open (<see cref="Have"/>,
+        /// by series item: each Sonarr copy's own), and what Jellyfin hides from them in the copies they can open (never searched;
+        /// a part one copy hides and another plays is theirs).
+        /// </summary>
+        private sealed record SearchView(Func<Guid, EpisodeCoverage> Have, HiddenParts? Hidden);
 
         /// <summary>
         /// Jellyfin's side of a family Search of a series' episodes: the episodes the viewer already has (nothing to
@@ -625,19 +644,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A series Jellyfin doesn't have yet has neither, when the viewer may ask about it by key. Null when they may
         /// not search it: Jellyfin has the series but not in a copy they can open, or they may not ask about it.
         /// </summary>
-        private (EpisodeCoverage Have, HiddenParts? Hidden)? SeriesSearchView(StatusViewer viewer, TitleKey title)
+        private SearchView? SeriesSearchView(StatusViewer viewer, TitleKey title)
         {
             var copies = CopiesOf(title, viewer);
-            // The first copy they can open (a finished lookup lists the ones it saw first, so it is the same copy).
-            if (copies.SeenOpenable is { } series)
+            var none = new EpisodeCoverage(Array.Empty<JfEpisode>());
+            // Every copy they can open, never just the first one listed.
+            var open = copies.Seen.Where(x => x.Visible).DistinctBy(x => x.ItemId).ToList();
+            if (open.Count > 0)
             {
-                var jf = _view.Episodes(series.ItemId, null, viewer, includeVirtual: false);
-                var hidden = viewer.IsAdmin || !viewer.HasParentalLimit ? null : StatusComposer.SplitHidden(jf, _view.Seasons(series.ItemId, viewer)).Hidden;
-                return (new EpisodeCoverage(jf.Where(e => !e.Hidden)), hidden);
+                var episodes = open.ToDictionary(x => x.ItemId, x => _view.Episodes(x.ItemId, null, viewer, includeVirtual: false));
+                var hidden = viewer.IsAdmin || !viewer.HasParentalLimit ? null
+                    : StatusComposer.SplitHidden(episodes.Values.SelectMany(e => e).ToList(), open.SelectMany(x => _view.Seasons(x.ItemId, viewer)).ToList()).Hidden;
+                return new SearchView(id => episodes.TryGetValue(id, out var jf) ? new EpisodeCoverage(jf.Where(e => !e.Hidden)) : none, hidden);
             }
             // A hidden copy was seen, or the lookup couldn't prove the series absent: nothing to search.
             if (!copies.IsProvenAbsent || !MayAskByKey(viewer, title, copies)) return null;
-            return (new EpisodeCoverage(Array.Empty<JfEpisode>()), null);
+            return new SearchView(_ => none, null);
         }
 
         /// <summary>One standard Sonarr copy's episodes a family Search of a series or season would search.</summary>
@@ -675,22 +697,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>The answer of <see cref="SearchableEpisodesAsync"/> from gathered facts, for the viewer past the final gate.</summary>
-        private IReadOnlyList<SearchableEpisodes> SearchableEpisodesOf(StatusViewer viewer, TitleKey key, int max, Func<int, int, bool>? searched, (EpisodeCoverage Have, HiddenParts? Hidden) view, Gathered gather)
+        private IReadOnlyList<SearchableEpisodes> SearchableEpisodesOf(StatusViewer viewer, TitleKey key, int max, Func<int, int, bool>? searched, SearchView view, Gathered gather)
         {
             var result = new List<SearchableEpisodes>();
             var title = key.Title;
             ApplyRequests(gather, viewer);
             if (!gather.Facts.TryGetValue(title, out var facts)) return result;
             var c = Context(viewer);
-            foreach (var copy in facts.Copies.Where(x => x.Instance.Role != "4k" && x.Series != null && x.Episodes != null))
+            // Each standard Sonarr copy through its own binding: one whose copy they can't open is never searched for them,
+            // and what they have is what its own copy plays.
+            foreach (var bound in SearchBindings(viewer, facts, title, c).Where(b => b.Copy.Episodes != null))
             {
+                var copy = bound.Copy;
+                var have = bound.Open ? view.Have(bound.Jf!.ItemId) : null;
                 // Not searched in this period first; the searched ones only stand in when there are no others.
                 var found = new List<(int Season, int Episode, int Id)>();
                 var spent = new List<(int Season, int Episode, int Id)>();
                 foreach (var arr in copy.Episodes!.Episodes.Where(e => key.Season is int only ? e.SeasonNumber == only : e.SeasonNumber > 0).OrderBy(e => e.SeasonNumber).ThenBy(e => e.EpisodeNumber))
                 {
                     if (found.Count >= max) break;
-                    if (view.Hidden?.Hides(arr.SeasonNumber, arr.EpisodeNumber) == true || view.Have.Contains((arr.SeasonNumber, arr.EpisodeNumber))) continue;
+                    if (view.Hidden?.Hides(arr.SeasonNumber, arr.EpisodeNumber) == true || have?.Contains((arr.SeasonNumber, arr.EpisodeNumber)) == true) continue;
                     if (StatusComposer.EpisodeFromArr(copy, arr.SeasonNumber, arr.EpisodeNumber, arr, c, facts.Request).Reason != StatusReasonCode.NoReleaseYet) continue;
                     var into = searched?.Invoke(arr.SeasonNumber, arr.EpisodeNumber) == true ? spent : found;
                     if (into.Count < max) into.Add((arr.SeasonNumber, arr.EpisodeNumber, arr.Id));
@@ -727,16 +753,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ApplyRequests(gather, viewer);
             var facts = gather.Facts[title];
             var c = Context(viewer);
-            // The key's arr facts are the primary Sonarr copy's, so the Jellyfin episodes read with them are those of a copy it
-            // owns, never another copy's (a 4K copy's episodes against the standard Sonarr's files); none: the arr's view alone.
+            // The key's arr facts are the headline binding's (the primary Sonarr copy's for an administrator), so the Jellyfin
+            // episodes read with them are those of the copy it owns, never another copy's (a 4K copy's episodes against the
+            // standard Sonarr's files); none: the arr's view alone.
             var copies = Shown(facts, CopiesOf(title, viewer));
-            var primary = StatusComposer.SeriesCopyFor(facts, null, copies);
-            var series = primary == null ? null : copies.Where(x => x.Visible).FirstOrDefault(x => ReferenceEquals(StatusComposer.SeriesCopyFor(facts, x.ItemId, copies), primary));
+            var series = StatusComposer.SeriesHeadline(facts, copies, c) is { Open: true } bound ? bound.Jf : null;
             // A stand-in for the missing Jellyfin item (no id): the arr's view of that season or episode.
             var standIn = new JfItemRef { Kind = key.Episode.HasValue ? "episode" : "season", Key = key, SeriesId = series?.ItemId, Season = season, Episode = key.Episode, Virtual = true };
             var status = key.Episode.HasValue
-                ? StatusComposer.Episode(facts, standIn, c, detail: true)
-                : StatusComposer.Season(facts, standIn, series != null ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: false) : Array.Empty<JfEpisode>(), c, detail: true);
+                ? StatusComposer.Episode(facts, standIn, c, detail: true, copies)
+                : StatusComposer.Season(facts, standIn, series != null ? _view.Episodes(series.ItemId, season, viewer, includeVirtual: false) : Array.Empty<JfEpisode>(), c, detail: true, copies);
             return Cache.Put(cacheKey, Serialize(new[] { WithLiveKey(status, facts) }));
         }
 
@@ -803,10 +829,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var cacheKey = CacheKey(now, route, what + "|" + string.Join(",", titles.Select(t => t + (ScopeOf(t) is { } scope ? "@" + scope : string.Empty))), gather.Revision);
                 if (Cache.Get(cacheKey) is { } hit) return hit;
                 var result = new List<KeyedStatus>();
+                var c = Context(now);
                 foreach (var title in titles)
                 {
-                    if (Compose(now, gather, title, detail: false, ScopeOf(title)) is not { } composed) continue;
-                    result.Add(ScopeOf(title) is { } asked ? Scoped(now, gather, composed, asked) : composed);
+                    if (Compose(now, gather, title, detail: false, ScopeOf(title), c) is not { } composed) continue;
+                    result.Add(ScopeOf(title) is { } asked ? Scoped(now, gather, composed, asked, c) : composed);
                 }
                 return Cache.Put(cacheKey, build(result));
             }
@@ -819,10 +846,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// non-4K one with the administrator's switch), across every copy they can open; arr ownership, a shared
         /// folder or library, or Seerr's word alone never is. Jellyfin and memory only.
         /// </summary>
-        private KeyedStatus Scoped(StatusViewer viewer, Gathered gather, KeyedStatus whole, RequestScope scope)
+        private KeyedStatus Scoped(StatusViewer viewer, Gathered gather, KeyedStatus whole, RequestScope scope, ComposeContext? context = null)
         {
             var whose = gather.Facts[whole.Key];
-            var c = Context(viewer);
+            var c = context ?? Context(viewer);
             var lookup = CopiesOf(whole.Key, viewer);
             var edition = EditionAvailability.Of(scope.Only4k);
             // A standard request is satisfied by any playable copy unless the administrator says it needs a non-4K one.
@@ -922,10 +949,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var shown = HeldCopies(asked.Select(h => h.CopyId), copies, null).FirstOrDefault()
                     ?? (scope.Only4k ? mine.FirstOrDefault(x => x.Visible) ?? SeerrCopy(scope, copies) : whole.Visible);
                 if (scope.Only4k && mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
+                // What the library hides from a viewer with parental limits in the copy the parts are read through goes in
+                // as hidden markers there (RequestedSeasons: the binding's own, numbers only).
                 var episodes = available.AsEpisodes().ToList();
-                // What the library hides from a viewer with parental limits goes in as hidden markers (numbers only).
-                if (!viewer.IsAdmin && viewer.HasParentalLimit && (shown ?? whole.Visible) is { } basis)
-                    episodes.AddRange(_view.Episodes(basis.ItemId, null, viewer, includeVirtual: false).Where(e => e.Hidden));
                 var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k, picked);
                 // A requested season read Ready without Sonarr's episode list: with no Sonarr copy while a Sonarr (that
                 // may hold it) couldn't be read ("one episode of each requested season is here"), or from a copy whose
@@ -963,17 +989,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A title composed by key. With a <paramref name="scope"/> (a Requests page entry), the
         /// request facts are that entry's own, not every household member's for the title.
         /// </summary>
-        private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null)
+        private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null, ComposeContext? context = null)
         {
             var facts = gather.Facts[key];
             var lookup = CopiesOf(key, viewer);
             if (!MayAskByKey(viewer, key, lookup)) return null;
             facts.Request = scope != null ? scope.Request : _requests.For(key, viewer);
             var copies = Shown(facts, lookup);
-            var c = Context(viewer);
+            var c = context ?? Context(viewer);
             var status = key.IsMovie
                 ? StatusComposer.Movie(facts, null, copies, c, detail)
-                : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null);
+                : StatusComposer.SeriesByKey(facts, copies, c);
             return new KeyedStatus(key, WithLiveKey(status, facts), copies.FirstOrDefault(x => x.Visible));
         }
 
@@ -1102,17 +1128,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return status;
         }
 
-        /// <summary>
-        /// For a viewer with parental limits, the episodes and seasons of a series Jellyfin hides from
-        /// them, so the queue-only surfaces (series cards, series keys) don't count their downloads.
-        /// Read only when a Sonarr copy of the series has queue rows (a few series per page); null otherwise.
-        /// </summary>
-        private HiddenParts? HiddenFromViewer(TitleFacts facts, Guid seriesItemId, StatusViewer viewer)
-        {
-            if (viewer.IsAdmin || !viewer.HasParentalLimit || !facts.Copies.Any(x => x.Series != null && x.Queue.Count > 0)) return null;
-            return StatusComposer.SplitHidden(_view.Episodes(seriesItemId, null, viewer, includeVirtual: false), _view.Seasons(seriesItemId, viewer)).Hidden;
-        }
-
         /// <summary>How many times an answer is prepared again for a viewer whose policy changed under it before it fails closed.</summary>
         internal const int GateAttempts = 3;
 
@@ -1171,11 +1186,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A series copy's episodes as the viewer sees them now (once per composition): the queue-only surfaces read
             // them to tell an upgrade from a download, only for copies whose Sonarr has downloads.
             var episodes = new Dictionary<Guid, IReadOnlyList<JfEpisode>>();
+            var hidden = new Dictionary<Guid, HiddenParts>();
+            IReadOnlyList<JfEpisode> EpisodesOf(Guid id) => episodes.TryGetValue(id, out var found) ? found : episodes[id] = _view.Episodes(id, null, viewer, includeVirtual: false);
             return new(viewer, _now().UtcDateTime, config?.ArrStatusLookingHours ?? 24)
             {
                 HandoffGrace = HandoffGrace(config),
                 RequestClock = config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true },
-                EpisodesOf = id => episodes.TryGetValue(id, out var found) ? found : episodes[id] = _view.Episodes(id, null, viewer, includeVirtual: false),
+                EpisodesOf = EpisodesOf,
+                // What Jellyfin hides from a viewer with parental limits in a series item: from the same episode read.
+                HiddenOf = viewer.IsAdmin || !viewer.HasParentalLimit ? null
+                    : id => hidden.TryGetValue(id, out var found) ? found : hidden[id] = StatusComposer.SplitHidden(EpisodesOf(id), _view.Seasons(id, viewer)).Hidden,
             };
         }
 
