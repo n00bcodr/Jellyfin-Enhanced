@@ -4082,6 +4082,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ArrListRequestAllEnabled = Services.Acquire.Lists.ListFlags.RequestAll(config),
                 ArrListSwapInEnabled = Services.Acquire.Lists.ListFlags.SwapIn(config),
                 ArrListStatusEnabled = Services.Acquire.Lists.ListFlags.Status(config),
+                // Phase 4c3a: list pages (each person may still hide them).
+                ArrListPlaylistUiEnabled = Services.Acquire.Lists.ListFlags.PlaylistUi(config),
+                ArrListCollectionUiEnabled = Services.Acquire.Lists.ListFlags.CollectionUi(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

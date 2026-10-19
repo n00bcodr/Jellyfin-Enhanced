@@ -164,7 +164,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The stamp.</returns>
         internal string ParentalStamp(User user)
         {
-            if (!_parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out var policy))
+            // The person as the caller just read them (the gate reads them right before): not read again.
+            if (!_parentalFilter.TryGetRestrictedPolicy(user, out var policy))
             {
                 return "-";
             }
@@ -271,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="user">User.</param>
         /// <returns>Whether the user is restricted.</returns>
         public bool IsRestricted(User user) =>
-            _parentalFilter.TryGetRestrictedPolicy(user.Id.ToString("N", System.Globalization.CultureInfo.InvariantCulture), out _);
+            _parentalFilter.TryGetRestrictedPolicy(user, out _);
 
         /// <summary>
         /// The users with parental controls who may see a list (Jellyfin's visibility or JE's own view permission).
@@ -322,19 +323,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The decision.</returns>
         public async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, string userIdN, CancellationToken cancellationToken)
         {
-            if (!_parentalFilter.TryGetRestrictedPolicy(userIdN, out _))
+            if (!_parentalFilter.TryGetRestrictedPolicy(userIdN, out var policy))
             {
                 return true;
             }
 
-            if (await ListContinuation.Await(() => _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, userIdN, cancellationToken)).ConfigureAwait(false))
+            return await ListContinuation.Await(() => CheckTitleAsync(mediaType, tmdbId, policy, cancellationToken)).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// <see cref="CheckTitleAsync(string, int, string, CancellationToken)"/> under a policy already resolved for the
+        /// person (many titles of one list are checked with one read of the person).
+        /// </summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="policy">The person's parental policy.</param>
+        /// <param name="cancellationToken">Cancellation (the overall budget).</param>
+        /// <returns>The decision.</returns>
+        internal async Task<bool?> CheckTitleAsync(string mediaType, int tmdbId, SeerrParentalFilter.Policy policy, CancellationToken cancellationToken)
+        {
+            if (!policy.IsRestricted)
+            {
+                return true;
+            }
+
+            if (await ListContinuation.Await(() => _parentalFilter.MaySeeAbsentAsync(mediaType, tmdbId, policy, cancellationToken)).ConfigureAwait(false))
             {
                 return true;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             // A verified signature that the limits refuse is a decision; no (or an unrated) signature is unknown.
-            return _parentalFilter.MaySeeAbsent(mediaType, tmdbId, userIdN, out var facts) ? true : facts != null ? false : null;
+            return _parentalFilter.MaySeeAbsent(mediaType, tmdbId, policy, out var facts) ? true : facts != null ? false : null;
         }
 
         /// <summary>Whether a TMDB title is blocked for the user (false for unrestricted users, no lookups).</summary>
@@ -362,7 +382,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public async Task<HashSet<string>> GetHiddenPlaceholderIdsAsync(IReadOnlyList<Placeholder> placeholders, User user, CancellationToken cancellationToken, ISet<string>? unverified = null)
         {
             var hidden = new HashSet<string>(StringComparer.Ordinal);
-            if (placeholders.Count == 0 || !IsRestricted(user))
+            // The person's limits as the caller just read them, once for every title (not one read of the person each).
+            if (placeholders.Count == 0 || !_parentalFilter.TryGetRestrictedPolicy(user, out var policy))
             {
                 return hidden;
             }
@@ -401,7 +422,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 {
                     using (await ListContinuation.AwaitLock(gate, budget.Token).ConfigureAwait(false))
                     {
-                        var allowed = await ListContinuation.Await(() => CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, userIdN, budget.Token)).ConfigureAwait(false);
+                        var allowed = await ListContinuation.Await(() => CheckTitleAsync(placeholder.MediaType, placeholder.TmdbId!.Value, policy, budget.Token)).ConfigureAwait(false);
                         blocked = allowed.HasValue ? !allowed.Value : null;
                     }
                 }

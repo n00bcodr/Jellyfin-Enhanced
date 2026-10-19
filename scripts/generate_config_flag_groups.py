@@ -54,6 +54,9 @@ USER_PREFERENCE_CLASSES = {
     "ListPlaceholders": {"class": "display", "unset": "follow-admin"},
     "ListStatus": {"class": "display", "unset": "follow-admin"},
     "ListSwapIn": {"class": "consent", "unset": "off"},
+    # Phase 4c3a: list pages (display preferences).
+    "ListPlaylistUi": {"class": "display", "unset": "follow-admin"},
+    "ListCollectionUi": {"class": "display", "unset": "follow-admin"},
 }
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

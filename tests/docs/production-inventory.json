@@ -327,6 +327,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/ListPlaceholders/ListPageDtos.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/MdblistRatings.cs",
       "category": "Model"
     },
@@ -632,6 +636,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListSummaries.cs",
       "category": "Services"
     },
     {
@@ -1540,6 +1548,34 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-api.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-collection.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-grid.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-pages.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-paint.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-playlist.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-render.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-request.js",
       "category": "js"
     },
     {
@@ -2558,6 +2594,16 @@
       "following_attributes": [
         "Authorize",
         "BodyLimit(LargeBody)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/lists/summaries",
+      "method": "Summaries",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireListsController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit"
       ]
     },
     {
@@ -6827,6 +6873,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4ListPlaylistUiEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ListCollectionUiEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8835,6 +8897,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "ListPlaylistUi",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "ListCollectionUi",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -10484,9 +10562,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 592,
-    "routes": 281,
-    "configuration_properties": 620,
+    "files": 601,
+    "routes": 282,
+    "configuration_properties": 624,
     "storage_references": 91,
     "scheduled_tasks": 15,
     "locales": 33

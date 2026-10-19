@@ -22,6 +22,12 @@
  *     one. A refused ask keeps the sheet open with the reason.
  *     `have` counts the copies in the library, whatever their quality: it marks seasons complete for
  *     the standard copy only (for 4K nothing is known to be here, so every season stays offered).
+ *     options.fixed (phase 4c3a, list entries) = { scope: string (what is asked for, e.g. "Season 2"), input: Object
+ *       (anything truthy: the scope is fixed), cost?: number (the preview's), note?: string (what the list's preview
+ *       says), send: () =>
+ *       Promise<JE.arrAsk result> } shows no scope cards and no Standard/4K toggle (the entry fixes both) and sends
+ *       through `send` (the list's own request route) instead of JE.arrAsk.ask.
+ *     options.listTicket binds a fixed sheet (including its loaders and later writes) to the originating list page.
  *   openOrAsk(title, options?) → Promise<result|null>   movies: one tap unless the sheet is needed.
  *   close() → void   closes the sheet (its promise resolves with null).
  *
@@ -51,6 +57,8 @@
 
     /** @type {Object|null} the open sheet's state */
     let current = null;
+    /** Pending sheet loaders cancelled by close or by their originating page. */
+    const pendingOpens = new Set();
     /** @type {Map<string, Promise<Object|null>>} one-tap movie asks in flight, by key */
     const inflight = new Map();
 
@@ -351,31 +359,64 @@
      */
     async function open(title, options) {
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
+        const listTicket = options?.fixed ? options?.listTicket : null;
         const opener = options?.opener || document.activeElement;
         const kind = title.kind === 'movie' ? 'movie' : 'series';
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
-        const caps = options?.caps || await JE.arrAsk.me();
-        if (!JE.arrAsk.canAsk(caps, kind)) {
-            JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
-            return null;
+        let cancelled = false;
+        let state = null;
+        let stop;
+        const stopped = new Promise(resolve => { stop = resolve; });
+        /** Cancels loaders promptly and removes an already displayed sheet. */
+        const cancel = () => {
+            cancelled = true;
+            stop(null);
+            if (state) finish(state, null);
+        };
+        const off = listTicket?.onRevoke(cancel);
+        const live = () => !cancelled && (!listTicket || listTicket.current()) && (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch;
+        pendingOpens.add(cancel);
+        try {
+            if (!live()) return null;
+            const caps = await Promise.race([options?.caps || JE.arrAsk.me(), stopped]);
+            if (!live()) return null;
+            if (!JE.arrAsk.canAsk(caps, kind)) {
+                sheetPaint(listTicket, () => JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text));
+                return null;
+            }
+            const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
+            const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
+            const loaded = await Promise.race([Promise.all([
+                options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
+                kind === 'series' && !options?.fixed ? withSeasons(title) : title,
+                JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
+            ]), stopped]);
+            if (!live() || !loaded) return null;
+            const [quota, shown, check] = loaded;
+            if (!shown) {
+                sheetPaint(listTicket, () => JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')));
+                return null;
+            }
+            pendingOpens.delete(cancel);
+            return await new Promise(resolve => {
+                const painted = sheetPaint(listTicket, () => {
+                    close();
+                    state = build(shown, kind, caps, quota, { ...options, listTicket, blocks: { [variant]: blockOf(check) } }, opener, resolve);
+                    current = state;
+                });
+                if (!painted) resolve(null);
+            });
+        } finally {
+            pendingOpens.delete(cancel);
+            off?.();
         }
-        const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
-        const variant = can4k && options?.variant === '4k' ? '4k' : 'standard';
-        const [quota, shown, check] = await Promise.all([
-            options && 'quota' in options ? options.quota : JE.arrAsk.quota(kind === 'movie' ? 'movie' : 'tv'),
-            kind === 'series' ? withSeasons(title) : title,
-            // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
-            JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
-        ]);
-        if ((JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
-        if (!shown) {
-            JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable'));
-            return null;
-        }
-        close();
-        return new Promise((resolve) => {
-            current = build(shown, kind, caps, quota, { ...options, blocks: { [variant]: blockOf(check) } }, opener, resolve);
-        });
+    }
+
+    /** Runs a sheet write under its list ticket, or directly for ordinary request sheets. */
+    function sheetPaint(ticket, fn) {
+        if (ticket) return JE.internals.arrListPages.gate.paint(ticket, fn, 'sheet');
+        fn();
+        return true;
     }
 
     /**
@@ -419,10 +460,13 @@
         const contact = JE.arrAsk.contact(caps);
         const can4k = kind === 'movie' ? caps.can4kMovies === true : caps.can4kSeries === true;
         const state = {
+            listTicket: options?.listTicket || null,
             title, kind, caps, quota, opener, resolve, busy: false, done: false, ...returnPoints(opener),
             variant: can4k && options?.variant === '4k' ? '4k' : 'standard',
             choice: null, picked: new Set(), episodeSeason: null, episodes: new Set(), cards: [], key: title.key,
-            blocks: { ...(options?.blocks || {}) }
+            blocks: { ...(options?.blocks || {}) },
+            // A list entry (phase 4c3a): its scope and edition are the entry's, and it is asked for through the list.
+            fixed: options?.fixed && typeof options.fixed.send === 'function' ? options.fixed : null
         };
         const backdrop = el('div', 'je-sheet-backdrop');
         if (isTv()) backdrop.classList.add('je-sheet-tv');
@@ -448,14 +492,14 @@
         const heading = el('h2', 'je-sheet-title', caps.asksFirst ? tr('arr_sheet_title_ask', { contact, name: title.name || '' }) : tr('arr_sheet_title', { name: title.name || '' }));
         heading.id = titleId;
         headText.appendChild(heading);
-        const facts = factsLine(title, kind);
+        const facts = state.fixed ? state.fixed.scope || '' : factsLine(title, kind);
         if (facts) headText.appendChild(el('div', 'je-sheet-facts', facts));
         head.appendChild(headText);
         sheet.appendChild(head);
 
-        if (can4k) sheet.appendChild(variantToggle(state));
+        if (can4k && !state.fixed) sheet.appendChild(variantToggle(state));
 
-        if (kind === 'series') {
+        if (kind === 'series' && !state.fixed) {
             const group = el('div', 'je-sheet-cards');
             group.setAttribute('role', 'group');
             group.setAttribute('aria-label', tr('arr_sheet_choices'));
@@ -684,6 +728,7 @@
      * @returns {Object|null} Input.
      */
     function currentInput(state) {
+        if (state.fixed) return state.fixed.input || {};
         const variant = state.variant;
         if (state.kind === 'movie') return JE.arrAsk.movieInput(state.key, variant);
         const card = state.cards.find(c => c.id === state.choice);
@@ -703,6 +748,11 @@
      * @returns {void}
      */
     function refresh(state) {
+        sheetPaint(state.listTicket, () => refreshSheet(state));
+    }
+
+    /** Updates the sheet inside its write boundary. */
+    function refreshSheet(state) {
         const { caps, quota } = state;
         const contact = JE.arrAsk.contact(caps);
         // This title can't be asked for now (e.g. the drive it would land on is nearly full): said first, nothing to send.
@@ -723,7 +773,8 @@
         state.sheet?.querySelectorAll('.je-sheet-episode').forEach((b) => b.setAttribute('aria-pressed', String(state.episodes.has(Number(b.dataset.episode)))));
 
         const input = currentInput(state);
-        const cost = input ? costOf(input, caps, quota) : 0;
+        // A list entry's cost is the one the list's preview gave (the server's own rounding).
+        const cost = state.fixed ? (Number.isInteger(state.fixed.cost) ? state.fixed.cost : 0) : input ? costOf(input, caps, quota) : 0;
         const over = limited(quota) && input != null && cost > quota.remaining;
         const used = limited(quota) && quota.remaining <= 0;
         const seerrBlocked = (caps.backend === 'seerr' && over) || !!paused;
@@ -759,7 +810,13 @@
         } else {
             state.note.hidden = true;
         }
-        if (state.kind === 'movie') {
+        if (state.fixed?.note && state.note.hidden && !used) {
+            // A list entry: what the list's preview says it would do and cost.
+            state.note.hidden = false;
+            state.note.classList.add('je-sheet-note-info');
+            state.note.appendChild(icon('confirmation_number', 'je-sheet-note-icon'));
+            state.note.appendChild(el('span', null, state.fixed.note));
+        } else if (state.kind === 'movie' && !state.fixed) {
             // A movie has no cards: its cost goes under the note.
             const line = costLine(JE.arrAsk.movieInput(state.key, state.variant), caps, quota);
             if (line.text && !used) {
@@ -807,34 +864,40 @@
      * @returns {Promise<void>}
      */
     async function submit(state) {
-        if (state.busy || state.done) return;
+        if (state.busy || state.done || (state.listTicket && !state.listTicket.current())) return;
         const input = currentInput(state);
         if (!input) {
             showMessage(state, tr('arr_sheet_pick_none'), true);
             return;
         }
         state.busy = true;
-        state.primary.disabled = true;
-        state.primary.setAttribute('aria-busy', 'true');
-        state.primary.replaceChildren(el('span', null, tr('arr_sheet_asking')));
-        showMessage(state, '', false);
+        sheetPaint(state.listTicket, () => {
+            state.primary.disabled = true;
+            state.primary.setAttribute('aria-busy', 'true');
+            state.primary.replaceChildren(el('span', null, tr('arr_sheet_asking')));
+            showMessage(state, '', false);
+        });
         let result;
         try {
-            result = await JE.arrAsk.ask(input);
+            result = state.fixed ? await state.fixed.send() : await JE.arrAsk.ask(input);
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
+        if (state.listTicket && (state.done || !state.listTicket.current())) return;
         state.busy = false;
-        state.primary.disabled = false;
-        state.primary.removeAttribute('aria-busy');
+        sheetPaint(state.listTicket, () => {
+            state.primary.disabled = false;
+            state.primary.removeAttribute('aria-busy');
+        });
         if (result.stale) {
             finish(state, null);
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
+        if (state.listTicket && (state.done || !state.listTicket.current())) return;
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
-            JE.arrAsk.toast(words.text);
+            sheetPaint(state.listTicket, () => JE.arrAsk.toast(words.text));
             finish(state, { ...result, input });
             return;
         }
@@ -856,8 +919,10 @@
      * @returns {void}
      */
     function showMessage(state, text, attention) {
-        state.message.textContent = text;
-        state.message.classList.toggle('je-sheet-message-attention', !!text && attention);
+        sheetPaint(state.listTicket, () => {
+            state.message.textContent = text;
+            state.message.classList.toggle('je-sheet-message-attention', !!text && attention);
+        });
     }
 
     /**
@@ -936,9 +1001,11 @@
         if (state.done) return;
         state.done = true;
         document.removeEventListener('keydown', state.onKey, true);
-        state.backdrop?.remove();
+        const remove = () => state.backdrop?.remove();
+        if (state.listTicket) JE.internals.arrListPages.gate.erase(remove);
+        else remove();
         if (current === state) current = null;
-        restoreFocus(state);
+        sheetPaint(state.listTicket, () => restoreFocus(state));
         state.resolve(result);
     }
 
@@ -947,6 +1014,7 @@
      * @returns {void}
      */
     function close() {
+        for (const cancel of pendingOpens) cancel();
         if (current) finish(current, null);
     }
 

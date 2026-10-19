@@ -304,8 +304,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// episodes of a few shows looks each show up once). Never keep it beyond that operation: it doesn't see library
         /// changes.
         /// </param>
+        /// <param name="present">Optional current list members: prefer equivalent qualifying copies already present.</param>
         /// <returns>The resolution (never null; <see cref="ScopeResolution.None"/> on lookup failures).</returns>
-        public ScopeResolution Resolve(Placeholder scope, string listKind, IReadOnlyList<User> users, ResolveMemo? memo = null)
+        public ScopeResolution Resolve(Placeholder scope, string listKind, IReadOnlyList<User> users, ResolveMemo? memo = null, IReadOnlySet<Guid>? present = null)
         {
             ArgumentNullException.ThrowIfNull(scope);
             if (scope.Kind == PlaceholderKinds.Custom)
@@ -316,8 +317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             try
             {
                 return scope.Kind == PlaceholderKinds.Movie
-                    ? ResolveMovie(scope, users, memo)
-                    : ResolveTv(scope, listKind == ListKinds.Collection, users, memo);
+                    ? ResolveMovie(scope, users, memo, present)
+                    : ResolveTv(scope, listKind == ListKinds.Collection, users, memo, present);
             }
             catch (Exception ex)
             {
@@ -326,14 +327,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        private ScopeResolution ResolveMovie(Placeholder scope, IReadOnlyList<User> users, ResolveMemo? memo)
+        private ScopeResolution ResolveMovie(Placeholder scope, IReadOnlyList<User> users, ResolveMemo? memo, IReadOnlySet<Guid>? present)
         {
             if (scope.TmdbId is not > 0 && string.IsNullOrEmpty(scope.ImdbId))
             {
                 return ScopeResolution.None;
             }
 
-            var match = _editions.Resolve(scope, users, memo: memo).Sources.FirstOrDefault();
+            // A qualifying copy already in the list wins; otherwise the adapter's edition order decides.
+            var match = _editions.Resolve(scope, users, memo: memo).Sources.OrderBy(s => present?.Contains(s.ItemId) == true ? 0 : 1).FirstOrDefault();
             if (match != null)
             {
                 return new ScopeResolution(new[] { new ResolvedItem(match.ItemId, BaseItemKind.Movie, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>());
@@ -342,7 +344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return ScopeResolution.None;
         }
 
-        private ScopeResolution ResolveTv(Placeholder scope, bool collection, IReadOnlyList<User> users, ResolveMemo? memo)
+        private ScopeResolution ResolveTv(Placeholder scope, bool collection, IReadOnlyList<User> users, ResolveMemo? memo, IReadOnlySet<Guid>? present)
         {
             if (scope.TmdbId is not > 0 && scope.TvdbId is not > 0 && string.IsNullOrEmpty(scope.ImdbId))
             {
@@ -353,6 +355,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var available = _editions.Resolve(scope, users, memo: memo);
             if (available.SeriesIds.Count == 0) return ScopeResolution.None;
 
+            // Equivalent qualifying copies already in the list come first, so they keep their coordinate (and their series)
+            // whichever library copy the adapter lists first. The adapter's edition and access filtering still apply before
+            // this preference; among the rest its order stands.
+            var sources = available.Sources.OrderBy(s => present?.Contains(s.ItemId) == true ? 0 : 1).ToList();
+
             if (collection && ListRules.EditionOf(scope) == ListRules.FourK
                 && (available.Sources.Any(s => s.ItemId != s.LogicalItemId) || (scope.Kind == PlaceholderKinds.Series && scope.Filled.Count > 0)))
             {
@@ -360,16 +367,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // edition is an alternate of an HD primary, so a collection plays the edition it actually asked for. A 4K
                 // series that already filled episodes this way keeps filling them one by one (until its completion
                 // rule holds), also once later 4K episodes arrive as primaries.
-                var exact = OnePerCoordinate(new[] { available.Sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
+                var exact = OnePerCoordinate(new[] { sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
                 return new ScopeResolution(exact, exact);
             }
 
             if (collection && scope.Kind == PlaceholderKinds.Series)
             {
-                // A 4K container needs an actual 4K episode, never just matching series metadata or arr ownership.
+                // A 4K container needs an actual 4K episode, never just matching series metadata or arr ownership. A copy
+                // of the series already in the list wins.
                 var series = ListRules.EditionOf(scope) == ListRules.FourK
-                    ? available.Sources.FirstOrDefault()?.SeriesId
-                    : available.SeriesIds[0];
+                    ? sources.OrderBy(s => s.SeriesId is Guid id && present?.Contains(id) == true ? 0 : 1).FirstOrDefault()?.SeriesId
+                    : available.SeriesIds.OrderBy(id => present?.Contains(id) == true ? 0 : 1).First();
                 return series.HasValue
                     ? new ScopeResolution(new[] { new ResolvedItem(series.Value, BaseItemKind.Series, Array.Empty<EpisodeCoord>()) }, Array.Empty<ResolvedItem>())
                     : ScopeResolution.None;
@@ -377,11 +385,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             // Source selection (including the edition and every viewer's access) belongs to one adapter. List-specific
             // representation and coordinate deduplication happen only after that selection.
-            var copies = available.Sources.GroupBy(s => s.SeriesId!.Value)
+            var copies = sources.GroupBy(s => s.SeriesId!.Value)
                 .Select(g => (SeriesId: g.Key, Episodes: OnePerCoordinate(new[] { g.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() })))
                 .ToList();
 
-            var episodes = OnePerCoordinate(new[] { available.Sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
+            var episodes = OnePerCoordinate(new[] { sources.Select(s => new ResolvedItem(s.ItemId, BaseItemKind.Episode, s.Coords)).ToList() });
             if (!collection || scope.Kind == PlaceholderKinds.Episodes)
             {
                 return new ScopeResolution(episodes, episodes);
@@ -398,7 +406,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var covered = new HashSet<EpisodeCoord>();
             var seasonItems = new List<ResolvedItem>();
             var credited = new List<ResolvedItem>();
-            foreach (var copy in copies.Where(c => c.Episodes.Count > 0).OrderByDescending(c => c.Episodes.Sum(e => e.Coords.Count)))
+            foreach (var copy in copies.Where(c => c.Episodes.Count > 0)
+                .OrderByDescending(c => present?.Contains(_host.FindSeason(c.SeriesId, number, primary) ?? Guid.Empty) == true)
+                .ThenByDescending(c => c.Episodes.Sum(e => e.Coords.Count)))
             {
                 var adds = copy.Episodes
                     .Select(e => e with { Coords = e.Coords.Where(c => !covered.Contains(c)).ToList() })

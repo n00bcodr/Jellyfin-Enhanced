@@ -188,7 +188,8 @@
             });
         }
         // Phase 4c1: list preferences per person ("" = null: follow the household; swap-in "" = no).
-        for (const [id, key] of [['listPlaceholdersSelect', 'listPlaceholders'], ['listStatusSelect', 'listStatus'], ['listSwapInSelect', 'listSwapIn']]) {
+        // Phase 4c3a: the playlist and collection page preferences (display: "" = follow the household).
+        for (const [id, key] of [['listPlaceholdersSelect', 'listPlaceholders'], ['listStatusSelect', 'listStatus'], ['listSwapInSelect', 'listSwapIn'], ['listPlaylistUiSelect', 'listPlaylistUi'], ['listCollectionUiSelect', 'listCollectionUi']]) {
             document.getElementById(id)?.addEventListener('change', (event) => {
                 if (JE.pluginConfig?.ArrListsEnabled !== true) return;
                 const value = event.target.value === 'on' ? true : event.target.value === 'off' ? false : null;
@@ -197,6 +198,8 @@
                 JE.userConfig.settings[key] = value;
                 JE.currentSettings[key] = value;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
+                // Phase 4c3a: list pages follow the change at once (drawn entries go when hidden).
+                JE.arrListPages?.settingsChanged?.();
                 JE.toast(JE.t('toast_list_settings_saved'));
                 resetAutoCloseTimer();
             });

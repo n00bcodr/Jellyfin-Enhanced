@@ -230,6 +230,9 @@
     };
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
+    // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
+    // map them to TMDB ids to guard entries of the same titles that aren't in the library.
+    internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
     internal.setUserPrefs = function(next) {
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const payload = next || {};

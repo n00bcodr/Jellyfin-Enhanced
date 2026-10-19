@@ -123,6 +123,110 @@ public class ListsSwapTests
         Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
     }
 
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    public async Task AnEquivalentMovieAlreadyInTheListIsPresenceWithoutOwnership(bool collection, bool fourK, bool presentFourK)
+    {
+        using var h = new ListsHarness(seerr: false);
+        var owner = h.NewUser("owner", admin: true);
+        var list = collection ? h.Host.AddCollection() : h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(list, owner);
+        var entry = fourK ? Ph("{\"kind\":\"movie\",\"tmdbId\":782,\"title\":\"Movie\",\"edition\":\"4k\"}") : Movie(782);
+        await Add(h, access, null, entry);
+        var selected = h.Host.AddMovieCopy(782, fourK);
+        var present = h.Host.AddMovieCopy(782, presentFourK);
+        list.Raw.Add(new RawEntry(present, true));
+        h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        var expected = fourK && !presentFourK ? new[] { selected, present } : new[] { present };
+        Assert.Equal(expected.Order(), h.Host.Resolved(list.Info.Id).Order());
+        if (!fourK || presentFourK)
+        {
+            Assert.Empty(h.Host.Calls);
+            Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+            Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EquivalentEpisodesAlreadyInTheListFillWithoutASecondCopy(bool collection)
+    {
+        using var h = new ListsHarness(seerr: false);
+        var owner = h.NewUser("owner", admin: true);
+        var list = collection ? h.Host.AddCollection() : h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(list, owner);
+        var entry = EpisodesOf(783, 1, 1);
+        await Add(h, access, null, entry);
+        var first = h.Host.AddSeries(tmdb: 783);
+        h.Host.AddEpisode(first, 1, 1);
+        var sibling = h.Host.AddSeries(tmdb: 783);
+        var present = h.Host.AddEpisode(sibling, 1, 1);
+        list.Raw.Add(new RawEntry(present, true));
+        h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        Assert.Equal(new[] { present }, h.Host.Resolved(list.Info.Id));
+        Assert.Empty(h.Host.Calls);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EquivalentEpisodesWithinOneSeriesPreferTheExistingSecondCopy(bool collection)
+    {
+        using var h = new ListsHarness(seerr: false);
+        var owner = h.NewUser("owner", admin: true);
+        var list = collection ? h.Host.AddCollection() : h.Host.AddPlaylist(owner);
+        var access = h.AccessFor(list, owner);
+        await Add(h, access, null, EpisodesOf(785, 1, 1));
+        var series = h.Host.AddSeries(tmdb: 785);
+        h.Host.AddEpisode(series, 1, 1);
+        var present = h.Host.AddEpisode(series, 1, 1);
+        list.Raw.Add(new RawEntry(present, true));
+        h.Host.Calls.Clear();
+
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+
+        Assert.Equal(new[] { present }, h.Host.Resolved(list.Info.Id));
+        Assert.Empty(h.Host.Calls);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Items);
+        Assert.Empty(h.Store.Load(access.ListIdN)!.Intents);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnEquivalentCollectionSeasonOrSeriesAlreadyPresentIsNotAddedAgain(bool wholeSeries)
+    {
+        using var h = new ListsHarness(seerr: false);
+        var owner = h.NewUser("owner", admin: true);
+        var list = h.Host.AddCollection();
+        var access = h.AccessFor(list, owner);
+        var entry = wholeSeries ? SeriesPh(784) : Season(784, 1);
+        await Add(h, access, null, entry);
+        var first = h.Host.AddSeries(tmdb: 784);
+        h.Host.AddEpisode(first, 1, 1);
+
+        var sibling = h.Host.AddSeries(tmdb: 784);
+        h.Host.AddEpisode(sibling, 1, 1);
+        var season = h.Host.Seasons[(sibling, 1)].Id;
+        var present = wholeSeries ? sibling : season;
+        list.Raw.Add(new RawEntry(present, true));
+        h.Host.Calls.Clear();
+        await h.Swap.RunListPassAsync(access.ListIdN, null, MetadataMode.None, None);
+        Assert.Equal(new[] { present }, h.Host.Resolved(list.Info.Id));
+        Assert.Empty(h.Host.Calls);
+    }
+
     [Fact]
     public async Task NothingIsSwappedInThatTheOwnerCantSeeAndAMissingListIsTerminal()
     {

@@ -2,9 +2,14 @@
  * @file Requests & downloads, phase 4 lists: the client transport of /JellyfinEnhanced/acquire/lists (list views,
  * adding/applying/editing/removing entries, reorder, the swap-in switch, request preview and Request one / Request all
  * missing, editable lists, creating playlists and collections). One request id per user action, reused by a retry after
- * a lost answer (the server answers a retry from its durable operation, never applying it twice). Answers that arrive
- * after a user switch are dropped. No network on load. Page modules (playlist rows, collection section, pickers) build
- * on JE.arrLists; nothing here renders.
+ * a lost answer (the server answers a retry from its durable operation, never applying it twice). No network on load.
+ * Page modules (playlist rows, collection section, pickers) build on JE.arrLists; nothing here renders.
+ *
+ * One acceptance rule for every answer ({@link ticket}): it is used (cached, announced to listeners, drawn) only while
+ * the session it was asked in is still the current one and, for a view, only when it is the view of the list asked
+ * about; pages add their own view and route to the same rule. It is checked after every await, so an answer read
+ * across a person switch is dropped (rejects with {stale: true}). Change notifications carry the session they come
+ * from ({epoch}), and listeners refuse another session's.
  */
 (function (JE) {
     'use strict';
@@ -32,6 +37,41 @@
     }
 
     /**
+     * A list id in N form (32 lowercase hex), or null.
+     * @param {*} id Id in N or D form.
+     * @returns {string|null} Id.
+     */
+    function normalizeId(id) {
+        const value = String(id || '').replace(/-/g, '').toLowerCase();
+        return /^[0-9a-f]{32}$/.test(value) ? value : null;
+    }
+
+    /**
+     * The acceptance rule of one request: taken before it is sent, asked after every await.
+     * - current(): the session it was asked in is still the current one, and the caller's own scope (a page adds the
+     *   view shown and its route) still holds;
+     * - accepts(view): current, and a view (when there is one) is of the list asked about.
+     * @param {string|null} listId The list asked about (null: not about one list).
+     * @param {function(): boolean} [scope] The caller's part of the rule.
+     * @returns {{epoch: number, listId: (string|null), current: function(): boolean, accepts: function(Object=): boolean}} Ticket.
+     */
+    function ticket(listId, scope) {
+        const same = value => normalizeId(value) || String(value ?? '');
+        const id = listId == null ? null : same(listId);
+        const started = epoch();
+        const current = () => epoch() === started && (typeof scope !== 'function' || scope() === true);
+        return {
+            epoch: started,
+            listId: id,
+            current,
+            accepts: view => current() && (!view || (id !== null && same(view.listId) === id))
+        };
+    }
+
+    /** The rejection of an answer the rule refused. */
+    const STALE = Object.freeze({ stale: true });
+
+    /**
      * A new request id for one user action (keep it for that action's retries).
      * @returns {string} Request id ([A-Za-z0-9_-], at most 64 characters).
      */
@@ -41,14 +81,14 @@
     }
 
     /**
-     * Calls a list route; resolves with {status, body} for every HTTP answer, rejects with {stale:true} when the user
-     * changed meanwhile and with the fetch error when no answer arrived.
+     * Calls a list route; resolves with {status, body} for every HTTP answer, rejects with {stale:true} when the rule
+     * refuses it (another session, or the caller's scope no longer holds) and with the fetch error when no answer arrived.
      * @param {string} path Path under /JellyfinEnhanced/acquire/lists.
-     * @param {{method?: string, body?: Object, signal?: AbortSignal, etag?: string}} [options] Options.
+     * @param {{method?: string, body?: Object, signal?: AbortSignal, etag?: string, ticket?: Object}} [options] Options.
      * @returns {Promise<{status: number, body: Object|null, etag: string|null}>} The answer.
      */
     async function call(path, options) {
-        const started = epoch();
+        const rule = options?.ticket || ticket(null);
         const method = options?.method || 'GET';
         const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
         if (options?.body) headers['Content-Type'] = 'application/json';
@@ -60,14 +100,14 @@
             signal: options?.signal,
             cache: 'no-store'
         });
-        if (epoch() !== started) {
-            throw { stale: true };
-        }
+        if (!rule.current()) throw STALE;
 
         let body = null;
         if (response.status !== 304) {
+            const text = await response.text().catch(() => '');
+            // The body can take a while: the person may have changed while it was read.
+            if (!rule.current()) throw STALE;
             try {
-                const text = await response.text();
                 body = text ? JSON.parse(text) : null;
             } catch {
                 body = null;
@@ -78,15 +118,17 @@
     }
 
     /**
-     * Tells listeners a list changed (its new view, when known).
+     * Tells listeners a list changed (its new view, when known), with the session it comes from.
      * @param {string} listId List id.
      * @param {Object|null} view The new view.
+     * @param {{epoch: number}} origin The session of the change.
      */
-    function changed(listId, view) {
-        if (view && view.listId) views.delete(view.listId);
+    function changed(listId, view, origin) {
+        if (view && view.listId) views.delete(normalizeId(view.listId) || view.listId);
+        views.delete(listId);
         for (const listener of listeners) {
             try {
-                listener(listId, view);
+                listener(listId, view, { epoch: origin.epoch });
             } catch (error) {
                 console.warn(logPrefix, 'listener failed', error);
             }
@@ -94,7 +136,8 @@
     }
 
     /**
-     * A mutation: its answer's view (409 conflicts carry a fresh one too) is announced to listeners.
+     * A mutation: its answer's view (409 conflicts carry a fresh one too) is announced to listeners, if the rule still
+     * accepts it (a view of another list is announced as "changed", without it).
      * @param {string} listId List id.
      * @param {string} path Path.
      * @param {string} method Method.
@@ -103,22 +146,28 @@
      * @returns {Promise<{status: number, body: Object|null}>} The answer.
      */
     async function mutate(listId, path, method, body, signal) {
-        const answer = await call(path, { method, body, signal });
-        const view = answer.body?.view || answer.body?.result?.view || (answer.body?.listId && answer.body?.placeholders ? answer.body : null);
-        if (answer.status < 500) changed(listId, view);
+        const rule = ticket(listId);
+        const answer = await call(path, { method, body, signal, ticket: rule });
+        if (!rule.current()) throw STALE;
+        const found = answer.body?.view || answer.body?.result?.view || (answer.body?.listId && answer.body?.placeholders ? answer.body : null);
+        const view = found && rule.accepts(found) ? found : null;
+        if (answer.status < 500) changed(listId, view, rule);
         return answer;
     }
 
     /**
-     * The caller's view of a list (revalidated: an unchanged list costs no body).
+     * The caller's view of a list (revalidated: an unchanged list costs no body). Cached only while the rule accepts it.
      * @param {string} listId Playlist or collection id.
-     * @param {{signal?: AbortSignal}} [options] Options.
+     * @param {{signal?: AbortSignal, ticket?: Object}} [options] Options (a page's ticket adds its view and route).
      * @returns {Promise<{status: number, body: Object|null}>} The view ({listId, listKind, rev, canEdit, nativeCanEdit, actions[], statusShown, swapIn, reconciling, placeholders[], order?, source?}).
      */
     async function getList(listId, options) {
+        const rule = options?.ticket || ticket(listId);
         const cached = views.get(listId);
-        const answer = await call(`/${encodeURIComponent(listId)}`, { signal: options?.signal, etag: cached?.etag });
+        const answer = await call(`/${encodeURIComponent(listId)}`, { signal: options?.signal, etag: cached?.etag, ticket: rule });
+        if (!rule.current()) throw STALE;
         if (answer.status === 304 && cached) return { status: 200, body: cached.view };
+        if (answer.status === 200 && answer.body && !rule.accepts(answer.body)) throw STALE;
         if (answer.status === 200 && answer.etag) views.set(listId, { etag: answer.etag, view: answer.body });
         return answer;
     }
@@ -126,6 +175,7 @@
     const api = {
         enabled,
         newRequestId,
+        ticket,
         getList,
         /**
          * Adds entries ({kind, mediaType, tmdbId, tvdbId?, imdbId?, title, year?, releaseDate?, posterPath?, seasonNumber?, episodes?, note?, edition?}).
@@ -193,7 +243,9 @@
          * @returns {Promise<{status: number, body: Object|null}>} ({operationId, replayed, results[{placeholderId, result}], view}).
          */
         requestEntries: async (listId, body, signal) => {
+            const rule = ticket(listId);
             const answer = await mutate(listId, `/${encodeURIComponent(listId)}/requests`, 'POST', body, signal);
+            if (!rule.current()) throw STALE;
             if (answer.status < 300) JE.arrStatus?.refresh?.();
             return answer;
         },
@@ -219,7 +271,8 @@
         createCollection: (body, signal) => call('/collections', { method: 'POST', body, signal }),
         /**
          * Subscribes to list changes made through this module.
-         * @param {function(string, Object|null): void} listener Called with (listId, view or null).
+         * @param {function(string, Object|null, {epoch: number}): void} listener Called with (listId, view or null, the
+         *   session of the change: refuse it when it isn't the current one).
          * @returns {function(): void} Unsubscribe.
          */
         onChange: (listener) => {

@@ -58,8 +58,10 @@
     "ArrPhase4GroupQuotasEnabled": "Requests & downloads (new)",
     "ArrPhase4HouseholdRulesEnabled": "Requests & downloads (new)",
     "ArrPhase4ListAuthoringEnabled": "Requests & downloads (new)",
+    "ArrPhase4ListCollectionUiEnabled": "Requests & downloads (new)",
     "ArrPhase4ListMaintenanceEnabled": "Requests & downloads (new)",
     "ArrPhase4ListPlaceholdersEnabled": "Requests & downloads (new)",
+    "ArrPhase4ListPlaylistUiEnabled": "Requests & downloads (new)",
     "ArrPhase4ListRequestAllEnabled": "Requests & downloads (new)",
     "ArrPhase4ListRequestsEnabled": "Requests & downloads (new)",
     "ArrPhase4ListStatusEnabled": "Requests & downloads (new)",
@@ -471,8 +473,10 @@
     "ArrPhase4GroupQuotasEnabled": "Group quotas (shared request pools)",
     "ArrPhase4HouseholdRulesEnabled": "Household rules: the Trusted role and fixed conditions per role",
     "ArrPhase4ListAuthoringEnabled": "Adding and editing list entries",
+    "ArrPhase4ListCollectionUiEnabled": "Show list entries on collection pages",
     "ArrPhase4ListMaintenanceEnabled": "Daily list maintenance",
     "ArrPhase4ListPlaceholdersEnabled": "Lists: titles not in the library on playlists and collections",
+    "ArrPhase4ListPlaylistUiEnabled": "Show list entries on playlist pages",
     "ArrPhase4ListRequestAllEnabled": "Request all missing",
     "ArrPhase4ListRequestsEnabled": "Ask for list entries",
     "ArrPhase4ListStatusEnabled": "Show request status on list entries",
@@ -872,8 +876,10 @@
     "ArrPhase4GroupQuotasEnabled": "*arr",
     "ArrPhase4HouseholdRulesEnabled": "*arr",
     "ArrPhase4ListAuthoringEnabled": "*arr",
+    "ArrPhase4ListCollectionUiEnabled": "*arr",
     "ArrPhase4ListMaintenanceEnabled": "*arr",
     "ArrPhase4ListPlaceholdersEnabled": "*arr",
+    "ArrPhase4ListPlaylistUiEnabled": "*arr",
     "ArrPhase4ListRequestAllEnabled": "*arr",
     "ArrPhase4ListRequestsEnabled": "*arr",
     "ArrPhase4ListStatusEnabled": "*arr",
@@ -1347,8 +1353,10 @@
     "ArrPhase4GroupQuotasEnabled": false,
     "ArrPhase4HouseholdRulesEnabled": false,
     "ArrPhase4ListAuthoringEnabled": false,
+    "ArrPhase4ListCollectionUiEnabled": false,
     "ArrPhase4ListMaintenanceEnabled": false,
     "ArrPhase4ListPlaceholdersEnabled": false,
+    "ArrPhase4ListPlaylistUiEnabled": false,
     "ArrPhase4ListRequestAllEnabled": false,
     "ArrPhase4ListRequestsEnabled": false,
     "ArrPhase4ListStatusEnabled": false,
@@ -1722,7 +1730,15 @@
       "class": "consent",
       "unset": "follow-admin"
     },
+    "ListCollectionUi": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
     "ListPlaceholders": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
+    "ListPlaylistUi": {
       "class": "display",
       "unset": "follow-admin"
     },

@@ -1702,7 +1702,8 @@ follows Jellyfin's own rights and the household's request rules:
   A 4K series entry filled that way works like a season: each 4K episode goes in as it arrives, one Jellyfin refused is
   tried again on the next pass, and the entry stays until the series is complete.
   If the server stops in the middle of putting an item in, the next start finishes or undoes it by what is actually in
-  the list, so an item never goes in twice. A 4K series keeps its episode links even if Jellyfin promotes the first
+  the list, so an item never goes in twice. An equivalent accessible copy already in the list satisfies the entry
+  without another insertion, provided it meets the requested edition and episode scope. A 4K series keeps its episode links even if Jellyfin promotes the first
   inserted alternate to the main version before recovery, including when the promotion clears its episode numbers:
   the pending swap remembers the coordinates verified before the insert.
 - **Status** (*Show request status on list entries*). Each entry shows where its request stands, the same status as
@@ -1712,13 +1713,33 @@ follows Jellyfin's own rights and the household's request rules:
   themselves.
 - **Privacy.** A person with parental limits sees only entries whose rating is verified to be within them (anything
   that can't be checked is hidden), and only the rows Jellyfin shows them; counts never include what they can't see.
+- **On the pages** (*Show list entries on playlist pages*, *Show list entries on collection pages*). A playlist's page
+  shows its entries in list order between the real items, also when the playlist has no real item yet (it no longer
+  looks empty). Entries are not Jellyfin rows: Play, Shuffle, play from here, selecting and the item menus only ever
+  use the real items, and dragging a real item still lands where it is dropped. A collection's page gets a *Not in
+  your library* section after its items, by release date with undated (TBA) titles last. Each entry says what it is
+  (a movie, a season, the episodes it stands for, a custom entry), its release (the year, *Coming* a date, or *Date to
+  be announced*), how much of a season or series is already in the list (counted apart from where its request
+  stands), and the shared request status; *Request* is there for entries the person may ask for, and opens the usual
+  request sheet for exactly that entry (its season or episodes and its edition). Leaving the page or losing access to the list cancels a loading
+  sheet and closes an open one. Selecting an entry opens its title at
+  the same scope (the season or the episode), and Back returns to the list on that entry. On the *Playlists* page a
+  list that still has entries the person can see shows how many instead of Jellyfin's *played* check (Jellyfin counts
+  a playlist with nothing playable in it as played); hidden entries are never counted. Phones get the status in words
+  under the title and large Request buttons; on TV the remote reaches every entry and its Request.
+- **Spoiler Guard.** List pages wait up to eight seconds for the person's Spoiler Guard choices. For a title they
+  guard (its library copy, or one they turned on from Seerr before it arrived) and on a guarded collection, entries
+  show no episode titles and no notes (an editor's note can give the story away); if those choices can't be read,
+  every entry is treated as guarded, with air dates hidden too. If the load never answers, the page uses that fully
+  guarded view for the rest of the visit, hiding released years as well.
 - **Deleted lists and people.** Deleting a playlist or collection removes its entries; deleting a person removes what
   lists kept about them (their requests stay).
 - **Backups.** Lists are part of Jellyfin Enhanced backups. After a restore every list is checked against what is
   really in Jellyfin before anything new goes in.
 
-Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, and agree that titles that
-arrive may take their place in lists they turned swap-in on for (off until they choose it). That agreement is theirs
+Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, hide the entries on playlist
+pages or on collection pages, and agree that titles that arrive may take their place in lists they turned swap-in on
+for (off until they choose it). That agreement is theirs
 alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
 
 **Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
