@@ -159,6 +159,26 @@
     }
 
     /**
+     * The abort of a read that started under an older Hidden Content / Spoiler Guard policy. Only this abort may be
+     * asked again, and only by the same session that started it (see isPresentationAbort).
+     * @returns {DOMException}
+     */
+    function createPresentationAbort() {
+        const abortError = new DOMException('Presentation policy changed', 'AbortError');
+        Object.defineProperty(abortError, 'presentationChanged', { value: true });
+        return abortError;
+    }
+
+    /**
+     * Whether an error is a privacy-policy abort (a session change, navigation or caller abort is not).
+     * @param {*} error
+     * @returns {boolean}
+     */
+    function isPresentationAbort(error) {
+        return error?.name === 'AbortError' && error.presentationChanged === true;
+    }
+
+    /**
      * Calculate exponential backoff with jitter
      * @param {number} attempt
      * @param {typeof CONFIG.retry} [config]
@@ -852,7 +872,7 @@
         const sensitive = isGet && /(?:JellyfinEnhanced\/(?:native-details|jellyseerr|acquire|arr|tmdb|awards|mdblist-ratings|reviews|activity)|\/Items(?:\/|\?))/.test(url);
         /** A response started under a previous policy cannot repopulate a feed or its cache. */
         function assertPresentation() {
-            if (sensitive && presentation !== presentationGeneration) throw new DOMException('Presentation policy changed', 'AbortError');
+            if (sensitive && presentation !== presentationGeneration) throw createPresentationAbort();
         }
 
         // One object per request: the limiter reads it while queued, and the
@@ -1023,6 +1043,7 @@
         plugin: pluginFetch,
         pluginResponse,
         authHeaders,
+        isPresentationAbort,
         manager
     };
 

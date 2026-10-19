@@ -13,10 +13,10 @@ function setup(t,aborts){
   apiClient:{getUrl:path=>'http://jellyfin.test'+path,getCurrentUserId:()=>'viewer'},
   JE:{t:(k,args)=>args?.error?`${k}: ${args.error}`:k,pluginConfig:{ElsewhereEnabled:true,TmdbEnabled:true,DEFAULT_REGION:'US',ElsewhereSeasonProviders:false},
    helpers:{createObserver(){},onViewPage(){},debounce:fn=>fn},cdn:{url:(_,f)=>'http://cdn.test/'+f},userConfig:{elsewhere:{}},
-   core:{api:{fetch:async url=>{
+   core:{api:{isPresentationAbort:e=>e?.name==='AbortError'&&e.presentationChanged===true,fetch:async url=>{
     calls.push(url);
     if(url.includes('/watch/providers')){
-     if(calls.filter(u=>u.includes('/watch/providers')).length<=aborts)throw new DOMException('Presentation policy changed','AbortError');
+     if(calls.filter(u=>u.includes('/watch/providers')).length<=aborts)throw Object.defineProperty(new DOMException('Presentation policy changed','AbortError'),'presentationChanged',{value:true});
      return structuredClone(PROVIDERS);
     }
     return url.includes('regions')?{results:[{iso_3166_1:'US',english_name:'United States'}]}:{results:[]};

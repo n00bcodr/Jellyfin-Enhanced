@@ -26,7 +26,9 @@ internal sealed class ActivityFeedItem
 }
 
 /// <summary>
-/// Selects the newest permitted activity before hydrating card metadata. All lookup
+/// Selects the newest permitted activity before hydrating card metadata. Hidden Content is judged by the shared identity
+/// resolver while the page fills; Spoiler Guard is applied to the delivered rows by the final presentation gate's one
+/// activity projection (TitlePresentationResultFilter), so the builder never derives its own title key. All lookup
 /// caches live inside Build so permission, author and media changes are observed on
 /// the next request, and no result can be reused across viewers.
 /// </summary>
@@ -35,7 +37,7 @@ internal sealed class ActivityFeedBuilder(
     IUserManager userManager,
     IItemRepository itemRepository,
     Logger logger,
-    HiddenContentPolicy? hidden = null, SpoilerPresentationContext? spoilers = null)
+    HiddenContentPolicy? hidden = null)
 {
     private const int CandidatePageSize = 64;
 
@@ -183,25 +185,21 @@ internal sealed class ActivityFeedBuilder(
             accessibleIds ??= new HashSet<Guid>(libraryManager.GetItemIds(new InternalItemsQuery(viewer) { Recursive = true }));
             var permitted = accessibleIds;
 #endif
+            var identities = hidden == null || hidden.IsEmpty ? null
+                : PrivacyIdentities.Resolve(libraryManager, page.Select(p => p.ItemId).Where(permitted.Contains));
             foreach (var (candidate, itemId, author) in page)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!permitted.Contains(itemId)) continue;
                 try
                 {
-                    var titleItem = GetItem(itemId);
-                    var parentId = titleItem is MediaBrowser.Controller.Entities.TV.Episode episode ? episode.SeriesId : Guid.Empty;
-                    var parent = parentId != Guid.Empty ? GetItem(parentId) : titleItem;
-                    if (hidden?.IsHidden(HiddenContentPolicy.TitleIdentity(parent?.GetBaseItemKind().ToString(), parent?.GetProviderId(MetadataProvider.Tmdb)), itemId.ToString(), parentId.ToString(), "library") == true) continue;
+                    if (identities != null && identities.TryGetValue(itemId, out var identity) && hidden!.IsHidden(identity, "library")) continue;
                     if (!summaries.TryGetValue(itemId, out var summary))
                     {
                         var item = GetItem(itemId);
                         if (item == null) continue;
-                        summaries[itemId] = summary = BuildSummary(item, GetItem, spoilers);
+                        summaries[itemId] = summary = BuildSummary(item, GetItem);
                     }
-                    var titleKey = HiddenContentPolicy.TitleIdentity(parent?.GetBaseItemKind().ToString(), parent?.GetProviderId(MetadataProvider.Tmdb));
-                    if (spoilers?.HidesReviews(titleKey) == true) candidate.Row.Content = null;
-                    if (spoilers?.HidesRatings(titleKey) == true) candidate.Row.Rating = null;
                     candidate.Row.UserName = author?.Username ?? candidate.Row.UserId;
                     candidate.Row.UserHasPrimaryImage = author?.ProfileImage != null;
                     candidate.Row.Item = summary;
@@ -228,26 +226,22 @@ internal sealed class ActivityFeedBuilder(
     }
 
     /// <summary>Hydrates only emitted cards; episode series lookups share the request's item cache.</summary>
-    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem, SpoilerPresentationContext? spoilers)
+    private static object BuildSummary(BaseItem item, Func<Guid, BaseItem?> getItem)
     {
         var episode = item as MediaBrowser.Controller.Entities.TV.Episode;
         var series = episode != null && episode.SeriesId != Guid.Empty ? getItem(episode.SeriesId) : null;
-        var title = series ?? item;
-        var key = HiddenContentPolicy.TitleIdentity(title.GetBaseItemKind().ToString(), title.GetProviderId(MetadataProvider.Tmdb));
-        var strip = spoilers?.MissingRow(key) ?? (Title: false, Overview: false, AirDate: false);
-        var protectedArt = spoilers?.ProtectArtwork(key, episode != null ? "episode" : item.GetBaseItemKind().ToString().ToLowerInvariant(), "Primary") == true;
         return new
         {
             Id = item.Id.ToString("N"),
-            Name = episode != null && strip.Title ? null : item.Name,
+            Name = item.Name,
             Type = item.GetBaseItemKind().ToString(),
             ProductionYear = item.ProductionYear,
             SeriesName = episode?.SeriesName,
             SeriesId = episode != null && episode.SeriesId != Guid.Empty ? episode.SeriesId.ToString("N") : null,
             SeasonNumber = episode?.ParentIndexNumber,
             EpisodeNumber = episode?.IndexNumber,
-            HasPrimaryImage = !protectedArt && item.HasImage(ImageType.Primary, 0),
-            HasThumbImage = !protectedArt && item.HasImage(ImageType.Thumb, 0),
+            HasPrimaryImage = item.HasImage(ImageType.Primary, 0),
+            HasThumbImage = item.HasImage(ImageType.Thumb, 0),
             SeriesHasPrimaryImage = series?.HasImage(ImageType.Primary, 0) == true,
             SeriesHasThumbImage = series?.HasImage(ImageType.Thumb, 0) == true
         };

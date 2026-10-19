@@ -1,0 +1,391 @@
+# Controller	Action	Routes	Declared answer	Title path (empty: carries no title)
+ActivityLog	GetLogEntries	HttpGet(Entries)	QueryResult<ActivityLogEntry>	
+ApiKey	CreateKey	HttpPost(Keys)	ActionResult	
+ApiKey	GetKeys	HttpGet(Keys)	QueryResult<AuthenticationInfo>	
+ApiKey	RevokeKey	HttpDelete(Keys/{key})	ActionResult	
+Artists	GetAlbumArtists	HttpGet(AlbumArtists)	QueryResult<BaseItemDto>	BaseItemDto
+Artists	GetArtistByName	HttpGet({name})	BaseItemDto	BaseItemDto
+Artists	GetArtists	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Audio	GetAudioStream	HttpGet({itemId}/stream) HttpHead({itemId}/stream)	ActionResult	
+Audio	GetAudioStreamByContainer	HttpGet({itemId}/stream.{container}) HttpHead({itemId}/stream.{container})	ActionResult	
+Backup	CreateBackup	HttpPost(Create)	BackupManifestDto	
+Backup	GetBackup	HttpGet(Manifest)	BackupManifestDto	
+Backup	ListBackups	HttpGet()	BackupManifestDto[]	
+Backup	StartRestoreBackup	HttpPost(Restore)	IActionResult	
+Branding	GetBrandingCss	HttpGet(Css) HttpGet(Css.css)	String	
+Branding	GetBrandingOptions	HttpGet(Configuration)	BrandingOptionsDto	
+Channels	GetAllChannelFeatures	HttpGet(Features)	IEnumerable<ChannelFeatures>	
+Channels	GetChannelFeatures	HttpGet({channelId}/Features)	ChannelFeatures	
+Channels	GetChannelItems	HttpGet({channelId}/Items)	QueryResult<BaseItemDto>	BaseItemDto
+Channels	GetChannels	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Channels	GetLatestChannelItems	HttpGet(Items/Latest)	QueryResult<BaseItemDto>	BaseItemDto
+ClientLog	LogFile	HttpPost(Document)	ClientLogDocumentResponseDto	
+Collection	AddToCollection	HttpPost({collectionId}/Items)	ActionResult	
+Collection	CreateCollection	HttpPost()	CollectionCreationResult	
+Collection	RemoveFromCollection	HttpDelete({collectionId}/Items)	ActionResult	
+Configuration	GetConfiguration	HttpGet(Configuration)	ServerConfiguration	
+Configuration	GetDefaultMetadataOptions	HttpGet(Configuration/MetadataOptions/Default)	MetadataOptions	
+Configuration	GetNamedConfiguration	HttpGet(Configuration/{key})	Object	
+Configuration	UpdateBrandingConfiguration	HttpPost(Configuration/Branding)	ActionResult	
+Configuration	UpdateConfiguration	HttpPost(Configuration)	ActionResult	
+Configuration	UpdateMediaEncoderPath	HttpPost(MediaEncoder/Path)	ActionResult	
+Configuration	UpdateNamedConfiguration	HttpPost(Configuration/{key})	ActionResult	
+Dashboard	GetConfigurationPages	HttpGet(web/ConfigurationPages)	IEnumerable<ConfigurationPageInfo>	
+Dashboard	GetDashboardConfigurationPage	HttpGet(web/ConfigurationPage)	ActionResult	
+Devices	DeleteDevice	HttpDelete()	ActionResult	
+Devices	GetDeviceInfo	HttpGet(Info)	DeviceInfoDto	
+Devices	GetDeviceOptions	HttpGet(Options)	DeviceOptionsDto	
+Devices	GetDevices	HttpGet()	QueryResult<DeviceInfoDto>	
+Devices	UpdateDeviceOptions	HttpPost(Options)	ActionResult	
+DisplayPreferences	GetDisplayPreferences	HttpGet({displayPreferencesId})	DisplayPreferencesDto	
+DisplayPreferences	UpdateDisplayPreferences	HttpPost({displayPreferencesId})	ActionResult	
+DynamicHls	GetHlsAudioSegment	HttpGet(Audio/{itemId}/hls1/{playlistId}/{segmentId}.{container})	ActionResult	
+DynamicHls	GetHlsVideoSegment	HttpGet(Videos/{itemId}/hls1/{playlistId}/{segmentId}.{container})	ActionResult	
+DynamicHls	GetLiveHlsStream	HttpGet(Videos/{itemId}/live.m3u8)	ActionResult	
+DynamicHls	GetMasterHlsAudioPlaylist	HttpGet(Audio/{itemId}/master.m3u8) HttpHead(Audio/{itemId}/master.m3u8)	ActionResult	
+DynamicHls	GetMasterHlsVideoPlaylist	HttpGet(Videos/{itemId}/master.m3u8) HttpHead(Videos/{itemId}/master.m3u8)	ActionResult	
+DynamicHls	GetVariantHlsAudioPlaylist	HttpGet(Audio/{itemId}/main.m3u8)	ActionResult	
+DynamicHls	GetVariantHlsVideoPlaylist	HttpGet(Videos/{itemId}/main.m3u8)	ActionResult	
+Environment	GetDefaultDirectoryBrowser	HttpGet(DefaultDirectoryBrowser)	DefaultDirectoryBrowserInfoDto	
+Environment	GetDirectoryContents	HttpGet(DirectoryContents)	IEnumerable<FileSystemEntryInfo>	
+Environment	GetDrives	HttpGet(Drives)	IEnumerable<FileSystemEntryInfo>	
+Environment	GetNetworkShares	HttpGet(NetworkShares)	IEnumerable<FileSystemEntryInfo>	
+Environment	GetParentPath	HttpGet(ParentPath)	String	
+Environment	ValidatePath	HttpPost(ValidatePath)	ActionResult	
+Filter	GetQueryFilters	HttpGet(Items/Filters2)	QueryFilters	
+Filter	GetQueryFiltersLegacy	HttpGet(Items/Filters)	QueryFiltersLegacy	
+Genres	GetGenre	HttpGet({genreName})	BaseItemDto	BaseItemDto
+Genres	GetGenres	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+HlsSegment	GetHlsAudioSegmentLegacy	HttpGet(Audio/{itemId}/hls/{segmentId}/stream.mp3) HttpGet(Audio/{itemId}/hls/{segmentId}/stream.aac)	ActionResult	
+HlsSegment	GetHlsPlaylistLegacy	HttpGet(Videos/{itemId}/hls/{playlistId}/stream.m3u8)	ActionResult	
+HlsSegment	GetHlsVideoSegmentLegacy	HttpGet(Videos/{itemId}/hls/{playlistId}/{segmentId}.{segmentContainer})	ActionResult	
+HlsSegment	StopEncodingProcess	HttpDelete(Videos/ActiveEncodings)	ActionResult	
+Image	DeleteCustomSplashscreen	HttpDelete(Branding/Splashscreen)	ActionResult	
+Image	DeleteItemImage	HttpDelete(Items/{itemId}/Images/{imageType})	ActionResult	
+Image	DeleteItemImageByIndex	HttpDelete(Items/{itemId}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	DeleteUserImage	HttpDelete(UserImage)	ActionResult	
+Image	DeleteUserImageByIndexLegacy	HttpDelete(Users/{userId}/Images/{imageType}/{index})	ActionResult	
+Image	DeleteUserImageLegacy	HttpDelete(Users/{userId}/Images/{imageType})	ActionResult	
+Image	GetArtistImage	HttpGet(Artists/{name}/Images/{imageType}/{imageIndex}) HttpHead(Artists/{name}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetGenreImage	HttpGet(Genres/{name}/Images/{imageType}) HttpHead(Genres/{name}/Images/{imageType})	ActionResult	
+Image	GetGenreImageByIndex	HttpGet(Genres/{name}/Images/{imageType}/{imageIndex}) HttpHead(Genres/{name}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetItemImage	HttpGet(Items/{itemId}/Images/{imageType}) HttpHead(Items/{itemId}/Images/{imageType})	ActionResult	
+Image	GetItemImage2	HttpGet(Items/{itemId}/Images/{imageType}/{imageIndex}/{tag}/{format}/{maxWidth}/{maxHeight}/{percentPlayed}/{unplayedCount}) HttpHead(Items/{itemId}/Images/{imageType}/{imageIndex}/{tag}/{format}/{maxWidth}/{maxHeight}/{percentPlayed}/{unplayedCount})	ActionResult	
+Image	GetItemImageByIndex	HttpGet(Items/{itemId}/Images/{imageType}/{imageIndex}) HttpHead(Items/{itemId}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetItemImageInfos	HttpGet(Items/{itemId}/Images)	IEnumerable<ImageInfo>	ImageInfo
+Image	GetMusicGenreImage	HttpGet(MusicGenres/{name}/Images/{imageType}) HttpHead(MusicGenres/{name}/Images/{imageType})	ActionResult	
+Image	GetMusicGenreImageByIndex	HttpGet(MusicGenres/{name}/Images/{imageType}/{imageIndex}) HttpHead(MusicGenres/{name}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetPersonImage	HttpGet(Persons/{name}/Images/{imageType}) HttpHead(Persons/{name}/Images/{imageType})	ActionResult	
+Image	GetPersonImageByIndex	HttpGet(Persons/{name}/Images/{imageType}/{imageIndex}) HttpHead(Persons/{name}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetSplashscreen	HttpGet(Branding/Splashscreen)	ActionResult	
+Image	GetStudioImage	HttpGet(Studios/{name}/Images/{imageType}) HttpHead(Studios/{name}/Images/{imageType})	ActionResult	
+Image	GetStudioImageByIndex	HttpGet(Studios/{name}/Images/{imageType}/{imageIndex}) HttpHead(Studios/{name}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetUserImage	HttpGet(UserImage) HttpHead(UserImage)	ActionResult	
+Image	GetUserImageByIndexLegacy	HttpGet(Users/{userId}/Images/{imageType}/{imageIndex}) HttpHead(Users/{userId}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	GetUserImageLegacy	HttpGet(Users/{userId}/Images/{imageType}) HttpHead(Users/{userId}/Images/{imageType})	ActionResult	
+Image	PostUserImage	HttpPost(UserImage)	ActionResult	
+Image	PostUserImageByIndexLegacy	HttpPost(Users/{userId}/Images/{imageType}/{index})	ActionResult	
+Image	PostUserImageLegacy	HttpPost(Users/{userId}/Images/{imageType})	ActionResult	
+Image	SetItemImage	HttpPost(Items/{itemId}/Images/{imageType})	ActionResult	
+Image	SetItemImageByIndex	HttpPost(Items/{itemId}/Images/{imageType}/{imageIndex})	ActionResult	
+Image	UpdateItemImageIndex	HttpPost(Items/{itemId}/Images/{imageType}/{imageIndex}/Index)	ActionResult	
+Image	UploadCustomSplashscreen	HttpPost(Branding/Splashscreen)	ActionResult	
+InstantMix	GetInstantMixFromAlbum	HttpGet(Albums/{itemId}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromArtists	HttpGet(Artists/{itemId}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromArtists2	HttpGet(Artists/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromItem	HttpGet(Items/{itemId}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromMusicGenreById	HttpGet(MusicGenres/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromMusicGenreByName	HttpGet(MusicGenres/{name}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromPlaylist	HttpGet(Playlists/{itemId}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+InstantMix	GetInstantMixFromSong	HttpGet(Songs/{itemId}/InstantMix)	QueryResult<BaseItemDto>	BaseItemDto
+ItemLookup	ApplySearchCriteria	HttpPost(Items/RemoteSearch/Apply/{itemId})	ActionResult	
+ItemLookup	GetBookRemoteSearchResults	HttpPost(Items/RemoteSearch/Book)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetBoxSetRemoteSearchResults	HttpPost(Items/RemoteSearch/BoxSet)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetExternalIdInfos	HttpGet(Items/{itemId}/ExternalIdInfos)	IEnumerable<ExternalIdInfo>	
+ItemLookup	GetMovieRemoteSearchResults	HttpPost(Items/RemoteSearch/Movie)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetMusicAlbumRemoteSearchResults	HttpPost(Items/RemoteSearch/MusicAlbum)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetMusicArtistRemoteSearchResults	HttpPost(Items/RemoteSearch/MusicArtist)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetMusicVideoRemoteSearchResults	HttpPost(Items/RemoteSearch/MusicVideo)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetPersonRemoteSearchResults	HttpPost(Items/RemoteSearch/Person)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetSeriesRemoteSearchResults	HttpPost(Items/RemoteSearch/Series)	IEnumerable<RemoteSearchResult>	
+ItemLookup	GetTrailerRemoteSearchResults	HttpPost(Items/RemoteSearch/Trailer)	IEnumerable<RemoteSearchResult>	
+ItemRefresh	RefreshItem	HttpPost({itemId}/Refresh)	ActionResult	
+Items	GetItems	HttpGet(Items)	QueryResult<BaseItemDto>	BaseItemDto
+Items	GetItemsByUserIdLegacy	HttpGet(Users/{userId}/Items)	QueryResult<BaseItemDto>	BaseItemDto
+Items	GetItemUserData	HttpGet(UserItems/{itemId}/UserData)	UserItemDataDto	
+Items	GetItemUserDataLegacy	HttpGet(Users/{userId}/Items/{itemId}/UserData)	UserItemDataDto	
+Items	GetResumeItems	HttpGet(UserItems/Resume)	QueryResult<BaseItemDto>	BaseItemDto
+Items	GetResumeItemsLegacy	HttpGet(Users/{userId}/Items/Resume)	QueryResult<BaseItemDto>	BaseItemDto
+Items	UpdateItemUserData	HttpPost(UserItems/{itemId}/UserData)	UserItemDataDto	
+Items	UpdateItemUserDataLegacy	HttpPost(Users/{userId}/Items/{itemId}/UserData)	UserItemDataDto	
+ItemUpdate	GetMetadataEditorInfo	HttpGet(Items/{itemId}/MetadataEditor)	MetadataEditorInfo	
+ItemUpdate	UpdateItem	HttpPost(Items/{itemId})	ActionResult	
+ItemUpdate	UpdateItemContentType	HttpPost(Items/{itemId}/ContentType)	ActionResult	
+Library	DeleteItem	HttpDelete(Items/{itemId})	ActionResult	
+Library	DeleteItems	HttpDelete(Items)	ActionResult	
+Library	GetAncestors	HttpGet(Items/{itemId}/Ancestors)	IEnumerable<BaseItemDto>	BaseItemDto
+Library	GetCriticReviews	HttpGet(Items/{itemId}/CriticReviews)	QueryResult<BaseItemDto>	BaseItemDto
+Library	GetDownload	HttpGet(Items/{itemId}/Download)	ActionResult	
+Library	GetFile	HttpGet(Items/{itemId}/File)	ActionResult	
+Library	GetItemCounts	HttpGet(Items/Counts)	ItemCounts	
+Library	GetLibraryOptionsInfo	HttpGet(Libraries/AvailableOptions)	LibraryOptionsResultDto	
+Library	GetMediaFolders	HttpGet(Library/MediaFolders)	QueryResult<BaseItemDto>	BaseItemDto
+Library	GetPhysicalPaths	HttpGet(Library/PhysicalPaths)	IEnumerable<String>	
+Library	GetSimilarItems	HttpGet(Artists/{itemId}/Similar) HttpGet(Items/{itemId}/Similar) HttpGet(Albums/{itemId}/Similar) HttpGet(Shows/{itemId}/Similar) HttpGet(Movies/{itemId}/Similar) HttpGet(Trailers/{itemId}/Similar)	QueryResult<BaseItemDto>	BaseItemDto
+Library	GetThemeMedia	HttpGet(Items/{itemId}/ThemeMedia)	AllThemeMediaResult	AllThemeMediaResult.ThemeVideosResult:ThemeMediaResult.Items:BaseItemDto
+Library	GetThemeSongs	HttpGet(Items/{itemId}/ThemeSongs)	ThemeMediaResult	ThemeMediaResult.Items:BaseItemDto
+Library	GetThemeVideos	HttpGet(Items/{itemId}/ThemeVideos)	ThemeMediaResult	ThemeMediaResult.Items:BaseItemDto
+Library	PostUpdatedMedia	HttpPost(Library/Media/Updated)	ActionResult	
+Library	PostUpdatedMovies	HttpPost(Library/Movies/Added) HttpPost(Library/Movies/Updated)	ActionResult	
+Library	PostUpdatedSeries	HttpPost(Library/Series/Added) HttpPost(Library/Series/Updated)	ActionResult	
+Library	RefreshLibrary	HttpPost(Library/Refresh)	ActionResult	
+LibraryStructure	AddMediaPath	HttpPost(Paths)	ActionResult	
+LibraryStructure	AddVirtualFolder	HttpPost()	ActionResult	
+LibraryStructure	GetVirtualFolders	HttpGet()	IEnumerable<VirtualFolderInfo>	
+LibraryStructure	RemoveMediaPath	HttpDelete(Paths)	ActionResult	
+LibraryStructure	RemoveVirtualFolder	HttpDelete()	ActionResult	
+LibraryStructure	RenameVirtualFolder	HttpPost(Name)	ActionResult	
+LibraryStructure	UpdateLibraryOptions	HttpPost(LibraryOptions)	ActionResult	
+LibraryStructure	UpdateMediaPath	HttpPost(Paths/Update)	ActionResult	
+LiveTv	AddListingProvider	HttpPost(ListingProviders)	ListingsProviderInfo	
+LiveTv	AddTunerHost	HttpPost(TunerHosts)	TunerHostInfo	
+LiveTv	CancelSeriesTimer	HttpDelete(SeriesTimers/{timerId})	ActionResult	
+LiveTv	CancelTimer	HttpDelete(Timers/{timerId})	ActionResult	
+LiveTv	CreateSeriesTimer	HttpPost(SeriesTimers)	ActionResult	
+LiveTv	CreateTimer	HttpPost(Timers)	ActionResult	
+LiveTv	DeleteListingProvider	HttpDelete(ListingProviders)	ActionResult	
+LiveTv	DeleteRecording	HttpDelete(Recordings/{recordingId})	ActionResult	
+LiveTv	DeleteTunerHost	HttpDelete(TunerHosts)	ActionResult	
+LiveTv	DiscoverTuners	HttpGet(Tuners/Discvover) HttpGet(Tuners/Discover)	TunerHostInfo	
+LiveTv	GetChannel	HttpGet(Channels/{channelId})	BaseItemDto	BaseItemDto
+LiveTv	GetChannelMappingOptions	HttpGet(ChannelMappingOptions)	ChannelMappingOptionsDto	
+LiveTv	GetDefaultListingProvider	HttpGet(ListingProviders/Default)	ListingsProviderInfo	
+LiveTv	GetDefaultTimer	HttpGet(Timers/Defaults)	SeriesTimerInfoDto	
+LiveTv	GetGuideInfo	HttpGet(GuideInfo)	GuideInfo	
+LiveTv	GetLineups	HttpGet(ListingProviders/Lineups)	IEnumerable<NameIdPair>	
+LiveTv	GetLiveRecordingFile	HttpGet(LiveRecordings/{recordingId}/stream)	ActionResult	
+LiveTv	GetLiveStreamFile	HttpGet(LiveStreamFiles/{streamId}/stream.{container})	ActionResult	
+LiveTv	GetLiveTvChannels	HttpGet(Channels)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetLiveTvInfo	HttpGet(Info)	LiveTvInfo	
+LiveTv	GetLiveTvPrograms	HttpGet(Programs)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetProgram	HttpGet(Programs/{programId})	BaseItemDto	BaseItemDto
+LiveTv	GetPrograms	HttpPost(Programs)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetRecommendedPrograms	HttpGet(Programs/Recommended)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetRecording	HttpGet(Recordings/{recordingId})	BaseItemDto	BaseItemDto
+LiveTv	GetRecordingFolders	HttpGet(Recordings/Folders)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetRecordingGroup	HttpGet(Recordings/Groups/{groupId})	BaseItemDto	BaseItemDto
+LiveTv	GetRecordingGroups	HttpGet(Recordings/Groups)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetRecordings	HttpGet(Recordings)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetRecordingsSeries	HttpGet(Recordings/Series)	QueryResult<BaseItemDto>	BaseItemDto
+LiveTv	GetSchedulesDirectCountries	HttpGet(ListingProviders/SchedulesDirect/Countries)	ActionResult	
+LiveTv	GetSeriesTimer	HttpGet(SeriesTimers/{timerId})	SeriesTimerInfoDto	
+LiveTv	GetSeriesTimers	HttpGet(SeriesTimers)	QueryResult<SeriesTimerInfoDto>	
+LiveTv	GetTimer	HttpGet(Timers/{timerId})	TimerInfoDto	TimerInfoDto.ProgramInfo:BaseItemDto
+LiveTv	GetTimers	HttpGet(Timers)	QueryResult<TimerInfoDto>	TimerInfoDto.ProgramInfo:BaseItemDto
+LiveTv	GetTunerHostTypes	HttpGet(TunerHosts/Types)	IEnumerable<NameIdPair>	
+LiveTv	ResetTuner	HttpPost(Tuners/{tunerId}/Reset)	ActionResult	
+LiveTv	SetChannelMapping	HttpPost(ChannelMappings)	TunerChannelMapping	
+LiveTv	UpdateSeriesTimer	HttpPost(SeriesTimers/{timerId})	ActionResult	
+LiveTv	UpdateTimer	HttpPost(Timers/{timerId})	ActionResult	
+Localization	GetCountries	HttpGet(Countries)	IReadOnlyList<CountryInfo>	
+Localization	GetCultures	HttpGet(Cultures)	IEnumerable<CultureDto>	
+Localization	GetLocalizationOptions	HttpGet(Options)	IEnumerable<LocalizationOption>	
+Localization	GetParentalRatings	HttpGet(ParentalRatings)	IReadOnlyList<ParentalRating>	
+Lyrics	DeleteLyrics	HttpDelete(Audio/{itemId}/Lyrics)	ActionResult	
+Lyrics	DownloadRemoteLyrics	HttpPost(Audio/{itemId}/RemoteSearch/Lyrics/{lyricId})	LyricDto	
+Lyrics	GetLyrics	HttpGet(Audio/{itemId}/Lyrics)	LyricDto	
+Lyrics	GetRemoteLyrics	HttpGet(Providers/Lyrics/{lyricId})	LyricDto	
+Lyrics	SearchRemoteLyrics	HttpGet(Audio/{itemId}/RemoteSearch/Lyrics)	IReadOnlyList<RemoteLyricInfoDto>	
+Lyrics	UploadLyrics	HttpPost(Audio/{itemId}/Lyrics)	LyricDto	
+MediaInfo	CloseLiveStream	HttpPost(LiveStreams/Close)	ActionResult	
+MediaInfo	GetBitrateTestBytes	HttpGet(Playback/BitrateTest)	ActionResult	
+MediaInfo	GetPlaybackInfo	HttpGet(Items/{itemId}/PlaybackInfo)	PlaybackInfoResponse	PlaybackInfoResponse.MediaSources:MediaSourceInfo
+MediaInfo	GetPostedPlaybackInfo	HttpPost(Items/{itemId}/PlaybackInfo)	PlaybackInfoResponse	PlaybackInfoResponse.MediaSources:MediaSourceInfo
+MediaInfo	OpenLiveStream	HttpPost(LiveStreams/Open)	LiveStreamResponse	LiveStreamResponse.MediaSource:MediaSourceInfo
+MediaSegments	GetItemSegments	HttpGet({itemId})	QueryResult<MediaSegmentDto>	
+Movies	GetMovieRecommendations	HttpGet(Recommendations)	IEnumerable<RecommendationDto>	RecommendationDto
+MusicGenres	GetMusicGenre	HttpGet({genreName})	BaseItemDto	BaseItemDto
+MusicGenres	GetMusicGenres	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Package	CancelPackageInstallation	HttpDelete(Packages/Installing/{packageId})	ActionResult	
+Package	GetPackageInfo	HttpGet(Packages/{name})	PackageInfo	
+Package	GetPackages	HttpGet(Packages)	IEnumerable<PackageInfo>	
+Package	GetRepositories	HttpGet(Repositories)	IEnumerable<RepositoryInfo>	
+Package	InstallPackage	HttpPost(Packages/Installed/{name})	ActionResult	
+Package	SetRepositories	HttpPost(Repositories)	ActionResult	
+Persons	GetPerson	HttpGet({name})	BaseItemDto	BaseItemDto
+Persons	GetPersons	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Playlists	AddItemToPlaylist	HttpPost({playlistId}/Items)	ActionResult	
+Playlists	CreatePlaylist	HttpPost()	PlaylistCreationResult	
+Playlists	GetPlaylist	HttpGet({playlistId})	PlaylistDto	
+Playlists	GetPlaylistItems	HttpGet({playlistId}/Items)	QueryResult<BaseItemDto>	BaseItemDto
+Playlists	GetPlaylistUser	HttpGet({playlistId}/Users/{userId})	PlaylistUserPermissions	
+Playlists	GetPlaylistUsers	HttpGet({playlistId}/Users)	IReadOnlyList<PlaylistUserPermissions>	
+Playlists	MoveItem	HttpPost({playlistId}/Items/{itemId}/Move/{newIndex})	ActionResult	
+Playlists	RemoveItemFromPlaylist	HttpDelete({playlistId}/Items)	ActionResult	
+Playlists	RemoveUserFromPlaylist	HttpDelete({playlistId}/Users/{userId})	ActionResult	
+Playlists	UpdatePlaylist	HttpPost({playlistId})	ActionResult	
+Playlists	UpdatePlaylistUser	HttpPost({playlistId}/Users/{userId})	ActionResult	
+Playstate	MarkPlayedItem	HttpPost(UserPlayedItems/{itemId})	UserItemDataDto	
+Playstate	MarkPlayedItemLegacy	HttpPost(Users/{userId}/PlayedItems/{itemId})	UserItemDataDto	
+Playstate	MarkUnplayedItem	HttpDelete(UserPlayedItems/{itemId})	UserItemDataDto	
+Playstate	MarkUnplayedItemLegacy	HttpDelete(Users/{userId}/PlayedItems/{itemId})	UserItemDataDto	
+Playstate	OnPlaybackProgress	HttpPost(PlayingItems/{itemId}/Progress)	ActionResult	
+Playstate	OnPlaybackProgressLegacy	HttpPost(Users/{userId}/PlayingItems/{itemId}/Progress)	ActionResult	
+Playstate	OnPlaybackStart	HttpPost(PlayingItems/{itemId})	ActionResult	
+Playstate	OnPlaybackStartLegacy	HttpPost(Users/{userId}/PlayingItems/{itemId})	ActionResult	
+Playstate	OnPlaybackStopped	HttpDelete(PlayingItems/{itemId})	ActionResult	
+Playstate	OnPlaybackStoppedLegacy	HttpDelete(Users/{userId}/PlayingItems/{itemId})	ActionResult	
+Playstate	PingPlaybackSession	HttpPost(Sessions/Playing/Ping)	ActionResult	
+Playstate	ReportPlaybackProgress	HttpPost(Sessions/Playing/Progress)	ActionResult	
+Playstate	ReportPlaybackStart	HttpPost(Sessions/Playing)	ActionResult	
+Playstate	ReportPlaybackStopped	HttpPost(Sessions/Playing/Stopped)	ActionResult	
+Plugins	DisablePlugin	HttpPost({pluginId}/{version}/Disable)	ActionResult	
+Plugins	EnablePlugin	HttpPost({pluginId}/{version}/Enable)	ActionResult	
+Plugins	GetPluginConfiguration	HttpGet({pluginId}/Configuration)	BasePluginConfiguration	
+Plugins	GetPluginImage	HttpGet({pluginId}/{version}/Image)	ActionResult	
+Plugins	GetPluginManifest	HttpPost({pluginId}/Manifest)	PluginManifest	
+Plugins	GetPlugins	HttpGet()	IEnumerable<PluginInfo>	
+Plugins	UninstallPlugin	HttpDelete({pluginId})	ActionResult	
+Plugins	UninstallPluginByVersion	HttpDelete({pluginId}/{version})	ActionResult	
+Plugins	UpdatePluginConfiguration	HttpPost({pluginId}/Configuration)	ActionResult	
+QuickConnect	AuthorizeQuickConnect	HttpPost(Authorize)	Boolean	
+QuickConnect	GetQuickConnectEnabled	HttpGet(Enabled)	Boolean	
+QuickConnect	GetQuickConnectState	HttpGet(Connect)	QuickConnectResult	
+QuickConnect	InitiateQuickConnect	HttpPost(Initiate)	QuickConnectResult	
+QuickConnect	InitiateQuickConnectLegacy	HttpGet(Initiate)	QuickConnectResult	
+RemoteImage	DownloadRemoteImage	HttpPost(Items/{itemId}/RemoteImages/Download)	ActionResult	
+RemoteImage	GetRemoteImageProviders	HttpGet(Items/{itemId}/RemoteImages/Providers)	IEnumerable<ImageProviderInfo>	
+RemoteImage	GetRemoteImages	HttpGet(Items/{itemId}/RemoteImages)	RemoteImageResult	
+ScheduledTasks	GetTask	HttpGet({taskId})	TaskInfo	
+ScheduledTasks	GetTasks	HttpGet()	IEnumerable<TaskInfo>	
+ScheduledTasks	StartTask	HttpPost(Running/{taskId})	ActionResult	
+ScheduledTasks	StopTask	HttpDelete(Running/{taskId})	ActionResult	
+ScheduledTasks	UpdateTask	HttpPost({taskId}/Triggers)	ActionResult	
+Search	GetSearchHints	HttpGet()	SearchHintResult	SearchHintResult.SearchHints:SearchHint
+Session	AddUserToSession	HttpPost(Sessions/{sessionId}/User/{userId})	ActionResult	
+Session	DisplayContent	HttpPost(Sessions/{sessionId}/Viewing)	ActionResult	
+Session	GetAuthProviders	HttpGet(Auth/Providers)	IEnumerable<NameIdPair>	
+Session	GetPasswordResetProviders	HttpGet(Auth/PasswordResetProviders)	IEnumerable<NameIdPair>	
+Session	GetSessions	HttpGet(Sessions)	IReadOnlyList<SessionInfoDto>	SessionInfoDto.NowPlayingItem:BaseItemDto
+Session	Play	HttpPost(Sessions/{sessionId}/Playing)	ActionResult	
+Session	PostCapabilities	HttpPost(Sessions/Capabilities)	ActionResult	
+Session	PostFullCapabilities	HttpPost(Sessions/Capabilities/Full)	ActionResult	
+Session	RemoveUserFromSession	HttpDelete(Sessions/{sessionId}/User/{userId})	ActionResult	
+Session	ReportSessionEnded	HttpPost(Sessions/Logout)	ActionResult	
+Session	ReportViewing	HttpPost(Sessions/Viewing)	ActionResult	
+Session	SendFullGeneralCommand	HttpPost(Sessions/{sessionId}/Command)	ActionResult	
+Session	SendGeneralCommand	HttpPost(Sessions/{sessionId}/Command/{command})	ActionResult	
+Session	SendMessageCommand	HttpPost(Sessions/{sessionId}/Message)	ActionResult	
+Session	SendPlaystateCommand	HttpPost(Sessions/{sessionId}/Playing/{command})	ActionResult	
+Session	SendSystemCommand	HttpPost(Sessions/{sessionId}/System/{command})	ActionResult	
+Startup	CompleteWizard	HttpPost(Complete)	ActionResult	
+Startup	GetFirstUser	HttpGet(User) HttpGet(FirstUser)	StartupUserDto	
+Startup	GetStartupConfiguration	HttpGet(Configuration)	StartupConfigurationDto	
+Startup	SetRemoteAccess	HttpPost(RemoteAccess)	ActionResult	
+Startup	UpdateInitialConfiguration	HttpPost(Configuration)	ActionResult	
+Startup	UpdateStartupUser	HttpPost(User)	ActionResult	
+Studios	GetStudio	HttpGet({name})	BaseItemDto	BaseItemDto
+Studios	GetStudios	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Subtitle	DeleteSubtitle	HttpDelete(Videos/{itemId}/Subtitles/{index})	ActionResult	
+Subtitle	DownloadRemoteSubtitles	HttpPost(Items/{itemId}/RemoteSearch/Subtitles/{subtitleId})	ActionResult	
+Subtitle	GetFallbackFont	HttpGet(FallbackFont/Fonts/{name})	ActionResult	
+Subtitle	GetFallbackFontList	HttpGet(FallbackFont/Fonts)	IEnumerable<FontFile>	
+Subtitle	GetRemoteSubtitles	HttpGet(Providers/Subtitles/Subtitles/{subtitleId})	ActionResult	
+Subtitle	GetSubtitle	HttpGet(Videos/{routeItemId}/{routeMediaSourceId}/Subtitles/{routeIndex}/Stream.{routeFormat})	ActionResult	
+Subtitle	GetSubtitlePlaylist	HttpGet(Videos/{itemId}/{mediaSourceId}/Subtitles/{index}/subtitles.m3u8)	ActionResult	
+Subtitle	GetSubtitleWithTicks	HttpGet(Videos/{routeItemId}/{routeMediaSourceId}/Subtitles/{routeIndex}/{routeStartPositionTicks}/Stream.{routeFormat})	ActionResult	
+Subtitle	SearchRemoteSubtitles	HttpGet(Items/{itemId}/RemoteSearch/Subtitles/{language})	IEnumerable<RemoteSubtitleInfo>	
+Subtitle	UploadSubtitle	HttpPost(Videos/{itemId}/Subtitles)	ActionResult	
+Suggestions	GetSuggestions	HttpGet(Items/Suggestions)	QueryResult<BaseItemDto>	BaseItemDto
+Suggestions	GetSuggestionsLegacy	HttpGet(Users/{userId}/Suggestions)	QueryResult<BaseItemDto>	BaseItemDto
+SyncPlay	SyncPlayBuffering	HttpPost(Buffering)	ActionResult	
+SyncPlay	SyncPlayCreateGroup	HttpPost(New)	GroupInfoDto	
+SyncPlay	SyncPlayGetGroup	HttpGet({id:guid})	GroupInfoDto	
+SyncPlay	SyncPlayGetGroups	HttpGet(List)	IEnumerable<GroupInfoDto>	
+SyncPlay	SyncPlayJoinGroup	HttpPost(Join)	ActionResult	
+SyncPlay	SyncPlayLeaveGroup	HttpPost(Leave)	ActionResult	
+SyncPlay	SyncPlayMovePlaylistItem	HttpPost(MovePlaylistItem)	ActionResult	
+SyncPlay	SyncPlayNextItem	HttpPost(NextItem)	ActionResult	
+SyncPlay	SyncPlayPause	HttpPost(Pause)	ActionResult	
+SyncPlay	SyncPlayPing	HttpPost(Ping)	ActionResult	
+SyncPlay	SyncPlayPreviousItem	HttpPost(PreviousItem)	ActionResult	
+SyncPlay	SyncPlayQueue	HttpPost(Queue)	ActionResult	
+SyncPlay	SyncPlayReady	HttpPost(Ready)	ActionResult	
+SyncPlay	SyncPlayRemoveFromPlaylist	HttpPost(RemoveFromPlaylist)	ActionResult	
+SyncPlay	SyncPlaySeek	HttpPost(Seek)	ActionResult	
+SyncPlay	SyncPlaySetIgnoreWait	HttpPost(SetIgnoreWait)	ActionResult	
+SyncPlay	SyncPlaySetNewQueue	HttpPost(SetNewQueue)	ActionResult	
+SyncPlay	SyncPlaySetPlaylistItem	HttpPost(SetPlaylistItem)	ActionResult	
+SyncPlay	SyncPlaySetRepeatMode	HttpPost(SetRepeatMode)	ActionResult	
+SyncPlay	SyncPlaySetShuffleMode	HttpPost(SetShuffleMode)	ActionResult	
+SyncPlay	SyncPlayStop	HttpPost(Stop)	ActionResult	
+SyncPlay	SyncPlayUnpause	HttpPost(Unpause)	ActionResult	
+System	GetEndpointInfo	HttpGet(Endpoint)	EndPointInfo	
+System	GetLogFile	HttpGet(Logs/Log)	ActionResult	
+System	GetPublicSystemInfo	HttpGet(Info/Public)	PublicSystemInfo	
+System	GetServerLogs	HttpGet(Logs)	LogFile[]	
+System	GetSystemInfo	HttpGet(Info)	SystemInfo	
+System	GetSystemStorage	HttpGet(Info/Storage)	SystemStorageDto	
+System	PingSystem	HttpGet(Ping) HttpPost(Ping)	String	
+System	RestartApplication	HttpPost(Restart)	ActionResult	
+System	ShutdownApplication	HttpPost(Shutdown)	ActionResult	
+TimeSync	GetUtcTime	HttpGet(GetUtcTime)	UtcTimeResponse	
+Trailers	GetTrailers	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto
+Trickplay	GetTrickplayHlsPlaylist	HttpGet(Videos/{itemId}/Trickplay/{width}/tiles.m3u8)	ActionResult	
+Trickplay	GetTrickplayTileImage	HttpGet(Videos/{itemId}/Trickplay/{width}/{index}.jpg)	ActionResult	
+TvShows	GetEpisodes	HttpGet({seriesId}/Episodes)	QueryResult<BaseItemDto>	BaseItemDto
+TvShows	GetNextUp	HttpGet(NextUp)	QueryResult<BaseItemDto>	BaseItemDto
+TvShows	GetSeasons	HttpGet({seriesId}/Seasons)	QueryResult<BaseItemDto>	BaseItemDto
+TvShows	GetUpcomingEpisodes	HttpGet(Upcoming)	QueryResult<BaseItemDto>	BaseItemDto
+UniversalAudio	GetUniversalAudioStream	HttpGet(Audio/{itemId}/universal) HttpHead(Audio/{itemId}/universal)	ActionResult	
+User	AuthenticateUser	HttpPost({userId}/Authenticate)	AuthenticationResult	AuthenticationResult.SessionInfo:SessionInfoDto.NowPlayingItem:BaseItemDto
+User	AuthenticateUserByName	HttpPost(AuthenticateByName)	AuthenticationResult	AuthenticationResult.SessionInfo:SessionInfoDto.NowPlayingItem:BaseItemDto
+User	AuthenticateWithQuickConnect	HttpPost(AuthenticateWithQuickConnect)	AuthenticationResult	AuthenticationResult.SessionInfo:SessionInfoDto.NowPlayingItem:BaseItemDto
+User	CreateUserByName	HttpPost(New)	UserDto	
+User	DeleteUser	HttpDelete({userId})	ActionResult	
+User	ForgotPassword	HttpPost(ForgotPassword)	ForgotPasswordResult	
+User	ForgotPasswordPin	HttpPost(ForgotPassword/Pin)	PinRedeemResult	
+User	GetCurrentUser	HttpGet(Me)	UserDto	
+User	GetPublicUsers	HttpGet(Public)	IEnumerable<UserDto>	
+User	GetUserById	HttpGet({userId})	UserDto	
+User	GetUsers	HttpGet()	IEnumerable<UserDto>	
+User	UpdateUser	HttpPost()	ActionResult	
+User	UpdateUserConfiguration	HttpPost(Configuration)	ActionResult	
+User	UpdateUserConfigurationLegacy	HttpPost({userId}/Configuration)	ActionResult	
+User	UpdateUserEasyPassword	HttpPost({userId}/EasyPassword)	ActionResult	
+User	UpdateUserLegacy	HttpPost({userId})	ActionResult	
+User	UpdateUserPassword	HttpPost(Password)	ActionResult	
+User	UpdateUserPasswordLegacy	HttpPost({userId}/Password)	ActionResult	
+User	UpdateUserPolicy	HttpPost({userId}/Policy)	ActionResult	
+UserLibrary	DeleteUserItemRating	HttpDelete(UserItems/{itemId}/Rating)	UserItemDataDto	
+UserLibrary	DeleteUserItemRatingLegacy	HttpDelete(Users/{userId}/Items/{itemId}/Rating)	UserItemDataDto	
+UserLibrary	GetIntros	HttpGet(Items/{itemId}/Intros)	QueryResult<BaseItemDto>	BaseItemDto
+UserLibrary	GetIntrosLegacy	HttpGet(Users/{userId}/Items/{itemId}/Intros)	QueryResult<BaseItemDto>	BaseItemDto
+UserLibrary	GetItem	HttpGet(Items/{itemId})	BaseItemDto	BaseItemDto
+UserLibrary	GetItemLegacy	HttpGet(Users/{userId}/Items/{itemId})	BaseItemDto	BaseItemDto
+UserLibrary	GetLatestMedia	HttpGet(Items/Latest)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	GetLatestMediaLegacy	HttpGet(Users/{userId}/Items/Latest)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	GetLocalTrailers	HttpGet(Items/{itemId}/LocalTrailers)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	GetLocalTrailersLegacy	HttpGet(Users/{userId}/Items/{itemId}/LocalTrailers)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	GetRootFolder	HttpGet(Items/Root)	BaseItemDto	BaseItemDto
+UserLibrary	GetRootFolderLegacy	HttpGet(Users/{userId}/Items/Root)	BaseItemDto	BaseItemDto
+UserLibrary	GetSpecialFeatures	HttpGet(Items/{itemId}/SpecialFeatures)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	GetSpecialFeaturesLegacy	HttpGet(Users/{userId}/Items/{itemId}/SpecialFeatures)	IEnumerable<BaseItemDto>	BaseItemDto
+UserLibrary	MarkFavoriteItem	HttpPost(UserFavoriteItems/{itemId})	UserItemDataDto	
+UserLibrary	MarkFavoriteItemLegacy	HttpPost(Users/{userId}/FavoriteItems/{itemId})	UserItemDataDto	
+UserLibrary	UnmarkFavoriteItem	HttpDelete(UserFavoriteItems/{itemId})	UserItemDataDto	
+UserLibrary	UnmarkFavoriteItemLegacy	HttpDelete(Users/{userId}/FavoriteItems/{itemId})	UserItemDataDto	
+UserLibrary	UpdateUserItemRating	HttpPost(UserItems/{itemId}/Rating)	UserItemDataDto	
+UserLibrary	UpdateUserItemRatingLegacy	HttpPost(Users/{userId}/Items/{itemId}/Rating)	UserItemDataDto	
+UserViews	GetGroupingOptions	HttpGet(UserViews/GroupingOptions)	IEnumerable<SpecialViewOptionDto>	
+UserViews	GetGroupingOptionsLegacy	HttpGet(Users/{userId}/GroupingOptions)	IEnumerable<SpecialViewOptionDto>	
+UserViews	GetUserViews	HttpGet(UserViews)	QueryResult<BaseItemDto>	BaseItemDto
+UserViews	GetUserViewsLegacy	HttpGet(Users/{userId}/Views)	QueryResult<BaseItemDto>	BaseItemDto
+VideoAttachments	GetAttachment	HttpGet({videoId}/{mediaSourceId}/Attachments/{index})	ActionResult	
+Videos	DeleteAlternateSources	HttpDelete({itemId}/AlternateSources)	ActionResult	
+Videos	GetAdditionalPart	HttpGet({itemId}/AdditionalParts)	QueryResult<BaseItemDto>	BaseItemDto
+Videos	GetVideoStream	HttpGet({itemId}/stream) HttpHead({itemId}/stream)	ActionResult	
+Videos	GetVideoStreamByContainer	HttpGet({itemId}/stream.{container}) HttpHead({itemId}/stream.{container})	ActionResult	
+Videos	MergeVersions	HttpPost(MergeVersions)	ActionResult	
+Years	GetYear	HttpGet({year})	BaseItemDto	BaseItemDto
+Years	GetYears	HttpGet()	QueryResult<BaseItemDto>	BaseItemDto

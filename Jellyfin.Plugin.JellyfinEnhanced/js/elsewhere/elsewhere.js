@@ -535,16 +535,20 @@
         // Fetch streaming data. Kept in the core response cache (30 minutes,
         // dropped on a user switch; the same key the Seerr TMDB helper would use)
         // so revisiting a title costs no request — the server keeps it for hours.
-        function fetchStreamingData(tmdbId, mediaType, callback, attempt = 1) {
+        function fetchStreamingData(tmdbId, mediaType, callback, attempt = 1, action = JE.createSessionAction?.()) {
             const path = `/${mediaType}/${tmdbId}/watch/providers`;
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
+            // The session that asked owns every attempt and the answer: after a switch nothing is asked again or shown.
+            const current = () => !action || action.current();
             JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
-                .then(data => callback(null, data))
+                .then(data => { if (current()) callback(null, data); })
                 .catch(error => {
+                    if (!current()) return;
                     // A Hidden Content or Spoiler Guard save while this ran aborts it (its answer belonged to the old
-                    // policy). That is not a failure: ask again under the new policy, a bounded number of times.
+                    // policy). That is not a failure: the same session asks again under the new policy, a bounded
+                    // number of times. Any other abort (navigation, the caller) is not asked again.
                     if (error?.name === 'AbortError') {
-                        if (attempt < 3) fetchStreamingData(tmdbId, mediaType, callback, attempt + 1);
+                        if (JE.core.api.isPresentationAbort?.(error) && attempt < 3) fetchStreamingData(tmdbId, mediaType, callback, attempt + 1, action);
                         else callback(null, null);
                         return;
                     }

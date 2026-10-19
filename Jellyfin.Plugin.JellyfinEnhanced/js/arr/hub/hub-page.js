@@ -259,13 +259,16 @@
     async function load() {
         if (state.loading && state.loading.generation === state.generation) return state.loading.promise;
         const generation = state.generation;
+        // The session that asked owns the answer and any retry of it.
+        const action = JE.createSessionAction?.() || null;
+        const owned = () => generation === state.generation && state.visible && (!action || action.current());
         const run = { generation, promise: null };
         state.loading = run;
         run.promise = (async () => {
             try {
                 const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
                 const data = await JE.core.api.plugin('/acquire/hub', { skipRetry: true });
-                if (generation !== state.generation || !state.visible) return;
+                if (!owned()) return;
                 if (!data || typeof data !== 'object') throw new Error('empty answer');
                 state.data = data;
                 state.error = false;
@@ -275,13 +278,13 @@
                 render();
                 follow(state.data, since);
             } catch (err) {
-                if (generation !== state.generation || !state.visible) return;
+                if (!owned()) return;
                 console.warn(`${logPrefix} could not load the Requests page (${err?.status || err?.message || err})`);
                 if (state.data) {
                     // A re-read failed: what is on screen stays, with a note saying so (the change
                     // that asked for it has been used up, so it is tried again on our own).
                     state.refreshFailed = true;
-                    scheduleRetry(generation);
+                    scheduleRetry(generation, action);
                 } else {
                     state.error = true;
                 }
@@ -297,14 +300,15 @@
      * Tries a failed re-read again while the page is shown: after 5 s, then twice as long each
      * time, at most a minute apart. Stops when the page is left or the user changes.
      * @param {number} generation The visit the failure belongs to.
+     * @param {{current: () => boolean}|null} [action] The session the failed read belongs to (a switch stops it).
      * @returns {void}
      */
-    function scheduleRetry(generation) {
+    function scheduleRetry(generation, action) {
         if (state.retryTimer) return;
         state.retryDelay = JE.arrStatus.retryDelay(state.retryDelay);
         state.retryTimer = setTimeout(() => {
             state.retryTimer = null;
-            if (generation === state.generation && state.visible) load();
+            if (generation === state.generation && state.visible && (!action || action.current())) load();
         }, state.retryDelay);
     }
 

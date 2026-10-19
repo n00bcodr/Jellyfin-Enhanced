@@ -485,3 +485,25 @@ test('poster badges read while a slow bootstrap answered are asked again from th
   assert.equal(h.statusCalls.length, 2);
   assert.equal(h.document.querySelector('.card .je-arr-ring-text').textContent, '55');
 });
+
+// D46 r16: the details page's re-read retry belongs to the session whose read failed.
+test('a details-page status retry is never sent after another account signs in', async t => {
+  let mode = 'ok';
+  const h = setup(t, {
+    html: detailsHtml, hash: '#/details?id=movie1',
+    responses: path => !path.startsWith('/acquire/status/item/movie1') ? null : mode === 'fail' ? null : moviePill(42)
+  });
+  h.JE.arr.live.seed('e1', 5);
+  await h.JE.internals.arrStatusDetails.update(false);
+  await h.tick();
+  const poll = h.open();
+  mode = 'fail';
+  await h.answer(poll, { epoch: 'e1', cursor: 9, keys: ['movie:tmdb:1'], reset: false });
+  poll.done = true;
+  await h.settle();
+  assert.equal(h.statusCalls.length, 2);
+  h.window.ApiClient.getCurrentUserId = () => 'fedcba9876543210fedcba9876543210';
+  mode = 'ok';
+  await h.tick(5000);
+  assert.equal(h.statusCalls.length, 2, 'the retry is not sent for the new account');
+});

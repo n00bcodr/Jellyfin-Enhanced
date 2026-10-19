@@ -185,6 +185,7 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
+        // The session that opened the drawer owns every read, re-read and retry of it.
         current = { target, overlay, root, opener, action: JE.createSessionAction(), unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
         root.addEventListener('click', event => { if (current !== opening || !opening.action.current()) event.stopImmediatePropagation(); }, true);
@@ -250,12 +251,13 @@
      */
     async function load(mine) {
         const state = current;
-        if (!state || state.generation !== mine) return;
+        const owned = () => current === state && state.generation === mine && (!state.action || state.action.current());
+        if (!state || !owned()) return;
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
             const data = await boundApi(state, `/arr/admin/manage?${q}`, { skipRetry: true });
-            if (current !== state || !state.action.current() || state.generation !== mine) return;
+            if (!owned()) return;
             if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;
             state.okAt = Date.now();
@@ -264,7 +266,7 @@
             renderShell(state.root, data);
             follow(state, data, since);
         } catch (err) {
-            if (current !== state || !state.action.current() || state.generation !== mine) return;
+            if (!owned()) return;
             console.warn(`${logPrefix} could not load (${err?.status || err?.message || err})`);
             if (!state.data) {
                 renderShell(state.root, null, true);

@@ -257,3 +257,14 @@ test('at most the visit\'s item and the item a pass owns keep a prefetch',async 
  h.prefetch(itemOf([1,2]),'a');h.prefetch(itemOf([3]),'b');h.prefetch(itemOf([4]),'c');
  assert.deepEqual(h.calls.slice(1).map(({options})=>options.signal.aborted),[true,true,false]);
 });
+// D46 r16: a chunk's retries belong to the session that asked; another account signing in stops them (a new pass
+// the page starts afterwards is that account's own request, with its own signal).
+test('a person-info retry is never sent after another account signs in',async t=>{
+ const h=setup(t,{server:()=>Promise.reject(Object.assign(new Error('HTTP 503'),{status:503}))});
+ h.prefetch(itemOf(range(1,3)));await h.settle();h.mount(range(1,3));await h.settle();assert.equal(h.calls.length,2);
+ const asked=h.calls[1].options.signal;
+ h.window.ApiClient.getCurrentUserId=()=>'user-b';
+ await h.advance(1000);await h.advance(3000);
+ assert.equal(h.calls.slice(2).filter(call=>call.options.signal===asked).length,0,'the first account\'s retry is not sent for the new account');
+ assert.equal(h.tagged(),0);
+});

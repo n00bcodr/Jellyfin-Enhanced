@@ -8730,7 +8730,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
                 : Enumerable.Empty<UserReview>();
 
-            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager), _presentation?.Load(viewer.Id, HttpContext));
+            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager));
             var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
             return Ok(new { items });
         }
