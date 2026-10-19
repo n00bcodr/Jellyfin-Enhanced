@@ -51,6 +51,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserSettingsDefaults.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.css",
       "category": "Configuration"
     },
@@ -61,6 +65,10 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/whats-new-seed.json",
       "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "category": "Controllers"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireCollectionsController.cs",
@@ -927,6 +935,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Users/AdminUserSettingsService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ActivityFavoriteMonitor.cs",
       "category": "Services"
     },
@@ -1488,6 +1500,18 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/admin/admin-tabs.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/adminusers/admin-user-tabs.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/adminusers/admin-users-api.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/adminusers/admin-users.js",
       "category": "js"
     },
     {
@@ -2496,6 +2520,56 @@
     }
   ],
   "routes": [
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/users/summary",
+      "method": "Summary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/arr/admin/users/{userId}",
+      "method": "GetUser",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/arr/admin/users/{userId}/policy",
+      "method": "Policy",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": [
+        "BodyLimit(16384)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/arr/admin/users/{userId}/pool-membership",
+      "method": "PoolMembership",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": [
+        "BodyLimit(16384)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/arr/admin/users/{userId}/display",
+      "method": "Display",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": [
+        "BodyLimit(16384)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/arr/admin/users/{userId}/seerr-import",
+      "method": "SeerrImport",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
+      "following_attributes": [
+        "BodyLimit(16384)"
+      ]
+    },
     {
       "verb": "GET",
       "path": "/JellyfinEnhanced/acquire/requests/collection/{itemId}",
@@ -10793,8 +10867,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 620,
-    "routes": 286,
+    "files": 626,
+    "routes": 292,
     "configuration_properties": 638,
     "storage_references": 92,
     "scheduled_tasks": 15,

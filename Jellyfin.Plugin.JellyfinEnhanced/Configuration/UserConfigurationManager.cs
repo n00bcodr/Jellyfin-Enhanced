@@ -216,6 +216,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>Reads an existing settings document without making a directory, seeding defaults or quarantining data.
+        /// Null means absent; inaccessible or corrupt files must be reported as unavailable by the caller.</summary>
+        public string? ReadExistingSettingsDocument(Guid userId)
+        {
+            if (userId == Guid.Empty) throw new ArgumentException("A person is required.", nameof(userId));
+            if (!Directory.Exists(_configBaseDir)) throw new IOException("The personal settings store is unavailable.");
+            var path = Path.Combine(_configBaseDir, userId.ToString("N"), SettingsFileName);
+            try { return File.ReadAllText(path); }
+            catch (FileNotFoundException) { return null; }
+            catch (DirectoryNotFoundException) { return null; }
+        }
+
         private string GetUserConfigDir(string userId)
         {
             var normalizedUserId = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();

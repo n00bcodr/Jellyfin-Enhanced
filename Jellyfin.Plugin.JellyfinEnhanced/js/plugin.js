@@ -1357,6 +1357,8 @@
 
             // Stage 6: Initialize feature modules
             if (typeof JE.initializePluginRevisions === 'function') JE.initializePluginRevisions();
+            // Phase 4u: native Dashboard Users routes (human administrators only).
+            if (typeof JE.initializeArrAdminUsers === 'function') JE.initializeArrAdminUsers();
             if (typeof JE.initializeEnhancedScript === 'function') JE.initializeEnhancedScript();
             if (typeof JE.initializeElsewhereScript === 'function' && JE.pluginConfig?.ElsewhereEnabled) JE.initializeElsewhereScript();
             if (typeof JE.initializeJellyseerrScript === 'function' && JE.pluginConfig?.JellyseerrEnabled && JE.pluginConfig?.JellyseerrShowSearchResults !== false) JE.initializeJellyseerrScript();

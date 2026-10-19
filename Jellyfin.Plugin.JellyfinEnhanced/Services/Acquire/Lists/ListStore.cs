@@ -454,7 +454,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        private ListDoc ReadStrict(string path, string listIdN)
+        /// <summary>Reads a private administrator summary without caching, seeding or quarantining the document.</summary>
+        public ListDoc ReadForAdmin(string listIdN)
+        {
+            EnsureValid(listIdN);
+            return ReadStrict(PathFor(listIdN), listIdN, false);
+        }
+
+        private ListDoc ReadStrict(string path, string listIdN, bool quarantine = true)
         {
             try
             {
@@ -471,7 +478,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             catch (Exception ex) when (ex is JsonException or InvalidDataException or NotSupportedException)
             {
                 _logger.Error($"[Lists] {listIdN}.json is unreadable ({ex.Message}); it is kept as-is and the list is read-only until fixed.");
-                BackupCorrupt(path);
+                if (quarantine) BackupCorrupt(path);
                 throw new InvalidDataException($"List document {listIdN} is corrupt.", ex);
             }
         }

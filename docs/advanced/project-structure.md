@@ -580,6 +580,16 @@ in `features-arr-home.test.mjs`, `features-arr-collection-gaps-p4.test.mjs` and 
 
 Home arrival projection consumes the badge adapter's playable source facts and persistent source observations, keeping edition arrival separate from permanent first-content arrival. HSS sections reconcile their cards, order and visibility against each fresh home answer.
 
+### Native Dashboard user settings
+
+- `Controllers/AcquireAdminUsersController.cs`: D19 human-administrator routes, private responses and partial group edits.
+- `Services/Acquire/Users/AdminUserSettingsService.cs`: adapters over existing request policy, quota projection, pools, personal JSON, notification state, automation grants and list attribution; source revisions and audited writes.
+- `js/arr/adminusers/admin-users-api.js`: independent private reads and narrow PATCH/ntfy transport.
+- `js/arr/adminusers/admin-user-tabs.js`: reversible native tab selection, indicator, keyboard and supported deep links for both Dashboard route families.
+- `js/arr/adminusers/admin-users.js`: vertical user form, retained drafts, one Save with per-section errors and batched card decoration.
+- `tests/backend/Users/AdminUserSettingsTests.cs` and `tests/frontend/features/features-arr-admin-users.test.mjs`: administrator boundaries, inheritance/conflicts/unavailability/consent preservation and native-route lifecycle coverage.
+- `Configuration/UserSettingsDefaults.cs`: one in-memory default mapping shared by first access, first administrator display write and reset, keeping unrelated preferences consistent without recording personal consent.
+
 ### Helpers, extensions and models
 
 | Location | Files and responsibilities |

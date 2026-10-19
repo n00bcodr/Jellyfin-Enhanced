@@ -1857,3 +1857,17 @@ Home Screen Sections rows update their cards and visibility when a fresh home an
 an opt-out. If HSS draws a section late, its placement is kept and duplicate sections are removed.
 A later 4K version fulfils a 4K request without making the title new again, even when the request
 was placed before the original HD copy arrived.
+
+### Jellyfin Dashboard user settings
+
+Administrators can open **Dashboard → Users**, select a person, and open the **Jellyfin Enhanced** tab between **Access** and **Parental control** in Jellyfin 12 and 10.11. The vertical form uses Jellyfin's native controls and one **Save** at the bottom. It saves changed sections and shows **Settings saved**; a failed section keeps its draft and shows an inline error. Edits made while Save is running remain as drafts for the next Save, including returning to an inherited value. Failed writes keep the desired values for retry. JE drafts survive native tab changes, and the tab supports bookmarks, reload and Back/Forward.
+
+The tab’s private content hides while administrator permission is checked again. A refused or failed check clears its private data and drafts. Edits made while a group is saving remain unsaved and can be saved next without reloading; other groups keep their own drafts and conflict checks.
+
+The tab uses the same household roles, count and estimated GB limits, 4K grants, quota pools and display preferences as the existing editors. It shows effective request rights and inheritance, notification assignment, personal consent attribution and Seerr identity status. Personal automation and list consents are read-only. Email verification remains the person's own action.
+
+The users list adds role, known quota use and pending-request chips from one batched read. Pending means requests made by that person. Unavailable use is left unknown. These administrator endpoints reject household Managers, Trusted accounts and API keys.
+
+![Household roles and known request use on Jellyfin user cards](../images/arr-dashboard-users.png)
+
+![The native Jellyfin Enhanced user tab and single Save](../images/arr-dashboard-user-edit.gif)
