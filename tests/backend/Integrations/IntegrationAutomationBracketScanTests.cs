@@ -105,6 +105,8 @@ public class IntegrationAutomationBracketScanTests
         ["WhatsNewService.WhatsNewFilePath"] = "the What's New state",
         ["WikidataAwardsService.CacheFilePath"] = "the Wikidata awards cache",
         ["DoesTheDogDieService.CacheFilePath"] = "the DoesTheDogDie warnings cache",
+        ["ListStore.DirectoryPath"] = "the lists folder (list documents, the experimental importer's quarantine copies, collage markers and reports)",
+        ["ListStore._dir"] = "the lists folder (list documents)",
         ["JeBackupService.DefaultFolderName"] = "the backups folder (backup zips and pre-restore copies)",
     };
 
