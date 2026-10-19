@@ -20,7 +20,7 @@ public class ReadySchemaTests
         using var c = new SqliteConnection("Data Source=" + path + ";Pooling=False");
         c.Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT name FROM sqlite_master WHERE name LIKE 'ready_%' ORDER BY name";
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE name LIKE 'ready_%' OR name LIKE 'alert_waits%' ORDER BY name";
         var list = new List<string>();
         using var r = cmd.ExecuteReader();
         while (r.Read()) list.Add(r.GetString(0));

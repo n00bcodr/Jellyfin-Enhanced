@@ -23,7 +23,7 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         public string Name { get; set; } = string.Empty;
         public DateTimeOffset Created { get; set; }
 
-        /// <summary>JE's nonce in the playlist's provider ids (a field only JE or an administrator's editor sets), or null.</summary>
+        /// <summary>JE's nonce in the playlist item itself (written by JE's own create), or null.</summary>
         public string? Nonce { get; set; }
 
         public List<Guid> Entries { get; } = new();
@@ -114,7 +114,16 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
 
     private static ReadyPlaylistInfo Info(Native p) => new(p.Id, p.Owner, p.Public, p.Shares, p.Folder, p.Name, p.Created, p.Nonce);
 
-    public ReadyPlaylistInfo? Get(Guid playlistId) => Playlists.TryGetValue(playlistId, out var p) ? Info(p) : null;
+    public ReadyPlaylistInfo? Get(Guid playlistId)
+    {
+        if (FailGet)
+        {
+            FailGet = false;
+            throw new InvalidOperationException("native read failed");
+        }
+
+        return Playlists.TryGetValue(playlistId, out var p) ? Info(p) : null;
+    }
 
     public Guid? NewPlaylistId(string name) => IdFor(TargetFolder(name));
 
@@ -134,15 +143,32 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         return refused;
     }
 
-    public Task<(Guid? Id, string? Refused)> CreateAsync(Guid ownerId, string name, ReadyGate gate)
+    /// <summary>
+    /// The create's own playlist is observed inside the create (probed live on 12.2 and 10.11.11, 4f round 6): Jellyfin raises
+    /// ItemAdded synchronously with the object it allocated, JE writes its nonce into it and takes its creation second, and
+    /// Jellyfin's own refresh then saves that object. False: a host on which JE can't observe it (no event on JE's call path):
+    /// the playlist is made without the nonce and the create says <c>provenance</c>.
+    /// </summary>
+    public bool ObservesCreate { get; set; } = true;
+
+    /// <summary>The next <see cref="Get"/> throws (a crash right after the create's second was recorded, before the bind).</summary>
+    public bool FailGet { get; set; }
+
+    public Task<(ReadyCreated? Made, string? Refused)> CreateAsync(Guid ownerId, string name, string nonce, ReadyGate gate)
     {
         Enter("create");
-        if (Gate("create", null, gate) is { } refused) return Task.FromResult<(Guid?, string?)>((null, refused));
+        if (Gate("create", null, gate) is { } refused) return Task.FromResult<(ReadyCreated?, string?)>((null, refused));
         var folder = TargetFolder(name);
-        var p = new Native { Id = IdFor(folder), Owner = ownerId, Folder = folder, Name = name, Created = Made() };
+        var p = new Native { Id = IdFor(folder), Owner = ownerId, Folder = folder, Name = name, Created = Made(), Nonce = ObservesCreate ? nonce : null };
+        Playlists[p.Id] = p;
+        // Still inside Jellyfin's create, before its refresh saves the created object again by its id: whatever was put in its
+        // place meanwhile is overwritten by that save (Jellyfin has no conditional save).
+        During?.Invoke("in-create");
         Playlists[p.Id] = p;
         Leave("create");
-        return Task.FromResult<(Guid?, string?)>((p.Id, null));
+        // The create has returned; JE hasn't read anything yet (4f r5 security-1's window).
+        During?.Invoke("created");
+        return Task.FromResult<(ReadyCreated?, string?)>(ObservesCreate ? (new ReadyCreated(p.Id, p.Created.ToUnixTimeSeconds()), null) : (null, "provenance"));
     }
 
     public Task<string?> RenameAsync(Guid playlistId, Guid ownerId, string name, ReadyGate gate)
@@ -165,15 +191,6 @@ internal sealed class FakeReadyPlaylistHost : IReadyPlaylistHost
         Leave("set-cleared");
         foreach (var id in itemIds.Where(i => !Refuses.Contains(i)).Distinct()) p.Entries.Add(id);
         Leave("set");
-        return Task.FromResult<string?>(null);
-    }
-
-    public Task<string?> StampAsync(Guid playlistId, string nonce, ReadyGate gate)
-    {
-        Enter("stamp");
-        if (Gate("stamp", playlistId, gate) is { } refused) return Task.FromResult<string?>(refused);
-        Playlists[playlistId].Nonce = nonce;
-        Leave("stamp");
         return Task.FromResult<string?>(null);
     }
 

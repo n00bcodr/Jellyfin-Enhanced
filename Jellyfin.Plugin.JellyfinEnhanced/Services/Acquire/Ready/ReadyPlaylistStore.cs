@@ -101,9 +101,9 @@ ON CONFLICT(server_id,user_id) DO UPDATE SET opted_in=1, opt_in_epoch=opt_in_epo
                 ("$m", marker), ("$ci", createId is Guid id ? Id(id) : null), ("$nc", nonce));
 
         /// <summary>
-        /// Records the creation time Jellyfin stored for the playlist JE's create made, right before JE writes its nonce into a
-        /// playlist with exactly that time (an interrupted create is recovered only at it). False when the epoch moved on, a
-        /// playlist is bound already or a restore happened.
+        /// Records the creation second JE's own create showed for the playlist it made (<see cref="ReadyCreated"/>), as soon as
+        /// the create returned (an interrupted create is recovered only at it). False when the epoch moved on, a playlist is
+        /// bound already or a restore happened.
         /// </summary>
         public bool NoteCreated(long generation, string server, Guid user, long epoch, long createdMs, DateTimeOffset now)
             => _db.WriteIf(generation, (c, t) => Exec(c, t, "UPDATE ready_playlists SET playlist_created=$pc, revision=revision+1, updated_at=$n WHERE server_id=$s AND user_id=$u AND opt_in_epoch=$e AND opted_in=1 AND playlist_id IS NULL",

@@ -359,6 +359,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 cancellationToken.ThrowIfCancellationRequested();
                 // Phase 3: the ledger's notices (OK'd, declined) and, in JE mode, its requests as interests.
                 if (NoticesOn) await DeliverRequestNoticesAsync(now, cancellationToken).ConfigureAwait(false);
+                // Outcome alerts waiting for evidence: on their own schedule, whatever else changed (or didn't).
+                await RetryAlertWaitsAsync(now, cancellationToken).ConfigureAwait(false);
                 if (LedgerInterest) ScanLedger();
                 else _ledgerCursor = null;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -711,23 +713,99 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Released by someone else's request going out (no OK of its own): "on its way".
                 if (n.Kind == "merged") p["shared"] = "1";
                 if (kind == NotifyKind.Declined && !string.IsNullOrWhiteSpace(n.DeclineReason)) p["reason"] = n.DeclineReason!.Trim() is var r && r.Length > 300 ? r[..300] : r;
-                // May the requester be told (the decision every channel makes again right before its send): a title they hid
-                // (Hidden Content, on any copy of it) is handled with no notification; rules or copies that can't be read now
-                // leave the notice for the next round (dropped unsent once it is too old).
-                if (ActiveViewer(want.UserId) is not { } requester) continue;
-                string? none = null;
-                var verdict = _dispatcher.Check(want.UserId, requester).Decide(kind!, key.Title.ToString(), p, ref none);
-                if (verdict.Wait) continue;
+                // May the requester be told (the one outcome policy every channel applies again right before its send:
+                // NotifyDispatcher.AlertCheck.Outcome): a title they can't see now or hid is handled with no notification;
+                // evidence that can't be read now moves the notice to the wait queue, in the same transaction (its own retries,
+                // fair between people, expiring from the notice's own time), so it never holds the ledger's page.
+                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : "req-no|") + want.Id;
+                if (_policy != null) await _policy.PrepareVisibilityAsync(want.UserId, new MutationInput { Key = key.Title.ToString() }, cancellationToken).ConfigureAwait(false);
+                var verdict = ActiveViewer(want.UserId) is { } requester ? Outcome(want.UserId, requester, kind!, key.Title.ToString(), p) : new NotifyDispatcher.AlertVerdict("unknown", true);
+                if (verdict.Wait)
+                {
+                    var wait = new AlertWait("notice", n.Id, want.UserId, kind!, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, now + NotifyDispatcher.WaitFor, 0);
+                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
+                    continue;
+                }
                 if (verdict.Why != null)
                 {
                     _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
                     continue;
                 }
-                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : "req-no|") + want.Id;
                 if (Notify(want.UserId, kind!, eventKey, key.Title.ToString(), null, p, now, prefs, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
                 else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
             }
             return told;
+        }
+
+        /// <summary>How many waiting outcome alerts one round tries (fairly between people: <see cref="NotifyStore.DueAlertWaits"/>).</summary>
+        internal const int AlertWaitsPerRound = 100;
+
+        /// <summary>
+        /// The wait queue of outcome alerts (4f round 6): each due one is decided again from the evidence as it is now
+        /// (<see cref="Outcome"/>), on its own schedule, independent of the request ledger's notices and of Seerr's changes.
+        /// Dropped unsent once the outcome itself is too old (its original time), the requester is gone or turned the kind off,
+        /// or the request isn't in that outcome any more; told (its removal and the notification commit together) once it may
+        /// be; tried again a little later while the evidence still can't be read. Returns how many were told.
+        /// </summary>
+        internal async Task<int> RetryAlertWaitsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            var told = 0;
+            var generation = _store.Generation;
+            foreach (var wait in _store.DueAlertWaits(now, AlertWaitsPerRound))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_store.Generation != generation) break;
+                var prefs = _store.Prefs(wait.User);
+                var still = StillOutcome(wait);
+                if (now - wait.OriginalAt > ArrivalFreshFor || !_users.IsActive(wait.User) || !(wait.Kind == NotifyKind.Declined ? prefs.Declined : prefs.Approved) || still == false)
+                {
+                    _store.DropAlertWait(wait, generation);
+                    continue;
+                }
+                var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(wait.Payload), StringComparer.Ordinal);
+                if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key)
+                    await _policy.PrepareVisibilityAsync(wait.User, new MutationInput { Key = key.Title.ToString() }, cancellationToken).ConfigureAwait(false);
+                var verdict = still == null || ActiveViewer(wait.User) is not { } viewer ? new NotifyDispatcher.AlertVerdict("unknown", true) : Outcome(wait.User, viewer, wait.Kind, wait.TitleKey, payload);
+                if (verdict.Wait)
+                {
+                    _store.RetryAlertWait(wait, now + NotifyDispatcher.WaitFor, generation);
+                    continue;
+                }
+                if (verdict.Why != null || !Notify(wait.User, wait.Kind, wait.EventKey, wait.TitleKey, null, payload, now, prefs, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation))
+                {
+                    _store.DropAlertWait(wait, generation);
+                    continue;
+                }
+                told++;
+            }
+            return told;
+        }
+
+        // Whether the request a waiting outcome alert is about is still in that outcome: true, false (moved on or gone: never
+        // told), or null when that can't be read now (the ledger or Seerr's list isn't there: tried again later).
+        private bool? StillOutcome(AlertWait wait)
+        {
+            if (wait.Source == "notice")
+            {
+                if (_ledger == null || !_ledger.Database.Available || wait.RequestId == null) return null;
+                var want = _ledger.Find(wait.RequestId);
+                return wait.Kind == NotifyKind.Declined ? want?.Status == "declined" : want?.Status is "queued" or "sent" or "stale" or "fulfilled";
+            }
+            if (!_requests.Active || !_requests.Loaded) return null;
+            var (source, all, floor) = _requests.Current;
+            if (source == null) return null;
+            var server = source.Length > 8 ? source[..8] : source;
+            if (!wait.SourceId.StartsWith(server + "|", StringComparison.Ordinal) || !int.TryParse(wait.RequestId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) return false;
+            if (all.FirstOrDefault(r => r.Id == id) is { } request) return request.Status == SeerrRequestStatus.Declined;
+            // Below the list's floor a request not held is unknown, not gone.
+            return floor is int below && id < below ? null : false;
+        }
+
+        // The one outcome policy (NotifyDispatcher.AlertCheck.Outcome) for a requester now.
+        private NotifyDispatcher.AlertVerdict Outcome(Guid user, StatusViewer viewer, string kind, string titleKey, Dictionary<string, string> payload)
+        {
+            string? none = null;
+            return _dispatcher.Check(user, viewer).Decide(kind, titleKey, payload, ref none);
         }
 
         /// <summary>
@@ -769,6 +847,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var (source, all, _) = _requests.Current;
             if (source == null) return;
             var seen = _store.SeerrSeen();
+            // A decline not seen yet: the requester's own view of the title, for the outcome policy (an absent title's rating).
+            foreach (var declined in all.Where(r => r.Status == SeerrRequestStatus.Declined && r.Key != null && r.RequestedBy.HasValue
+                         && !(seen.TryGetValue(r.Id, out var was) && was == r.Status)).Take(MaxPerRound))
+            {
+                await _policy.PrepareVisibilityAsync(declined.RequestedBy!.Value, new MutationInput { Key = declined.Key!.Title.ToString() }, cancellationToken).ConfigureAwait(false);
+            }
             var asks = all.Where(r => r.Status == SeerrRequestStatus.Pending && r.Key != null && !seen.ContainsKey(r.Id)).Take(MaxPerRound).ToList();
             if (asks.Count == 0) return;
             var admins = _users.Admins();
@@ -1455,16 +1539,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && _users.IsActive(requester))
                 {
                     var prefs = _store.Prefs(requester);
-                    if (prefs.Declined && r.Key != null && ActiveViewer(requester) is { } viewer)
+                    if (prefs.Declined && r.Key != null)
                     {
                         var p = TitleParams(r.Key.Title, null, r);
                         p["contact"] = Contact();
-                        // Not for a title the requester hid; rules or copies that can't be read now: this change isn't noted as
-                        // seen, so the next read of Seerr decides it again.
-                        string? none = null;
-                        var verdict = _dispatcher.Check(requester, viewer).Decide(NotifyKind.Declined, r.Key.Title.ToString(), p, ref none);
-                        if (verdict.Wait) changed.Remove((r.Id, r.Status));
-                        else if (verdict.Why == null) Notify(requester, NotifyKind.Declined, "declined|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key.Title.ToString(), null, p, now, prefs);
+                        // The one outcome policy (as for JE's own notices); evidence that can't be read now: the decline goes to
+                        // the wait queue (tried again on its own schedule, not on Seerr's next change), and the change is seen.
+                        var id = r.Id.ToString(CultureInfo.InvariantCulture);
+                        var eventKey = "declined|" + server + "|" + id;
+                        var verdict = ActiveViewer(requester) is { } viewer ? Outcome(requester, viewer, NotifyKind.Declined, r.Key.Title.ToString(), p) : new NotifyDispatcher.AlertVerdict("unknown", true);
+                        if (verdict.Wait)
+                        {
+                            var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id,
+                                r.UpdatedAt is DateTime updated ? new DateTimeOffset(DateTime.SpecifyKind(updated, DateTimeKind.Utc)) : now, now + NotifyDispatcher.WaitFor, 0);
+                            _store.InTransaction(tx => tx.AddAlertWait(wait));
+                        }
+                        else if (verdict.Why == null) Notify(requester, NotifyKind.Declined, eventKey, r.Key.Title.ToString(), null, p, now, prefs);
                     }
                 }
                 if (r.Status == SeerrRequestStatus.Pending && fresh)

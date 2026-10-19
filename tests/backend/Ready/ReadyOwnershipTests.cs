@@ -27,27 +27,27 @@ public class ReadyOwnershipTests
     [InlineData(20, true)]
     [InlineData(20, false)]
     [InlineData(3, true)]
-    public async Task APlaylistPutInPlaceOfJesFreshOneBeforeTheStampIsNeverAdopted(int secondsLater, bool withEntries)
+    public async Task APlaylistPutInPlaceOfJesFreshOneBeforeJeReadsItIsNeverAdopted(int secondsLater, bool withEntries)
     {
         using var w = new ReadyWorld();
         var emma = w.User();
         var (_, versions) = w.Movie(Sintel, Arrived);
         w.Interests.Add(emma.UserId, "w:1", ReadyInterestKind.Request, Sintel);
         await w.Service.SetPlaylistAsync(emma.UserId, true);
-        // Between Jellyfin making JE's playlist and JE writing its nonce, the person deletes it and makes their own under the
-        // same (marker) name: Jellyfin gives it the same id.
+        // Between Jellyfin's create returning and JE's first read, the person deletes it and makes their own under the same
+        // (marker) name: Jellyfin gives it the same id.
         FakeReadyPlaylistHost.Native? own = null;
         var theirs = Guid.NewGuid();
         w.Host.During = call =>
         {
-            if (call != "stamp" || own != null) return;
+            if (call != "created" || own != null) return;
             var made = Assert.Single(w.Host.Playlists.Values);
             w.Host.Playlists.Remove(made.Id);
             w.Now = w.Now.AddSeconds(secondsLater);
             own = withEntries ? w.Host.AddOwn(emma.UserId, made.Name, theirs) : w.Host.AddOwn(emma.UserId, made.Name);
             Assert.Equal(made.Id, own.Id);
         };
-        Assert.Equal("changed", await w.Service.ReconcileAsync(emma.UserId));
+        Assert.Equal("lost", await w.Service.ReconcileAsync(emma.UserId));
         w.Host.During = null;
         Assert.NotNull(own);
         // Never stamped, bound, renamed, written or deleted.
@@ -57,8 +57,11 @@ public class ReadyOwnershipTests
         Assert.False(w.Service.Status(emma.UserId).CanRemove);
         Assert.Equal("nothing", await w.Service.RemoveAsync(emma.UserId));
 
-        // The next look abandons that create and makes a fresh playlist of JE's under a new marker; theirs stays as it is.
+        // Lost: nothing more until the person turns it on again; then a fresh playlist of JE's under a new marker; theirs stays
+        // as it is.
         w.Now = w.Now.AddMinutes(5);
+        Assert.Equal("not_active", await w.Service.ReconcileAsync(emma.UserId));
+        await w.Service.SetPlaylistAsync(emma.UserId, true);
         Assert.Equal("updated", await w.Service.ReconcileAsync(emma.UserId));
         var fresh = w.Store.Binding(ReadyWorld.Server, emma.UserId)!.PlaylistId!.Value;
         Assert.NotEqual(own.Id, fresh);

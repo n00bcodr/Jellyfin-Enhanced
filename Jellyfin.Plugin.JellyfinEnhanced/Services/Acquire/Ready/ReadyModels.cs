@@ -183,13 +183,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         /// <summary>
         /// The random nonce of this binding's create: recorded before the create call and written into the playlist itself
-        /// (<see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>, a field the person can neither see nor set) before it is bound. A
-        /// playlist without it is never JE's.
+        /// (<see cref="JellyfinReadyPlaylistHost.NoncePrefix"/>, a field the person can neither see nor set) by the create, on the
+        /// very object Jellyfin's create allocated (<see cref="ReadyCreated"/>). A playlist without it is never JE's.
         /// </summary>
         public string? Nonce { get; init; }
 
         /// <summary>
-        /// When Jellyfin made the playlist (its DateCreated as stored, UTC ms): recorded right before JE writes its nonce into it,
+        /// When Jellyfin made the playlist (UTC ms of the whole second its create showed): recorded as soon as the create returned,
         /// kept when it is bound; null before.
         /// </summary>
         public long? PlaylistCreated { get; init; }
@@ -242,8 +242,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         public long CreatedMs => CreatedSecond * 1000;
 
         /// <summary>
-        /// True when this is the very playlist a binding made: JE's nonce in it and exactly the creation second recorded when
-        /// it was stamped (equality at the host's precision, never a tolerance across seconds). Jellyfin gives a playlist made
+        /// True when this is the very playlist a binding made: JE's nonce in it and exactly the creation second its create showed
+        /// (equality at the host's precision, never a tolerance across seconds). Jellyfin gives a playlist made
         /// again under the same folder the same id, but neither the nonce nor, in any other second, the time.
         /// </summary>
         public bool Carries(string? nonce, long? createdMs)

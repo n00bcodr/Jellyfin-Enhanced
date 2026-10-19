@@ -53,7 +53,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
                 case NotifyKind.Declined:
                 {
-                    var reason = P("reason");
+                    // The decline reason is free text that may name the title: never with "hide titles".
+                    var reason = named ? P("reason") : string.Empty;
                     var headline = named ? $"{contact} said no to {title}" : $"{contact} said no to a request";
                     return new NotifyMessage(headline, reason.Length > 0 ? $"“{reason}”" : "You can still follow it to hear if it comes later.");
                 }

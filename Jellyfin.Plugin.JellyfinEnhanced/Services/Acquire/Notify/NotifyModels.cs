@@ -223,6 +223,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     }
 
     /// <summary>Small helpers for stored values.</summary>
+    /// <summary>
+    /// A request's outcome alert (declined, OK'd) waiting for evidence that can't be read now (the requester's Hidden Content,
+    /// the title's copies), in its own queue (4f round 6): tried again on its own schedule, whatever else changes, fairly
+    /// between people, and dropped once the outcome itself is too old.
+    /// </summary>
+    /// <param name="Source"><c>notice</c> (a JE request ledger notice) or <c>seerr</c> (a Seerr request's change).</param>
+    /// <param name="SourceId">The notice's id, or the Seerr server and request id.</param>
+    /// <param name="User">The requester.</param>
+    /// <param name="Kind"><see cref="NotifyKind.Declined"/> or <see cref="NotifyKind.Approved"/>.</param>
+    /// <param name="TitleKey">The title.</param>
+    /// <param name="EventKey">The notification's event key.</param>
+    /// <param name="Payload">Its parameters (JSON).</param>
+    /// <param name="RequestId">The request (ledger want id, or Seerr request id) whose state must still be this outcome.</param>
+    /// <param name="OriginalAt">When the outcome happened (the notice's time, Seerr's update time): expiry counts from it.</param>
+    /// <param name="NextAt">When it is tried next.</param>
+    /// <param name="Tries">How often it was tried.</param>
+    public sealed record AlertWait(string Source, string SourceId, Guid User, string Kind, string TitleKey, string EventKey, string Payload, string? RequestId, DateTimeOffset OriginalAt, DateTimeOffset NextAt, int Tries);
+
     internal static class NotifyValues
     {
         public static long Ms(DateTimeOffset at) => at.ToUnixTimeMilliseconds();
