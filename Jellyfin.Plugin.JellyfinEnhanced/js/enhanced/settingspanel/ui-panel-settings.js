@@ -39,6 +39,7 @@
             nativePosterTagsToggle: 'useNativePosterTags',
             autoSeasonRequestsSelect: 'autoSeasonRequests', autoMovieRequestsSelect: 'autoMovieRequests',
             listPlaceholdersSelect: 'listPlaceholders', listStatusSelect: 'listStatus', listSwapInSelect: 'listSwapIn',
+            listPlaylistUiSelect: 'listPlaylistUi', listCollectionUiSelect: 'listCollectionUi',
             acquisitionBadgesSelect: 'acquisitionBadges', nativeAcquisitionStampsSelect: 'nativeAcquisitionStamps',
             watchProgressModeSelect: 'watchProgressMode', watchProgressTimeFormatSelect: 'watchProgressTimeFormat',
             qualityTagsAudioLanguageSelect: 'qualityTagsPreferredAudioLanguage', pauseScreenDelayInput: 'pauseScreenDelaySeconds',
@@ -57,7 +58,7 @@
                 if (control.type === 'checkbox') control.checked = !!value;
                 else if (key === 'acquisitionBadges' || key === 'nativeAcquisitionStamps') control.value = value === false ? 'off' : '';
                 else if (key === 'listSwapIn') control.value = value === true ? 'on' : '';
-                else if (['autoSeasonRequests', 'autoMovieRequests', 'listPlaceholders', 'listStatus'].includes(key)) {
+                else if (['autoSeasonRequests', 'autoMovieRequests', 'listPlaceholders', 'listStatus', 'listPlaylistUi', 'listCollectionUi'].includes(key)) {
                     control.value = value === true ? 'on' : value === false ? 'off' : '';
                 } else control.value = value ?? '';
             });

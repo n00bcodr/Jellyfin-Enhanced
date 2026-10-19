@@ -235,9 +235,15 @@
             || (reason === 'saved' && state.persisted.acquisitionBadges !== previousPersisted.acquisitionBadges
                 && state.persisted.acquisitionBadges === after && after !== false)) return JE.internals.arrStatusCards?.reset?.();
     });
+    settingsEffects.set('list-pages', ({ changed }) => {
+        // Phase 4c3a: list pages follow a list preference change at once (drawn entries go when hidden).
+        if (changed(['listPlaceholders', 'listStatus', 'listPlaylistUi', 'listCollectionUi'])) return JE.arrListPages?.settingsChanged?.();
+    });
     settingsEffects.set('language-mirror', ({ state, reason }) => {
         if (reason !== 'saved' && reason !== 'read') return;
-        const language = normalizeLanguage(resolveSettings(state.persisted).displayLanguage);
+        // Only a real language tag is mirrored: a stored "undefined" or "null" mirrors as Auto ('').
+        const stored = resolveSettings(state.persisted).displayLanguage;
+        const language = typeof JE.languageCode === 'function' ? JE.languageCode(stored) : normalizeLanguage(stored);
         const key = `${ApiClient.getCurrentUserId()}-language`;
         if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
     });
@@ -252,7 +258,7 @@
     }
     for (const [keys, toastKey] of [
         [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
-        [['listPlaceholders', 'listStatus', 'listSwapIn'], 'toast_list_settings_saved'],
+        [['listPlaceholders', 'listStatus', 'listSwapIn', 'listPlaylistUi', 'listCollectionUi'], 'toast_list_settings_saved'],
         [['useNativePosterTags'], 'toast_native_poster_tags_saved'],
         [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved']
     ]) {
