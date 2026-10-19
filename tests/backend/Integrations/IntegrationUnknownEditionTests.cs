@@ -47,10 +47,14 @@ public class IntegrationUnknownEditionTests
         }
     }
 
+    // Two shapes of an unread file: a source without dimensions, and (what Jellyfin 12.2 and 10.11.11 show, seen live) no
+    // video stream at all, so no source until the probe; then the source is first seen, and dated, at the probe.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AFirstFourKSourceProbedAfterTheTenMinuteWaitIsNewForTheFourKAskAndNeverStandard(bool episode)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task AFirstFourKSourceProbedAfterTheTenMinuteWaitIsNewForTheFourKAskAndNeverStandard(bool episode, bool noSourceUntilProbed)
     {
         using var w = new StampWorld();
         using var home = new HomeArrivals(w.Db, null, null, () => true, w.Library, w.Store);
@@ -59,11 +63,13 @@ public class IntegrationUnknownEditionTests
         var (fourK, standard) = (Guid.NewGuid(), Guid.NewGuid());
         w.Interests.Add(key, StampWorld.Interest(fourK, T0.AddDays(-1), fourKOnly: true, allSeasons: true));
         w.Interests.Add(key, StampWorld.Interest(standard, T0.AddDays(-1), allSeasons: true));
-        var item = Arrival(key, episode);
+        var probed = Probed(Arrival(key, episode), 3840, 2160);
+        var item = noSourceUntilProbed ? probed with { Sources = Array.Empty<StampSource>() } : Arrival(key, episode) with { Id = probed.Id };
         w.Library.RaiseAdded(item);                                              // Jellyfin announces it before the probe
 
         await Run(w, 0, 11);                                                     // past the ten-minute wait
-        Assert.False(w.Store.Seen(item.Id, item.Sources[0].Identity));          // still pending
+        Assert.False(w.Store.Seen(item.Id, probed.Sources[0].Identity));        // still pending
+        Assert.False(w.Store.Seen(item.Id));
         Assert.Empty(w.Store.FactsFor(item.Id));
         Assert.Null(w.Store.EditionArrival(Parts(item, "std")));                // never the standard edition
         Assert.Null(home.EditionAt(Content(item), false));                      // nor for home rows, which share the history
@@ -71,16 +77,17 @@ public class IntegrationUnknownEditionTests
 
         // Jellyfin probes the file at 12 minutes: 2160p.
         w.Now = T0.AddMinutes(12);
-        w.Library.RaiseUpdated(Probed(item, 3840, 2160));
+        w.Library.RaiseUpdated(probed);
         await Run(w, 12, 14);
-        // The 4K ask's New, dated at the first sighting; the standard ask too (D44: any first copy, 4K included, is new
-        // content for it).
-        Assert.Equal(new[] { (fourK, T0), (standard, T0) }.OrderBy(x => x.Item1), News(w, item.Id).Select(f => (f.UserId, f.At)).OrderBy(x => x.Item1));
+        // The 4K ask's New, dated at the source's first sighting; the standard ask too (D44: any first copy, 4K included,
+        // is new content for it).
+        var seenAt = noSourceUntilProbed ? T0.AddMinutes(12) : T0;
+        Assert.Equal(new[] { (fourK, seenAt), (standard, seenAt) }.OrderBy(x => x.Item1), News(w, item.Id).Select(f => (f.UserId, f.At)).OrderBy(x => x.Item1));
         Assert.Equal(AcquisitionStamp.NewForYou, w.Resolver.Resolve(item.Id, fourK, w.Now));
         Assert.DoesNotContain(w.Store.FactsFor(item.Id), f => f.Kind == AcquisitionStampKinds.Upgraded);
-        Assert.Equal(T0, w.Store.EditionArrival(Parts(item, "4k")));
+        Assert.Equal(seenAt, w.Store.EditionArrival(Parts(item, "4k")));
         Assert.Null(w.Store.EditionArrival(Parts(item, "std")));
-        Assert.Equal(T0, home.EditionAt(Content(item), true));
+        Assert.Equal(seenAt, home.EditionAt(Content(item), true));
         Assert.Null(home.EditionAt(Content(item), false));
     }
 

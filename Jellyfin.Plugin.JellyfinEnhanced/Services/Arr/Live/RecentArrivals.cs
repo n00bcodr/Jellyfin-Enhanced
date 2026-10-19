@@ -20,6 +20,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly int _cap;
         private readonly Func<DateTimeOffset> _now;
 
+        /// <summary>How long a new movie or episode stays a fresh arrival (its updates may still be part of it).</summary>
+        public static readonly TimeSpan FreshFor = TimeSpan.FromDays(3);
+
+        /// <summary>
+        /// A movie or episode Jellyfin created within <see cref="FreshFor"/>: its update can still be part of its
+        /// arrival after the window, because Jellyfin can read a file's dimensions (and so a 4K copy's edition) late.
+        /// An old item's metadata refresh is not.
+        /// </summary>
+        /// <param name="item">The updated item.</param>
+        /// <param name="now">Now.</param>
+        /// <returns>True for a fresh movie or episode.</returns>
+        public static bool FreshVideo(MediaBrowser.Controller.Entities.BaseItem? item, DateTimeOffset now)
+        {
+            if (item is not (MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Episode) || item.DateCreated == DateTime.MinValue) return false;
+            var created = item.DateCreated.Kind == DateTimeKind.Local ? item.DateCreated.ToUniversalTime() : DateTime.SpecifyKind(item.DateCreated, DateTimeKind.Utc);
+            var age = now.UtcDateTime - created;
+            return age >= TimeSpan.Zero && age <= FreshFor;
+        }
+
         /// <summary>Creates the tracker.</summary>
         /// <param name="window">How long after being added an item's updates still count.</param>
         /// <param name="cap">Most items held.</param>

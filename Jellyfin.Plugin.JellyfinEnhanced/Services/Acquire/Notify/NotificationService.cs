@@ -2009,21 +2009,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>
         /// Jellyfin updated an item (tests call it): only items added a moment ago count, their first
         /// metadata read fills in provider ids and numbers. A movie or episode that is still a fresh arrival
-        /// (<see cref="ArrivalFreshFor"/>) counts too: Jellyfin can read a file's dimensions after that moment, and the
-        /// probe is when its edition (a 4K request's copy) becomes known, so it is looked at then, not at the next sweep.
+        /// (<see cref="RecentArrivals.FreshVideo"/>) counts too: Jellyfin can read a file's dimensions after that moment,
+        /// and the probe is when its edition (a 4K request's copy) becomes known, so it is looked at then, not at the next
+        /// sweep (the live change feed only carries it while acquisition badges are on).
         /// </summary>
         internal void ItemUpdated(BaseItem? item)
         {
-            if (item == null || !(_recentlyAdded.IsRecent(item.Id) || FreshVideo(item))) return;
+            if (item == null || !(_recentlyAdded.IsRecent(item.Id) || RecentArrivals.FreshVideo(item, _now()))) return;
             OnItem(item);
-        }
-
-        private bool FreshVideo(BaseItem item)
-        {
-            if (item is not (Movie or Episode) || item.DateCreated == DateTime.MinValue) return false;
-            var created = item.DateCreated.Kind == DateTimeKind.Local ? item.DateCreated.ToUniversalTime() : DateTime.SpecifyKind(item.DateCreated, DateTimeKind.Utc);
-            var age = _now().UtcDateTime - created;
-            return age >= TimeSpan.Zero && age <= ArrivalFreshFor;
         }
 
         /// <summary>The items added lately whose updates still count (tests).</summary>

@@ -44,6 +44,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         private readonly Func<PluginConfiguration?> _config;
         private readonly ConcurrentQueue<ItemChange> _items = new();
         private readonly Timer _itemTimer;
+        private readonly Func<DateTimeOffset> _now;
         private readonly RecentArrivals _recentlyAdded;
         private readonly TimeSpan _itemFlushDelay;
         private int _itemFlushArmed;
@@ -62,7 +63,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
         /// </summary>
         internal ArrChangeTracker(ArrStateStore store, ArrChangeFeed feed, ArrLiveRouter router, ILibraryManager? libraryManager, Logger? logger, Func<PluginConfiguration?> config, Func<DateTimeOffset>? now = null, TimeSpan? itemFlushDelay = null, AcquisitionStampStore? stamps = null)
         {
-            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, now);
+            _now = now ?? (() => DateTimeOffset.UtcNow);
+            _recentlyAdded = new RecentArrivals(RecentlyAddedWindow, MaxRecentlyAdded, _now);
             _itemFlushDelay = itemFlushDelay ?? ItemFlushDelay;
             _store = store;
             _feed = feed;
@@ -245,12 +247,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
 
         // Metadata completes recent arrivals. For old items, the source-aware stamp feeder publishes
         // committed acquisition transitions; a metadata refresh alone must not invalidate every title.
+        // A movie or episode that is still a fresh arrival can be read (its dimensions, so a 4K copy's edition)
+        // after the window: without acquisition badges no feeder publishes that, so its update does.
         private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
         {
             if (e?.Item is not { } item) return;
-            if (!_recentlyAdded.IsRecent(item.Id)) return;
+            if (!_recentlyAdded.IsRecent(item.Id) && !(RecentArrivals.FreshVideo(item, _now()) && !FeederOwnsLateUpdates)) return;
             Enqueue(item);
         }
+
+        private bool FeederOwnsLateUpdates => AcquisitionStampFlags.Badges(_config()) && _stamps?.Available == true;
 
         private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
         {
