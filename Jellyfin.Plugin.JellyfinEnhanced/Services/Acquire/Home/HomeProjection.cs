@@ -268,6 +268,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             // Followed titles only (a title the viewer asked for is the request's card). A title asked for in both editions is
             // composed once per edition (phase 4b), so the map takes the first of each title.
             var byKey = composed.GroupBy(t => t.Key.Title.ToString(), StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            // A request's own edition (its copy to open and its arrival): never the other edition's result for the same title.
+            var byEdition = composed.GroupBy(t => (t.Key.Title.ToString(), t.Only4k)).ToDictionary(g => g.Key, g => g.First());
             var requested = entries.Select(e => TitleKey.Parse(e.Key)?.Title.ToString()).OfType<string>().ToHashSet(StringComparer.Ordinal);
             // Follows of titles the viewer also asked for are the request's (one card per title).
             var followed = follows.GroupBy(f => TitleKey.Parse(f.Key)!.Title.ToString(), StringComparer.Ordinal)
@@ -320,7 +322,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 var cards = new List<(DateTime At, HomeCard Card)>();
                 foreach (var e in entries)
                 {
-                    if (e.Group is HubGroup.Declined || TitleKey.Parse(e.Key) is not { } key || !byKey.TryGetValue(key.Title.ToString(), out var title)) continue;
+                    if (e.Group is HubGroup.Declined || TitleKey.Parse(e.Key) is not { } key || !byEdition.TryGetValue((key.Title.ToString(), e.Is4k), out var title)) continue;
                     if (key.IsMovie)
                     {
                         if (e.Group != HubGroup.Ready || title.Visible == null) continue;

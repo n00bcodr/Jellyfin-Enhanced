@@ -193,6 +193,31 @@ public class HomeRowsTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task AFourKOnlyFirstArrivalOfATitleAskedForInBothEditionsIsJustArrivedForTheFourKAsk(bool standardNeedsNonFourK)
+    {
+        // Integration review RBS1-BEH-R1-1: "Just arrived" looked the requested arrival up by title only, so with both
+        // editions asked for it judged the 4K ask by the standard edition's result (no non-4K source: no copy to open).
+        using var home = new Home();
+        home.Lab.Config.ArrStandardNeedsNonFourK = standardNeedsNonFourK;
+        await home.Lab.Warm();
+        await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = Matrix });
+        await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
+        await home.Lab.Outbox.TickAsync(default);
+        home.Lab.Radarr.Queue.Clear();
+        home.Lab.Arr.Now = home.Lab.Arr.Now.AddHours(1);
+        // The first copy of the title is a new 4K one.
+        home.MovieCopy(Matrix, home.Now.AddMinutes(-30), fourK: true);
+        await home.Lab.Warm();
+        var arrived = (await home.Rows(home.Lab.Emma)).Arrived!;
+        Assert.Contains(arrived, c => c.Key == Matrix && c.Is4k);
+        // The standard ask: any copy unless the administrator wants a non-4K one (content arrival is edition-independent,
+        // fulfilment follows the switch; Q-REBUILD1-2).
+        Assert.Equal(!standardNeedsNonFourK, arrived.Any(c => c.Key == Matrix && !c.Is4k));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task AFourKMovieUpgradeFulfilsTheRequestButIsNeverNewContent(bool grouped)
     {
         using var home = new Home();
