@@ -87,7 +87,7 @@ hide:
 
     [:material-star-four-points-outline: Features](arr/arr-features.md){ .je-chip } [:material-tune: Settings](arr/arr-settings.md){ .je-chip }
 
--   [![](images/readme/elsewhere-reviews.webp){ .no-lightbox .je-plain loading=lazy }](elsewhere/elsewhere-features.md){ .je-thumb tabindex="-1" aria-hidden="true" } :material-earth: **Elsewhere**
+-   [![](images/readme/elsewhere-reviews.webp){ .no-lightbox .je-plain loading=lazy }](elsewhere/elsewhere-features.md){ .je-thumb tabindex="-1" aria-hidden="true" } :material-earth: **Elsewhere & Reviews**
 
     Find streaming providers and read reviews.
 

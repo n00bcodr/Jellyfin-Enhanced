@@ -235,7 +235,7 @@ See [Playback controls](../enhanced/enhanced-features.md#playback-controls) and 
 
 Identify what failed before treating it as a TMDB problem:
 
-- TMDB-backed reviews or availability: check the configured JE TMDB key, provider IDs, the relevant proxy request, and server connectivity. See [Elsewhere settings](../elsewhere/elsewhere-settings.md).
+- TMDB-backed reviews or availability: check the configured JE TMDB key, provider IDs, the relevant proxy request, and server connectivity. See [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md).
 - Seerr search or requests: check service connectivity, account linking, and permissions through [Seerr settings](../seerr/seerr-settings.md).
 - Stored poster ratings: check Jellyfin rating metadata using [Media tags](../enhanced/tags.md).
 - Static icons: check local CDN asset requests using [installation troubleshooting](../installation/troubleshooting.md#cdn-connectivity-and-limits).

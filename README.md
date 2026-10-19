@@ -57,7 +57,7 @@
 <details>
 <summary>First admin settings and defaults</summary>
 
-Open **Dashboard → Plugins → Jellyfin Enhanced** next. **Overview** shows status and quick actions. Configure features in **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard** and **Admin**; **Docs** links to the guides.
+Open **Dashboard → Plugins → Jellyfin Enhanced** next. **Overview** shows status and quick actions. Configure features in **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard** and **Admin**; **Docs** links to the guides.
 
 | Setting | Default | What it does |
 |---|---|---|

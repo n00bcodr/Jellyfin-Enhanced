@@ -49,7 +49,7 @@ Main media-tag preferences start off, including quality, genre, language, rating
 
     - **Seerr:** Open **Seerr**, turn on **Enable Seerr integration**, enter **Seerr URL(s) (One per line)** and **Seerr API Key**, then click **Test** beside the key. Follow the [Seerr setup guide](../seerr/seerr-settings.md#setup) to link/import Jellyfin accounts. In **Users**, click **Import Users Now** to import unblocked users. Then use **Permission Audit → Run Audit** to check linked accounts; it doesn't import missing ones.
     - **Sonarr, Radarr, Bazarr, or Shoko:** Configure them in **\*arr**. Use addresses reachable from the Jellyfin server. Configure public browser links separately with URL mappings when needed.
-    - **TMDB:** Add **TMDB API Key** in **Seerr** or **Elsewhere** if your chosen features need it. Both fields edit the same key. Basic poster tags don't require it.
+    - **TMDB:** Add **TMDB API Key** in **Seerr** or **Elsewhere & Reviews** if your chosen features need it. Both fields edit the same key. Basic poster tags don't require it.
 
     Click **Save Settings** and refresh affected clients after configuring services. Test each optional service separately. Opening the personal panel confirms that JE's client interface loaded; it doesn't confirm that every integration is ready.
 

@@ -249,7 +249,7 @@ Show subscription-provider icons on Seerr posters.
 
 ??? info "How it works"
 
-    Poster icons use the server region (US by default), the server's provider selection (empty by default, meaning all), and provider exclusions (empty by default). Configure these under [Elsewhere settings](../elsewhere/elsewhere-settings.md).
+    Poster icons use the server region (US by default), the server's provider selection (empty by default, meaning all), and provider exclusions (empty by default). Configure these under [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md).
 
     More Info's **Streaming** section is independent of this switch. With TMDB configured, it uses your **per-user Elsewhere region**, then the server region, then US. If that region is absent from supplied data, it tries US and then the first supplied region. It shows up to six unique subscription providers.
 

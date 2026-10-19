@@ -1,10 +1,10 @@
-# Elsewhere Integration
+# Elsewhere & Reviews
 
 Find subscription streaming providers, read reviews, and see release or air dates on item detail pages in Jellyfin. These features work in compatible Jellyfin web clients.
 
 ## Overview
 
-You can set up provider lookup, TMDB reviews, release dates, and reviews from your Jellyfin users in the admin **Elsewhere** tab. Start with [Elsewhere Settings](elsewhere-settings.md) for setup, defaults, and troubleshooting.
+You can set up provider lookup, TMDB reviews, release dates, and reviews from your Jellyfin users in the admin **Elsewhere & Reviews** tab. Start with [Elsewhere & Reviews Settings](elsewhere-settings.md) for setup, defaults, and troubleshooting.
 
 !!! note "API key requirements"
 
@@ -27,7 +27,7 @@ See which subscription services carry a movie or series in your default search c
 ![Custom Elsewhere heading above a manual search result with no streaming providers in United Kingdom](../images/elsewhere/providers-unavailable.webp)
 *An admin's **Custom Branding Message** replaces the unavailable heading; the red box is a manual search result.*
 
-Admin settings in **Elsewhere**:
+Admin settings in **Elsewhere & Reviews**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ Give the unavailable-provider heading your own message and optional icon. It app
 
 #### How to use
 
-1. As an admin, open **Custom Branding** in the **Elsewhere** tab.
+1. As an admin, open **Custom Branding** in the **Elsewhere & Reviews** tab.
 2. Enter a message and optional image URL, then click **Save Settings**.
 3. Reload the detail page.
 
@@ -95,14 +95,14 @@ Share your thoughts and star ratings with other viewers on your Jellyfin server.
 
 ### How to use
 
-1. An admin opens **Elsewhere**, turns on **Enable User Written Reviews**, and clicks **Save Settings**. Reload the client after changing the configuration.
+1. An admin opens **Elsewhere & Reviews**, turns on **Enable User Written Reviews**, and clicks **Save Settings**. Reload the client after changing the configuration.
 2. Open an eligible item and expand **Reviews ({count})**.
 3. Click **Write a Review** (shown only when you have no review for this item), enter text and/or choose a rating, then click the save icon. Click a star's left half for a half-star value or its right half for a full value. Use the close icon beside the stars to clear a rating, or the form's close icon to cancel.
 4. Use your card's **Edit** icon to update the review or **Delete** to remove it after confirmation. You have one review per movie, series, season, or episode; saving again updates it.
 
 ![Write a Review form with a 4.5-star rating, review text, character counter, and save and cancel icons](../images/elsewhere/user-review-form.webp)
 
-Admin settings in **Elsewhere**:
+Admin settings in **Elsewhere & Reviews**:
 
 ![TMDB Reviews, Release Dates and User Reviews settings](../images/admin/reviews.webp)
 
@@ -141,12 +141,12 @@ Read TMDB community reviews on movie and series detail pages. You can browse the
 
 ### How to use
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere** tab.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab.
 2. Enter and test the shared **TMDB API Key**. Keep **Enable Elsewhere** on to edit the TMDB-review controls in the admin UI.
 3. Turn on **Show TMDB Reviews**, optionally turn on **Expand reviews by default**, and click **Save Settings**.
 4. Reload the client, open a movie or series with a TMDB ID, and expand **Reviews ({count})**. Scroll horizontally through the cards; use **Read More** or **Read Less** for long text.
 
-Admin settings in **Elsewhere**:
+Admin settings in **Elsewhere & Reviews**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -182,7 +182,7 @@ Read the top AniList user reviews for anime on movie and series detail pages. Th
 ### How to use
 
 1. Make sure AniList is a metadata provider for your anime library (for example with the Jellyfin AniList plugin), so each item has an AniList ID.
-2. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere** tab, turn on **Show AniList Reviews**, and click **Save Settings**.
+2. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then the **Elsewhere & Reviews** tab, turn on **Show AniList Reviews**, and click **Save Settings**.
 3. Reload the client, open an anime movie or series that has an AniList ID, and expand **Reviews ({count})**.
 
 | Setting | Default | What it does |
@@ -211,11 +211,11 @@ See movie release dates or television air dates beside the item's other metadata
 
 ### How to use
 
-1. In **Elsewhere**, configure the shared **TMDB API Key**.
+1. In **Elsewhere & Reviews**, configure the shared **TMDB API Key**.
 2. Under **Release Dates**, turn on **Show Release/Air Date** and click **Save Settings**.
 3. Reload the client and open a movie, series, season, or episode with the required TMDB metadata. Hover over a movie chip to see **Cinema Release**, **Digital Release**, or **Physical Release**; television chips use **Episode**.
 
-Admin settings in **Elsewhere**:
+Admin settings in **Elsewhere & Reviews**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -245,7 +245,7 @@ Provider logos on Jellyfin Enhanced's Seerr cards help you check subscription av
 ### How to use
 
 1. Complete [Seerr connection setup](../seerr/seerr-settings.md).
-2. Configure the shared **TMDB API Key** in **Elsewhere**.
+2. Configure the shared **TMDB API Key** in **Elsewhere & Reviews**.
 3. Open **Seerr**, turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
 4. Reload the client and browse JE's Seerr cards.
 

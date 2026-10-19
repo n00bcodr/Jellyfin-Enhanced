@@ -444,7 +444,7 @@ Using `.rating-tag-critic` without the exclusion also hides user-review chips.
 
 These chips show the aggregate 1–5 review average converted to a /10 score.
 
-They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under **Elsewhere** → **User Reviews**:
+They require a resolvable TMDB item key, personal **Show Rating Tags**, and the following admin settings under **Elsewhere & Reviews** → **User Reviews**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
-# Elsewhere Settings
+# Elsewhere & Reviews Settings
 
-Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere**. Settings on this page are admin settings for the server unless marked per user. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
+Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere & Reviews**. Settings on this page are admin settings for the server unless marked per user. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ Use a compatible Jellyfin web client with Jellyfin Enhanced loaded. See [Compati
 
 Set up the shared TMDB key first, then choose the Elsewhere features you want. The same key also serves JE's TMDB-dependent Seerr features.
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then **Elsewhere**.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then **Elsewhere & Reviews**.
 2. Enter your **TMDB API Key**. Click **Test** beside it and read the feedback. This checks the entered key through Jellyfin, including an unsaved key; it does not save configuration.
 3. Turn on **Enable Elsewhere**. Enter the key first if this checkbox is disabled.
 4. Choose **Default Region**, such as `US`, `GB`, `DE`, or `AU`. Optionally configure **Default Providers**, **Ignore Providers**, and **Custom Branding**.
@@ -211,7 +211,7 @@ Show your own heading when no filtered automatic providers or season groups rema
 
 ### How to use
 
-1. Expand **Custom Branding** in **Elsewhere**.
+1. Expand **Custom Branding** in **Elsewhere & Reviews**.
 2. Enter a message and optional icon URL. Use an image viewers can access, such as an HTTPS URL or a root-relative path like `/web/assets/img/icon.png`.
 3. Click **Save Settings** and reload the client.
 
@@ -266,7 +266,7 @@ Show the top AniList user reviews for anime on movie and series pages. See [AniL
 | --- | --- | --- |
 | **Show AniList Reviews** | Off | Enables AniList review cards for movies and series that have an AniList ID. |
 
-![AniList Reviews setting in the Elsewhere tab](../images/elsewhere/anilist-reviews-settings.webp)
+![AniList Reviews setting in the Elsewhere & Reviews tab](../images/elsewhere/anilist-reviews-settings.webp)
 
 ??? info "Dependencies and privacy"
 
@@ -280,7 +280,7 @@ Let viewers share text reviews and/or star ratings on your server. Local reviews
 
 ### How to use
 
-1. Turn on **Enable User Written Reviews** in **Elsewhere**, click **Save Settings**, and reload the client.
+1. Turn on **Enable User Written Reviews** in **Elsewhere & Reviews**, click **Save Settings**, and reload the client.
 2. On an eligible detail page, expand **Reviews ({count})** and click **Write a Review** if you have no review for that item, or **Edit** on your existing review.
 
 See [User Reviews](elsewhere-features.md#user-reviews) for writing, editing, deletion, character limits, and the picker limitation.
@@ -396,7 +396,7 @@ Show subscription-provider logos on JE's Seerr cards inside Jellyfin, including 
 ### How to use
 
 1. Complete [Seerr connection setup](../seerr/seerr-settings.md).
-2. Configure the shared **TMDB API Key** in **Elsewhere**.
+2. Configure the shared **TMDB API Key** in **Elsewhere & Reviews**.
 3. Open **Seerr**, turn on **Show Streaming Providers on Posters**, and click **Save Settings**.
 4. Reload the client and browse JE's Seerr cards. For Jellyfin search cards, keep **Show Seerr Results in Search** on.
 
@@ -407,7 +407,7 @@ Admin settings in **Seerr**, except the TMDB key:
 | **Enable Seerr integration** | Off | Enables JE's Seerr features. |
 | **Seerr URL(s) (One per line)** | Empty | Supplies the Seerr instance addresses used by JE. |
 | **Seerr API Key** | Empty | Authenticates JE's requests to Seerr. |
-| **TMDB API Key** | Empty (**Elsewhere**) | Enables server-side watch-provider lookups. |
+| **TMDB API Key** | Empty (**Elsewhere & Reviews**) | Enables server-side watch-provider lookups. |
 | **Show Streaming Providers on Posters** | Off | Adds at most four valid subscription-provider logos to JE's Seerr cards. |
 | **Show Seerr Results in Search** | On | Enables JE's Seerr results in Jellyfin search when connection and access requirements are met. |
 

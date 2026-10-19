@@ -593,10 +593,10 @@ Elsewhere shows subscription streaming providers for a title in your region, inc
 
 **How to use:**
 
-1. An administrator configures **Enable Elsewhere** and **TMDB API Key** under **Elsewhere**.
+1. An administrator configures **Enable Elsewhere** and **TMDB API Key** under **Elsewhere & Reviews**.
 2. Choose regions/providers in a title's Elsewhere controls.
 
-See [Elsewhere Features](../elsewhere/elsewhere-features.md) and [Elsewhere Settings](../elsewhere/elsewhere-settings.md) for defaults and limits.
+See [Elsewhere & Reviews Features](../elsewhere/elsewhere-features.md) and [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) for defaults and limits.
 
 ![Streaming providers for a movie in the selected region](../images/elsewhere/providers-available.webp)
 

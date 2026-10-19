@@ -75,7 +75,7 @@ You can also read **Documentation** in the administrator **Docs** tab. It loads 
 
 ## Optional integrations
 
-Install companions or configure services only for the features you want. Check [Compatibility](../getting-started/compatibility.md) for requirements and [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for page placement. Follow the [Seerr settings](../seerr/seerr-settings.md), [*arr settings](../arr/arr-settings.md), and [Elsewhere settings](../elsewhere/elsewhere-settings.md) guides for their integrations.
+Install companions or configure services only for the features you want. Check [Compatibility](../getting-started/compatibility.md) for requirements and [JE Pages & Tabs](../getting-started/pages-and-tabs.md) for page placement. Follow the [Seerr settings](../seerr/seerr-settings.md), [*arr settings](../arr/arr-settings.md), and [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) guides for their integrations.
 
 ## Updates and backups
 

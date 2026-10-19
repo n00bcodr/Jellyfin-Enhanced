@@ -291,7 +291,7 @@ A pink person-with-heart chip shows the average star rating from reviews visible
 
 **How to use:**
 
-1. As an administrator, open **Elsewhere** → **User Reviews**.
+1. As an administrator, open **Elsewhere & Reviews** → **User Reviews**.
 2. Turn on **Enable User Written Reviews** and **Show average user rating on poster cards**, then click **Save Settings**.
 3. Each viewer must also enable **Show Rating Tags**. There is no separate personal review-chip switch.
 
@@ -366,7 +366,7 @@ You'll see green current-age chips, red age-at-death chips, and blue age-at-rele
 ![Toy Story cast portraits with two deceased actors shown in grayscale](../images/tags/people-tags-deceased.webp)
 
 !!! note "Optional TMDB enrichment"
-    To add facts from TMDB, the person needs a TMDB ID and your administrator must set **TMDB API Key** under **Elsewhere**.
+    To add facts from TMDB, the person needs a TMDB ID and your administrator must set **TMDB API Key** under **Elsewhere & Reviews**.
 
 ??? info "Person metadata and caching"
     Facts come from Jellyfin person metadata. Failed or unavailable TMDB enrichment keeps usable Jellyfin facts. Missing birth/death dates or birthplace omit the corresponding details. Age at release also needs the viewed item's visible premiere date; hidden or stripped dates cannot supply it.

@@ -144,7 +144,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | Source | Responsibility |
 |---|---|
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
-| `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
+| `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
@@ -336,7 +336,7 @@ The editor stores `TagStyleOverrides=""` until overrides are saved. Native rende
 
 | Location | Responsibility |
 |---|---|
-| `js/elsewhere/elsewhere.js` | Streaming-provider discovery; see [Elsewhere Features](../elsewhere/elsewhere-features.md). |
+| `js/elsewhere/elsewhere.js` | Streaming-provider discovery; see [Elsewhere & Reviews Features](../elsewhere/elsewhere-features.md). |
 | `js/elsewhere/reviews.js` | TMDB and JE user reviews. Review visibility uses the shared author policy; Spoiler Guard suppression of this web panel is client behavior. |
 | `js/awards/awards.js` | Details-page awards banner, backed by `Services/WikidataAwardsService.cs` and `Model/AwardsData.cs`. Authenticated `GET /JellyfinEnhanced/awards/{mediaType}/{tmdbId}` supports `movie`, `tv`, `person`; Wikidata needs no API key. Server results are cached. |
 | `js/extras/active-streams.js` | Active stream header widget and session details. |

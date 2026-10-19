@@ -248,7 +248,7 @@ Compare direct local access with your remote URL. If the tabs work locally, chec
 
 ??? note "Details"
 
-    The current tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard**, **Admin**, and **Docs**.
+    The current tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**.
 
     A proxy authentication page returned in place of JSON or JavaScript is a different failure from an unreachable service. For Seerr and *arr, server connection URLs must be reachable by Jellyfin without an interactive browser sign-in; user-facing URL mappings are separate. Follow [Seerr settings](../seerr/seerr-settings.md) or [*arr troubleshooting](../arr/troubleshooting-support.md) for service-specific diagnosis.
 

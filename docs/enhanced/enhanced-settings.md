@@ -372,7 +372,7 @@ Use the admin configuration page to turn server features on and set starting pre
 
 ??? info "How it works"
 
-    The tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard**, **Admin**, and **Docs**. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
+    The tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
 
     Some server effects happen immediately. Page integrations can have additional requirements, described below.
 
@@ -638,7 +638,7 @@ Stored watched/favorite/review entries respect viewer library access. Active Str
 
     The usual request returns up to 50 merged entries with no UI pagination. Watched/favorite storage in `activity.json` is capped at 500 entries. Rewatches update the timestamp while retaining maximum progress and completion.
 
-    **Elsewhere** → **User Reviews** → **Hide reviews from hidden users** and **Hide reviews from disabled users** both default to On. They also filter activity authors, with admin/self exceptions. User Reviews runs independently. Disabling Activity Feed stops watched/favorite collection, but reviews written while it is off can appear when the feed returns. See [Elsewhere settings](../elsewhere/elsewhere-settings.md) for those shared review controls.
+    **Elsewhere & Reviews** → **User Reviews** → **Hide reviews from hidden users** and **Hide reviews from disabled users** both default to On. They also filter activity authors, with admin/self exceptions. User Reviews runs independently. Disabling Activity Feed stops watched/favorite collection, but reviews written while it is off can appear when the feed returns. See [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) for those shared review controls.
 
     **Active Streams Header Widget** enables the Active Streams data endpoint as well as the header widget. The feed's live section refreshes every 15 seconds while the document is visible. Stored history does not use that polling. The header widget refreshes on initialization, opening, and manual refresh.
 
@@ -708,7 +708,7 @@ Use these references for settings owned by other feature areas:
 
 - **Seerr** and **Pages** → **Seerr Recommendations Page**: [Seerr settings](../seerr/seerr-settings.md).
 - **\*arr**, **Pages** → **Calendar Page**, and the download parts of **Pages** → **Requests Page**: [*arr settings](../arr/arr-settings.md). Request controls are also covered in [Seerr settings](../seerr/seerr-settings.md).
-- **Elsewhere**, **TMDB Reviews**, **Release Dates**, and **User Reviews**: [Elsewhere settings](../elsewhere/elsewhere-settings.md). Written reviews have no separate personal review-tag switch.
+- **Elsewhere**, **TMDB Reviews**, **Release Dates**, and **User Reviews**: [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md). Written reviews have no separate personal review-tag switch.
 - **Display** → **Spoiler Guard**: [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md).
 - **Display** → **Awards** / **MDBList Ratings**, other **Extras** options, and **Admin** maintenance, analytics, developer, and cache controls: [Other settings](../other/other-settings.md).
 
