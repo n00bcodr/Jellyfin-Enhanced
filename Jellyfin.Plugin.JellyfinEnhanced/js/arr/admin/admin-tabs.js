@@ -238,12 +238,15 @@
         }
         delete state.again[tab];
         const generation = state.generation;
+        // The session that asked owns the answer and any retry of it.
+        const action = JE.createSessionAction?.() || null;
+        const owned = () => generation === state.generation && (!action || action.current());
         const intent = intentOf(tab);
         const token = intent.next();
         const run = (async () => {
             try {
                 const data = await JE.core.api.plugin(route(tab), { skipRetry: true });
-                if (generation !== state.generation) return;
+                if (!owned()) return;
                 if (!intent.current(token)) {
                     // Asked for something else meanwhile: this answer is for what is no longer asked.
                     state.again[tab] = true;
@@ -263,7 +266,7 @@
                     if (tab === 'overview' && (state.data.overview?.needsAttention || []).length !== attention) H.renderTabs?.();
                 }
             } catch (err) {
-                if (generation !== state.generation) return;
+                if (!owned()) return;
                 if (!intent.current(token)) {
                     // A late failure of what is no longer asked changes nothing.
                     state.again[tab] = true;
@@ -272,7 +275,7 @@
                     // tried again on its own, sooner than the fallback poll.
                     state.failed[tab] = true;
                     if (tab === 'activity') state.history.failedRoute = route(tab);
-                    if (state.data[tab] && state.tab === tab) scheduleRetry(tab, generation);
+                    if (state.data[tab] && state.tab === tab) scheduleRetry(tab, generation, action);
                     console.warn(`${logPrefix} could not load the ${tab} tab (${err?.status || err?.message || err})`);
                 }
             } finally {
@@ -281,7 +284,7 @@
             if (state.tab === tab) draw();
             if (state.again[tab]) {
                 delete state.again[tab];
-                if (generation === state.generation && state.tab === tab) await load(tab);
+                if (owned() && state.tab === tab) await load(tab);
             }
         })();
         state.loading[tab] = run;
@@ -399,16 +402,17 @@
      * most a minute apart; stops when the tab or the page is left.
      * @param {string} tab Tab id.
      * @param {number} generation The visit the failure belongs to.
+     * @param {{current: () => boolean}|null} [action] The session the failed read belongs to (a switch stops it).
      * @returns {void}
      */
-    function scheduleRetry(tab, generation) {
+    function scheduleRetry(tab, generation, action) {
         if (state.retry.timer && state.retry.tab === tab) return;
         stopRetry(true);
         state.retry.tab = tab;
         state.retry.delay = JE.arrStatus.retryDelay(state.retry.delay);
         state.retry.timer = setTimeout(() => {
             state.retry.timer = null;
-            if (generation === state.generation && state.tab === tab && state.panel?.isConnected) load(tab, true);
+            if (generation === state.generation && (!action || action.current()) && state.tab === tab && state.panel?.isConnected) load(tab, true);
         }, state.retry.delay);
     }
 

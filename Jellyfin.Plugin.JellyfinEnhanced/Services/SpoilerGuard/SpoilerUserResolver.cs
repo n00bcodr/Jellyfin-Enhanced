@@ -124,12 +124,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var collKeyN in userState.Collections.Keys)
                 {
                     if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                    if (_libraryManager.GetItemById(collGuid) is not MediaBrowser.Controller.Entities.Movies.BoxSet bs) continue;
-                    foreach (var child in bs.GetLinkedChildren())
-                    {
-                        if (child != null && child.Id == movieId) { result = collGuid; break; }
-                    }
-                    if (result.HasValue) break;
+                    // The shared identity resolver's linked-children membership (the same answer every surface gets).
+                    if (PrivacyIdentities.CollectionMembers(_libraryManager, collGuid).Contains(movieId)) { result = collGuid; break; }
                 }
             }
             catch (Exception ex)

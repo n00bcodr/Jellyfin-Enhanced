@@ -177,7 +177,9 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
-        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        current = { target, overlay, root, opener, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0,
+            // The session that opened the drawer owns every read, re-read and retry of it.
+            action: JE.createSessionAction?.() || null };
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
         root.focus();
@@ -239,12 +241,13 @@
      */
     async function load(mine) {
         const state = current;
-        if (!state || state.generation !== mine) return;
+        const owned = () => current === state && state.generation === mine && (!state.action || state.action.current());
+        if (!state || !owned()) return;
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
             const data = await JE.core.api.plugin(`/arr/admin/manage?${q}`, { skipRetry: true });
-            if (current !== state || state.generation !== mine) return;
+            if (!owned()) return;
             if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;
             state.okAt = Date.now();
@@ -253,7 +256,7 @@
             renderShell(state.root, data);
             follow(state, data, since);
         } catch (err) {
-            if (current !== state || state.generation !== mine) return;
+            if (!owned()) return;
             console.warn(`${logPrefix} could not load (${err?.status || err?.message || err})`);
             if (!state.data) {
                 renderShell(state.root, null, true);

@@ -30,3 +30,15 @@ JE_CHROMIUM_PATH=/usr/bin/chromium python3 tests/host/run.py --target all --brow
 ```
 
 This loads the unmodified Jellyfin web application and JE assets, signs in through the real login form as regular and administrator users, waits for authenticated JE bootstrap, opens the Enhanced panel with its keyboard shortcut, changes Auto Pause through the checkbox, and reloads to verify server persistence. Uncaught page errors fail the journey. Third-party browser requests are blocked; host API and asset responses are not mocked. Browser dependencies are required when `--browser` is specified; failures are never silently skipped. Artifacts include a browser result file and failure screenshots. Session credentials are passed over stdin, and traces/HAR/storage snapshots are intentionally not recorded because they contain authentication tokens. These checks cover Chromium desktop only; mocked component browser tests remain a separate suite.
+
+## Endpoint registry extraction
+
+`tests/host/endpoint-registry` lists every controller action of a Jellyfin host with its declared answer and whether that answer can carry a title (BaseItemDto, SearchHint, ImageInfo, MediaSourceInfo, RecommendationDto), by reading the host's `Jellyfin.Api.dll` as metadata (nothing runs). Copy `/jellyfin` out of an official image and run it on that folder:
+
+```sh
+id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin ./host-12.2 && docker rm "$id"
+dotnet run --project tests/host/endpoint-registry -- ./host-12.2 > endpoints.tsv
+```
+
+The checked-in results are `tests/fixtures/host-endpoints/jellyfin-<version>.tsv`. The backend tests read them: every title-carrying endpoint must be classified in `Services/PrivacySurfaceRegistry.cs`, and the generated privacy model (`PrivacySurfaceModelTests`) covers each one. Regenerate them for a new Jellyfin release.
+

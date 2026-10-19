@@ -33,80 +33,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // HiddenContentResponseFilter).
     public sealed class SpoilerFieldStripFilter : IAsyncActionFilter
     {
-        // Action-name table built from live observation on Jellyfin 10.11.x:
-        // - /Items                        → Items.GetItems
-        // - /Items?<filter>               → Items.GetItems (same)
-        // - /Items/Resume                 → Items.GetResumeItems / GetResumeItemsLegacy
-        // - /Items/{id}                   → UserLibrary.GetItem
-        // - /Users/{uid}/Items/{id}       → UserLibrary.GetItemLegacy
-        // - /Items/Latest                 → UserLibrary.GetLatestMedia / Legacy
-        // - /Shows/{seriesId}/Episodes    → TvShows.GetEpisodes
-        // - /Shows/{seriesId}/Seasons     → TvShows.GetSeasons
-        // - /Shows/NextUp                 → TvShows.GetNextUp
-        // - /Shows/Upcoming               → TvShows.GetUpcomingEpisodes
-        // - /Shows/{seriesId}/Similar     → LibraryStructure / etc — covered by GetSimilar* if present
-        // - /Items?<search>               → Items.GetItems with searchTerm
-        // - /Search/Hints                 → Search.GetSearchHints
-        // - /Users/{uid}/Suggestions      → Suggestions.GetSuggestions / Legacy
-        private static readonly Dictionary<(string, string), bool> _routes
-            = new()
-            {
-                { ("Items",       "GetItems"),               true },
-                { ("Items",       "GetItemsByUserIdLegacy"), true },
-                { ("Items",       "GetResumeItems"),         true },
-                { ("Items",       "GetResumeItemsLegacy"),   true },
-                { ("UserLibrary", "GetItem"),                true },
-                { ("UserLibrary", "GetItemLegacy"),          true },
-                { ("UserLibrary", "GetLatestMedia"),         true },
-                { ("UserLibrary", "GetLatestMediaLegacy"),   true },
-                // More UserLibrary endpoints that emit episode DTOs.
-                { ("UserLibrary", "GetIntros"),              true },
-                { ("UserLibrary", "GetIntrosLegacy"),        true },
-                { ("UserLibrary", "GetLocalTrailers"),       true },
-                { ("UserLibrary", "GetLocalTrailersLegacy"), true },
-                { ("UserLibrary", "GetSpecialFeatures"),     true },
-                { ("UserLibrary", "GetSpecialFeaturesLegacy"),true },
-                { ("TvShows",     "GetEpisodes"),            true },
-                { ("TvShows",     "GetSeasons"),             true },
-                { ("TvShows",     "GetNextUp"),              true },
-                { ("TvShows",     "GetUpcomingEpisodes"),    true },
-                { ("Suggestions", "GetSuggestions"),         true },
-                { ("Suggestions", "GetSuggestionsLegacy"),   true },
-                { ("Search",      "GetSearchHints"),         true },
-                // "More Like This" rail emits BaseItemDto[] including
-                // episode-shaped items — strip those too.
-                { ("Library",     "GetSimilarItems"),        true },
-                { ("Library",     "GetSimilarShows"),        true },
-                { ("Library",     "GetSimilarMovies"),       true },
-                { ("Library",     "GetSimilarTrailers"),     true },
-                { ("Library",     "GetSimilarAlbums"),       true },
-                // /Items/{id}/Images returns IEnumerable<ImageInfo> whose
-                // Path is the raw server filesystem path (commonly
-                // contains the episode title in user-organized libraries).
-                { ("Image",       "GetItemImageInfos"),      true },
-                // /Items/{id}/PlaybackInfo returns
-                // PlaybackInfoResponse{MediaSources: MediaSourceInfo[]}.
-                // MediaSourceInfo carries the same title-bearing fields as
-                // BaseItemDto.MediaSources (Path, Name, MediaStreams,
-                // MediaAttachments) — emitted as a peer DTO not covered
-                // by the BaseItemDto-shape strip. Both GET and POST
-                // variants register here.
-                { ("MediaInfo",   "GetPlaybackInfo"),        true },
-                { ("MediaInfo",   "GetPostedPlaybackInfo"),  true },
-                // Surfaces commonly hit by native clients (Streamyfin /
-                // Findroid / Swiftfin / Jellyfin Android TV) that
-                // previously bypassed the strip.
-                //
-                // Movies.GetMovieRecommendations powers the "Recommended for
-                // You" rail on home screens — wraps BaseItemDto[] inside
-                // a RecommendationDto, requires a custom switch arm.
-                { ("Movies",      "GetMovieRecommendations"), true },
-                // Playlists.GetPlaylistItems returns QueryResult<BaseItemDto>
-                // — user-created playlists can include spoiler-list
-                // episodes/movies (e.g. "Watch later"), so the items need
-                // the same strip as a regular library list.
-                { ("Playlists",   "GetPlaylistItems"),       true },
-            };
+        // Which endpoints this filter strips comes from the one surface registry (PrivacySurfaceRegistry): every host
+        // endpoint whose answer can carry a title, extracted from Jellyfin 12.2 and 10.11.11, classified once for both
+        // Hidden Content and Spoiler Guard.
 
         // Per-category reveal mask for the advanced Spoiler Guard mode. Each
         // flag EXEMPTS one field from a strip the base toggles would apply;
@@ -199,14 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             StripIfApplicable(result, state, cfg, userId, context);
         }
 
-        private static bool IsTargetRoute(ActionContext context)
-        {
-            var rv = context.ActionDescriptor.RouteValues;
-            if (rv == null) return false;
-            if (!rv.TryGetValue("controller", out var controller) || controller == null) return false;
-            if (!rv.TryGetValue("action", out var action) || action == null) return false;
-            return _routes.ContainsKey((controller, action));
-        }
+        private static bool IsTargetRoute(ActionContext context) => PrivacySurfaceRegistry.Find(context) is { Sg: true };
 
         private async Task RunFieldStripAsync(
             ActionExecutingContext context,
@@ -342,6 +264,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // same title-bearing fields as BaseItemDto's MediaSources.
                 case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
                     StripPlaybackInfo(pbi, userState, cfg, userId, context);
+                    break;
+                // /Items/{id}/ThemeMedia: the item's theme videos, theme songs and soundtrack songs in one answer.
+                case AllThemeMediaResult all:
+                    foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
+                        if (part?.Items != null) foreach (var item in part.Items) StripItem(item, userState, cfg, userId);
                     break;
                 default:
                     // Route was in the allowlist (so we *believed* it

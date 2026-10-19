@@ -1072,3 +1072,32 @@ test('the Overview\'s "delete it too?" sends Remove & search again\'s choices (b
   assert.equal(page.querySelector('[data-je-focus="delete:a7"]'), null);
   assert.ok(page.querySelector('[data-je-focus="delete:a1"]'));
 });
+
+// D46 r16: a tab's retry belongs to the session whose read failed; another account signing in stops it.
+test('a tab retry is never sent after another account signs in', async t => {
+  let fail = false;
+  let reads = 0;
+  const h = setup(t, {
+    hash: '#/requests?tab=activity',
+    responses: path => {
+      if (!path.startsWith('/arr/admin/hub/activity')) return null;
+      reads++;
+      return fail ? Object.assign(new Error('HTTP 502'), { status: 502 }) : activity();
+    }
+  });
+  h.allowConsoleError?.(/could not load/);
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await until(() => h.document.querySelector('.je-ops-dl'));
+  fail = true;
+  const mark = timers.mark();
+  await h.JE.internals.arrHub.admin.refresh();
+  await until(() => h.document.querySelector('.je-arr-stale-note'));
+  assert.deepEqual(timers.since(mark), [5000]);
+  h.window.ApiClient.getCurrentUserId = () => 'fedcba9876543210fedcba9876543210';
+  fail = false;
+  const before = reads;
+  timers.runSince(mark);
+  await wait(30);
+  assert.equal(reads, before, 'the retry is not sent for the new account');
+});

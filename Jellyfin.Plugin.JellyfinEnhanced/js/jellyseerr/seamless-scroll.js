@@ -241,6 +241,8 @@
 
         // Track state for retry UI
         let retryCount = 0;
+        // The session the row was built for owns every load and retry of it; after a switch it loads nothing more.
+        const action = JE.createSessionAction?.() || null;
         let retryRow = null;
         let destroyed = false;
         let filling = false;
@@ -381,7 +383,7 @@
 
         // Wrap loadMoreFn with retry logic. Resolves true when the load succeeded.
         const wrappedLoad = async (hint) => {
-            if (!hasMoreCheck() || isLoadingCheck()) return false;
+            if (!hasMoreCheck() || isLoadingCheck() || (action && !action.current())) return false;
 
             removeRetryRow();
             console.debug(`${logPrefix} Loading more items (attempt ${retryCount + 1}, deficit ${Math.round(hint.deficitPx)}px)`);
@@ -407,7 +409,7 @@
                 const delay = Math.max(calculateBackoff(retryCount), Number(error?.retryAfterMs) || 0);
                 console.debug(`${logPrefix} Retrying in ${delay}ms...`);
                 await sleep(delay);
-                if (destroyed || !sentinel.isConnected) return false;
+                if (destroyed || !sentinel.isConnected || (action && !action.current())) return false;
                 return wrappedLoad(hint);
             }
         };
