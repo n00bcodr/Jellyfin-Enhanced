@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reflection;
-using System.Runtime.Loader;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -65,7 +64,7 @@ public class ApiShippedLocalesTests
         // Only the policy line differs from the file; every other script is served as it is.
         var source = File.ReadAllText(Path.Combine(Js, "enhanced", "translations.js"));
         Assert.Equal(source.Split('\n').Length, served.Split('\n').Length);
-        Assert.Single(source.Split('\n').Zip(served.Split('\n')).Where(pair => pair.First != pair.Second));
+        Assert.Single(source.Split('\n').Zip(served.Split('\n')), pair => pair.First != pair.Second);
         Assert.Equal(File.ReadAllText(Path.Combine(Js, "enhanced", "config.js")), Served("enhanced/config.js"));
     }
 
@@ -130,7 +129,8 @@ public class ApiShippedLocalesTests
     }
 
     // A Weblate-style change: one new file, js/locales/eo.json, and nothing else. A real build of the plugin with it ships
-    // Esperanto: the server stores it and hands it to the browser, whose rule (the served script) writes it.
+    // Esperanto: the server stores it and hands it to the browser, whose rule (the served script) writes it. The build runs
+    // in its own process (a probe app referencing the copied plugin), so this test process never loads a second plugin.
     [Fact]
     public void ALocaleFileAddedToABuildIsAcceptedWithNoOtherStep()
     {
@@ -143,42 +143,50 @@ public class ApiShippedLocalesTests
             File.WriteAllText(Path.Combine(project, "js", "locales", "eo.json"), "{\n  \"panel_title\": \"Jellyfin Enhanced\"\n}\n");
 #if JF10
             const string Target = "jf10";
+            const string Framework = "net9.0";
 #else
             const string Target = "jf12";
+            const string Framework = "net10.0";
 #endif
+            var probe = Directory.CreateDirectory(Path.Combine(work, "probe")).FullName;
+            File.WriteAllText(Path.Combine(probe, "probe.csproj"), $$"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>{{Framework}}</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+                  <ItemGroup><ProjectReference Include="../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" /></ItemGroup>
+                </Project>
+                """);
+            File.WriteAllText(Path.Combine(probe, "Program.cs"), """
+                using System.Text.Json;
+                using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+                const string Prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
+                File.WriteAllText(args[0], LanguageTags.TranslationsScript());
+                Console.WriteLine(JsonSerializer.Serialize(new Dictionary<string, object>
+                {
+                    ["embedded"] = typeof(LanguageTags).Assembly.GetManifestResourceNames().Where(n => n.StartsWith(Prefix, StringComparison.Ordinal)).Select(n => n[Prefix.Length..^".json".Length]).ToArray(),
+                    ["bundled"] = LanguageTags.Bundled,
+                    ["sanitized"] = new[] { "eo", "EO-au", "ja" }.Select(LanguageTags.Sanitize).ToArray(),
+                }));
+                """);
             var output = Path.Combine(work, "out");
-            var (code, log) = Run(Dotnet(), $"build \"{Path.Combine(project, "JellyfinEnhanced.csproj")}\" -c Release -p:JellyfinTarget={Target} -p:RestoreLockedMode=true -p:UseSharedCompilation=false -nodeReuse:false -nologo -v:q -o \"{output}\"", project);
+            var (code, log) = Run(Dotnet(), $"build \"{Path.Combine(probe, "probe.csproj")}\" -c Release -p:JellyfinTarget={Target} -p:UseSharedCompilation=false -nodeReuse:false -nologo -v:q -o \"{output}\"", probe);
             Assert.True(code == 0, log);
 
-            var context = new AssemblyLoadContext("je-locale-build", isCollectible: true);
-            try
-            {
-                var assembly = context.LoadFromAssemblyPath(Path.Combine(output, "Jellyfin.Plugin.JellyfinEnhanced.dll"));
-                Assert.Contains("eo", Embedded(assembly));
-                var tags = assembly.GetType("Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags", throwOnError: true)!;
-                string Sanitize(string raw) => (string)tags.GetMethod("Sanitize", new[] { typeof(string) })!.Invoke(null, new object?[] { raw })!;
-                Assert.Equal("eo", Sanitize("eo"));
-                Assert.Equal("eo-AU", Sanitize("EO-au"));
-                Assert.Equal("", Sanitize("ja"));
-                Assert.Contains("eo", ((IEnumerable<string>)tags.GetProperty("Bundled")!.GetValue(null)!).ToList());
+            var script = Path.Combine(work, "translations.js");
+            var (probeCode, answer) = Run(Dotnet(), $"\"{Path.Combine(output, "probe.dll")}\" \"{script}\"", work, 2);
+            Assert.True(probeCode == 0, answer);
+            using var probed = JsonDocument.Parse(answer);
+            Assert.Contains("eo", probed.RootElement.GetProperty("embedded").EnumerateArray().Select(e => e.GetString()));
+            Assert.Contains("eo", probed.RootElement.GetProperty("bundled").EnumerateArray().Select(e => e.GetString()));
+            Assert.Equal(new[] { "eo", "eo-AU", "" }, probed.RootElement.GetProperty("sanitized").EnumerateArray().Select(e => e.GetString()).ToArray());
 
-                // The translations script that build serves, run as the browser runs it.
-                var serve = tags.GetMethod("TranslationsScript", BindingFlags.Public | BindingFlags.Static, Type.EmptyTypes);
-                Assert.True(serve != null, "the build has no LanguageTags.TranslationsScript()");
-                var script = Path.Combine(work, "translations.js");
-                File.WriteAllText(script, (string)serve!.Invoke(null, null)!);
-                var probe = Path.Combine(work, "probe.cjs");
-                File.WriteAllText(probe, "const vm = require('node:vm'); const fs = require('node:fs');\n"
-                    + "const window = { JellyfinEnhanced: {} }; vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), { window, console });\n"
-                    + "const JE = window.JellyfinEnhanced; console.log(JSON.stringify(['eo', 'EO-au', 'ja', 'fr'].map(JE.supportedLanguageCode)));\n");
-                var (nodeCode, answer) = Run("node", $"\"{probe}\" \"{script}\"", work, 2);
-                Assert.True(nodeCode == 0, answer);
-                Assert.Equal("[\"eo\",\"eo-AU\",\"\",\"fr\"]", answer.Trim());
-            }
-            finally
-            {
-                context.Unload();
-            }
+            // The translations script that build serves, run as the browser runs it.
+            var node = Path.Combine(work, "probe.cjs");
+            File.WriteAllText(node, "const vm = require('node:vm'); const fs = require('node:fs');\n"
+                + "const window = { JellyfinEnhanced: {} }; vm.runInNewContext(fs.readFileSync(process.argv[2], 'utf8'), { window, console });\n"
+                + "const JE = window.JellyfinEnhanced; console.log(JSON.stringify(['eo', 'EO-au', 'ja', 'fr'].map(JE.supportedLanguageCode)));\n");
+            var (nodeCode, written) = Run("node", $"\"{node}\" \"{script}\"", work, 2);
+            Assert.True(nodeCode == 0, written);
+            Assert.Equal("[\"eo\",\"eo-AU\",\"\",\"fr\"]", written.Trim());
         }
         finally
         {
