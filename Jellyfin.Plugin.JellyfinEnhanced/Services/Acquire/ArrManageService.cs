@@ -340,7 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
             var audit = _audit.ReadRecent(500);
-            var jfCopies = _status.CopiesOf(title, viewer);
+            var jfCopies = _status.CopiesOf(title, viewer).Display;
             var holders = new List<(ArrConnection Instance, ArrMovieEntry? Movie, ArrSeriesEntry? Series)>();
             var instances = new List<ManageInstance>();
             string? name = null;

@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// Copy lookups (<see cref="IArrJellyfinView.Copies"/>) that reached their scan bound in the current flow: an
-    /// HTTP read, a notification round, a recipe run. Such a lookup reports no eligible copy, which is the answer for
-    /// that read only: whatever is composed from it is never cached or stored as absence (the next read scans again),
-    /// and a background decision that would act on absence waits for a conclusive read. Work that keeps or acts on
-    /// lookups starts a <see cref="Track"/> watch around them; the lookup calls <see cref="Note"/>.
+    /// HTTP read, a notification round, a recipe run. Such a lookup is <see cref="CopyLookupOutcome.Incomplete"/>: whatever
+    /// is composed from it is never cached or stored (the next read scans again), and a background decision that would
+    /// act on absence waits for a conclusive read. Work that keeps or acts on lookups starts a <see cref="Track"/> watch
+    /// around them; the lookup calls <see cref="Note"/>.
     /// </summary>
     public static class CopyLookupBound
     {
@@ -55,6 +56,68 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (ReferenceEquals(Current.Value, this)) Current.Value = Parent;
             }
         }
+    }
+
+    /// <summary>What a copy lookup established (<see cref="CopyLookup"/>).</summary>
+    public enum CopyLookupOutcome
+    {
+        /// <summary>The scan finished and found at least one copy (one the viewer can open or not).</summary>
+        Found,
+
+        /// <summary>The scan finished and found none: the title is proven absent.</summary>
+        ProvenAbsent,
+
+        /// <summary>The scan reached its bound first: the copies it saw are facts, absence is not proven.</summary>
+        Incomplete,
+    }
+
+    /// <summary>
+    /// The answer of <see cref="IArrJellyfinView.Copies"/>: a value, never a list, so each reader states its policy.
+    /// A page that only shows the title reads <see cref="Display"/> (an incomplete lookup shows as "not found", is
+    /// never cached and never makes anything Ready or fulfilled). Anything that asserts absence (the absent-title
+    /// rules, "since removed", "declined", a missing title offered or asked for, an alert's "can no longer open") acts
+    /// only on <see cref="IsProvenAbsent"/>; on an incomplete lookup it fails closed. The copies the scan did see
+    /// (<see cref="Seen"/>) are acted on either way: one the viewer can't open keeps the title hidden from them, one they
+    /// can open counts as present.
+    /// </summary>
+    public sealed class CopyLookup
+    {
+        private CopyLookup(CopyLookupOutcome outcome, IReadOnlyList<JfCopy> seen)
+        {
+            Outcome = outcome;
+            Seen = seen;
+        }
+
+        /// <summary>The finished scan that found nothing.</summary>
+        public static CopyLookup Absent { get; } = new(CopyLookupOutcome.ProvenAbsent, Array.Empty<JfCopy>());
+
+        /// <summary>A finished scan: found, or proven absent when it found nothing.</summary>
+        /// <param name="copies">Every copy it found.</param>
+        /// <returns>The lookup.</returns>
+        public static CopyLookup Complete(IReadOnlyList<JfCopy> copies) => copies.Count == 0 ? Absent : new(CopyLookupOutcome.Found, copies);
+
+        /// <summary>A scan that reached its bound.</summary>
+        /// <param name="seen">The copies it saw before (in the order a finished scan lists them first).</param>
+        /// <returns>The lookup.</returns>
+        public static CopyLookup Incomplete(IReadOnlyList<JfCopy> seen) => new(CopyLookupOutcome.Incomplete, seen);
+
+        /// <summary>What the scan established.</summary>
+        public CopyLookupOutcome Outcome { get; }
+
+        /// <summary>The scan finished (found, or proven absent).</summary>
+        public bool IsComplete => Outcome != CopyLookupOutcome.Incomplete;
+
+        /// <summary>The scan finished and found no copy: the only answer the absent-title rules accept.</summary>
+        public bool IsProvenAbsent => Outcome == CopyLookupOutcome.ProvenAbsent;
+
+        /// <summary>The copies the scan saw: every copy when it finished, the first ones otherwise.</summary>
+        public IReadOnlyList<JfCopy> Seen { get; }
+
+        /// <summary>A copy the viewer can open that the scan saw (present, finished or not), or null.</summary>
+        public JfCopy? SeenOpenable => Seen.FirstOrDefault(c => c.Visible);
+
+        /// <summary>The copies a page shows: every copy of a finished scan; none of an incomplete one ("not found").</summary>
+        public IReadOnlyList<JfCopy> Display => IsComplete ? Seen : Array.Empty<JfCopy>();
     }
 
     /// <summary>
@@ -288,9 +351,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
         /// current library: the key's kind only, once per item, up to twenty eligible copies. Native
         /// query limits apply after current-library membership, with bounded paging. A scan that reaches its
-        /// bound reports no copy for this read and tells <see cref="CopyLookupBound"/> (never cached as absence).
+        /// bound is <see cref="CopyLookupOutcome.Incomplete"/> with the copies it saw, and tells <see cref="CopyLookupBound"/>.
         /// </summary>
-        IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
+        CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>
         /// The series' episodes the viewer can see (one season, or all when null), virtual ones included

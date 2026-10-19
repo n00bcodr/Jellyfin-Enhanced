@@ -84,17 +84,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         }
 
         /// <summary>
-        /// True when the person can already open a copy of the title in Jellyfin; null when the copy lookup reached its
-        /// scan bound (not known: the recipe asks nothing now and decides on its next run).
+        /// True when the person can already open a copy of the title in Jellyfin (one the lookup saw, finished or not);
+        /// null when the copy lookup reached its scan bound without seeing one (not known: the recipe asks nothing now and
+        /// decides on its next run).
         /// </summary>
         /// <param name="key">The title.</param>
         /// <param name="user">The person.</param>
         public bool? InLibrary(TitleKey key, Guid user)
         {
             if (_view.Viewer(user) is not { } viewer) return false;
-            using var bound = CopyLookupBound.Track();
-            var any = _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible);
-            return bound.Reached ? null : any;
+            var copies = _view.Copies(key, viewer, _aliases?.Of(key));
+            return copies.SeenOpenable != null ? true : copies.IsComplete ? false : null;
         }
 
         /// <summary>
@@ -107,9 +107,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.AutoRequest
         public int? EpisodesInLibrary(TitleKey series, int season, Guid user)
         {
             if (_view.Viewer(user) is not { } viewer) return 0;
-            using var bound = CopyLookupBound.Track();
-            var copies = _view.Copies(series, viewer, _aliases?.Of(series)).Where(c => c.Visible).ToList();
-            if (bound.Reached) return null;
+            // A copy the lookup didn't reach may hold more of the season: no answer until one finishes.
+            var lookup = _view.Copies(series, viewer, _aliases?.Of(series));
+            if (!lookup.IsComplete) return null;
+            var copies = lookup.Seen.Where(c => c.Visible).ToList();
             return copies.Count == 0 ? 0 : copies.Max(c => _view.Episodes(c.ItemId, season, viewer, false).Count);
         }
     }

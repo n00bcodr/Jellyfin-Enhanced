@@ -225,6 +225,46 @@ public class ApiArrRequestsHubTests
         Assert.Equal(0, rig.Service.Cache.Count);
     }
 
+    [Theory]
+    [InlineData("absent", true)]        // control: Jellyfin proven not to have it, Radarr has missed it for a month
+    [InlineData("visibleFirst", false)] // a copy Emma can open was seen before the lookup stopped: not missing
+    [InlineData("nothingSeen", true)]   // a movie's Search asks only whether she can open a copy already (the arr decides)
+    [InlineData("visible", false)]      // control
+    public async Task AFamilySearchNeverTreatsAMovieWhoseCopyTheLookupSawAsMissing(string shape, bool searchable)
+    {
+        using var library = new IntegrationEditionOrphanTests.Library();
+        IntegrationEditionIncompleteTests.Shape(library, shape, id: "693134");
+        using var rig = await Ready(r =>
+        {
+            r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "movie:tmdb:693134" ? library.View.Copies(key, viewer, aliases) : null;
+            // Dune's standard copy has been missing for a month: nothing in the queue or grabbed.
+            var dune = r.Radarr.Movies.Single(m => (int)m["tmdbId"]! == 693134);
+            dune["added"] = r.Arr.Now.UtcDateTime.AddDays(-30).ToString("o", CultureInfo.InvariantCulture);
+            dune["isAvailable"] = true;
+            r.Radarr.Queue.Clear();
+            r.Radarr.History.Clear();
+        });
+        var (instance, _) = await rig.Service.SearchableInstanceAsync(rig.Emma, TitleKey.Parse("movie:tmdb:693134")!, null, default);
+        Assert.Equal(searchable, instance != null);
+    }
+
+    [Theory]
+    [InlineData("absent", true)]       // control: Jellyfin proven not to have the series: Sonarr's missing episodes are searchable
+    [InlineData("nothingSeen", false)] // not proven absent: a copy the lookup didn't reach may be hidden, or hold them
+    public async Task AFamilySearchOfASeriesNeedsItsAbsenceProvenWhenNoCopyWasSeen(string shape, bool searchable)
+    {
+        using var library = new IntegrationEditionOrphanTests.Library();
+        IntegrationEditionBoundTests.Rows(library, shape == "absent" ? 0 : IntegrationEditionBoundTests.PastTheCeiling, live: false, id: "78874", provider: "Tvdb");
+        using var rig = await Ready(r =>
+        {
+            r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "tv:tvdb:78874" ? library.View.Copies(key, viewer, aliases) : null;
+            // Firefly S1E2 monitored, out for years, nothing grabbed.
+            r.Sonarr.Episodes.Add(new JsonObject { ["id"] = 102, ["seriesId"] = 1, ["seasonNumber"] = 1, ["episodeNumber"] = 2, ["airDateUtc"] = "2003-10-12T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
+        });
+        var episodes = await rig.Service.SearchableEpisodesAsync(rig.Emma, TitleKey.Parse("tv:tvdb:78874")!, 50, null, default);
+        Assert.Equal(searchable, episodes.Count > 0);
+    }
+
     [Fact]
     public async Task EachMemberSeesOnlyTheirOwnRequestsGroupedWithTheirStatus()
     {
@@ -843,7 +883,7 @@ public class ApiArrRequestsHubTests
         // The copy is found, but Emma can't open it: the answer of a title nobody has (not Ready).
         Assert.NotEqual("ready", emma.GetProperty("items")[0].GetProperty("stage").GetString());
         var admin = rig.Service.CopiesOf(TitleKey.Parse("tv:tvdb:78874")!, rig.Admin);
-        Assert.Equal(tmdbOnly, Assert.Single(admin).ItemId);
+        Assert.Equal(tmdbOnly, Assert.Single(admin.Seen).ItemId);
     }
 
     [Fact]

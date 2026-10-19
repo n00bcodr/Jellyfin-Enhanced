@@ -143,7 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var viewer = _view.Viewer(userId);
             if (TitleKey.Parse(input.Key) is not { } key) return;
-            if (viewer is { HasParentalLimit: true } && _view.Copies(key, viewer, _aliases.Of(key)).Count == 0)
+            if (viewer is { HasParentalLimit: true } && _view.Copies(key, viewer, _aliases.Of(key)).IsProvenAbsent)
             {
                 var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
                 await _parental.MaySeeAbsentAsync(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), ct).ConfigureAwait(false);
@@ -234,13 +234,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             SeerrParentalFilter.AbsentSignature? signature = null;
             if (viewer != null)
             {
-                var copies = _view.Copies(key, viewer, _aliases.Of(key));
+                // The copies the lookup saw decide (finished or not); the absent-title rule needs a proven absence, so a
+                // lookup that couldn't finish and saw nothing fails closed.
+                var lookup = _view.Copies(key, viewer, _aliases.Of(key));
+                var copies = lookup.Seen;
                 if (copies.Count > 0)
                 {
                     var target = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
                     visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, target, _libraries.Libraries());
                 }
-                else
+                else if (lookup.IsProvenAbsent)
                 {
                     var libraries = instance == null ? new ArrLibraryTarget(null, null, "no_instance") : input.RootFolder == null ? _libraries.ResolveTitle(instance, key) : _libraries.Resolve(instance, input.RootFolder);
                     visible = viewer.Handle is User user && ArrInstanceLibraries.CanOpen(user, libraries, _libraries.Libraries());

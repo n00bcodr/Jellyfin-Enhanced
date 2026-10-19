@@ -141,8 +141,8 @@ public class IntegrationEditionOrphanTests
         using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         var viewer = libraryContext ? StatusViewer.Library : l.Person(fake.Member);
         l.Change(state);
-        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
-        Assert.DoesNotContain(l.View.Copies(Matrix, viewer), c => c.Visible);
+        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
+        Assert.DoesNotContain(l.View.Copies(Matrix, viewer).Seen, c => c.Visible);
         Assert.Empty(l.View.Sources(l.Uhd.Id, viewer));
         Assert.Empty(editions.Scope(viewer, Matrix, Edition.Standard));
         Assert.Empty(editions.Scope(viewer, Matrix, Edition.FourK));
@@ -227,8 +227,8 @@ public class IntegrationEditionOrphanTests
         using var l = new Library { IncludeHd = true };
         using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         var viewer = libraryContext ? StatusViewer.Library : l.Person(fake.Member);
-        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
-        var gathered = l.View.Copies(Matrix, viewer);
+        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
+        var gathered = l.View.Copies(Matrix, viewer).Seen;
         Assert.Equal(2, gathered.Count(c => c.Visible));
         Assert.Single(editions.Movie(viewer, gathered, Edition.FourK));
         Assert.Equal(2, editions.Movie(viewer, gathered, Edition.Standard).Count);
@@ -266,20 +266,20 @@ public class IntegrationEditionOrphanTests
         using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         var viewer = l.Person(fake.Member);
         var old = l.UhdRoot; l.Change("removed");
-        Assert.DoesNotContain(l.View.Copies(Matrix, viewer), c => c.Visible && c.ItemId == l.Uhd.Id);
+        Assert.DoesNotContain(l.View.Copies(Matrix, viewer).Seen, c => c.Visible && c.ItemId == l.Uhd.Id);
         var readded = new CollectionFolder { Id = Guid.NewGuid(), Name = "Renamed 4K" }; l.AddRoot(readded);
         l.Live.Single(f => f.ItemId == readded.Id.ToString("N")).Locations = new[] { "/media/Movies 4K" };
         // A stale collection row may be listed before the current one. The physical media need not get a new id.
         l.Parents[l.Uhd.Id] = new() { old, readded };
         l.Manager.Invocations.Clear();
-        var copy = Assert.Single(l.View.Copies(Matrix, viewer), c => c.ItemId == l.Uhd.Id);
+        var copy = Assert.Single(l.View.Copies(Matrix, viewer).Seen, c => c.ItemId == l.Uhd.Id);
         Assert.True(copy.Visible); Assert.Equal(readded.Id.ToString("N"), copy.LibraryId);
         l.Manager.Verify(m => m.GetVirtualFolders(), Times.Once);
         l.Manager.Verify(m => m.GetItemById<BaseItem>(readded.Id, It.IsAny<User?>()), Times.Once);
         Assert.Equal(readded.Id.ToString("N"), l.View.Resolve(l.Uhd.Id, viewer)!.LibraryId);
         l.Denied.Add(readded.Id);
-        Assert.DoesNotContain(l.View.Copies(Matrix, viewer), c => c.ItemId == l.Uhd.Id && c.Visible);
-        Assert.Contains(l.View.Copies(Matrix, StatusViewer.Library), c => c.ItemId == l.Uhd.Id && c.Visible);
+        Assert.DoesNotContain(l.View.Copies(Matrix, viewer).Seen, c => c.ItemId == l.Uhd.Id && c.Visible);
+        Assert.Contains(l.View.Copies(Matrix, StatusViewer.Library).Seen, c => c.ItemId == l.Uhd.Id && c.Visible);
     }
 
     [Theory]
@@ -296,7 +296,7 @@ public class IntegrationEditionOrphanTests
         episode.Files.Add(File(episode, 3840));
         l.Items[series.Id] = series; l.Items[episode.Id] = episode;
         l.Parents[series.Id] = new() { l.UhdRoot }; l.Parents[episode.Id] = new() { l.UhdRoot };
-        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
         Assert.True(editions.Available(viewer, Firefly.WithEpisode(1, 1), Edition.FourK));
         l.Change("removed");
         Assert.Empty(editions.Scope(viewer, Firefly.WithEpisode(1, 1), Edition.FourK));
@@ -346,10 +346,10 @@ public class IntegrationEditionOrphanTests
         l.Manager.Setup(m => m.FindByPath(l.Uhd.Path, false)).Returns(l.Uhd);
         l.Change("path"); // Same live collection id, stale native collection mapping.
         l.Manager.Invocations.Clear();
-        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+        var editions = new EditionAvailability(l.View, () => fake.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
         switch (entry)
         {
-            case "Copies": Assert.Empty(l.View.Copies(Matrix, viewer)); break;
+            case "Copies": Assert.True(l.View.Copies(Matrix, viewer).IsProvenAbsent); break;
             case "Resolve": Assert.Null(l.View.Resolve(l.Uhd.Id, viewer)); break;
             case "Sources": Assert.Empty(l.View.Sources(l.Uhd.Id, viewer)); break;
             case "Sources-fast": Assert.Empty(l.View.Sources(l.Uhd.Id, viewer, false)); break;
@@ -405,7 +405,7 @@ public class IntegrationEditionOrphanTests
         using var l = new Library();
         using var fake = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         l.Uhd.Path = path;
-        Assert.Empty(l.View.Copies(Matrix, l.Person(fake.Member)));
+        Assert.True(l.View.Copies(Matrix, l.Person(fake.Member)).IsProvenAbsent);
     }
 
     [Theory]
@@ -508,11 +508,11 @@ public class IntegrationEditionOrphanTests
                 q.HasAnyProviderId?.GetValueOrDefault("Tmdb") == "604"
                     ? rows.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToList() : new());
         }
-        var copies = l.View.Copies(key, viewer, aliases);
+        var copies = l.View.Copies(key, viewer, aliases).Seen;
         Assert.Equal(rows.Last().Id, Assert.Single(copies).ItemId);
         if (entry != "alias")
         {
-            var editions = new EditionAvailability(l.View, () => rig.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+            var editions = new EditionAvailability(l.View, () => rig.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
             Assert.True(editions.Available(viewer, key, entry == "4k" ? Edition.FourK : Edition.Standard));
         }
     }
@@ -525,7 +525,7 @@ public class IntegrationEditionOrphanTests
         using var l = new Library();
         using var rig = new IntegrationEditionAvailabilityTests.Rig(IntegrationEditionAvailabilityTests.Layout.OneItem, IntegrationEditionAvailabilityTests.Has.Hd, true);
         PagedRows(l, 25, false, live: false);
-        Assert.Empty(l.View.Copies(Matrix, libraryContext ? StatusViewer.Library : l.Person(rig.Member)));
+        Assert.True(l.View.Copies(Matrix, libraryContext ? StatusViewer.Library : l.Person(rig.Member)).IsProvenAbsent);
         // Check exhaustion, not merely an empty projection from a full native page.
         var queries = l.Manager.Invocations.Where(i => i.Method.Name == "GetItemList").Select(i => (InternalItemsQuery)i.Arguments[0]).ToList();
         Assert.True(queries.Sum(q => q.Limit ?? 0) > 25);
@@ -542,7 +542,9 @@ public class IntegrationEditionOrphanTests
             l.Items[row.Id] = row; l.Parents[row.Id] = new() { l.HdRoot };
             rows.Add(row); rows.Add(row);
         }
-        var copies = l.View.Copies(Matrix, StatusViewer.Library, Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray());
+        var lookup = l.View.Copies(Matrix, StatusViewer.Library, Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray());
+        Assert.Equal(CopyLookupOutcome.Found, lookup.Outcome);
+        var copies = lookup.Seen;
         Assert.Equal(20, copies.Count); Assert.Equal(20, copies.Select(c => c.ItemId).Distinct().Count());
         l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.AtMost(10));
     }
@@ -554,7 +556,7 @@ public class IntegrationEditionOrphanTests
     {
         using var l = new Library();
         var rows = PagedRows(l, orphans, false);
-        Assert.Equal(rows.Last().Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library)).ItemId);
+        Assert.Equal(rows.Last().Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library).Seen).ItemId);
         var queries = l.Manager.Invocations.Where(i => i.Method.Name == "GetItemList").Select(i => (InternalItemsQuery)i.Arguments[0]).ToList();
         Assert.Equal(new[] { 0, 100 }, queries.Select(q => q.StartIndex ?? 0));
         Assert.All(queries, q => Assert.Equal(new[] { (ItemSortBy.SortName, SortOrder.Ascending), (ItemSortBy.DateCreated, SortOrder.Ascending) }, q.OrderBy));
@@ -565,7 +567,7 @@ public class IntegrationEditionOrphanTests
     {
         using var l = new Library();
         PagedRows(l, 100, false, live: false);
-        Assert.Empty(l.View.Copies(Matrix, StatusViewer.Library));
+        Assert.True(l.View.Copies(Matrix, StatusViewer.Library).IsProvenAbsent);
         l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.Exactly(2));
     }
 
@@ -577,7 +579,7 @@ public class IntegrationEditionOrphanTests
             q.HasAnyProviderId?.GetValueOrDefault("Tmdb") == "608" ? new List<BaseItem> { l.Uhd } : new());
         // Six TMDB ids: six queries (one value of a provider per query), every one searched within the page ceiling.
         var aliases = Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray();
-        Assert.Equal(l.Uhd.Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library, aliases)).ItemId);
+        Assert.Equal(l.Uhd.Id, Assert.Single(l.View.Copies(Matrix, StatusViewer.Library, aliases).Seen).ItemId);
         l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.Exactly(6));
     }
 

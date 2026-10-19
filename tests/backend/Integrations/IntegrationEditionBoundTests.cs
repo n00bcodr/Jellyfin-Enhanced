@@ -100,8 +100,8 @@ public class IntegrationEditionBoundTests
         var viewer = libraryContext ? StatusViewer.Library : l.Person(rig.Member);
         // 1,001 rows retained from removed paths ahead of the live copy: none of them counts, the copy is found.
         Rows(l, 1_001);
-        Assert.Equal(l.Uhd.Id, Assert.Single(l.View.Copies(Matrix, viewer)).ItemId);
-        var editions = new EditionAvailability(l.View, () => rig.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v));
+        Assert.Equal(l.Uhd.Id, Assert.Single(l.View.Copies(Matrix, viewer).Seen).ItemId);
+        var editions = new EditionAvailability(l.View, () => rig.Arr.Plugin.Plugin.Configuration, (k, v) => l.View.Copies(k, v).Display);
         Assert.True(editions.Available(viewer, Matrix, Edition.FourK));
     }
 
@@ -146,7 +146,11 @@ public class IntegrationEditionBoundTests
         // The live 4K copy lies past the work ceiling; with a partial hit, an eligible copy also comes first.
         var rows = Rows(l, PastTheCeiling);
         if (partial) rows.Insert(0, l.Hd);
-        Assert.Empty(l.View.Copies(Matrix, viewer));
+        // Incomplete: what it saw is kept (the HD copy of the partial hit), and pages show no copy.
+        var bounded = l.View.Copies(Matrix, viewer);
+        Assert.Equal(CopyLookupOutcome.Incomplete, bounded.Outcome);
+        Assert.Empty(bounded.Display);
+        Assert.Equal(partial ? new[] { l.Hd.Id } : Array.Empty<Guid>(), bounded.Seen.Select(c => c.ItemId));
         Assert.False(lab.Status.Editions.Available(viewer, Matrix, Edition.FourK));
 
         lab.Status.Cache.Clear();
@@ -260,10 +264,11 @@ public class IntegrationEditionBoundTests
         using var rig = await IntegrationNotificationsTests.Started();
         rig.Phones(rig.Admin);
         rig.Prefs(rig.Admin, p => p.AdminAlerts = true);
-        // The policy's visibility check reads the title's copies (as RequestPolicy does).
+        // The policy's visibility check reads the title's copies as RequestPolicy does: a copy they can open, or a
+        // proven absence (an incomplete lookup that saw nothing fails closed).
         var policy = new IntegrationRequestLedgerTests.Policy();
         policy.People[rig.Admin.UserId] = new(rig.Admin.UserId, "Admin", true, true, true, true, "p1", "je", "inst", "g1", 7, 7, 0, "{}");
-        policy.Adjust = (user, input, facts) => { l.View.Copies(TitleKey.Parse(input.Key)!, rig.View.Viewer(user)!); return facts; };
+        policy.Adjust = (user, input, facts) => l.View.Copies(TitleKey.Parse(input.Key)!, rig.View.Viewer(user)!) is var lookup && (lookup.SeenOpenable != null || lookup.IsProvenAbsent) ? facts : facts with { Visible = false };
         using var dispatcher = new NotifyDispatcher(rig.NotifyStore, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), null, () => rig.Config, () => rig.Arr.Now, rig.Users, rig.View, rig.Status.Aliases, null, policy);
         rig.NotifyStore.Add(rig.Admin.UserId, "approval|bound|1", NotifyKind.Approval, dune, null, new Dictionary<string, string> { ["title"] = "Dune: Part Two", ["user"] = "Kid" },
             new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);

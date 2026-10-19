@@ -1026,7 +1026,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // only the copy Seerr matched the request to, as the Requests page does: never the standard copy.
         private List<JfCopy> SeriesCopies(TitleKey key, StatusViewer viewer, bool only4k)
         {
-            var copies = _view.Copies(key, viewer, _aliases.Of(key));
+            // What a finished lookup found (the callers' watches keep everything as it was when one couldn't finish).
+            var copies = _view.Copies(key, viewer, _aliases.Of(key)).Display;
             if (!only4k) return copies.Where(c => c.Visible).ToList();
             var fourK = (FourKSeriesCopies(key, copies) ?? Array.Empty<JfCopy>()).Where(c => c.Visible).ToList();
             if (fourK.Count == 0 && SeerrFourKItem(key, viewer.UserId) is Guid seerr) fourK = copies.Where(c => c.Visible && c.ItemId == seerr).ToList();
@@ -1462,7 +1463,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 foreach (var k in keys)
                 {
-                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Select(c => c.ItemId).Where(id => id != Guid.Empty));
+                    // Every copy the lookup saw (finished or not): forgetting the marks of more items only tells them again.
+                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Seen.Select(c => c.ItemId).Where(id => id != Guid.Empty));
                 }
             }
             // Read before a restore (generation given): not written into the restored data.

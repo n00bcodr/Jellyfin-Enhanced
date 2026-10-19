@@ -329,13 +329,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var key = TitleKey.Parse(row.Key)!;
             var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
-            var copies = _requests.View.Copies(key, viewer, aliases);
-            var open = copies.FirstOrDefault(c => c.Visible);
+            var lookup = _requests.View.Copies(key, viewer, aliases);
+            // The card shows what a finished lookup found (one that couldn't finish reads as not in the library).
+            var open = lookup.Display.FirstOrDefault(c => c.Visible);
             if (viewer.HasParentalLimit)
             {
-                // A copy Jellyfin hides from them (rating, tags or library) hides the title; an absent
-                // title needs a verified rating they may see.
-                if (copies.Count > 0 ? open == null : !await MaySeeAsync(row.Kind, row.TmdbId, viewer.UserId, ct).ConfigureAwait(false)) return null;
+                // A copy Jellyfin hides from them (rating, tags or library) hides the title unless one they can open
+                // was seen too; an absent title needs a verified rating they may see, and only a proven absence is one.
+                var seen = lookup.Seen;
+                if (seen.Count > 0 ? lookup.SeenOpenable == null : !lookup.IsProvenAbsent || !await MaySeeAsync(row.Kind, row.TmdbId, viewer.UserId, ct).ConfigureAwait(false)) return null;
             }
             var itemId = open?.ItemId.ToString("N", CultureInfo.InvariantCulture);
             if (itemId != null && hidden.Contains(itemId)) return null;

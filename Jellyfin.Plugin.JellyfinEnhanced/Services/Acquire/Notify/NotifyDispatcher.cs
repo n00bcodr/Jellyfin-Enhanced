@@ -248,10 +248,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             using (var bound = CopyLookupBound.Track())
             {
                 reason = Suppression(delivery, prefs, payload, out itemId);
-                if (bound.Reached)
+                if (reason != null && bound.Reached)
                 {
-                    // A copy lookup that reached its scan bound says neither "still theirs" nor "gone": the alert stays
-                    // pending and is looked at again later, and the round goes on to the others.
+                    // A copy lookup that reached its scan bound proves nothing gone: the alert stays pending and is
+                    // looked at again later, and the round goes on to the others. One that may go out on what the
+                    // lookup did see (a copy the recipient can open) goes out.
                     _store.Postpone(delivery.Id, _now() + BoundRetry, delivery.Generation);
                     return (prefs, null, null);
                 }
@@ -402,7 +403,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;
             }
             var key = TitleKey.Parse(delivery.TitleKey);
-            return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).Any(c => c.Visible) ? null : "The recipient can no longer open this title.";
+            return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).SeenOpenable != null ? null : "The recipient can no longer open this title.";
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>

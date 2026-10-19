@@ -151,14 +151,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         return !Withdrawn(seriesItemId, viewer) && (copies.Count == 0 || copies.Any(c => c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId)));
     }
 
-    /// <summary>Answers Copies instead of the in-memory copies when it returns a list (tests route one title to a real ArrJellyfinView).</summary>
-    public Func<TitleKey, StatusViewer, IReadOnlyCollection<TitleKey>?, IReadOnlyList<JfCopy>?>? CopiesFrom { get; set; }
+    /// <summary>Answers Copies instead of the in-memory copies when it returns a lookup (tests route one title to a real ArrJellyfinView).</summary>
+    public Func<TitleKey, StatusViewer, IReadOnlyCollection<TitleKey>?, CopyLookup?>? CopiesFrom { get; set; }
 
     /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
     public List<IReadOnlyList<string>> CopyQueries { get; } = new();
 
-    /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item.</summary>
-    public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+    /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item (always a finished lookup).</summary>
+    public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
     {
         OnCopies?.Invoke();
         if (CopiesFrom?.Invoke(titleKey, viewer, aliases) is { } routed) return routed;
@@ -175,7 +175,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
                 result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = viewer.IsLibraryContext || ((c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId)) && !Withdrawn(c.Copy.ItemId, viewer)) });
             }
         }
-        return result;
+        return CopyLookup.Complete(result);
     }
 
     /// <summary>Runs on every episode lookup (tests use it to make something happen mid-way).</summary>

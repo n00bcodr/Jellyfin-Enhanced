@@ -345,7 +345,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 if (TitleKey.Parse(raw) is not { } key) continue;
                 var aliases = _aliases?.Of(key) ?? Array.Empty<TitleKey>();
-                var copy = _service.View.Copies(key, caller, aliases).FirstOrDefault(c => c.Visible);
+                var copy = _service.View.Copies(key, caller, aliases).Display.FirstOrDefault(c => c.Visible);
                 var item = copy == null ? null : _directory.Item(copy.ItemId);
                 result[raw] = new HubTitleMeta
                 {

@@ -67,7 +67,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _feed = feed;
             _libraries = libraries ?? new ArrInstanceLibraries(store, () => Array.Empty<JfLibraryRoot>(), _now);
             _aliases = new TitleAliases(store, requests as SeerrRequestReadModel);
-            Editions = new EditionAvailability(view, _config, CopiesOf);
+            // Edition availability credits only what a finished lookup found (Ready and fulfilment never ride on a guess).
+            Editions = new EditionAvailability(view, _config, (key, viewer) => CopiesOf(key, viewer).Display);
         }
 
         /// <summary>
@@ -129,7 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var c = Context(viewer);
             var statuses = new List<TitleStatus>();
             var seriesEpisodes = new Dictionary<Guid, IReadOnlyList<JfEpisode>>();
-            var titleCopies = new Dictionary<TitleKey, IReadOnlyList<JfCopy>>();
+            var titleCopies = new Dictionary<TitleKey, CopyLookup>();
             // A series, season or episode card is of one series copy: it reads the Sonarr that owns that copy's folder. The
             // copies the gather read for the viewer serve (the final gate kept their policy), so a page of posters reads
             // each title's copies once.
@@ -137,7 +138,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 if (!facts.Copies.Any(x => x.Series != null)) return null;
                 if (!titleCopies.TryGetValue(facts.Key, out var found)) titleCopies[facts.Key] = found = gather.Copies.GetValueOrDefault(facts.Key) ?? CopiesOf(facts.Key, viewer);
-                return found;
+                return Shown(facts, found);
             }
             foreach (var item in items)
             {
@@ -169,10 +170,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var key in titleKeys)
             {
                 var facts = gather.Facts[key];
-                var copies = CopiesOf(key, viewer);
+                var lookup = CopiesOf(key, viewer);
                 // Absent titles require an openable destination or the viewer's own request.
                 // Jellyfin copies retain their own content and library visibility decision.
-                if (!MayAskByKey(viewer, key, copies)) continue;
+                if (!MayAskByKey(viewer, key, lookup)) continue;
+                var copies = Shown(facts, lookup);
                 statuses.Add(WithLiveKey(key.IsMovie
                     ? StatusComposer.Movie(facts, null, copies, c, detail: false)
                     : StatusComposer.SeriesByKey(facts, copies, c, copies.FirstOrDefault(x => x.Visible) is { } shown ? HiddenFromViewer(facts, shown.ItemId, viewer) : null), facts));
@@ -268,14 +270,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // The Jellyfin copies tell which Sonarr copy owns the page's own series copy (its arr facts are that copy's,
             // never another instance's: none when that can't be told), and admins see every Sonarr holding it and which
             // are in the library.
-            var seriesCopies = item.Kind != "movie" && facts.Copies.Any(x => x.Series != null) ? CopiesOf(title, viewer) : null;
+            var seriesCopies = item.Kind != "movie" && facts.Copies.Any(x => x.Series != null) ? Shown(facts, CopiesOf(title, viewer)) : null;
             var page = item.Kind == "series" ? item.ItemId : item.SeriesId;
             TitleStatus status;
             switch (item.Kind)
             {
                 case "movie":
                 {
-                    var copies = CopiesOf(title, viewer);
+                    var copies = Shown(facts, CopiesOf(title, viewer));
                     status = StatusComposer.Movie(facts, item, copies, c, detail: true);
                     // Get 4K is pointless when a copy the viewer can open (this one or another library's) has a 4K source.
                     if (Editions.Movie(viewer, copies, Edition.FourK).Count > 0) status.FourK = true;
@@ -410,10 +412,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private TitleStatus? ComposeAbsent(StatusViewer viewer, AbsentTitle page, Gathered gather, RequestFacts? episodeRequests)
         {
             var title = page.Title.Title;
-            var copies = CopiesOf(title, viewer);
-            if (!MayAskByKey(viewer, title, copies)) return null;
+            var lookup = CopiesOf(title, viewer);
+            if (!MayAskByKey(viewer, title, lookup)) return null;
             ApplyRequests(gather, viewer);
             var facts = gather.Facts[title];
+            var copies = Shown(facts, lookup);
             var c = Context(viewer);
             // Virtual: the page id never stands for a file, so nothing on it can read as Ready.
             var item = new JfItemRef { ItemId = page.PageId, Kind = page.Kind, Key = page.ScopeKey, Season = page.Season, Episode = page.Episode, Virtual = true, TmdbId = page.TmdbId };
@@ -481,7 +484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key, Guid? seriesId = null)
         {
             if (key.IsMovie || key.Season is not int season) return null;
-            var copies = CopiesOf(key.Title, viewer);
+            var copies = CopiesOf(key.Title, viewer).Display;
             if (seriesId is Guid shown)
                 return copies.Any(x => x.Visible && x.ItemId == shown) ? ScopeItemIn(viewer, key, shown, season) : null;
             JfItemRef? first = null;
@@ -528,7 +531,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             if (key.Season == null)
             {
-                var visible = CopiesOf(key.Title, viewer).Where(x => x.Visible).Select(x => x.ItemId).ToList();
+                var visible = CopiesOf(key.Title, viewer).Display.Where(x => x.Visible).Select(x => x.ItemId).ToList();
                 if (visible.Count == 0) return null;
                 if (shown is Guid id && visible.Contains(id)) return id;
                 if (key.IsMovie && shown is Guid gone)
@@ -586,8 +589,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var c = Context(viewer);
             if (key.IsMovie)
             {
-                // A copy the viewer can already open is not missing.
-                if (CopiesOf(title, viewer).Any(x => x.Visible)) return (null, sent);
+                // A copy the viewer can already open is not missing (one the lookup saw counts, finished or not).
+                if (CopiesOf(title, viewer).SeenOpenable != null) return (null, sent);
             }
             else
             {
@@ -613,13 +616,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private (EpisodeCoverage Have, HiddenParts? Hidden)? SeriesSearchView(StatusViewer viewer, TitleKey title)
         {
             var copies = CopiesOf(title, viewer);
-            if (copies.FirstOrDefault(x => x.Visible) is { } series)
+            // The first copy they can open (a finished lookup lists the ones it saw first, so it is the same copy).
+            if (copies.SeenOpenable is { } series)
             {
                 var jf = _view.Episodes(series.ItemId, null, viewer, includeVirtual: false);
                 var hidden = viewer.IsAdmin || !viewer.HasParentalLimit ? null : StatusComposer.SplitHidden(jf, _view.Seasons(series.ItemId, viewer)).Hidden;
                 return (new EpisodeCoverage(jf.Where(e => !e.Hidden)), hidden);
             }
-            if (copies.Count > 0 || !MayAskByKey(viewer, title, copies)) return null;
+            // A hidden copy was seen, or the lookup couldn't prove the series absent: nothing to search.
+            if (!copies.IsProvenAbsent || !MayAskByKey(viewer, title, copies)) return null;
             return (new EpisodeCoverage(Array.Empty<JfEpisode>()), null);
         }
 
@@ -710,7 +715,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ApplyRequests(gather, viewer);
             var facts = gather.Facts[title];
             var c = Context(viewer);
-            var series = CopiesOf(title, viewer).FirstOrDefault(x => x.Visible);
+            var series = CopiesOf(title, viewer).Display.FirstOrDefault(x => x.Visible);
             // A stand-in for the missing Jellyfin item (no id): the arr's view of that season or episode.
             var standIn = new JfItemRef { Kind = key.Episode.HasValue ? "episode" : "season", Key = key, SeriesId = series?.ItemId, Season = season, Episode = key.Episode, Virtual = true };
             var status = key.Episode.HasValue
@@ -802,7 +807,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var whose = gather.Facts[whole.Key];
             var c = Context(viewer);
-            var copies = CopiesOf(whole.Key, viewer);
+            var lookup = CopiesOf(whole.Key, viewer);
             var edition = EditionAvailability.Of(scope.Only4k);
             // A standard request is satisfied by any playable copy unless the administrator says it needs a non-4K one.
             var anyCopy = !scope.Only4k && !Editions.StandardNeedsNonFourK;
@@ -812,6 +817,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             facts.Unreadable.AddRange(whose.Unreadable);
             facts.Stale.AddRange(whose.Stale);
             facts.Checked.AddRange(whose.Checked);
+            var copies = Shown(facts, lookup);
 
             if (whole.Key.IsMovie)
             {
@@ -832,7 +838,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     // the request says where it is, and a 4K source in a copy the viewer can open says it arrived
                     // (Seerr's word that it is available is not enough on its own).
                     var arrivedAt = hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
-                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null);
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null, facts);
                     return whole with { Status = WithLiveKey(only, whose), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
                 }
                 var (status, arrived, shown) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, scope.Only4k);
@@ -855,7 +861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var held = HeldCopies(any.Hits.Select(h => h.CopyId), copies, null);
                     if (held.Count > 0)
                         return whole with { Visible = held[0], Scoped = true, ArrivedAt = any.Hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max() };
-                    var (only, _) = StatusComposer.RequestedOnly(whole.Status, scope.Request, false, null);
+                    var (only, _) = StatusComposer.RequestedOnly(whole.Status, scope.Request, false, null, facts);
                     return whole with { Status = WithLiveKey(only, facts), Visible = null, Scoped = true, ArrivedAt = null };
                 }
             }
@@ -872,7 +878,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var any = Editions.Episodes(viewer, copies, Edition.FourK, null, readDimensions: true);
                     var held = HeldCopies(any.Hits.Select(h => h.CopyId), copies, scope.JellyfinItemId);
                     var arrivedAt = any.Hits.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Max();
-                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null);
+                    var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null, facts);
                     return whole with { Status = WithLiveKey(only, facts), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
                 }
             }
@@ -944,9 +950,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private KeyedStatus? Compose(StatusViewer viewer, Gathered gather, TitleKey key, bool detail, RequestScope? scope = null)
         {
             var facts = gather.Facts[key];
-            var copies = CopiesOf(key, viewer);
-            if (!MayAskByKey(viewer, key, copies)) return null;
+            var lookup = CopiesOf(key, viewer);
+            if (!MayAskByKey(viewer, key, lookup)) return null;
             facts.Request = scope != null ? scope.Request : _requests.For(key, viewer);
+            var copies = Shown(facts, lookup);
             var c = Context(viewer);
             var status = key.IsMovie
                 ? StatusComposer.Movie(facts, null, copies, c, detail)
@@ -959,12 +966,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// title with an openable arr destination and no parental limits. With no arr holding it, the
         /// destination is where a request would land (the default instance's, as the request policy
         /// reads it). Unresolved destinations require every library. Their own request grants access
-        /// only while Jellyfin has no copy.
+        /// only while Jellyfin has no copy. The copies the lookup saw decide whether or not it finished; with none seen,
+        /// the absent-title rule needs a proven absence: an unfinished lookup may hide a copy, so for a viewer with
+        /// parental limits it fails closed.
         /// </summary>
-        private bool MayAskByKey(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy> copies)
+        private bool MayAskByKey(StatusViewer viewer, TitleKey key, CopyLookup copies)
         {
-            if ((viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) || copies.Any(x => x.Visible)) return true;
-            if (copies.Count > 0) return !viewer.HasParentalLimit;
+            if ((viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) || copies.SeenOpenable != null) return true;
+            if (copies.Seen.Count > 0 || (!copies.IsProvenAbsent && viewer.HasParentalLimit)) return !viewer.HasParentalLimit;
             if (!_libraries.MaySeeAbsent(viewer, key)) return false;
             if (AskedBy(key, viewer)) return true;
             if (!ArrInstanceLibraries.AbsentParentalEnabled && viewer.HasParentalLimit) return false;
@@ -993,19 +1002,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
         }
 
-        private sealed record CopyAccess(bool Absent, bool Visible, bool Asked);
+        /// <summary>
+        /// What the viewer's copy lookup says for the arr facts: proven <paramref name="Absent"/>, a copy they can open
+        /// seen, their own request, and <paramref name="Unproven"/>: the lookup couldn't finish and saw nothing (absent
+        /// or hidden, it can't tell; both rules must allow the facts).
+        /// </summary>
+        private sealed record CopyAccess(bool Absent, bool Visible, bool Asked, bool Unproven = false);
 
-        private CopyAccess AccessOf(TitleKey key, StatusViewer viewer, IReadOnlyList<JfCopy>? read = null)
+        private CopyAccess AccessOf(TitleKey key, StatusViewer viewer, CopyLookup? read = null)
         {
             var copies = read ?? CopiesOf(key, viewer);
-            var absent = copies.Count == 0;
-            return new CopyAccess(absent, copies.Any(c => c.Visible), absent && AskedBy(key, viewer));
+            var unproven = !copies.IsComplete && copies.Seen.Count == 0;
+            return new CopyAccess(copies.IsProvenAbsent, copies.SeenOpenable != null, (copies.IsProvenAbsent || unproven) && AskedBy(key, viewer), unproven);
         }
 
         private bool MayUseCopy(StatusViewer viewer, CopyAccess access, ArrConnection instance, string? path)
         {
             if (viewer.IsAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !viewer.HasParentalLimit)) return true;
             if (access.Absent) return _libraries.CanSeeAbsent(viewer, instance, path, access.Asked);
+            if (access.Unproven && !_libraries.CanSeeAbsent(viewer, instance, path, access.Asked)) return false;
             var target = _libraries.Resolve(instance, path);
             // A visible Jellyfin title already grants access to its arr facts. Only a resolved
             // destination can distinguish an inaccessible quality copy from that visible title.
@@ -1043,7 +1058,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Every Jellyfin copy of a title as the viewer sees it, found by the title's key and every
         /// alias (a series Jellyfin knows only by its TMDB id is found by its TVDB key).
         /// </summary>
-        internal IReadOnlyList<JfCopy> CopiesOf(TitleKey key, StatusViewer viewer) => _view.Copies(key, viewer, _aliases.Of(key));
+        internal CopyLookup CopiesOf(TitleKey key, StatusViewer viewer) => _view.Copies(key, viewer, _aliases.Of(key));
+
+        /// <summary>
+        /// The copies a status composed from <paramref name="lookup"/> shows (<see cref="CopyLookup.Display"/>), noting on
+        /// the facts whether the lookup finished: one that couldn't reads as not found but never as "since removed" or
+        /// "declined" (<see cref="TitleFacts.CopiesIncomplete"/>).
+        /// </summary>
+        private static IReadOnlyList<JfCopy> Shown(TitleFacts facts, CopyLookup lookup)
+        {
+            facts.CopiesIncomplete = !lookup.IsComplete;
+            return lookup.Display;
+        }
 
         /// <summary>
         /// Sets the key the change feed announces a title under when it differs from the status key
@@ -1230,7 +1256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             public Dictionary<TitleKey, TitleFacts> Facts { get; } = new();
 
             /// <summary>The Jellyfin copies of each title, as the viewer the facts were gathered for could open them.</summary>
-            public Dictionary<TitleKey, IReadOnlyList<JfCopy>> Copies { get; } = new();
+            public Dictionary<TitleKey, CopyLookup> Copies { get; } = new();
 
             public string Revision { get; set; } = string.Empty;
         }

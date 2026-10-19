@@ -97,6 +97,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The key the change feed announces the title under, when an arr copy names it differently (see <see cref="TitleStatus.LiveKey"/>).</summary>
         public TitleKey? LiveKey { get; set; }
+
+        /// <summary>
+        /// The viewer's Jellyfin copy lookup for the title couldn't finish (<see cref="CopyLookupOutcome.Incomplete"/>): the
+        /// status reads it as not found, but nothing says it is gone because of that (never "since removed" or "declined").
+        /// </summary>
+        public bool CopiesIncomplete { get; set; }
     }
 
     /// <summary>
@@ -905,7 +911,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         .Where(x => x.Stage == StatusStage.Downloading && x.Progress != null).Select(x => x.Progress!).ToList();
                     state = stage is StatusStage.None or StatusStage.Ready
                         // Nothing monitored, queued or aired there yet: the request says where it is.
-                        ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request, c)
+                        ? ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored), facts.Request, c, facts)
                         : Overall(stage, summary) with
                         {
                             Attention = summary.Attention > 0, Date = summary.NextAir, DateIsDay = summary.NextAirIsDay,
@@ -987,11 +993,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// otherwise waiting for an OK, OK'd or said no. Also returns when it arrived.
         /// <paramref name="whole"/> is the whole-title status (its key, kind and admin block are kept).
         /// </summary>
-        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedOnly(TitleStatus whole, RequestFacts? request, bool available, DateTime? availableAt)
+        public static (TitleStatus Status, DateTime? ArrivedAt) RequestedOnly(TitleStatus whole, RequestFacts? request, bool available, DateTime? availableAt, TitleFacts? facts = null)
         {
             var state = available
                 ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: availableAt)
-                : ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr), request, admin: whole.Admin != null);
+                : ApplyRequest(new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr), request, facts: facts, admin: whole.Admin != null);
             var status = new TitleStatus
             {
                 Key = whole.Key,
@@ -1715,13 +1721,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null, bool? admin = null)
         {
             if (request == null) return state;
+            // "Not here" from a Jellyfin lookup that couldn't finish is no proof: it is never read as gone or said no to.
+            var proven = facts?.CopiesIncomplete != true;
             // Everything asked for arrived once: no "OK'd! Getting started" again. Gone from Jellyfin and every arr
             // since, it says so; otherwise the copy's own state stands (not being fetched, service down, ...).
             if (request.Fulfilled)
-                return state.Stage == StatusStage.NotHere && state.Reason == StatusReasonCode.NotInArr ? new CopyState(StatusStage.NotHere, StatusReasonCode.Removed) : state;
+                return proven && state.Stage == StatusStage.NotHere && state.Reason == StatusReasonCode.NotInArr ? new CopyState(StatusStage.NotHere, StatusReasonCode.Removed) : state;
             if (state.Stage is StatusStage.NotHere or StatusStage.None)
             {
-                if (request.Declined) return new CopyState(StatusStage.NotHere, StatusReasonCode.Declined);
+                if (request.Declined) return proven ? new CopyState(StatusStage.NotHere, StatusReasonCode.Declined) : state;
                 if (request.Pending)
                 {
                     // An administrator is the one it waits for: held back at sending, it says why (not "waiting for you").
@@ -1831,7 +1839,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts FourKOnly(TitleFacts facts)
         {
-            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
             fourK.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role == "4k"));
             fourK.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role == "4k"));
             fourK.Stale.AddRange(facts.Stale.Where(i => i.Role == "4k"));
@@ -1842,7 +1850,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A copy of the facts (every instance's), for an edition any copy satisfies (see <see cref="RequestedEdition"/>).</summary>
         internal static TitleFacts EveryEdition(TitleFacts facts)
         {
-            var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
             every.Copies.AddRange(facts.Copies);
             every.Unreadable.AddRange(facts.Unreadable);
             every.Stale.AddRange(facts.Stale);
@@ -1856,7 +1864,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts StandardOnly(TitleFacts facts)
         {
-            var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey };
+            var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
             standard.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role != "4k"));
             standard.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role != "4k"));
             standard.Stale.AddRange(facts.Stale.Where(i => i.Role != "4k"));

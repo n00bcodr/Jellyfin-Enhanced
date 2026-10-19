@@ -215,10 +215,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
-        public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+        public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
         {
             var user = viewer.Handle as User;
-            if (user == null && !viewer.IsLibraryContext) return Array.Empty<JfCopy>();
+            if (user == null && !viewer.IsLibraryContext) return CopyLookup.Absent;
             // The key and its aliases of the same kind, one query per set of distinct providers
             // (Jellyfin matches any of the ids a query names; an item is listed once).
             var libraries = LiveLibraries(viewer);
@@ -273,12 +273,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                 }
             }
-            if (bound != null)
-            {
-                // No eligible copy found, for this read only: no partial hits, never cached as absence, no credit.
-                ReachedBound(titleKey, bound, pages, rowsRead, observable, items.Count, searched, queries.Count);
-                return Array.Empty<JfCopy>();
-            }
+            if (bound != null) ReachedBound(titleKey, bound, pages, rowsRead, observable, items.Count, searched, queries.Count);
             var copies = new List<JfCopy>(items.Count);
             foreach (var item in items)
             {
@@ -295,7 +290,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     DateCreated = Utc(item.DateCreated),
                 });
             }
-            return copies;
+            // Reaching a bound proves nothing about absence: what was seen comes back as an incomplete answer.
+            return bound != null ? CopyLookup.Incomplete(copies) : CopyLookup.Complete(copies);
         }
 
         /// <inheritdoc />
@@ -575,7 +571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _boundLogged[title] = now;
             }
             _logger?.LogWarning(
-                "Jellyfin copy lookup for {Title} reached its {Bound} ({Pages} pages, {Rows} native rows, {Observable} observable rows, {Copies} eligible copies, {Searched} of {Queries} provider queries); this read reports no eligible copy and is not cached.",
+                "Jellyfin copy lookup for {Title} reached its {Bound} ({Pages} pages, {Rows} native rows, {Observable} observable rows, {Copies} eligible copies, {Searched} of {Queries} provider queries); this read is incomplete (absence not proven) and is not cached.",
                 title, bound, pages, rows, observable, copies, searched, queries);
         }
 

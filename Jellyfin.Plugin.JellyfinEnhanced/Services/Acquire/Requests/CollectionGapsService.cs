@@ -152,10 +152,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var key = TitleKey.Parse(part.Key)!;
                 var aliases = _aliases?.Of(key);
                 var copies = _view.Copies(key, viewer, aliases);
-                if (copies.Any(c => c.Visible)) have++;
+                if (copies.SeenOpenable != null) have++;
                 // A copy the viewer can't open (another library, its rating or tags): Jellyfin's answer
-                // is final, so the movie isn't theirs to see here.
-                else if (copies.Count == 0) missing.Add(part);
+                // is final, so the movie isn't theirs to see here. Only a movie proven absent is missing (a lookup
+                // that couldn't finish may have a copy they can't open among the rows it didn't read).
+                else if (copies.IsProvenAbsent) missing.Add(part);
             }
 
             // Absent movies: only what the viewer's parental limits allow (the filter refuses unknowns).
