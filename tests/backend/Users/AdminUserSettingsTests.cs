@@ -347,4 +347,48 @@ public class AdminUserSettingsTests
         Assert.Equal("time",stored.WatchProgressMode);Assert.True(stored.ListSwapIn);Assert.False(stored.AutoMovieRequests);
     }
 
+    // Q-REBUILD1-3 (b), D43: the Display group also holds 4c3's playlist/collection page preferences and 4d's three home-row
+    // preferences: append-only rows with the same tri-state rule (null follows the administrator; effective = the
+    // administrator's switch and not false), each with its en.json label (D50).
+    [Fact]
+    public void ListPageAndHomeRowPreferencesAreDisplayRowsWithTheTriStateRule()
+    {
+        using var f=new Fixture();var c=f.R.Policy.Configuration;
+        c.ArrPhase4Enabled=true;c.ArrPhase4ListPlaceholdersEnabled=true;c.ArrPhase4ListPlaylistUiEnabled=true;c.ArrPhase4ListCollectionUiEnabled=false;
+        c.ArrPhase4HomeRowsEnabled=true;
+        var id=f.R.Member.ToString("N");
+        var path=f.Files.Write(id,"{\"ListPlaylistUi\":false,\"HomeRowSoon\":false,\"HomeOpsStrip\":false,\"AutoMovieRequests\":true,\"ListSwapIn\":true}");
+        var added=new[]{"listPlaylistUi","listCollectionUi","homeRowRequests","homeRowSoon","homeRowArrived"};
+        var display=f.Read().GetProperty("display");
+        var fields=display.GetProperty("stored").EnumerateObject().Select(p=>p.Name).ToList();
+        // Appended after the earlier rows, in this order; the administrators-only strip is not a person's display row.
+        Assert.Equal(new[]{"listPlaceholders","listStatus","acquisitionBadges","nativeAcquisitionStamps","useNativePosterTags"}.Concat(added),fields);
+        var stored=display.GetProperty("stored");var gates=display.GetProperty("gates");var effective=display.GetProperty("effective");
+        Assert.False(stored.GetProperty("listPlaylistUi").GetBoolean());Assert.False(stored.GetProperty("homeRowSoon").GetBoolean());
+        Assert.Equal(JsonValueKind.Null,stored.GetProperty("listCollectionUi").ValueKind);Assert.Equal(JsonValueKind.Null,stored.GetProperty("homeRowArrived").ValueKind);
+        Assert.True(gates.GetProperty("listPlaylistUi").GetBoolean());Assert.False(gates.GetProperty("listCollectionUi").GetBoolean());
+        foreach(var row in new[]{"homeRowRequests","homeRowSoon","homeRowArrived"}) Assert.True(gates.GetProperty(row).GetBoolean());
+        Assert.False(effective.GetProperty("listPlaylistUi").GetBoolean());   // the person hid it
+        Assert.False(effective.GetProperty("listCollectionUi").GetBoolean()); // the administrator's switch is off
+        Assert.True(effective.GetProperty("homeRowRequests").GetBoolean());   // follows the administrator
+        Assert.False(effective.GetProperty("homeRowSoon").GetBoolean());
+        Assert.True(effective.GetProperty("homeRowArrived").GetBoolean());
+
+        Assert.Equal(200,f.Patch("display","\"listCollectionUi\":true,\"listPlaylistUi\":null,\"homeRowArrived\":false,\"homeRowSoon\":null").Status);
+        var saved=JsonDocument.Parse(File.ReadAllText(path)).RootElement;
+        Assert.True(saved.GetProperty("ListCollectionUi").GetBoolean());Assert.Equal(JsonValueKind.Null,saved.GetProperty("ListPlaylistUi").ValueKind);
+        Assert.False(saved.GetProperty("HomeRowArrived").GetBoolean());Assert.Equal(JsonValueKind.Null,saved.GetProperty("HomeRowSoon").ValueKind);
+        Assert.False(saved.GetProperty("HomeOpsStrip").GetBoolean());
+        Assert.True(saved.GetProperty("AutoMovieRequests").GetBoolean());Assert.True(saved.GetProperty("ListSwapIn").GetBoolean());
+        // With the home rows off, every home-row row reads off whatever the person chose.
+        c.ArrPhase4HomeRowsEnabled=false;
+        effective=f.Read().GetProperty("display").GetProperty("effective");
+        foreach(var row in new[]{"homeRowRequests","homeRowSoon","homeRowArrived"}) Assert.False(effective.GetProperty(row).GetBoolean());
+        // The administrators-only strip and non-boolean values stay refused.
+        Assert.Equal(400,f.Patch("display","\"homeOpsStrip\":false").Status);
+        Assert.Equal(400,f.Patch("display","\"homeRowSoon\":\"off\"").Status);
+
+        var en=JsonDocument.Parse(File.ReadAllText(Path.Combine(IntegrationAutoRequestLedgerTests.Root(),"Jellyfin.Plugin.JellyfinEnhanced","js","locales","en.json"))).RootElement;
+        foreach(var field in fields) Assert.True(en.TryGetProperty("arr_user_"+field,out var label)&&label.GetString()!.Length>0,"en.json label for "+field);
+    }
 }

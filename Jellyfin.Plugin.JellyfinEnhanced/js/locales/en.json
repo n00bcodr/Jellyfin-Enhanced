@@ -2101,5 +2101,10 @@
     "arr_user_tab": "Jellyfin Enhanced",
     "arr_user_nativeSave": "Save",
     "arr_user_showDetails": "Show details",
-    "arr_user_settingsSaved": "Settings saved."
+    "arr_user_settingsSaved": "Settings saved.",
+    "arr_user_listPlaylistUi": "Missing entries on playlist pages",
+    "arr_user_listCollectionUi": "Missing entries on collection pages",
+    "arr_user_homeRowRequests": "Home row: Your requests",
+    "arr_user_homeRowSoon": "Home row: Coming soon for you",
+    "arr_user_homeRowArrived": "Home row: Just arrived for you"
 }

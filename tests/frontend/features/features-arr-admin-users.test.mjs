@@ -315,3 +315,21 @@ test('an external policy write before our pool write cannot be adopted as our ow
   assert.equal(writes.length,3);assert.equal(writes[2].body.revision,'p2');assert.equal(status(h,'policy'),'arr_user_conflict');assert.equal(h.document.querySelector('[data-field="quotaLimit"]').value,'8');
  }finally{h.close();}
 });
+
+// Q-REBUILD1-3 (b), D43: 4c3's list-page and 4d's home-row preferences are Display rows like the others (tri-state, saved
+// through the display group), each labelled from en.json (D50).
+test('list-page and home-row preferences render and save as tri-state Display rows with en.json labels',async()=>{
+ const en=JSON.parse(readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json',import.meta.url),'utf8'));
+ const added=['listPlaylistUi','listCollectionUi','homeRowRequests','homeRowSoon','homeRowArrived'];
+ const withRows=()=>{const v=view();v.display.stored={...v.display.stored,listPlaylistUi:false,listCollectionUi:null,homeRowRequests:null,homeRowSoon:true,homeRowArrived:null};v.display.gates={...v.display.gates,...Object.fromEntries(added.map(k=>[k,true]))};v.display.effective={...v.display.effective,listPlaylistUi:false,listCollectionUi:true,homeRowRequests:true,homeRowSoon:true,homeRowArrived:true};return v;};
+ const h=setup(`#/dashboard/users/${A}/access?jeTab=jellyfinenhanced`,'<div id="usersEditPage"><div class="content-primary"></div></div>',()=>Promise.resolve(withRows()));
+ try{
+  await tick();
+  for(const field of added){const select=h.document.querySelector(`[data-group="display"] [data-field="${field}"]`);assert.ok(select,field);assert.deepEqual([...select.options].map(o=>o.value),['','true','false']);assert.ok(typeof en['arr_user_'+field]==='string'&&en['arr_user_'+field].length>0,'en.json label for '+field);}
+  assert.equal(h.document.querySelector('[data-field="listPlaylistUi"]').value,'false');assert.equal(h.document.querySelector('[data-field="homeRowSoon"]').value,'true');assert.equal(h.document.querySelector('[data-field="homeRowArrived"]').value,'');
+  const change=(field,value)=>{const el=h.document.querySelector(`[data-field="${field}"]`);el.value=value;el.dispatchEvent(new h.window.Event('change',{bubbles:true}));};
+  change('homeRowArrived','false');change('listPlaylistUi','');h.document.querySelector('[data-je-user-save]').click();await tick();
+  const write=h.writes.find(w=>w.group==='display');assert.ok(write);assert.equal(write.body.homeRowArrived,false);assert.equal(write.body.listPlaylistUi,null);assert.equal(write.body.revision,'d1');
+  assert.ok(!('homeOpsStrip' in write.body));
+ }finally{h.close();}
+});
