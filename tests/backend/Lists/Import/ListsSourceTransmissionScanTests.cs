@@ -250,17 +250,23 @@ public class ListsSourceTransmissionScanTests
     {
         var code = Code(File.ReadAllText(Path.Combine(Root(), "Services", "MdblistService.cs")));
         var hold = Body(code, "Hold");
-        var consume = Body(code, "ConsumeLocked");
-        var rest = code.Replace(hold, string.Empty, StringComparison.Ordinal).Replace(consume, string.Empty, StringComparison.Ordinal);
-
-        // A status read replaces the balance only through Hold (requests charged since it was asked for come off it), and
-        // a request is charged only through ConsumeLocked (which counts it).
-        Assert.DoesNotMatch(@"_accountStatus\s*=[^=]", rest);
-        Assert.DoesNotMatch(@"RateLimitRemaining\s*(?:=[^=>]|-=|--)", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal));
         var reserve = Body(code, "ReserveAsync");
+        var finish = Body(code, "Finish");
+        var rest = code.Replace(hold, string.Empty, StringComparison.Ordinal).Replace(reserve, string.Empty, StringComparison.Ordinal).Replace(finish, string.Empty, StringComparison.Ordinal);
+        rest = Regex.Replace(rest, @"private\s+(?:int|long)\s+_(?:outstanding|finished|heldFinished)\b[^;]*;", string.Empty); // their declarations
+
+        // A status read replaces MDBList's count only through Hold, which never changes it; a reservation is charged only
+        // in ReserveAsync and finished only in Finish (review round 5: it stays outstanding until then, whatever a refresh
+        // says), and what may be spent is always MDBList's count minus every reservation it can't have counted.
+        Assert.DoesNotMatch(@"_accountStatus\s*=[^=]", rest);
+        Assert.DoesNotMatch(@"RateLimitRemaining\s*(?:-=|--|\+=|\+\+)", code);
+        Assert.DoesNotMatch(@"RateLimitRemaining\s*=[^=>]", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal).Replace("RateLimitRemaining = SpendableLocked()", string.Empty, StringComparison.Ordinal));
+        Assert.DoesNotMatch(@"RateLimitRemaining", hold);
+        Assert.DoesNotMatch(@"_outstanding\s*(?:\+\+|--|[+-]?=[^=])|_finished\s*(?:\+\+|--|[+-]?=[^=])|_heldFinished\s*=[^=]", rest);
+        Assert.Matches(@"_outstanding\s*-\s*\(\s*_finished\s*-\s*_heldFinished\s*\)", Body(code, "SpendableLocked"));
         Assert.Matches(@"_statusRefresh\.WaitAsync", reserve); // one refresh at a time
         var locked = Body("private void L() " + reserve[reserve.LastIndexOf("lock (_accountStatusLock)", StringComparison.Ordinal)..], "L");
-        Assert.Matches(@"FreshLocked\(\)[\s\S]*RateLimitRemaining\s*<=\s*Math\.Max\(SafetyMargin,[\s\S]*ConsumeLocked\(\)", locked); // checked and charged in one step
+        Assert.Matches(@"FreshLocked\(\)[\s\S]*SpendableLocked\(\)\s*<=\s*Math\.Max\(SafetyMargin,[\s\S]*_outstanding\+\+", locked); // checked and charged in one step
     }
 
     // ── Review round 4 (D53 rule 1 over its whole class): every send that spends the MDBList quota reserves first ──
@@ -310,16 +316,16 @@ public class ListsSourceTransmissionScanTests
                 continue;
             }
 
-            var reserve = Regex.Match(body, @"if\s*\(\s*!\s*await\s+Reserve\w*Async\s*\(");
+            // Reserved first, held until the method returns (review round 5: outstanding until the request finished).
+            var reserve = Regex.Match(body, @"using\s+var\s+(\w+)\s*=\s*await\s+Reserve\w*Async\s*\([^;]*;\s*if\s*\(\s*\1\s*==\s*null\s*\)");
             Assert.True(reserve.Success && reserve.Index < send.Index, method + " sends to MDBList without reserving first");
         }
 
         Assert.Equal(3, senders); // the status read, the ratings lookup, the media batch
         var (reserveStart, reserveLength) = BodyAt(code, "ReserveAsync");
-        foreach (Match charge in Regex.Matches(code, @"\bConsumeLocked\s*\(\s*\)\s*;"))
-        {
-            Assert.InRange(charge.Index, reserveStart, reserveStart + reserveLength);
-        }
+        var charges = Regex.Matches(code, @"\b_outstanding\s*\+\+");
+        Assert.Single(charges);
+        Assert.InRange(charges[0].Index, reserveStart, reserveStart + reserveLength);
 
         // The fetcher: every api.mdblist.com request is a list read (which the gate reserves for) or the status read, and
         // the gate refuses an API read it can't reserve for (no quota means no read, never an unreserved one).
@@ -332,7 +338,8 @@ public class ListsSourceTransmissionScanTests
         }
 
         var gate = Body(Code(fetcherRaw), "SendAsync");
-        Assert.Matches(@"Provider\s*==\s*MdblistApiProvider\s*&&\s*\(\s*_mdblist\s*==\s*null\s*\|\|\s*!\s*await\s+_mdblist\.TryReserveListRequestAsync", gate);
+        Assert.Matches(@"Provider\s*==\s*MdblistApiProvider\s*&&\s*\(\s*_mdblist\s*==\s*null\s*\|\|\s*\(\s*reservation\s*=\s*await\s+_mdblist\.TryReserveListRequestAsync[^;]*\)\s*==\s*null\s*\)", gate);
+        Assert.Matches(@"using\s*\(\s*reservation\s*\)\s*\{[\s\S]*SendOnceAsync\(", gate); // outstanding until the attempt finished
     }
 
     // ── Review round 3 (D53 rule 1): completeness is decided on the parsed rows ──

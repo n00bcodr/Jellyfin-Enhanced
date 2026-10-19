@@ -149,7 +149,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
             else
             {
-                response.Entries = items.Select((item, i) => ToEntry(item, i)).ToList();
+                // Review round 5 (4c2-R5-2): an ordinary entry goes through the viewer's Spoiler Guard like an exact one, on
+                // its completed identity (an IMDb episode row carries the episode's title as its note).
+                response.Entries = items.Select((item, i) =>
+                {
+                    var entry = ToEntry(item, i);
+                    viewer.Project(entry, identities.GetValueOrDefault(item));
+                    return entry;
+                }).ToList();
             }
 
             if (hideCounts)
@@ -363,12 +370,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var identity = identities[group.First];
                 return ListSourceGroups.Entry(group, i, facts, identity, library.Find(group, identity));
             }).ToList();
-            foreach (var entry in response.Entries)
+            for (var i = 0; i < groups.Count; i++)
             {
-                if (entry.Prepared != null)
-                {
-                    viewer.Project(entry.Prepared);
-                }
+                viewer.Project(response.Entries[i], identities[groups[i].First]); // the entry's note and its prepared match
             }
 
             response.SnapshotKeys = groups.SelectMany(g => g.Keys).ToList();

@@ -377,7 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     }
                     else
                     {
-                        var found = Require(await _lookup.FindImdbEpisodeAsync(wanted.ImdbId, cancellationToken).ConfigureAwait(false));
+                        var found = Require(await _lookup.FindImdbEpisodeAsync(wanted.ImdbId, context, cancellationToken).ConfigureAwait(false));
                         if (found != null)
                         {
                             var details = Require(await _lookup.GetDetailsAsync("tv", found.ShowTmdbId, context, cancellationToken).ConfigureAwait(false));

@@ -175,7 +175,7 @@ public class ListsImportGuideReplayTests
             return Task.FromResult(new LookupResult<IReadOnlyList<EpisodeFacts>>(LookupStatus.Ok, episodes.Select(e => new EpisodeFacts(e[0].GetInt32(), e[1].GetInt32(), Str(e[2]), Str(e[3]))).ToList()));
         }
 
-        public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, CancellationToken cancellationToken) =>
+        public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken) =>
             Task.FromResult(LookupResult<ImdbEpisodeFind>.NotFound);
 
         private static TitleHit Hit(JsonElement[] h) =>

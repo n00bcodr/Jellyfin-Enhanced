@@ -134,7 +134,7 @@ public class ListsSourceReviewR4FixTests(ITestOutputHelper output)
     // ── Rule 3 (Q-4C2AFIX4-1): completion under a budget, bounded through the limiter ──
 
     /// <summary>The library holds copies no source id can find, so every entry's identity goes through the lookup.</summary>
-    private sealed class CopiesBeyondEveryId : IImportPhysicalTitles
+    internal sealed class CopiesBeyondEveryId : IImportPhysicalTitles
     {
         public ImportPhysical Read(User viewer, CompletedIdentity identity, int? season) => ImportPhysical.None;
 
@@ -145,7 +145,7 @@ public class ListsSourceReviewR4FixTests(ITestOutputHelper output)
     /// The production preview, resolver and TMDB title lookup (through the shared limiter and JE's TMDB cache) over a
     /// TMDB whose details answers take <see cref="Latency"/>, or wait until <see cref="Release"/> for the held ids.
     /// </summary>
-    private sealed class CompletionWorld : IDisposable
+    internal sealed class CompletionWorld : IDisposable
     {
         private int _inFlight;
 
@@ -174,6 +174,11 @@ public class ListsSourceReviewR4FixTests(ITestOutputHelper output)
                         await Task.Delay(Latency, ct);
                     }
 
+                    if (Answer(id) is var status and not 200)
+                    {
+                        return IntegrationTransport.Response("{\"status_code\":34,\"status_message\":\"The resource you requested could not be found.\"}", status);
+                    }
+
                     return IntegrationTransport.Response("{\"id\":" + id + ",\"title\":\"M" + id + "\",\"release_date\":\"2001-01-01\",\"imdb_id\":\"tt" + (1000000 + id) + "\",\"external_ids\":{\"imdb_id\":\"tt" + (1000000 + id) + "\"}}");
                 }
                 finally
@@ -197,6 +202,7 @@ public class ListsSourceReviewR4FixTests(ITestOutputHelper output)
         public ListSourcePreview Preview { get; }
         public User Admin { get; }
         public TimeSpan Latency { get; set; } = TimeSpan.FromMilliseconds(10);
+        public Func<int, int> Answer { get; set; } = _ => 200; // r5: TMDB's status per id (404: a stale id, 5xx: transient)
         public HashSet<int> Held { get; } = new();
         public ManualResetEventSlim Release { get; } = new();
         public List<int> Starts { get; } = new();

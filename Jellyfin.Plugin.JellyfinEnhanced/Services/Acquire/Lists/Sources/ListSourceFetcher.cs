@@ -462,7 +462,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     continue;
                 }
 
-                var (kind, type) = SourceTypes.Classify(Str(element, "mediatype") ?? Str(element, "media_type"), context, MdblistMedia, PersonOnly);
+                var (kind, type) = SourceTypes.Classify(Declared(element, "mediatype", "media_type"), context, MdblistMedia, PersonOnly);
                 if (kind != SourceRowKind.Usable)
                 {
                     read.Row(kind == SourceRowKind.Excluded ? SourceRow.Excluded() : SourceRow.Malformed);
@@ -796,7 +796,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceRow.Malformed;
             }
 
-            var (kind, mediaType) = SourceTypes.Classify(Str(element, "media_type"), context, TmdbMedia, PersonOnly);
+            var (kind, mediaType) = SourceTypes.Classify(Declared(element, "media_type"), context, TmdbMedia, PersonOnly);
             if (Unkeyed(kind) is { } unkeyed)
             {
                 return unkeyed;
@@ -827,7 +827,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceRow.Malformed;
             }
 
-            var (kind, mediaType) = SourceTypes.Classify(Str(element, "mediaType"), context, TmdbMedia, PersonOnly);
+            var (kind, mediaType) = SourceTypes.Classify(Declared(element, "mediaType"), context, TmdbMedia, PersonOnly);
             if (Unkeyed(kind) is { } unkeyed)
             {
                 return unkeyed;
@@ -1031,9 +1031,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceRow.Malformed;
             }
 
-            var carried = element.TryGetProperty("episode", out _) ? "episode" : element.TryGetProperty("season", out _) ? "season"
-                : element.TryGetProperty("movie", out _) ? "movie" : element.TryGetProperty("show", out _) ? "show" : element.TryGetProperty("person", out _) ? "person" : null;
-            var (kind, type) = SourceTypes.Classify(Str(element, "type") ?? (context != null ? carried : null), context, TraktMedia, PersonOnly);
+            // Review round 5 (4c2-R5-3): a `type` field that isn't a type is malformed, never replaced by the object the row
+            // carries; in a chart the carried object declares the type only when the row has no `type` field at all, and a
+            // carried field that isn't an object declares none.
+            var declared = Declared(element, "type");
+            if (!declared.Present && context != null)
+            {
+                var carried = new[] { "episode", "season", "movie", "show", "person" }.FirstOrDefault(name => element.TryGetProperty(name, out _));
+                declared = carried == null ? SourceDeclared.Absent
+                    : element.GetProperty(carried).ValueKind == JsonValueKind.Object ? SourceDeclared.Of(carried) : SourceDeclared.Invalid;
+            }
+
+            var (kind, type) = SourceTypes.Classify(declared, context, TraktMedia, PersonOnly);
             if (Unkeyed(kind) is { } unkeyed)
             {
                 return unkeyed;
@@ -1304,7 +1313,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             var id = ValidImdb(Str(item, "id"));
-            var declared = item.TryGetProperty("titleType", out var titleType) && titleType.ValueKind == JsonValueKind.Object ? Str(titleType, "id") : null;
+            var declared = !item.TryGetProperty("titleType", out var titleType) ? SourceDeclared.Absent
+                : titleType.ValueKind == JsonValueKind.Object ? Declared(titleType, "id") : SourceDeclared.Invalid;
             var (kind, type) = SourceTypes.Classify(declared, context, ImdbMedia, ImdbExcludedTypes, alwaysDeclared: true);
             if (Unkeyed(kind) is { } unkeyed)
             {
@@ -1432,22 +1442,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 GateOpen(transmission);
                 Admit(transmission.Provider == MdblistStatusProvider ? MdblistApiProvider : transmission.Provider, options);
                 // Every MDBList API read reserves its request of the shared daily quota first (review round 4: the one
-                // reservation the ratings lookups use too); without the quota's bookkeeping it isn't sent at all.
+                // reservation the ratings lookups use too); without the quota's bookkeeping it isn't sent at all. The
+                // reservation stays outstanding until this attempt has finished (review round 5), whatever its outcome.
+                IDisposable? reservation = null;
                 if (transmission.Provider == MdblistApiProvider
-                    && (_mdblist == null || !await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false)))
+                    && (_mdblist == null || (reservation = await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false)) == null))
                 {
                     throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
                 }
 
                 HttpResult result;
-                if (transmission.Provider == SeerrProvider)
+                using (reservation)
                 {
-                    using var lease = await _limiter.AcquireAsync("source-fetch", false, cancellationToken).ConfigureAwait(false);
-                    result = await SeerrOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    result = await SendOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                    if (transmission.Provider == SeerrProvider)
+                    {
+                        using var lease = await _limiter.AcquireAsync("source-fetch", false, cancellationToken).ConfigureAwait(false);
+                        result = await SeerrOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        result = await SendOnceAsync(transmission, cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
                 if (result.Status == 429 && attempt == 0 && result.RetryAfter is >= 0 and <= MaxRetryWaitSeconds)
@@ -1817,6 +1832,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 JsonValueKind.String when int.TryParse(value.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) => parsed,
                 _ => null,
             };
+        }
+
+        // A row's type field (review round 5, 4c2-R5-3: absent ≠ present-but-invalid): absent only when the row has none of
+        // the names; a field that isn't a non-empty string (a number, null, "", an object), or two that disagree, is
+        // present but invalid, never read as absent.
+        private static SourceDeclared Declared(JsonElement element, params string[] names)
+        {
+            var found = SourceDeclared.Absent;
+            foreach (var name in names)
+            {
+                if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out _))
+                {
+                    continue;
+                }
+
+                if (Str(element, name) is not { } type || (found.Present && found.Type != type))
+                {
+                    return SourceDeclared.Invalid;
+                }
+
+                found = SourceDeclared.Of(type);
+            }
+
+            return found;
         }
 
         private static string? Str(JsonElement element, string name)

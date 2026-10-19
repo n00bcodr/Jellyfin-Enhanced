@@ -44,7 +44,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         /// <summary>
         /// Applies the rules to one candidate (in place). Spoiler Guard takes the candidate's completed identity; a
-        /// candidate without one is guarded (fails closed).
+        /// candidate without one is guarded (fails closed). A guarded candidate loses every title-level text a provider
+        /// fills (review round 5, 4c2-R5-2: the inventory): its overview, its season's name (Jellyfin's own Spoiler Guard
+        /// shows "Season N") and its episodes' titles. Its title, year, dates, poster and numbers stay.
         /// </summary>
         /// <param name="candidate">Candidate.</param>
         public void Project(ImportCandidateDto candidate)
@@ -58,10 +60,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 candidate.SpoilerGuarded = true;
                 candidate.Overview = null;
+                if (candidate.Season != null)
+                {
+                    candidate.Season.Name = null;
+                }
+
                 foreach (var episode in candidate.Episodes ?? new List<ImportEpisodeInfoDto>())
                 {
                     episode.Title = null;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Applies the rules to one entry of a list review (review round 5, 4c2-R5-2), ordinary or exact, in place: when the
+        /// viewer guards the title (asked with its completed identity; none: guarded, fails closed), every title-level text
+        /// a provider fills into the entry goes: its note (a list's own note; an IMDb episode row's episode title), its
+        /// episode title, its alternatives' titles; and its prepared resolution is projected like any other. The entry is
+        /// the review's own copy: the source rows it was built from are never changed.
+        /// </summary>
+        /// <param name="entry">The entry.</param>
+        /// <param name="identity">The completed identity of its title.</param>
+        public void Project(ImportEntryDto entry, CompletedIdentity? identity)
+        {
+            if (entry.Prepared != null)
+            {
+                Project(entry.Prepared);
+            }
+
+            if (identity != null && !SpoilerGuarded(identity))
+            {
+                return;
+            }
+
+            entry.Note = null;
+            entry.EpisodeTitle = null;
+            foreach (var alternative in entry.Alternatives ?? new List<ImportAlternativeDto>())
+            {
+                alternative.Title = null;
             }
         }
     }

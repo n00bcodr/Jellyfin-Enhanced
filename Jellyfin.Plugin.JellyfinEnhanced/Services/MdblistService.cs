@@ -68,12 +68,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // actually hitting 0 and getting 429s.
         public const int SafetyMargin = 5;
         private readonly object _accountStatusLock = new();
+        // MDBList's own answer as held (RateLimitRemaining as MDBList reported it; never changed afterwards).
         private MdblistAccountStatus? _accountStatus;
-        // Review round 3 (4c2-R3-2): one status refresh at a time, and the quota's consumption counted, so an answer that
-        // arrives late never puts back requests charged after it was asked for (guarded by _accountStatusLock).
+        // Review round 3 (4c2-R3-2): one status refresh at a time. Review round 5 (4c2-R5-1): what JE may still spend is
+        // MDBList's count minus every reservation it can't have counted yet: those still OUTSTANDING (reserved, their
+        // request not finished: whenever they were made, so a refresh that overtakes one never gives it back) and those
+        // finished after the held answer was asked for. A reservation finished before a status read was asked for is in
+        // that read's count. Guarded by _accountStatusLock.
         private readonly SemaphoreSlim _statusRefresh = new(1, 1);
-        private long _consumed;
-        private long _heldIssuedAt = -1;
+        private int _outstanding;
+        private long _finished;
+        private long _heldFinished = -1;
 
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
         {
@@ -188,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             lock (_accountStatusLock)
             {
-                return _accountStatus?.RateLimitRemaining;
+                return _accountStatus == null ? null : SpendableLocked();
             }
         }
 
@@ -202,8 +207,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         /// <param name="readStatus">Reads the account status (MDBList's /user) through the caller's transport.</param>
         /// <param name="cancellationToken">Cancellation.</param>
-        /// <returns>True when one request was reserved.</returns>
-        public Task<bool> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
+        /// <returns>The reservation, to dispose once the request has finished (answered, failed or not sent); null when
+        /// none is left to spend.</returns>
+        public Task<IDisposable?> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(readStatus);
             return ReserveAsync(readStatus, SafetyMargin, cancellationToken);
@@ -212,9 +218,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // THE reservation of the quota (review round 4, 4c2-R4-1; D53 rule 1 over every request that spends it): list reads,
         // ratings lookups and media batches each take one request here BEFORE they send, checked against the balance as
         // it is now and charged in the same step, so two spenders can never both pass a check the first one's charge
-        // would have failed. A request refused or failed after its reservation stays charged (the safe side). A status
-        // that isn't fresh is read first by `readStatus` (one refresh at a time); an unknown status fails open.
-        private async Task<bool> ReserveAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, int floor, CancellationToken cancellationToken)
+        // would have failed. The reservation stays OUTSTANDING until its request finishes (review round 5, 4c2-R5-1: a
+        // status refresh never gives it back, whenever it was made); a request refused or failed after its reservation
+        // stays charged (the safe side) until a status read asked after it finished. A status that isn't fresh is read
+        // first by `readStatus` (one refresh at a time); an unknown status fails open.
+        private async Task<IDisposable?> ReserveAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, int floor, CancellationToken cancellationToken)
         {
             if (FreshStatus() == null)
             {
@@ -224,10 +232,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (FreshStatus() == null)
                     {
-                        var issuedAt = Consumed();
+                        var askedAt = Finished();
                         if (await readStatus(cancellationToken).ConfigureAwait(false) is { } status)
                         {
-                            Hold(status, issuedAt);
+                            Hold(status, askedAt);
                         }
                     }
                 }
@@ -237,62 +245,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // The reservation is checked against the balance as it is now and charged in the same step.
+            // The reservation is checked against what is spendable now and charged in the same step.
             lock (_accountStatusLock)
             {
-                var current = FreshLocked();
-                if (current != null && current.RateLimitRemaining <= Math.Max(SafetyMargin, floor))
+                if (FreshLocked() != null && SpendableLocked() <= Math.Max(SafetyMargin, floor))
                 {
-                    return false;
+                    return null;
                 }
 
-                ConsumeLocked();
-                return true;
+                _outstanding++;
+                return new Reservation(this);
             }
         }
 
-        // Requests charged so far (the mark a status read is issued at).
-        private long Consumed()
+        // Reservations finished so far (the mark a status read is asked at).
+        private long Finished()
         {
             lock (_accountStatusLock)
             {
-                return _consumed;
+                return _finished;
             }
         }
 
-        // Holds a status read issued when `issuedAt` requests had been charged: the requests charged since may not be in
-        // its count, so they come off it; a read issued before the status held never replaces it.
-        private void Hold(MdblistAccountStatus status, long issuedAt)
+        // Holds a status read asked when `askedAt` reservations had finished (those are in its count; any finished since,
+        // and every one still outstanding, may not be); a read asked before the status held never replaces it.
+        private void Hold(MdblistAccountStatus status, long askedAt)
         {
             lock (_accountStatusLock)
             {
-                if (issuedAt < _heldIssuedAt)
+                if (askedAt < _heldFinished)
                 {
                     return;
                 }
 
-                status.RateLimitRemaining = (int)Math.Max(0, status.RateLimitRemaining - (_consumed - issuedAt));
                 _accountStatus = status;
-                _heldIssuedAt = issuedAt;
+                _heldFinished = askedAt;
             }
         }
 
-        // One request charged to the quota (caller holds _accountStatusLock).
-        private void ConsumeLocked()
+        // What may still be spent: MDBList's held count minus every reservation it can't have counted (caller holds
+        // _accountStatusLock; _accountStatus is set).
+        private int SpendableLocked()
         {
-            _consumed++;
-            if (_accountStatus != null)
+            return (int)Math.Max(0, _accountStatus!.RateLimitRemaining - _outstanding - (_finished - _heldFinished));
+        }
+
+        // A reservation's request finished (answered, failed or never sent): no longer outstanding, still charged until a
+        // status read asked after now.
+        private void Finish()
+        {
+            lock (_accountStatusLock)
             {
-                _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+                _outstanding--;
+                _finished++;
             }
         }
 
-        // The cached account status while it is fresh, else null.
+        // The status as callers see it: MDBList's answer with what JE may still spend as its remaining count.
+        private MdblistAccountStatus? ViewLocked(MdblistAccountStatus? status) => status == null ? null : new MdblistAccountStatus
+        {
+            Plan = status.Plan,
+            IsSupporter = status.IsSupporter,
+            RateLimit = status.RateLimit,
+            RateLimitRemaining = SpendableLocked(),
+            RateLimitResetUnixSeconds = status.RateLimitResetUnixSeconds,
+            FetchedAtUnixMs = status.FetchedAtUnixMs,
+        };
+
+        // One request of the quota, reserved until its request finishes (disposed once, by the code that sent it).
+        private sealed class Reservation(MdblistService owner) : IDisposable
+        {
+            private int _done;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _done, 1) == 0)
+                {
+                    owner.Finish();
+                }
+            }
+        }
+
+        // The cached account status while it is fresh (as callers see it), else null.
         private MdblistAccountStatus? FreshStatus()
         {
             lock (_accountStatusLock)
             {
-                return FreshLocked();
+                return ViewLocked(FreshLocked());
             }
         }
 
@@ -367,13 +406,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return landed;
                 }
 
-                var issuedAt = Consumed();
+                var askedAt = Finished();
                 var status = await ReadStatusAsync(apiKey, cancellationToken).ConfigureAwait(false);
-                if (status != null && !testingOverride)
+                if (status == null || testingOverride)
                 {
-                    Hold(status, issuedAt);
+                    return status;
                 }
-                return status;
+
+                Hold(status, askedAt);
+                lock (_accountStatusLock)
+                {
+                    return ViewLocked(_accountStatus);
+                }
             }
             catch (Exception ex)
             {
@@ -411,7 +455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // The ratings path's reservation: its status read is this service's own (failures are an unknown status, which
         // fails open like it always has).
-        private Task<bool> ReserveRatingsRequestAsync(string apiKey, int floor, CancellationToken cancellationToken) =>
+        private Task<IDisposable?> ReserveRatingsRequestAsync(string apiKey, int floor, CancellationToken cancellationToken) =>
             ReserveAsync(async ct =>
             {
                 try
@@ -435,10 +479,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // One request of the quota is reserved before the lookup is sent (review round 4, 4c2-R4-1), so a list
-            // import reserving at the same time can't spend past the margin. Fails OPEN if the account status is
-            // unknown (e.g. the one /user probe itself failed); a defensive check layered on top of the real request,
-            // not a hard requirement to proceed.
-            if (!await ReserveRatingsRequestAsync(apiKey, SafetyMargin, cancellationToken).ConfigureAwait(false))
+            // import reserving at the same time can't spend past the margin, and stays outstanding until the lookup
+            // has finished (review round 5). Fails OPEN if the account status is unknown (e.g. the one /user probe
+            // itself failed); a defensive check layered on top of the real request, not a hard requirement to proceed.
+            using var reservation = await ReserveRatingsRequestAsync(apiKey, SafetyMargin, cancellationToken).ConfigureAwait(false);
+            if (reservation == null)
             {
                 // Not a real "MDBList has no data" answer, so Confirmed=false
                 // retries on the short RetryTtl instead of being trusted as a
@@ -505,8 +550,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-            // Reserved before the batch is sent, against the larger of the margin and the caller's reserve (4c2-R4-1).
-            if (!await ReserveRatingsRequestAsync(apiKey, reserve, cancellationToken).ConfigureAwait(false))
+            // Reserved before the batch is sent, against the larger of the margin and the caller's reserve (4c2-R4-1),
+            // until the batch has finished (review round 5).
+            using var reservation = await ReserveRatingsRequestAsync(apiKey, reserve, cancellationToken).ConfigureAwait(false);
+            if (reservation == null)
             {
                 _logger.Warning($"[MDBList] Only {RemainingQuota()} requests remaining today, skipping media batch lookup for {mediaType} ({tmdbIds.Count} ids)");
                 return null;

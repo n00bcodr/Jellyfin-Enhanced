@@ -43,7 +43,7 @@ public class ListsImportReviewR1d3Tests
         public Task<LookupResult<IReadOnlyList<EpisodeFacts>>> GetSeasonAsync(int tvTmdbId, int season, ImportCallContext context, CancellationToken cancellationToken) =>
             Task.FromResult(LookupResult<IReadOnlyList<EpisodeFacts>>.NotFound);
 
-        public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, CancellationToken cancellationToken) =>
+        public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken) =>
             Task.FromResult(LookupResult<ImdbEpisodeFind>.NotFound);
     }
 

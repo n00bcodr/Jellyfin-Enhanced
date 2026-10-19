@@ -203,4 +203,27 @@ public class ListsImportLookupTests
         Assert.Equal(LookupStatus.Ok, (await lookup.SearchAsync("queued", f.Context, CancellationToken.None)).Status);
         Assert.Single(f.Calls, c => c.Contains("queued", StringComparison.Ordinal));
     }
+
+    [Fact] // review round 5 (4c2-R5-4): a definitive "not found" is reused with its status, and never waits for the limiter
+    public async Task ANotFoundIsReusedWithItsStatusWithoutTheLimiterWhileAnErrorIsAskedAgain()
+    {
+        using var f = new Fixture();
+        f.Reply = request => Task.FromResult(request.RequestUri!.AbsolutePath == "/api/v1/movie/7"
+            ? IntegrationTransport.Response("{\"message\":\"nope\"}", 404)
+            : IntegrationTransport.Response("{\"message\":\"Unable to retrieve movie.\"}", 500));
+        var limiter = new MetadataCallLimiter(1, TimeSpan.Zero, TimeProvider.System);
+        var lookup = new SeerrImportLookup(f.Transport, limiter, f.Plugin.Core.Logger);
+
+        Assert.Equal(LookupStatus.NotFound, (await lookup.GetDetailsAsync("movie", 7, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(LookupStatus.Transient, (await lookup.GetDetailsAsync("movie", 8, f.Context, CancellationToken.None)).Status);
+        using (await limiter.AcquireAsync("someone else", false, CancellationToken.None))
+        {
+            var again = lookup.GetDetailsAsync("movie", 7, f.Context, CancellationToken.None);
+            Assert.True(await Task.WhenAny(again, Task.Delay(TimeSpan.FromSeconds(5))) == again, "a remembered NotFound waited for the limiter");
+            Assert.Equal(LookupStatus.NotFound, (await again).Status);
+        }
+
+        Assert.Equal(LookupStatus.Transient, (await lookup.GetDetailsAsync("movie", 8, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(new[] { "seerr.test/api/v1/movie/7", "seerr.test/api/v1/movie/8", "seerr.test/api/v1/movie/8" }, f.Calls);
+    }
 }

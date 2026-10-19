@@ -154,9 +154,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         /// <summary>TMDB <c>/find/{tt}?external_source=imdb_id</c> for an IMDb EPISODE id (Seerr drops episode results).</summary>
         /// <param name="imdbId">IMDb id.</param>
+        /// <param name="context">Caller context (the shared limiter's owner and priority).</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The episode coordinates (NotFound when unknown or without a TMDB key).</returns>
-        Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, CancellationToken cancellationToken);
+        Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken);
     }
 
     /// <summary>
@@ -173,7 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// </summary>
     public sealed class SeerrImportLookup : IImportLookup
     {
-        /// <summary>How long a successful lookup is reused.</summary>
+        /// <summary>How long a definitive lookup (found, or not found: review round 5) is reused, with its status.</summary>
         public static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(30);
 
         /// <summary>Per upstream call timeout.</summary>
@@ -188,7 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private readonly MetadataCallLimiter _limiter;
         private readonly TmdbResponseCache? _tmdb;
         private readonly Logger _logger;
-        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, object Value)> _cache = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (DateTime ExpiresUtc, LookupStatus Status, object? Value)> _cache = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, SharedLookup> _inFlight = new(StringComparer.Ordinal);
 
         /// <summary>Creates the lookup (singleton).</summary>
@@ -235,7 +236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "/api/v1/search?query=" + Uri.EscapeDataString(normalized) + "&page=1",
                 context,
                 json => ParseSearch(json),
-                v => ((IReadOnlyList<TitleHit>)v).Count > 0,
+                v => ((IReadOnlyList<TitleHit>)v).Count > 0, // Seerr answers a TMDB error as no results: never definitive
                 cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<TitleHit>>(status, status == LookupStatus.Ok ? (IReadOnlyList<TitleHit>)value! : null);
         }
@@ -279,7 +280,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         /// <inheritdoc />
-        public async Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, CancellationToken cancellationToken)
+        public async Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken)
         {
             var key = JellyfinEnhanced.Instance?.Configuration?.GetTmdbApiKey();
             if (_tmdb == null || string.IsNullOrWhiteSpace(key) || !Regex.IsMatch(imdbId ?? string.Empty, "^tt[0-9]{5,10}$"))
@@ -287,11 +288,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return LookupResult<ImdbEpisodeFind>.NotFound;
             }
 
+            // Review round 5: a definitive answer is reused with its status without waiting for the limiter, and a call
+            // to TMDB takes its turn at the shared limiter (it had neither).
+            var cacheKey = "tmdb-find|" + Fingerprint(new[] { "tmdb" }, key) + "|" + imdbId;
+            if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
+            {
+                return new LookupResult<ImdbEpisodeFind>(cached.Status, cached.Value as ImdbEpisodeFind);
+            }
+
+            context.CountCall();
+            LookupResult<ImdbEpisodeFind> result;
+            using (await _limiter.AcquireAsync(context.Owner, context.Background, cancellationToken).ConfigureAwait(false))
+            {
+                result = await FindUpstreamAsync(imdbId!, key, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (result.Status is LookupStatus.Ok or LookupStatus.NotFound)
+            {
+                Remember(cacheKey, result.Status, result.Value);
+            }
+
+            return result;
+        }
+
+        private async Task<LookupResult<ImdbEpisodeFind>> FindUpstreamAsync(string imdbId, string key, CancellationToken cancellationToken)
+        {
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(CallTimeout);
-                var response = await _tmdb.GetAsync("find/" + imdbId, "?external_source=imdb_id", key, timeout.Token).ConfigureAwait(false);
+                var response = await _tmdb!.GetAsync("find/" + imdbId, "?external_source=imdb_id", key, timeout.Token).ConfigureAwait(false);
                 if (!response.IsSuccess)
                 {
                     return response.StatusCode == 404 ? LookupResult<ImdbEpisodeFind>.NotFound : LookupResult<ImdbEpisodeFind>.Transient;
@@ -341,9 +367,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var key = Fingerprint(urls, apiKey) + "|" + cacheKey;
+            // A definitive answer is reused with its status, without waiting for the limiter (review round 5, 4c2-R5-4).
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return (LookupStatus.Ok, cached.Value);
+                return (cached.Status, cached.Value);
             }
 
             // One shared call per key; E4: it follows its waiters' cancellation while it is still queued for the limiter.
@@ -395,9 +422,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 result = (LookupStatus.Transient, null);
             }
 
-            if (result.Status == LookupStatus.Ok && result.Value != null && cacheable(result.Value))
+            if ((result.Status == LookupStatus.Ok && result.Value != null && cacheable(result.Value)) || result.Status == LookupStatus.NotFound)
             {
-                Remember(key, result.Value);
+                Remember(key, result.Status, result.Value);
             }
 
             _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
@@ -523,7 +550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        private void Remember(string key, object value)
+        private void Remember(string key, LookupStatus status, object? value)
         {
             if (_cache.Count >= MaxCacheEntries)
             {
@@ -542,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
             }
 
-            _cache[key] = (DateTime.UtcNow + CacheTtl, value);
+            _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
         private static IReadOnlyList<TitleHit>? ParseSearch(string json)

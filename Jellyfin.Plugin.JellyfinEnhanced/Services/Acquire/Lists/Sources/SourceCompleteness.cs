@@ -49,34 +49,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// that fixes one type, any other type, an unsupported one included (the source changed shape).</item>
     /// </list>
     /// A missing type is taken from the context only where the context fixes it reliably (a chart or collection of one
-    /// media type, an MDBList official list of movies or shows) and the provider doesn't always declare one. The provider
-    /// rules are in each parser (ListSourceFetcher: TmdbRow, SeerrRow, TraktRow, ImdbRow, MdblistItems; ChronolistsPage).
+    /// media type, an MDBList official list of movies or shows) and the provider doesn't always declare one. Review round 5
+    /// (4c2-R5-3): "missing" means the row has no type field at all (<see cref="SourceDeclared.Absent"/>); a type field
+    /// that is present but isn't a type (a number, null, an empty string, an object) is malformed in every context, never
+    /// read as missing. The provider rules are in each parser (ListSourceFetcher: TmdbRow, SeerrRow, TraktRow, ImdbRow,
+    /// MdblistItems; ChronolistsPage).
     /// </summary>
     internal static class SourceTypes
     {
         /// <summary>Classifies a row's declared type.</summary>
-        /// <param name="declared">The type the row declares (null: none).</param>
+        /// <param name="declared">The row's type field as read (absent, a type, or present but invalid).</param>
         /// <param name="context">The type the source context fixes, in the provider's own words (null: the source mixes types).</param>
         /// <param name="media">The JE media type ("movie", "tv") of a supported provider type, else null.</param>
         /// <param name="excluded">The provider's deliberately unsupported types.</param>
         /// <param name="alwaysDeclared">The provider declares a type on every row (a missing one is malformed in any context).</param>
         /// <returns><see cref="SourceRowKind.Usable"/> with the type to key the row as (its entry still needs a key), or
         /// <see cref="SourceRowKind.Excluded"/> / <see cref="SourceRowKind.Malformed"/>.</returns>
-        public static (SourceRowKind Kind, string? Type) Classify(string? declared, string? context, System.Func<string, string?> media, IReadOnlySet<string> excluded, bool alwaysDeclared = false)
+        public static (SourceRowKind Kind, string? Type) Classify(SourceDeclared declared, string? context, System.Func<string, string?> media, IReadOnlySet<string> excluded, bool alwaysDeclared = false)
         {
-            if (declared == null)
+            if (!declared.Present)
             {
                 return context == null || alwaysDeclared ? (SourceRowKind.Malformed, null) : (SourceRowKind.Usable, context);
             }
 
-            if (excluded.Contains(declared))
+            if (declared.Type is not { } type)
             {
-                return (context == null ? SourceRowKind.Excluded : SourceRowKind.Malformed, declared);
+                return (SourceRowKind.Malformed, null); // a type field that isn't a type: never inferred from the context
             }
 
-            var kind = media(declared);
-            return kind == null || (context != null && kind != media(context)) ? (SourceRowKind.Malformed, declared) : (SourceRowKind.Usable, declared);
+            if (excluded.Contains(type))
+            {
+                return (context == null ? SourceRowKind.Excluded : SourceRowKind.Malformed, type);
+            }
+
+            var kind = media(type);
+            return kind == null || (context != null && kind != media(context)) ? (SourceRowKind.Malformed, type) : (SourceRowKind.Usable, type);
         }
+    }
+
+    /// <summary>
+    /// A row's type field as read (review round 5, 4c2-R5-3): <see cref="Absent"/> (no such field), a type (a non-empty
+    /// string), or <see cref="Invalid"/> (the field is there but holds no type: a number, null, an empty string, an object,
+    /// or two type fields that disagree).
+    /// </summary>
+    /// <param name="Present">The row has the field.</param>
+    /// <param name="Type">The type it declares (null when present: invalid).</param>
+    internal readonly record struct SourceDeclared(bool Present, string? Type)
+    {
+        /// <summary>No type field.</summary>
+        public static readonly SourceDeclared Absent = default;
+
+        /// <summary>A type field that holds no type.</summary>
+        public static readonly SourceDeclared Invalid = new(true, null);
+
+        /// <summary>A declared type.</summary>
+        /// <param name="type">The type (null: invalid).</param>
+        /// <returns>The declaration.</returns>
+        public static SourceDeclared Of(string? type) => new(true, type);
     }
 
     /// <summary>What one page of a paged list read said about the list (each paging loop reports every page it read).</summary>

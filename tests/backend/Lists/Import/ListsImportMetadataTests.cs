@@ -150,7 +150,7 @@ public class ListsImportMetadataTests
         Assert.Equal(LookupStatus.NotFound, (await net.Lookup.GetSeasonAsync(110492, 9, net.Context, CancellationToken.None)).Status); // TMDB's 404 is a real miss
         Assert.Equal(LookupStatus.NotFound, (await net.Lookup.GetDetailsAsync("person", 5, net.Context, CancellationToken.None)).Status);
 
-        var found = await net.Lookup.FindImdbEpisodeAsync("tt0959621", CancellationToken.None);
+        var found = await net.Lookup.FindImdbEpisodeAsync("tt0959621", net.Context, CancellationToken.None);
         Assert.Equal((1396, 1, 1, "Pilot"), (found.Value!.ShowTmdbId, found.Value.Season, found.Value.Episode, found.Value.Title));
         Assert.True(net.Lookup.CanFindImdbEpisodes);
     }

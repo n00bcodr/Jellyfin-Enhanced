@@ -90,7 +90,7 @@ internal sealed class FakeImportLookup : IImportLookup
         return Seasons.TryGetValue((tvTmdbId, season), out var episodes) ? Ok<IReadOnlyList<EpisodeFacts>>(episodes) : LookupResult<IReadOnlyList<EpisodeFacts>>.NotFound;
     }
 
-    public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, CancellationToken cancellationToken)
+    public Task<LookupResult<ImdbEpisodeFind>> FindImdbEpisodeAsync(string imdbId, ImportCallContext context, CancellationToken cancellationToken)
     {
         Log.Enqueue("find:" + imdbId);
         return Task.FromResult(ImdbEpisodes.TryGetValue(imdbId, out var found) ? Ok(found) : LookupResult<ImdbEpisodeFind>.NotFound);

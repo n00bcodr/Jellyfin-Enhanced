@@ -275,8 +275,12 @@ public class ListsSourceReviewR3FixTests
     // declares deliberately unsupported (Excludes: a counted exclusion in this context; else malformed, a typed context
     // that never holds one), a row of a type JE doesn't know, a row with no declared type (Infers: the context fixes
     // the type reliably; else malformed) and, for a typed context, a row declaring the other supported type (changed).
+    // Review round 5 (4c2-R5-3, absent ≠ present-but-invalid): every shape also carries a row whose type field is present
+    // but isn't a type (Declare(id, raw JSON): a number, null, an empty string): malformed in every context, never
+    // inferred from it.
     internal sealed record Shape(string Provider, Func<Net, string[], (string Url, SourceFetchOptions? Options)> Arrange, Func<int, string> Valid, string Malformed, Func<int, string>? Unsupported,
-        Func<int, string>? Explicit = null, bool Excludes = false, Func<int, string>? Unknown = null, Func<int, string>? Untyped = null, bool Infers = false, Func<int, string>? Changed = null)
+        Func<int, string>? Explicit = null, bool Excludes = false, Func<int, string>? Unknown = null, Func<int, string>? Untyped = null, bool Infers = false, Func<int, string>? Changed = null,
+        Func<int, string, string>? Declare = null)
     {
         public override string ToString() => Provider;
     }
@@ -321,6 +325,10 @@ public class ListsSourceReviewR3FixTests
         string MdbTyped(int id, string type) => "{\"id\":" + id + ",\"title\":\"T" + id + "\",\"mediatype\":\"" + type + "\",\"release_year\":2001}";
         string MdbUntyped(int id) => "{\"id\":" + id + ",\"title\":\"T" + id + "\",\"release_year\":2001}";
         string ChronoMovie(int id) => "{\"t\":\"movie\",\"id\":" + id + ",\"n\":\"M" + id + "\",\"rd\":\"2001-01-01\"}";
+        string TmdbDeclared(int id, string raw) => "{\"id\":" + id + ",\"media_type\":" + raw + ",\"title\":\"M" + id + "\",\"release_date\":\"2001-01-01\"}";
+        string SeerrDeclared(int id, string raw) => "{\"id\":" + id + ",\"mediaType\":" + raw + ",\"title\":\"M" + id + "\",\"releaseDate\":\"2001-01-01\"}";
+        string ImdbDeclared(int n, string raw) => "{\"node\":{\"item\":{\"id\":\"tt" + (2000000 + n) + "\",\"titleType\":{\"id\":" + raw + "},\"titleText\":{\"text\":\"T" + n + "\"},\"releaseYear\":{\"year\":2001}}}}";
+        string MdbDeclared(int id, string raw) => "{\"id\":" + id + ",\"title\":\"T" + id + "\",\"mediatype\":" + raw + ",\"release_year\":2001}";
         string ChronoTyped(int id, string type) => "{\"t\":\"" + type + "\",\"id\":" + id + ",\"n\":\"T" + id + "\",\"rd\":\"2001-01-01\"}";
         HttpResponseMessage Chronolists(string[] rows)
         {
@@ -333,51 +341,54 @@ public class ListsSourceReviewR3FixTests
 
         yield return new("tmdb list", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"name\":\"L\",\"total_pages\":1,\"item_count\":" + rows.Length + ",\"items\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/list/7", null); },
             TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
-            Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped);
+            Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Declare: TmdbDeclared);
         yield return new("tmdb trending", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/trending/all/week"] = _ => Json("{\"page\":1,\"total_pages\":1,\"total_results\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/trending/all/week", null); },
             TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
-            Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped);
+            Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Declare: TmdbDeclared);
         yield return new("tmdb chart", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/movie/popular"] = _ => Json("{\"page\":1,\"total_pages\":1,\"total_results\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/movie", null); },
             TmdbUntyped, "{\"title\":\"No id\"}", TmdbAdult,
-            Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow);
+            Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow, Declare: TmdbDeclared);
         yield return new("tmdb collection", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/collection/10", null); },
             TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
-            Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow);
+            Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow, Declare: TmdbDeclared);
         yield return new("seerr trending", (net, rows) => { SeerrOnly(net); net.Routes["http://seerr.test/api/v1/discover/trending"] = _ => Json("{\"page\":1,\"totalPages\":1,\"totalResults\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/trending/all/week", null); },
             SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", SeerrAdult,
-            Explicit: SeerrPerson, Excludes: true, Unknown: SeerrUnknown, Untyped: SeerrUntyped);
+            Explicit: SeerrPerson, Excludes: true, Unknown: SeerrUnknown, Untyped: SeerrUntyped, Declare: SeerrDeclared);
         yield return new("seerr collection", (net, rows) => { SeerrOnly(net); net.Routes["http://seerr.test/api/v1/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/collection/10", null); },
             SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", SeerrAdult,
-            Explicit: SeerrPerson, Unknown: SeerrUnknown, Untyped: SeerrUntyped, Infers: true, Changed: SeerrShow);
+            Explicit: SeerrPerson, Unknown: SeerrUnknown, Untyped: SeerrUntyped, Infers: true, Changed: SeerrShow, Declare: SeerrDeclared);
         yield return new("trakt list", (net, rows) => { Trakt(net).Routes["https://api.trakt.tv/users/me/lists/mine/items/movie,show,season,episode"] = _ => TraktAnswer(rows); return ("https://trakt.tv/users/me/lists/mine", null); },
             TraktValid, "{\"id\":899,\"type\":\"movie\",\"movie\":{\"title\":\"No ids\",\"ids\":{\"trakt\":5}}}", _ => "{\"id\":898,\"type\":\"person\",\"person\":{\"name\":\"P\",\"ids\":{\"trakt\":5}}}",
             Explicit: _ => "{\"id\":898,\"type\":\"person\",\"person\":{\"name\":\"P\",\"ids\":{\"trakt\":5}}}", Excludes: true,
             Unknown: id => "{\"id\":897,\"type\":\"network\",\"network\":{\"name\":\"N\",\"ids\":{\"tmdb\":" + id + "}}}",
-            Untyped: id => "{\"id\":896,\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
+            Untyped: id => "{\"id\":896,\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}",
+            Declare: (id, raw) => "{\"id\":895,\"type\":" + raw + ",\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
         yield return new("trakt chart", (net, rows) => { Trakt(net).Routes["https://api.trakt.tv/movies/trending"] = _ => TraktAnswer(rows); return ("https://trakt.tv/movies/trending", null); },
             id => "{\"watchers\":1,\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}", "{\"watchers\":1,\"movie\":{\"title\":\"No ids\",\"ids\":{\"trakt\":5}}}", null,
             Explicit: _ => "{\"watchers\":1,\"person\":{\"name\":\"P\",\"ids\":{\"trakt\":5}}}",
             Unknown: id => "{\"watchers\":1,\"type\":\"network\",\"network\":{\"name\":\"N\",\"ids\":{\"tmdb\":" + id + "}}}",
             Untyped: id => "{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}", Infers: true,
-            Changed: id => "{\"watchers\":1,\"show\":{\"title\":\"S" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
+            Changed: id => "{\"watchers\":1,\"show\":{\"title\":\"S" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}",
+            Declare: (id, raw) => "{\"watchers\":1,\"type\":" + raw + ",\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
         yield return new("trakt box office", (net, rows) => { Trakt(net).Routes["https://api.trakt.tv/movies/boxoffice"] = _ => Json("[" + Join(rows) + "]"); return ("https://trakt.tv/movies/boxoffice", null); },
             id => "{\"revenue\":1,\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}", "{\"revenue\":1,\"movie\":{\"title\":\"No ids\",\"ids\":{\"trakt\":5}}}", null,
             Explicit: _ => "{\"revenue\":1,\"person\":{\"name\":\"P\",\"ids\":{\"trakt\":5}}}",
             Unknown: id => "{\"revenue\":1,\"type\":\"network\",\"network\":{\"name\":\"N\",\"ids\":{\"tmdb\":" + id + "}}}",
             Untyped: id => "{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}", Infers: true,
-            Changed: id => "{\"revenue\":1,\"show\":{\"title\":\"S" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
+            Changed: id => "{\"revenue\":1,\"show\":{\"title\":\"S" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}",
+            Declare: (id, raw) => "{\"revenue\":1,\"type\":" + raw + ",\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
         yield return new("imdb list", (net, rows) => { net.Routes["https://api.graphql.imdb.com/"] = _ => Json("{\"data\":{\"list\":{\"name\":{\"originalText\":\"L\"},\"items\":{\"total\":" + rows.Length + ",\"edges\":[" + Join(rows) + "],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}}"); return ("https://www.imdb.com/list/ls000000302/", null); },
             ImdbRowOf, "{\"node\":{\"item\":{\"id\":\"nm0000001\",\"titleType\":{\"id\":\"movie\"},\"titleText\":{\"text\":\"Bad id\"}}}}", n => ImdbTyped(n, "videoGame"),
-            Explicit: n => ImdbTyped(n, "videoGame"), Excludes: true, Unknown: n => ImdbTyped(n, "radioSeries"), Untyped: ImdbUntyped);
+            Explicit: n => ImdbTyped(n, "videoGame"), Excludes: true, Unknown: n => ImdbTyped(n, "radioSeries"), Untyped: ImdbUntyped, Declare: ImdbDeclared);
         yield return new("imdb chart", (net, rows) => { net.Routes["https://api.graphql.imdb.com/"] = _ => Json("{\"data\":{\"chartTitles\":{\"total\":" + rows.Length + ",\"edges\":[" + Join(rows) + "],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}"); return ("https://www.imdb.com/chart/top/", null); },
             ImdbRowOf, "{\"node\":{\"item\":{\"id\":\"nm0000001\",\"titleType\":{\"id\":\"movie\"},\"titleText\":{\"text\":\"Bad id\"}}}}", null,
-            Explicit: n => ImdbTyped(n, "videoGame"), Unknown: n => ImdbTyped(n, "radioSeries"), Untyped: ImdbUntyped, Changed: n => ImdbTyped(n, "tvSeries"));
+            Explicit: n => ImdbTyped(n, "videoGame"), Unknown: n => ImdbTyped(n, "radioSeries"), Untyped: ImdbUntyped, Changed: n => ImdbTyped(n, "tvSeries"), Declare: ImdbDeclared);
         yield return new("mdblist public", (net, rows) => { net.Routes["https://mdblist.com/lists/me/mine/json"] = _ => Json("[" + Join(rows) + "]"); return ("https://mdblist.com/lists/me/mine", null); },
             MdbRowOf, "{\"title\":\"No ids\",\"mediatype\":\"movie\"}", id => "{\"id\":" + id + ",\"title\":\"A\",\"mediatype\":\"movie\",\"adult\":1}",
-            Explicit: id => MdbTyped(id, "person"), Excludes: true, Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped);
+            Explicit: id => MdbTyped(id, "person"), Excludes: true, Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped, Declare: MdbDeclared);
         yield return new("mdblist official", (net, rows) => { net.Routes["https://mdblist.com/lists/official/movies/top/json"] = _ => Json("[" + Join(rows) + "]"); return ("https://mdblist.com/lists/official/movies/top", null); },
             MdbRowOf, "{\"title\":\"No ids\",\"mediatype\":\"movie\"}", id => "{\"id\":" + id + ",\"title\":\"A\",\"mediatype\":\"movie\",\"adult\":1}",
-            Explicit: id => MdbTyped(id, "person"), Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped, Infers: true, Changed: id => MdbTyped(id, "show"));
+            Explicit: id => MdbTyped(id, "person"), Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped, Infers: true, Changed: id => MdbTyped(id, "show"), Declare: MdbDeclared);
         yield return new("mdblist api", (net, rows) =>
             {
                 net.Config.MdblistApiKey = "mdb-key";
@@ -387,15 +398,16 @@ public class ListsSourceReviewR3FixTests
                 return ("https://mdblist.com/lists/me/mine", ApiRead);
             },
             MdbRowOf, "{\"title\":\"No ids\",\"mediatype\":\"movie\"}", id => "{\"id\":" + id + ",\"title\":\"A\",\"mediatype\":\"movie\",\"adult\":1}",
-            Explicit: id => MdbTyped(id, "person"), Excludes: true, Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped);
+            Explicit: id => MdbTyped(id, "person"), Excludes: true, Unknown: id => MdbTyped(id, "game"), Untyped: MdbUntyped, Declare: MdbDeclared);
         yield return new("chronolists", (net, rows) => { net.Routes["https://chronolists.com/mcu"] = _ => Chronolists(rows); return ("https://chronolists.com/mcu", null); },
             ChronoMovie, "{\"t\":\"movie\",\"n\":\"No id\",\"rd\":\"2001-01-01\"}", null,
-            Explicit: id => ChronoTyped(id, "person"), Unknown: id => ChronoTyped(id, "game"), Untyped: id => "{\"id\":" + id + ",\"n\":\"M" + id + "\",\"rd\":\"2001-01-01\"}");
+            Explicit: id => ChronoTyped(id, "person"), Unknown: id => ChronoTyped(id, "game"), Untyped: id => "{\"id\":" + id + ",\"n\":\"M" + id + "\",\"rd\":\"2001-01-01\"}",
+            Declare: (id, raw) => "{\"t\":" + raw + ",\"id\":" + id + ",\"n\":\"T" + id + "\",\"rd\":\"2001-01-01\"}");
     }
 
     public static IEnumerable<object[]> RowCases() =>
         from shape in Shapes()
-        from row in new[] { "valid", "malformed", "duplicate", "unsupported", "explicit-unsupported", "unknown-type", "untyped", "changed-type" }
+        from row in new[] { "valid", "malformed", "duplicate", "unsupported", "explicit-unsupported", "unknown-type", "untyped", "changed-type", "declared-number", "declared-null", "declared-empty" }
         where row switch
         {
             "unsupported" => shape.Unsupported != null,
@@ -403,6 +415,7 @@ public class ListsSourceReviewR3FixTests
             "unknown-type" => shape.Unknown != null,
             "untyped" => shape.Untyped != null,
             "changed-type" => shape.Changed != null,
+            "declared-number" or "declared-null" or "declared-empty" => shape.Declare != null,
             _ => true,
         }
         select new object[] { shape.Provider, row };
@@ -421,6 +434,9 @@ public class ListsSourceReviewR3FixTests
             "explicit-unsupported" => new[] { shape.Valid(1), shape.Explicit!(77), shape.Valid(2) },
             "unknown-type" => new[] { shape.Valid(1), shape.Unknown!(77), shape.Valid(2) },
             "untyped" => new[] { shape.Valid(1), shape.Untyped!(77), shape.Valid(2) },
+            "declared-number" => new[] { shape.Valid(1), shape.Declare!(77, "42"), shape.Valid(2) },
+            "declared-null" => new[] { shape.Valid(1), shape.Declare!(77, "null"), shape.Valid(2) },
+            "declared-empty" => new[] { shape.Valid(1), shape.Declare!(77, "\"\""), shape.Valid(2) },
             _ => new[] { shape.Valid(1), shape.Changed!(77), shape.Valid(2) },
         };
         using var net = new Net();
