@@ -20,6 +20,14 @@ namespace JE.Tests;
 /// settled, a summary's members settled, a bell row and its deliveries, a wait added, retried, taken or dropped, a notice or
 /// a batch consumed) comes after a <c>Final</c> call in the same function with no await in between (a settle may follow
 /// the network send it settles; a method handed a verdict acts on it, and its callers are checked instead).</item>
+/// <item>One verdict → effect table (4f round 10): a verdict is acted on only through <c>NotifyFinal.Effect</c>, its one table
+/// (Off = leave it as it is, Wait = postpone, Refuse = suppress, Send = act), in a switch that names every effect; nothing reads
+/// the verdict itself outside the gate; each switch's sections do only what their effect allows (a Leave section writes
+/// nothing; a Postpone section neither suppresses nor acts; a Suppress section neither postpones nor acts, and suppresses
+/// something unless its site says how the event is consumed; an Act section suppresses or postpones only after acting); every
+/// verdict of the gate reaches such a switch.</item>
+/// <item>Every alert carries its origin: each alert the notify path makes for the gate sets <c>Since</c> (when what it tells
+/// happened), deliveries excepted (their alert was told when it was made).</item>
 /// </list>
 /// <see cref="AwaitSites"/> lists every await on the alert paths (followed from the rounds' entry points) for the
 /// await-point model.
@@ -89,6 +97,8 @@ internal sealed class NotifyGateWalk
         Carried(problems);
         Gate(problems);
         Actions(problems);
+        Table(problems);
+        Origins(problems);
         return problems;
     }
 
@@ -320,6 +330,199 @@ internal sealed class NotifyGateWalk
     private bool NetworkSend(SemanticModel model, AwaitExpressionSyntax awaited)
         => Awaited(awaited.Expression) is { } call && model.GetSymbolInfo(call).Symbol is IMethodSymbol { Name: "SendAsync" } m
            && (Is(m.ContainingType, Dispatcher) || m.ContainingType?.Name == "ReadyNativeChannel");
+
+    // ── one verdict → effect table (4f round 10) ───────────────────────────
+
+    private INamedTypeSymbol? EffectType => Type(Ns + "NotifyEffect");
+
+    // The table: each verdict and the one effect it has at every action site.
+    private static readonly Dictionary<string, string> TableRows = new(StringComparer.Ordinal)
+    {
+        ["Off"] = "Leave", ["Wait"] = "Postpone", ["Refuse"] = "Suppress", ["Send"] = "Act",
+    };
+
+    // Sites whose refusal is consumed with the event itself, outside the switch: the reason a Suppress section there writes
+    // nothing. A collector (its Act section only gathers the verdicts) consumes the event with the rows it makes.
+    internal static readonly Dictionary<string, string> ConsumedElsewhere = new(StringComparer.Ordinal)
+    {
+        ["ScanRequests"] = "the Seerr change is marked seen with the rest of the list after the loop",
+        ["AdminChecksAsync"] = "a Needs-attention row is a condition the next check observes again; nothing is queued for it",
+        ["SendTest"] = "a test: nothing is queued, nothing to consume",
+        ["TrySendTest"] = "a test: nothing is queued, nothing to consume",
+    };
+
+    /// <summary>The switches over the effect the last <see cref="Problems"/> checked ("Method at File:line").</summary>
+    internal List<string> EffectSites { get; } = new();
+
+    // What an action call does, for the effect it may appear under: act (a send, a settle, a bell row), postpone, suppress, or
+    // another write (consuming a notice, a batch, a mark); null for anything else.
+    private string? EffectClass(IMethodSymbol m)
+    {
+        var type = m.ContainingType?.Name;
+        if (Is(m.ContainingType, Dispatcher) && m.Name is "SendAsync" or "Settle") return "act";
+        if (type == "ReadyNativeChannel" && m.Name == "SendAsync") return "act";
+        if (Is(m.ContainingType, Service) && m.Name is "Notify" or "NotifyAll" or "Add" or "Announce") return "act";
+        if (type is "NotifyStore" or "NotifyTransaction" && m.Name is "Add" or "Finish") return "act";
+        if (type is "NotifyStore" or "NotifyTransaction" && m.Name is "Postpone" or "AddAlertWait" or "RetryAlertWait") return "postpone";
+        if (Is(m.ContainingType, Service) && m.Name == "WaitBatch") return "postpone";
+        if (type is "NotifyStore" && m.Name is "Suppress" or "DropAlertWait") return "suppress";
+        if (Is(m.ContainingType, Service) && m.Name == "DropBatch") return "suppress";
+        if (type == "NotifyTransaction") return "write";
+        if (type == "NotifyStore" && m.Name is "InTransaction" or "TryMark" or "ClaimMark" or "SetBatch" or "DeleteBatch" or "SavePrefs") return "write";
+        return null;
+    }
+
+    private void Table(List<string> problems)
+    {
+        EffectSites.Clear();
+        if (Plan is not { } plan) return;
+        if (EffectType is not { } effect)
+        {
+            problems.Add("there is no verdict → effect table (NotifyEffect)");
+            return;
+        }
+
+        // The table itself: one switch, each verdict to its effect.
+        var of = plan.GetMembers("EffectOf").OfType<IMethodSymbol>().SingleOrDefault();
+        var arms = of?.DeclaringSyntaxReferences.SelectMany(r => r.GetSyntax().DescendantNodes().OfType<SwitchExpressionArmSyntax>()).ToList() ?? new();
+        var rows = arms.Where(a => a.Pattern is ConstantPatternSyntax).ToDictionary(
+            a => ((ConstantPatternSyntax)a.Pattern).Expression is MemberAccessExpressionSyntax v ? v.Name.Identifier.ValueText : "?",
+            a => a.Expression is MemberAccessExpressionSyntax e ? e.Name.Identifier.ValueText : "?");
+        foreach (var (verdict, wanted) in TableRows)
+        {
+            if (!rows.TryGetValue(verdict, out var got)) problems.Add($"the table (NotifyFinal.EffectOf) has no row for {verdict}");
+            else if (got != wanted) problems.Add($"the table maps {verdict} to {got}, not {wanted}");
+        }
+
+        if (plan.GetMembers("Effect").OfType<IPropertySymbol>().SingleOrDefault() is not { } effectProperty)
+        {
+            problems.Add("a verdict has no Effect (NotifyFinal.Effect)");
+            return;
+        }
+
+        foreach (var (tree, model) in Scope())
+        {
+            var root = tree.GetRoot();
+            // Nothing reads the verdict itself outside the gate; the effect is read only to switch over it.
+            foreach (var access in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+            {
+                if (model.GetSymbolInfo(access).Symbol is not IPropertySymbol p || !Is(p.ContainingType, plan)) continue;
+                var where = Member(model, access);
+                var inGate = Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(g.Name));
+                if (p.Name is "Verdict" or "Sends" && !inGate)
+                    problems.Add($"the verdict read directly (not through the table) at {Where(access)}: {Line(access)}");
+                if (SymbolEqualityComparer.Default.Equals(p, effectProperty) && !(access.Parent is SwitchStatementSyntax s && s.Expression == access))
+                    problems.Add($"the effect read outside a switch over it at {Where(access)}: {Line(access)}");
+            }
+
+            foreach (var swtch in root.DescendantNodes().OfType<SwitchStatementSyntax>())
+            {
+                if (!Is(model.GetTypeInfo(swtch.Expression).Type, effect)) continue;
+                var owner = Member(model, swtch);
+                var site = owner?.Name ?? "?";
+                EffectSites.Add(site + " at " + Where(swtch));
+                // A method handed a verdict (it acts on it for its callers) isn't where the event is consumed: its callers are.
+                var deciding = swtch.Expression is MemberAccessExpressionSyntax m && SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(m).Symbol, effectProperty)
+                               && !(owner is IMethodSymbol handed && TakesPlan(handed));
+                var named = new HashSet<string>(StringComparer.Ordinal);
+                var collector = swtch.Sections.Any(s => Labels(s).Contains("Act") && s.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(c => Collects(model, c, plan)));
+                foreach (var section in swtch.Sections)
+                {
+                    if (section.Labels.Any(l => l is DefaultSwitchLabelSyntax)) problems.Add($"a switch over the effect lumps effects in a default at {Where(section)}");
+                    var labels = Labels(section);
+                    if (labels.Count != section.Labels.Count(l => l is not DefaultSwitchLabelSyntax)) problems.Add($"a switch over the effect with a label that isn't one effect at {Where(section)}");
+                    named.UnionWith(labels);
+                    var calls = section.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                        .Select(c => (Call: c, Class: model.GetSymbolInfo(c).Symbol is IMethodSymbol cm ? EffectClass(cm.OriginalDefinition) : null))
+                        .Where(c => c.Class != null).OrderBy(c => c.Call.SpanStart).ToList();
+                    string Calls(IEnumerable<(InvocationExpressionSyntax Call, string? Class)> list) => string.Join(", ", list.Select(c => Name(c.Call) + " (" + c.Class + ")"));
+                    if (labels.Contains("Leave") && calls.Count > 0)
+                        problems.Add($"Leave at {Where(section)} ({site}) does {Calls(calls)}: nothing may be done while notifications are off");
+                    if (labels.Contains("Postpone") && calls.Where(c => c.Class is "act" or "suppress").ToList() is { Count: > 0 } wrongP)
+                        problems.Add($"Postpone at {Where(section)} ({site}) does {Calls(wrongP)}: a wait is postponed, never ended or told");
+                    if (labels.Contains("Suppress") && calls.Where(c => c.Class is "act" or "postpone").ToList() is { Count: > 0 } wrongS)
+                        problems.Add($"Suppress at {Where(section)} ({site}) does {Calls(wrongS)}: a refusal ends it, never told or held");
+                    if (labels.Contains("Act"))
+                    {
+                        var firstAct = calls.FirstOrDefault(c => c.Class == "act").Call?.SpanStart ?? int.MaxValue;
+                        if (calls.Where(c => c.Class is "suppress" or "postpone" && c.Call.SpanStart < firstAct).ToList() is { Count: > 0 } wrongA)
+                            problems.Add($"Act at {Where(section)} ({site}) does {Calls(wrongA)} before acting");
+                    }
+
+                    if (deciding && labels.Contains("Suppress") && !collector && !calls.Any(c => c.Class is "suppress" or "write") && !ConsumedElsewhere.ContainsKey(site))
+                        problems.Add($"Suppress at {Where(section)} ({site}) suppresses nothing (and the site doesn't say how its event is consumed)");
+                }
+
+                foreach (var missing in TableRows.Values.Where(e => !named.Contains(e)))
+                    problems.Add($"a switch over the effect at {Where(swtch)} ({site}) doesn't name {missing}");
+            }
+
+            // Every verdict of the gate is acted on through the table: switched over, or handed to a method that acts on it
+            // (and switches over it).
+            foreach (var call in root.DescendantNodes().OfType<InvocationExpressionSyntax>().Where(c => IsFinal(model, c)))
+            {
+                var where = Member(model, call);
+                if (Is(where?.ContainingType, plan) || (Is(where?.ContainingType, Dispatcher) && where is IMethodSymbol g && GateMethods.Contains(g.Name))) continue;
+                if (call.Parent is not EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator } || model.GetDeclaredSymbol(declarator) is not ILocalSymbol local)
+                {
+                    problems.Add($"a verdict of the gate not kept to be acted on at {Where(call)}: {Line(call)}");
+                    continue;
+                }
+
+                var scope = declarator.Ancestors().First(a => a is BlockSyntax);
+                var uses = scope.DescendantNodes().OfType<IdentifierNameSyntax>().Where(i => i.Identifier.ValueText == local.Name && SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(i).Symbol, local)).ToList();
+                var acted = uses.Any(u => (u.Parent is MemberAccessExpressionSyntax ma && ma.Expression == u && ma.Parent is SwitchStatementSyntax && ma.Name.Identifier.ValueText == "Effect")
+                                          || (u.Parent is ArgumentSyntax { Parent: ArgumentListSyntax { Parent: InvocationExpressionSyntax inv } } && model.GetSymbolInfo(inv).Symbol is IMethodSymbol target && TakesPlan(target) && InScope(target.ContainingType)));
+                if (!acted) problems.Add($"a verdict of the gate never acted on through the table at {Where(call)}: {Line(call)}");
+            }
+        }
+    }
+
+    // The effects a switch section's labels name (NotifyEffect.X).
+    private static List<string> Labels(SwitchSectionSyntax section)
+        => section.Labels.OfType<CaseSwitchLabelSyntax>().Select(l => l.Value is MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "NotifyEffect" } } v ? v.Name.Identifier.ValueText : "?").ToList();
+
+    // Gathering verdicts to make their rows later (a collector's Act section).
+    private static bool Collects(SemanticModel model, InvocationExpressionSyntax call, INamedTypeSymbol plan)
+        => model.GetSymbolInfo(call).Symbol is IMethodSymbol { Name: "Add" } m && m.ContainingType is { IsGenericType: true } list
+           && list.TypeArguments.Any(t => Is(t, plan));
+
+    private static string Name(InvocationExpressionSyntax call) => call.Expression switch
+    {
+        MemberAccessExpressionSyntax m => m.Name.Identifier.ValueText,
+        IdentifierNameSyntax i => i.Identifier.ValueText,
+        _ => call.Expression.ToString(),
+    };
+
+    // Every alert the notify path makes for the gate carries its origin (Since); a delivery's alert (NotifyAlert.Of) excepted.
+    private void Origins(List<string> problems)
+    {
+        var alertType = Type(Ns + "NotifyAlert");
+        if (alertType == null) return;
+        var counted = 0;
+        foreach (var (tree, model) in Scope())
+        {
+            foreach (var made in tree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+            {
+                if (!Is(model.GetTypeInfo(made).Type, alertType)) continue;
+                var where = Member(model, made);
+                if (Is(where?.ContainingType, alertType) && where?.Name == "Of") continue;
+                counted++;
+                var since = made.Initializer?.Expressions.OfType<AssignmentExpressionSyntax>().FirstOrDefault(a => a.Left is IdentifierNameSyntax { Identifier.ValueText: "Since" });
+                if (since == null)
+                {
+                    problems.Add($"an alert made with no origin (Since) at {Where(made)} ({where?.Name})");
+                    continue;
+                }
+
+                // Its origin is a time, never "no limit".
+                if (model.GetTypeInfo(since.Right).Type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } || since.Right is LiteralExpressionSyntax)
+                    problems.Add($"an alert whose origin may be missing (Since = {since.Right}) at {Where(made)} ({where?.Name})");
+            }
+        }
+
+        if (counted < 2) problems.Add($"only {counted} alerts made");
+    }
 
     // ── the await sites of the alert paths ─────────────────────────────────
 

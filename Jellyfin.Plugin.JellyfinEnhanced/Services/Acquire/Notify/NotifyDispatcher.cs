@@ -254,7 +254,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             foreach (var delivery in list)
                             {
                                 cancellationToken.ThrowIfCancellationRequested();
-                                if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyVerdict.Off)
+                                if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyEffect.Leave)
                                 {
                                     done = (done.Attempted, true);
                                     break;
@@ -362,16 +362,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // The notification itself (its bell row): too old to be told, refused or waiting as for a delivery (administrators'
         // phone-and-e-mail switch aside: it decides only their deliveries), else made with a delivery for each channel the
-        // person has on now, held until their quiet hours end.
+        // person has on now, held until their quiet hours end. A batch of new episodes: each episode is held to the catch-up
+        // limit by its own arrival (4f round 10); the batch is told with the fresh ones, and refused when none is left.
         private NotifyFinal Tell(in GateRead read, NotifyAlert alert)
         {
-            if (alert.Since is { } since && read.Now - since > NotificationService.ArrivalFreshFor)
-                return NotifyFinal.Refuse(alert, read.Now, "It happened too long ago to be told now.");
+            const string TooOld = "It happened too long ago to be told now.";
+            if (alert.Since is { } since && read.Now - since > NotificationService.ArrivalFreshFor) return NotifyFinal.Refuse(alert, read.Now, TooOld);
             var payload = new Dictionary<string, string>(alert.Payload);
+            if (alert.Kind == NotifyKind.Episodes)
+            {
+                switch (FreshEpisodes(read.Now, payload))
+                {
+                    case null:
+                        return NotifyFinal.Refuse(alert, read.Now, TooOld);
+                    case Guid only when only != Guid.Empty:
+                        alert = alert with { ItemId = only.ToString("N", CultureInfo.InvariantCulture) };
+                        break;
+                }
+            }
+
             var verdict = Suppression(in read, alert, payload, outbound: false, out var itemId);
             if (verdict.Wait) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
             if (verdict.Why is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
             return NotifyFinal.Tell(alert, read.Now, payload, itemId, Deliveries(in read, alert.Kind));
+        }
+
+        // A batch's episodes held to the catch-up limit by their own arrivals (an episode with none: by the batch's): those past it
+        // are dropped from the payload and its count, seasons and wording set from what is left. Null when none is left; the one
+        // episode left when the batch was narrowed to it; else Guid.Empty.
+        private static Guid? FreshEpisodes(DateTimeOffset now, Dictionary<string, string> payload)
+        {
+            if (!payload.TryGetValue("episodeItems", out var json)) return Guid.Empty;
+            List<NotifyEpisode>? all;
+            try { all = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+            catch (JsonException) { return Guid.Empty; }
+            if (all is not { Count: > 0 }) return Guid.Empty;
+            var fresh = all.Where(e => e.At is not { } at || now - at <= NotificationService.ArrivalFreshFor).ToList();
+            if (fresh.Count == 0) return null;
+            if (fresh.Count == all.Count) return Guid.Empty;
+            payload["episodeItems"] = JsonSerializer.Serialize(fresh, PayloadJson);
+            payload["count"] = fresh.Count.ToString(CultureInfo.InvariantCulture);
+            payload["seasons"] = string.Join(", ", fresh.Select(e => e.Season).Distinct().OrderBy(x => x));
+            if (fresh.Count == 1)
+            {
+                payload["mode"] = "single";
+                payload["season"] = fresh[0].Season.ToString(CultureInfo.InvariantCulture);
+                payload["episode"] = fresh[0].Episode.ToString(CultureInfo.InvariantCulture);
+                return fresh[0].ItemId;
+            }
+
+            // Fewer than the batch: never "the whole season".
+            payload["mode"] = "many";
+            payload.Remove("season");
+            payload.Remove("episode");
+            return Guid.Empty;
         }
 
         // A new notification's deliveries, from the person's settings and the channels as they are now.
@@ -389,23 +433,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return deliveries;
         }
 
-        // A delivery's verdict other than a send, acted on (right after the gate): waiting, postponed; refused, suppressed.
-        // True for a send (the caller sends it); false otherwise (Off: nothing is done).
-        private bool Act(DueDelivery delivery, NotifyFinal final)
+        // A delivery's verdict acted on right after the gate, by the one table (4f round 10): Leave, nothing is done (it stays
+        // pending); Postpone, held until the verdict's time; Suppress, ended; Act, the caller sends it. Returns the effect.
+        private NotifyEffect Act(DueDelivery delivery, NotifyFinal final)
         {
-            switch (final.Verdict)
+            switch (final.Effect)
             {
-                case NotifyVerdict.Send:
-                    return true;
-                case NotifyVerdict.Wait:
+                case NotifyEffect.Leave:
+                    return NotifyEffect.Leave;
+                case NotifyEffect.Postpone:
                     _store.Postpone(delivery.Id, final.Until!.Value, delivery.Generation);
-                    return false;
-                case NotifyVerdict.Refuse:
+                    return NotifyEffect.Postpone;
+                case NotifyEffect.Suppress:
                     _store.Suppress(delivery.Id, final.Why!, delivery.Generation);
-                    return false;
-                default:
-                    return false;
+                    return NotifyEffect.Suppress;
+                case NotifyEffect.Act:
+                    return NotifyEffect.Act;
             }
+
+            throw new InvalidOperationException("Unknown effect.");
         }
 
         /// <summary>How long a delivery (or an episode batch) waits before its recipient's unreadable Hidden Content is read again.</summary>
@@ -445,9 +491,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// hours, freshness, still theirs to see, Hidden Content, no earlier attempt), then one message (a summary for several)
         /// goes to one idle session of theirs, read again right before the send. At that last moment, with no await before the
         /// send, every one of them is decided by the gate again and the text is rendered from the person's settings as they are
-        /// then (hidden titles, a title they hid meanwhile, a kind they turned off): render last. Busy, unsupported, no session
-        /// or anything else ends them as suppressed: never held for later and never retried. Returns how many were attempted,
-        /// and whether notifications were switched off (the rest stay pending).
+        /// then (hidden titles, a title they hid meanwhile, a kind they turned off): render last. Each verdict, at the first look
+        /// and in the claim, is acted on by the one table (4f round 10): notifications switched off (even during the session's
+        /// re-read right before the claim) leave every one of them pending, unclaimed, to go once they are back on; a refusal
+        /// suppresses it. Busy, unsupported, no session or anything else on the session's side ends them as suppressed: never
+        /// held for later and never retried. Returns how many were attempted, and whether notifications were switched off.
         /// </summary>
         private async Task<(int Attempted, bool Off)> DeliverDisplayAsync(IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
         {
@@ -455,29 +503,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             foreach (var delivery in deliveries)
             {
                 var final = Final(NotifyAlert.Of(delivery));
-                if (final.Verdict == NotifyVerdict.Off) return (0, true);
-                if (Act(delivery, final)) ready.Add(delivery);
+                switch (Act(delivery, final))
+                {
+                    case NotifyEffect.Leave:
+                        return (0, true);
+                    case NotifyEffect.Act:
+                        ready.Add(delivery);
+                        break;
+                    case NotifyEffect.Postpone:
+                    case NotifyEffect.Suppress:
+                        // Acted on by the table already.
+                        break;
+                }
             }
             if (ready.Count == 0 || _native == null) return (deliveries.Count, false);
             var user = ready[0].UserId;
             var generation = ready[0].Generation;
-            var vetoed = new Dictionary<long, string>();
+            // What the claim did by the table: notifications switched off (nothing claimed, all left pending), and the deliveries
+            // it postponed or suppressed itself.
+            var off = false;
+            var decided = new HashSet<long>();
             // Right before the send: every delivery decided again and the message rendered from the settings as they are now.
             (NotifyMessage Message, IReadOnlyList<long> Ids)? Claim()
             {
-                vetoed.Clear();
                 var going = new List<long>();
                 NotifyMessage? single = null;
                 foreach (var delivery in ready)
                 {
                     var final = Final(NotifyAlert.Of(delivery) with { Claimed = true });
-                    if (!final.Sends)
+                    switch (Act(delivery, final))
                     {
-                        vetoed[delivery.Id] = final.Why ?? "Notifications are switched off.";
-                        continue;
+                        case NotifyEffect.Leave:
+                            // Switched off: nothing is claimed or sent, and none of them is ended.
+                            off = true;
+                            return null;
+                        case NotifyEffect.Act:
+                            going.Add(delivery.Id);
+                            single = final.Message;
+                            break;
+                        case NotifyEffect.Postpone:
+                        case NotifyEffect.Suppress:
+                            decided.Add(delivery.Id);
+                            break;
                     }
-                    going.Add(delivery.Id);
-                    single = final.Message;
                 }
                 if (going.Count == 0) return null;
                 return (going.Count == 1 ? single! : NotifyTexts.Summary(going.Count), going);
@@ -495,14 +563,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     _store.Suppress(delivery.Id, "Native message: the send started but its outcome is unknown (" + result.Reason + "); not sent again.", delivery.Generation);
                 }
-                else
+                else if (!off && !decided.Contains(delivery.Id))
                 {
-                    _store.Suppress(delivery.Id, vetoed.TryGetValue(delivery.Id, out var why)
-                        ? "Native message not sent (changed right before the send): " + why
-                        : "Native message not sent: " + result.Reason + ".", delivery.Generation);
+                    // The session's side (gone, changed, busy, a claim the database refused): never held, never retried.
+                    _store.Suppress(delivery.Id, "Native message not sent: " + result.Reason + ".", delivery.Generation);
                 }
             }
-            return (deliveries.Count, false);
+            return (deliveries.Count, off);
         }
 
         // Why a native message must not go out (now), or null: no native channel, an earlier attempt (first look only), stale,
@@ -536,15 +603,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _logger?.Warning($"Notifications: {delivery.Channel} delivery {delivery.Id} failed (attempt {attempt}){(retry.HasValue ? ", will retry" : ", giving up")}: {error}");
         }
 
-        // One delivery: its awaited preparation, then the final gate, then its action (the send and its settling).
-        private async Task<NotifyVerdict> DeliverAsync(DueDelivery delivery, CancellationToken cancellationToken)
+        // One delivery: its awaited preparation, then the final gate, then its action by the table (the send and its settling).
+        private async Task<NotifyEffect> DeliverAsync(DueDelivery delivery, CancellationToken cancellationToken)
         {
             await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
             var final = Final(NotifyAlert.Of(delivery));
-            if (!Act(delivery, final)) return final.Verdict;
+            var effect = Act(delivery, final);
+            if (effect != NotifyEffect.Act) return effect;
             var (ok, error) = await SendAsync(final, final.Message!, final.Link, delivery.Kind, cancellationToken).ConfigureAwait(false);
             Settle(delivery, ok, error);
-            return NotifyVerdict.Send;
+            return NotifyEffect.Act;
         }
 
         /// <summary>
@@ -569,10 +637,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             foreach (var delivery in deliveries)
             {
                 var final = Final(NotifyAlert.Of(delivery));
-                if (final.Verdict == NotifyVerdict.Off) return (0, true);
-                if (!Act(delivery, final)) continue;
-                going.Add(delivery);
-                first ??= final;
+                switch (Act(delivery, final))
+                {
+                    case NotifyEffect.Leave:
+                        return (0, true);
+                    case NotifyEffect.Act:
+                        going.Add(delivery);
+                        first ??= final;
+                        break;
+                    case NotifyEffect.Postpone:
+                    case NotifyEffect.Suppress:
+                        // Acted on by the table already.
+                        break;
+                }
             }
 
             if (going.Count < SummaryAt)
@@ -582,7 +659,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 foreach (var delivery in going)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyVerdict.Off) return (deliveries.Count, true);
+                    if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyEffect.Leave) return (deliveries.Count, true);
                 }
 
                 return (deliveries.Count, false);

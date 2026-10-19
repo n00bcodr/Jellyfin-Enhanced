@@ -20,6 +20,11 @@ namespace JE.Tests;
 /// un-send it. The cells are generated from the paths' points × the mutations; <see cref="EveryAwaitOnTheAlertPathsIsAPointOfTheModel"/>
 /// checks, by Roslyn over the plugin's source, that every await on those paths is one of the model's points (or composite,
 /// or excluded with its reason), so an await added later without a point fails.
+/// 4f round 10 (4f-r9-1, 4f-r9-2, D53): the native message's claim is a path of its own (its point is the session re-read
+/// right before the claim: notifications switched off there leave it pending, and it goes once they are back on), and every
+/// path has the mutation <see cref="Mutation.Stale"/>: the clock passes the alert's catch-up limit at the point, so each alert
+/// kind is checked to carry its own origin (an alert made after that is refused; a delivery of an alert told when it was made
+/// isn't held to it; a native message is stale after its own ten minutes).
 /// </summary>
 [Collection("Plugin singleton")]
 public class ReadyAwaitPointModelTests
@@ -33,6 +38,7 @@ public class ReadyAwaitPointModelTests
         Unreadable,
         Quiet,
         Disabled,
+        Stale,
     }
 
     private const string Dune = "movie:tmdb:693134";
@@ -50,7 +56,8 @@ public class ReadyAwaitPointModelTests
     /// <param name="After">How many of the path's points come before its decision: a mutation at an earlier point decides it.</param>
     /// <param name="Outbound">A delivery (sent / pending / suppressed) rather than the notification itself (told / held / none).</param>
     /// <param name="Admin">An administrators' alert (an ask, a reminder): their alerts to phone and e-mail, no Hidden Content.</param>
-    internal sealed record Unit(string Name, int After, bool Outbound, bool Admin, Func<World, Ctx, string> Observe);
+    /// <param name="Native">A native Ready message (sent / pending / suppressed; never held).</param>
+    internal sealed record Unit(string Name, int After, bool Outbound, bool Admin, Func<World, Ctx, string> Observe, bool Native = false);
 
     /// <summary>A path: how its world is made, how the round under test and the round after it run, its points and units.</summary>
     internal sealed class AlertPath
@@ -137,6 +144,7 @@ public class ReadyAwaitPointModelTests
             probe.Hit("arr:" + path);
             return Task.CompletedTask;
         };
+        w.Sessions.OnReread = _ => probe.Hit("reread");
     }
 
     private static void Uninstall(World w)
@@ -146,6 +154,7 @@ public class ReadyAwaitPointModelTests
         w.Rig.OnPush = null;
         w.Rig.Mail.OnSend = null;
         w.Rig.Radarr.Before = null;
+        w.Sessions.OnReread = null;
     }
 
     // ================================================================== mutations
@@ -185,6 +194,10 @@ public class ReadyAwaitPointModelTests
                     p.UtcOffsetMinutes = 0;
                 });
                 break;
+            case Mutation.Stale:
+                // The clock passes the catch-up limit (and a minute) at this point: what happened before it is too old to tell.
+                w.Rig.Arr.Now = w.Rig.Arr.Now + NotificationService.ArrivalFreshFor + TimeSpan.FromMinutes(1);
+                break;
             default:
                 w.Rig.Users.Disabled.Add(who.UserId);
                 break;
@@ -215,6 +228,9 @@ public class ReadyAwaitPointModelTests
             case Mutation.Quiet:
                 w.Rig.Prefs(who, p => p.QuietHours = false);
                 break;
+            case Mutation.Stale:
+                // Time doesn't go back.
+                break;
             default:
                 w.Rig.Users.Disabled.Remove(who.UserId);
                 break;
@@ -244,8 +260,26 @@ public class ReadyAwaitPointModelTests
     // ================================================================== expectations
 
     /// <summary>The final gate's verdict on an alert after the mutation: what the action does then.</summary>
-    internal static (string First, string Then) Expected(Unit unit, Mutation m, bool affected)
+    internal static (string First, string Then) Expected(Unit unit, Mutation m, int index)
     {
+        var affected = index < unit.After;
+        if (unit.Native)
+        {
+            // Never held: switched off, it stays pending (nothing done) and goes once they are back on; anything else ends it.
+            if (!affected) return ("sent", "sent");
+            return m == Mutation.Off ? ("pending", "sent") : ("suppressed", "suppressed");
+        }
+
+        if (m == Mutation.Stale)
+        {
+            // A delivery of an alert told when it was made isn't held to the catch-up limit.
+            if (unit.Outbound) return ("sent", "sent");
+            if (!affected) return ("told", "told");
+            // Too old by the time it is decided: refused for good. A reminder pressed again (the next round) is a new press, told
+            // unless the refused one was spent at the same (later) time: the clock passed the limit before the press was recorded.
+            return unit.Name == "remind" && index > 0 ? ("none", "told") : ("none", "none");
+        }
+
         if (unit.Outbound)
         {
             if (!affected) return ("sent", "sent");
@@ -648,10 +682,48 @@ public class ReadyAwaitPointModelTests
         Units = ctx => new[] { new Unit("episodes", 1, false, false, (w, c) => Told(w, w.Rig.Emma, NotifyKind.Episodes)) },
     };
 
+    // A native Ready message (4f-r9-1): Emma's Ready alert with a native message for her idle session; the point is the session
+    // re-read right before the claim (inside the send: the claim decides with no await before the host call).
+    private static AlertPath Native() => new()
+    {
+        Name = "native",
+        Kind = NotifyKind.Ready,
+        Title = Dune,
+        InLibrary = true,
+        Target = w => w.Rig.Emma,
+        Points = new[] { new Point("reread#1", "DeliverDisplayAsync:SendAsync") },
+        Setup = async () =>
+        {
+            var w = new World(await IntegrationNotificationsTests.Started(r => r.Request(1, 693134, r.Emma)), jeMode: false);
+            w.Rig.Config.ArrPhase4ReadyMessagesEnabled = true;
+            w.Rig.Prefs(w.Rig.Emma, p => p.NativeReadyMessages = true);
+            await w.Service.EvaluateAsync(new[] { Dune }, null, default);
+            w.Rig.Arrive(Dune);
+            await w.Service.EvaluateAsync(new[] { Dune }, null, default);
+            var row = Assert.Single(w.Rig.NotifyStore.Inbox(w.Rig.Emma.UserId, null, 500), r => r.Kind == NotifyKind.Ready);
+            var ctx = new Ctx();
+            ctx.Rows[Dune] = row.Id;
+            Assert.Equal("pending", DeliveryOf(w, row.Id, NotifyChannel.DisplayMessage));
+            w.Sessions.Add(w.Rig.Emma.UserId, "tv", w.Rig.Arr.Now.UtcDateTime);
+            return (w, ctx);
+        },
+        Run = RunDispatcher,
+        Next = async (w, ctx) =>
+        {
+            w.Rig.Arr.Now = w.Rig.Arr.Now.AddMinutes(1);
+            w.Sessions.Add(w.Rig.Emma.UserId, "tv", w.Rig.Arr.Now.UtcDateTime);
+            await w.Dispatcher.RunOnceAsync(default);
+            // Delivered once: a further round sends nothing more.
+            await w.Dispatcher.RunOnceAsync(default);
+            Assert.True(w.Sessions.Sent.Count <= 1, "native messages sent: " + w.Sessions.Sent.Count.ToString(CultureInfo.InvariantCulture));
+        },
+        Units = ctx => new[] { new Unit("native", 1, false, false, (w, c) => DeliveryOf(w, c.Rows[Dune], NotifyChannel.DisplayMessage), Native: true) },
+    };
+
     internal static readonly AlertPath[] Paths =
     {
         Single(NotifyKind.Declined), Single(NotifyKind.Approved), Summary(), Fallback(), WaitRetry(), Notice(NotifyKind.Declined), Notice(NotifyKind.Approved),
-        AskJe(), AskSeerr(), DeclineSeerr(), Remind(), Ready(), Episodes(),
+        AskJe(), AskSeerr(), DeclineSeerr(), Remind(), Ready(), Episodes(), Native(),
     };
 
     public static IEnumerable<object[]> Cells()
@@ -681,7 +753,7 @@ public class ReadyAwaitPointModelTests
             Assert.True(pointLabel == "window" || probe.Fired, $"{pathName}: the point {pointLabel} was never reached (reached: {string.Join(", ", probe.Trace)})");
 
             var units = path.Units(ctx);
-            var first = units.Select(u => (u, Expected(u, mutation, index < u.After), Got: u.Observe(w, ctx))).ToList();
+            var first = units.Select(u => (u, Expected(u, mutation, index), Got: u.Observe(w, ctx))).ToList();
             Undo(path, w, ctx, mutation);
             await path.Next(w, ctx);
             var problems = new List<string>();
@@ -726,7 +798,7 @@ public class ReadyAwaitPointModelTests
         ["PrepareOutcomeAsync:PrepareVisibilityAsync"] = "point",
         ["SendAsync:NtfySender.SendAsync"] = "point",
         ["SendAsync:EmailSender.SendAsync"] = "point",
-        ["DeliverDisplayAsync:SendAsync"] = "excluded: the native message's network send itself; its claim decides with no await before the host call (r2b)",
+        ["DeliverDisplayAsync:SendAsync"] = "point",
         // NotificationService: asks, outcomes, the wait queue, Remind, Ready, new episodes, administrators' checks.
         ["TickAsync:WaitAsync"] = "excluded: the round's lock, taken before the round reads anything",
         ["TickAsync:PrepareAskVisibilityAsync"] = "composite",
@@ -761,6 +833,6 @@ public class ReadyAwaitPointModelTests
         var pointed = Paths.SelectMany(p => p.Points).SelectMany(p => p.Sites).ToHashSet(StringComparer.Ordinal);
         var unpointed = Sites.Where(s => s.Value == "point" && !pointed.Contains(s.Key)).Select(s => s.Key).ToList();
         Assert.True(unpointed.Count == 0, "awaits with no point in any path: " + string.Join(", ", unpointed));
-        Assert.True(Cells().Count() >= 200, "cells: " + Cells().Count().ToString(CultureInfo.InvariantCulture));
+        Assert.True(Cells().Count() >= 280, "cells: " + Cells().Count().ToString(CultureInfo.InvariantCulture));
     }
 }
