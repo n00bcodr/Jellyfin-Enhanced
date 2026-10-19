@@ -182,3 +182,89 @@ for(const stage of ['pending','failed'])test(`${stage} title identity work survi
  fail=false;if(stage==='pending')gate.resolve({Items:[{Id:'e0',Type:'Movie',ProviderIds:{Tmdb:'42'}}]});else h.later();
  h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(h.document.querySelector('.card'),card);
 });
+
+// R12: one native-node selector for every pass; a delayed decision carries the scope captured at lookup start.
+/** Retained native list rows (ID-only), as Jellyfin renders list views. */
+function mountRows(h,count,type){
+ h.document.body.innerHTML='<div class="itemsContainer">'+Array.from({length:count},(_,i)=>`<div class="listItem" data-id="e${i}" data-type="${type}"></div>`).join('')+'</div>';
+ return [...h.document.querySelectorAll('.listItem')];
+}
+for(const type of ['Movie','Series'])for(const all of [false,true])test(`retained ${type} list rows resolve provider identity on ${all?'full':'ordinary'} scans`,async t=>{
+ const h=setup(t,o=>{const ids=new URL(o.url).searchParams.get('Ids').split(',');return {Items:ids.map(Id=>({Id,Type:type,ProviderIds:{Tmdb:Id==='e1'?'7':'42'}}))};});
+ h.api.getHiddenData().items={provider:{type,tmdbId:'42'}};h.api.rebuildSets();
+ const rows=mountRows(h,2,type);const pass=()=>all?h.api.filterAllNativeCards():h.api.filterNativeCards();pass();await h.settle();pass();await h.settle();
+ assert.deepEqual([...h.document.querySelectorAll('.listItem')],rows,'exact rows retained');
+ assert.equal(rows[0].classList.contains('je-hidden'),true,'provider-only rule hides the list row');
+ assert.equal(rows[1].classList.contains('je-hidden'),false,'control: other title stays visible');
+ assert.ok(rows.every(r=>r.hasAttribute('data-je-hidden-checked')),'both rows reach a final verdict');
+ const reads=h.reads.length;h.api.filterNativeCards();await h.settle();assert.equal(h.reads.length,reads,'settled rows do no further work');
+});
+test('retained Episode list rows cascade a provider-hidden parent (shared selector control)',async t=>{
+ const h=setup(t,o=>metadata(o));const rows=mountRows(h,2,'Episode');h.api.filterNativeCards();await h.settle();
+ assert.ok(rows.every(r=>r.classList.contains('je-hidden')&&r.hasAttribute('data-je-hidden-checked')));
+});
+test('cards and list rows of the same identity share one title lookup',async t=>{
+ const h=setup(t,o=>{const ids=new URL(o.url).searchParams.get('Ids').split(',');return {Items:ids.map(Id=>({Id,Type:'Movie',ProviderIds:{Tmdb:'42'}}))};});
+ h.api.getHiddenData().items={provider:{type:'Movie',tmdbId:'42'}};h.api.rebuildSets();
+ h.document.body.innerHTML='<div class="card" data-id="e0" data-type="Movie"></div><div class="listItem" data-id="e0" data-type="Movie"></div><div class="card" data-itemid="e0" data-type="Movie"></div>';
+ h.api.filterNativeCards();await h.settle();
+ assert.equal(h.reads.length,1);assert.ok([...h.document.body.children].every(n=>n.classList.contains('je-hidden')));
+});
+/** A child whose parent ProviderIds read is held open; the parent is provider-hidden when released. */
+function delayedParent(t){
+ const gate=deferred();const h=setup(t,o=>new URL(o.url).searchParams.get('Fields')==='ProviderIds'?gate.promise:metadata(o));
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();
+ const release=async()=>{gate.resolve({Items:[{Id:'s0',Type:'Series',ProviderIds:{Tmdb:'42'}}]});await h.settle();};
+ return {h,release};
+}
+for(const scan of [false,true])test(`a parent lookup started outside details is not applied after navigation into details${scan?' (newer details verdict present)':''}`,async t=>{
+ const {h,release}=delayedParent(t);const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();
+ h.window.location.hash='#!/details?id=series';h.JE.core.navigation.replayViewShow();
+ if(scan){h.api.filterNativeCards();await h.settle();assert.equal(card.hasAttribute('data-je-hidden-checked'),true,'details pass decides the retained node');}
+ await release();
+ assert.equal(card.classList.contains('je-hidden'),false,'detail-page exclusion re-checked at apply time');
+ h.api.filterNativeCards();await h.settle();
+ assert.equal(h.document.querySelector('.card'),card);assert.equal(card.classList.contains('je-hidden'),false,'ordinary details scans keep the correct verdict');
+ assert.equal(card.hasAttribute('data-je-hidden-direct')||card.hasAttribute('data-je-hidden-parent-series-id'),false);
+ h.window.location.hash='#!/home';h.JE.core.navigation.replayViewShow();h.api.filterNativeCards();await h.settle();
+ assert.equal(card.classList.contains('je-hidden'),true,'back outside details the ordinary scan applies the parent hide');
+});
+test('control: after navigation the incoming view decides a retained node with its own pass',async t=>{
+ const gate=deferred();const h=setup(t,o=>new URL(o.url).searchParams.get('Fields')==='ProviderIds'?gate.promise:metadata(o));
+ h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};h.api.setupNativeObserver();
+ const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();h.JE.core.navigation.replayViewShow();await h.settle();
+ assert.equal(card.hasAttribute('data-je-hidden-checked'),false,'pending in both views');
+ gate.resolve({Items:[{Id:'s0',Type:'Series',ProviderIds:{Tmdb:'99'}}]});await h.settle();
+ assert.equal(card.hasAttribute('data-je-hidden-checked'),true);assert.equal(card.classList.contains('je-hidden'),false);
+ assert.equal(h.reads.filter(r=>new URL(r.url).searchParams.get('Fields')==='ProviderIds').length,1,'both views share one identity lookup');
+});
+test('a delayed parent hide never borrows a newer rule scope',async t=>{
+ const {h,release}=delayedParent(t);const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();
+ h.api.getHiddenData().items.extra={itemId:'unrelated'};h.api.rebuildSets();
+ await release();
+ assert.equal(card.hasAttribute('data-je-hidden-checked'),false,'old-rule decision is not stamped with the new rule generation');
+ h.api.filterNativeCards();await h.settle();assert.equal(card.classList.contains('je-hidden'),true);assert.equal(card.hasAttribute('data-je-hidden-checked'),true);
+});
+test('a delayed parent hide is not applied after the server disables Hidden Content',async t=>{
+ const {h,release}=delayedParent(t);const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();
+ h.JE.pluginConfig.HiddenContentEnabled=false;await release();
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);
+});
+test('control: a delayed parent hide is not applied on a surface whose filter is off',async t=>{
+ const {h,release}=delayedParent(t);h.JE.detectCardRowSurface=card=>card.parentNode.dataset.surface||null;
+ const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();
+ card.parentNode.dataset.surface='nextup';h.api.getHiddenData().settings.filterNextUp=false;await release();
+ assert.equal(card.classList.contains('je-hidden'),false);
+});
+test('control: a delayed parent hide applies in its own still-current scope',async t=>{
+ const {h,release}=delayedParent(t);const [card]=mount(h,1);h.api.filterNativeCards();await h.settle();await release();
+ assert.equal(card.classList.contains('je-hidden'),true);assert.equal(card.hasAttribute('data-je-hidden-checked'),true);
+});
+test('a delayed title identity is not written to a retained node that now shows another item',async t=>{
+ const gate=deferred();const h=setup(t,()=>gate.promise);
+ h.api.getHiddenData().items={provider:{type:'Movie',tmdbId:'42'}};h.api.rebuildSets();
+ const [card]=mount(h,1,'Movie');h.api.filterNativeCards();await h.settle();
+ card.dataset.id='other';gate.resolve({Items:[{Id:'e0',Type:'Movie',ProviderIds:{Tmdb:'42'}}]});await h.settle();
+ assert.equal(card.dataset.tmdbId,undefined,'identity belongs to e0, not the node now showing another item');
+ assert.equal(card.classList.contains('je-hidden'),false);
+});

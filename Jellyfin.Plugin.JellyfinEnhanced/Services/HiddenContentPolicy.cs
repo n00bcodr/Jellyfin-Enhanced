@@ -87,11 +87,27 @@ public sealed class HiddenContentPolicy
     }
 
     /// <summary>Canonical typed TMDB title key; children need their parent's provider id explicitly.</summary>
-    public static string? TitleIdentity(string? type, string? tmdb)
+    public static string? TitleIdentity(string? type, string? tmdb) => ParseOwningTitle(type, tmdb, extended: false) is { } title ? title.Key : null;
+
+    /// <summary>The owning title of a TMDB title, season or episode key ("42", "42:s1", "42:s1:e2"), as guarded routes receive it.</summary>
+    public static string? OwningTitle(string? type, string? key) => ParseOwningTitle(type, key) is { } title ? title.Key : null;
+
+    /// <summary>
+    /// The one parser for title identities: every typed TMDB key, including the extended season/episode keys
+    /// that review routes receive, resolves here to its owning title. Movies have no season/episode keys.
+    /// </summary>
+    public static (string Key, int TmdbId)? ParseOwningTitle(string? type, string? key, bool extended = true)
     {
         var kind = type?.ToLowerInvariant() switch { "movie" => "movie", "series" or "tv" => "tv", _ => null };
-        return kind != null && int.TryParse(tmdb, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
-            ? kind + ":tmdb:" + id.ToString(CultureInfo.InvariantCulture) : null;
+        if (kind == null || string.IsNullOrEmpty(key)) return null;
+        var parts = key.Split(':');
+        if (parts.Length > (extended && kind == "tv" ? 3 : 1)
+            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0
+            || parts.Length > 1 && !Ordinal(parts[1], 's') || parts.Length > 2 && !Ordinal(parts[2], 'e')) return null;
+        return (kind + ":tmdb:" + id.ToString(CultureInfo.InvariantCulture), id);
+
+        static bool Ordinal(string part, char prefix)
+            => part.Length > 1 && part[0] == prefix && int.TryParse(part.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out _);
     }
 
     /// <summary>Validates a provider rule key (whole title only, positive Int32 TMDB id).</summary>

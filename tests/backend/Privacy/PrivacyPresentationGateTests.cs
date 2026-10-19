@@ -115,4 +115,96 @@ public class PrivacyPresentationGateTests
         var json=TitlePresentationGate.Read(f.Core.Manager,service,user).Project("""{"rows":{"series":"tv:tmdb:42","episodes":[{"episode":1,"title":"secret","overview":"secret","still":"/secret.jpg"}]}}""","requests",null,"page");
         Assert.DoesNotContain("secret",json);
     }
+
+    [Theory]
+    [InlineData("reviews/tv/42", true)]
+    [InlineData("reviews/tv/42:s1", true)]
+    [InlineData("reviews/tv/42:s1:e2", true)]
+    [InlineData("reviews/tv/042:s01:e02", true)]
+    [InlineData("reviews/tv/43:s1", false)]
+    [InlineData("reviews/tv/43:s1:e2", false)]
+    public void ReviewRoutesResolveSeasonAndEpisodeKeysToTheGuardedSeries(string path, bool guarded)
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(f, user, "tv:tmdb:42");
+        f.Plugin.Configuration.SpoilerStripReviews = false;
+        var final = PrivacyOperationalProjectionTests.Final(f, spoilers, user, path, new ContentResult
+        {
+            Content = """{"reviews":[{"userId":"u","userName":"Viewer","content":"kept text","rating":9}],"averageRating":9,"totalReviews":1}""",
+            ContentType = "application/json"
+        });
+        var review = final["reviews"]![0]!;
+        Assert.Equal("kept text", review["content"]!.GetValue<string>());
+        Assert.Equal(guarded, review["rating"] == null);
+        Assert.Equal(guarded, final["averageRating"] == null);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReviewRatingMapResolvesExtendedKeysToTheOwningSeries(bool suppress)
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(f, user, "tv:tmdb:42", suppress);
+        var final = PrivacyOperationalProjectionTests.Final(f, spoilers, user, "reviews/ratings", new ContentResult
+        {
+            Content = """{"ratings":{"tv:42":{"average":4,"count":1},"tv:42:s1":{"average":4,"count":1},"tv:42:s1:e2":{"average":4,"count":1},"tv:43:s1:e2":{"average":3,"count":1}}}""",
+            ContentType = "application/json"
+        });
+        var ratings = final["ratings"]!.AsObject();
+        foreach (var key in new[] { "tv:42", "tv:42:s1", "tv:42:s1:e2" })
+            Assert.Equal(suppress, ratings[key] == null);
+        Assert.Equal(3, ratings["tv:43:s1:e2"]!["average"]!.GetValue<int>());
+    }
+
+    [Theory]
+    [InlineData("tv", "42", "tv:tmdb:42")]
+    [InlineData("tv", "42:s1", "tv:tmdb:42")]
+    [InlineData("series", "42:s1:e2", "tv:tmdb:42")]
+    [InlineData("tv", "0042:s0:e0", "tv:tmdb:42")]
+    [InlineData("movie", "603", "movie:tmdb:603")]
+    [InlineData("movie", "603:s1", null)]
+    [InlineData("tv", "42:e2", null)]
+    [InlineData("tv", "42:s1:e2:x", null)]
+    [InlineData("tv", "0", null)]
+    [InlineData("tv", "4294967296", null)]
+    [InlineData("tv", "-1", null)]
+    [InlineData("tv", "４２", null)]
+    [InlineData("person", "42", null)]
+    [InlineData(null, "42", null)]
+    public void OwningTitleIsTheSingleCanonicalRouteIdentityParser(string? type, string key, string? expected)
+        => Assert.Equal(expected, HiddenContentPolicy.OwningTitle(type, key));
+
+    [Theory]
+    [InlineData("movie", "603:s1")]
+    [InlineData("tv", "0:s1")]
+    [InlineData("tv", "42:e2")]
+    [InlineData("tv", "99999999999")]
+    public void ReviewRoutesRejectKeysWithoutAnOwningTitle(string type, string key)
+    {
+        using var f = new ApiPluginFixture();
+        var c = ApiAssetTests.Controller(f.Core, f.Core.Manager);
+        c.HttpContext.User = TestCallers.Principal(Guid.NewGuid(), false);
+        Assert.IsType<BadRequestObjectResult>(c.GetItemReviews(type, key));
+        Assert.IsType<BadRequestObjectResult>(c.UpsertReview(type, key, new() { Content = "text", Rating = 4 }));
+        Assert.IsType<BadRequestObjectResult>(c.DeleteReview(type, key));
+    }
+
+    [Theory]
+    [InlineData("42")]
+    [InlineData("42:s1")]
+    [InlineData("42:s1:e2")]
+    public void SuppressedReviewsCoverTheGuardedSeriesSeasonsAndEpisodes(string key)
+    {
+        using var f = new ApiPluginFixture();
+        var user = Guid.NewGuid();
+        var spoilers = PrivacyOperationalProjectionTests.Guard(f, user, "tv:tmdb:42");
+        f.Plugin.Configuration.SpoilerStripReviews = true;
+        var c = ApiAssetTests.Controller(f.Core, f.Core.Manager, spoilers);
+        c.HttpContext.User = TestCallers.Principal(user, false);
+        var body = System.Text.Json.JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(c.GetItemReviews("tv", key)).Value);
+        Assert.Contains("\"totalReviews\":0", body);
+    }
 }

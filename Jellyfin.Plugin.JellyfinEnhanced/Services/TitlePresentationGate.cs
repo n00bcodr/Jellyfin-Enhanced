@@ -193,7 +193,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         string? kind = p.FirstOrDefault(v => v is "movie" or "tv");
         string? title = null;
         for (var i = 0; i + 1 < p.Length; i++)
-            if (HiddenContentPolicy.TitleIdentity(p[i], p[i + 1]) is { } key) { title = key; break; }
+            if (HiddenContentPolicy.OwningTitle(p[i], p[i + 1]) is { } key) { title = key; break; }
         var seasonAt = Array.IndexOf(p, "season"); var episodeAt = Array.IndexOf(p, "episode");
         var season = seasonAt >= 0 && seasonAt + 1 < p.Length && int.TryParse(p[seasonAt + 1], out var sn) ? sn : 0;
         var episode = episodeAt >= 0 && episodeAt + 1 < p.Length && int.TryParse(p[episodeAt + 1], out var en) ? en : 0;

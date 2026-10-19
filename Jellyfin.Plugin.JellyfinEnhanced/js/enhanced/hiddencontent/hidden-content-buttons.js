@@ -24,7 +24,7 @@
         titlesInFlight = action;
         try {
             const byId = new Map();
-            for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
+            for (const card of internal.nativeNodes()) {
                 const id = getCardItemId(card);
                 const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
                 if (internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)) || (titlesRetryAt.get(id)?.action.current() && Date.now() < titlesRetryAt.get(id).retryAt) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
@@ -49,6 +49,8 @@
                         if (!title) continue;
                         checkedTitleIds.delete(internal.normalizeId(item.Id));
                         for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
+                            // A retained node that now shows another item keeps its own identity.
+                            if (getCardItemId(card) !== internal.normalizeId(item.Id)) continue;
                             card.dataset.type = title.type;
                             card.dataset.tmdbId = title.tmdbId;
                             card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();

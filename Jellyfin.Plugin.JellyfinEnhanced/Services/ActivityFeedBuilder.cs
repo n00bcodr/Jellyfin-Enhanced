@@ -1,3 +1,4 @@
+using System.Globalization;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -88,6 +89,8 @@ internal sealed class ActivityFeedBuilder(
                 var timestamp = string.IsNullOrEmpty(review.UpdatedAt) ? review.CreatedAt : review.UpdatedAt;
                 if (!DateTimeOffset.TryParse(timestamp, out var occurred)) continue;
                 Guid.TryParseExact(review.UserId, "N", out var authorId);
+                // The owning title's TMDB id; legacy rows without a media type keep the single-match lookup below.
+                var owner = HiddenContentPolicy.ParseOwningTitle(review.MediaType == "movie" ? "movie" : "tv", review.TmdbId);
                 candidates.Add(new Candidate(new ActivityFeedItem
                 {
                     ActivityType = "Reviewed",
@@ -95,7 +98,7 @@ internal sealed class ActivityFeedBuilder(
                     Timestamp = occurred.ToUnixTimeMilliseconds(),
                     Rating = review.Rating,
                     Content = review.Content
-                }, Guid.Empty, authorId, review.TmdbId.Split(':')[0], review.MediaType));
+                }, Guid.Empty, authorId, owner?.TmdbId.ToString(CultureInfo.InvariantCulture), review.MediaType));
             }
         }
 
