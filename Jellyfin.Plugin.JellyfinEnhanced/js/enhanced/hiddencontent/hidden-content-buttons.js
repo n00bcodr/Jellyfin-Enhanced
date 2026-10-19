@@ -168,7 +168,7 @@
                             try {
                                 const saved = await internal.saveTitleRule(title, true).catch(() => false);
                                 if (saved && action.current()) {
-                                    card.classList.toggle('je-hidden', internal.shouldFilterSurface(surface || internal.getCurrentNativeSurface()));
+                                    internal.requestNativeDecision();
                                     setHiddenState();
                                 }
                                 else btn.textContent = JE.t('hidden_content_save_failed_persistent');
@@ -180,9 +180,7 @@
                         }
                         return saveConfirmedTitle();
                     }
-                    confirmAndHide(itemData, () => {
-                        card.classList.add('je-hidden');
-                    });
+                    confirmAndHide(itemData, () => internal.requestNativeDecision());
                 }
             };
         }
@@ -237,7 +235,7 @@
                 dialogOpts.showEpisodeChoice = true;
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: surface });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
                 dialogOpts.onChooseShow = async () => {
                     let seriesTmdbId = '';
@@ -256,26 +254,25 @@
                         type: 'Series',
                         tmdbId: seriesTmdbId
                     });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
             } else {
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: surface });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
             dialogOpts.onChooseScoped = () => {
                 hideItem({ itemId, name: cardName, hideScope: surface });
-                card.classList.add('je-hidden');
+                internal.requestNativeDecision();
             };
         }
 
         if (!action.current()) return;
-        confirmAndHide(itemData, () => {
-            card.classList.add('je-hidden');
-        }, dialogOpts);
+        // The hide's own refresh decides the card by every rule (scope, surface switch, parent series).
+        confirmAndHide(itemData, () => internal.requestNativeDecision(), dialogOpts);
     }
 
     /**

@@ -15,7 +15,6 @@
     const debouncedSave = (...args) => internal.debouncedSave(...args);
     const showUndoToast = (...args) => internal.showUndoToast(...args);
     const refreshNativeCardVisibility = (...args) => internal.refreshNativeCardVisibility(...args);
-    const restoreNativeCardsForIds = (...args) => internal.restoreNativeCardsForIds(...args);
 
     // ============================================================
     // State
@@ -125,6 +124,11 @@
         return task;
     }
 
+    /** A JE-rendered card (discover, Seerr, hub, request row): native cards are decided only by the filter. */
+    function jeOwnedCard(card) {
+        return card && !internal.isNativeNode?.(card) ? card : null;
+    }
+
     /** Shared control host for native pages/cards, modal and future list/home renderers. */
     function buildTitleControl(data, options = {}) {
         const title = titleData(data);
@@ -141,7 +145,9 @@
             const label = JE.t(hidden ? 'hidden_content_unhide' : 'hidden_content_hide_button');
             const card = options.card || button.closest('.je-discover-card, .jellyseerr-card, .card, .je-hub-entry, [data-je-hide-title]');
             const surface = typeof options.surface === 'function' ? options.surface() : options.surface || 'recommendations';
-            if (card) card.classList.toggle('je-hidden', hidden && shouldFilterSurface(surface));
+            // A native card's visibility has one writer using every rule; the repaint only asks it to decide again.
+            if (internal.isNativeNode?.(card)) internal.requestNativeDecision?.();
+            jeOwnedCard(card)?.classList.toggle('je-hidden', hidden && shouldFilterSurface(surface));
             button.classList.toggle('je-already-hidden', hidden);
             const iconName = hidden ? 'visibility_off' : 'visibility';
             if (button.dataset.jeHideIcon !== iconName) {
@@ -498,11 +504,9 @@
             return saveTitleRule(title, false).catch(() => false);
         }
         const newItems = { ...data.items };
-        let restoredJellyfinId = '';
 
         // Try direct key match first (covers storage keys like "tmdb-12345")
         if (newItems[itemId]) {
-            restoredJellyfinId = newItems[itemId].itemId || '';
             delete newItems[itemId];
         } else {
             // Fallback: itemId might be a Jellyfin ID — find the matching storage key.
@@ -514,10 +518,7 @@
             const matchingKey = wanted
                 ? Object.keys(newItems).find(k => normalizeId(newItems[k].itemId) === wanted)
                 : undefined;
-            if (matchingKey) {
-                restoredJellyfinId = newItems[matchingKey].itemId || itemId || '';
-                delete newItems[matchingKey];
-            }
+            if (matchingKey) delete newItems[matchingKey];
         }
 
         hiddenData = { ...data, items: newItems };
@@ -525,11 +526,7 @@
         rebuildSets();
         debouncedSave();
         emitChange();
-
-        const idsToRestore = new Set();
-        if (restoredJellyfinId) idsToRestore.add(restoredJellyfinId);
-        else if (itemId && !String(itemId).startsWith('tmdb-')) idsToRestore.add(itemId);
-        restoreNativeCardsForIds(idsToRestore);
+        // The filter shows the item's cards again unless another rule still hides them.
         refreshNativeCardVisibility();
     }
 
@@ -665,14 +662,12 @@
      * Unhides all items, restoring full visibility.  Clears the entire items map.
      */
     function unhideAll() {
-        const oldHiddenIds = new Set(hiddenIdSet);
         const data = getHiddenData();
         hiddenData = { ...data, items: {} };
         JE.userConfig.hiddenContent = hiddenData;
         rebuildSets();
         debouncedSave();
         emitChange();
-        restoreNativeCardsForIds(oldHiddenIds);
         refreshNativeCardVisibility();
     }
 
@@ -696,7 +691,8 @@
         hiddenTmdbIdSet.clear();
         knownTitles.clear();
         document.querySelectorAll('[data-je-title-key], .je-hide-btn, .je-detail-hide-btn').forEach(button => {
-            button.closest('[data-je-hide-title], .je-discover-card, .jellyseerr-card, .card, .je-hub-entry')?.classList.remove('je-hidden');
+            // Native cards are re-decided by the filter's own session pass.
+            jeOwnedCard(button.closest('[data-je-hide-title], .je-discover-card, .jellyseerr-card, .card, .je-hub-entry'))?.classList.remove('je-hidden');
             button.remove();
         });
     });

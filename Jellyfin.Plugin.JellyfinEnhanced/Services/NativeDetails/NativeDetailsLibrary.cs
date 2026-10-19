@@ -140,7 +140,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
             var copies = new List<BaseItem>();
             var seen = new HashSet<Guid>();
-            foreach (var providers in TitleAliases.ProviderQueries(key, aliases))
+            // "No copy" (and "the viewer can open none") is only an answer once every alias query has been read to its
+            // end: the shared builder caps one call at four queries, so the aliases go in slices that each fit, and no
+            // query has a row limit. A capped read could hide a copy the viewer can open, or prove an absence it never saw.
+            IEnumerable<TitleKey[]> slices = aliases.Count == 0 ? new[] { Array.Empty<TitleKey>() } : aliases.Chunk(3);
+            foreach (var providers in slices.SelectMany(slice => TitleAliases.ProviderQueries(key, slice)))
             {
                 // No user on the query: every copy in any library, whoever may see it.
                 var found = _library.GetItemList(new InternalItemsQuery
@@ -148,7 +152,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     IncludeItemTypes = new[] { movie ? BaseItemKind.Movie : BaseItemKind.Series },
                     HasAnyProviderId = providers,
                     Recursive = true,
-                    Limit = 20,
                     DtoOptions = new DtoOptions(false),
                 });
                 foreach (var item in found ?? new List<BaseItem>())

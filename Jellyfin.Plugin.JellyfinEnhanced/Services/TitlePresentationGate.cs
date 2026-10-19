@@ -34,6 +34,48 @@ public static class TitlePresentationGate
     }
 }
 
+/// <summary>
+/// Every response value a native endpoint answers with, enumerated exactly once. Hosts may answer with lazy sequences
+/// that build fresh DTOs on each enumeration (12.2's movie recommendations are a Select over the categories); a
+/// projection over one enumeration is lost on the next, so each owner projects the materialized instances and the
+/// materialized value is what MVC serializes.
+/// </summary>
+public static class NativeResponseValue
+{
+    /// <summary>Replaces the result's value with its materialized equivalent (the same instances when already materialized) and returns it.</summary>
+    public static object? Materialize(ObjectResult result)
+    {
+        switch (result.Value)
+        {
+            case QueryResult<BaseItemDto> page:
+                if (page.Items != null) page.Items = Once(page.Items);
+                break;
+            case IEnumerable<BaseItemDto> list:
+                result.Value = Once(list);
+                break;
+            case SearchHintResult hints when hints.SearchHints is not null && hints.SearchHints is not (SearchHint[] or List<SearchHint>):
+                result.Value = new SearchHintResult(hints.SearchHints.ToArray(), hints.TotalRecordCount);
+                break;
+            case IEnumerable<RecommendationDto> recommendations:
+                var once = Once(recommendations);
+                foreach (var recommendation in once)
+                    if (recommendation?.Items != null) recommendation.Items = Once(recommendation.Items);
+                result.Value = once;
+                break;
+            case IEnumerable<ImageInfo> images:
+                result.Value = Once(images);
+                break;
+            case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse { MediaSources: not null } playback:
+                playback.MediaSources = Once(playback.MediaSources);
+                break;
+        }
+        return result.Value;
+    }
+
+    /// <summary>Arrays and lists are already materialized; anything else is enumerated exactly once.</summary>
+    private static IReadOnlyList<T> Once<T>(IEnumerable<T> values) => values is T[] or List<T> ? (IReadOnlyList<T>)values : values.ToArray();
+}
+
 /// <summary>A fresh pair of effective policies used without an intervening asynchronous operation.</summary>
 public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, SpoilerPresentationContext? Spoilers)
 {
@@ -157,12 +199,15 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         return root.ToJsonString();
     }
 
-    /// <summary>Every response shape a guarded native endpoint returns (host-verified on 12.2 and 10.11.11), with the delivery-time policy.</summary>
+    /// <summary>
+    /// Every response shape a guarded native endpoint returns (host-verified on 12.2 and 10.11.11), with the delivery-time
+    /// policy: materialized once, those instances projected, and the projected value delivered.
+    /// </summary>
     private void DeliverNative(ResultExecutingContext context, ObjectResult result, TitlePresentationPolicy final, string? surface, Guid viewer)
     {
         try
         {
-            switch (result.Value)
+            switch (NativeResponseValue.Materialize(result))
             {
                 case BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto>:
                     ProjectNative(result, final, surface, viewer, context);
@@ -170,7 +215,10 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 case SearchHintResult hints:
                     ProjectSearchHints(result, hints, final, surface, viewer, context);
                     return;
-                case IEnumerable<ImageInfo> or IEnumerable<RecommendationDto> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse:
+                case IReadOnlyList<RecommendationDto> recommendations:
+                    ProjectRecommendations(recommendations, final, surface, viewer, context);
+                    return;
+                case IEnumerable<ImageInfo> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse:
                     StripDelivered(result, final, viewer, context);
                     return;
                 default:
@@ -200,7 +248,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <summary>Search hints carry no parent id: the owning series is read from the library, then hints are filtered like items.</summary>
     private void ProjectSearchHints(ObjectResult result, SearchHintResult page, TitlePresentationPolicy final, string? surface, Guid viewer, ResultExecutingContext context)
     {
-        var hints = page.SearchHints?.ToArray() ?? Array.Empty<SearchHint>();
+        var hints = page.SearchHints.ToArray();
         if (!final.Hidden.IsEmpty && hints.Length > 0)
         {
             final.Hidden.BindLibraryIds(library, hints.Select(h => h.Id));
@@ -228,6 +276,27 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     private void ProjectNative(ObjectResult result, TitlePresentationPolicy final, string? surface, Guid viewer, ActionContext context)
     {
         var items = result.Value switch { BaseItemDto one => new[] { one }, QueryResult<BaseItemDto> page => page.Items.ToArray(), IEnumerable<BaseItemDto> list => list.ToArray(), _ => Array.Empty<BaseItemDto>() };
+        var kept = ProjectItems(items, result.Value is BaseItemDto, final, surface, viewer, context);
+        if (result.Value is QueryResult<BaseItemDto> query) result.Value = new QueryResult<BaseItemDto>(query.StartIndex, Math.Max(0, query.TotalRecordCount - items.Length + kept.Length), kept);
+        else if (result.Value is not BaseItemDto) result.Value = kept;
+    }
+
+    /// <summary>Every category's items are projected in one batch; each category keeps its own projected items.</summary>
+    private void ProjectRecommendations(IReadOnlyList<RecommendationDto> recommendations, TitlePresentationPolicy final, string? surface, Guid viewer, ActionContext context)
+    {
+        var items = recommendations.Where(r => r?.Items != null).SelectMany(r => r.Items).ToArray();
+        var kept = ProjectItems(items, single: false, final, surface, viewer, context).ToHashSet(ReferenceEqualityComparer.Instance);
+        foreach (var recommendation in recommendations)
+            if (recommendation?.Items != null) recommendation.Items = recommendation.Items.Where(kept.Contains).ToArray();
+    }
+
+    /// <summary>
+    /// Hidden Content and Spoiler Guard for materialized DTOs. A library item gets the full native rule set (Jellyfin ID,
+    /// collection, provider and watched state) whether or not it carries TMDB metadata; an absent title is judged by
+    /// its typed identity.
+    /// </summary>
+    private BaseItemDto[] ProjectItems(BaseItemDto[] items, bool single, TitlePresentationPolicy final, string? surface, Guid viewer, ActionContext context)
+    {
         final.Hidden.BindLibraryIds(library, items.Select(i => i.Id));
         var real = items.Where(i => !SyntheticId.HasNamespace(i.Id)).ToArray();
         var identities = new Dictionary<Guid, string>();
@@ -240,24 +309,24 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             : HiddenContentPolicy.TitleIdentity(dto.Type.ToString(), dto.ProviderIds?.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value)
                 ?? identities.GetValueOrDefault(dto.SeriesId ?? dto.Id);
         string Surface(BaseItemDto item) => surface ?? HiddenContentResponseFilter.PresentationSurface(context, item);
-        var kept = items.Where(i => result.Value is BaseItemDto || !final.Hidden.IsHidden(Key(i), i.Id.ToString(), i.SeriesId?.ToString(), Surface(i)) && !final.Hidden.IsHidden(i, Surface(i))).ToArray();
+        var kept = items.Where(i => single || !final.Hidden.IsHidden(Key(i), i.Id.ToString(), i.SeriesId?.ToString(), Surface(i)) && !final.Hidden.IsHidden(i, Surface(i))).ToArray();
+        var config = JellyfinEnhanced.Instance?.Configuration;
         foreach (var dto in kept)
         {
-            var guarded = final.Spoilers?.Guarded(Key(dto)) == true;
             if (SyntheticId.HasNamespace(dto.Id))
             {
+                var guarded = final.Spoilers?.Guarded(Key(dto)) == true;
                 dto.ProviderIds ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 dto.ProviderIds["JeSpoilerGuarded"] = guarded ? "true" : "false";
+                if (guarded && final.Spoilers is { } absent && config != null) strip?.StripAbsent(dto, absent.State, config, viewer);
+                continue;
             }
-            if (guarded && final.Spoilers is { } presentation && JellyfinEnhanced.Instance?.Configuration is { } config)
-            {
-                if (SyntheticId.HasNamespace(dto.Id) || presentation.Unavailable)
-                    strip.StripAbsent(dto, presentation.State, config, viewer);
-                else strip.StripLibraryItem(dto, presentation.State, config, viewer);
-            }
+            if (final.Spoilers is not { Enabled: true } presentation || config == null) continue;
+            // Unknown policy fails closed; otherwise the native strip decides from the item itself, never from a TMDB key.
+            if (presentation.Unavailable) strip?.StripAbsent(dto, presentation.State, config, viewer);
+            else if (SpoilerFieldStripFilter.HasEntries(presentation.State)) strip?.StripLibraryItem(dto, presentation.State, config, viewer);
         }
-        if (result.Value is QueryResult<BaseItemDto> query) result.Value = new QueryResult<BaseItemDto>(query.StartIndex, Math.Max(0, query.TotalRecordCount - items.Length + kept.Length), kept);
-        else if (result.Value is not BaseItemDto) result.Value = kept;
+        return kept;
     }
 
     private sealed record Schema(string Surface, string? Title, string Resource, string? Kind = null, string? Scope = null, int Season = 0, int Episode = 0);
