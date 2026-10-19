@@ -16,9 +16,16 @@
         return code;
     }
 
+    // A complete language tag: a 2-3 letter language, then an optional 4-letter script, an optional region (2 letters or
+    // 3 digits) and variants (5-8 letters or digits, or a digit and 3 more), each variant once. The server's
+    // Helpers/LanguageTags.Canonical and the copy in plugin.js use the same expression (shared table:
+    // tests/backend/Api/language-tags.json).
+    const LANGUAGE_TAG = /^([A-Za-z]{2,3})(?:-([A-Za-z]{4}))?(?:-([A-Za-z]{2}|[0-9]{3}))?((?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$/;
+
     /**
-     * A language tag JE may use, normalized (`en-au` → `en-AU`), or '' for anything else: a literal "undefined" or
-     * "null" (a value stringified by mistake), an empty or malformed value, or one Intl refuses.
+     * A complete language tag in canonical case (`en-au` → `en-AU`, `zh-hant-tw` → `zh-Hant-TW`), or '' for anything
+     * else: a literal "undefined" or "null" (a value stringified by mistake), an empty or malformed value (`en-12`,
+     * `en-US-US`), or one Intl refuses.
      * @param {*} raw A stored or configured value.
      * @returns {string} The tag, or ''.
      */
@@ -26,8 +33,13 @@
         if (typeof raw !== 'string') return '';
         const code = raw.trim();
         if (!code || /^(undefined|null|nan|true|false)$/i.test(code)) return '';
-        if (!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
-        const normalized = normalizeLangCode(code);
+        const match = LANGUAGE_TAG.exec(code);
+        if (!match) return '';
+        const variants = match[4].split('-').filter(Boolean).map(v => v.toLowerCase());
+        if (new Set(variants).size !== variants.length) return '';
+        const normalized = [match[1].toLowerCase(),
+            match[2] ? match[2][0].toUpperCase() + match[2].slice(1).toLowerCase() : '',
+            match[3] ? match[3].toUpperCase() : '', ...variants].filter(Boolean).join('-');
         try {
             if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
         } catch (e) {

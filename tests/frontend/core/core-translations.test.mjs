@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, jsonResponse, plain } from '../helpers/harness.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
 function setup(t, fetch, apiClient={}, html='') {
   const h=createHarness({html,JE:{pluginVersion:'test-v1',cdn:{url:(source,path)=>`http://jellyfin.test/cdn/${source}/${path}`}},apiClient:{getCurrentUser:()=>({Id:'a'}),...apiClient},fetch});
   t.after(()=>h.close());h.load('enhanced/translations.js');return h;
@@ -183,4 +184,21 @@ test('JE.supportedLanguageCode accepts only supported language tags', t => {
   h.JE.pluginConfig = {};
   assert.equal(write('pr'), '');
   assert.equal(write('en-AU'), 'en-AU');
+});
+
+// Stage 1 fix round 2 (RBS1-BEH-R2-2): the complete tag's syntax first (language, then optional script, region and
+// variants), then the exact or base-language match. One table with the server (tests/backend/Api/language-tags.json,
+// also read by ApiDisplayLanguageTests), so the client and server rules are the same.
+const LANGUAGE_TABLE = JSON.parse(readFileSync(new URL('../../backend/Api/language-tags.json', import.meta.url), 'utf8'));
+const SHIPPED = readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
+test('JE.languageCode follows the shared language-tag table', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  const wrong = LANGUAGE_TABLE.syntax.filter(([raw, expected]) => h.JE.languageCode(raw) !== expected).map(([raw, expected]) => `${raw} → ${h.JE.languageCode(raw)} (expected ${expected})`);
+  assert.deepEqual(wrong, []);
+});
+test('JE.supportedLanguageCode follows the shared write table with the shipped languages', t => {
+  const h = setup(t, async () => jsonResponse({}));
+  h.JE.pluginConfig = { SupportedLanguages: SHIPPED };
+  const wrong = LANGUAGE_TABLE.write.filter(([raw, expected]) => h.JE.supportedLanguageCode(raw) !== expected).map(([raw, expected]) => `${raw} → ${h.JE.supportedLanguageCode(raw)} (expected ${expected})`);
+  assert.deepEqual(wrong, []);
 });

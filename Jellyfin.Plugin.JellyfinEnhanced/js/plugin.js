@@ -1073,15 +1073,19 @@
     function seedDisplayLanguage(userId) {
         if (!userId) return;
         const languageKey = `${userId}-language`;
-        // A language tag, normalized (`pt-br` → `pt-BR`), or '' for a literal "undefined"/"null" or a malformed
-        // value (translations.js applies the same rule to what it reads).
+        // A complete language tag in canonical case (`pt-br` → `pt-BR`), or '' for a literal "undefined"/"null" or a
+        // malformed value (`en-12`, `en-US-US`): JE.languageCode's rule (translations.js), copied for when that module
+        // didn't load.
         const languageCode = (raw) => {
             if (typeof raw !== 'string') return '';
             const code = raw.trim();
-            if (!code || /^(undefined|null|nan|true|false)$/i.test(code) || !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code)) return '';
-            const parts = code.split('-');
-            const normalized = parts.length === 1 ? parts[0].toLowerCase()
-                : parts.length === 2 ? `${parts[0].toLowerCase()}-${parts[1].toUpperCase()}` : code;
+            const match = /^([A-Za-z]{2,3})(?:-([A-Za-z]{4}))?(?:-([A-Za-z]{2}|[0-9]{3}))?((?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$/.exec(code);
+            if (!code || /^(undefined|null|nan|true|false)$/i.test(code) || !match) return '';
+            const variants = match[4].split('-').filter(Boolean).map(v => v.toLowerCase());
+            if (new Set(variants).size !== variants.length) return '';
+            const normalized = [match[1].toLowerCase(),
+                match[2] ? match[2][0].toUpperCase() + match[2].slice(1).toLowerCase() : '',
+                match[3] ? match[3].toUpperCase() : '', ...variants].filter(Boolean).join('-');
             try {
                 if (typeof Intl !== 'undefined' && typeof Intl.getCanonicalLocales === 'function') Intl.getCanonicalLocales(normalized);
             } catch (e) {

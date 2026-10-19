@@ -62,6 +62,63 @@ public class ApiDisplayLanguageTests
         Assert.Equal(stored, UserSettingsDefaults.Create(f.Plugin.Configuration).DisplayLanguage);
     }
 
+    // Stage 1 fix round 2 (RBS1-BEH-R2-2): the complete tag's syntax is checked before any exact or base-language match,
+    // so a malformed tag of a shipped language (en-12, en-US-US) is Auto, and a valid one (en-AU, pt-BR, zh-Hant) is kept,
+    // on every server write: a save, the first-read seed and a reset. One table with the client
+    // (tests/backend/Api/language-tags.json).
+    private static JsonElement Table(string name)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "tests", "backend", "Api", "language-tags.json")));
+        return document.RootElement.GetProperty(name).Clone();
+    }
+
+    public static IEnumerable<object?[]> Writes()
+    {
+        foreach (var row in Table("write").EnumerateArray())
+            foreach (var path in new[] { "save", "seed", "reset" })
+                yield return new object?[] { row[0].GetString(), row[1].GetString(), path };
+    }
+
+    [Theory]
+    [MemberData(nameof(Writes))]
+    public void EveryServerWriteChecksTheWholeTagBeforeMatchingAShippedLanguage(string raw, string expected, string path)
+    {
+        using var f = new ApiPluginFixture();
+        var person = Guid.NewGuid();
+        var admin = Controller(f, Guid.NewGuid());
+        admin.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            new[] { new Claim("Jellyfin-UserId", Guid.NewGuid().ToString()), new Claim(ClaimTypes.Role, "Administrator") }, "test"));
+        switch (path)
+        {
+            case "save":
+                Assert.IsType<OkObjectResult>(Controller(f, person).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = raw }));
+                break;
+            case "seed":
+                f.Plugin.Configuration.DefaultLanguage = raw;
+                Assert.IsType<OkObjectResult>(Controller(f, person).GetUserSettingsSettings(person.ToString("N")));
+                break;
+            default:
+                Assert.IsType<OkObjectResult>(Controller(f, person).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = "fr" }));
+                f.Plugin.Configuration.DefaultLanguage = raw;
+                Assert.IsType<OkObjectResult>(admin.ResetAllUsersSettings());
+                break;
+        }
+
+        Assert.Equal(expected, Stored(f, person).DisplayLanguage);
+    }
+
+    // The server's syntax rule is the client's (JE.languageCode): the same table, the same answers.
+    [Fact]
+    public void TheServersLanguageTagSyntaxIsTheClients()
+    {
+        var canonical = typeof(Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags).GetMethod("Canonical", new[] { typeof(string) });
+        Assert.NotNull(canonical);
+        var wrong = Table("syntax").EnumerateArray()
+            .Select(row => (Raw: row[0].GetString(), Expected: row[1].GetString(), Got: (string?)canonical!.Invoke(null, new object?[] { row[0].GetString() })))
+            .Where(r => r.Expected != r.Got).Select(r => $"{r.Raw} → {r.Got} (expected {r.Expected})").ToList();
+        Assert.Empty(wrong);
+    }
+
     [Fact]
     public void ThePublicConfigurationListsTheLanguagesJeShips()
     {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, plain, deferred } from '../helpers/harness.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
 const payload = (extra = {}) => ({ UserId: 'user-a', Version: '1.2.3', PublicConfig: {}, PrivateConfig: null,
@@ -293,4 +294,20 @@ test('a household contact that starts a sentence starts with a capital ("the adm
   assert.equal(t1('waiting', { contact: 'the admin' }), 'Waiting for the admin to OK it', 'mid-sentence it stays as it is');
   assert.equal(t1('said_no', { contact: 'Dad' }), 'Dad said no');
   assert.equal(t1('ready', { title: 'iCarly' }), 'iCarly is ready', 'only the contact is touched, never a title');
+});
+
+// Stage 1 fix round 2 (RBS1-BEH-R2-2): the seed's own copy of the rule (used when translations.js didn't load, as
+// here) follows the table the server and translations.js use (tests/backend/Api/language-tags.json): the complete tag
+// first, then the shipped-language match.
+const LANGUAGE_TABLE = JSON.parse(readFileSync(new URL('../../backend/Api/language-tags.json', import.meta.url), 'utf8'));
+const SHIPPED = readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
+for (const [raw, expected] of LANGUAGE_TABLE.write) test(`the seed writes ${JSON.stringify(expected || null)} for a configured language ${JSON.stringify(raw)} (shared table)`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: { DefaultLanguage: raw, SupportedLanguages: SHIPPED } }) });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected || null);
+});
+for (const [raw, expected] of LANGUAGE_TABLE.syntax.filter(([raw]) => raw.trim())) test(`a stored language ${JSON.stringify(raw)} is ${expected ? 'kept' : 'removed'} by the seed (shared table)`, async t => {
+  const h = setup(t, { data: payload({ PublicConfig: {} }), storage: { 'user-a-language': raw } });
+  await until(() => h.plugin.initialized);
+  assert.equal(h.window.localStorage.getItem('user-a-language'), expected ? raw : null);
 });
