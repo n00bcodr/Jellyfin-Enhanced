@@ -51,13 +51,7 @@ When Weblate is unavailable, maintainers can update locale JSON in the repositor
     node scripts/validate-translations.js validate
     ```
 
-5. For a new language file, regenerate the language list JE accepts, and include both changed files in the pull request:
-
-    ```bash
-    python3 scripts/generate_language_policy.py
-    ```
-
-    It updates `js/language-policy.json` and its copy in `js/enhanced/translations.js`. Until then, the language can't be saved as anyone's choice, and the test suite reports the list as out of date.
+5. A new language file needs nothing else: the plugin reads the language list from the locale files it is built with, so once the file is in `js/locales/`, the language can be chosen and saved.
 
 6. Fix errors and review warnings, then submit a pull request describing the language and changes.
 

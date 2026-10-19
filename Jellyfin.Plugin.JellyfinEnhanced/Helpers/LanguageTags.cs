@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -9,16 +11,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 {
     /// <summary>
     /// The display languages JE stores and hands to clients (a person's <c>DisplayLanguage</c>, the administrator's default
-    /// as each person's first setting). The rule is data, js/language-policy.json (generated from js/locales by
-    /// scripts/generate_language_policy.py), embedded here and carried by the client (<c>JE.languageCode</c> and
-    /// <c>JE.supportedLanguageCode</c> in js/enhanced/translations.js), so both sides compute the same answer; neither asks
-    /// which cultures the platform knows.
+    /// as each person's first setting). The rule is data: js/language-policy.json (the tag syntax), and the locale bundles
+    /// this build ships, read at run time from its embedded js/locales resources (a locale file added to js/locales is a
+    /// language JE ships, with no other step). The client gets the same data inside the translations script the server
+    /// serves (<see cref="TranslationsScript"/>; <c>JE.languageCode</c> and <c>JE.supportedLanguageCode</c>), so both sides
+    /// compute the same answer; neither asks which cultures the platform knows.
     /// </summary>
     public static class LanguageTags
     {
-        private const string PolicyResource = "Jellyfin.Plugin.JellyfinEnhanced.js.language-policy.json";
+        private const string ResourcePrefix = "Jellyfin.Plugin.JellyfinEnhanced.js.";
+        private const string PolicyResource = ResourcePrefix + "language-policy.json";
+        private const string LocalePrefix = ResourcePrefix + "locales.";
+        private const string TranslationsResource = ResourcePrefix + "enhanced.translations.js";
 
-        private sealed record Policy(char[] Space, IReadOnlyList<string> Reserved, Regex Tag, IReadOnlyList<string> Shipped);
+        /// <summary>The line of js/enhanced/translations.js the server replaces with the policy when it serves the file.</summary>
+        private const string PolicyPlaceholder = "const LANGUAGE_POLICY = null; // je:language-policy";
+
+        private sealed record Policy(string SpaceText, char[] Space, IReadOnlyList<string> Reserved, string TagPattern, Regex Tag);
 
         private static readonly Lazy<Policy> Loaded = new(() =>
         {
@@ -26,16 +35,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 ?? throw new InvalidOperationException("The embedded js/language-policy.json is missing.");
             using var document = JsonDocument.Parse(stream);
             var root = document.RootElement;
-            static IReadOnlyList<string> Strings(JsonElement list) => list.EnumerateArray().Select(e => e.GetString()!).ToArray();
+            var space = root.GetProperty("space").GetString()!;
+            var tag = root.GetProperty("tag").GetString()!;
             return new Policy(
-                root.GetProperty("space").GetString()!.ToCharArray(),
-                Strings(root.GetProperty("reserved")),
-                new Regex(root.GetProperty("tag").GetString()!, RegexOptions.CultureInvariant),
-                Strings(root.GetProperty("shipped")));
+                space,
+                space.ToCharArray(),
+                root.GetProperty("reserved").EnumerateArray().Select(e => e.GetString()!).ToArray(),
+                tag,
+                new Regex(tag, RegexOptions.CultureInvariant));
         });
 
-        /// <summary>The locale codes JE ships (its own locale files, <c>en</c> included), as the policy lists them.</summary>
-        public static IReadOnlyList<string> Bundled => Loaded.Value.Shipped;
+        // The locale bundles the build embeds (js/locales/<code>.json): each file name that is a language tag.
+        private static readonly Lazy<IReadOnlyList<string>> Shipped = new(() => Assembly.GetExecutingAssembly().GetManifestResourceNames()
+            .Where(name => name.StartsWith(LocalePrefix, StringComparison.Ordinal) && name.EndsWith(".json", StringComparison.Ordinal))
+            .Select(name => name[LocalePrefix.Length..^".json".Length])
+            .Where(code => Canonical(code).Length > 0)
+            .OrderBy(code => code, StringComparer.OrdinalIgnoreCase)
+            .ToArray());
+
+        private static readonly Lazy<string> Served = new(() =>
+        {
+            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(TranslationsResource)
+                ?? throw new InvalidOperationException("The embedded js/enhanced/translations.js is missing.");
+            using var reader = new System.IO.StreamReader(stream, Encoding.UTF8);
+            var policy = Loaded.Value;
+            var json = JsonSerializer.Serialize(
+                new { space = policy.SpaceText, reserved = policy.Reserved, tag = policy.TagPattern, shipped = Bundled },
+                new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+            return reader.ReadToEnd().Replace(PolicyPlaceholder, "const LANGUAGE_POLICY = " + json + ";", StringComparison.Ordinal);
+        });
+
+        /// <summary>The locale codes JE ships: its embedded locale files (<c>en</c> included), ordered case-insensitively.</summary>
+        public static IReadOnlyList<string> Bundled => Shipped.Value;
+
+        /// <summary>
+        /// js/enhanced/translations.js as the server serves it: the policy line carries the rule (js/language-policy.json) and
+        /// the locale bundles this build ships (<see cref="Bundled"/>). Without it the client accepts no language at all.
+        /// </summary>
+        /// <returns>The script.</returns>
+        public static string TranslationsScript() => Served.Value;
 
         /// <summary>
         /// A display language JE may store: a complete language tag (<see cref="Canonical"/>: <c>pt-br</c> → <c>pt-BR</c>) that

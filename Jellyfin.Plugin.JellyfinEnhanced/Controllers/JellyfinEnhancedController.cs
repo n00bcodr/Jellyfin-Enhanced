@@ -3980,7 +3980,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.DefaultSubtitleTextEffect,
                 config.DisableCustomSubtitleStyles,
                 // As the display-language gate stores it (a value saved before the gate existed is handed out as Auto). The
-                // client carries the same policy itself (js/enhanced/translations.js), so no language list is sent.
+                // client gets the same policy inside the translations script it is served, so no language list is sent.
                 DefaultLanguage = LanguageTags.Sanitize(config.DefaultLanguage),
                 // Overlay positions
                 config.QualityTagsPosition,
@@ -5193,7 +5193,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private ActionResult GetScriptResource(string resourcePath)
         {
-            var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
+            // The translations script carries the display-language policy, written in as it is served (from the locale files
+            // this build embeds): see LanguageTags.TranslationsScript.
+            var stream = string.Equals(resourcePath, "js/enhanced/translations.js", StringComparison.Ordinal)
+                ? new MemoryStream(Encoding.UTF8.GetBytes(LanguageTags.TranslationsScript()))
+                : Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
             // Pick a content type that matches the requested file. Defaults to JS for the

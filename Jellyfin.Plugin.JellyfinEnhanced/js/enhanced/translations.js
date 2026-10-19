@@ -16,19 +16,15 @@
         return code;
     }
 
-    // The display-language rule, the same data as the server's (js/language-policy.json, Helpers/LanguageTags.cs): what JE
-    // stores, seeds or writes into Jellyfin's shared language key is a language tag that resolves to a locale bundle JE
-    // ships, exactly or by its base language. Carried here because translations load before the public configuration.
-    // BEGIN language-policy: generated from js/language-policy.json by scripts/generate_language_policy.py (do not edit)
-    const LANGUAGE_POLICY = {
-        "space": " \t\n\r\f\u000b",
-        "reserved": ["undefined", "null", "nan", "true", "false"],
-        "tag": "^(?<language>[A-Za-z]{2,3})(?:-(?<script>[A-Za-z]{4}))?(?:-(?<region>[A-Za-z]{2}|[0-9]{3}))?(?<variants>(?:-(?:[A-Za-z0-9]{5,8}|[0-9][A-Za-z0-9]{3}))*)$",
-        "shipped": ["ar", "bg", "ca", "cs", "da", "de", "en", "en-GB", "en-US", "es", "et", "fa", "fi", "fr", "gsw", "he", "hu", "it", "ko", "ml", "nl", "no", "pl", "pr", "pt", "pt-BR", "ru", "sk", "sv", "tr", "uk", "zh-CN", "zh-HK"]
-    };
-    // END language-policy
-    const LANGUAGE_TAG = new RegExp(LANGUAGE_POLICY.tag);
-    const SHIPPED_LANGUAGES = new Set(LANGUAGE_POLICY.shipped.map(code => code.toLowerCase()));
+    // The display-language rule, the same data as the server's (Helpers/LanguageTags.cs): what JE stores, seeds or writes
+    // into Jellyfin's shared language key is a language tag that resolves to a locale bundle JE ships, exactly or by its
+    // base language. The server writes the policy in on the next line when it serves this file: the tag syntax
+    // (js/language-policy.json) and the locale bundles this build ships (its embedded js/locales). Carried here because
+    // translations load before the public configuration. Unserved (null), JE has no rule: JE.languageCode and
+    // JE.supportedLanguageCode stay undefined, and nothing writes or removes a language.
+    const LANGUAGE_POLICY = null; // je:language-policy
+    const LANGUAGE_TAG = LANGUAGE_POLICY ? new RegExp(LANGUAGE_POLICY.tag) : null;
+    const SHIPPED_LANGUAGES = new Map((LANGUAGE_POLICY ? LANGUAGE_POLICY.shipped : []).map(code => [code.toLowerCase(), code]));
 
     /** The value without the policy's space characters at either end (ASCII only, as on the server). */
     function trimSpace(value) {
@@ -46,7 +42,7 @@
      * @returns {string} The tag, or ''.
      */
     function languageCode(raw) {
-        if (typeof raw !== 'string') return '';
+        if (!LANGUAGE_POLICY || typeof raw !== 'string') return '';
         const code = trimSpace(raw);
         if (LANGUAGE_POLICY.reserved.includes(code.toLowerCase())) return '';
         const match = LANGUAGE_TAG.exec(code);
@@ -58,7 +54,16 @@
             region ? region.toUpperCase() : '', ...list].filter(Boolean).join('-');
     }
 
-    JE.languageCode = languageCode;
+    /**
+     * The shipped locale bundle a value resolves to (the tag's own, else its base language's), as the build names it
+     * (`pt-br` → `pt-BR`, `de-Latn-CH` → `de`), or '' when JE ships none for it.
+     * @param {*} raw A stored, configured or chosen value.
+     * @returns {string} The bundle's code, or ''.
+     */
+    function languageBundle(raw) {
+        const lower = languageCode(raw).toLowerCase();
+        return lower ? SHIPPED_LANGUAGES.get(lower) || SHIPPED_LANGUAGES.get(lower.split('-')[0]) || '' : '';
+    }
 
     /**
      * The language tag JE may WRITE (Jellyfin's shared `${userId}-language` key, its own displayLanguage): a tag
@@ -68,12 +73,14 @@
      * @returns {string} The tag, or ''.
      */
     function supportedLanguageCode(raw) {
-        const code = languageCode(raw);
-        const lower = code.toLowerCase();
-        return code && (SHIPPED_LANGUAGES.has(lower) || SHIPPED_LANGUAGES.has(lower.split('-')[0])) ? code : '';
+        return languageBundle(raw) ? languageCode(raw) : '';
     }
 
-    JE.supportedLanguageCode = supportedLanguageCode;
+    if (LANGUAGE_POLICY) {
+        JE.languageCode = languageCode;
+        JE.languageBundle = languageBundle;
+        JE.supportedLanguageCode = supportedLanguageCode;
+    }
 
     function buildLanguageChain(primaryLang) {
         const normalizedLang = normalizeLangCode(primaryLang);

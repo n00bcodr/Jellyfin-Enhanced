@@ -10427,7 +10427,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
-      "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.language-policy.json",
+      "literal": "language-policy.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs"
     },
     {

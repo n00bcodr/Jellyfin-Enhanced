@@ -169,7 +169,7 @@ test('JE.languageCode accepts language tags only', t => {
 // Dashcrash §7 (integration rebuild): what JE WRITES (the shared `${userId}-language` key, its own displayLanguage) is
 // a valid language tag that resolves to a locale bundle JE ships (exactly, or its base language). Anything else is ''
 // (Auto). Empty stays Auto. Stage 1 fix round 3 (RBS1-R3-2): the shipped bundles are data carried by translations.js
-// (generated from js/locales with the server's js/language-policy.json), not what the browser happens to know, and not
+// (fix round 4: written in by the server from the locale files the build embeds), not what the browser happens to know, and not
 // the public configuration (translations load before it arrives).
 test('JE.supportedLanguageCode accepts only tags of a shipped bundle', t => {
   const h = setup(t, async () => jsonResponse({}));
@@ -221,4 +221,32 @@ test('JE.supportedLanguageCode follows the shared write table with the shipped l
   const h = setup(t, async () => jsonResponse({}));
   const wrong = LANGUAGE_TABLE.write.filter(([raw, expected]) => h.JE.supportedLanguageCode(raw) !== expected).map(([raw, expected]) => `${raw} → ${h.JE.supportedLanguageCode(raw)} (expected ${expected})`);
   assert.deepEqual(wrong, []);
+});
+
+// Stage 1 fix round 4 (Q-REBUILD1FIX3-1): the shipped languages reach the browser inside the translations script the
+// server serves (from the locale resources the build embeds); the file itself carries no list. Unserved, the rule is
+// absent and JE writes or removes no language at all (the seed, the store's mirror and the panel check for it).
+test('the translations file as committed carries no language list: unserved, JE has no rule to write by', t => {
+  const source = readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /"shipped"/);
+  const h = createHarness({ JE: { pluginVersion: 'test-v1' } });
+  t.after(() => h.close());
+  h.window.eval(`[function () {\n${source}\n}][0]();`);
+  assert.equal(h.JE.languageCode, undefined);
+  assert.equal(h.JE.supportedLanguageCode, undefined);
+  assert.equal(typeof h.JE.loadTranslations, 'function', 'the rest of the module still loads');
+});
+test('served, the script accepts exactly the locale files the build ships, a newly added one included', async t => {
+  const { served, shippedLocales } = await import('../helpers/served-scripts.mjs');
+  const source = readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/translations.js', import.meta.url), 'utf8');
+  for (const locales of [shippedLocales(), [...shippedLocales(), 'eo']]) {
+    const h = createHarness({ JE: { pluginVersion: 'test-v1' } });
+    t.after(() => h.close());
+    h.window.eval(`[function () {\n${served('enhanced/translations.js', source, { locales })}\n}][0]();`);
+    assert.deepEqual(locales.filter(code => h.JE.supportedLanguageCode(code) !== code), []);
+    assert.equal(h.JE.supportedLanguageCode('eo-AU'), locales.includes('eo') ? 'eo-AU' : '');
+    assert.equal(h.JE.languageBundle('de-Latn-CH'), 'de');
+    assert.equal(h.JE.languageBundle('pt-br'), 'pt-BR');
+    assert.equal(h.JE.languageBundle('ja'), '');
+  }
 });

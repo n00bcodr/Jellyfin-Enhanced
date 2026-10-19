@@ -14,7 +14,7 @@ namespace JE.Tests;
 // administrator's default as each person's first or reset setting, is a language tag that resolves to a locale bundle JE
 // ships (exactly, or its base language) or Auto (""): never a literal "undefined" or "null", a malformed value or a
 // language JE has no bundle for, which the client would otherwise mirror into Jellyfin's shared language key. Stage 1 fix
-// round 3 (RBS1-R3-2): the rule is data (js/language-policy.json, generated from js/locales), the same on the client; no
+// round 3 (RBS1-R3-2): the rule is data (js/language-policy.json and the locale files the build embeds), the same on the client; no
 // culture the server happens to know makes a language acceptable.
 [Collection("Plugin singleton")]
 public class ApiDisplayLanguageTests
@@ -121,24 +121,8 @@ public class ApiDisplayLanguageTests
         Assert.Empty(wrong);
     }
 
-    // Stage 1 fix round 3 (RBS1-R3-2): the server's shipped languages are the policy file, which lists exactly the locale
-    // files (tests/runner/tests/test_language_policy.py checks it is current) and the locale bundles the build embeds.
-    [Fact]
-    public void TheServersShippedLanguagesAreThePolicyFileAndTheBundlesTheBuildEmbeds()
-    {
-        var root = Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "js");
-        using var policy = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "language-policy.json")));
-        var listed = policy.RootElement.GetProperty("shipped").EnumerateArray().Select(e => e.GetString()!).ToList();
-        var files = Directory.GetFiles(Path.Combine(root, "locales"), "*.json")
-            .Select(p => Path.GetFileNameWithoutExtension(p)!).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
-        Assert.Equal(files, listed);
-        Assert.Equal(listed, Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags.Bundled);
-        const string Prefix = "Jellyfin.Plugin.JellyfinEnhanced.js.locales.";
-        var embedded = typeof(Jellyfin.Plugin.JellyfinEnhanced.Helpers.LanguageTags).Assembly.GetManifestResourceNames()
-            .Where(n => n.StartsWith(Prefix, StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal))
-            .Select(n => n[Prefix.Length..^".json".Length]).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
-        Assert.Equal(listed, embedded);
-    }
+    // Stage 1 fix round 4: the shipped languages are the locale resources the build embeds, read at run time
+    // (ApiShippedLocalesTests; the committed list and its generator are gone).
 
     [Fact]
     public void ThePanelListsTheShippedLanguagesAndThePublicConfigurationCarriesNoSecondList()
@@ -148,7 +132,7 @@ public class ApiDisplayLanguageTests
         var controller = ApiAssetTests.Controller(f.Core, maintenance);
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
-        // The client carries the policy itself (translations.js, generated from the same file): no list to drift from it.
+        // The client gets the policy inside the translations script it is served: no second list to drift from it.
         Assert.False(document.RootElement.TryGetProperty("SupportedLanguages", out _));
         var shipped = Directory.GetFiles(Path.Combine(IntegrationAutoRequestLedgerTests.Root(), "Jellyfin.Plugin.JellyfinEnhanced", "js", "locales"), "*.json")
             .Select(Path.GetFileNameWithoutExtension).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
