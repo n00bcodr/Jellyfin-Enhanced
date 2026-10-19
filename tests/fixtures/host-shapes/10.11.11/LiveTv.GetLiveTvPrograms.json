@@ -1,0 +1,66 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "EndDate": "2026-10-19T15:00:00.0000000Z",
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "e5e3d6d980668efff7a9beaeaea78d74",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Program Now",
+   "Overview": "Secret plot r17 program now",
+   "People": [],
+   "ProviderIds": {},
+   "RunTimeTicks": 288000000000,
+   "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+   "StartDate": "2026-10-19T07:00:00.0000000Z",
+   "Taglines": [],
+   "Tags": [],
+   "Type": "Program",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "e5e3d6d980668efff7a9beaeaea78d74",
+    "Key": "e5e3d6d9-8066-8eff-f7a9-beaeaea78d74",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "EndDate": "2026-10-19T18:00:00.0000000Z",
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "a900b05ea9806e4ba14305701c18a270",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Program Later",
+   "Overview": "Secret plot r17 program later",
+   "People": [],
+   "ProviderIds": {},
+   "RunTimeTicks": 108000000000,
+   "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+   "StartDate": "2026-10-19T15:00:00.0000000Z",
+   "Status": "New",
+   "Taglines": [],
+   "Tags": [],
+   "TimerId": "090c593b81ea8cdf3d8fe035f1f95252",
+   "Type": "Program",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "a900b05ea9806e4ba14305701c18a270",
+    "Key": "a900b05e-a980-6e4b-a143-05701c18a270",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 2
+}

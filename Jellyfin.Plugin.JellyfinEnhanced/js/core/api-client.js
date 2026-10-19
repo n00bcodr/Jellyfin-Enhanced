@@ -14,7 +14,18 @@
 //   JE.core.api.fetch(url, options)  — full-URL fetch with auth + retry/dedup/cache
 //   JE.core.api.jf(path, options)    — same, path resolved via ApiClient.getUrl
 //   JE.core.api.plugin(path, options)— same, targeting /JellyfinEnhanced/ endpoints
+//   JE.core.api.session()            — the signed-in session, for a request sent later (see below)
 //   JE.core.api.manager              — the request manager (aliased as JE.requestManager)
+//
+// Bound requests (deferred work: retries, re-reads, queued writes, action-bar operations). A request made after
+// an await, a timer or a queue wait carries the session that asked for it, and optionally its owner's predicate:
+//   const session = JE.core.api.session();                // or JE.createSessionAction().session
+//   JE.core.api.plugin(path, { bound: { session, current: () => owner.isLive } });
+//   // shorthand: JE.core.api.plugin(path, { bound: action.bound(() => owner.isLive) })
+// The transport checks both immediately before the bytes go out (after the queue releases it, after whatever the
+// caller awaited first, and before every retry attempt) and sends with that session's own credentials; when the
+// session is no longer the signed-in one, or current() is not true, it rejects with an AbortError and sends nothing.
+// The answer is published only while both still hold. A call without `bound` behaves exactly as before.
 (function(JE) {
     'use strict';
 
@@ -786,6 +797,47 @@
 
     // ── Generalized authenticated fetch ──────────────────────────────────────
 
+    /**
+     * @typedef {Object} RequestSession
+     * @property {string} userId
+     * @property {string} serverId
+     * @property {string} token
+     * @property {*} epoch
+     * @property {() => boolean} current - Whether this is still the signed-in session (identity and epoch).
+     */
+
+    /**
+     * The signed-in session, captured now, for a request sent later.
+     * @returns {RequestSession}
+     */
+    function session() {
+        const userId = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
+        const server = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const serverId = server();
+        const token = ApiClient.accessToken();
+        return Object.freeze({
+            userId, serverId, token, epoch,
+            current: () => ApiClient.getCurrentUserId() === userId && server() === serverId
+                && ApiClient.accessToken() === token && JE.session?.isCurrent?.(epoch) !== false
+        });
+    }
+
+    /**
+     * The one bound-request check: the request's own session must still be the signed-in one and its owner's
+     * current() (when given) must be true. Used as the request's session assertion, so the transport runs it
+     * immediately before every send and again before the answer is published.
+     * @param {{session: RequestSession, current?: () => boolean}} bound
+     * @returns {(() => void) & {userId: string, token: string}}
+     */
+    function bindRequest(bound) {
+        const owner = bound?.session;
+        if (!owner || typeof owner.current !== 'function') throw new TypeError('A bound request needs the session that asked for it');
+        return Object.assign(() => {
+            if (!owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
+        }, { userId: owner.userId, token: owner.token });
+    }
+
     /** Captures the submitting identity, including switches before the session hook observes them. */
     function captureSession() {
         const userId = ApiClient.getCurrentUserId();
@@ -840,6 +892,8 @@
      * @property {'low'} [priority] - Decorative lookup (badges, icons, per-card tags): runs in
      *   a capped lane that yields to every waiting normal request, and is sent with
      *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
+     * @property {{session: RequestSession, current?: () => boolean}} [bound] - Deferred work: the session that
+     *   asked (and its owner's predicate). Checked immediately before every send; otherwise AbortError, nothing sent.
      */
 
     /**
@@ -862,10 +916,16 @@
             skipRetry = false,
             auth = true,
             timeoutMs,
-            priority
+            priority,
+            bound
         } = options;
 
-        const assertSession = captureSession();
+        // A bound request is checked against its own session before anything else (it may have been made after
+        // another account signed in); the live identity is then recorded as for any request.
+        const boundSession = bound ? bindRequest(bound) : null;
+        if (boundSession) boundSession();
+        const live = captureSession();
+        const assertSession = boundSession || live;
         const withStatus = responseMode === 'status';
         const isGet = method.toUpperCase() === 'GET';
         const presentation = presentationGeneration;
@@ -1032,7 +1092,7 @@
         return coreFetch(options.url, {
             method: options.type || 'GET', body: options.data,
             headers: { ...(options.contentType ? { 'Content-Type': options.contentType } : {}), ...options.headers },
-            signal: options.signal, skipRetry: true
+            signal: options.signal, skipRetry: true, bound: options.bound
         });
     }
 
@@ -1042,6 +1102,7 @@
         jf,
         plugin: pluginFetch,
         pluginResponse,
+        session,
         authHeaders,
         isPresentationAbort,
         manager

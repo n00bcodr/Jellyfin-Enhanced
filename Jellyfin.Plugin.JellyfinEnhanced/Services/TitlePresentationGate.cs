@@ -88,15 +88,153 @@ public static class NativeResponseValue
 /// </summary>
 internal static class NativePrivacyProjection
 {
-    /// <summary>Every library id the answer names: items and their series, hints, and recommendation seeds.</summary>
-    public static IEnumerable<Guid> Ids(object? value) => value switch
+    /// <summary>Every library id the answer names: items, hints, recommendation seeds, theme owners and nested title members.</summary>
+    public static IEnumerable<Guid> Ids(object? value)
     {
-        SearchHintResult hints => hints.SearchHints?.Select(h => h.Id) ?? [],
-        AllThemeMediaResult all => ThemeItems(all).SelectMany(Item),
-        IEnumerable<RecommendationDto> categories => categories.Where(r => r != null)
-            .SelectMany(r => (r.Items ?? []).SelectMany(Item).Append(Seed(r) ?? Guid.Empty)),
-        _ => Items(value).SelectMany(Item)
+        IEnumerable<Guid> top = value switch
+        {
+            SearchHintResult hints => hints.SearchHints?.Select(h => h.Id) ?? [],
+            AllThemeMediaResult all => ThemeItems(all).Select(i => i.Id),
+            IEnumerable<RecommendationDto> categories => categories.Where(r => r != null)
+                .SelectMany(r => (r.Items ?? []).Select(i => i.Id).Append(Seed(r) ?? Guid.Empty)),
+            _ => Items(value).Select(i => i.Id)
+        };
+        return top.Concat(Nested(value).Select(n => n.Dto.Id)).Concat(Timers(value).Select(t => ProgramOf(t) ?? Guid.Empty))
+            .Concat(ActivityEntries(value).Select(e => ItemOf(e) ?? Guid.Empty));
+    }
+
+    /// <summary>The entries of an activity-log answer.</summary>
+    public static IReadOnlyList<MediaBrowser.Model.Activity.ActivityLogEntry> ActivityEntries(object? value)
+        => value is QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page ? page.Items.Where(e => e != null).ToArray() : [];
+
+    /// <summary>The library item an activity entry records.</summary>
+    public static Guid? ItemOf(MediaBrowser.Model.Activity.ActivityLogEntry entry) => Guid.TryParse(entry.ItemId, out var id) && id != Guid.Empty ? id : null;
+
+    /// <summary>Whether the answer holds title members or title rows the gate projects besides its own items.</summary>
+    public static bool HasTitleMembers(object? value) => Nested(value).Count > 0 || Timers(value).Count > 0 || ActivityEntries(value).Any(e => ItemOf(e) != null);
+
+    /// <summary>
+    /// The identities of every library item the answer names, from the one identity resolver (<paramref name="resolve"/>
+    /// or the request-cached viewer-independent resolution). Ownership comes from the resolver and the host's own owner
+    /// facts, never from a DTO's fields: a theme answer's OwnerId owns its items, and an endpoint that lists the opened
+    /// item's extras (local trailers, special features) owns them by its route.
+    /// </summary>
+    public static Dictionary<Guid, PrivacyIdentity> Identities(ILibraryManager library, object? value, ActionContext? context,
+        Func<IEnumerable<Guid>, Dictionary<Guid, PrivacyIdentity>>? resolve = null)
+    {
+        var owners = Owners(value, context);
+        var ids = Ids(value).Concat(owners.Select(o => o.Owner)).Where(id => id != Guid.Empty && !SyntheticId.HasNamespace(id)).Distinct().ToArray();
+        var identities = resolve?.Invoke(ids) ?? PrivacyIdentities.Resolve(library, ids, context?.HttpContext);
+        foreach (var (owner, items) in owners)
+        {
+            if (!identities.TryGetValue(owner, out var title)) continue;
+            foreach (var dto in items)
+                if (dto != null && dto.Id != owner && (!identities.TryGetValue(dto.Id, out var own) || !own.IsExtra))
+                    identities[dto.Id] = PrivacyIdentity.Owned(title, dto.Id, own?.Kind ?? dto.Type);
+        }
+        return identities;
+    }
+
+    /// <summary>The host's owner facts in the answer: each theme list's OwnerId, or the route's opened item for its extras.</summary>
+    private static List<(Guid Owner, IReadOnlyList<BaseItemDto> Items)> Owners(object? value, ActionContext? context)
+    {
+        var owners = new List<(Guid, IReadOnlyList<BaseItemDto>)>();
+        switch (value)
+        {
+            case ThemeMediaResult theme when theme.OwnerId != Guid.Empty && theme.Items != null:
+                owners.Add((theme.OwnerId, theme.Items));
+                break;
+            case AllThemeMediaResult all:
+                foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
+                    if (part is { Items: not null } && part.OwnerId != Guid.Empty) owners.Add((part.OwnerId, part.Items));
+                break;
+            case IEnumerable<BaseItemDto> extras when context != null && PrivacySurfaceRegistry.RouteOwnsAnswer(context) is { } opened:
+                owners.Add((opened, extras.ToArray()));
+                break;
+        }
+        return owners;
+    }
+
+    /// <summary>A title member nested inside an answer's own value, and how to replace it in the delivered value.</summary>
+    public sealed record NestedTitle(BaseItemDto Dto, Action<BaseItemDto?> Replace, bool KeepsControls);
+
+    /// <summary>
+    /// The title members an answer carries besides its own items, as the hosts build them (12.2 and 10.11.11): a channel's
+    /// CurrentProgram on any item, a session's NowPlayingItem (its controls hang on it), NowViewingItem and (10.11) queue
+    /// items, and a timer's ProgramInfo. Replacing one never touches the host's shared session state.
+    /// </summary>
+    public static List<NestedTitle> Nested(object? value)
+    {
+        var found = new List<NestedTitle>();
+        void Item(BaseItemDto? dto)
+        {
+            if (dto?.CurrentProgram is { } program) found.Add(new(program, v => dto.CurrentProgram = v, false));
+        }
+        void Session(SessionInfoDto? session)
+        {
+            if (session == null) return;
+            if (session.NowPlayingItem is { } playing) found.Add(new(playing, v => session.NowPlayingItem = v, true));
+            if (session.NowViewingItem is { } viewing) found.Add(new(viewing, v => session.NowViewingItem = v, false));
+#if !JF12
+            if (session.NowPlayingQueueFullItems is { Count: > 0 } queue)
+            {
+                // The session's own list is shared: the delivered value gets its own copy before an element is replaced.
+                var own = queue.ToArray();
+                session.NowPlayingQueueFullItems = own;
+                for (var i = 0; i < own.Length; i++)
+                {
+                    var index = i;
+                    if (own[i] != null) found.Add(new(own[i], v => own[index] = v!, true));
+                }
+            }
+#endif
+        }
+        switch (value)
+        {
+            case IEnumerable<SessionInfoDto> sessions:
+                foreach (var session in sessions) Session(session);
+                break;
+            case MediaBrowser.Model.LiveTv.TimerInfoDto or QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto>:
+                foreach (var timer in Timers(value))
+                    if (timer.ProgramInfo is { } program) found.Add(new(program, v => timer.ProgramInfo = v, false));
+                break;
+            case IEnumerable<RecommendationDto> categories:
+                foreach (var category in categories) foreach (var item in category?.Items ?? []) Item(item);
+                break;
+            case AllThemeMediaResult all:
+                foreach (var item in ThemeItems(all)) Item(item);
+                break;
+            default:
+                foreach (var item in Items(value)) Item(item);
+                break;
+        }
+        return found;
+    }
+
+    /// <summary>The timer rows of a timer answer.</summary>
+    public static IReadOnlyList<MediaBrowser.Model.LiveTv.TimerInfoDto> Timers(object? value) => value switch
+    {
+        MediaBrowser.Model.LiveTv.TimerInfoDto one => [one],
+        QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto> page => page.Items?.Where(t => t != null).ToArray() ?? [],
+        _ => []
     };
+
+    /// <summary>The library programme a timer records.</summary>
+    public static Guid? ProgramOf(MediaBrowser.Model.LiveTv.TimerInfoDto timer)
+        => Guid.TryParse(timer.ProgramId, out var id) ? id : timer.ProgramInfo?.Id;
+
+    /// <summary>
+    /// What a hidden now-playing (or queued) item leaves: enough for the session's controls (id, kind, length), no title.
+    /// </summary>
+    public static BaseItemDto Stub(BaseItemDto dto) => new()
+    {
+        Id = dto.Id, ServerId = dto.ServerId, Type = dto.Type, MediaType = dto.MediaType, IsFolder = dto.IsFolder,
+        RunTimeTicks = dto.RunTimeTicks, LocationType = dto.LocationType, Name = string.Empty
+    };
+
+    /// <summary>A private copy of a DTO the host may share (a session's now-playing item), for projection.</summary>
+    public static BaseItemDto Copy(BaseItemDto dto)
+        => JsonSerializer.Deserialize<BaseItemDto>(JsonSerializer.SerializeToUtf8Bytes(dto, Jellyfin.Extensions.Json.JsonDefaults.Options), Jellyfin.Extensions.Json.JsonDefaults.Options)!;
 
     /// <summary>The DTOs of an item answer (single, page or list).</summary>
     public static IReadOnlyList<BaseItemDto> Items(object? value) => value switch
@@ -110,8 +248,6 @@ internal static class NativePrivacyProjection
     /// <summary>The items of the three theme lists an item's theme media answer holds.</summary>
     public static IReadOnlyList<BaseItemDto> ThemeItems(AllThemeMediaResult all)
         => new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult }.Where(r => r?.Items != null).SelectMany(r => r.Items).ToArray();
-
-    private static IEnumerable<Guid> Item(BaseItemDto dto) => dto.SeriesId is { } series ? [dto.Id, series] : [dto.Id];
 
     /// <summary>A "because you watched / liked" category names its seed title by id; person categories name a person.</summary>
     public static Guid? Seed(RecommendationDto category)
@@ -236,7 +372,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var answer = context.Result as ObjectResult;
         var delivered = answer is { Value: not null } && answer.StatusCode is null or (>= 200 and < 300);
         var route = read && entry == null ? Route(context) : null;
-        if (entry != null && (!delivered || entry.Exempt)) return;
+        // An endpoint exempt for its own items still projects the title members nested in its answer (and title rows).
+        if (entry != null && (!delivered || entry.Exempt && !NativePrivacyProjection.HasTitleMembers(answer!.Value))) return;
         if (entry == null && route == null)
         {
             // A title-carrying answer from an endpoint the registry does not classify never leaves while a policy applies.
@@ -336,7 +473,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             var sg = entry.Sg && final.Spoilers is { Enabled: true };
             string Surface(BaseItemDto? item) => entry.Hc == null ? "none" : PrivacySurfaceRegistry.Surface(context, item);
             var known = value is BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> or SearchHintResult or IReadOnlyList<RecommendationDto>
-                or IEnumerable<ImageInfo> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse or AllThemeMediaResult;
+                or IEnumerable<ImageInfo> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse or AllThemeMediaResult or IEnumerable<SessionInfoDto>
+                or MediaBrowser.Model.LiveTv.TimerInfoDto or QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto>
+                or QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>;
             if (!known)
             {
                 // An answer shape this gate cannot project never leaves while a policy applies to the viewer.
@@ -347,10 +486,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             }
             // The viewer's watched state is read only where a decision needs it (a recommendation category's seed).
             var seeds = sg && value is IReadOnlyList<RecommendationDto> && SpoilerFieldStripFilter.HasEntries(final.Spoilers!.State);
-            var identities = hc || seeds ? Identities(context.HttpContext, value, final, seeds ? viewer : Guid.Empty) : Synthetic(value);
+            // Activity entries are judged with the viewer's own watched state (an episode the viewer has seen keeps its title).
+            var rows = NativePrivacyProjection.ActivityEntries(value).Count > 0;
+            var identities = Identities(context, value, final, seeds || rows ? viewer : Guid.Empty);
             foreach (var identity in identities.Values) final.Hidden.Bind(identity);
             NativePrivacyProjection.Hide(result, hc ? final.Hidden : null, Surface, identities, single: value is BaseItemDto,
                 sg ? seed => identities.TryGetValue(seed, out var owner) && final.Spoilers!.Guarded(owner) : null);
+            ProjectNested(result.Value, final, identities, viewer, entry.HcExempt == null ? null : PrivacySurfaceRegistry.OpenedItem(context, result.Value));
+            if (rows) ProjectActivityLog(result, final, identities);
             if (!sg) return;
             switch (result.Value)
             {
@@ -376,15 +519,110 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     }
 
     /// <summary>
-    /// The identities of every library item the answer names (items, their series, hints and seeds), plus absent titles.
-    /// Without a viewer, the request's earlier resolution (the Hidden Content action filter's) is reused.
+    /// The identities of every library item the answer names (items, hints, seeds, theme owners, nested title members),
+    /// plus absent titles. Without a viewer, the request's earlier resolution (the Hidden Content action filter's) is reused.
     /// </summary>
-    private Dictionary<Guid, PrivacyIdentity> Identities(HttpContext http, object? value, TitlePresentationPolicy final, Guid viewer)
+    private Dictionary<Guid, PrivacyIdentity> Identities(ActionContext? context, object? value, TitlePresentationPolicy final, Guid viewer)
     {
-        var ids = NativePrivacyProjection.Ids(value).Where(id => id != Guid.Empty && !SyntheticId.HasNamespace(id)).Distinct();
-        var identities = viewer == Guid.Empty ? PrivacyIdentities.Resolve(library, ids, http) : spoilers.Resolve(ids, viewer, final.Spoilers);
+        var identities = NativePrivacyProjection.Identities(library, value, context,
+            viewer == Guid.Empty ? null : ids => spoilers.Resolve(ids, viewer, final.Spoilers));
         foreach (var pair in Synthetic(value)) identities.TryAdd(pair.Key, pair.Value);
         return identities;
+    }
+
+    /// <summary>
+    /// The title members nested in an answer, with the requesting viewer's delivery-time policy: a hidden one leaves (a
+    /// now-playing or queued item keeps a title-less stub so its session's controls stay), a guarded one is stripped on a
+    /// private copy with this viewer's watched state (never the session owner's). The opened item is never hidden from its own answer.
+    /// </summary>
+    private void ProjectNested(object? value, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer, Guid? opened)
+    {
+        var hc = !final.Hidden.IsEmpty;
+        var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
+        var config = JellyfinEnhanced.Instance?.Configuration;
+        if (!hc && spoiler == null) return;
+        if (hc)
+            foreach (var timer in NativePrivacyProjection.Timers(value))
+                if (NativePrivacyProjection.ProgramOf(timer) is { } program && program != opened
+                    && final.Hidden.IsHidden(identities.TryGetValue(program, out var row) ? row : new PrivacyIdentity(program, BaseItemKind.Program, program, null, Array.Empty<Guid>(), null), "library"))
+                {
+                    // A hidden programme's timer row stays (it can still be cancelled) without the programme's title.
+                    timer.Name = null; timer.Overview = null; timer.ProgramInfo = null;
+                }
+        foreach (var member in NativePrivacyProjection.Nested(value))
+        {
+            var identity = identities.GetValueOrDefault(member.Dto.Id);
+            if (hc && member.Dto.Id != opened && final.Hidden.IsHidden(member.Dto, identity, "library"))
+            {
+                member.Replace(member.KeepsControls ? NativePrivacyProjection.Stub(member.Dto) : null);
+                continue;
+            }
+            if (spoiler == null || config == null) continue;
+            var copy = NativePrivacyProjection.Copy(member.Dto);
+            // The decision is this viewer's: a session's item carries no (or another account's) watched state.
+            copy.UserData = null;
+            if (spoiler.Unavailable) strip?.StripAbsent(copy, spoiler.State, config, viewer);
+            else strip?.StripLibraryItem(copy, identity, spoiler.State, config, viewer);
+            member.Replace(copy);
+        }
+    }
+
+    /// <summary>
+    /// The administrator's activity log, by each entry's own item and the viewer's rules: an entry about a title the viewer
+    /// hid is left out (the page's total follows); a guarded episode the viewer hasn't watched has its title replaced in the
+    /// entry's text the way Spoiler Guard replaces it ("Season 1, Episode 2"). Entries without an item are unchanged.
+    /// </summary>
+    private void ProjectActivityLog(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities)
+    {
+        if (result.Value is not QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page) return;
+        var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
+        var config = JellyfinEnhanced.Instance?.Configuration;
+        var replace = spoiler != null && config != null && SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title;
+        var kept = new List<MediaBrowser.Model.Activity.ActivityLogEntry>(page.Items.Count);
+        foreach (var entry in page.Items)
+        {
+            if (entry == null) continue;
+            var identity = NativePrivacyProjection.ItemOf(entry) is { } id ? identities.GetValueOrDefault(id) : null;
+            if (identity != null && !final.Hidden.IsEmpty && final.Hidden.IsHidden(identity, "library")) continue;
+            if (identity is { Kind: BaseItemKind.Episode } && replace && (spoiler!.Unavailable || spoiler.Guarded(identity))
+                && library.GetItemById(identity.ItemId) is MediaBrowser.Controller.Entities.TV.Episode episode && !string.IsNullOrEmpty(episode.Name))
+            {
+                var label = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number ? $"Season {season}, Episode {number}" : "Episode";
+                if (entry.Name != null) entry.Name = entry.Name.Replace(episode.Name, label, StringComparison.Ordinal);
+                entry.ShortOverview = entry.ShortOverview?.Replace(episode.Name, label, StringComparison.Ordinal);
+                entry.Overview = entry.Overview?.Replace(episode.Name, label, StringComparison.Ordinal);
+            }
+            kept.Add(entry);
+        }
+        if (kept.Count != page.Items.Count)
+            result.Value = new QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>(page.StartIndex, Math.Max(0, page.TotalRecordCount - page.Items.Count + kept.Count), kept);
+    }
+
+    /// <summary>
+    /// Sessions as a viewer receives them (the REST answer and the dashboard's WebSocket updates): every session and its
+    /// controls stay; their title members are projected with that viewer's delivery-time policy. A policy that cannot be
+    /// read leaves no title in them.
+    /// </summary>
+    /// <param name="sessions">The host's session answer (fresh DTOs; their now-playing items may be shared).</param>
+    /// <param name="viewer">The receiving viewer.</param>
+    public IReadOnlyList<SessionInfoDto> ProjectSessions(IEnumerable<SessionInfoDto> sessions, Guid viewer)
+    {
+        var list = sessions.ToList();
+        if (viewer == Guid.Empty || list.Count == 0 || NativePrivacyProjection.Nested(list).Count == 0) return list;
+        try
+        {
+            var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+            if (!PolicyApplies(final)) return list;
+            var identities = Identities(null, list, final, Guid.Empty);
+            foreach (var identity in identities.Values) final.Hidden.Bind(identity);
+            ProjectNested(list, final, identities, viewer, null);
+        }
+        catch (Exception ex)
+        {
+            logger?.Error($"Presentation gate could not project sessions: {ex.GetType().Name}");
+            foreach (var member in NativePrivacyProjection.Nested(list)) member.Replace(member.KeepsControls ? NativePrivacyProjection.Stub(member.Dto) : null);
+        }
+        return list;
     }
 
     /// <summary>Absent titles (the native details facade's synthetic ids) carry their typed TMDB identity in the id itself.</summary>
@@ -436,9 +674,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 if (guarded) strip?.StripAbsent(dto, presentation.State, config, viewer);
                 continue;
             }
-            // Unknown policy fails closed; otherwise the native strip decides from the item itself, never from a TMDB key.
+            // Unknown policy fails closed; otherwise the native strip decides from the item's resolved identity, never from a TMDB key.
             if (presentation.Unavailable) strip?.StripAbsent(dto, presentation.State, config, viewer);
-            else if (SpoilerFieldStripFilter.HasEntries(presentation.State)) strip?.StripLibraryItem(dto, presentation.State, config, viewer);
+            else if (SpoilerFieldStripFilter.HasEntries(presentation.State)) strip?.StripLibraryItem(dto, identities.GetValueOrDefault(dto.Id), presentation.State, config, viewer);
         }
     }
 

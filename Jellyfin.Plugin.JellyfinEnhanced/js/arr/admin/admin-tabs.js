@@ -230,7 +230,7 @@
      *   is read exactly once more after it, since that read may have looked before the change.
      * @returns {Promise<void>}
      */
-    async function load(tab, fresh) {
+    async function load(tab, fresh, retryOf) {
         if (!ROUTES[tab]) return undefined;
         if (state.loading[tab]) {
             if (fresh) state.again[tab] = true;
@@ -238,14 +238,14 @@
         }
         delete state.again[tab];
         const generation = state.generation;
-        // The session that asked owns the answer and any retry of it.
-        const action = JE.createSessionAction?.() || null;
+        // The session that asked owns the answer and any retry of it (a retry keeps the failed read's session).
+        const action = retryOf || JE.createSessionAction?.() || null;
         const owned = () => generation === state.generation && (!action || action.current());
         const intent = intentOf(tab);
         const token = intent.next();
         const run = (async () => {
             try {
-                const data = await JE.core.api.plugin(route(tab), { skipRetry: true });
+                const data = await JE.core.api.plugin(route(tab), { skipRetry: true, bound: action?.bound?.(owned) });
                 if (!owned()) return;
                 if (!intent.current(token)) {
                     // Asked for something else meanwhile: this answer is for what is no longer asked.
@@ -284,7 +284,7 @@
             if (state.tab === tab) draw();
             if (state.again[tab]) {
                 delete state.again[tab];
-                if (owned() && state.tab === tab) await load(tab);
+                if (owned() && state.tab === tab) await load(tab, false, action);
             }
         })();
         state.loading[tab] = run;
@@ -412,7 +412,7 @@
         state.retry.delay = JE.arrStatus.retryDelay(state.retry.delay);
         state.retry.timer = setTimeout(() => {
             state.retry.timer = null;
-            if (generation === state.generation && (!action || action.current()) && state.tab === tab && state.panel?.isConnected) load(tab, true);
+            if (generation === state.generation && (!action || action.current()) && state.tab === tab && state.panel?.isConnected) load(tab, true, action);
         }, state.retry.delay);
     }
 

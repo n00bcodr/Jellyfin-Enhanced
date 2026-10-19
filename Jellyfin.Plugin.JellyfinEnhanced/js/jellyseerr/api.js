@@ -335,10 +335,10 @@
      * @returns {Promise<{results: Array, page: number, totalPages: number, totalResults: number}>}
      */
     api.search = async function(query, page = 1, options = {}) {
-        const { skipCache = false, signal, throwOnError = false } = options;
+        const { skipCache = false, signal, throwOnError = false, bound } = options;
         try {
             const lang = (navigator.language || 'en').split('-')[0];
-            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache, signal });
+            const data = await get(`/search?query=${encodeURIComponent(query)}&page=${page}&language=${lang}`, { skipCache, signal, bound });
 
             // Filter out people results before returning (immutable — don't mutate cached response)
             if (data.results) {

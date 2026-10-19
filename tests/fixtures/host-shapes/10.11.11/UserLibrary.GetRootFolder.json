@@ -1,0 +1,53 @@
+{
+ "BackdropImageTags": [],
+ "CanDelete": false,
+ "CanDownload": false,
+ "ChannelId": null,
+ "ChildCount": 16,
+ "DateCreated": "2026-10-19T09:28:35.8071872Z",
+ "DateLastMediaAdded": "0001-01-01T00:00:00.0000000Z",
+ "DisplayPreferencesId": "b21ccc945ed35ac08c3b35d5de9e71f3",
+ "EnableMediaSourceDisplay": true,
+ "Etag": "6026a5d1e79025031bb3fb4739f1fed3",
+ "ExternalUrls": [],
+ "GenreItems": [],
+ "Genres": [],
+ "Id": "e9d5075a555c1cbc394eec4cef295274",
+ "ImageBlurHashes": {
+  "Primary": {
+   "995c29725005b6e5ebb940f721ac1bb4-jeufded036f526d": "WH9jZNofE1t6IoRkjtWqj@oLfkj[00WB%MWCxuofV@axofa#j@oe"
+  }
+ },
+ "ImageTags": {
+  "Primary": "995c29725005b6e5ebb940f721ac1bb4-jeufded036f526d"
+ },
+ "IsFolder": true,
+ "LocalTrailerCount": 0,
+ "LocationType": "FileSystem",
+ "LockData": false,
+ "LockedFields": [],
+ "MediaType": "Unknown",
+ "Name": "Media Folders",
+ "ParentId": null,
+ "Path": "/config/root/default",
+ "People": [],
+ "PlayAccess": "Full",
+ "PrimaryImageAspectRatio": 1.7777777777777777,
+ "ProviderIds": {},
+ "RemoteTrailers": [],
+ "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+ "SortName": "media folders",
+ "SpecialFeatureCount": 0,
+ "Studios": [],
+ "Taglines": [],
+ "Tags": [],
+ "Type": "UserRootFolder",
+ "UserData": {
+  "IsFavorite": false,
+  "ItemId": "e9d5075a555c1cbc394eec4cef295274",
+  "Key": "e9d5075a-555c-1cbc-394e-ec4cef295274",
+  "PlayCount": 0,
+  "PlaybackPositionTicks": 0,
+  "Played": false
+ }
+}

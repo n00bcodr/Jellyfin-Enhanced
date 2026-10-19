@@ -1055,6 +1055,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySessionsWebSocketListener.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySurfaceRegistry.cs",
       "category": "Services"
     },
@@ -9686,7 +9690,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 540,
+    "files": 541,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,

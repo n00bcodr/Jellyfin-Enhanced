@@ -592,7 +592,7 @@
          * @param {string} query The current search query.
          * @param {{deficitPx?: number, horizontal?: boolean}} [hint] From the scroll engine.
          */
-        async function loadMoreSearchResults(query, hint) {
+        async function loadMoreSearchResults(query, hint, bound) {
             if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
 
             // The global navigation abort cancels the query's signal. If the
@@ -622,7 +622,7 @@
                 const pages = [];
                 for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-                const settled = await Promise.allSettled(pages.map(p => search(apiQuery, p, { signal, throwOnError: true })));
+                const settled = await Promise.allSettled(pages.map(p => search(apiQuery, p, { signal, throwOnError: true, bound })));
                 if (lastProcessedQuery !== query) return; // query changed during fetch
 
                 // Commit pages in order up to the first failure; a flaky page must
@@ -717,7 +717,7 @@
             JE.seamlessScroll.setupInfiniteScroll(
                 searchScrollState,
                 '.jellyseerr-section',
-                (hint) => loadMoreSearchResults(query, hint),
+                (hint, bound) => loadMoreSearchResults(query, hint, bound),
                 () => searchHasMore && !searchSuspended,
                 () => searchIsLoading,
                 { horizontal: true, trackSelector: '.itemsContainer', scrollerSelector: '.emby-scroller' }

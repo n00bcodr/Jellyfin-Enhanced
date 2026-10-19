@@ -1,5 +1,5 @@
 # Controller	Action	Routes	Declared answer	Title path (empty: carries no title)
-ActivityLog	GetLogEntries	HttpGet(Entries)	QueryResult<ActivityLogEntry>	
+ActivityLog	GetLogEntries	HttpGet(Entries)	QueryResult<ActivityLogEntry>	ActivityLogEntry
 ApiKey	CreateKey	HttpPost(Keys)	ActionResult	
 ApiKey	GetKeys	HttpGet(Keys)	QueryResult<AuthenticationInfo>	
 ApiKey	RevokeKey	HttpDelete(Keys/{key})	ActionResult	

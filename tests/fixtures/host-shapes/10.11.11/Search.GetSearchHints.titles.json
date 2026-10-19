@@ -1,0 +1,77 @@
+{
+ "SearchHints": [
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "2b1589698d56aa3f7e6af0a3de171c68",
+   "ItemId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "MediaType": "Video",
+   "Name": "D46 R17 Channel",
+   "Type": "TvChannel"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "f54a9a67c8bff46ec62af9ca063c8eaf",
+   "ItemId": "f54a9a67c8bff46ec62af9ca063c8eaf",
+   "MediaType": "Video",
+   "Name": "D46 R17 Guarded (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "80d39ee2e139aeaff6a344a99f6b2776-jeufded036f526d",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "99e9b37dd2d610f20696f697f6af6edf",
+   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
+   "MediaType": "Video",
+   "Name": "D46 R17 Hidden (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "02bf4b42b4cb2d9c2dfc47f508939e18-jeufded036f526d",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "be7f1a11579d285bc676f6484b2dd389",
+   "ItemId": "be7f1a11579d285bc676f6484b2dd389",
+   "MediaType": "Video",
+   "Name": "D46 R17 Plain (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "b62285dcda61f87661521b34840a2d7e-jeufded036f526d",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "ChannelName": "D46 R17 Channel",
+   "EndDate": "2026-10-19T18:00:00.0000000Z",
+   "Id": "a900b05ea9806e4ba14305701c18a270",
+   "ItemId": "a900b05ea9806e4ba14305701c18a270",
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Program Later",
+   "RunTimeTicks": 108000000000,
+   "StartDate": "2026-10-19T15:00:00.0000000Z",
+   "Type": "Program"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "b970e608063e6608f89a0b31a5dae2a8",
+   "IsFolder": true,
+   "ItemId": "b970e608063e6608f89a0b31a5dae2a8",
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Show (1991)",
+   "ProductionYear": 1991,
+   "Type": "Series"
+  }
+ ],
+ "TotalRecordCount": 6
+}

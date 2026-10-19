@@ -246,7 +246,8 @@
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
-            const data = await JE.core.api.plugin(`/arr/admin/manage?${q}`, { skipRetry: true });
+            // Bound to the session that opened the drawer: a switch during the feed-position wait sends nothing.
+            const data = await JE.core.api.plugin(`/arr/admin/manage?${q}`, { skipRetry: true, bound: state.action?.bound?.(owned) });
             if (!owned()) return;
             if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;

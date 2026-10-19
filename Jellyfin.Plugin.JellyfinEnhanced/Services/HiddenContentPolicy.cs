@@ -150,9 +150,12 @@ public sealed class HiddenContentPolicy
         return IsHidden(TitleIdentity(item.Type.ToString(), tmdb), item.Id.ToString(), item.SeriesId?.ToString(), surface);
     }
 
-    /// <summary>Matches a native DTO by its own fields and by the resolved library identity (owner, owner's TMDB key).</summary>
+    /// <summary>
+    /// Matches a native DTO by its resolved library identity (the item, its owner, the owner's TMDB key); only an item the
+    /// identity resolver could not resolve is matched by its own DTO fields.
+    /// </summary>
     public bool IsHidden(BaseItemDto item, PrivacyIdentity? identity, string surface)
-        => IsHidden(item, surface) || identity != null && IsHidden(identity, surface);
+        => identity != null ? IsHidden(identity, surface) : IsHidden(item, surface);
 
     /// <summary>Matches a resolved library identity: the item, its owning title by Jellyfin ID, and that title's TMDB key.</summary>
     public bool IsHidden(PrivacyIdentity identity, string surface)

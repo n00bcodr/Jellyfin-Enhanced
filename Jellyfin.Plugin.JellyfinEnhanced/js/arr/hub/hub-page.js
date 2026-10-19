@@ -267,7 +267,8 @@
         run.promise = (async () => {
             try {
                 const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
-                const data = await JE.core.api.plugin('/acquire/hub', { skipRetry: true });
+                // Bound to the session that asked: a switch during the feed-position wait sends nothing as the new account.
+                const data = await JE.core.api.plugin('/acquire/hub', { skipRetry: true, bound: action?.bound?.(owned) });
                 if (!owned()) return;
                 if (!data || typeof data !== 'object') throw new Error('empty answer');
                 state.data = data;

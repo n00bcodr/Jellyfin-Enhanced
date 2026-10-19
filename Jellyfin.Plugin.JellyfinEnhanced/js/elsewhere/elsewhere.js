@@ -540,7 +540,8 @@
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
             // The session that asked owns every attempt and the answer: after a switch nothing is asked again or shown.
             const current = () => !action || action.current();
-            JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
+            // Sent (and every retry of it) only as that session: the transport checks it right before the bytes go out.
+            JE.core.api.fetch(url, { cacheKey: `tmdb:${path}`, bound: action?.bound?.(current) })
                 .then(data => { if (current()) callback(null, data); })
                 .catch(error => {
                     if (!current()) return;

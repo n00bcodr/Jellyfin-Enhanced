@@ -84,14 +84,25 @@ public class PrivacySurfaceModelTests
         ["Search.GetSearchHints"] = "search",
     };
 
-    /// <summary>Endpoints neither policy changes (the viewer's own sessions, login and recording schedule, a live tuner stream).</summary>
-    private static readonly string[] Untouched = ["Session.GetSessions", "User.AuthenticateUser", "User.AuthenticateUserByName",
-        "User.AuthenticateWithQuickConnect", "LiveTv.GetTimer", "LiveTv.GetTimers", "MediaInfo.OpenLiveStream"];
+    /// <summary>Endpoints neither policy changes (sign-in, the recording schedule, a live tuner stream).</summary>
+    private static readonly string[] Untouched = ["User.AuthenticateUser", "User.AuthenticateUserByName",
+        "User.AuthenticateWithQuickConnect", "LiveTv.GetTimer", "LiveTv.GetTimers", "MediaInfo.OpenLiveStream", "ActivityLog.GetLogEntries"];
+
+    /// <summary>Endpoints whose own items are not titles but whose answer nests titles (sessions: the now-playing item).</summary>
+    private static readonly string[] NestedOnly = ["Session.GetSessions"];
+
+    /// <summary>
+    /// Endpoints this model's synthetic answers cannot represent: the host never puts a library title in a timer's
+    /// ProgramInfo (it is a Live TV programme) or a now-playing item in a sign-in's new session. Their real shapes run in
+    /// PrivacyHostShapeModelTests (captured from both hosts).
+    /// </summary>
+    public static readonly string[] HostShapedOnly = ["LiveTv.GetTimer", "LiveTv.GetTimers", "User.AuthenticateUser", "User.AuthenticateUserByName",
+        "User.AuthenticateWithQuickConnect", "ActivityLog.GetLogEntries"];
 
     /// <summary>The oracle's Hidden Content surface (null: never hidden) and whether Spoiler Guard strips the answer.</summary>
     public static (string? Hc, bool Sg) Expected(string endpoint)
         => Lists.Contains(endpoint) ? ("library", true) : Scoped.TryGetValue(endpoint, out var scope) ? ((string?)scope, true)
-            : Untouched.Contains(endpoint) ? ((string?)null, false) : ((string?)null, true);
+            : Untouched.Contains(endpoint) || NestedOnly.Contains(endpoint) ? ((string?)null, false) : ((string?)null, true);
 
     /// <summary>The endpoints the model covers: every title-carrying host endpoint plus Home Screen Sections.</summary>
     public static IEnumerable<string> NativeSurfaces() => TitleEndpoints.Keys.Append("HomeScreen.GetSectionContent").Distinct().OrderBy(k => k, StringComparer.Ordinal);
@@ -110,7 +121,7 @@ public class PrivacySurfaceModelTests
 
     public static IEnumerable<object[]> Cells()
     {
-        foreach (var surface in NativeSurfaces().Concat(JeSurfaces))
+        foreach (var surface in NativeSurfaces().Concat(JeSurfaces).Except(HostShapedOnly))
         foreach (var kind in Kinds)
         foreach (var rule in Rules)
         foreach (var moment in Moments)
@@ -365,6 +376,12 @@ public class PrivacySurfaceModelTests
         var expected = Expected(surface);
         Assert.IsAssignableFrom<ObjectResult>(result);
         var declared = TitleEndpoints.GetValueOrDefault(surface) ?? "QueryResult<BaseItemDto>";
+        if (NestedOnly.Contains(surface))
+        {
+            // A session stays; the title it plays is projected (hidden: a title-less stub; guarded: stripped).
+            Assert.DoesNotContain("Secret", delivered);
+            return;
+        }
         var list = declared is not ("BaseItemDto" or "IEnumerable<ImageInfo>" or "PlaybackInfoResponse" or "TimerInfoDto" or "LiveStreamResponse" or "AllThemeMediaResult"
             or "AuthenticationResult" or "IReadOnlyList<SessionInfoDto>" or "QueryResult<TimerInfoDto>");
         if (hc)
@@ -385,7 +402,8 @@ public class PrivacySurfaceModelTests
         // Both hosts' title-carrying endpoints are present (12.2 and 10.11.11 differ by three).
         foreach (var host in new[] { "12.2", "10.11.11" })
             foreach (var endpoint in HostEndpoints.Where(e => e.Host == host && e.TitlePath.Length > 0))
-                Assert.Contains(cells, c => c.Item1 == endpoint.Controller + "." + endpoint.Action);
+                Assert.True(cells.Any(c => c.Item1 == endpoint.Controller + "." + endpoint.Action) || HostShapedOnly.Contains(endpoint.Controller + "." + endpoint.Action),
+                    endpoint.Controller + "." + endpoint.Action);
         foreach (var kind in Kinds) Assert.Contains(cells, c => c.Item2 == kind);
         foreach (var rule in Rules) foreach (var moment in Moments) Assert.Contains(cells, c => c.Item3 == rule && c.Item4 == moment);
         foreach (var surface in JeSurfaces) Assert.Contains(cells, c => c.Item1 == surface);

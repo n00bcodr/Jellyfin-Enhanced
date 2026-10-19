@@ -113,7 +113,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 // The one identity resolver and the one projection the final delivery gate also uses.
                 var identities = _library != null
-                    ? PrivacyIdentities.Resolve(_library, NativePrivacyProjection.Ids(value.Value), context.HttpContext)
+                    ? NativePrivacyProjection.Identities(_library, value.Value, context)
                     : new Dictionary<Guid, PrivacyIdentity>();
                 foreach (var identity in identities.Values) hide.Bind(identity);
                 NativePrivacyProjection.Hide(value, hide, item => PrivacySurfaceRegistry.Surface(context, item), identities, single: false);

@@ -22,15 +22,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 /// <param name="Kind">The item's kind.</param>
 /// <param name="OwnerId">The owning title: the series of a season/episode, otherwise the item itself.</param>
 /// <param name="TitleKey">The owning title's typed TMDB key ("movie:tmdb:1"/"tv:tmdb:2"), or null without one.</param>
-/// <param name="Collections">The candidate collections (BoxSets) that link this movie.</param>
-/// <param name="Played">The viewer's watched state for a movie or episode; null when unknown or not applicable.</param>
-public sealed record PrivacyIdentity(Guid ItemId, BaseItemKind Kind, Guid OwnerId, string? TitleKey, IReadOnlyList<Guid> Collections, bool? Played)
+/// <param name="Collections">The candidate collections (BoxSets) that link this movie (for an extra: that link its owning movie).</param>
+/// <param name="Played">The viewer's watched state for a movie or episode (for an extra of a movie: the movie's); null when unknown or not applicable.</param>
+/// <param name="OwnerKind">The owning title's kind (the item's own kind when it owns itself).</param>
+public sealed record PrivacyIdentity(Guid ItemId, BaseItemKind Kind, Guid OwnerId, string? TitleKey, IReadOnlyList<Guid> Collections, bool? Played,
+    BaseItemKind? OwnerKind = null)
 {
     /// <summary>The series that owns a season or episode (or a series itself); empty for anything else.</summary>
     public Guid SeriesId => Kind is BaseItemKind.Series or BaseItemKind.Season or BaseItemKind.Episode || OwnerId != ItemId ? OwnerId : Guid.Empty;
 
     /// <summary>A stable per-item projection key for policy decisions made from this identity rather than a TMDB key.</summary>
     public string ProjectionKey => "jellyfin:item:" + ItemId.ToString("N");
+
+    /// <summary>An extra (theme song or video, trailer, featurette) owned by another title: it follows its owner.</summary>
+    public bool IsExtra => OwnerId != ItemId && Kind is not (BaseItemKind.Season or BaseItemKind.Episode);
+
+    /// <summary>
+    /// The identity of an item another title owns, from the owner's identity (a theme answer's OwnerId, the route's opened
+    /// item): the owner's title key, its guarded collections and its watched state.
+    /// </summary>
+    /// <param name="owner">The owning title's identity.</param>
+    /// <param name="itemId">The owned item.</param>
+    /// <param name="kind">The owned item's kind.</param>
+    public static PrivacyIdentity Owned(PrivacyIdentity owner, Guid itemId, BaseItemKind kind)
+    {
+        // An extra of an episode or season belongs to that episode's series (the title Spoiler Guard and Hidden Content name).
+        var title = owner.Kind is BaseItemKind.Episode or BaseItemKind.Season ? owner.OwnerId : owner.ItemId;
+        var titleKind = owner.Kind is BaseItemKind.Episode or BaseItemKind.Season ? owner.OwnerKind ?? BaseItemKind.Series : owner.Kind;
+        return new PrivacyIdentity(itemId, kind, title, owner.TitleKey, owner.Kind == BaseItemKind.Movie ? owner.Collections : Array.Empty<Guid>(),
+            owner.Kind == BaseItemKind.Movie ? owner.Played : null, titleKind);
+    }
 }
 
 /// <summary>
@@ -75,14 +96,17 @@ public static class PrivacyIdentities
         var membership = new Dictionary<Guid, List<Guid>>();
         foreach (var collection in collections?.Where(c => c != Guid.Empty).Distinct() ?? [])
             foreach (var member in CollectionMembers(library, collection))
-                if (items.ContainsKey(member)) (membership.TryGetValue(member, out var list) ? list : membership[member] = new()).Add(collection);
+                if (Find(member) != null) (membership.TryGetValue(member, out var list) ? list : membership[member] = new()).Add(collection);
         foreach (var item in items.Values)
         {
             var owner = item;
             for (var hop = 0; hop < 2 && OwnerOf(owner) is var next && next != Guid.Empty && Find(next) is { } found; hop++) owner = found;
-            bool? played = viewer != null && userData != null && item is Movie or Episode ? userData.GetUserData(viewer, item)?.Played == true : null;
+            // An extra of a movie is the movie's: its collections and its watched state.
+            var title = item is Movie ? item : owner is Movie ? owner : null;
+            bool? played = viewer != null && userData != null && (item is Movie or Episode || title != null)
+                ? userData.GetUserData(viewer, item is Episode ? item : title!)?.Played == true : null;
             answer[item.Id] = new PrivacyIdentity(item.Id, item.GetBaseItemKind(), owner.Id, TitleKey(owner),
-                item is Movie && membership.TryGetValue(item.Id, out var sets) ? sets : Array.Empty<Guid>(), played);
+                title != null && membership.TryGetValue(title.Id, out var sets) ? sets : Array.Empty<Guid>(), played, owner.GetBaseItemKind());
         }
         return answer;
     }

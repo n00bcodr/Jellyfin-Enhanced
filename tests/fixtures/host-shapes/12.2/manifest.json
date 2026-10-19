@@ -1,0 +1,640 @@
+{
+ "captured": "2026-10-19T18:33:42+0800",
+ "host": "12.2",
+ "note": "Captured by .notes/tools/d46-r17/capture-r17.py from an owned rig-only lab with no privacy rule set.",
+ "owners": {
+  "guardedFeature": "f54a9a67c8bff46ec62af9ca063c8eaf",
+  "guardedSong": "f54a9a67c8bff46ec62af9ca063c8eaf",
+  "guardedTrailer": "f54a9a67c8bff46ec62af9ca063c8eaf",
+  "guardedVideo": "f54a9a67c8bff46ec62af9ca063c8eaf",
+  "plainSong": "be7f1a11579d285bc676f6484b2dd389",
+  "showFeature": "b970e608063e6608f89a0b31a5dae2a8",
+  "showSong": "b970e608063e6608f89a0b31a5dae2a8",
+  "showVideo": "b970e608063e6608f89a0b31a5dae2a8"
+ },
+ "roles": {
+  "channel:r17": "2b1589698d56aa3f7e6af0a3de171c68",
+  "episode:show-e1": "6770089c05c9ff11ce37ffc0fba72b0d",
+  "episode:show-e2": "a8be74a03a35ac05db2077507004bc8d",
+  "extra:guardedFeature:0": "2ab5420e73034a76aa58a3cc852d975d",
+  "extra:guardedSong:0": "c9eeb624e374fcf8bab9938cba1c9d82",
+  "extra:guardedTrailer:0": "280c2acd9057d41848a571f05b07c704",
+  "extra:guardedVideo:0": "3610114dce5c237d34bb12ef88c8167f",
+  "extra:plainSong:0": "67820e026c147072c4fb2fa28b121bab",
+  "extra:showFeature:0": "1b2d894b80636473701e32d8f6c30b1c",
+  "extra:showSong:0": "f8a0dc4816dc6ce414ab9d5e29fa66c2",
+  "extra:showVideo:0": "f5290a60ef8ca9a429794248b1cd5c1e",
+  "movie:guarded": "f54a9a67c8bff46ec62af9ca063c8eaf",
+  "movie:hidden": "99e9b37dd2d610f20696f697f6af6edf",
+  "movie:plain": "be7f1a11579d285bc676f6484b2dd389",
+  "program:later": "a900b05ea9806e4ba14305701c18a270",
+  "program:now": "e5e3d6d980668efff7a9beaeaea78d74",
+  "season:show-s1": "4b1ac6fd256eed7cba781bc31c409ed2",
+  "series:show": "b970e608063e6608f89a0b31a5dae2a8",
+  "timer:later": "7892b9d800e8d6ab0090b056aaead5c4",
+  "user:admin": "7ef882cd307344279240d0eca8333a9f",
+  "user:viewer": "c799f011678d4423bd7c07d24c672de8"
+ },
+ "shots": [
+  {
+   "endpoint": "Session.GetSessions",
+   "file": "Session.GetSessions.admin.json",
+   "method": "GET",
+   "path": "/Sessions",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Session.GetSessions",
+   "file": "Session.GetSessions.viewer.json",
+   "method": "GET",
+   "path": "/Sessions",
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
+   "endpoint": "Items.GetItems",
+   "file": "Items.GetItems.json",
+   "method": "GET",
+   "path": "/Items?ParentId=8d1d244b84dc080333684fdc9395acc2&Recursive=true&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Items.GetItemsByUserIdLegacy",
+   "file": "Items.GetItemsByUserIdLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items?ParentId=8d1d244b84dc080333684fdc9395acc2&Recursive=true&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Items.GetResumeItems",
+   "file": "Items.GetResumeItems.json",
+   "method": "GET",
+   "path": "/UserItems/Resume?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
+   "endpoint": "Items.GetResumeItemsLegacy",
+   "file": "Items.GetResumeItemsLegacy.json",
+   "method": "GET",
+   "path": "/Users/c799f011678d4423bd7c07d24c672de8/Items/Resume?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
+   "endpoint": "UserLibrary.GetLatestMedia",
+   "file": "UserLibrary.GetLatestMedia.json",
+   "method": "GET",
+   "path": "/Items/Latest?ParentId=8d1d244b84dc080333684fdc9395acc2&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetLatestMediaLegacy",
+   "file": "UserLibrary.GetLatestMediaLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/Latest?ParentId=12562028d06899a2a69c2c274534860e&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "TvShows.GetNextUp",
+   "file": "TvShows.GetNextUp.json",
+   "method": "GET",
+   "path": "/Shows/NextUp?SeriesId=b970e608063e6608f89a0b31a5dae2a8&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
+   "endpoint": "TvShows.GetUpcomingEpisodes",
+   "file": "TvShows.GetUpcomingEpisodes.json",
+   "method": "GET",
+   "path": "/Shows/Upcoming?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "TvShows.GetSeasons",
+   "file": "TvShows.GetSeasons.json",
+   "method": "GET",
+   "path": "/Shows/b970e608063e6608f89a0b31a5dae2a8/Seasons?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "TvShows.GetEpisodes",
+   "file": "TvShows.GetEpisodes.json",
+   "method": "GET",
+   "path": "/Shows/b970e608063e6608f89a0b31a5dae2a8/Episodes?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Suggestions.GetSuggestions",
+   "file": "Suggestions.GetSuggestions.json",
+   "method": "GET",
+   "path": "/Items/Suggestions?userId=7ef882cd307344279240d0eca8333a9f&type=Movie,Episode&limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Suggestions.GetSuggestionsLegacy",
+   "file": "Suggestions.GetSuggestionsLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Suggestions?type=Movie,Episode&limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetSimilarItems",
+   "file": "Library.GetSimilarItems.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/Similar?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Movies.GetMovieRecommendations",
+   "file": "Movies.GetMovieRecommendations.json",
+   "method": "GET",
+   "path": "/Movies/Recommendations?ParentId=8d1d244b84dc080333684fdc9395acc2&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Search.GetSearchHints",
+   "file": "Search.GetSearchHints.json",
+   "method": "GET",
+   "path": "/Search/Hints?searchTerm=Secret%20ending",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Search.GetSearchHints",
+   "file": "Search.GetSearchHints.titles.json",
+   "method": "GET",
+   "path": "/Search/Hints?searchTerm=D46%20R17",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Trailers.GetTrailers",
+   "file": "Trailers.GetTrailers.json",
+   "method": "GET",
+   "path": "/Trailers?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 500,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetItemCollections",
+   "file": "Library.GetItemCollections.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/Collections",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "InstantMix.GetInstantMixFromItem",
+   "file": "InstantMix.GetInstantMixFromItem.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/InstantMix?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetLiveTvPrograms",
+   "file": "LiveTv.GetLiveTvPrograms.json",
+   "method": "GET",
+   "path": "/LiveTv/Programs?channelIds=2b1589698d56aa3f7e6af0a3de171c68&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetPrograms",
+   "file": "LiveTv.GetPrograms.json",
+   "method": "POST",
+   "path": "/LiveTv/Programs",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecommendedPrograms",
+   "file": "LiveTv.GetRecommendedPrograms.json",
+   "method": "GET",
+   "path": "/LiveTv/Programs/Recommended?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetLiveTvChannels",
+   "file": "LiveTv.GetLiveTvChannels.json",
+   "method": "GET",
+   "path": "/LiveTv/Channels?addCurrentProgram=true&fields=Overview",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetChannel",
+   "file": "LiveTv.GetChannel.json",
+   "method": "GET",
+   "path": "/LiveTv/Channels/2b1589698d56aa3f7e6af0a3de171c68",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetProgram",
+   "file": "LiveTv.GetProgram.json",
+   "method": "GET",
+   "path": "/LiveTv/Programs/e5e3d6d980668efff7a9beaeaea78d74",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetTimers",
+   "file": "LiveTv.GetTimers.json",
+   "method": "GET",
+   "path": "/LiveTv/Timers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetTimer",
+   "file": "LiveTv.GetTimer.json",
+   "method": "GET",
+   "path": "/LiveTv/Timers/7892b9d800e8d6ab0090b056aaead5c4",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecordings",
+   "file": "LiveTv.GetRecordings.json",
+   "method": "GET",
+   "path": "/LiveTv/Recordings?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecordingsSeries",
+   "file": "LiveTv.GetRecordingsSeries.json",
+   "method": "GET",
+   "path": "/LiveTv/Recordings/Series",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecordingFolders",
+   "file": "LiveTv.GetRecordingFolders.json",
+   "method": "GET",
+   "path": "/LiveTv/Recordings/Folders",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecordingGroups",
+   "file": "LiveTv.GetRecordingGroups.json",
+   "method": "GET",
+   "path": "/LiveTv/Recordings/Groups",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetIntros",
+   "file": "UserLibrary.GetIntros.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/Intros",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItem",
+   "file": "UserLibrary.GetItem.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItem",
+   "file": "UserLibrary.GetItem.episode.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItem",
+   "file": "UserLibrary.GetItem.channel.json",
+   "method": "GET",
+   "path": "/Items/2b1589698d56aa3f7e6af0a3de171c68",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItem",
+   "file": "UserLibrary.GetItem.theme-song.json",
+   "method": "GET",
+   "path": "/Items/c9eeb624e374fcf8bab9938cba1c9d82?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItemLegacy",
+   "file": "UserLibrary.GetItemLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/f54a9a67c8bff46ec62af9ca063c8eaf?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetAncestors",
+   "file": "Library.GetAncestors.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/Ancestors",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetLocalTrailers",
+   "file": "UserLibrary.GetLocalTrailers.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/LocalTrailers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetSpecialFeatures",
+   "file": "UserLibrary.GetSpecialFeatures.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/SpecialFeatures",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeSongs",
+   "file": "Library.GetThemeSongs.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/ThemeSongs?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeVideos",
+   "file": "Library.GetThemeVideos.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/ThemeVideos?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeMedia",
+   "file": "Library.GetThemeMedia.movie.json",
+   "method": "GET",
+   "path": "/Items/f54a9a67c8bff46ec62af9ca063c8eaf/ThemeMedia?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetLocalTrailers",
+   "file": "UserLibrary.GetLocalTrailers.series.json",
+   "method": "GET",
+   "path": "/Items/b970e608063e6608f89a0b31a5dae2a8/LocalTrailers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetSpecialFeatures",
+   "file": "UserLibrary.GetSpecialFeatures.series.json",
+   "method": "GET",
+   "path": "/Items/b970e608063e6608f89a0b31a5dae2a8/SpecialFeatures",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeSongs",
+   "file": "Library.GetThemeSongs.series.json",
+   "method": "GET",
+   "path": "/Items/b970e608063e6608f89a0b31a5dae2a8/ThemeSongs?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeVideos",
+   "file": "Library.GetThemeVideos.series.json",
+   "method": "GET",
+   "path": "/Items/b970e608063e6608f89a0b31a5dae2a8/ThemeVideos?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeMedia",
+   "file": "Library.GetThemeMedia.series.json",
+   "method": "GET",
+   "path": "/Items/b970e608063e6608f89a0b31a5dae2a8/ThemeMedia?inheritFromParent=false",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeSongs",
+   "file": "Library.GetThemeSongs.episode-inherited.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/ThemeSongs?inheritFromParent=true",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetThemeMedia",
+   "file": "Library.GetThemeMedia.episode-inherited.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/ThemeMedia?inheritFromParent=true",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetLocalTrailersLegacy",
+   "file": "UserLibrary.GetLocalTrailersLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/f54a9a67c8bff46ec62af9ca063c8eaf/LocalTrailers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetSpecialFeaturesLegacy",
+   "file": "UserLibrary.GetSpecialFeaturesLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/f54a9a67c8bff46ec62af9ca063c8eaf/SpecialFeatures",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Image.GetItemImageInfos",
+   "file": "Image.GetItemImageInfos.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/Images",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "MediaInfo.GetPlaybackInfo",
+   "file": "MediaInfo.GetPlaybackInfo.json",
+   "method": "GET",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=7ef882cd307344279240d0eca8333a9f",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "MediaInfo.GetPostedPlaybackInfo",
+   "file": "MediaInfo.GetPostedPlaybackInfo.json",
+   "method": "POST",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=7ef882cd307344279240d0eca8333a9f",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Videos.GetAdditionalPart",
+   "file": "Videos.GetAdditionalPart.json",
+   "method": "GET",
+   "path": "/Videos/f54a9a67c8bff46ec62af9ca063c8eaf/AdditionalParts",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Library.GetMediaFolders",
+   "file": "Library.GetMediaFolders.json",
+   "method": "GET",
+   "path": "/Library/MediaFolders",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserViews.GetUserViews",
+   "file": "UserViews.GetUserViews.json",
+   "method": "GET",
+   "path": "/UserViews?userId=7ef882cd307344279240d0eca8333a9f",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserViews.GetUserViewsLegacy",
+   "file": "UserViews.GetUserViewsLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Views",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetRootFolder",
+   "file": "UserLibrary.GetRootFolder.json",
+   "method": "GET",
+   "path": "/Items/Root",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetRootFolderLegacy",
+   "file": "UserLibrary.GetRootFolderLegacy.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/Root",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Channels.GetChannels",
+   "file": "Channels.GetChannels.json",
+   "method": "GET",
+   "path": "/Channels",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Genres.GetGenres",
+   "file": "Genres.GetGenres.json",
+   "method": "GET",
+   "path": "/Genres?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Studios.GetStudios",
+   "file": "Studios.GetStudios.json",
+   "method": "GET",
+   "path": "/Studios?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Persons.GetPersons",
+   "file": "Persons.GetPersons.json",
+   "method": "GET",
+   "path": "/Persons?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Artists.GetArtists",
+   "file": "Artists.GetArtists.json",
+   "method": "GET",
+   "path": "/Artists?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Artists.GetAlbumArtists",
+   "file": "Artists.GetAlbumArtists.json",
+   "method": "GET",
+   "path": "/Artists/AlbumArtists?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "MusicGenres.GetMusicGenres",
+   "file": "MusicGenres.GetMusicGenres.json",
+   "method": "GET",
+   "path": "/MusicGenres?limit=5",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Years.GetYears",
+   "file": "Years.GetYears.json",
+   "method": "GET",
+   "path": "/Years?parentId=8d1d244b84dc080333684fdc9395acc2",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Years.GetYear",
+   "file": "Years.GetYear.json",
+   "method": "GET",
+   "path": "/Years/1991",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetRecordingGroup",
+   "file": "LiveTv.GetRecordingGroup.json",
+   "method": "GET",
+   "path": "/LiveTv/Recordings/Groups/2b1589698d56aa3f7e6af0a3de171c68",
+   "status": 404,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "ActivityLog.GetLogEntries",
+   "file": "ActivityLog.GetLogEntries.json",
+   "method": "GET",
+   "path": "/System/ActivityLog/Entries?limit=200&hasUserId=true",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "User.AuthenticateUserByName",
+   "file": "User.AuthenticateUserByName.json",
+   "method": "POST",
+   "path": "/Users/AuthenticateByName",
+   "status": 200,
+   "viewer": "viewer"
+  }
+ ]
+}
