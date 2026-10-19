@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHarness, deferred, jsRoot } from '../helpers/harness.mjs';
+import { shippedLocales } from '../helpers/served-scripts.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
@@ -472,7 +473,8 @@ for (const [chosen, saved] of [['zz-ZZ', ''], ['fr', 'fr'], ['', ''], ['haw-AU',
   for (const code of ['', chosen]) if (![...select.options].some(o => o.value === code)) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
   h.window.ApiClient.ajax = async request => { if (request.type === 'POST') h.writes.push(request); return []; };
   await h.choose('displayLanguageSelect', chosen);
-  assert.equal(select.value, chosen);
+  // Fix round 4 (RBS1-R4-2): the select shows what the store holds (the saved tag), never the tampered option chosen.
+  assert.equal(select.value, saved);
   assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, saved);
 });
 
@@ -1223,4 +1225,70 @@ test('a throwing language toast cannot skip its reload, other notifications or p
   assert.ok(h.toasts.includes(tr('toast_badge_settings_saved')));
   assert.equal(h.document.getElementById('acquisitionBadgesSelect').value, 'off');
   h.clock.advance(1500); assert.equal(h.clock.reloads, 1); assert.equal(h.warnings, 1);
+});
+
+// Stage 1 fix round 4 (RBS1-R4-2): the panel shows the display language the server stored, exactly (en-AU, de-Latn-CH: no
+// truncation to en or de, no base-language substitution), from the real locale enumeration: the server's list of the
+// locale files this build ships (GET /JellyfinEnhanced/locales leaves out the base English) and Jellyfin 12.2's own
+// /Localization/Cultures answer (captured from a 12.2 server). A stored tag without its own option gets one, labelled by
+// the bundle the policy resolves it to; on enumeration and on every store update (a save of another setting, a read).
+const SERVER_LOCALES = shippedLocales().filter(code => code !== 'en');
+const CULTURES = JSON.parse(readFileSync(new URL('../helpers/jellyfin-12.2-cultures.json', import.meta.url), 'utf8'));
+async function storedLanguagePanel(t, stored) {
+  const h = panel(t, { config: badges, settings: { displayLanguage: stored } });
+  h.wire();
+  let persisted = { displayLanguage: stored };
+  h.window.fetch = async () => ({ ok: false }); // no locale newer than this build
+  h.window.ApiClient.ajax = async request => {
+    if (request.url.includes('/JellyfinEnhanced/locales')) return [...SERVER_LOCALES];
+    if (request.url.includes('/Localization/Cultures')) return structuredClone(CULTURES);
+    if (request.type === 'POST') { h.writes.push(request); persisted = { ...persisted, ...JSON.parse(request.data) }; return { success: true, consents: {}, displayLanguage: persisted.displayLanguage }; }
+    return { ...persisted };
+  };
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
+  await tick(); await tick();
+  const select = h.document.getElementById('displayLanguageSelect');
+  return { ...h, select, setPersisted(value) { persisted = { ...persisted, ...value }; } };
+}
+function shows(h, tag, label) {
+  const { select } = h;
+  assert.ok(select.selectedIndex >= 0, `nothing selected (value ${JSON.stringify(select.value)})`);
+  assert.equal(select.value, tag);
+  assert.equal(select.options[select.selectedIndex].value, tag);
+  assert.equal([...select.options].filter(o => o.value.toLowerCase() === tag.toLowerCase()).length, 1, 'one option per language');
+  if (label) assert.equal(select.options[select.selectedIndex].textContent, label);
+}
+const STORED = [['en-AU', 'English (en-AU)'], ['de-Latn-CH', 'German (de-Latn-CH)'], ['pt-BR', 'Portuguese (Brazil)'], ['zh-HK', 'Chinese (Hong Kong)'], ['fr', 'French'], ['', null]];
+for (const [stored, label] of STORED) test(`the panel shows the stored language ${JSON.stringify(stored)} exactly, from the real enumeration`, async t => {
+  const h = await storedLanguagePanel(t, stored);
+  shows(h, stored, label);
+  // Every shipped language is still offered once, the real list untouched.
+  for (const code of SERVER_LOCALES) assert.equal([...h.select.options].filter(o => o.value === code).length, 1, code);
+});
+for (const [stored, label] of STORED) test(`an unrelated save keeps the stored language ${JSON.stringify(stored)} selected`, async t => {
+  const h = await storedLanguagePanel(t, stored);
+  await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  await tick();
+  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, stored, 'the save keeps the stored language');
+  shows(h, stored, label);
+  h.document.getElementById('showFileSizesToggle')?.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await tick(); await tick();
+  shows(h, stored, label);
+});
+for (const [from, to, label] of [['fr', 'de-Latn-CH', 'German (de-Latn-CH)'], ['en-AU', 'pt-BR', 'Portuguese (Brazil)'], ['pt-BR', 'en-AU', 'English (en-AU)'], ['en-AU', '', null]]) test(`a read that brings ${JSON.stringify(to)} (stored elsewhere) shows it exactly`, async t => {
+  const h = await storedLanguagePanel(t, from);
+  h.setPersisted({ displayLanguage: to });
+  assert.equal(await h.JE.readUserSettings('settings.json'), true);
+  await tick();
+  shows(h, to, label);
+});
+test('a stored language the panel shows can be chosen away from and back, saved as stored', async t => {
+  const h = await storedLanguagePanel(t, 'en-AU');
+  await h.choose('displayLanguageSelect', 'fr'); await tick();
+  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'fr');
+  shows(h, 'fr', 'French');
+  await h.choose('displayLanguageSelect', 'en-AU'); await tick();
+  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'en-AU');
+  shows(h, 'en-AU', 'English (en-AU)');
 });

@@ -44,8 +44,8 @@
             homeRowRequestsSelect: 'homeRowRequests', homeRowSoonSelect: 'homeRowSoon', homeRowArrivedSelect: 'homeRowArrived', homeOpsStripSelect: 'homeOpsStrip',
             watchProgressModeSelect: 'watchProgressMode', watchProgressTimeFormatSelect: 'watchProgressTimeFormat',
             qualityTagsAudioLanguageSelect: 'qualityTagsPreferredAudioLanguage', pauseScreenDelayInput: 'pauseScreenDelaySeconds',
-            randomIncludeMovies: 'randomIncludeMovies', randomIncludeShows: 'randomIncludeShows', randomSourceSelect: 'randomSourceId',
-            displayLanguageSelect: 'displayLanguage'
+            randomIncludeMovies: 'randomIncludeMovies', randomIncludeShows: 'randomIncludeShows', randomSourceSelect: 'randomSourceId'
+            // The display-language select renders itself (ui-panel-language.js): it may need an option for the stored tag.
         };
         for (const [id, key] of Object.entries(bindings)) {
             const control = document.getElementById(id);

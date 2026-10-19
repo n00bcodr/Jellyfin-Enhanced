@@ -36,6 +36,11 @@ function panel(tt, { config = {}, settings = {}, answer = () => [] } = {}) {
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
   h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} });
+  // As ui-panel.js wires the panel: the language select renders the stored language itself (fix round 4). No locale newer
+  // than this build on GitHub; the enumeration requests are answered by `answer`.
+  h.window.fetch = async () => ({ ok: false });
+  h.load('enhanced/settingspanel/ui-panel-language.js');
+  h.JE.internals.enhancedUi.wireLanguageControls({ resetAutoCloseTimer() {} });
   return { ...h, writes, toasts, listPages,
     async choose(id, value) {
       const select = h.document.getElementById(id);
