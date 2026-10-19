@@ -13,6 +13,8 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
+using MediaBrowser.Model.Search;
+using Jellyfin.Data.Enums;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -45,9 +47,13 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
     }
 }
 
-/// <summary>Runs even for facade short circuits, after action awaits and immediately before result serialization.</summary>
+/// <summary>
+/// Runs even for facade short circuits, after action awaits and immediately before result serialization. Which
+/// responses it guards comes from the matched endpoint's metadata (controller/action, route template and bound values),
+/// never from the request path's text; policy is always re-read here, at delivery.
+/// </summary>
 public sealed class TitlePresentationResultFilter(UserConfigurationManager manager, SpoilerPresentation spoilers, ILibraryManager library,
-    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
+    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
 {
     /// <inheritdoc />
     public int Order => int.MaxValue;
@@ -57,7 +63,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <inheritdoc />
     public void OnResourceExecuting(ResourceExecutingContext context)
     {
-        if (Route(context.HttpContext, context.ActionDescriptor as ControllerActionDescriptor) == null) return;
+        if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
         context.HttpContext.Request.Headers.Remove("If-None-Match");
@@ -73,18 +79,21 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <inheritdoc />
     public void OnResultExecuting(ResultExecutingContext context)
     {
-        if (!HttpMethods.IsGet(context.HttpContext.Request.Method) && !HttpMethods.IsHead(context.HttpContext.Request.Method)) return;
+        var read = HttpMethods.IsGet(context.HttpContext.Request.Method) || HttpMethods.IsHead(context.HttpContext.Request.Method);
         var viewer = UserHelper.GetCurrentUserId(context.HttpContext.User);
         if (viewer == null || viewer == Guid.Empty) return;
-        var native = context.Result is ObjectResult { Value: BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> };
-        var route = Route(context.HttpContext, context.ActionDescriptor as ControllerActionDescriptor);
+        // A guarded native endpoint (any verb: PlaybackInfo is also POSTed) is projected whatever shape it answers with.
+        var guardedNative = HiddenContentResponseFilter.Guards(context) || SpoilerFieldStripFilter.Guards(context);
+        var native = context.Result is ObjectResult { Value: not null } answer && (guardedNative && answer.StatusCode is null or (>= 200 and < 300)
+            || read && answer.Value is BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> or SearchHintResult);
+        var route = read ? Route(context) : null;
         if (!native && route == null) return;
         try
         {
             var final = TitlePresentationGate.Read(manager, spoilers, viewer.Value, library);
             if (native)
             {
-                ProjectNative((ObjectResult)context.Result, final, route?.Surface, viewer.Value, context);
+                DeliverNative(context, (ObjectResult)context.Result, final, route?.Surface, viewer.Value);
                 return;
             }
             var spec = route!;
@@ -148,6 +157,74 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         return root.ToJsonString();
     }
 
+    /// <summary>Every response shape a guarded native endpoint returns (host-verified on 12.2 and 10.11.11), with the delivery-time policy.</summary>
+    private void DeliverNative(ResultExecutingContext context, ObjectResult result, TitlePresentationPolicy final, string? surface, Guid viewer)
+    {
+        try
+        {
+            switch (result.Value)
+            {
+                case BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto>:
+                    ProjectNative(result, final, surface, viewer, context);
+                    return;
+                case SearchHintResult hints:
+                    ProjectSearchHints(result, hints, final, surface, viewer, context);
+                    return;
+                case IEnumerable<ImageInfo> or IEnumerable<RecommendationDto> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse:
+                    StripDelivered(result, final, viewer, context);
+                    return;
+                default:
+                    // An answer shape this gate cannot project never leaves while a policy applies to the viewer.
+                    if (!PolicyApplies(final)) return;
+                    logger?.Warning($"Presentation gate: {context.ActionDescriptor.DisplayName} answered {result.Value?.GetType().FullName}; withheld while a privacy policy applies.");
+                    Withhold(context);
+                    return;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.Error($"Presentation gate could not project {context.ActionDescriptor.DisplayName}: {ex.GetType().Name}");
+            Withhold(context);
+        }
+    }
+
+    private static void Withhold(ResultExecutingContext context)
+    {
+        context.Result = new StatusCodeResult(503);
+        context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+    }
+
+    private static bool PolicyApplies(TitlePresentationPolicy final)
+        => !final.Hidden.IsEmpty || final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State));
+
+    /// <summary>Search hints carry no parent id: the owning series is read from the library, then hints are filtered like items.</summary>
+    private void ProjectSearchHints(ObjectResult result, SearchHintResult page, TitlePresentationPolicy final, string? surface, Guid viewer, ResultExecutingContext context)
+    {
+        var hints = page.SearchHints?.ToArray() ?? Array.Empty<SearchHint>();
+        if (!final.Hidden.IsEmpty && hints.Length > 0)
+        {
+            final.Hidden.BindLibraryIds(library, hints.Select(h => h.Id));
+            var parents = new Dictionary<Guid, Guid>();
+            var children = hints.Where(h => h.Type is BaseItemKind.Episode or BaseItemKind.Season).Select(h => h.Id).Distinct().ToArray();
+            foreach (var batch in children.Chunk(2000))
+                foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch, DtoOptions = new MediaBrowser.Controller.Dto.DtoOptions(false) }) ?? [])
+                    if (item is MediaBrowser.Controller.Entities.TV.Episode { SeriesId: var episodeSeries }) parents[item.Id] = episodeSeries;
+                    else if (item is MediaBrowser.Controller.Entities.TV.Season { SeriesId: var seasonSeries }) parents[item.Id] = seasonSeries;
+            var where = surface ?? HiddenContentResponseFilter.PresentationSurface(context, null);
+            var kept = hints.Where(h => !final.Hidden.IsHidden(null, h.Id.ToString(), parents.TryGetValue(h.Id, out var series) ? series.ToString() : null, where)).ToArray();
+            if (kept.Length != hints.Length) result.Value = new SearchHintResult(kept, Math.Max(0, page.TotalRecordCount - hints.Length + kept.Length));
+        }
+        StripDelivered(result, final, viewer, context);
+    }
+
+    /// <summary>Spoiler Guard's native strip, re-applied with the policy read at delivery; unknown policy is withheld.</summary>
+    private void StripDelivered(ObjectResult result, TitlePresentationPolicy final, Guid viewer, ResultExecutingContext context)
+    {
+        if (final.Spoilers is not { Enabled: true } presentation) return;
+        if (presentation.Unavailable) { Withhold(context); return; }
+        strip?.StripDelivered(result, presentation.State, viewer, context);
+    }
+
     private void ProjectNative(ObjectResult result, TitlePresentationPolicy final, string? surface, Guid viewer, ActionContext context)
     {
         var items = result.Value switch { BaseItemDto one => new[] { one }, QueryResult<BaseItemDto> page => page.Items.ToArray(), IEnumerable<BaseItemDto> list => list.ToArray(), _ => Array.Empty<BaseItemDto>() };
@@ -185,11 +262,32 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private sealed record Schema(string Surface, string? Title, string Resource, string? Kind = null, string? Scope = null, int Season = 0, int Episode = 0);
 
-    private static Schema? Route(HttpContext http, ControllerActionDescriptor? action)
+    /// <summary>
+    /// The matched JE endpoint's route template with its bound values, all lower-cased (literals come from the
+    /// declaration, values from model binding). Request casing and aliases therefore cannot change the classification, and a route whose family
+    /// segment is a parameter (for example the page catch-all) is never a guarded feed.
+    /// </summary>
+    private static string[]? EndpointSegments(ActionContext context)
     {
-        var path = http.Request.Path.Value?.Trim('/').Split('/') ?? Array.Empty<string>();
-        if (path.Length < 2 || !path[0].Equals("JellyfinEnhanced", StringComparison.OrdinalIgnoreCase)) return null;
-        var p = path.Skip(1).ToArray();
+        if (context.ActionDescriptor is not ControllerActionDescriptor action || action.AttributeRouteInfo?.Template is not { } template
+            || action.ControllerTypeInfo.Assembly != typeof(TitlePresentationResultFilter).Assembly) return null;
+        var parts = template.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !parts[0].Equals("JellyfinEnhanced", StringComparison.OrdinalIgnoreCase) || parts[1].Contains('{')) return null;
+        var segments = new List<string>();
+        foreach (var part in parts.Skip(1))
+        {
+            if (!(part.StartsWith('{') && part.EndsWith('}'))) { segments.Add(part.ToLowerInvariant()); continue; }
+            var name = part[1..^1].TrimStart('*').Split(':', '=', '?')[0];
+            if (context.RouteData.Values.TryGetValue(name, out var value) && value?.ToString() is { Length: > 0 } text)
+                segments.AddRange(text.ToLowerInvariant().Split('/', StringSplitOptions.RemoveEmptyEntries));
+        }
+        return segments.ToArray();
+    }
+
+    private static Schema? Route(ActionContext context)
+    {
+        var http = context.HttpContext;
+        if (EndpointSegments(context) is not { Length: > 0 } p) return null;
         string? kind = p.FirstOrDefault(v => v is "movie" or "tv");
         string? title = null;
         for (var i = 0; i + 1 < p.Length; i++)

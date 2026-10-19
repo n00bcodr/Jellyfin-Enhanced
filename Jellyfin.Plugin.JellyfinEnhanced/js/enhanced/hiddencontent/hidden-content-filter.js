@@ -50,12 +50,6 @@
             (!viewScoped || scope.view === viewGeneration);
     }
 
-    /** Sole processed-marker writer: record the decision's identity, surface and the scope captured with its inputs. */
-    function markNativeDecision(card, hidden, scope) {
-        if (nodeClaims.get(card) !== scope.seq || !nativeDecisionScopeCurrent(scope, !hidden)) return;
-        cardDecisions.set(card, { scope, viewScoped: !hidden, itemId: getCardItemId(card), surface: nativeNodeSurface(card) });
-        card.setAttribute(PROCESSED_ATTR, `${scope.rules}:${hidden ? 'hide' : scope.view}`);
-    }
 
     /** Sole processed-marker reader, including retained nodes marked in an older scope. */
     function nativeDecisionResolved(card) {
@@ -208,6 +202,24 @@
             nativeDecisionScopeCurrent(scope, !hidden);
     }
 
+    /**
+     * The only place a native verdict takes effect, and the sole processed-marker writer. The apply-time checks, the
+     * DOM effect and the marker happen in this one synchronous step; when a check fails nothing is written and the
+     * node stays unresolved for the next ordinary scan. A marker is never written ahead of a deferred effect.
+     * @param {boolean} final Whether the verdict's inputs were complete when they were read (a pending identity is not).
+     */
+    function applyNativeDecision(card, itemId, surface, scope, hidden, parentSeriesId, final) {
+        if (!decisionApplies(card, itemId, surface, scope, hidden)) return;
+        card.classList.toggle('je-hidden', hidden);
+        if (hidden && parentSeriesId) card.setAttribute(HIDDEN_PARENT_ATTR, parentSeriesId);
+        else card.removeAttribute(HIDDEN_PARENT_ATTR);
+        if (hidden && !parentSeriesId) card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+        else card.removeAttribute(HIDDEN_DIRECT_ATTR);
+        if (!final) return;
+        cardDecisions.set(card, { scope, viewScoped: !hidden, itemId, surface });
+        card.setAttribute(PROCESSED_ATTR, `${scope.rules}:${hidden ? 'hide' : scope.view}`);
+    }
+
     /** Failed and unattempted identities wait before a later ordinary pass retries them. */
     const TITLE_RETRY_AFTER_MS = 30000;
 
@@ -308,12 +320,7 @@
                 // A newer direct/scoped hide remains authoritative over this older parent read.
                 if (isHiddenOnSurface(itemId, surface, { type: card.dataset.type, tmdbId: card.dataset.tmdbId })) continue;
                 const hidden = !!seriesId && internal.isHidden(seriesId);
-                if (!decisionApplies(card, itemId, surface, scope, hidden)) continue;
-                card.classList.toggle('je-hidden', hidden);
-                if (hidden) card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
-                else card.removeAttribute(HIDDEN_PARENT_ATTR);
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                markNativeDecision(card, hidden, scope);
+                applyNativeDecision(card, itemId, surface, scope, hidden, seriesId, true);
             }
         });
     }
@@ -397,25 +404,17 @@
             const allows = shouldFilterSurface(surface);
             const hidden = allows && isHiddenOnSurface(itemId, surface,
                 { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
-            if (hidden) {
-                card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                markNativeDecision(card, true, scope);
-            } else if (parentCascadeEligible(card, surface)) {
+            if (!hidden && parentCascadeEligible(card, surface)) {
                 // Preserve an existing hide until its asynchronous parent verdict is resolved.
                 pendingParentChecks.push({ card, itemId, surface });
                 continue;
-            } else {
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                if (cardTitleResolved(card, itemId)) markNativeDecision(card, false, scope);
             }
-            changes.push({ card, hidden, itemId, surface });
+            // The verdict is final only if its inputs were: a visible title card may still await its identity.
+            changes.push({ card, hidden, itemId, surface, final: hidden || cardTitleResolved(card, itemId) });
         }
+        // Reads happen in the pass; the effect and its marker are written together in the paint frame.
         if (changes.length) requestAnimationFrame(() => {
-            for (const { card, hidden, itemId, surface } of changes) {
-                if (decisionApplies(card, itemId, surface, scope, hidden)) card.classList.toggle('je-hidden', hidden);
-            }
+            for (const { card, hidden, itemId, surface, final } of changes) applyNativeDecision(card, itemId, surface, scope, hidden, null, final);
         });
         if (pendingParentChecks.length) void batchCheckParentSeries(pendingParentChecks, scope);
     }
@@ -499,6 +498,7 @@
 
     Object.assign(internal, {
         nativeNodes,
+        nativeDecisionResolved,
         captureNativeDecisionScope,
         nativeDecisionScopeCurrent,
         getCurrentNativeSurface,
