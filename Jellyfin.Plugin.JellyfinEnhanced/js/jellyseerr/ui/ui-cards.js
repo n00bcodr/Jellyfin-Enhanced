@@ -367,7 +367,8 @@
             + '<div class="cardScalable">'
             + '<div class="cardPadder cardPadder-overflowPortrait"></div>'
             // tabindex/cursor: keyboard and pointer activation (see the delegated handlers).
-            + '<div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image" style="cursor: pointer;" tabindex="0">'
+            // focusable: Jellyfin's remote navigation only lands on links, buttons and this class.
+            + '<div class="cardImageContainer coveredImage cardContent jellyseerr-poster-image focusable" style="cursor: pointer;" tabindex="0">'
             + '<div class="jellyseerr-status-badge"></div>'
             + '<div class="jellyseerr-elsewhere-icons"></div>'
             + '<div class="cardIndicators"></div>'
@@ -420,7 +421,8 @@
         const ctx = {
             // Resolve Seerr URL based on mappings or fallback to base URL
             seerrBase: JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '',
-            useMoreInfoModal: !!(config && config.JellyseerrUseMoreInfoModal),
+            // A TV app has no new window to open Seerr in, so it always uses the modal.
+            useMoreInfoModal: !!(config && config.JellyseerrUseMoreInfoModal) || JE.core.ui.isTvLayout(),
             moreInfoLoaded: !!JE.jellyseerrMoreInfo,
             // Admin opt-in: an available item's poster goes straight to Jellyfin.
             availablePostersLinkToJellyfin: !!(config && config.JellyseerrAvailablePosterLinksToJellyfin),
@@ -955,6 +957,7 @@
             goToJellyfinItem(state);
         } else if (!state.overview) {
             createOverview(state);
+            if (JE.core.ui.isTvLayout()) state.overview?.querySelector('.jellyseerr-request-button')?.focus();
         } else {
             removeOverview(state);
         }

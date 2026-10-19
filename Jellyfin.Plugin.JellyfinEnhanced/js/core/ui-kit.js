@@ -7,7 +7,7 @@
 // (shared by the Seerr results row, cards and request buttons).
 //
 // Public surface: JE.core.ui { escapeHtml, toast, injectCss, removeCss,
-// addTouchTapListener, addDelegatedTouchTapListener }.
+// addTouchTapListener, addDelegatedTouchTapListener, isTvLayout }.
 // Aliases kept: JE.escapeHtml, JE.toast, JE.helpers.addCSS/removeCSS/escHtml.
 (function(JE) {
     'use strict';
@@ -271,13 +271,22 @@
         root.addEventListener('touchend', (e) => { trackerFor(e, false)?.end(e); }, { passive: false });
     }
 
+    /**
+     * Whether Jellyfin's TV layout (remote-driven) is active.
+     * @returns {boolean}
+     */
+    function isTvLayout() {
+        return document.documentElement.classList.contains('layout-tv');
+    }
+
     JE.core.ui = {
         escapeHtml,
         toast,
         injectCss,
         removeCss,
         addTouchTapListener,
-        addDelegatedTouchTapListener
+        addDelegatedTouchTapListener,
+        isTvLayout
     };
 
     // Frozen-contract aliases: these are the canonical implementations now.

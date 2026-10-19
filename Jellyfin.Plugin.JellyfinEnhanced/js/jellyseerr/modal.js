@@ -151,6 +151,8 @@
             }
         };
 
+        if (JE.core.ui.isTvLayout()) enableTvSelectPicker(modalElement, bodyEl);
+
         const show = () => {
             document.body.appendChild(modalElement);
             document.body.classList.add('jellyseerr-modal-is-open');
@@ -205,6 +207,72 @@
 
         return { modalElement, show, close };
     };
+
+    const TV_BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack'];
+
+    /**
+     * Jellyfin's own select list on a TV closes through history.back(), which
+     * also closes this dialog. On the TV layout a select opens an in-dialog
+     * list of buttons instead, and Back closes that list only.
+     * @param {HTMLElement} modalElement
+     * @param {HTMLElement} bodyEl
+     */
+    function enableTvSelectPicker(modalElement, bodyEl) {
+        let picker = null;
+        let owner = null;
+
+        const closePicker = () => {
+            if (!picker) return;
+            document.removeEventListener('keydown', onPickerKey, true);
+            picker.remove();
+            picker = null;
+            owner?.focus();
+            owner = null;
+        };
+
+        const onPickerKey = (e) => {
+            if (!TV_BACK_KEYS.includes(e.key) && e.keyCode !== 10009 && e.keyCode !== 461) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            closePicker();
+        };
+
+        const openPicker = (select) => {
+            closePicker();
+            owner = select;
+            picker = document.createElement('div');
+            picker.className = 'jellyseerr-tv-picker';
+            picker.setAttribute('role', 'listbox');
+            Array.from(select.options).forEach((option) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'jellyseerr-tv-picker-option focusable';
+                item.setAttribute('role', 'option');
+                item.setAttribute('aria-selected', String(option.value === select.value));
+                item.textContent = option.textContent;
+                item.addEventListener('click', () => {
+                    select.value = option.value;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    closePicker();
+                });
+                picker.appendChild(item);
+            });
+            select.insertAdjacentElement('afterend', picker);
+            document.addEventListener('keydown', onPickerKey, true);
+            (picker.querySelector('[aria-selected="true"]') || picker.firstElementChild)?.focus();
+        };
+
+        const intercept = (e) => {
+            const select = e.target instanceof Element ? e.target.closest('select') : null;
+            if (!select || !bodyEl.contains(select)) return;
+            if (e.type === 'keydown' && e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.type !== 'mousedown') openPicker(select);
+        };
+
+        ['mousedown', 'click', 'keydown'].forEach((type) => modalElement.addEventListener(type, intercept, true));
+    }
 
     /**
      * Generates the HTML string for the advanced request options form.
