@@ -170,7 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (result == null || cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty) return;
             var userState = _resolver.LoadUserState(context.HttpContext, userId);
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0) return;
+            if (!HasEntries(userState)) return;
             try
             {
                 StripIfApplicable(result, userState, cfg, userId, context);
@@ -181,7 +181,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static bool IsTargetRoute(ActionExecutingContext context)
+        /// <summary>Whether the matched endpoint (by its descriptor's controller/action) is one this filter strips.</summary>
+        internal static bool Guards(ActionContext context) => IsTargetRoute(context);
+
+        /// <summary>Whether a viewer's state names anything Spoiler Guard could apply to.</summary>
+        internal static bool HasEntries(UserSpoilerBlur state)
+            => state.Series.Count + state.Movies.Count + state.Collections.Count + state.ProviderTitles.Count + state.PendingTmdb.Count > 0;
+
+        /// <summary>
+        /// The final delivery gate's re-strip with the state it read at delivery, for every guarded response shape. The
+        /// strip is idempotent, so an answer the action-time pass already stripped is unchanged.
+        /// </summary>
+        internal void StripDelivered(ObjectResult result, UserSpoilerBlur state, Guid userId, ActionContext context)
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty || !HasEntries(state)) return;
+            StripIfApplicable(result, state, cfg, userId, context);
+        }
+
+        private static bool IsTargetRoute(ActionContext context)
         {
             var rv = context.ActionDescriptor.RouteValues;
             if (rv == null) return false;
@@ -210,7 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // despite the Movie branches in StripItem +
             // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
             // GetTagData / image-filter checks.
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0)
+            if (!HasEntries(userState))
             {
                 await next().ConfigureAwait(false);
                 return;
@@ -254,7 +272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             // ObjectResult covers most MVC return shapes, but JsonResult /
             // ContentResult / custom IActionResult are siblings (not
@@ -352,7 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             if (!RouteParentIsSpoilerEpisode(context, userState, userId, out _)) return;
             // Auxiliary "scrub title-bearing fields" path — only relevant when a
@@ -377,7 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             if (pbi.MediaSources == null) return;
             if (!RouteParentIsSpoilerEpisode(context, userState, userId, out var isMovie)) return;
@@ -438,7 +456,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // confirm it's an Episode (or Season) of a spoiler-list series
         // the user hasn't watched.
         private bool RouteParentIsSpoilerEpisode(
-            ActionExecutingContext context,
+            ActionContext context,
             UserSpoilerBlur userState,
             Guid userId,
             out bool isMovie)

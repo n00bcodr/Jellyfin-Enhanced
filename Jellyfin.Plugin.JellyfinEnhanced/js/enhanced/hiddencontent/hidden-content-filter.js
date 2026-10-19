@@ -33,11 +33,15 @@
     });
     let viewGeneration = 0;
     let visibilityGeneration = 0;
+    let decisionSequence = 0;
     const cardDecisions = new WeakMap();
+    /** The newest pass that read each node's inputs; an older asynchronous result never replaces it. */
+    const nodeClaims = new WeakMap();
 
-    /** Captures the lifetime of a final verdict without exposing session credentials in DOM. */
+    /** Captures the lifetime of a verdict when its inputs are read, without exposing session credentials in DOM. */
     function captureNativeDecisionScope() {
-        return { action: JE.createSessionAction(), view: viewGeneration, visibility: visibilityGeneration, rules: internal.getRulesGeneration() };
+        return { seq: ++decisionSequence, action: JE.createSessionAction(), view: viewGeneration, visibility: visibilityGeneration,
+            rules: internal.getRulesGeneration() };
     }
 
     /** Positive identities/hides survive navigation; negative verdicts also depend on their view. */
@@ -46,19 +50,12 @@
             (!viewScoped || scope.view === viewGeneration);
     }
 
-    /** Sole processed-marker writer: record the decision's identity, surface and lifetime. */
-    function markNativeDecision(card, hidden, scope = captureNativeDecisionScope()) {
-        if (!nativeDecisionScopeCurrent(scope, !hidden)) return;
-        cardDecisions.set(card, { scope, viewScoped: !hidden, itemId: getCardItemId(card),
-            surface: getCardSurface(card) || getCurrentNativeSurface() });
-        card.setAttribute(PROCESSED_ATTR, `${scope.rules}:${hidden ? 'hide' : scope.view}`);
-    }
 
     /** Sole processed-marker reader, including retained nodes marked in an older scope. */
     function nativeDecisionResolved(card) {
         const decision = cardDecisions.get(card);
         return card.hasAttribute(PROCESSED_ATTR) && !!decision &&
-            decision.itemId === getCardItemId(card) && decision.surface === (getCardSurface(card) || getCurrentNativeSurface()) &&
+            decision.itemId === getCardItemId(card) && decision.surface === nativeNodeSurface(card) &&
             nativeDecisionScopeCurrent(decision.scope, decision.viewScoped);
     }
     const sectionSurfaceCache = new WeakMap();
@@ -75,8 +72,13 @@
     const HIDDEN_PARENT_ATTR = 'data-je-hidden-parent-series-id';
     /** Data attribute marking a directly-hidden card. */
     const HIDDEN_DIRECT_ATTR = 'data-je-hidden-direct';
-    /** Selector for any hideable card/list-item. */
-    const CARD_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
+    /** The one native-node selector: every pass (filter, title and parent identity, recovery) reads these nodes. */
+    const NATIVE_NODE_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
+
+    /** Every hideable native card or list row; image-editor cards are never Hidden Content nodes. */
+    function nativeNodes() {
+        return [...document.querySelectorAll(NATIVE_NODE_SEL)].filter(node => !node.hasAttribute('data-imagetype'));
+    }
 
     // ============================================================
     // Scope-aware filtering
@@ -174,6 +176,50 @@
         return 'library';
     }
 
+    /** Whether Hidden Content may decide native nodes at all (user and server switches). */
+    function hiddenContentActive() {
+        return getSettings().enabled && JE.pluginConfig?.HiddenContentEnabled !== false;
+    }
+
+    /** The node's surface, read identically when a decision's inputs are read and when it is applied. */
+    function nativeNodeSurface(card) {
+        return getCardSurface(card) || getCurrentNativeSurface();
+    }
+
+    /** Full parent-cascade eligibility (surface, detail-page exclusion, node kind, rules), shared by decision and apply. */
+    function parentCascadeEligible(card, surface) {
+        return shouldFilterSurface(surface) && getCurrentNativeSurface() !== 'details' && ['Episode', 'Season'].includes(card.dataset.type) &&
+            (hiddenIdSet.size > 0 || internal.hasProviderRules());
+    }
+
+    /**
+     * A decision applies only as the node's newest claim, in the scope captured with its inputs, with unchanged
+     * identity and surface and its eligibility re-checked now. It never borrows the current scope.
+     */
+    function decisionApplies(card, itemId, surface, scope, hidden) {
+        return card.isConnected && nodeClaims.get(card) === scope.seq && getCardItemId(card) === itemId &&
+            nativeNodeSurface(card) === surface && hiddenContentActive() && (!hidden || shouldFilterSurface(surface)) &&
+            nativeDecisionScopeCurrent(scope, !hidden);
+    }
+
+    /**
+     * The only place a native verdict takes effect, and the sole processed-marker writer. The apply-time checks, the
+     * DOM effect and the marker happen in this one synchronous step; when a check fails nothing is written and the
+     * node stays unresolved for the next ordinary scan. A marker is never written ahead of a deferred effect.
+     * @param {boolean} final Whether the verdict's inputs were complete when they were read (a pending identity is not).
+     */
+    function applyNativeDecision(card, itemId, surface, scope, hidden, parentSeriesId, final) {
+        if (!decisionApplies(card, itemId, surface, scope, hidden)) return;
+        card.classList.toggle('je-hidden', hidden);
+        if (hidden && parentSeriesId) card.setAttribute(HIDDEN_PARENT_ATTR, parentSeriesId);
+        else card.removeAttribute(HIDDEN_PARENT_ATTR);
+        if (hidden && !parentSeriesId) card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
+        else card.removeAttribute(HIDDEN_DIRECT_ATTR);
+        if (!final) return;
+        cardDecisions.set(card, { scope, viewScoped: !hidden, itemId, surface });
+        card.setAttribute(PROCESSED_ATTR, `${scope.rules}:${hidden ? 'hide' : scope.view}`);
+    }
+
     /** Failed and unattempted identities wait before a later ordinary pass retries them. */
     const TITLE_RETRY_AFTER_MS = 30000;
 
@@ -253,13 +299,13 @@
         await Promise.all(pending);
     }
 
-    /** Resolves and paints retained child cards only when both required metadata decisions are final. */
-    async function batchCheckParentSeries(cardEntries) {
-        if (!cardEntries?.length || !getSettings().enabled) return;
-        if (hiddenIdSet.size === 0 && !internal.hasProviderRules()) return;
-        const action = JE.createSessionAction();
-        const allowsCard = card => shouldFilterSurface(getCardSurface(card) || getCurrentNativeSurface());
-        cardEntries = cardEntries.filter(entry => allowsCard(entry.card));
+    /**
+     * Resolves and paints retained child nodes only when both required metadata decisions are final, in the scope
+     * the pass captured when it read their inputs, and only while their full cascade eligibility still holds.
+     */
+    async function batchCheckParentSeries(cardEntries, scope) {
+        if (!cardEntries?.length) return;
+        const { action } = scope;
         await hydrateParentMetadata(cardEntries.map(entry => entry.itemId), false, action);
         if (!action.current()) return;
         if (internal.hasProviderRules()) {
@@ -267,20 +313,14 @@
         }
         if (!action.current()) return;
         requestAnimationFrame(() => {
-            if (!action.current() || !getSettings().enabled) return;
-            for (const { card, itemId } of cardEntries) {
-                if (!card.isConnected || getCardItemId(card) !== itemId || !allowsCard(card) || !parentSeriesResolved(itemId)) continue;
+            for (const { card, itemId, surface } of cardEntries) {
+                if (!card.isConnected || !parentCascadeEligible(card, surface) || !parentSeriesResolved(itemId)) continue;
                 const seriesId = parentSeriesCache.get(itemId)?.seriesId;
                 if (!parentTitleResolved(seriesId)) continue;
                 // A newer direct/scoped hide remains authoritative over this older parent read.
-                if (isHiddenOnSurface(itemId, getCardSurface(card) || getCurrentNativeSurface(),
-                    { type: card.dataset.type, tmdbId: card.dataset.tmdbId })) continue;
+                if (isHiddenOnSurface(itemId, surface, { type: card.dataset.type, tmdbId: card.dataset.tmdbId })) continue;
                 const hidden = !!seriesId && internal.isHidden(seriesId);
-                card.classList.toggle('je-hidden', hidden);
-                if (hidden) card.setAttribute(HIDDEN_PARENT_ATTR, seriesId);
-                else card.removeAttribute(HIDDEN_PARENT_ATTR);
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                markNativeDecision(card, hidden);
+                applyNativeDecision(card, itemId, surface, scope, hidden, seriesId, true);
             }
         });
     }
@@ -307,7 +347,7 @@
             if (norm) wanted.add(norm);
         });
         if (wanted.size === 0) return;
-        document.querySelectorAll(CARD_SEL).forEach((card) => {
+        nativeNodes().forEach((card) => {
             const cardId = getCardItemId(card);
             const hiddenBySeriesId = normalizeId(card.getAttribute(HIDDEN_PARENT_ATTR));
             if (hiddenBySeriesId && wanted.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
@@ -326,9 +366,9 @@
      * restores any previously-hidden cards instead.
      */
     function refreshNativeCardVisibility() {
-        if (!getSettings().enabled || JE.pluginConfig?.HiddenContentEnabled === false) {
+        if (!hiddenContentActive()) {
             visibilityGeneration++;
-            document.querySelectorAll(CARD_SEL).forEach(card => {
+            nativeNodes().forEach(card => {
                 card.classList.remove('je-hidden');
                 card.removeAttribute(HIDDEN_PARENT_ATTR);
                 card.removeAttribute(HIDDEN_DIRECT_ATTR);
@@ -348,48 +388,35 @@
      * Called by the debounced MutationObserver callback.
      */
     function filterNativeCardPass(all) {
-        const nativeSurface = getCurrentNativeSurface();
-        const settings = getSettings();
-        if (!settings.enabled || JE.pluginConfig?.HiddenContentEnabled === false) return;
+        if (!hiddenContentActive()) return;
+        // Every decision of this pass carries the scope captured as its inputs are read.
         const scope = captureNativeDecisionScope();
         void internal.hydrateCardTitles?.();
-        const isDetailPage = nativeSurface === 'details';
         const pendingParentChecks = [];
         const changes = [];
-        const cards = document.querySelectorAll(CARD_SEL);
-        for (const card of cards) {
-            if (card.hasAttribute('data-imagetype') || (!all && nativeDecisionResolved(card))) continue;
+        for (const card of nativeNodes()) {
+            if (!all && nativeDecisionResolved(card)) continue;
             const itemId = getCardItemId(card);
             card.removeAttribute(PROCESSED_ATTR);
             if (!itemId) continue;
-            const cardSurface = getCardSurface(card) || nativeSurface;
-            const allows = shouldFilterSurface(cardSurface);
-            const hidden = allows && isHiddenOnSurface(itemId, cardSurface,
+            nodeClaims.set(card, scope.seq);
+            const surface = nativeNodeSurface(card);
+            const allows = shouldFilterSurface(surface);
+            const hidden = allows && isHiddenOnSurface(itemId, surface,
                 { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
-            if (hidden) {
-                card.setAttribute(HIDDEN_DIRECT_ATTR, '1');
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                markNativeDecision(card, true, scope);
-            } else if (allows && !isDetailPage && ['Episode', 'Season'].includes(card.dataset.type) &&
-                (hiddenIdSet.size > 0 || internal.hasProviderRules())) {
+            if (!hidden && parentCascadeEligible(card, surface)) {
                 // Preserve an existing hide until its asynchronous parent verdict is resolved.
-                pendingParentChecks.push({ card, itemId });
+                pendingParentChecks.push({ card, itemId, surface });
                 continue;
-            } else {
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                if (cardTitleResolved(card, itemId)) markNativeDecision(card, false, scope);
             }
-            changes.push({ card, hidden, itemId });
+            // The verdict is final only if its inputs were: a visible title card may still await its identity.
+            changes.push({ card, hidden, itemId, surface, final: hidden || cardTitleResolved(card, itemId) });
         }
+        // Reads happen in the pass; the effect and its marker are written together in the paint frame.
         if (changes.length) requestAnimationFrame(() => {
-            if (!nativeDecisionScopeCurrent(scope, false) || !getSettings().enabled) return;
-            for (const { card, hidden, itemId } of changes) {
-                if (getCardItemId(card) !== itemId || (!hidden && !nativeDecisionScopeCurrent(scope))) continue;
-                card.classList.toggle('je-hidden', hidden);
-            }
+            for (const { card, hidden, itemId, surface, final } of changes) applyNativeDecision(card, itemId, surface, scope, hidden, null, final);
         });
-        if (pendingParentChecks.length) void batchCheckParentSeries(pendingParentChecks);
+        if (pendingParentChecks.length) void batchCheckParentSeries(pendingParentChecks, scope);
     }
 
     /** Ordinary scans revisit unresolved or expired retained-node verdicts. */
@@ -453,7 +480,7 @@
                         if (node.nodeType === 1 && (
                             node.classList?.contains('card') ||
                             node.classList?.contains('listItem') || node.hasAttribute?.('data-je-hide-title') ||
-                            node.querySelector?.('.card[data-id], .listItem[data-id], [data-je-hide-title]')
+                            node.querySelector?.(`${NATIVE_NODE_SEL}, [data-je-hide-title]`)
                         )) {
                             hasNewItems = true;
                             break;
@@ -470,6 +497,8 @@
     }
 
     Object.assign(internal, {
+        nativeNodes,
+        nativeDecisionResolved,
         captureNativeDecisionScope,
         nativeDecisionScopeCurrent,
         getCurrentNativeSurface,

@@ -309,13 +309,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return _routes.TryGetValue((controller, action), out route);
         }
 
+        /// <summary>Whether the matched endpoint (by controller/action metadata) is one this filter guards.</summary>
+        internal static bool Guards(ActionContext context) => TryGetRoute(context, out _);
+
         /// <summary>The existing native route policy, reused by the final delivery gate including mixed home rows.</summary>
-        internal static string PresentationSurface(ActionContext context, BaseItemDto item)
+        internal static string PresentationSurface(ActionContext context, BaseItemDto? item)
         {
             if (!TryGetRoute(context, out var route)) return "none";
             var surfaces = ResolveSurfaces(context, route.Surfaces);
             if (surfaces.Length == 1 && surfaces[0] == "library" && IsMetadataResolverIdsCall(context)) return "none";
-            return surfaces.Length > 1 ? (item.UserData?.PlaybackPositionTicks ?? 0) > 0 ? "continuewatching" : "nextup" : surfaces[0];
+            return surfaces.Length > 1 ? (item?.UserData?.PlaybackPositionTicks ?? 0) > 0 ? "continuewatching" : "nextup" : surfaces[0];
         }
 
         private HiddenContentPolicy LoadHiddenContentPolicy(HttpContext httpContext, Guid userId)
