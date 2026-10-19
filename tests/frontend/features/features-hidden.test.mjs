@@ -52,8 +52,10 @@ test('hidden scope filters home rows without hiding same title in the library',t
  assert.equal(cards[0].classList.contains('je-hidden'),true);
  assert.equal(cards[1].classList.contains('je-hidden'),true);
  assert.equal(cards[2].classList.contains('je-hidden'),false);
- h.api.restoreNativeCardsForIds(new Set(['AA-BB']));
+ // Unhide goes through the filter (the one visibility writer): the card shows once its rule is gone.
+ h.api.debouncedSave=()=>{};h.api.unhideItem('AA-BB');h.flush();
  assert.equal(cards[0].classList.contains('je-hidden'),false);
+ assert.equal(cards[1].classList.contains('je-hidden'),true,'the scoped Next Up hide still applies');
 });
 test('home-section scopes merge without weakening an existing global hide',t=>{
  const h=setup(t,{items:{a:{itemId:'a',hideScope:'nextup'},b:{itemId:'b',hideScope:'global'}}});
@@ -78,11 +80,12 @@ test('hidden requests/calendar normalize IDs and respect surface settings',t=>{
  h.api.getHiddenData().settings.filterCalendar=false;
  assert.equal(h.api.filterCalendarEvents([{title:'Show'},{tmdbId:42,type:'Series'},{itemId:'AA-BB'}]).length,3);
 });
-test('switching users clears previous hidden DOM marks and cached policy',t=>{
+test('switching users re-decides retained markers through an ordinary scan and clears cached policy',t=>{
  const h=setup(t,{items:{a:{itemId:'a',tmdbId:42,type:'Series'}},html:'<div class="card" data-id="a"></div>'});
  h.api.filterNativeCards();h.flush();assert.equal(h.api.getHiddenCount(),1);assert.equal(h.api.filterRequestItems([{tmdbId:42,type:'Series'}]).length,0);
- h.switchUser();
- const card=h.document.querySelector('.card');assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);assert.equal(h.api.hiddenIdSet.size,0);
+ const card=h.document.querySelector('.card'),marker=card.getAttribute('data-je-hidden-checked');h.switchUser();
+ assert.equal(card.getAttribute('data-je-hidden-checked'),marker,'session boundary does not sweep markers');h.flush();
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(h.api.hiddenIdSet.size,0);
  // The incoming user sees none of the previous user's hidden IDs, TMDB IDs or items.
  assert.equal(h.api.filterRequestItems([{tmdbId:42,type:'Series'}]).length,1);assert.equal(h.api.getHiddenCount(),0);assert.equal(h.api.isHiddenOnSurface('a','library'),false);
 });
@@ -263,12 +266,13 @@ test('edits made while a pending bulk flush awaits are saved before the atomic b
  assert.deepEqual(requests.map(o=>o.type),['POST','POST','PUT']);
 });
 
-test('disabling the master restores provider-only cards and clears scan marks',t=>{
+test('disabling the master restores provider-only cards and expires their scan scope',t=>{
  const h=setup(t,{items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}},html:'<div class="card" data-id="synthetic" data-type="Movie"></div>'});
  h.JE.titleDetails={parse:()=>({kind:'movie',tmdbId:42})};h.api.filterAllNativeCards();h.flush();
  const card=h.document.querySelector('.card');assert.ok(card.classList.contains('je-hidden'));
  h.api.getHiddenData().settings.enabled=false;h.api.refreshNativeCardVisibility();h.flush();
- assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),false);
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(h.api.nativeDecisionResolved(card),false,'the disable expires the old verdict');
+ h.api.getHiddenData().settings.enabled=true;h.api.filterNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),true,'re-enabled ordinary scan re-decides the retained node');
 });
 
 for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing edits':'accepts the final acknowledged base'}`,async t=>{

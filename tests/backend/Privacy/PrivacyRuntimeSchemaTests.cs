@@ -169,7 +169,7 @@ public class PrivacyRuntimeSchemaTests
         var library=Mock.Of<ILibraryManager>();var service=new SpoilerPresentation(f.Core.Manager,library,Mock.Of<IUserManager>(),Mock.Of<IUserDataManager>());
         var http=new DefaultHttpContext();http.Request.Path=path;http.Request.Method="GET";http.User=JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(user);
         const string raw="""{"results":[{"id":42,"mediaType":"person","name":"Person","new_spoiler_field":"public-person","knownFor":[{"id":42,"mediaType":"movie","overview":"secret"},{"id":42,"mediaType":"tv","overview":"hidden"},{"id":43,"mediaType":"movie","overview":"public"}]},{"id":42,"mediaType":"movie","overview":"secret"}]}""";
-        var action=new Microsoft.AspNetCore.Mvc.ActionContext(http,new Microsoft.AspNetCore.Routing.RouteData(),new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        var action=EndpointRouting.Bind(http);
         var result=new Microsoft.AspNetCore.Mvc.Filters.ResultExecutingContext(action,new List<Microsoft.AspNetCore.Mvc.Filters.IFilterMetadata>(),new ContentResult { Content=raw,ContentType="application/json" },new object());
         new TitlePresentationResultFilter(f.Core.Manager,service,library,Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(),null!).OnResultExecuting(result);
         var body=Assert.IsType<ContentResult>(result.Result).Content!;var rows=JsonNode.Parse(body)!["results"]!.AsArray();

@@ -87,11 +87,27 @@ public sealed class HiddenContentPolicy
     }
 
     /// <summary>Canonical typed TMDB title key; children need their parent's provider id explicitly.</summary>
-    public static string? TitleIdentity(string? type, string? tmdb)
+    public static string? TitleIdentity(string? type, string? tmdb) => ParseOwningTitle(type, tmdb, extended: false) is { } title ? title.Key : null;
+
+    /// <summary>The owning title of a TMDB title, season or episode key ("42", "42:s1", "42:s1:e2"), as guarded routes receive it.</summary>
+    public static string? OwningTitle(string? type, string? key) => ParseOwningTitle(type, key) is { } title ? title.Key : null;
+
+    /// <summary>
+    /// The one parser for title identities: every typed TMDB key, including the extended season/episode keys
+    /// that review routes receive, resolves here to its owning title. Movies have no season/episode keys.
+    /// </summary>
+    public static (string Key, int TmdbId)? ParseOwningTitle(string? type, string? key, bool extended = true)
     {
         var kind = type?.ToLowerInvariant() switch { "movie" => "movie", "series" or "tv" => "tv", _ => null };
-        return kind != null && int.TryParse(tmdb, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0
-            ? kind + ":tmdb:" + id.ToString(CultureInfo.InvariantCulture) : null;
+        if (kind == null || string.IsNullOrEmpty(key)) return null;
+        var parts = key.Split(':');
+        if (parts.Length > (extended && kind == "tv" ? 3 : 1)
+            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0
+            || parts.Length > 1 && !Ordinal(parts[1], 's') || parts.Length > 2 && !Ordinal(parts[2], 'e')) return null;
+        return (kind + ":tmdb:" + id.ToString(CultureInfo.InvariantCulture), id);
+
+        static bool Ordinal(string part, char prefix)
+            => part.Length > 1 && part[0] == prefix && int.TryParse(part.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out _);
     }
 
     /// <summary>Validates a provider rule key (whole title only, positive Int32 TMDB id).</summary>
@@ -134,41 +150,39 @@ public sealed class HiddenContentPolicy
         return IsHidden(TitleIdentity(item.Type.ToString(), tmdb), item.Id.ToString(), item.SeriesId?.ToString(), surface);
     }
 
-    /// <summary>Resolves missing DTO provider/parent metadata in bounded batches, never per card.</summary>
+    /// <summary>
+    /// Matches a native DTO by its resolved library identity (the item, its owner, the owner's TMDB key); only an item the
+    /// identity resolver could not resolve is matched by its own DTO fields.
+    /// </summary>
+    public bool IsHidden(BaseItemDto item, PrivacyIdentity? identity, string surface)
+        => identity != null ? IsHidden(identity, surface) : IsHidden(item, surface);
+
+    /// <summary>Matches a resolved library identity: the item, its owning title by Jellyfin ID, and that title's TMDB key.</summary>
+    public bool IsHidden(PrivacyIdentity identity, string surface)
+    {
+        if (!Filters(surface)) return false;
+        var owner = identity.OwnerId != identity.ItemId ? NormalizeId(identity.OwnerId.ToString()) : null;
+        return IsHidden(identity.TitleKey, identity.ItemId.ToString(), identity.SeriesId == Guid.Empty ? null : identity.SeriesId.ToString(), surface)
+            || owner != null && Matches(_items, owner, surface);
+    }
+
+    /// <summary>Resolves missing DTO provider/parent metadata in bounded batches, never per card (the shared identity resolver).</summary>
     public void BindLibraryIds(ILibraryManager library, IEnumerable<Guid> ids)
     {
         if (_titles.Count + _titleItems.Count == 0) return;
-        foreach (var batch in ids.Where(id => id != Guid.Empty).Distinct().Chunk(2000)) BindLibraryBatch(library, batch);
+        foreach (var identity in PrivacyIdentities.Resolve(library, ids).Values) Bind(identity);
     }
 
-    private void BindLibraryBatch(ILibraryManager library, Guid[] unique)
+    /// <summary>Binds resolved identities (provider keys of the items and their owners) into this policy.</summary>
+    public void Bind(PrivacyIdentity identity)
     {
-        var options = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } };
-        var items = library.GetItemList(new InternalItemsQuery { ItemIds = unique, DtoOptions = options });
-        if (items == null) return;
-        var parents = new HashSet<Guid>();
-        foreach (var item in items)
-        {
-            if (item is Episode e) parents.Add(e.SeriesId);
-            else if (item is Season season) parents.Add(season.SeriesId);
-            else AddItem(item);
-        }
-        if (parents.Count > 0)
-            foreach (var parent in library.GetItemList(new InternalItemsQuery { ItemIds = parents.ToArray(), DtoOptions = options })) AddItem(parent);
-        foreach (var item in items)
-        {
-            var parent = item is Episode e ? e.SeriesId : item is Season season ? season.SeriesId : Guid.Empty;
-            if (_libraryKeys.TryGetValue(parent.ToString("N"), out var key)) _libraryKeys[item.Id.ToString("N")] = key;
-        }
-    }
-
-    private void AddItem(BaseItem item)
-    {
-        var key = TitleIdentity(item is Movie ? "movie" : item is Series ? "tv" : null, item.GetProviderId(MetadataProvider.Tmdb));
-        if (key == null) return;
-        var id = item.Id.ToString("N");
+        if (identity.TitleKey is not { } key) return;
+        var id = identity.ItemId.ToString("N");
         _libraryKeys[id] = key;
-        if (_titleItems.TryGetValue(id, out var scopes)) foreach (var scope in scopes) Add(_titles, key, scope);
+        var owner = identity.OwnerId.ToString("N");
+        if (owner != id) _libraryKeys[owner] = key;
+        foreach (var bound in owner == id ? new[] { id } : new[] { id, owner })
+            if (_titleItems.TryGetValue(bound, out var scopes)) foreach (var scope in scopes) Add(_titles, key, scope);
     }
 
     /// <summary>Matches aliases already known by the acquisition index, without any upstream lookup.</summary>

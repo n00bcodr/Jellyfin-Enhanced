@@ -223,7 +223,7 @@
    * @param {() => boolean} [isStale] - True once another category (or Back) took over
    * @returns {Promise<{pages: number, rendered: number}>} Pages consumed and cards appended
    */
-  async function loadMoreCategoryItems(st, container, hint, isStale) {
+  async function loadMoreCategoryItems(st, container, hint, isStale, bound) {
     st.isLoading = true;
     const pageBudget = Number.isFinite(hint?.pageBudget) ? Math.max(0, hint.pageBudget) : Infinity;
     let feeds = activeFeeds(st).filter(f => f.hasMore);
@@ -249,7 +249,7 @@
       });
 
       const settledPerFeed = await Promise.all(plans.map(({ feed, pages }) =>
-        Promise.allSettled(pages.map(p => fetchWithManagedRequest(`${feed.path}?page=${p}`)))));
+        Promise.allSettled(pages.map(p => fetchWithManagedRequest(`${feed.path}?page=${p}`, { bound })))));
       // Another category (or Back) took over while these pages were in flight:
       // they are cached for later, but this page's DOM and state are not ours.
       if (isStale?.()) return { pages: 0, rendered: 0 };
@@ -353,7 +353,7 @@
     JE.discoveryFilter.setupInfiniteScroll(
       st,
       SCROLL_ROOT,
-      (hint) => loadMoreCategoryItems(st, container, hint, stale),
+      (hint, bound) => loadMoreCategoryItems(st, container, hint, stale, bound),
       () => activeFeeds(st).some(f => f.hasMore),
       () => st.isLoading
     );

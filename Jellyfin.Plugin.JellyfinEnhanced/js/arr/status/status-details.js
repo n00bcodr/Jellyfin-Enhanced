@@ -122,17 +122,20 @@
         if (previous) previous.unsubscribe = null;
         stop();
         const controller = new AbortController();
-        const state = { itemId, controller, loading: true, quiet: false, unsubscribe: kept, retries, retryTimer: null };
+        // A re-read keeps the session of the read it repeats; a switch ends it (the page is reset by the session hook).
+        const action = previous?.action || JE.createSessionAction?.() || null;
+        const state = { itemId, controller, loading: true, quiet: false, unsubscribe: kept, retries, retryTimer: null, action };
         current = state;
-        const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
-        if (current !== state) return;
+        // Sent only as the session of the read it repeats (checked by the transport after the feed-position wait).
+        const data = await JE.arrStatus.fetchItem(itemId, controller.signal, action?.bound?.(() => current === state));
+        if (current !== state || (action && !action.current())) return;
         state.loading = false;
         if (!data && kept) {
             // The re-read failed (or timed out): keep what is shown and the subscription, ask again later.
             state.retries = retries + 1;
             state.retryTimer = setTimeout(() => {
                 state.retryTimer = null;
-                if (current === state) update(true);
+                if (current === state && (!action || action.current())) update(true);
             }, RETRY_MS[Math.min(state.retries, RETRY_MS.length) - 1]);
             return;
         }

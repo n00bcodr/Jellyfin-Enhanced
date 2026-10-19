@@ -1,0 +1,106 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "80ae90c0629e00f2b24f51c18b5b308c",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Studio",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Studio",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "80ae90c0629e00f2b24f51c18b5b308c",
+    "Key": "Studio-2.0 Entertainment",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "409e6d0d28f9d19e45e7a8799ab0141d",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Studio",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Studio",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "409e6d0d28f9d19e45e7a8799ab0141d",
+    "Key": "Studio-3 Chance Productions",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "583b1607519e19272b949f98a987496e",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Studio",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Studio",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "583b1607519e19272b949f98a987496e",
+    "Key": "Studio-5",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "ae5d9d30ed448e650abd9780a5a48047",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Studio",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Studio",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "ae5d9d30ed448e650abd9780a5a48047",
+    "Key": "Studio-10 Ton Productions",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "fbfee638ce075370e706e1c211f235a2",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Studio",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Studio",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "fbfee638ce075370e706e1c211f235a2",
+    "Key": "Studio-18Hz Productions",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 5
+}

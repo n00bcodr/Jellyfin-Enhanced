@@ -679,11 +679,13 @@
             const path = peopleInfoPath(ids);
 
             let response = null;
+            // Every attempt belongs to the session that asked; after a switch nothing is sent again or painted.
+            const action = JE.createSessionAction?.() || null;
             for (let attempt = 0; ; attempt++) {
                 try {
                     // Single transport attempt: this loop owns the retries, so a
                     // failing chunk costs at most 1 + RETRY_DELAYS_MS.length requests.
-                    response = await JE.core.api.plugin(path, { signal, skipRetry: true });
+                    response = await JE.core.api.plugin(path, { signal, skipRetry: true, bound: action?.bound?.() });
                     break;
                 } catch (error) {
                     if (signal.aborted) {
@@ -703,6 +705,11 @@
                         releaseCards(chunk);
                         return false;
                     }
+                    // Another account signed in: this visit's chunk ends here (the session reset starts a new visit).
+                    if (action && !action.current()) {
+                        releaseCards(chunk, true);
+                        return false;
+                    }
                 }
             }
 
@@ -710,6 +717,10 @@
             // item must not be cached under the new identity or rendered.
             if (signal.aborted || !isCurrentEpoch(requestEpoch) || lastProcessedItemId !== itemId) {
                 releaseCards(chunk);
+                return false;
+            }
+            if (action && !action.current()) {
+                releaseCards(chunk, true);
                 return false;
             }
 

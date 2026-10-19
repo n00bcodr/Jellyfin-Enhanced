@@ -124,12 +124,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 foreach (var collKeyN in userState.Collections.Keys)
                 {
                     if (!Guid.TryParse(collKeyN, out var collGuid)) continue;
-                    if (_libraryManager.GetItemById(collGuid) is not MediaBrowser.Controller.Entities.Movies.BoxSet bs) continue;
-                    foreach (var child in bs.GetLinkedChildren())
-                    {
-                        if (child != null && child.Id == movieId) { result = collGuid; break; }
-                    }
-                    if (result.HasValue) break;
+                    // The shared identity resolver's linked-children membership (the same answer every surface gets).
+                    if (PrivacyIdentities.CollectionMembers(_libraryManager, collGuid).Contains(movieId)) { result = collGuid; break; }
                 }
             }
             catch (Exception ex)
@@ -185,6 +181,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var key = HiddenContentPolicy.TitleIdentity(type, tmdb);
             return key != null && (state.ProviderTitles.ContainsKey(key) || state.PendingTmdb.ContainsKey(key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
+        }
+
+        /// <summary>
+        /// Spoiler scope of a resolved library identity, decided from the identity alone (never from a DTO's fields): a
+        /// movie by its id, a guarded collection that links it, or its TMDB key; a series, season or episode by the owning
+        /// series' id or key; an extra (theme song or video, trailer, featurette) by the title that owns it.
+        /// </summary>
+        public bool InSpoilerScope(UserSpoilerBlur state, PrivacyIdentity identity)
+        {
+            var key = identity.TitleKey;
+            var provider = key != null && (state.ProviderTitles.ContainsKey(key) || state.PendingTmdb.ContainsKey(key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
+            var owner = identity.OwnerId.ToString("N");
+            switch (identity.Kind)
+            {
+                case Jellyfin.Data.Enums.BaseItemKind.Movie:
+                    return state.Movies.ContainsKey(identity.ItemId.ToString("N")) || provider || FindOptedInCollectionForMovie(state, identity.ItemId).HasValue;
+                case Jellyfin.Data.Enums.BaseItemKind.Series or Jellyfin.Data.Enums.BaseItemKind.Season or Jellyfin.Data.Enums.BaseItemKind.Episode:
+                    return state.Series.ContainsKey(owner) || provider;
+                default:
+                    if (!identity.IsExtra) return false;
+                    return state.Series.ContainsKey(owner) || state.Movies.ContainsKey(owner) || provider
+                        || identity.OwnerKind == Jellyfin.Data.Enums.BaseItemKind.Movie && FindOptedInCollectionForMovie(state, identity.OwnerId).HasValue;
+            }
         }
 
         /// <summary>Series membership shared by native DTO, image and tag owners, including durable provider intent.</summary>

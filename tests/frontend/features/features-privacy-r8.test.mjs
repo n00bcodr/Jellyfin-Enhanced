@@ -276,10 +276,12 @@ test('a failed parent provider batch is retried by a later view, not cached for 
  const h=filterSetup(t,{provider:{type:'Series',tmdbId:'42'}},(o,n)=>{
   if(o.url.includes('SeriesId'))return {Items:[{Id:'episode',Type:'Episode',SeriesId:'series'}]};
   if(n===2)unavailable();return {Items:[{Id:'series',Type:'Series',ProviderIds:{Tmdb:'42'}}]};});
- const view=()=>{h.document.body.innerHTML='<div class="section">'+'<div class="card" data-id="episode" data-type="Episode"></div>'.repeat(3)+'</div>';h.api.filterNativeCards();};
+ h.document.body.innerHTML='<div class="section">'+'<div class="card" data-id="episode" data-type="Episode"></div>'.repeat(3)+'</div>';
+ const retained=[...h.document.querySelectorAll('.card')];const view=()=>h.api.filterNativeCards();
  view();await h.settle();assert.equal(h.document.querySelectorAll('.je-hidden').length,0,'outage: nothing resolved');
  const failed=h.reads.length;view();await h.settle();assert.equal(h.reads.length,failed,'no retry storm inside the window');
  h.later(31000);view();await h.settle();
+ assert.deepEqual([...h.document.querySelectorAll('.card')],retained);
  assert.equal(h.document.querySelectorAll('.je-hidden').length,3,'the provider-hidden parent applies once reads recover');
 });
 test('a failed ID-only card title batch is retried for the same retained card',async t=>{
@@ -292,7 +294,8 @@ test('a failed ID-only card title batch is retried for the same retained card',a
 test('a failed single parent lookup is not cached as "no parent"',async t=>{
  const h=filterSetup(t,{series:{itemId:'series',type:'Series',name:'Show',hideScope:'global'}},(o,n)=>{
   if(n<=2)unavailable();return o.url.includes('/Items/episode')?{SeriesId:'series'}:{Items:[{Id:'episode',SeriesId:'series'}]};});
- const view=()=>{h.document.body.innerHTML='<div class="section"><div class="card" data-id="episode" data-type="Episode"></div></div>';h.api.filterNativeCards();};
+ h.document.body.innerHTML='<div class="section"><div class="card" data-id="episode" data-type="Episode"></div></div>';
+ const retained=h.document.querySelector('.card');const view=()=>h.api.filterNativeCards();
  view();await h.settle();assert.equal(h.document.querySelectorAll('.je-hidden').length,0);
- view();await h.settle();assert.equal(h.document.querySelectorAll('.je-hidden').length,1,'the next view looks the parent up again');
+ h.later(31000);view();await h.settle();assert.equal(h.document.querySelector('.card'),retained);assert.equal(h.document.querySelectorAll('.je-hidden').length,1,'ordinary pass looks the retained parent up again');
 });

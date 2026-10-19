@@ -49,29 +49,44 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
                         foreach (var item in items)
                         {
                             if (item is not (Movie or Series)) continue;
-                            var title = HiddenContentPolicy.TitleIdentity(item is Movie ? "movie" : "tv", item.GetProviderId(MetadataProvider.Tmdb));
-                            if (title == null) continue;
+                            if (PrivacyIdentities.TitleKey(item) is not { } title) continue;
                             var watched = item is Movie && userData.GetUserData(person, item)?.Played == true;
                             context.AddLibraryTitle(title, watched);
                         }
                     }
                 }
-                // Collection membership is resolved once for the whole context, never once per result card.
-                var collections = state.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).ToArray();
+                // Collection membership is resolved once for the whole context from each guarded BoxSet's linked
+                // children (a BoxSet is not its movies' ancestor), never once per result card.
+                var collections = state.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToArray();
                 if (collections.Length > 0 && person != null)
-                    foreach (var batch in collections.Distinct().Chunk(2000))
-                    foreach (var item in library.GetItemList(new InternalItemsQuery { AncestorIds = batch, Recursive = true,
-                        IncludeItemTypes = new[] { BaseItemKind.Movie }, DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } }))
-                    {
-                        var title = HiddenContentPolicy.TitleIdentity("movie", item.GetProviderId(MetadataProvider.Tmdb));
-                        if (title != null) context.AddLibraryTitle(title, userData.GetUserData(person, item)?.Played == true);
-                    }
+                {
+                    var members = collections.SelectMany(c => PrivacyIdentities.CollectionMembers(library, c)).Distinct().ToArray();
+                    context.AddCollectionMembers(members);
+                    foreach (var batch in members.Chunk(2000))
+                        foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch,
+                            DtoOptions = new DtoOptions(false) { Fields = new[] { ItemFields.ProviderIds } } }))
+                        {
+                            if (item is not Movie || PrivacyIdentities.TitleKey(item) is not { } title) continue;
+                            context.AddLibraryTitle(title, userData.GetUserData(person, item)?.Played == true);
+                        }
+                }
             }
         }
         catch (Exception) { context = new(new(), plugin, unavailable: true); }
         context.Seal();
         if (http != null) http.Items[key] = context;
         return context;
+    }
+
+    /// <summary>
+    /// The shared identity resolver with this viewer's watched state and guarded collections: what every row that names a
+    /// library item (activity, recommendation seeds) is judged by.
+    /// </summary>
+    public Dictionary<Guid, PrivacyIdentity> Resolve(IEnumerable<Guid> ids, Guid viewer, SpoilerPresentationContext? context)
+    {
+        var person = viewer == Guid.Empty ? null : users.GetUserById(viewer);
+        var collections = context?.State.Collections.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty) ?? [];
+        return PrivacyIdentities.Resolve(library, ids, person, userData, collections);
     }
 }
 
@@ -122,10 +137,50 @@ public sealed class SpoilerPresentationContext
 
     internal void AddLibraryTitle(string key, bool watched) { if (watched) _watched.Add(key); else _titles.Add(key); }
 
+    private readonly HashSet<Guid> _members = new();
+    private readonly Dictionary<string, bool> _identities = new(StringComparer.Ordinal);
+
+    internal void AddCollectionMembers(IEnumerable<Guid> members) => _members.UnionWith(members);
+
+    /// <summary>
+    /// The native rule set for a library identity: Jellyfin ID (the item or its owning series), a guarded collection that
+    /// links the movie, durable provider intent, and the viewer's watched state (a watched movie or episode is not guarded).
+    /// </summary>
+    public bool Guarded(PrivacyIdentity identity)
+    {
+        if (!_config.SpoilerBlurEnabled) return false;
+        if (_unavailable) return true;
+        if (identity.Played == true) return false;
+        static string N(Guid id) => id.ToString("N");
+        var key = identity.TitleKey;
+        var provider = key != null && (State.ProviderTitles.ContainsKey(key) || State.PendingTmdb.ContainsKey(key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
+        return identity.Kind switch
+        {
+            BaseItemKind.Movie => State.Movies.ContainsKey(N(identity.ItemId)) || provider || _members.Contains(identity.ItemId)
+                || identity.Collections.Any(c => State.Collections.ContainsKey(N(c))),
+            BaseItemKind.Series or BaseItemKind.Season or BaseItemKind.Episode => State.Series.ContainsKey(N(identity.OwnerId)) || provider,
+            // Extras follow their owning title (a movie's extras also its guarded collections).
+            _ => identity.IsExtra && (State.Series.ContainsKey(N(identity.OwnerId)) || State.Movies.ContainsKey(N(identity.OwnerId)) || provider
+                || _members.Contains(identity.OwnerId) || identity.Collections.Any(c => State.Collections.ContainsKey(N(c))))
+        };
+    }
+
+    /// <summary>
+    /// Binds a library identity to a projection key, so a row about that item is projected by the one schema projection
+    /// exactly as its TMDB key would be, but with the item's own native decision (Jellyfin-ID rules, watched state).
+    /// </summary>
+    public string Bind(PrivacyIdentity identity)
+    {
+        var key = identity.ProjectionKey;
+        _identities[key] = Guarded(identity);
+        return key;
+    }
+
     internal bool KnowsTitle(string? title) => title != null && (_titles.Contains(title) || _watched.Contains(title));
 
     /// <summary>Each result is judged by its own typed identity, never by the seed's guard.</summary>
-    public bool Guarded(string? title) => _config.SpoilerBlurEnabled && (_unavailable || title != null && _titles.Contains(title) && !_watched.Contains(title));
+    public bool Guarded(string? title) => _config.SpoilerBlurEnabled && (_unavailable || title != null
+        && (_identities.TryGetValue(title, out var bound) ? bound : _titles.Contains(title) && !_watched.Contains(title)));
 
     /// <summary>Existing admin caps and per-user opt-outs, including the separate series-description policy.</summary>
     public (bool Title, bool Overview, bool AirDate) MissingRow(string? title)

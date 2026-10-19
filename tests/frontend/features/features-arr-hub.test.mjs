@@ -771,3 +771,58 @@ test('the Manage drawer keeps what it shows when a re-read fails, says so, and r
   assert.deepEqual(timers.delays(), []);
   assert.ok(reads >= 3);
 });
+
+// D46 r16: a retry belongs to the session that failed. Another account signing in (before the session hook has run)
+// must not have that retry sent under its credentials or its answer shown in the first account's view.
+test('a Requests page retry is never sent or shown after another account signs in', async t => {
+  let n = 0;
+  const outcome = [];
+  const h = setup(t, {
+    hash: '#/requests',
+    responses: path => {
+      if (path !== '/acquire/hub') return null;
+      n++;
+      return outcome.shift() === 'fail' ? Object.assign(new Error('HTTP 502'), { status: 502 }) : hubAnswer();
+    }
+  });
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await wait(10);
+  const page = h.document.getElementById('je-requests-hub-page');
+  outcome.push('fail');
+  h.live().at(-1).cb(['movie:tmdb:693134']);
+  await until(() => page.querySelector('.je-hub-refresh-failed'));
+  assert.deepEqual(timers.delays(), [5000]);
+  h.window.ApiClient.getCurrentUserId = () => 'fedcba9876543210fedcba9876543210';
+  const reads = n;
+  timers.run();
+  await wait(30);
+  assert.equal(n, reads, 'the retry is not sent for the new account');
+});
+
+test('a Manage drawer retry is never sent or shown after another account signs in', async t => {
+  let fail = false;
+  let reads = 0;
+  const h = setup(t, {
+    responses: path => {
+      if (!path.startsWith('/arr/admin/manage?')) return null;
+      reads++;
+      return fail ? Object.assign(new Error('HTTP 502'), { status: 502 }) : { key: 'movie:tmdb:1', kind: 'movie', title: 'Dune', status: status('downloading', 'downloading'), instances: [], requests: [] };
+    }
+  });
+  const timers = holdLongTimers(h);
+  h.JE.initializeArrStatus();
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' });
+  const drawer = h.document.querySelector('.je-manage');
+  fail = true;
+  h.live().find(s => s.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);
+  await until(() => drawer.querySelector('.je-manage-stale'));
+  assert.deepEqual(timers.delays(), [5000]);
+  h.window.ApiClient.getCurrentUserId = () => 'fedcba9876543210fedcba9876543210';
+  fail = false;
+  const before = reads;
+  timers.run();
+  await wait(30);
+  assert.equal(reads, before, 'the retry is not sent for the new account');
+  assert.ok(drawer.querySelector('.je-manage-stale'), 'nothing new is shown in the first account\'s drawer');
+});

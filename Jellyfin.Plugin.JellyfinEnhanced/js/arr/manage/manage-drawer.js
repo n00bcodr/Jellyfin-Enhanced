@@ -54,10 +54,14 @@
         if (current === state && !state.submitted.current()) close();
     }
 
-    /** Sends through the core binding only while this drawer's opening identity remains current. */
-    async function boundApi(state, path, options) {
+    /**
+     * Sends through the core transport's bound request: only while this drawer is the open one, its opening session is
+     * the signed-in one and its operation (if any) is current (and `owner()`, when given), checked right before the
+     * bytes go out, after any queue wait.
+     */
+    async function boundApi(state, path, options, owner) {
         if (current !== state || !state.action.current()) { ended(state); throw new DOMException('Cancelled', 'AbortError'); }
-        const result = await JE.core.api.plugin(path, options);
+        const result = await JE.core.api.plugin(path, { ...options, bound: state.action.bound(() => current === state && (!owner || owner())) });
         if (current !== state || !state.action.current()) { ended(state); throw new DOMException('Cancelled', 'AbortError'); }
         return result;
     }
@@ -193,8 +197,11 @@
         root.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
         document.addEventListener('focusin', keepFocus, true);
+        // The session that opened the drawer, and the operation it was opened for (if any), own every read, re-read,
+        // retry and write of it; the transport checks both right before each send.
         const session = JE.createSessionAction();
-        const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel };
+        const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel,
+            bound: owner => session.bound(() => submitted.current() && (!owner || owner() === true)) };
         current = { target, overlay, root, opener, action, submitted, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
         // A stale drawer takes no input: a link in it opens nothing (D46S2-R4-3), and an ended operation closes it.
@@ -261,12 +268,15 @@
      */
     async function load(mine) {
         const state = current;
-        if (!state || state.generation !== mine) return;
+        const owned = () => current === state && state.generation === mine && (!state.action || state.action.current());
+        if (!state || !owned()) return;
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
             const since = JE.arrStatus?.feedPosition ? await JE.arrStatus.feedPosition() : null;
-            const data = await boundApi(state, `/arr/admin/manage?${q}`, { skipRetry: true });
-            if (current !== state || !state.action.current() || state.generation !== mine) return;
+            // Bound to the session (and operation) that opened the drawer: a switch or the operation ending during the
+            // feed-position wait or in the queue sends nothing.
+            const data = await boundApi(state, `/arr/admin/manage?${q}`, { skipRetry: true }, owned);
+            if (!owned()) return;
             if (!data || typeof data !== 'object') throw new Error('empty answer');
             state.data = data;
             state.okAt = Date.now();
@@ -275,7 +285,7 @@
             renderShell(state.root, data);
             follow(state, data, since);
         } catch (err) {
-            if (current !== state || !state.action.current() || state.generation !== mine) return;
+            if (!owned()) return;
             console.warn(`${logPrefix} could not load (${err?.status || err?.message || err})`);
             if (!state.data) {
                 renderShell(state.root, null, true);

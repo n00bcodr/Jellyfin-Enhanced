@@ -1,0 +1,73 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "4b1ac6fd256eed7cba781bc31c409ed2",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "IndexNumber": 1,
+   "IsFolder": true,
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Season 1",
+   "Overview": "Secret plot r17 season",
+   "Path": "/config/d46-r17-tv/D46 R17 Show (1991)/Season 01",
+   "People": [],
+   "ProviderIds": {},
+   "SeriesId": "b970e608063e6608f89a0b31a5dae2a8",
+   "SeriesName": "D46 R17 Show",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Taglines": [],
+   "Tags": [],
+   "Type": "Season",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "4b1ac6fd256eed7cba781bc31c409ed2",
+    "Key": "b970e608-063e-6608-f89a-0b31a5dae2a8001",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 50,
+    "UnplayedItemCount": 1
+   }
+  },
+  {
+   "AirDays": [],
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "b970e608063e6608f89a0b31a5dae2a8",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "IsFolder": true,
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Show",
+   "Overview": "Secret plot r17 series",
+   "Path": "/config/d46-r17-tv/D46 R17 Show (1991)",
+   "People": [],
+   "ProductionYear": 1991,
+   "ProviderIds": {},
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Taglines": [],
+   "Tags": [],
+   "Type": "Series",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "b970e608063e6608f89a0b31a5dae2a8",
+    "Key": "b970e608-063e-6608-f89a-0b31a5dae2a8",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false,
+    "PlayedPercentage": 50,
+    "UnplayedItemCount": 1
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 2
+}

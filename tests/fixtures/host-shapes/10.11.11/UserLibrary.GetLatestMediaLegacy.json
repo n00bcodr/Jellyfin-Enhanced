@@ -1,0 +1,35 @@
+[
+ {
+  "AirDays": [],
+  "BackdropImageTags": [],
+  "ChannelId": null,
+  "ChildCount": 2,
+  "GenreItems": [],
+  "Genres": [],
+  "Id": "b970e608063e6608f89a0b31a5dae2a8",
+  "ImageBlurHashes": {},
+  "ImageTags": {},
+  "IsFolder": true,
+  "LocationType": "FileSystem",
+  "MediaType": "Unknown",
+  "Name": "D46 R17 Show (1991)",
+  "Overview": "Secret plot r17 series",
+  "Path": "/config/d46-r17-tv/D46 R17 Show (1991)",
+  "People": [],
+  "ProductionYear": 1991,
+  "ProviderIds": {},
+  "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+  "Taglines": [],
+  "Tags": [],
+  "Type": "Series",
+  "UserData": {
+   "IsFavorite": false,
+   "ItemId": "b970e608063e6608f89a0b31a5dae2a8",
+   "Key": "b970e608-063e-6608-f89a-0b31a5dae2a8",
+   "PlayCount": 0,
+   "PlaybackPositionTicks": 0,
+   "Played": false,
+   "UnplayedItemCount": 2
+  }
+ }
+]

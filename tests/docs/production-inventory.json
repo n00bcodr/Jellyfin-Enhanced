@@ -1055,6 +1055,18 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyIdentity.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySessionsWebSocketListener.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySurfaceRegistry.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ProviderPresentationSchema.cs",
       "category": "Services"
     },
@@ -9703,7 +9715,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 542,
+    "files": 545,
     "routes": 258,
     "configuration_properties": 579,
     "storage_references": 84,

@@ -142,7 +142,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // left alone — those images resolve via the IP ladder as before.
             if (result is not ObjectResult objectResult || objectResult.Value == null) return;
 
-            switch (objectResult.Value)
+            // Stamp the instances MVC will serialize: a lazy answer is enumerated once (see NativeResponseValue).
+            switch (NativeResponseValue.Materialize(objectResult))
             {
                 case BaseItemDto single:
                     Stamp(single, marker, session);

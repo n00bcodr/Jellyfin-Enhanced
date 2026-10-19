@@ -811,7 +811,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Response.Headers["Cache-Control"] = "private, no-store";
                 var segments = apiPath.Split('?', 2)[0].Split('/', StringSplitOptions.RemoveEmptyEntries);
                 var title = segments.Length >= 4 && segments[2] is "movie" or "tv"
-                    ? Services.HiddenContentPolicy.TitleIdentity(segments[2], segments[3]) : null;
+                    ? Services.HiddenContentPolicy.OwningTitle(segments[2], segments[3]) : null;
                 var seasonIndex = Array.IndexOf(segments, "season");
                 var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < segments.Length && int.TryParse(segments[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
                 projected = _presentation?.Load(Guid.Parse(jellyfinUserId), HttpContext).ProjectResource(projected, title, Services.ProviderPresentationSchema.ProviderResource(apiPath), kind,
@@ -4494,7 +4494,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         apiPath.StartsWith("movie/", StringComparison.Ordinal) || apiPath == "discover/movie" ? "movie" : apiPath.StartsWith("tv/", StringComparison.Ordinal) || apiPath == "discover/tv" ? "tv" : null,
                         resource: Services.ProviderPresentationSchema.ProviderResource(apiPath));
                     var pathParts = apiPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    var title = pathParts.Length >= 2 ? Services.HiddenContentPolicy.TitleIdentity(pathParts[0], pathParts[1]) : null;
+                    var title = pathParts.Length >= 2 ? Services.HiddenContentPolicy.OwningTitle(pathParts[0], pathParts[1]) : null;
                     var seasonIndex = Array.IndexOf(pathParts, "season");
                     var episodeIndex = Array.IndexOf(pathParts, "episode");
                     var seasonNumber = seasonIndex >= 0 && seasonIndex + 1 < pathParts.Length && int.TryParse(pathParts[seasonIndex + 1], out var seasonValue) ? seasonValue : 0;
@@ -4838,7 +4838,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var presentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
-            if (presentation?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+            if (presentation?.HidesRatings(Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId)) == true)
             {
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
@@ -4848,7 +4848,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 var result = await _wikidataAwardsService.GetAwardsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
                 var final = Services.TitlePresentationGate.Read(_userConfigurationManager, _presentation, UserHelper.GetCurrentUserId(User) ?? Guid.Empty, _libraryManager);
-                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId)) == true)
                 {
                     Response.Headers["Cache-Control"] = "private, no-store";
                     return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
@@ -4893,7 +4893,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var presentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
-            if (presentation?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+            if (presentation?.HidesRatings(Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId)) == true)
             {
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
@@ -4903,7 +4903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 var result = await _mdblistService.GetRatingsAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
                 var final = Services.TitlePresentationGate.Read(_userConfigurationManager, _presentation, UserHelper.GetCurrentUserId(User) ?? Guid.Empty, _libraryManager);
-                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId)) == true)
+                if (final.Spoilers?.HidesRatings(Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId)) == true)
                 {
                     Response.Headers["Cache-Control"] = "private, no-store";
                     return Ok(new { confirmed = true, ratings = Array.Empty<object>(), awards = Array.Empty<object>() });
@@ -7767,12 +7767,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
             new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        // Extended key for season/episode reviews: {tmdbId}:s{n} or {tmdbId}:s{n}e{n}
-        private static readonly System.Text.RegularExpressions.Regex _tmdbIdExtendedRegex =
-            new System.Text.RegularExpressions.Regex(@"^\d+(:s\d+(:e\d+)?)?$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        private static bool IsValidTmdbKey(string tmdbId) =>
-            !string.IsNullOrWhiteSpace(tmdbId) && _tmdbIdExtendedRegex.IsMatch(tmdbId);
+        // Review keys ({tmdbId}, {tmdbId}:s{n}, {tmdbId}:s{n}:e{n}) are valid only when they resolve to an owning title.
+        private static bool IsValidTmdbKey(string mediaType, string tmdbId) =>
+            Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId) != null;
 
         /// <summary>
         /// Per-request state for deciding which reviews a viewer may see.
@@ -7874,11 +7871,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { message = "MediaType must be 'movie' or 'tv'." });
 
-            if (!IsValidTmdbKey(tmdbId))
+            if (!IsValidTmdbKey(mediaType, tmdbId))
                 return BadRequest(new { message = "Invalid TmdbId." });
 
             var spoilerPresentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
-            if (spoilerPresentation?.HidesReviews(Services.HiddenContentPolicy.TitleIdentity(mediaType, tmdbId.Split(':')[0])) == true)
+            if (spoilerPresentation?.HidesReviews(Services.HiddenContentPolicy.OwningTitle(mediaType, tmdbId)) == true)
             {
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return Ok(new { reviews = Array.Empty<object>(), averageRating = (double?)null, totalReviews = 0 });
@@ -7956,7 +7953,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (sep <= 0) continue;
                 var mediaType = raw.Substring(0, sep);
                 if (mediaType != "movie" && mediaType != "tv") continue;
-                if (!IsValidTmdbKey(raw.Substring(sep + 1))) continue;
+                if (!IsValidTmdbKey(mediaType, raw.Substring(sep + 1))) continue;
                 if (requested.ContainsKey(raw)) continue;
                 if (requested.Count >= MaxReviewRatingKeys)
                     return BadRequest(new { message = $"At most {MaxReviewRatingKeys} keys per request." });
@@ -7974,12 +7971,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var ratings = new Dictionary<string, object?>(StringComparer.Ordinal);
+            var guard = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
             foreach (var key in order)
             {
                 var (sum, count) = requested[key];
-                var parts = key.Split(':');
-                var guard = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
-                ratings[key] = count == 0 || guard?.HidesRatings(Services.HiddenContentPolicy.TitleIdentity(parts[0], parts[1])) == true ? null : new { average = sum / count, count };
+                var sep = key.IndexOf(':');
+                ratings[key] = count == 0 || guard?.HidesRatings(Services.HiddenContentPolicy.OwningTitle(key[..sep], key[(sep + 1)..])) == true ? null : new { average = sum / count, count };
             }
 
             return Ok(new { ratings });
@@ -8059,7 +8056,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (!IsValidTmdbKey(tmdbId))
+            if (!IsValidTmdbKey(mediaType, tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             if (payload == null)
@@ -8110,7 +8107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (!IsValidTmdbKey(tmdbId))
+            if (!IsValidTmdbKey(mediaType, tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             if (payload == null)
@@ -8151,7 +8148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (!IsValidTmdbKey(tmdbId))
+            if (!IsValidTmdbKey(mediaType, tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
@@ -8381,7 +8378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (mediaType != "movie" && mediaType != "tv")
                 return BadRequest(new { success = false, message = "MediaType must be 'movie' or 'tv'." });
 
-            if (!IsValidTmdbKey(tmdbId))
+            if (!IsValidTmdbKey(mediaType, tmdbId))
                 return BadRequest(new { success = false, message = "Invalid TmdbId." });
 
             if (string.IsNullOrWhiteSpace(userIdN) || !Guid.TryParseExact(userIdN, "N", out _))
@@ -8839,7 +8836,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ? _userConfigurationManager.GetAllReviews().Reviews.Values.AsEnumerable()
                 : Enumerable.Empty<UserReview>();
 
-            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager), _presentation?.Load(viewer.Id, HttpContext));
+            var builder = new Services.ActivityFeedBuilder(_libraryManager, _userManager, _itemRepository, _logger, Services.HiddenContentPolicy.Load(_userConfigurationManager, viewer.Id, HttpContext, _libraryManager));
             var items = builder.Build(activity, reviews, viewer, IsAdminUser(), config, limit, cancellationToken);
             return Ok(new { items });
         }

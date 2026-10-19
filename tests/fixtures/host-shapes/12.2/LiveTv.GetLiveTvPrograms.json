@@ -1,0 +1,70 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "EndDate": "2026-10-19T15:00:00.0000000Z",
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "e5e3d6d980668efff7a9beaeaea78d74",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Program Now",
+   "Overview": "Secret plot r17 program now",
+   "People": [],
+   "ProviderIds": {
+    "ProgramEtag": "xmltv-sha256-v1:58C431A01B7FB30CE3AE4D946564300645E81DD3A5FEC872F7DF3AA1BE5FF0E5"
+   },
+   "RunTimeTicks": 288000000000,
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "StartDate": "2026-10-19T07:00:00.0000000Z",
+   "Taglines": [],
+   "Tags": [],
+   "Type": "Program",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "e5e3d6d980668efff7a9beaeaea78d74",
+    "Key": "e5e3d6d9-8066-8eff-f7a9-beaeaea78d74",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": "2b1589698d56aa3f7e6af0a3de171c68",
+   "EndDate": "2026-10-19T18:00:00.0000000Z",
+   "GenreItems": [],
+   "Genres": [],
+   "Id": "a900b05ea9806e4ba14305701c18a270",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Program Later",
+   "Overview": "Secret plot r17 program later",
+   "People": [],
+   "ProviderIds": {
+    "ProgramEtag": "xmltv-sha256-v1:D04525E638B3F852B494B8E825B45DE14B5AFB52BBA75FFF98EA3B6BF2B0BBE8"
+   },
+   "RunTimeTicks": 108000000000,
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "StartDate": "2026-10-19T15:00:00.0000000Z",
+   "Status": "New",
+   "Taglines": [],
+   "Tags": [],
+   "TimerId": "7892b9d800e8d6ab0090b056aaead5c4",
+   "Type": "Program",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "a900b05ea9806e4ba14305701c18a270",
+    "Key": "a900b05e-a980-6e4b-a143-05701c18a270",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 2
+}

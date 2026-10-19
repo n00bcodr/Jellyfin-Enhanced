@@ -1,0 +1,26 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "84466f090c2b9feedfe7b2ce9428b000",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Year",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Year",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "84466f090c2b9feedfe7b2ce9428b000",
+    "Key": "Year-1991",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 1
+}

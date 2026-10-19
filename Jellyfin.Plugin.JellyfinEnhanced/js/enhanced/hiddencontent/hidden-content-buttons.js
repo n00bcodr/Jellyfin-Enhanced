@@ -10,24 +10,24 @@
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
     const { hiddenIdSet, getSettings, hideItem, unhideItem, getCardSurface, getCardItemId, confirmAndHide } = internal;
-    let checkedCards = new WeakSet();
+    const checkedTitleIds = new Map();
+    const titlesRetryAt = new Map();
     /** After a failed identity batch, later passes retry it once this window has passed. */
     const TITLE_RETRY_AFTER_MS = 30000;
-    let titlesRetryAt = 0;
     let titlesInFlight = null;
-    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedCards = new WeakSet(); titlesRetryAt = 0; titlesInFlight = null; });
+    JE.session?.onUserChange('hidden-content-card-identities', () => { checkedTitleIds.clear(); titlesRetryAt.clear(); titlesInFlight = null; });
 
     /** Resolves ID-only native card identities in bounded batches, only when provider rules exist. */
     async function hydrateCardTitles() {
-        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || Date.now() < titlesRetryAt || titlesInFlight) return;
+        if (!internal.hasProviderRules() || JE.pluginConfig?.HiddenContentEnabled === false || titlesInFlight?.current()) return;
         const action = JE.createSessionAction();
         titlesInFlight = action;
         try {
             const byId = new Map();
-            for (const card of document.querySelectorAll('.card[data-id], .card[data-itemid]')) {
+            for (const card of internal.nativeNodes()) {
                 const id = getCardItemId(card);
                 const surface = internal.getCardSurface(card) || internal.getCurrentNativeSurface();
-                if (checkedCards.has(card) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
+                if (internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)) || (titlesRetryAt.get(id)?.action.current() && Date.now() < titlesRetryAt.get(id).retryAt) || (!card.querySelector('.je-hide-btn') && !internal.shouldFilterSurface(surface)) ||
                     !['movie', 'series'].includes((card.dataset.type || '').toLowerCase()) ||
                     internal.titleData({ itemId: id, type: card.dataset.type, tmdbId: card.dataset.tmdbId }) ||
                     JE.titleDetails?.isSynthetic?.(id)) continue;
@@ -38,16 +38,19 @@
             for (let start = 0; start < ids.length; start += 50) {
                 if (!action.current()) return;
                 const batch = ids.slice(start, start + 50);
-                // Future batches remain eligible if an earlier request fails. One pass owns hydration at a time.
-                for (const id of batch) for (const card of byId.get(id) || []) checkedCards.add(card);
+                const scope = internal.captureNativeDecisionScope();
                 try {
                     const reply = await ApiClient.ajax({ type: 'GET', dataType: 'json',
                         url: ApiClient.getUrl(`/Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), Fields: 'ProviderIds' }) });
                     if (!action.current()) return;
+                    for (const id of batch) { checkedTitleIds.set(id, scope); titlesRetryAt.delete(id); }
                     for (const item of reply?.Items || []) {
                         const title = internal.titleData(item);
                         if (!title) continue;
+                        checkedTitleIds.delete(internal.normalizeId(item.Id));
                         for (const card of byId.get(internal.normalizeId(item.Id)) || []) {
+                            // A retained node that now shows another item keeps its own identity.
+                            if (getCardItemId(card) !== internal.normalizeId(item.Id)) continue;
                             card.dataset.type = title.type;
                             card.dataset.tmdbId = title.tmdbId;
                             card.querySelector('.je-hide-btn')?.jeHiddenPaint?.();
@@ -57,8 +60,7 @@
                 } catch (_) {
                     // Leave unresolved cards usable; the same cards retry after the window.
                     if (!action.current()) return;
-                    for (const id of ids.slice(start)) for (const card of byId.get(id) || []) checkedCards.delete(card);
-                    titlesRetryAt = Date.now() + TITLE_RETRY_AFTER_MS;
+                    for (const id of ids.slice(start)) titlesRetryAt.set(id, { action, retryAt: Date.now() + TITLE_RETRY_AFTER_MS });
                     return;
                 }
             }
@@ -166,7 +168,7 @@
                             try {
                                 const saved = await internal.saveTitleRule(title, true).catch(() => false);
                                 if (saved && action.current()) {
-                                    card.classList.toggle('je-hidden', internal.shouldFilterSurface(surface || internal.getCurrentNativeSurface()));
+                                    internal.requestNativeDecision();
                                     setHiddenState();
                                 }
                                 else btn.textContent = JE.t('hidden_content_save_failed_persistent');
@@ -178,9 +180,7 @@
                         }
                         return saveConfirmedTitle();
                     }
-                    confirmAndHide(itemData, () => {
-                        card.classList.add('je-hidden');
-                    });
+                    confirmAndHide(itemData, () => internal.requestNativeDecision());
                 }
             };
         }
@@ -235,7 +235,7 @@
                 dialogOpts.showEpisodeChoice = true;
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: surface });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
                 dialogOpts.onChooseShow = async () => {
                     let seriesTmdbId = '';
@@ -254,26 +254,25 @@
                         type: 'Series',
                         tmdbId: seriesTmdbId
                     });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
             } else {
                 dialogOpts.onChooseScoped = () => {
                     hideItem({ ...itemData, hideScope: surface });
-                    card.classList.add('je-hidden');
+                    internal.requestNativeDecision();
                 };
             }
         } catch (err) {
             console.warn('🪼 Jellyfin Enhanced: Failed to fetch item data for scoped hide', err);
             dialogOpts.onChooseScoped = () => {
                 hideItem({ itemId, name: cardName, hideScope: surface });
-                card.classList.add('je-hidden');
+                internal.requestNativeDecision();
             };
         }
 
         if (!action.current()) return;
-        confirmAndHide(itemData, () => {
-            card.classList.add('je-hidden');
-        }, dialogOpts);
+        // The hide's own refresh decides the card by every rule (scope, surface switch, parent series).
+        confirmAndHide(itemData, () => internal.requestNativeDecision(), dialogOpts);
     }
 
     /**
@@ -366,6 +365,8 @@
         }
     }
 
-    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons, hydrateCardTitles });
+    Object.assign(internal, { addLibraryHideButtons, removeLibraryHideButtons, hydrateCardTitles,
+        isCardTitleResolved: id => internal.nativeDecisionScopeCurrent(checkedTitleIds.get(id)),
+        resetCardTitleVerdicts: () => checkedTitleIds.clear() });
 
 })(window.JellyfinEnhanced);

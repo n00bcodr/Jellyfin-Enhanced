@@ -395,9 +395,9 @@ public static class ProviderPresentationSchema
         {
             if(!schema.Fields.TryGetValue(Key(pair.Key),out var field))
             {
-                if(schemaName=="review-rating-map" && pair.Key.Split(':') is { Length: >=2 } parts && HiddenContentPolicy.TitleIdentity(parts[0],parts[1]) is { } owner)
+                if(schemaName=="review-rating-map" && RatingOwner(pair.Key,out var ratingKind) is { } owner)
                 {
-                    row[pair.Key]=Walk(pair.Value,"review-rating",owner,parts[0],null,0,0,surface,hidden,spoilers,false,false,out var childGuarded);
+                    row[pair.Key]=Walk(pair.Value,"review-rating",owner,ratingKind,null,0,0,surface,hidden,spoilers,false,false,out var childGuarded);
                     containsGuarded |= childGuarded;
                 }
                 else if(schema.Countries && pair.Key.Length==2 && pair.Key.All(c=>c is >= 'A' and <= 'Z'))
@@ -444,8 +444,7 @@ public static class ProviderPresentationSchema
             {
                 if (!schema.Fields.TryGetValue(Key(pair.Key), out var declared))
                 {
-                    if (schemaName == "review-rating-map" && pair.Key.Split(':') is { Length: >= 2 } parts
-                        && HiddenContentPolicy.TitleIdentity(parts[0], parts[1]) != null) continue;
+                    if (schemaName == "review-rating-map" && RatingOwner(pair.Key, out _) != null) continue;
                     row.Remove(pair.Key);
                 }
                 else if (declared.Child == null && (pair.Value is JsonObject || pair.Value is JsonArray values && values.Any(v => v is JsonObject or JsonArray)))
@@ -454,6 +453,14 @@ public static class ProviderPresentationSchema
         }
         if(schemaName=="group" && row["results"] is JsonArray { Count:0 }) return null;
         return row;
+    }
+
+    /// <summary>A "mediaType:tmdbKey" rating-map entry's owning title, through the canonical parser.</summary>
+    private static string? RatingOwner(string key, out string kind)
+    {
+        var sep = key.IndexOf(':');
+        kind = sep > 0 ? key[..sep] : "";
+        return sep > 0 ? HiddenContentPolicy.OwningTitle(kind, key[(sep + 1)..]) : null;
     }
 
     private static bool OwnsTitle(string schema)

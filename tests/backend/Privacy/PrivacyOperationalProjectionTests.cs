@@ -49,7 +49,7 @@ public class PrivacyOperationalProjectionTests
         http.Request.Path = "/JellyfinEnhanced/" + path;
         http.Request.Method = "GET";
         http.User = TestCallers.Principal(user, false);
-        var context = new ResultExecutingContext(new ActionContext(http, new RouteData(), new ActionDescriptor()),
+        var context = new ResultExecutingContext(EndpointRouting.Bind(http),
             new List<IFilterMetadata>(), result, new object());
         new TitlePresentationResultFilter(fixture.Core.Manager, spoilers, Mock.Of<ILibraryManager>(),
             Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), null!).OnResultExecuting(context);

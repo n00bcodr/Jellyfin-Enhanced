@@ -33,80 +33,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     // HiddenContentResponseFilter).
     public sealed class SpoilerFieldStripFilter : IAsyncActionFilter
     {
-        // Action-name table built from live observation on Jellyfin 10.11.x:
-        // - /Items                        → Items.GetItems
-        // - /Items?<filter>               → Items.GetItems (same)
-        // - /Items/Resume                 → Items.GetResumeItems / GetResumeItemsLegacy
-        // - /Items/{id}                   → UserLibrary.GetItem
-        // - /Users/{uid}/Items/{id}       → UserLibrary.GetItemLegacy
-        // - /Items/Latest                 → UserLibrary.GetLatestMedia / Legacy
-        // - /Shows/{seriesId}/Episodes    → TvShows.GetEpisodes
-        // - /Shows/{seriesId}/Seasons     → TvShows.GetSeasons
-        // - /Shows/NextUp                 → TvShows.GetNextUp
-        // - /Shows/Upcoming               → TvShows.GetUpcomingEpisodes
-        // - /Shows/{seriesId}/Similar     → LibraryStructure / etc — covered by GetSimilar* if present
-        // - /Items?<search>               → Items.GetItems with searchTerm
-        // - /Search/Hints                 → Search.GetSearchHints
-        // - /Users/{uid}/Suggestions      → Suggestions.GetSuggestions / Legacy
-        private static readonly Dictionary<(string, string), bool> _routes
-            = new()
-            {
-                { ("Items",       "GetItems"),               true },
-                { ("Items",       "GetItemsByUserIdLegacy"), true },
-                { ("Items",       "GetResumeItems"),         true },
-                { ("Items",       "GetResumeItemsLegacy"),   true },
-                { ("UserLibrary", "GetItem"),                true },
-                { ("UserLibrary", "GetItemLegacy"),          true },
-                { ("UserLibrary", "GetLatestMedia"),         true },
-                { ("UserLibrary", "GetLatestMediaLegacy"),   true },
-                // More UserLibrary endpoints that emit episode DTOs.
-                { ("UserLibrary", "GetIntros"),              true },
-                { ("UserLibrary", "GetIntrosLegacy"),        true },
-                { ("UserLibrary", "GetLocalTrailers"),       true },
-                { ("UserLibrary", "GetLocalTrailersLegacy"), true },
-                { ("UserLibrary", "GetSpecialFeatures"),     true },
-                { ("UserLibrary", "GetSpecialFeaturesLegacy"),true },
-                { ("TvShows",     "GetEpisodes"),            true },
-                { ("TvShows",     "GetSeasons"),             true },
-                { ("TvShows",     "GetNextUp"),              true },
-                { ("TvShows",     "GetUpcomingEpisodes"),    true },
-                { ("Suggestions", "GetSuggestions"),         true },
-                { ("Suggestions", "GetSuggestionsLegacy"),   true },
-                { ("Search",      "GetSearchHints"),         true },
-                // "More Like This" rail emits BaseItemDto[] including
-                // episode-shaped items — strip those too.
-                { ("Library",     "GetSimilarItems"),        true },
-                { ("Library",     "GetSimilarShows"),        true },
-                { ("Library",     "GetSimilarMovies"),       true },
-                { ("Library",     "GetSimilarTrailers"),     true },
-                { ("Library",     "GetSimilarAlbums"),       true },
-                // /Items/{id}/Images returns IEnumerable<ImageInfo> whose
-                // Path is the raw server filesystem path (commonly
-                // contains the episode title in user-organized libraries).
-                { ("Image",       "GetItemImageInfos"),      true },
-                // /Items/{id}/PlaybackInfo returns
-                // PlaybackInfoResponse{MediaSources: MediaSourceInfo[]}.
-                // MediaSourceInfo carries the same title-bearing fields as
-                // BaseItemDto.MediaSources (Path, Name, MediaStreams,
-                // MediaAttachments) — emitted as a peer DTO not covered
-                // by the BaseItemDto-shape strip. Both GET and POST
-                // variants register here.
-                { ("MediaInfo",   "GetPlaybackInfo"),        true },
-                { ("MediaInfo",   "GetPostedPlaybackInfo"),  true },
-                // Surfaces commonly hit by native clients (Streamyfin /
-                // Findroid / Swiftfin / Jellyfin Android TV) that
-                // previously bypassed the strip.
-                //
-                // Movies.GetMovieRecommendations powers the "Recommended for
-                // You" rail on home screens — wraps BaseItemDto[] inside
-                // a RecommendationDto, requires a custom switch arm.
-                { ("Movies",      "GetMovieRecommendations"), true },
-                // Playlists.GetPlaylistItems returns QueryResult<BaseItemDto>
-                // — user-created playlists can include spoiler-list
-                // episodes/movies (e.g. "Watch later"), so the items need
-                // the same strip as a regular library list.
-                { ("Playlists",   "GetPlaylistItems"),       true },
-            };
+        // Which endpoints this filter strips comes from the one surface registry (PrivacySurfaceRegistry): every host
+        // endpoint whose answer can carry a title, extracted from Jellyfin 12.2 and 10.11.11, classified once for both
+        // Hidden Content and Spoiler Guard.
 
         // Per-category reveal mask for the advanced Spoiler Guard mode. Each
         // flag EXEMPTS one field from a strip the base toggles would apply;
@@ -170,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (result == null || cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty) return;
             var userState = _resolver.LoadUserState(context.HttpContext, userId);
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0) return;
+            if (!HasEntries(userState)) return;
             try
             {
                 StripIfApplicable(result, userState, cfg, userId, context);
@@ -181,14 +110,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static bool IsTargetRoute(ActionExecutingContext context)
+        /// <summary>Whether the matched endpoint (by its descriptor's controller/action) is one this filter strips.</summary>
+        internal static bool Guards(ActionContext context) => IsTargetRoute(context);
+
+        /// <summary>Whether a viewer's state names anything Spoiler Guard could apply to.</summary>
+        internal static bool HasEntries(UserSpoilerBlur state)
+            => state.Series.Count + state.Movies.Count + state.Collections.Count + state.ProviderTitles.Count + state.PendingTmdb.Count > 0;
+
+        /// <summary>
+        /// The final delivery gate's re-strip with the state it read at delivery, for every guarded response shape. The
+        /// strip is idempotent, so an answer the action-time pass already stripped is unchanged.
+        /// </summary>
+        internal void StripDelivered(ObjectResult result, UserSpoilerBlur state, Guid userId, ActionContext context)
         {
-            var rv = context.ActionDescriptor.RouteValues;
-            if (rv == null) return false;
-            if (!rv.TryGetValue("controller", out var controller) || controller == null) return false;
-            if (!rv.TryGetValue("action", out var action) || action == null) return false;
-            return _routes.ContainsKey((controller, action));
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            if (cfg?.SpoilerBlurEnabled != true || userId == Guid.Empty || !HasEntries(state)) return;
+            StripIfApplicable(result, state, cfg, userId, context);
         }
+
+        private static bool IsTargetRoute(ActionContext context) => PrivacySurfaceRegistry.Find(context) is { Sg: true };
 
         private async Task RunFieldStripAsync(
             ActionExecutingContext context,
@@ -210,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // despite the Movie branches in StripItem +
             // RouteParentIsSpoilerEpisode. Mirror the GetTagCache /
             // GetTagData / image-filter checks.
-            if (userState.Series.Count == 0 && userState.Movies.Count == 0 && userState.Collections.Count == 0 && userState.ProviderTitles.Count == 0 && userState.PendingTmdb.Count == 0)
+            if (!HasEntries(userState))
             {
                 await next().ConfigureAwait(false);
                 return;
@@ -254,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             // ObjectResult covers most MVC return shapes, but JsonResult /
             // ContentResult / custom IActionResult are siblings (not
@@ -271,15 +211,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             if (objectResult.Value == null) return;
 
-            switch (objectResult.Value)
+            // A lazy answer (12.2 builds recommendation DTOs per enumeration) is enumerated once and its instances stripped.
+            var value = NativeResponseValue.Materialize(objectResult);
+            // Every decision below takes its ownership from the one identity resolver (the item's owner, a theme
+            // answer's OwnerId, the route's opened item), never from a DTO's SeriesId.
+            var identities = NativePrivacyProjection.Identities(_libraryManager, value, context);
+            switch (value)
             {
                 case BaseItemDto single:
-                    StripItem(single, userState, cfg, userId);
+                    StripItem(single, userState, cfg, userId, identities.GetValueOrDefault(single.Id));
                     break;
                 case QueryResult<BaseItemDto> qr:
                     if (qr.Items != null)
                     {
-                        foreach (var item in qr.Items) StripItem(item, userState, cfg, userId);
+                        foreach (var item in qr.Items) StripItem(item, userState, cfg, userId, identities.GetValueOrDefault(item.Id));
                     }
                     break;
                 case IEnumerable<BaseItemDto> seq:
@@ -294,14 +239,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var list = seq is List<BaseItemDto> alreadyList
                         ? alreadyList
                         : seq.ToList();
-                    foreach (var item in list) StripItem(item, userState, cfg, userId);
+                    foreach (var item in list) StripItem(item, userState, cfg, userId, identities.GetValueOrDefault(item.Id));
                     if (!ReferenceEquals(list, seq))
                     {
                         objectResult.Value = list;
                     }
                     break;
                 case SearchHintResult shr:
-                    StripSearchHints(shr, userState, cfg, userId);
+                    StripSearchHints(shr, userState, cfg, userId, identities);
                     break;
                 // ImageInfo[] from /Items/{id}/Images. Path is raw
                 // filesystem. Look up the parent itemId from the route to
@@ -316,13 +261,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var rec in recs)
                     {
                         if (rec?.Items == null) continue;
-                        foreach (var item in rec.Items) StripItem(item, userState, cfg, userId);
+                        foreach (var item in rec.Items) StripItem(item, userState, cfg, userId, identities.GetValueOrDefault(item.Id));
                     }
                     break;
                 // PlaybackInfoResponse contains MediaSources[] with the
                 // same title-bearing fields as BaseItemDto's MediaSources.
                 case MediaBrowser.Model.MediaInfo.PlaybackInfoResponse pbi:
                     StripPlaybackInfo(pbi, userState, cfg, userId, context);
+                    break;
+                // /Items/{id}/ThemeMedia: the item's theme videos, theme songs and soundtrack songs in one answer.
+                case AllThemeMediaResult all:
+                    foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
+                        if (part?.Items != null) foreach (var item in part.Items) StripItem(item, userState, cfg, userId, identities.GetValueOrDefault(item.Id));
                     break;
                 default:
                     // Route was in the allowlist (so we *believed* it
@@ -352,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             if (!RouteParentIsSpoilerEpisode(context, userState, userId, out _)) return;
             // Auxiliary "scrub title-bearing fields" path — only relevant when a
@@ -377,7 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             UserSpoilerBlur userState,
             PluginConfiguration cfg,
             Guid userId,
-            ActionExecutingContext context)
+            ActionContext context)
         {
             if (pbi.MediaSources == null) return;
             if (!RouteParentIsSpoilerEpisode(context, userState, userId, out var isMovie)) return;
@@ -434,11 +384,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // Look up the parent item from the route's itemId value and
-        // confirm it's an Episode (or Season) of a spoiler-list series
-        // the user hasn't watched.
+        // The route's opened item (images, playback info) is in spoiler scope for this viewer: decided from the
+        // resolver's identity of that item (a movie, an episode or season of a guarded series, or an extra of a guarded
+        // title), with the viewer's watched state for movies and episodes.
         private bool RouteParentIsSpoilerEpisode(
-            ActionExecutingContext context,
+            ActionContext context,
             UserSpoilerBlur userState,
             Guid userId,
             out bool isMovie)
@@ -455,72 +405,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     return false;
                 }
-                var parent = _libraryManager.GetItemById(itemId);
-                if (parent == null) return false;
-
-                Guid? seriesId = null;
-                bool watchedCheck = true;
-                // Movies path. Movie's spoiler-list membership is keyed
-                // by movie ID (not by SeriesId), and watched-state is the
-                // movie's own UserData.Played. Mirrors StripItem.
-                if (parent is MediaBrowser.Controller.Entities.Movies.Movie movieParent)
+                if (PrivacyIdentities.Resolve(_libraryManager, new[] { itemId }, context.HttpContext).GetValueOrDefault(itemId) is not { } identity) return false;
+                if (!_resolver.InSpoilerScope(userState, identity)) return false;
+                switch (identity.Kind)
                 {
-                    isMovie = true;
-                    if (!_resolver.IsMovieInSpoilerScope(userState,movieParent.Id)) return false;
-                    if (ResolvePlayedServerSide(userId, itemId)) return false;
-                    return true;
+                    case Jellyfin.Data.Enums.BaseItemKind.Movie:
+                        isMovie = true;
+                        return !ResolvePlayedServerSide(userId, itemId);
+                    case Jellyfin.Data.Enums.BaseItemKind.Episode:
+                        return !ResolvePlayedServerSide(userId, itemId);
+                    case Jellyfin.Data.Enums.BaseItemKind.Season:
+                        return true; // Season any-watched check is too costly here; over-strip.
+                    default:
+                        // An extra of a guarded title: a movie's follows the movie's watched state; a series' is always stripped.
+                        return !(identity.OwnerKind == Jellyfin.Data.Enums.BaseItemKind.Movie && ResolvePlayedServerSide(userId, identity.OwnerId));
                 }
-                if (parent is MediaBrowser.Controller.Entities.TV.Episode ep)
-                {
-                    seriesId = ep.SeriesId;
-                }
-                else if (parent is MediaBrowser.Controller.Entities.TV.Season s)
-                {
-                    seriesId = s.SeriesId;
-                    watchedCheck = false; // Season any-watched check is too costly here; over-strip.
-                }
-                else
-                {
-                    // Extras (Trailer / Video / Intro / etc.) attached to
-                    // a spoiler-list series. Mirrors the isExtra path in
-                    // StripItem. Use the BaseItem's SeriesId
-                    // (`SeriesPresentationUniqueKey`-related — fall back
-                    // to ParentId lookup if absent).
-                    Guid extraSeriesId = Guid.Empty;
-                    var hasSeriesProp = parent.GetType().GetProperty("SeriesId");
-                    if (hasSeriesProp != null
-                        && hasSeriesProp.GetValue(parent) is Guid sid
-                        && sid != Guid.Empty)
-                    {
-                        extraSeriesId = sid;
-                    }
-                    else if (parent.ParentId != Guid.Empty)
-                    {
-                        // Walk up the parent chain until we find a Series.
-                        var ancestor = _libraryManager.GetItemById(parent.ParentId);
-                        var hops = 0;
-                        while (ancestor != null && hops < 4)
-                        {
-                            if (ancestor is MediaBrowser.Controller.Entities.TV.Series ser)
-                            {
-                                extraSeriesId = ser.Id;
-                                break;
-                            }
-                            if (ancestor.ParentId == Guid.Empty) break;
-                            ancestor = _libraryManager.GetItemById(ancestor.ParentId);
-                            hops++;
-                        }
-                    }
-                    if (extraSeriesId == Guid.Empty) return false;
-                    seriesId = extraSeriesId;
-                    watchedCheck = false; // Extras have no per-extra watched flag — over-strip.
-                }
-
-                if (!seriesId.HasValue || seriesId.Value == Guid.Empty) return false;
-                if (!_resolver.IsSeriesInSpoilerScope(userState, seriesId.Value)) return false;
-
-                if (watchedCheck && ResolvePlayedServerSide(userId, itemId)) return false;
-                return true;
             }
             catch (Exception ex)
             {
@@ -532,14 +431,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>Applies the native watched/season/category rules with a freshly loaded presentation state.</summary>
-        internal void StripLibraryItem(BaseItemDto item, UserSpoilerBlur state, PluginConfiguration config, Guid viewer)
-            => StripItem(item, state, config, viewer);
+        /// <summary>
+        /// Applies the native watched/season/category rules with a freshly loaded presentation state, the item's ownership
+        /// taken from its resolved identity.
+        /// </summary>
+        internal void StripLibraryItem(BaseItemDto item, PrivacyIdentity? identity, UserSpoilerBlur state, PluginConfiguration config, Guid viewer)
+            => StripItem(item, state, config, viewer, identity);
 
-        // Per-item strip. Mutates `item` in place when applicable; no-op otherwise.
-        private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        // Per-item strip. Mutates `item` in place when applicable; no-op otherwise. With a resolved identity every
+        // decision (kind, owning title, scope) comes from it; only an id the library cannot resolve falls back to the DTO.
+        private void StripItem(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId, PrivacyIdentity? identity = null)
         {
             if (item == null) return;
+            if (identity != null)
+            {
+                StripOwned(item, identity, userState, cfg, userId);
+                return;
+            }
 
             // Series path: when the item is the Series itself (Series detail
             // page = /Items/{seriesId}), strip cast / overview / tags / etc.
@@ -701,6 +609,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (played) return;
 
             ApplyStripping(item, userState, cfg, userId, ResolveCategoryReveal(item, userState, cfg, userId, seriesId.Value));
+        }
+
+        /// <summary>
+        /// The per-item rules for a library item whose ownership the identity resolver gave: a series, a movie (its
+        /// watched state), a season (seasons 0 and 1 pass, any watched episode releases it), an episode (watched state and
+        /// the advanced-mode categories of its series) and an extra of a guarded title (a movie's follows the movie's
+        /// watched state; a series' is always stripped). Collections, folders and names pass through.
+        /// </summary>
+        private void StripOwned(BaseItemDto item, PrivacyIdentity identity, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        {
+            if (!_resolver.InSpoilerScope(userState, identity)) return;
+            switch (identity.Kind)
+            {
+                case Jellyfin.Data.Enums.BaseItemKind.Series:
+                    MutateImageTagsForCacheBust(item, cfg, watched: false, playbackPositionTicks: 0);
+                    ApplyStripping(item, userState, cfg, userId);
+                    return;
+                case Jellyfin.Data.Enums.BaseItemKind.Movie:
+                {
+                    var played = identity.Played ?? item.UserData?.Played ?? ResolvePlayedServerSide(userId, identity.ItemId);
+                    MutateImageTagsForCacheBust(item, cfg, played, item.UserData?.PlaybackPositionTicks ?? 0);
+                    if (played) return;
+                    ApplyStripping(item, userState, cfg, userId);
+                    return;
+                }
+                case Jellyfin.Data.Enums.BaseItemKind.Season:
+                {
+                    if (item.IndexNumber.GetValueOrDefault(int.MaxValue) <= 1) return;
+                    var anyWatched = item.UserData is { UnplayedItemCount: { } unplayed } && item.RecursiveItemCount is { } total
+                        ? total > 0 && unplayed < total
+                        : HasWatchedAnyEpisodeInSeasonServerSide(userId, identity.ItemId);
+                    MutateImageTagsForCacheBust(item, cfg, anyWatched, playbackPositionTicks: 0);
+                    if (anyWatched) return;
+                    ApplyStripping(item, userState, cfg, userId);
+                    return;
+                }
+                case Jellyfin.Data.Enums.BaseItemKind.Episode:
+                {
+                    var played = identity.Played ?? item.UserData?.Played ?? ResolvePlayedServerSide(userId, identity.ItemId);
+                    MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
+                    if (played) return;
+                    ApplyStripping(item, userState, cfg, userId, ResolveCategoryReveal(item, userState, cfg, userId, identity.SeriesId));
+                    return;
+                }
+                default:
+                {
+                    if (!identity.IsExtra) return;
+                    var played = identity.OwnerKind == Jellyfin.Data.Enums.BaseItemKind.Movie && (identity.Played ?? ResolvePlayedServerSide(userId, identity.OwnerId));
+                    MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
+                    if (played) return;
+                    ApplyStripping(item, userState, cfg, userId);
+                    return;
+                }
+            }
         }
 
         /// <summary>
@@ -927,7 +889,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // We strip episode hints whose series is in the user's spoiler
         // list and that the user hasn't watched. Server-side, so all
         // clients benefit.
-        private void StripSearchHints(SearchHintResult result, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId)
+        private void StripSearchHints(SearchHintResult result, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId,
+            IReadOnlyDictionary<Guid, PrivacyIdentity> identities)
         {
             if (result?.SearchHints == null) return;
 
@@ -954,11 +917,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
+                // Ownership from the resolver (the episode's series, the movie itself), never from the hint.
+                if (actualItem == null || identities.GetValueOrDefault(hint.Id) is not { } identity) continue;
                 if (isEpisodeHint)
                 {
-                    if (actualItem is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
-                    if (ep.SeriesId == Guid.Empty) continue;
-                    if (!_resolver.IsSeriesInSpoilerScope(userState, ep.SeriesId)) continue;
+                    if (identity.Kind != Jellyfin.Data.Enums.BaseItemKind.Episode) continue;
+                    if (!_resolver.InSpoilerScope(userState, identity)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
 
                     if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles) && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
@@ -977,8 +941,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // helper. Movie hint Name is NOT rewritten (MatchedTerm
                     // is still nulled below to suppress autocomplete
                     // substring leak of any non-title-bearing match).
-                    if (actualItem is not MediaBrowser.Controller.Entities.Movies.Movie) continue;
-                    if (!_resolver.IsMovieInSpoilerScope(userState,hint.Id)) continue;
+                    if (identity.Kind != Jellyfin.Data.Enums.BaseItemKind.Movie) continue;
+                    if (!_resolver.InSpoilerScope(userState, identity)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
                 }
 

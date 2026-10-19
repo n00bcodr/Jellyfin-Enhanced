@@ -37,7 +37,7 @@ Requests & downloads also offers Hide/Unhide on titles that have not arrived yet
 
 Confirmed manager Unhide actions remain valid when you close the manager, but cancel if the signed-in session changes during the fade.
 
-Failed card metadata batches retry after a bounded wait, including cards in later batches that were never requested.
+Failed title and parent-series metadata batches retry on the next normal scan after a 30-second wait, including the same cards already on screen and later batches that were never requested. No page reload is needed. When you return to a view, cards that previously had no provider metadata are checked again, including cards retained on screen. Rule and account changes also recheck those cards; pending and failed reads keep their existing retry wait. List-view rows get the same checks as cards, so a hidden movie or series disappears from list views too. A parent-series lookup that finishes after you open a details page doesn't hide that page's episodes; the next scan decides them. Cards and rows that leave the page before a hide is shown on them (for example because you navigated away) are checked again when they come back, so a hidden title never reappears. A hide saved while search results or another page are still loading also applies to that response.
 
 Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
 
@@ -488,6 +488,7 @@ Jellyfin users can write their own reviews for movies, series, seasons, and epis
 - Average user rating chip displayed next to TMDB/RT ratings in the item media info bar
 - Average user rating also shown as a poster tag (`person_heart` icon) on library cards when rating tags are enabled
 - Admin moderation — admins can delete any user's review
+- Spoiler Guard applies to season and episode reviews the same way as to the series: while it hides a guarded series' ratings or reviews, it also hides them for that series' seasons and episodes
 - Optional: star ratings given in a review can also be saved as the user's Jellyfin rating on the item, so scrobblers and Letterboxd/Trakt-style sync tools that read Jellyfin user data pick them up
 
 **How to write a review:**

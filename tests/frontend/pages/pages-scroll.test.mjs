@@ -31,3 +31,10 @@ test('hidden scroll sections do not fetch and teardown prevents pending load fro
   h.section.getClientRects=()=>[{}];const pending=deferred();h.P.setupInfiniteScroll(h.state,'#feed',async()=>{loads++;return pending.promise;},()=>true,()=>false);
   h.P.cleanupInfiniteScroll(h.state);pending.resolve({pages:1,rendered:1});await nextTurn();assert.equal(loads,1);assert.equal(h.state.fill,null);assert.equal(h.document.querySelector('.je-scroll-sentinel'),null);
 });
+// D46 r16: a load's retry belongs to the session the row was built for; another account signing in stops it.
+test('a scroll load retry is never sent after another account signs in',async t=>{
+  const h=setup(t);h.P.CONFIG.retry.baseDelayMs=5;h.P.CONFIG.retry.maxDelayMs=5;let loads=0;
+  h.P.setupInfiniteScroll(h.state,'#feed',async()=>{loads++;if(loads===1){h.window.ApiClient.getCurrentUserId=()=>'user-b';throw new Error('HTTP 502');}return {pages:1,rendered:1};},()=>true,()=>false);
+  await new Promise(r=>setTimeout(r,60));
+  assert.equal(loads,1,'the retry is not sent for the new account');
+});

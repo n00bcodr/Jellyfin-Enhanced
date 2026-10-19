@@ -1,0 +1,35 @@
+{
+ "SearchHints": [
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "6770089c05c9ff11ce37ffc0fba72b0d",
+   "IndexNumber": 1,
+   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
+   "MediaType": "Video",
+   "Name": "Secret ending r17 E1",
+   "ParentIndexNumber": 1,
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "f3c9a45eec591dbb16db023d3257dc1b-jeufded036f526d",
+   "RunTimeTicks": 20000000,
+   "Series": "D46 R17 Show (1991)",
+   "Type": "Episode"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "a8be74a03a35ac05db2077507004bc8d",
+   "IndexNumber": 2,
+   "ItemId": "a8be74a03a35ac05db2077507004bc8d",
+   "MediaType": "Video",
+   "Name": "Secret ending r17 E2",
+   "ParentIndexNumber": 1,
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "4721a2463244fb495f9cd076143b5fbe-jeufded036f526d",
+   "RunTimeTicks": 20000000,
+   "Series": "D46 R17 Show (1991)",
+   "Type": "Episode"
+  }
+ ],
+ "TotalRecordCount": 2
+}
