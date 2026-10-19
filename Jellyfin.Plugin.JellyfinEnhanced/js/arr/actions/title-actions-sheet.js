@@ -61,13 +61,14 @@
         const node = el('span', 'material-icons', name || 'more_horiz'); node.setAttribute('aria-hidden', 'true'); return node;
     }
 
-    /** Closes the current sheet and restores a live opener, including a row replaced by the host. */
-    function close(restore = true) {
-        if (!current) return;
+    /** Closes the current sheet (only when `owner` opened it, if given) and restores a live opener. */
+    function close(restore = true, owner) {
+        if (!current || (owner && current.owner !== owner)) return;
         const state = current; current = null;
+        const live = state.action.current();
         state.lease.open = false; state.release?.(); state.observer.disconnect(); state.backdrop.remove();
         for (const [node, before] of state.inert) node.inert = before;
-        if (restore && state.action.current()) {
+        if (restore && live) {
             const target = state.opener?.isConnected ? state.opener : state.returnHost?.querySelector('.je-actions-more, .je-card-more');
             target?.focus();
         }
@@ -92,11 +93,15 @@
         if (badge && badge.textContent.trim() && parseInt(badge.textContent, 10) > 0) state.textContent = JE.t('title_actions_open_issues', { n: badge.textContent });
     }
 
-    /** Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. */
-    function show(c, entries, opener = document.activeElement) {
+    /**
+     * Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. Its
+     * actions belong to the sheet's generation: this session and route, while the sheet is open and
+     * its owning host (a row or card, `owner.current()`) is still mounted.
+     */
+    function show(c, entries, opener = document.activeElement, owner = null) {
         close(false); styles();
         const lease = { open: true };
-        const action = JE.createSessionAction();
+        const action = A.generation(() => lease.open && owner?.current?.() !== false);
         const backdrop = el('div', 'je-actions-backdrop');
         const sheet = el('section', 'je-actions-sheet focuscontainer');
         sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', JE.t('title_actions_more'));
@@ -106,7 +111,7 @@
         dismiss.onclick = () => close(); head.append(heading, dismiss); sheet.append(el('div', 'je-actions-handle'), head);
         const pairs = [];
         for (const group of groups) {
-            const order = { watch: ['trailer', 'played', 'open'], view: ['guard', 'hide'], requests: ['report', 'follow', 'request', 'manage'], other: ['share', 'native-more'] }[group];
+            const order = { watch: ['replay', 'shuffle', 'instant-mix', 'trailer', 'played', 'open'], view: ['guard', 'hide'], requests: ['report', 'follow', 'request', 'manage'], other: ['share', 'native-more'] }[group];
             const rank = id => order.includes(id) ? order.indexOf(id) : 100;
             const rows = entries.filter(e => (e.group || 'other') === group).sort((a, b) => rank(a.id) - rank(b.id));
             if (!rows.length) continue;
@@ -143,7 +148,7 @@
         });
         const observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button)));
         pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) observer.observe(source, { subtree: true, childList: true, attributes: true }); });
-        current = { backdrop, opener, action, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
+        current = { backdrop, opener, action, owner, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
         dismiss.onclick = () => close();
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
         sheet.addEventListener('keydown', e => {

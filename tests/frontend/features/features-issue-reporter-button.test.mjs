@@ -373,3 +373,75 @@ test('a page showing the unavailable icon gets the working one at its next look 
   assert.equal(await h.reporter.tryAddButton(), true);
   assert.equal(h.reads.length, 0);
 });
+
+/**
+ * The reporter with the real Seerr API module: the viewer's status read waits for the test, and every
+ * Seerr read is recorded with the user it was sent as.
+ */
+function sessionPage(t) {
+  let user = 'user-a'; let epoch = 1; const switches = []; const sent = []; const status = [];
+  const h = createHarness({
+    url: 'http://jellyfin.test/web/index.html#!/details?id=a',
+    html: ROW,
+    JE: {
+      pluginConfig: { JellyseerrEnabled: true, JellyseerrShowReportButton: true },
+      t: key => key,
+      session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (_name, fn) => switches.push(fn) },
+      core: { api: { fetch: async url => {
+        sent.push([user, url]);
+        if (url.includes('/user-status')) { const d = deferred(); status.push(d); return d.promise; }
+        return { mediaInfo: { id: 9 } };
+      } } },
+    },
+    apiClient: {
+      getCurrentUserId: () => user,
+      getItem: async (_user, id) => movie(id),
+      ajax: async () => ({ active: true }),
+      getUrl: path => path,
+    },
+  });
+  t.after(() => h.close());
+  h.load('core/ui-kit.js');
+  h.load('jellyseerr/api.js');
+  h.JE.jellyseerrAPI.surfaceUserStatusBanner = () => {};
+  h.load('jellyseerr/issue-reporter.js');
+  return { ...h, reporter: h.JE.jellyseerrIssueReporter, sent, status,
+    switchUser() { user = 'user-b'; epoch++; switches.forEach(fn => fn()); } };
+}
+
+test('a Report setup whose status read is cancelled by a user switch ends; it never continues as the new user', async t => {
+  const h = sessionPage(t);
+  const look = h.reporter.tryAddButton();
+  await tick();
+  assert.equal(h.status.length, 1);
+  h.switchUser();
+  // The shared transport cancels the outgoing user's read.
+  h.status[0].reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+  assert.equal(await look, false);
+  assert.equal(h.document.querySelectorAll(ICONS).length, 0, 'no Report button with the previous user\'s item metadata');
+  assert.deepEqual(h.sent.filter(([, url]) => !url.includes('/user-status')), [], 'no reportContext lookup sent as the new user');
+});
+
+test('a Report icon placed for the previous user is replaced at the next look', async t => {
+  const h = sessionPage(t);
+  const first = h.reporter.tryAddButton(); await tick();
+  h.status[0].resolve({ active: true, userFound: true, canReportIssues: true });
+  assert.equal(await first, true);
+  const old = h.document.querySelector('.jellyseerr-report-issue-icon');
+  h.switchUser();
+  const second = h.reporter.tryAddButton(); await tick();
+  h.status[1]?.resolve({ active: true, userFound: true, canReportIssues: true });
+  assert.equal(await second, true);
+  const icons = h.document.querySelectorAll(ICONS);
+  assert.equal(icons.length, 1);
+  assert.notEqual(icons[0], old);
+});
+
+test('controls: a same-session Report setup still places one working icon', async t => {
+  const h = sessionPage(t);
+  const look = h.reporter.tryAddButton(); await tick();
+  h.status[0].resolve({ active: true, userFound: true, canReportIssues: true });
+  assert.equal(await look, true);
+  assert.equal(h.document.querySelectorAll('.jellyseerr-report-issue-icon').length, 1);
+  assert.ok(h.sent.some(([user, url]) => user === 'user-a' && url.includes('/movie/603')));
+});

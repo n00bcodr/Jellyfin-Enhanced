@@ -171,7 +171,8 @@
     /**
      * Checks if the Seerr server is active and if the current user is linked.
      * Caches the result to avoid repeated API calls.
-     * @returns {Promise<{active: boolean, userFound: boolean}>}
+     * @returns {Promise<{active: boolean, userFound: boolean, cancelled?: boolean}>} `cancelled` when the read was
+     *   cancelled (never cached): callers end their setup instead of treating Seerr as inactive.
      */
     api.checkUserStatus = async function() {
         if (cachedUserStatus !== null) {
@@ -203,6 +204,8 @@
             }
             return status;
         } catch (error) {
+            // A cancelled read (the viewer changed) says nothing about Seerr: the caller's setup ends.
+            if (error?.name === 'AbortError') return { active: false, userFound: false, reason: 'cancelled', cancelled: true };
             console.warn(`${logPrefix} Status check failed:`, error);
             const fallback = {
                 active: false,

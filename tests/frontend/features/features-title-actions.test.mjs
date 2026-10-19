@@ -53,7 +53,8 @@ test('receiver authenticates and resolves under their own public title projectio
   await a.receive('tv:tmdb:603:s2:e4');
   assert.equal(calls[0], '/title-actions/tv/603?season=2&episode=4');
   assert.ok(calls.some(c => typeof c === 'string' && c.includes('/season/2')));
-  assert.deepEqual(plain(calls.at(-1)), ['tv:tmdb:603:s2:e4']);
+  assert.equal(calls.at(-1)[0], 'tv:tmdb:603:s2:e4');
+  assert.equal(calls.at(-1)[1].current(), true, 'the key lookup carries the receive generation');
 });
 
 test('revoked receiver access never navigates', async t => {

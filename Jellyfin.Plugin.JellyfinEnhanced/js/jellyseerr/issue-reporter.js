@@ -13,6 +13,8 @@
     // re-resolve it after a user switch.
     JE.session?.onUserChange('issue-reporter', () => {
         cachedUserCanReport = null;
+        // Icons drawn for the outgoing user go; the next look draws them for the new one.
+        document.querySelectorAll('.jellyseerr-report-issue-icon, .jellyseerr-report-unavailable-icon').forEach(icon => { if (placedIcons.has(icon)) icon.remove(); });
     });
 
     /**
@@ -29,14 +31,18 @@
     /**
      * Checks if issue reporting is available.
      * Resolves TMDB via parent series or fallback for Season/Episode items.
-     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', 'no-both', or 'no-account' (no Seerr account)
+     * Returns: 'available', 'no-tmdb', 'no-jellyseerr', 'no-both', 'no-account' (no Seerr account), or
+     * 'cancelled' once the caller's look is no longer current (a cancelled lookup ends it, never a fallback)
+     * @param {object} item
+     * @param {function(): boolean} [current] - The caller's look (session, page and item) is still current.
      * @returns {Promise<string>}
      */
-    issueReporter.checkReportingAvailability = async function (item) {
+    issueReporter.checkReportingAvailability = async function (item, current = () => true) {
         try {
             // Check Jellyseerr status first
             const statusUrl = ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/status');
             const statusRes = await JE.core.api.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
+            if (!current()) return 'cancelled';
             const jellyseerrActive = statusRes && statusRes.active === true;
 
             // Resolve TMDB ID: direct, parent (for Season/Episode), or fallback search
@@ -52,6 +58,7 @@
                         const parentItem = JE.helpers?.getItemCached
                             ? await JE.helpers.getItemCached(parentId, { userId })
                             : await ApiClient.getItem(userId, parentId);
+                        if (!current()) return 'cancelled';
                         tmdbId = parentItem?.ProviderIds?.Tmdb || parentItem?.ProviderIds?.['Tmdb'] || null;
                         if (tmdbId) {
                             console.debug(`${logPrefix} Availability check resolved TMDB via parent: ${tmdbId}`);
@@ -74,6 +81,7 @@
             // Issues are read and reported as the viewer's own Seerr account: without one (Jellyfin
             // Enhanced request mode lets such viewers in) every issue call would be refused.
             const userStatus = await JE.jellyseerrAPI?.checkUserStatus?.();
+            if (!current() || userStatus?.cancelled) return 'cancelled';
             if (userStatus && userStatus.active && userStatus.userFound === false) {
                 return 'no-account';
             }
@@ -81,11 +89,13 @@
             if (userStatus?.canReportIssues === false) return 'no-permissions';
             if (JE.jellyseerrAPI?.reportContext) {
                 const record = await JE.jellyseerrAPI.reportContext(tmdbId, ['Series', 'Season', 'Episode'].includes(type) ? 'tv' : 'movie');
+                if (!current()) return 'cancelled';
                 if (!record?.mediaId) return 'no-record';
             }
             // Both available
             return 'available';
         } catch (error) {
+            if (error?.name === 'AbortError' || !current()) return 'cancelled';
             console.debug(`${logPrefix} Error checking reporting availability:`, error);
             cachedUserCanReport = 'no-jellyseerr';
             return 'no-jellyseerr';
@@ -795,12 +805,12 @@
      * Fetches open issues for the item and applies an orange indicator + count badge
      * to the report button. No-op if JellyseerrShowIssueIndicator is off.
      */
-    issueReporter.applyIssueIndicator = async function (button, tmdbId, mediaType) {
+    issueReporter.applyIssueIndicator = async function (button, tmdbId, mediaType, current = () => true) {
         if (!JE.pluginConfig?.JellyseerrShowIssueIndicator) return;
         const action = JE.createSessionAction();
         try {
             const result = await JE.jellyseerrAPI.fetchIssuesForMedia(tmdbId, mediaType, { take: 50, filter: 'open' });
-            if (!action.current() || !button.isConnected) return;
+            if (!action.current() || !button.isConnected || current() === false) return;
             const openIssues = result?.results || [];
             button.querySelectorAll('.jellyseerr-issue-count-badge').forEach(badge => badge.remove());
             button.classList.toggle('has-open-issues', openIssues.length > 0);
@@ -855,8 +865,9 @@
     // reporter's own first look on a fresh load) share it instead of each adding an icon.
     const pendingLooks = new WeakMap();
 
-    // The icons the reporter placed, each with the item it reports. A copy of one (an action row
-    // replaced by a copy of itself) looks the same but has no click handler, so it never counts.
+    // The icons the reporter placed, each with the item it reports and the session that drew it. A copy
+    // of one (an action row replaced by a copy of itself) looks the same but has no click handler, so it
+    // never counts; nor does an icon drawn for a previous user.
     const placedIcons = new WeakMap();
 
     /**
@@ -869,7 +880,8 @@
     function iconFor(page, itemId) {
         let live = null;
         for (const icon of page.querySelectorAll(REPORT_ICONS)) {
-            if (!live && placedIcons.get(icon) === itemId) live = icon;
+            const placed = placedIcons.get(icon);
+            if (!live && placed?.itemId === itemId && placed.action.current()) live = icon;
             else icon.remove();
         }
         return live;
@@ -888,11 +900,11 @@
      * @param {HTMLElement} button
      * @param {HTMLElement} page
      * @param {string} itemId
-     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @param {{current: function(): boolean, action: object}} look - The page's look at this item and its session.
      * @returns {boolean} The page has an icon for the item now.
      */
-    function placeIcon(row, button, page, itemId, current) {
-        if (!current()) {
+    function placeIcon(row, button, page, itemId, look) {
+        if (!look.current()) {
             console.debug(`${logPrefix} Page moved on before the report button was ready`);
             return false;
         }
@@ -901,7 +913,7 @@
         if (existing && !(isUnavailable(existing) && !isUnavailable(button))) return true;
         existing?.remove();
         button.setAttribute('data-je-item-id', itemId);
-        placedIcons.set(button, itemId);
+        placedIcons.set(button, { itemId, action: look.action });
         JE.core.ui.placeDetailAction(row, button);
         return true;
     }
@@ -935,12 +947,13 @@
         }
 
         const running = pendingLooks.get(itemDetailPage);
-        if (running && running.itemId === itemId) return running.promise;
-        const look = { itemId, promise: Promise.resolve(false) };
-        const current = () => pendingLooks.get(itemDetailPage) === look && pageItemId() === itemId
+        if (running && running.itemId === itemId && running.action.current()) return running.promise;
+        // A look belongs to the viewer who started it as well as to the page and item.
+        const look = { itemId, action: JE.createSessionAction(), promise: Promise.resolve(false) };
+        look.current = () => look.action.current() && pendingLooks.get(itemDetailPage) === look && pageItemId() === itemId
             && itemDetailPage.isConnected && !itemDetailPage.classList.contains('hide');
         pendingLooks.set(itemDetailPage, look);
-        look.promise = addButton(itemDetailPage, itemId, current).finally(() => {
+        look.promise = addButton(itemDetailPage, itemId, look).finally(() => {
             if (pendingLooks.get(itemDetailPage) === look) pendingLooks.delete(itemDetailPage);
         });
         return look.promise;
@@ -950,10 +963,12 @@
      * Reads the item and adds its report (or unavailable) button to the page.
      * @param {HTMLElement} itemDetailPage
      * @param {string} itemId
-     * @param {function(): boolean} current - The look is still the page's look at this item.
+     * @param {{current: function(): boolean, action: object}} look - The page's look at this item; every
+     *   continuation stops once it is stale (another viewer, page or item).
      * @returns {Promise<boolean>} The page has a report button.
      */
-    async function addButton(itemDetailPage, itemId, current) {
+    async function addButton(itemDetailPage, itemId, look) {
+        const current = look.current;
         try {
             // Fetch item data from Jellyfin API (same way as reviews.js)
             const userId = ApiClient.getCurrentUserId();
@@ -965,6 +980,7 @@
             const item = JE.helpers?.getItemCached
                 ? await JE.helpers.getItemCached(itemId, { userId })
                 : await ApiClient.getItem(userId, itemId);
+            if (!current()) return false;
             if (!item) {
                 console.debug(`${logPrefix} Could not fetch item data`);
                 return false;
@@ -1008,7 +1024,8 @@
             const mediaType = isTvLike ? 'tv' : 'movie';
 
             // Check if reporting is available (item has TMDB ID and Jellyseerr configured)
-            const availability = await issueReporter.checkReportingAvailability(item);
+            const availability = await issueReporter.checkReportingAvailability(item, current);
+            if (availability === 'cancelled' || !current()) return false;
 
             // If services not available, show unavailable button — except when the
             // item itself simply has no TMDB ID (e.g. MusicVideo, or any other type
@@ -1053,7 +1070,7 @@
                 if (buttonContainerUnavail) {
                     const unavailButton = issueReporter.createUnavailableButton(buttonContainerUnavail, '', '', availability);
                     if (unavailButton) {
-                        if (!placeIcon(buttonContainerUnavail, unavailButton, itemDetailPage, itemId, current)) return false;
+                        if (!placeIcon(buttonContainerUnavail, unavailButton, itemDetailPage, itemId, look)) return false;
                         console.log(`${logPrefix} Added unavailable report button (${availability})`);
                         return true;
                     }
@@ -1092,9 +1109,11 @@
             }
 
             // If still no TMDB ID, try the general fallback lookup (may inspect names/urls)
+            if (!current()) return false;
             if (!tmdbId) {
                 console.debug(`${logPrefix} No direct TMDB ID found for ${item.Name}, trying fallback...`);
                 tmdbId = await issueReporter.getTmdbIdFallback(item.Name, mediaType, item);
+                if (!current()) return false;
 
                 if (!tmdbId) {
                     // No TMDB ID for this item, and the fallback search couldn't find one
@@ -1167,12 +1186,13 @@
 
             if (button) {
                 // In its fixed place in the row (before More…), once.
-                if (!placeIcon(buttonContainer, button, itemDetailPage, itemId, current)) return false;
+                if (!placeIcon(buttonContainer, button, itemDetailPage, itemId, look)) return false;
                 // The item's icon was already there: nothing more to do.
                 if (button.parentNode !== buttonContainer) return true;
                 console.log(`${logPrefix} ✓ Report issue button added to ${item.Name} (${mediaType}, TMDB: ${tmdbId})`);
                 // Fire-and-forget: colour button orange + count badge when open issues exist
-                issueReporter.applyIssueIndicator(button, tmdbId, mediaType);
+                // The count belongs to this viewer and item, after the look itself has finished.
+                issueReporter.applyIssueIndicator(button, tmdbId, mediaType, () => look.action.current() && pageItemId() === itemId);
                 return true;
             }
         } catch (error) {
