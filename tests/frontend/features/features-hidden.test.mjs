@@ -52,8 +52,10 @@ test('hidden scope filters home rows without hiding same title in the library',t
  assert.equal(cards[0].classList.contains('je-hidden'),true);
  assert.equal(cards[1].classList.contains('je-hidden'),true);
  assert.equal(cards[2].classList.contains('je-hidden'),false);
- h.api.restoreNativeCardsForIds(new Set(['AA-BB']));
+ // Unhide goes through the filter (the one visibility writer): the card shows once its rule is gone.
+ h.api.debouncedSave=()=>{};h.api.unhideItem('AA-BB');h.flush();
  assert.equal(cards[0].classList.contains('je-hidden'),false);
+ assert.equal(cards[1].classList.contains('je-hidden'),true,'the scoped Next Up hide still applies');
 });
 test('home-section scopes merge without weakening an existing global hide',t=>{
  const h=setup(t,{items:{a:{itemId:'a',hideScope:'nextup'},b:{itemId:'b',hideScope:'global'}}});
@@ -269,7 +271,7 @@ test('disabling the master restores provider-only cards and expires their scan s
  h.JE.titleDetails={parse:()=>({kind:'movie',tmdbId:42})};h.api.filterAllNativeCards();h.flush();
  const card=h.document.querySelector('.card');assert.ok(card.classList.contains('je-hidden'));
  h.api.getHiddenData().settings.enabled=false;h.api.refreshNativeCardVisibility();h.flush();
- assert.equal(card.classList.contains('je-hidden'),false);assert.equal(card.hasAttribute('data-je-hidden-checked'),true,'boundary retains the recorded old scope');
+ assert.equal(card.classList.contains('je-hidden'),false);assert.equal(h.api.nativeDecisionResolved(card),false,'the disable expires the old verdict');
  h.api.getHiddenData().settings.enabled=true;h.api.filterNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),true,'re-enabled ordinary scan re-decides the retained node');
 });
 

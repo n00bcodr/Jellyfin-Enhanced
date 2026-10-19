@@ -177,6 +177,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             try
             {
+                if (executed.Result is ObjectResult materialized) NativeResponseValue.Materialize(materialized);
                 if (_library != null && executed.Result is ObjectResult value)
                 {
                     IEnumerable<Guid> ids = value.Value switch {

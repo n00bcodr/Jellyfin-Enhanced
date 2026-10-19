@@ -75,9 +75,14 @@
     /** The one native-node selector: every pass (filter, title and parent identity, recovery) reads these nodes. */
     const NATIVE_NODE_SEL = '.card[data-id], .card[data-itemid], .listItem[data-id]';
 
-    /** Every hideable native card or list row; image-editor cards are never Hidden Content nodes. */
+    /** Whether an element is a native card or list row this filter decides; image-editor cards never are. */
+    function isNativeNode(node) {
+        return !!node?.matches?.(NATIVE_NODE_SEL) && !node.hasAttribute('data-imagetype');
+    }
+
+    /** Every hideable native card or list row. */
     function nativeNodes() {
-        return [...document.querySelectorAll(NATIVE_NODE_SEL)].filter(node => !node.hasAttribute('data-imagetype'));
+        return [...document.querySelectorAll(NATIVE_NODE_SEL)].filter(isNativeNode);
     }
 
     // ============================================================
@@ -194,18 +199,20 @@
 
     /**
      * A decision applies only as the node's newest claim, in the scope captured with its inputs, with unchanged
-     * identity and surface and its eligibility re-checked now. It never borrows the current scope.
+     * identity and surface and its eligibility re-checked now. It never borrows the current scope. A hide also needs
+     * the feature active and its surface filtered; a show (including the release when the feature is off) does not.
      */
     function decisionApplies(card, itemId, surface, scope, hidden) {
         return card.isConnected && nodeClaims.get(card) === scope.seq && getCardItemId(card) === itemId &&
-            nativeNodeSurface(card) === surface && hiddenContentActive() && (!hidden || shouldFilterSurface(surface)) &&
+            nativeNodeSurface(card) === surface && (!hidden || hiddenContentActive() && shouldFilterSurface(surface)) &&
             nativeDecisionScopeCurrent(scope, !hidden);
     }
 
     /**
-     * The only place a native verdict takes effect, and the sole processed-marker writer. The apply-time checks, the
-     * DOM effect and the marker happen in this one synchronous step; when a check fails nothing is written and the
-     * node stays unresolved for the next ordinary scan. A marker is never written ahead of a deferred effect.
+     * The only writer of native-node visibility and of the processed marker. The verdict was read from every rule
+     * (item ID and scope, provider, parent series, legacy global rules, surface and enable switches); the apply-time
+     * checks, the DOM effect and the marker happen in this one synchronous step. When a check fails nothing is
+     * written and the node stays unresolved for the next ordinary scan. Every other path only requests a decision.
      * @param {boolean} final Whether the verdict's inputs were complete when they were read (a pending identity is not).
      */
     function applyNativeDecision(card, itemId, surface, scope, hidden, parentSeriesId, final) {
@@ -332,52 +339,27 @@
             internal.isCardTitleResolved?.(itemId);
     }
 
+    let decisionRequested = false;
     /**
-     * Restores visibility for cards matching a set of item IDs.
-     * Used when un-hiding items to immediately show them again.
-     * @param {Set<string>} idsToRestore Set of item IDs to restore.
+     * Button repaints, deliberate hide/unhide callbacks and identity hydration never write native visibility: they ask
+     * for one ordinary scan, which decides every unresolved node by every rule. Coalesced to a frame, so a request
+     * made by a scan's own consequences cannot re-trigger itself.
      */
-    function restoreNativeCardsForIds(idsToRestore) {
-        if (!idsToRestore || idsToRestore.size === 0) return;
-        // Callers pass IDs straight from the store or from an unhide argument, so they may be
-        // dashed; the IDs they are matched against here are not. Canonicalise once, up front.
-        const wanted = new Set();
-        idsToRestore.forEach((id) => {
-            const norm = normalizeId(id);
-            if (norm) wanted.add(norm);
-        });
-        if (wanted.size === 0) return;
-        nativeNodes().forEach((card) => {
-            const cardId = getCardItemId(card);
-            const hiddenBySeriesId = normalizeId(card.getAttribute(HIDDEN_PARENT_ATTR));
-            if (hiddenBySeriesId && wanted.has(hiddenBySeriesId) && card.classList.contains('je-hidden')) {
-                card.classList.remove('je-hidden');
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            } else if ((cardId && wanted.has(cardId)) || card.getAttribute(HIDDEN_DIRECT_ATTR) === '1') {
-                card.classList.remove('je-hidden');
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            }
-        });
+    function requestNativeDecision() {
+        if (decisionRequested) return;
+        decisionRequested = true;
+        requestAnimationFrame(() => { decisionRequested = false; filterNativeCards(); });
     }
 
     /**
-     * Triggers a full re-filter of all native cards.  If filtering is disabled,
-     * restores any previously-hidden cards instead.
+     * Triggers a full re-decision of all native cards. Turning filtering off makes every retained verdict stale; the
+     * same pass then shows what this feature hid, through the one writer.
      */
     function refreshNativeCardVisibility() {
-        if (!hiddenContentActive()) {
-            visibilityGeneration++;
-            nativeNodes().forEach(card => {
-                card.classList.remove('je-hidden');
-                card.removeAttribute(HIDDEN_PARENT_ATTR);
-                card.removeAttribute(HIDDEN_DIRECT_ATTR);
-            });
-            return;
-        }
+        if (!hiddenContentActive()) visibilityGeneration++;
         requestAnimationFrame(() => {
             filterAllNativeCards();
-            if (typeof JE.hideEmptyHomeSections === 'function') {
+            if (hiddenContentActive() && typeof JE.hideEmptyHomeSections === 'function') {
                 JE.hideEmptyHomeSections();
             }
         });
@@ -388,10 +370,10 @@
      * Called by the debounced MutationObserver callback.
      */
     function filterNativeCardPass(all) {
-        if (!hiddenContentActive()) return;
+        const active = hiddenContentActive();
         // Every decision of this pass carries the scope captured as its inputs are read.
         const scope = captureNativeDecisionScope();
-        void internal.hydrateCardTitles?.();
+        if (active) void internal.hydrateCardTitles?.();
         const pendingParentChecks = [];
         const changes = [];
         for (const card of nativeNodes()) {
@@ -399,8 +381,14 @@
             const itemId = getCardItemId(card);
             card.removeAttribute(PROCESSED_ATTR);
             if (!itemId) continue;
+            // Feature off: show what this feature hid; nothing is resolved, so turning it on decides the node again.
+            if (!active && !card.classList.contains('je-hidden') && !card.hasAttribute(HIDDEN_PARENT_ATTR) && !card.hasAttribute(HIDDEN_DIRECT_ATTR)) continue;
             nodeClaims.set(card, scope.seq);
             const surface = nativeNodeSurface(card);
+            if (!active) {
+                changes.push({ card, hidden: false, itemId, surface, final: false });
+                continue;
+            }
             const allows = shouldFilterSurface(surface);
             const hidden = allows && isHiddenOnSurface(itemId, surface,
                 { type: card.dataset.type, tmdbId: card.dataset.tmdbId });
@@ -498,6 +486,8 @@
 
     Object.assign(internal, {
         nativeNodes,
+        isNativeNode,
+        requestNativeDecision,
         nativeDecisionResolved,
         captureNativeDecisionScope,
         nativeDecisionScopeCurrent,
@@ -505,7 +495,6 @@
         getCardSurface,
         getCardItemId,
         isHiddenOnSurface,
-        restoreNativeCardsForIds,
         refreshNativeCardVisibility,
         filterNativeCards,
         filterAllNativeCards,

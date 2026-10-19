@@ -289,7 +289,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             if (objectResult.Value == null) return;
 
-            switch (objectResult.Value)
+            // A lazy answer (12.2 builds recommendation DTOs per enumeration) is enumerated once and its instances stripped.
+            switch (NativeResponseValue.Materialize(objectResult))
             {
                 case BaseItemDto single:
                     StripItem(single, userState, cfg, userId);
