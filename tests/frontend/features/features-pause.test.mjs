@@ -2,9 +2,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,enabled=true){
- let subscriptions=0,releases=0;const handlers=[];const h=createHarness({JE:{session:{onUserChange:(key,fn)=>handlers.push(fn)},currentSettings:{pauseScreenEnabled:enabled},t:key=>key,helpers:{onBodyMutation:()=>{subscriptions++;return {unsubscribe:()=>releases++};}}}});
+ let subscriptions=0,releases=0;const handlers=[];const h=createHarness({JE:{session:{onUserChange:(key,fn)=>handlers.push(fn)},currentSettings:{pauseScreenEnabled:enabled,pauseScreenDelaySeconds:0},t:key=>key,helpers:{onBodyMutation:()=>{subscriptions++;return {unsubscribe:()=>releases++};}}}});
  h.window.localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{Id:'wrong',UserId:'other',AccessToken:'wrong'},{Id:'server-a',UserId:'user-a',AccessToken:'test'}]}));
- h.load('core/ui-kit.js');h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
+ h.load('core/ui-kit.js');h.load('enhanced/player/now-playing.js');h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
 }
 test('disabled pause screen creates no DOM or observers',t=>{const h=setup(t,false);h.JE.initializePauseScreen();assert.equal(h.JE.pauseScreenInstance,undefined);assert.deepEqual(h.counts(),{subscriptions:0,releases:0});});
 test('pause screen uses active server credentials and has one instance after repeated initialization',t=>{
@@ -52,4 +52,50 @@ test('pause overlay leaves arrow keys alone outside the TV layout',t=>{
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.showOverlay();
  const e=new h.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true});h.document.dispatchEvent(e);
  assert.equal(e.defaultPrevented,false);assert.equal(p.overlay.getAttribute('aria-hidden'),'false');
+});
+
+const A='a'.repeat(32),B='b'.repeat(32);
+const src=id=>`http://jellyfin.test/Videos/${id}/stream.mp4?static=true`;
+const flush=(ms=30)=>new Promise(resolve=>setTimeout(resolve,ms));
+function playing(t,{current=src(A),sessions=null}={}){
+ const h=setup(t);
+ h.window.ApiClient.serverAddress=()=>'http://jellyfin.test';h.window.ApiClient.deviceId=()=>'device-1';
+ h.window.ApiClient.ajax=async()=>sessions;
+ h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;
+ p.firstAvailableBlobURL=async()=>null;p.fetchWithRetry=async url=>({Overview:'overview '+(url.includes(A)?'A':url.includes(B)?'B':'?')});
+ h.document.body.innerHTML=`<div class="videoOsdBottom"><button class="btnUserRating" data-id="${A}"></button></div><div class="videoPlayerContainer"><video></video></div>`;
+ const video=h.document.querySelector('video');let currentSrc=current,paused=false;
+ Object.defineProperty(video,'currentSrc',{get:()=>currentSrc});Object.defineProperty(video,'paused',{get:()=>paused});Object.defineProperty(video,'duration',{get:()=>2700});
+ return {h,p,video,setSource:value=>{currentSrc=value;},pause:async()=>{paused=true;video.dispatchEvent(new h.window.Event('pause'));await flush();},overlay:()=>p.overlay.getAttribute('aria-hidden'),plot:()=>p.overlayPlot.textContent};
+}
+test('a source change on the same video element drops the previous item before the next pause',async t=>{
+ const x=playing(t);x.p.checkForVideoChanges();await flush();
+ assert.equal(x.plot(),'overview A');
+ x.setSource(src(B));x.video.dispatchEvent(new x.h.window.Event('loadstart'));
+ assert.equal(x.p.currentItemId,null);assert.equal(x.plot(),'');
+ await x.pause();
+ assert.equal(x.p.currentItemId,B);assert.equal(x.plot(),'overview B');assert.equal(x.overlay(),'false');
+});
+test('the OSD button holding the previous item never decides what the overlay describes',async t=>{
+ const x=playing(t,{current:'blob:http://jellyfin.test/1'});x.p.checkForVideoChanges();await flush();
+ assert.equal(x.p.currentItemId,null);
+ await x.pause();
+ assert.equal(x.p.currentItemId,null);assert.equal(x.plot(),'');assert.equal(x.overlay(),'true');
+});
+test('a blob stream is identified by the one matching server session with the same runtime',async t=>{
+ const session=(id,ticks)=>[{DeviceId:'device-1',NowPlayingItem:{Id:id,RunTimeTicks:ticks}},{DeviceId:'other',NowPlayingItem:{Id:A,RunTimeTicks:1}}];
+ const ok=playing(t,{current:'blob:http://jellyfin.test/1',sessions:session(B,27000000000)});ok.p.checkForVideoChanges();await ok.pause();
+ assert.equal(ok.p.currentItemId,B);assert.equal(ok.plot(),'overview B');assert.equal(ok.overlay(),'false');
+ const mismatch=playing(t,{current:'blob:http://jellyfin.test/1',sessions:session(B,36000000000)});mismatch.p.checkForVideoChanges();await mismatch.pause();
+ assert.equal(mismatch.p.currentItemId,null);assert.equal(mismatch.overlay(),'true');
+ const ambiguous=playing(t,{current:'blob:http://jellyfin.test/1',sessions:[...session(B,27000000000),...session(A,27000000000)]});ambiguous.p.checkForVideoChanges();await ambiguous.pause();
+ assert.equal(ambiguous.p.currentItemId,null);assert.equal(ambiguous.overlay(),'true');
+});
+test('a late response for the previous item cannot fill the overlay after a source change',async t=>{
+ const x=playing(t);const gate=deferred();
+ x.p.fetchWithRetry=async url=>{if(url.includes(A)){await gate.promise;return {Overview:'overview A'};}return {Overview:'overview B'};};
+ x.p.checkForVideoChanges();await flush();
+ x.setSource(src(B));x.video.dispatchEvent(new x.h.window.Event('loadstart'));await x.pause();
+ gate.resolve();await flush();
+ assert.equal(x.p.currentItemId,B);assert.equal(x.plot(),'overview B');
 });

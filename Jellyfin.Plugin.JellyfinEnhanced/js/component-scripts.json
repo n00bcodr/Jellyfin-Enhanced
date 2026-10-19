@@ -59,6 +59,7 @@
     "enhanced/homeremoval/features-remove-multiselect.js",
     "enhanced/events.js",
     "enhanced/player/playback.js",
+    "enhanced/player/now-playing.js",
     "// auto-skip.js consumes JE.internals.player (exported by playback.js)",
     "enhanced/player/auto-skip.js",
     "// hidden-content modules — order matters: -data.js owns the",

@@ -15,6 +15,8 @@
     }
       if (JE.pauseScreenInstance?.overlay?.isConnected) return;
       JE.pauseScreenInstance?.destroy();
+      const nowPlaying = () => JE.internals.nowPlaying;
+
       class JellyfinPauseScreen {
         constructor() {
           // State
@@ -22,9 +24,10 @@
           this.destroyed = false;
           this.currentVideo = null;
           this.currentItemId = null;
+          this.readyItemId = null;
+          this.syncing = 0;
           this.userId = null;
           this.token = null;
-          this.lastItemIdCheck = 0;
           this.cleanupListeners = null;
           this.imgBlobCache = new Map();
           this.imgProbeCache = new Map();
@@ -585,8 +588,17 @@
 
             const idleFor = Date.now() - this.lastUserInteractionAt;
             if (idleFor >= this.pauseScreenDelayMs) {
-              this.showOverlay();
+              if (this.syncing) {
+                this.pauseScreenTimer = setTimeout(tryShowWhenIdle, 250);
+                return;
+              }
               this.pauseScreenTimer = null;
+              const sourceId = nowPlaying().itemIdFromSource(video);
+              if (sourceId && sourceId !== this.readyItemId) {
+                this.syncItem(video).then(() => this.schedulePauseOverlayDelay());
+                return;
+              }
+              if (this.readyItemId && this.readyItemId === this.currentItemId) this.showOverlay();
               return;
             }
 
@@ -660,31 +672,56 @@
           this.itemCache.clear();
           this.imgProbeCache.clear();
 
-          const itemId = this.checkForItemId(true);
+          const np = nowPlaying();
+          const itemId = np.itemIdFromSource(video) || np.itemIdFromRoute();
           if (itemId) {
             this.currentItemId = itemId;
             await this.fetchItemInfo(itemId);
           }
         }
 
-        checkForItemId(force = false) {
-          const now = Date.now();
-          if (!force && now - this.lastItemIdCheck < 500) return this.currentItemId;
-          this.lastItemIdCheck = now;
+        /** Clears the current item and its details after a source change. */
+        invalidateIdentity() {
+          this.generation++;
+          if (this.overlay.getAttribute('aria-hidden') === 'false') this.hideOverlay();
+          this.clearDisplayData();
+          if (this.pauseScreenTimer) {
+            clearTimeout(this.pauseScreenTimer);
+            this.pauseScreenTimer = null;
+          }
+          if (this.fetchAbort) { this.fetchAbort.abort(); this.fetchAbort = null; }
+          this.currentItemId = null;
+          this.readyItemId = null;
+        }
 
-          // Use the OSD favorite button — it's always updated to the current item
-          const el = document.querySelector('.videoOsdBottom .btnUserRating[data-id]');
-          return el?.dataset?.id || null;
+        /** Identifies the playing item and loads its details; null when it can't be identified. */
+        async syncItem(video) {
+          const source = video.currentSrc;
+          this.syncing++;
+          try {
+            const itemId = await nowPlaying().resolveItemId(video);
+            if (this.destroyed || video !== this.currentVideo || video.currentSrc !== source) return null;
+            if (!itemId) {
+              this.invalidateIdentity();
+              return null;
+            }
+            if (itemId !== this.currentItemId || itemId !== this.readyItemId) {
+              this.currentItemId = itemId;
+              this.readyItemId = null;
+              await this.fetchItemInfo(itemId);
+            }
+            return this.readyItemId === itemId ? itemId : null;
+          } finally {
+            this.syncing--;
+          }
         }
 
         attachVideoListeners(video) {
           const handlePause = () => {
             if (video === this.currentVideo && !video.ended) {
-              const newItemId = this.checkForItemId(true);
-              if (newItemId && newItemId !== this.currentItemId) {
-                this.currentItemId = newItemId;
-                this.fetchItemInfo(newItemId);
-              }
+              this.syncItem(video).then(itemId => {
+                if (itemId && video === this.currentVideo && video.paused) this.schedulePauseOverlayDelay();
+              });
               this.updateProgressStatic();
 
               // Clear any existing timer
@@ -720,11 +757,19 @@
             }
           };
 
+          const handleSourceChange = () => {
+            if (video === this.currentVideo) this.invalidateIdentity();
+          };
+
           video.addEventListener("pause", handlePause);
           video.addEventListener("play", handlePlay);
+          video.addEventListener("loadstart", handleSourceChange);
+          video.addEventListener("emptied", handleSourceChange);
           return () => {
             video.removeEventListener("pause", handlePause);
             video.removeEventListener("play", handlePlay);
+            video.removeEventListener("loadstart", handleSourceChange);
+            video.removeEventListener("emptied", handleSourceChange);
           };
         }
 
@@ -778,6 +823,7 @@
                 this.itemCache.set(itemId, record);
                 }
                 await this.displayItemInfo(record.item, record.domain, itemId);
+                if (!this.destroyed && generation === this.generation) this.readyItemId = itemId;
             } catch (err) {
                 if (this.destroyed || generation !== this.generation) return;
                 if (err.name !== 'AbortError') {
@@ -988,6 +1034,7 @@
           if (this.cleanupListeners) { this.cleanupListeners(); this.cleanupListeners = null; }
           if (this.fetchAbort) { this.fetchAbort.abort(); this.fetchAbort = null; }
           this.currentItemId = null;
+          this.readyItemId = null;
           this.currentVideo = null;
         }
 

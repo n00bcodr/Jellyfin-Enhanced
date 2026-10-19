@@ -40,6 +40,7 @@
       .map(n => n.replace(/(^|\s)(\S)/g, (_, sp, ch) => sp + ch.toUpperCase()));
   }
 
+  const nowPlaying = JE.internals.nowPlaying;
   const infoCache = new Map();
   const seriesCache = new Map();
   let lastShownId = null;
@@ -60,12 +61,6 @@
 
   function isEnabled() {
     return JE.pluginConfig?.ShowPlaybackRatingBadge === true;
-  }
-
-  function parseItemIdFromSrc(video) {
-    const src = (video && (video.currentSrc || video.src)) || '';
-    const match = src.match(/\/Videos\/([0-9a-f]{32}|[0-9a-f-]{36})\//i);
-    return match ? match[1].replace(/-/g, '').toLowerCase() : null;
   }
 
   function getOsdItemId() {
@@ -181,46 +176,22 @@
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  function normalizeId(id) {
-    return id ? String(id).replace(/-/g, '').toLowerCase() : null;
-  }
-
-  // Server's view of what this device is playing, for blob: sources with no id in the URL
-  async function probeNowPlayingId(userId) {
-    try {
-      const deviceId = ApiClient.deviceId?.();
-      if (!deviceId) return null;
-      const sessions = await ApiClient.ajax({
-        type: 'GET',
-        url: ApiClient.getUrl('/Sessions', { ControllableByUserId: userId }),
-        dataType: 'json'
-      });
-      if (!Array.isArray(sessions)) return null;
-      const matches = sessions.filter(x => x?.DeviceId === deviceId && x?.NowPlayingItem?.Id);
-      return matches.length === 1 ? normalizeId(matches[0].NowPlayingItem.Id) : null;
-    } catch (e) {
-      console.debug(`${logPrefix} Now-playing probe failed`, e);
-      return null;
-    }
-  }
-
   // Source URL, page hash, now-playing probe, then OSD button. The last two can still hold
   // the previous item, so wait for the id to change (unchanged after 6s means a replay).
   async function resolveItemId(video) {
-    const fromSrc = parseItemIdFromSrc(video);
+    const fromSrc = nowPlaying.itemIdFromSource(video);
     if (fromSrc) return fromSrc;
 
-    const fromHash = normalizeId(JE.internals?.player?.getCurrentVideoItemId?.());
+    const fromHash = nowPlaying.itemIdFromRoute();
     if (fromHash) return fromHash;
 
-    const userId = ApiClient.getCurrentUserId?.();
     for (let i = 0; i < 12; i++) {
-      const id = (userId && await probeNowPlayingId(userId)) || getOsdItemId();
+      const id = await nowPlaying.itemIdFromSession() || getOsdItemId();
       if (id && id !== lastSeenId) return id;
       await sleep(500);
       if (video.ended || !JE.isVideoPage?.()) return null;
     }
-    return (userId && await probeNowPlayingId(userId)) || getOsdItemId();
+    return await nowPlaying.itemIdFromSession() || getOsdItemId();
   }
 
   // The route can change to #/video just after playback starts
