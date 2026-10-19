@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -18,7 +19,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 {
     // Scheduled task that syncs Jellyseerr watchlist items to Jellyfin watchlist.
-    public partial class JellyseerrWatchlistSyncTask : IScheduledTask
+    public partial class JellyseerrWatchlistSyncTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IUserManager _userManager;
@@ -50,6 +51,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         public string Description => "Syncs items from each user's Jellyseerr watchlist to their Jellyfin watchlist.\n\nConfigure the task triggers to run this task periodically for automatic syncing.";
 
         public string Category => "Jellyfin Enhanced";
+
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.SyncJellyseerrWatchlist && config.JellyseerrEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
@@ -89,7 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.SyncJellyseerrWatchlist || !config.JellyseerrEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("[Seerr→Jellyfin Watchlist Sync] Sync is disabled in plugin configuration.");
                 progress?.Report(100);

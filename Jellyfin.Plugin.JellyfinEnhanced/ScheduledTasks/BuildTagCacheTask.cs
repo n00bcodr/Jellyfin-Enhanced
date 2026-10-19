@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -13,7 +14,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     /// On startup, the cache is loaded from disk instead (TagCacheMonitor handles
     /// any items added/changed while the server was off via Jellyfin's library scan events).
     /// </summary>
-    public class BuildTagCacheTask : IScheduledTask
+    public class BuildTagCacheTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly TagCacheService _tagCacheService;
         private readonly TagCacheMonitor _tagCacheMonitor;
@@ -34,6 +35,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.TagCacheServerMode;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             return new[]
@@ -53,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             // hook), so this task must not build or reconcile anything. Re-enable
             // catch-up is handled by that hook; this gate just keeps the daily
             // trigger and manual runs from doing work the admin opted out of.
-            if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
+            if (!IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration))
             {
                 _logger.Info("[TagCache] Server-Side Tag Cache is disabled; skipping cache refresh (tags will use batch fallback).");
                 progress.Report(100);

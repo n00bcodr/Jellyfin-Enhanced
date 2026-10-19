@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,7 +17,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     /// Scheduled Tasks or from the "Apply to existing titles now" button on the
     /// plugin config page (which also passes the run's options).
     /// </summary>
-    public class SpoilerApplyExistingTitlesTask : IScheduledTask
+    public class SpoilerApplyExistingTitlesTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly SpoilerExistingTitlesApplier _applier;
 
@@ -32,6 +33,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         public string Description => "Turns Spoiler Guard on for every show and movie already in the library that is inside the auto-enable scope (content types and libraries), for every user who can see it. Titles a user already has, or has fully watched, are skipped. Run it by hand; rescans never do this.";
 
         public string Category => "Jellyfin Enhanced";
+
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.SpoilerBlurEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {

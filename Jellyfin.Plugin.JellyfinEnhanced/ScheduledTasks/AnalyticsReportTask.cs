@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.Tasks;
@@ -15,7 +16,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     /// whether triggered by this task's own default trigger or run manually
     /// from the Scheduled Tasks page.
     /// </summary>
-    public class AnalyticsReportTask : IScheduledTask
+    public class AnalyticsReportTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly AnalyticsReportingService _analyticsReportingService;
 
@@ -33,6 +34,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
             "No-ops entirely unless enabled there, and skips silently until the configured reporting interval has elapsed.";
 
         public string Category => "Jellyfin Enhanced";
+
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.AnalyticsEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {

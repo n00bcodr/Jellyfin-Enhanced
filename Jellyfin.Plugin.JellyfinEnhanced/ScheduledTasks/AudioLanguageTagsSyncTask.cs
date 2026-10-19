@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ using MediaBrowser.Model.Tasks;
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 {
     /// Scheduled task that writes each movie's and series' audio languages as prefixed Jellyfin tags.
-    public class AudioLanguageTagsSyncTask : IScheduledTask
+    public class AudioLanguageTagsSyncTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly ILocalizationManager _localization;
@@ -41,6 +42,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.AudioLanguageTagSyncEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             // No default triggers - run on demand only
@@ -51,7 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.AudioLanguageTagSyncEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("Audio Language Tags Sync is disabled in plugin configuration.");
                 progress?.Report(100);

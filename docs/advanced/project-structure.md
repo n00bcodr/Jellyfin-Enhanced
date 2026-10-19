@@ -518,7 +518,7 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 
 The table lists task names as shown by Jellyfin and their default triggers. Files are under `ScheduledTasks/` unless stated otherwise.
 
-Feature gates still apply when a task runs. Default triggers are distinct from an administrator's saved schedule.
+Feature gates still apply when a task runs. A task is hidden from the dashboard list while its feature is off and appears again once the feature is on, with no restart. Always listed: Refresh Translation Cache, Refresh CDN Assets and Jellyfin Enhanced Startup. Default triggers are distinct from an administrator's saved schedule.
 
 | File | Task name | Default triggers |
 |---|---|---|

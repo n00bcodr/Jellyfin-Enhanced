@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -12,7 +13,7 @@ using MediaBrowser.Model.Tasks;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 {
-    public class JellyseerrUserImportTask : IScheduledTask
+    public class JellyseerrUserImportTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly IUserManager _userManager;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -36,6 +37,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.JellyseerrAutoImportUsers && config.JellyseerrEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             return new[]
@@ -52,7 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.JellyseerrAutoImportUsers || !config.JellyseerrEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("[Jellyseerr User Import] Auto-import is disabled in plugin configuration.");
                 progress?.Report(100);

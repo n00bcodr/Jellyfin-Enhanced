@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
@@ -20,7 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     /// (from MDBList's own GET /user endpoint) drops to MdblistFetchReserve,
     /// reserving the rest for live item-details page lookups.
     /// </summary>
-    public class MdblistRatingsFetchTask : IScheduledTask
+    public class MdblistRatingsFetchTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly MdblistService _mdblistService;
@@ -49,6 +50,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.MdblistRatingsEnabled && config.MdblistRatingsFetchEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             // No default triggers - run on demand only
@@ -59,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.MdblistRatingsEnabled || !config.MdblistRatingsFetchEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("MDBList Ratings Fetch is disabled in plugin configuration.");
                 progress?.Report(100);

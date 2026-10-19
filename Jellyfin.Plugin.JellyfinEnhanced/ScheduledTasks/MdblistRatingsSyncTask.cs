@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,7 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
     /// never fetched, or is missing that specific source, is simply skipped
     /// until the Fetch task populates it.
     /// </summary>
-    public class MdblistRatingsSyncTask : IScheduledTask
+    public class MdblistRatingsSyncTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly MdblistService _mdblistService;
@@ -58,6 +59,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.MdblistRatingsEnabled && config.MdblistRatingsAutoSyncEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             // No default triggers - run on demand only
@@ -68,7 +77,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.MdblistRatingsEnabled || !config.MdblistRatingsAutoSyncEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("MDBList Ratings Sync is disabled in plugin configuration.");
                 progress?.Report(100);

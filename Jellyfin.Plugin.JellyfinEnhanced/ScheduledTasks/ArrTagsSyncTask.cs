@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -17,7 +18,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 {
     /// Scheduled task that syncs tags from Radarr and Sonarr to Jellyfin items.
-    public class ArrTagsSyncTask : IScheduledTask
+    public class ArrTagsSyncTask : IScheduledTask, IConfigurableScheduledTask
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -41,6 +42,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public string Category => "Jellyfin Enhanced";
 
+        internal static bool IsFeatureEnabled([NotNullWhen(true)] Configuration.PluginConfiguration? config) => config != null && config.ArrTagsSyncEnabled;
+
+        public bool IsHidden => !IsFeatureEnabled(JellyfinEnhanced.Instance?.Configuration);
+
+        public bool IsEnabled => true;
+
+        public bool IsLogged => true;
+
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
             // No default triggers - run on demand only
@@ -51,7 +60,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
 
-            if (config == null || !config.ArrTagsSyncEnabled)
+            if (!IsFeatureEnabled(config))
             {
                 _logger.Info("Arr Tags Sync is disabled in plugin configuration.");
                 progress?.Report(100);
