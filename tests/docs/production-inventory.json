@@ -531,6 +531,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Import/CompletedIdentity.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Import/ImportLookup.cs",
       "category": "Services"
     },
@@ -10350,7 +10354,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 592,
+    "files": 593,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,
