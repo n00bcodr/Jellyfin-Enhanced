@@ -149,10 +149,10 @@ public class ListsConsentTests
         var playlist = h.Host.AddPlaylist(owner);
         var access = h.AccessFor(playlist, owner);
         h.TvDetails[530] = "{\"id\":530,\"name\":\"Show\",\"firstAirDate\":\"" + Past + "\",\"status\":\"Returning Series\",\"inProduction\":true," +
-            "\"externalIds\":{\"tvdbId\":1530},\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":2,\"airDate\":\"" + Past + "\"}," +
+            "\"posterPath\":null,\"externalIds\":{\"imdbId\":null,\"tvdbId\":1530},\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":2,\"airDate\":\"" + Past + "\"}," +
             "\"nextEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":3,\"airDate\":\"" + Future + "\"}," +
             "\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3,\"airDate\":\"" + Past + "\"}]}";
-        h.SeasonDetails[(530, 1)] = "{\"seasonNumber\":1,\"airDate\":\"" + Past + "\",\"episodes\":[" +
+        h.SeasonDetails[(530, 1)] = "{\"seasonNumber\":1,\"posterPath\":null,\"airDate\":\"" + Past + "\",\"episodes\":[" +
             "{\"episodeNumber\":1,\"seasonNumber\":1,\"airDate\":\"" + Past + "\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"airDate\":\"" + Past + "\"}," +
             "{\"episodeNumber\":3,\"seasonNumber\":1,\"airDate\":\"" + Future + "\"}]}";
         var season = Season(530, 1);

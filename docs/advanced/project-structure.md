@@ -57,6 +57,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   │                                 # TagCache*, CdnAsset, WatchlistMonitor,
 │   │                                 # SeerrParentalFilter, MaintenanceMode*,
 │   │                                 # TmdbResponseCache, TmdbCompanyTvDiscover,
+│   │                                 # UpstreamDiagnostics (log codes, never bodies),
 │   │                                 # ItemStatsService, ScriptInjectionStartupFilter,
 │   │                                 # ClientScriptBundle, MovieCollectionsBatch, …)
 │   ├── Identity/
@@ -441,7 +442,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   `ListContinuation.cs` the runtime create/swap continuation boundary (fresh state and access after awaits, synchronous
   writes and the final create projection sharing deletion's lifecycle lock);
   `ListStatusSource.cs` the shared status for entries; `ListMetadata.cs` the metadata source behind
-  `IListMetadataSource`; `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
+  `IListMetadataSource`; `ResponseContract.cs` the declared contract of every provider answer the lists read (title
+  details, searches, finds, seasons, placeholder metadata: Valid, Partial or Malformed); `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).

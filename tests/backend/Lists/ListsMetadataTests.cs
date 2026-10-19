@@ -88,7 +88,7 @@ public class ListsMetadataTests
     public async Task FetchingIsCachedPerSeerrAndUnknownTitlesAreRememberedBriefly()
     {
         using var h = new ListsHarness(seerr: true);
-        h.MovieDetails[10] = "{\"id\":10,\"releaseDate\":\"2010-07-16\"}";
+        h.MovieDetails[10] = "{\"id\":10,\"releaseDate\":\"2010-07-16\",\"posterPath\":null,\"imdbId\":null}"; // a whole answer (round 7: only those are kept)
         var movie = Movie(10);
         Assert.Equal("2010-07-16", (await h.Metadata.FetchAsync(movie, TimeSpan.FromHours(1), Today, CancellationToken.None))!.ReleaseDate);
         await h.Metadata.FetchAsync(movie, TimeSpan.FromHours(1), Today, CancellationToken.None);
@@ -211,7 +211,7 @@ public class ListsMetadataTests
 
         // A later read isn't stuck behind the abandoned burst.
         h.ReplyAsync = null;
-        h.MovieDetails[1] = "{\"id\":1,\"releaseDate\":\"2001-01-01\"}";
+        h.MovieDetails[1] = "{\"id\":1,\"releaseDate\":\"2001-01-01\",\"posterPath\":null,\"imdbId\":null}";
         var fresh = await h.Metadata.FetchAsync(Movie(1), TimeSpan.FromHours(1), Today, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("2001-01-01", fresh!.ReleaseDate);
 

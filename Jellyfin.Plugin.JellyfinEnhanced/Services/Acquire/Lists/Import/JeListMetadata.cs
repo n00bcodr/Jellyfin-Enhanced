@@ -16,7 +16,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// list core's own transformations (<see cref="ListMetadataService.FromMovie"/>/<see cref="ListMetadataService.FromTv"/>,
     /// fed TMDB's answer in Seerr's field names), so release dates, expected episodes, production state and partial
     /// seasons mean exactly what they mean with Seerr. Answers are public TMDB data shared by every viewer; the per-viewer
-    /// projection (parental limits, Spoiler Guard) stays with the list views. Null always means unknown.
+    /// projection (parental limits, Spoiler Guard) stays with the list views. Null always means unknown. Review round 7: each
+    /// answer is read by the same contract as Seerr's (<see cref="ResponseContract.MetadataMovie"/>, <c>MetadataShow</c>,
+    /// <c>MetadataSeason</c>): a Malformed one is unknown, a Partial one is used as partial metadata (never clears a value),
+    /// and neither stays in TMDB's response cache.
     /// </summary>
     public sealed class TmdbListMetadataSource
     {
@@ -58,29 +61,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var fetchedAt = DateTime.UtcNow;
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", fresh, cancellationToken)).ConfigureAwait(false);
-                return movie is JsonElement m ? ListMetadataService.FromMovie(m, fetchedAt) : null;
+                var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, fresh, cancellationToken)).ConfigureAwait(false);
+                return movie is { } m ? ListMetadataService.FromMovie(m.Root, fetchedAt, m.Verdict) : null;
             }
 
-            var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", fresh, cancellationToken)).ConfigureAwait(false);
-            if (tv is not JsonElement show)
+            var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", ResponseContract.MetadataShow, fresh, cancellationToken)).ConfigureAwait(false);
+            if (tv is not { } show)
             {
                 return null;
             }
 
-            JsonElement? season = null;
+            (JsonElement Root, ResponseVerdict Verdict)? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
                 // A season read that fails leaves season null: FromTv then marks the answer partial (it never shrinks the
                 // expected set from the show's details alone).
-                season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, fresh, cancellationToken)).ConfigureAwait(false);
+                season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, ResponseContract.MetadataSeason, fresh, cancellationToken)).ConfigureAwait(false);
             }
 
-            return ListMetadataService.FromTv(placeholder, show, season, fetchedAt, todayUtc);
+            return ListMetadataService.FromTv(placeholder, show.Root, season?.Root, fetchedAt, todayUtc, show.Verdict, season?.Verdict ?? ResponseVerdict.Valid);
         }
 
-        // One TMDB resource in Seerr's field names (camelCase), or null (not found, an error, an unreadable answer).
-        private async Task<JsonElement?> GetAsync(string path, string query, bool fresh, CancellationToken cancellationToken)
+        // One TMDB resource in Seerr's field names (camelCase) with its verdict by `schema`, or null (not found, an error, a
+        // Malformed answer). An answer that isn't Valid is dropped from TMDB's response cache (asked again next time).
+        private async Task<(JsonElement Root, ResponseVerdict Verdict)?> GetAsync(string path, string query, ResourceSchema schema, bool fresh, CancellationToken cancellationToken)
         {
             try
             {
@@ -93,15 +97,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
 
                 using var doc = JsonDocument.Parse(response.Content);
-                return doc.RootElement.ValueKind == JsonValueKind.Object ? Camelize(doc.RootElement) : null;
+                var root = doc.RootElement.ValueKind == JsonValueKind.Object ? Camelize(doc.RootElement) : doc.RootElement;
+                var read = schema.Read(root);
+                if (read.Verdict != ResponseVerdict.Valid)
+                {
+                    _tmdb.Forget(path, query, Key);
+                    _logger.Debug($"[Lists] TMDB metadata {path} answered {(read.Verdict == ResponseVerdict.Partial ? "in part" : "something JE can't read")} ({read.Reason})");
+                }
+
+                return read.Verdict == ResponseVerdict.Malformed ? null : (root, read.Verdict);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch (Exception ex) when (ex is OperationCanceledException or System.Net.Http.HttpRequestException or JsonException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                _logger.Debug($"[Lists] TMDB metadata {path} failed: {ex.Message}");
+                _logger.Debug($"[Lists] TMDB metadata {path} failed: {UpstreamDiagnostics.Code(ex)}");
                 return null;
             }
         }

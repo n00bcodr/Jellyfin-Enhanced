@@ -1783,7 +1783,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
                 {
-                    _logger.Debug($"[Lists] Metadata for \"{p.Title}\" failed: {ex.Message}");
+                    _logger.Debug($"[Lists] Metadata for \"{p.Title}\" failed: {UpstreamDiagnostics.Code(ex)}");
                 }
             })).ConfigureAwait(false);
             foreach (var pair in fetched)
@@ -1810,12 +1810,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var (poster, answered) = await ListContinuation.Await(() => _metadata.ReadTmdbPosterAsync(p, token)).ConfigureAwait(false);
                     if (answered)
                     {
-                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true };
+                        fetched[p.Id] = new PlaceholderMetadata { FetchedAtUtc = DateTime.UtcNow, PosterPath = ListRules.IsValidPosterPath(poster) ? poster : null, Partial = true, PosterAnswered = true };
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
                 {
-                    _logger.Debug($"[Lists] TMDB poster for \"{p.Title}\" failed: {ex.Message}");
+                    _logger.Debug($"[Lists] TMDB poster for \"{p.Title}\" failed: {UpstreamDiagnostics.Code(ex)}");
                 }
             })).ConfigureAwait(false);
             foreach (var pair in fetched)

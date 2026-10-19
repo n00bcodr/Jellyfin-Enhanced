@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
                 catch (Exception ex) when (ex is JsonException or InvalidDataException or FormatException)
                 {
-                    _logger.Warning($"[Lists] Couldn't read the list {source.CanonicalUrl}: {ex.Message}");
+                    _logger.Warning($"[Lists] Couldn't read the list {source.CanonicalUrl}: {UpstreamDiagnostics.Code(ex)}");
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
                 }
 
@@ -1563,7 +1563,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
             catch (HttpRequestException ex)
             {
-                _logger.Debug($"[Lists] Source request failed: {ex.Message}");
+                _logger.Debug($"[Lists] Source request failed: {UpstreamDiagnostics.Code(ex)}");
+                throw new SourceHttpException("unreachable", "Can't reach the list site right now.");
+            }
+            catch (Exception ex) when (ex is not (SourceHttpException or OperationCanceledException or OutOfMemoryException))
+            {
+                // Review round 7 (4c2-R7-6): any other transport failure becomes a typed one, so its message (which can carry
+                // the request URL with its key) never travels further or reaches a log.
+                _logger.Debug($"[Lists] Source request failed: {UpstreamDiagnostics.Code(ex)}");
                 throw new SourceHttpException("unreachable", "Can't reach the list site right now.");
             }
         }
@@ -1593,8 +1600,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             {
                 throw new SourceHttpException("timeout", "Seerr took too long to answer.");
             }
-            catch (HttpRequestException)
+            catch (Exception ex) when (ex is not (SourceHttpException or OperationCanceledException or OutOfMemoryException))
             {
+                _logger.Debug($"[Lists] Seerr list request failed: {UpstreamDiagnostics.Code(ex)}");
                 throw new SourceHttpException("upstream_error", "Can't reach Seerr right now.");
             }
         }

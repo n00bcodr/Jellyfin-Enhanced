@@ -445,10 +445,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var name = ListRules.CleanText(request?.Name);
-            if (request == null || name.Length == 0 || name.Length > ListRules.MaxTitle || !ValidRequestId(request.RequestId)
-                || (request.Entries?.Count ?? 0) > MaxEntries)
+            if (request == null || name.Length == 0 || name.Length > ListRules.MaxTitle)
             {
                 return Bad("invalid_body", "A name of 1-200 characters is required.");
+            }
+
+            // Phase 4c2 (review round 7, found live): each refusal says what is wrong (a bad request id or too many entries
+            // were reported as a missing name).
+            if (!ValidRequestId(request.RequestId))
+            {
+                return Bad("invalid_body", "The request id isn't valid (letters, digits, '-' and '_' only).");
+            }
+
+            if ((request.Entries?.Count ?? 0) > MaxEntries)
+            {
+                return Bad("invalid_body", "Too many entries for one list.");
             }
 
             var (entryError, entries) = ParseEntries(request.Entries ?? new List<ApplyEntryDto>(), user!.Id.ToString("N", CultureInfo.InvariantCulture));

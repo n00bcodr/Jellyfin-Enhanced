@@ -390,7 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.Debug($"[Lists] Request status for list {access.ListIdN} failed: {ex.Message}");
+                _logger.Debug($"[Lists] Request status for list {access.ListIdN} failed: {UpstreamDiagnostics.Code(ex)}");
                 return null;
             }
         }

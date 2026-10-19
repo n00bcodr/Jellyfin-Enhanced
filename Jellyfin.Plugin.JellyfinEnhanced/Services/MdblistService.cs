@@ -75,7 +75,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // finished after the held answer was asked for. A reservation finished before a status read was asked for is in
         // that read's count. Review round 6 (4c2-R6-3): all of that belongs to one ACCOUNT, i.e. one API key (known by a
         // fingerprint, never the key): a new key starts a fresh account that reads its status before it spends, and the
-        // old key's late answers and completions only ever touch the old account. Guarded by _accountStatusLock.
+        // old key's late answers and completions only ever touch the old account. Review round 7 (4c2-R7-4): an account
+        // lives while anything references it (a refresh or status read in progress, a caller between its balance read and
+        // its reservation, an outstanding reservation); acquiring one and letting idle ones go is one step under the lock,
+        // so one key never has two live accounts. Guarded by _accountStatusLock.
         private readonly Dictionary<string, Account> _accounts = new(StringComparer.Ordinal);
         private const int MaxAccounts = 8;
 
@@ -189,15 +192,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// iterating the library) should call GetAccountStatusAsync first so this reflects current data.</summary>
         public int? RemainingQuota()
         {
-            var account = CurrentAccount();
-            if (account == null)
+            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
                 return null;
             }
 
             lock (_accountStatusLock)
             {
-                return account.Status == null ? null : SpendableLocked(account);
+                // A look, not a reference: an account nobody holds and whose balance was never read has nothing to show.
+                return _accounts.TryGetValue(Fingerprint(apiKey), out var account) && account.Status != null ? SpendableLocked(account) : null;
             }
         }
 
@@ -219,7 +223,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
             ArgumentNullException.ThrowIfNull(readStatus);
-            return ReserveAsync(AccountOf(apiKey), readStatus, SafetyMargin, cancellationToken);
+            return ReserveAsync(apiKey, readStatus, SafetyMargin, cancellationToken);
         }
 
         // THE reservation of the quota (review round 4, 4c2-R4-1; D53 rule 1 over every request that spends it): list reads,
@@ -229,9 +233,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (review round 5, 4c2-R5-1: a status refresh never gives it back, whenever it was made); a request refused or
         // failed after its reservation stays charged (the safe side) until a status read asked after it finished. A status
         // that isn't fresh is read first by `readStatus` (one refresh at a time per account; a new key's account has none,
-        // so it reads its own before it spends: review round 6); an unknown status fails open.
-        private async Task<IDisposable?> ReserveAsync(Account account, Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, int floor, CancellationToken cancellationToken)
+        // so it reads its own before it spends: review round 6); an unknown status fails open. The caller holds a reference
+        // to the account from before its balance read until its reservation is made (review round 7): the reservation then
+        // holds its own until its request finishes.
+        private async Task<IDisposable?> ReserveAsync(string apiKey, Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, int floor, CancellationToken cancellationToken)
         {
+            using var held = Acquire(apiKey);
+            var account = held.Account;
             if (FreshStatus(account) == null)
             {
                 // Single flight: one refresh at a time; a caller that waited takes the status the refresh before it read.
@@ -262,6 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 account.Outstanding++;
+                account.References++; // the reservation's own, released when its request finishes
                 return new Reservation(this, account);
             }
         }
@@ -278,14 +287,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             public int Outstanding { get; set; }
 
+            // Everything holding the account (AccountRef handles and outstanding reservations): it is let go only at 0.
+            public int References { get; set; }
+
             public long Finished { get; set; }
 
             public long HeldFinished { get; set; } = -1;
         }
 
-        // The account of `apiKey` (created the first time the key is met; old idle accounts are let go past MaxAccounts:
-        // a key met again then reads its status first, the safe side).
-        private Account AccountOf(string apiKey)
+        // A reference to the account of `apiKey` (review round 7, 4c2-R7-4), taken in the same locked step that finds or
+        // creates it: created the first time the key is met; past MaxAccounts, accounts NOTHING references (no handle, no
+        // outstanding reservation) are let go (a key met again then reads its status first, the safe side). Dispose the
+        // handle once the account is no longer needed.
+        private AccountRef Acquire(string apiKey)
         {
             var fingerprint = Fingerprint(apiKey);
             lock (_accountStatusLock)
@@ -294,7 +308,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     if (_accounts.Count >= MaxAccounts)
                     {
-                        foreach (var idle in _accounts.Values.Where(a => a.Outstanding == 0).Select(a => a.Fingerprint).ToList())
+                        foreach (var idle in _accounts.Values.Where(a => a.References == 0 && a.Outstanding == 0).Select(a => a.Fingerprint).ToList())
                         {
                             _accounts.Remove(idle);
                         }
@@ -303,15 +317,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _accounts[fingerprint] = account = new Account(fingerprint);
                 }
 
-                return account;
+                account.References++;
+                return new AccountRef(this, account);
             }
         }
 
-        // The configured key's account, or null without a key.
-        private Account? CurrentAccount()
+        private void Release(Account account)
         {
-            var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
-            return string.IsNullOrWhiteSpace(apiKey) ? null : AccountOf(apiKey);
+            lock (_accountStatusLock)
+            {
+                account.References--;
+            }
+        }
+
+        // One reference to an account (released once).
+        private sealed class AccountRef(MdblistService owner, Account account) : IDisposable
+        {
+            private int _done;
+
+            public Account Account { get; } = account;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _done, 1) == 0)
+                {
+                    owner.Release(Account);
+                }
+            }
         }
 
         // An account's identity: a short hash of its key (never the key or its length).
@@ -358,6 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 account.Outstanding--;
                 account.Finished++;
+                account.References--;
             }
         }
 
@@ -445,8 +478,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
             // Review round 6 (4c2-R6-3): the status of the key asked with, held by that key's account only (an answer that
-            // arrives after the admin changed the key is the old account's, never the new one's).
-            var account = testingOverride ? null : AccountOf(apiKey);
+            // arrives after the admin changed the key is the old account's, never the new one's). Review round 7: the account
+            // is referenced for the whole read, so it can't be let go (and replaced) while its answer is on its way.
+            using var held = testingOverride ? null : Acquire(apiKey);
+            var account = held?.Account;
             if (account != null && !forceRefresh && FreshStatus(account) is { } fresh)
             {
                 return fresh;
@@ -483,7 +518,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch account status: {UpstreamDiagnostics.Code(ex)}");
                 return null;
             }
             finally
@@ -518,15 +553,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // The ratings path's reservation: its status read is this service's own (failures are an unknown status, which
         // fails open like it always has).
         private Task<IDisposable?> ReserveRatingsRequestAsync(string apiKey, int floor, CancellationToken cancellationToken) =>
-            ReserveAsync(AccountOf(apiKey), async ct =>
+            ReserveAsync(apiKey, async ct =>
             {
                 try
                 {
                     return await ReadStatusAsync(apiKey, ct).ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
-                    _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
+                    _logger.Warning($"[MDBList] Failed to fetch account status: {UpstreamDiagnostics.Code(ex)}");
                     return null;
                 }
             }, floor, cancellationToken);
@@ -581,7 +616,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // short-lived miss (RetryTtl, not NegativeTtl) so the same
                 // title isn't retried on every view but isn't trusted as a
                 // confirmed "no data" either.
-                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch ratings for {mediaType}:{tmdbId}: {UpstreamDiagnostics.Code(ex)}");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
         }
@@ -642,44 +677,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids). Body: {Truncate(responseBody, 500)}");
+                    // Review round 7 (4c2-R7-6): never the body (an upstream or a proxy can echo the request, key included).
+                    _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids)");
                     return null;
                 }
 
                 using var doc = JsonDocument.Parse(responseBody);
                 var root = doc.RootElement;
 
-                var result = new Dictionary<string, MdblistCacheEntry>();
-                if (root.ValueKind == JsonValueKind.Array)
+                // Review round 7 (found live): an answer that isn't the declared list is a failed batch (the chunk is retried
+                // on the next run), never an empty one, which the fetch would record as a confirmed "no MDBList data" for
+                // every id it asked about (NegativeTtl, 3 days).
+                if (root.ValueKind != JsonValueKind.Array)
                 {
-                    foreach (var itemEl in root.EnumerateArray())
-                    {
-                        var entry = ParseMediaItem(itemEl, now);
-                        // The array item's own top-level "id" is an internal
-                        // MDBList id, not the tmdb id we requested by. Match
-                        // results back to our request via Ids["tmdb"] instead.
-                        if (entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) && !string.IsNullOrEmpty(tmdbIdStr))
-                        {
-                            result[tmdbIdStr] = entry;
-                        }
-                    }
+                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected ({root.ValueKind})");
+                    return null;
                 }
-                else
+
+                var result = new Dictionary<string, MdblistCacheEntry>();
+                foreach (var itemEl in root.EnumerateArray())
                 {
-                    _logger.Warning($"[MDBList] Media batch response for {mediaType} wasn't a JSON array as expected. Body: {Truncate(responseBody, 500)}");
+                    var entry = itemEl.ValueKind == JsonValueKind.Object ? ParseMediaItem(itemEl, now) : null;
+                    // The array item's own top-level "id" is an internal
+                    // MDBList id, not the tmdb id we requested by. Match
+                    // results back to our request via Ids["tmdb"] instead.
+                    if (entry == null || !entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) || string.IsNullOrEmpty(tmdbIdStr))
+                    {
+                        // A row JE can't read may be any of the ids asked about: an id missing from this answer proves
+                        // nothing, so the batch is a failure (retried next run), not a list of confirmed misses.
+                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row without a TMDB id; the batch is retried");
+                        return null;
+                    }
+
+                    result[tmdbIdStr] = entry;
                 }
 
                 return result;
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.Message}");
+                _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {UpstreamDiagnostics.Code(ex)}");
                 return null;
             }
         }
-
-        private static string Truncate(string s, int maxLength) =>
-            string.IsNullOrEmpty(s) || s.Length <= maxLength ? s : s.Substring(0, maxLength) + "...";
 
         /// <summary>
         /// Writes a round of GetMediaBatchAsync results into the same cache the

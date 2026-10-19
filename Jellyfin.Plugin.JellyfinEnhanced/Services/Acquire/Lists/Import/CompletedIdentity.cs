@@ -136,14 +136,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     tmdb = hits.Value?.FirstOrDefault(h => h.MediaType == type)?.TmdbId;
                     if (tmdb is not > 0)
                     {
-                        return identity; // the lookup doesn't know the title: these are all its ids
+                        // The lookup doesn't know the title: these are all its ids, but only a Valid answer proves that (a
+                        // row it couldn't read may be the title; review round 7).
+                        return hits.Verdict == ResponseVerdict.Valid ? identity : null;
                     }
                 }
 
+                // Only Valid details complete an identity (review round 7, 4c2-R7-1): an id they don't carry is then proven
+                // absent; details without their external ids (Partial) prove nothing about them, so the identity stays
+                // incomplete and the caller retries or leaves the entry out.
                 var details = await _lookup.GetDetailsAsync(type, tmdb.Value, _context, cancellationToken).ConfigureAwait(false);
                 return details.Status switch
                 {
                     LookupStatus.Transient => null,
+                    LookupStatus.Ok when details.Verdict != ResponseVerdict.Valid || details.Value?.Verdict != ResponseVerdict.Valid => null,
                     _ => identity.With(tmdb, details.Value?.TvdbId, details.Value?.ImdbId),
                 };
             }

@@ -267,7 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 {
-                    _logger.Debug($"[Lists] Season episode counts of TMDB show {show} unavailable: {ex.Message}");
+                    _logger.Debug($"[Lists] Season episode counts of TMDB show {show} unavailable: {UpstreamDiagnostics.Code(ex)}");
                     return (Show: show, Counts: (IReadOnlyDictionary<int, int>?)null);
                 }
             })).ConfigureAwait(false);

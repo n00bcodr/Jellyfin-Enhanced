@@ -38,32 +38,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         /// <summary>A definite miss.</summary>
         public static LookupResult<T> NotFound { get; } = new(LookupStatus.NotFound, default);
+
+        /// <summary>
+        /// What the answer behind an Ok or NotFound result is worth (review round 7, <see cref="ResponseContract"/>): Valid
+        /// (definitive), or Partial (usable, but never proof that something is absent: a season or episode missing from it,
+        /// an id it doesn't carry).
+        /// </summary>
+        public ResponseVerdict Verdict { get; init; } = ResponseVerdict.Valid;
     }
 
     /// <summary>
-    /// One upstream answer as an import lookup read it (review round 6, D53 "NotFound = proven absence"): its status, its
-    /// value and whether it is DEFINITIVE, i.e. a valid, whole answer that may be remembered. Only a definitive answer is
-    /// cached; "not found" or "no titles" needs a valid answer from every source asked whose every row was read.
+    /// One upstream answer as an import lookup read it (review round 6, D53 "NotFound = proven absence"; review round 7, one
+    /// contract per resource): its status, its value and its <see cref="ResponseVerdict"/>. Only a Valid answer is
+    /// cached (and only when the resource's policy keeps it); "not found" or "no titles" needs a Valid answer from every
+    /// source asked.
     /// </summary>
     /// <param name="Status">Status.</param>
     /// <param name="Value">Value when Ok.</param>
-    /// <param name="Definitive">A valid, whole answer (every row read): it may be remembered.</param>
-    internal readonly record struct LookupAnswer(LookupStatus Status, object? Value, bool Definitive)
+    /// <param name="Verdict">What the answer is worth (Malformed answers are Transient).</param>
+    /// <param name="Keep">The resource's policy keeps a Valid answer (Seerr's empty search is never kept).</param>
+    internal readonly record struct LookupAnswer(LookupStatus Status, object? Value, ResponseVerdict Verdict, bool Keep = true)
     {
         /// <summary>A failure, or an answer that proves nothing: asked again next time.</summary>
-        public static LookupAnswer Transient => new(LookupStatus.Transient, null, false);
+        public static LookupAnswer Transient => new(LookupStatus.Transient, null, ResponseVerdict.Malformed);
 
         /// <summary>A proven absence (TMDB's or every Seerr server's 404, an episode find's valid empty list).</summary>
-        public static LookupAnswer NotFound => new(LookupStatus.NotFound, null, true);
+        public static LookupAnswer NotFound => new(LookupStatus.NotFound, null, ResponseVerdict.Valid);
 
-        /// <summary>Remembered: a definitive answer (a transient one never is).</summary>
-        public bool Remembered => Definitive && Status != LookupStatus.Transient && (Status == LookupStatus.NotFound || Value != null);
+        /// <summary>A Valid answer: definitive (the TMDB response cache keeps it).</summary>
+        public bool Definitive => Verdict == ResponseVerdict.Valid && Status != LookupStatus.Transient;
+
+        /// <summary>Remembered: a definitive answer its resource keeps (a transient one never is).</summary>
+        public bool Remembered => Definitive && Keep && (Status == LookupStatus.NotFound || Value != null);
 
         /// <summary>An answer.</summary>
         /// <param name="value">Value.</param>
-        /// <param name="definitive">Every row was read.</param>
+        /// <param name="verdict">Its verdict (Malformed makes it Transient).</param>
         /// <returns>The answer.</returns>
-        public static LookupAnswer Ok(object value, bool definitive = true) => new(LookupStatus.Ok, value, definitive);
+        public static LookupAnswer Ok(object value, ResponseVerdict verdict = ResponseVerdict.Valid) =>
+            verdict == ResponseVerdict.Malformed ? Transient : new(LookupStatus.Ok, value, verdict);
+
+        /// <summary>The lookup result of this answer.</summary>
+        /// <typeparam name="T">Value type.</typeparam>
+        /// <returns>The result.</returns>
+        public LookupResult<T> Result<T>() => new(Status, Status == LookupStatus.Ok ? (T?)Value : default) { Verdict = Verdict };
     }
 
     /// <summary>How one row of a search answer read (review round 6).</summary>
@@ -109,7 +127,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// <param name="Status">TMDB status text.</param>
     /// <param name="InProduction">TV: still in production.</param>
     /// <param name="Seasons">TV seasons.</param>
-    public sealed record TitleDetails(TitleHit Hit, string? ImdbId, int? TvdbId, string? Status, bool? InProduction, IReadOnlyList<SeasonFacts> Seasons);
+    public sealed record TitleDetails(TitleHit Hit, string? ImdbId, int? TvdbId, string? Status, bool? InProduction, IReadOnlyList<SeasonFacts> Seasons)
+    {
+        /// <summary>
+        /// What the details answer is worth (review round 7): only Valid details prove their ids (an id they don't carry
+        /// is absent) and their season list (a season they don't list is missing).
+        /// </summary>
+        public ResponseVerdict Verdict { get; init; } = ResponseVerdict.Valid;
+    }
 
     /// <summary>One episode of a season.</summary>
     /// <param name="Season">Season.</param>
@@ -273,13 +298,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return new LookupResult<IReadOnlyList<TitleHit>>(LookupStatus.Ok, Array.Empty<TitleHit>());
             }
 
-            var (status, value) = await GetAsync(
+            var answer = await GetAsync(
                 "search|" + normalized,
                 "/api/v1/search?query=" + Uri.EscapeDataString(normalized) + "&page=1",
                 context,
                 ParseSearch,
                 cancellationToken).ConfigureAwait(false);
-            return new LookupResult<IReadOnlyList<TitleHit>>(status, status == LookupStatus.Ok ? (IReadOnlyList<TitleHit>)value! : null);
+            return answer.Result<IReadOnlyList<TitleHit>>();
         }
 
         /// <inheritdoc />
@@ -291,13 +316,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var id = tmdbId.ToString(CultureInfo.InvariantCulture);
-            var (status, value) = await GetAsync(
+            var answer = await GetAsync(
                 "details|" + mediaType + "|" + id,
                 "/api/v1/" + mediaType + "/" + id,
                 context,
-                json => ParseDetails(json, mediaType) is { } details ? LookupAnswer.Ok(details) : LookupAnswer.Transient,
+                json => ParseDetails(json, mediaType),
                 cancellationToken).ConfigureAwait(false);
-            return new LookupResult<TitleDetails>(status, status == LookupStatus.Ok ? (TitleDetails)value! : null);
+            return answer.Result<TitleDetails>();
         }
 
         /// <inheritdoc />
@@ -309,13 +334,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var path = "/api/v1/tv/" + tvTmdbId.ToString(CultureInfo.InvariantCulture) + "/season/" + season.ToString(CultureInfo.InvariantCulture);
-            var (status, value) = await GetAsync(
+            var answer = await GetAsync(
                 "season|" + path,
                 path,
                 context,
-                json => ParseSeason(json, season) is { } episodes ? LookupAnswer.Ok(episodes) : LookupAnswer.Transient,
+                json => ParseSeason(json, season),
                 cancellationToken).ConfigureAwait(false);
-            return new LookupResult<IReadOnlyList<EpisodeFacts>>(status, status == LookupStatus.Ok ? (IReadOnlyList<EpisodeFacts>)value! : null);
+            return answer.Result<IReadOnlyList<EpisodeFacts>>();
         }
 
         /// <inheritdoc />
@@ -343,12 +368,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 Remember(cacheKey, answer.Status, answer.Value);
             }
 
-            return new LookupResult<ImdbEpisodeFind>(answer.Status, answer.Value as ImdbEpisodeFind);
+            return answer.Result<ImdbEpisodeFind>();
         }
 
         // ── Plumbing ─────────────────────────────────────────────────────────
 
-        private async Task<(LookupStatus Status, object? Value)> GetAsync(
+        private async Task<LookupAnswer> GetAsync(
             string cacheKey,
             string apiPath,
             ImportCallContext context,
@@ -357,14 +382,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         {
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
-                return (LookupStatus.Transient, null);
+                return LookupAnswer.Transient;
             }
 
             var key = Fingerprint(urls, apiKey) + "|" + cacheKey;
             // A definitive answer is reused with its status, without waiting for the limiter (review round 5, 4c2-R5-4).
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
-                return (cached.Status, cached.Value);
+                return new LookupAnswer(cached.Status, cached.Value, ResponseVerdict.Valid);
             }
 
             // One shared call per key; E4: it follows its waiters' cancellation while it is still queued for the limiter.
@@ -411,7 +436,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
             catch (Exception ex)
             {
-                _logger.Debug($"[Lists] Seerr lookup failed: {ex.Message}");
+                _logger.Debug($"[Lists] Seerr lookup failed: {UpstreamDiagnostics.Code(ex)}");
                 answer = LookupAnswer.Transient;
             }
 
@@ -421,18 +446,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
-            shared.Result.TrySetResult((answer.Status, answer.Value));
+            shared.Result.TrySetResult(answer);
         }
 
-        // Every configured server in order until one gives a readable answer (review round 6). Each request takes its own
-        // turn at the limiter and is counted (4c2-R6-4). The first turn is queued like the shared lookup (cancelled once
-        // every waiter is gone: an aborted request or the /resolve deadline); once admitted the lookup runs to the end
-        // regardless (its result serves later joiners and the cache). Not found only when EVERY server answered 404
-        // (4c2-R6-2): a server that failed, timed out or answered something unreadable proves nothing, so the lookup is
-        // transient and asked again.
+        // Every configured server in order until one gives a Valid answer (review rounds 6 and 7). Each request takes its
+        // own turn at the limiter and is counted (4c2-R6-4); the turn is held until that request has ended (its own
+        // timeout), whoever still waits for it. The first turn is queued like the shared lookup (cancelled once every
+        // waiter is gone: an aborted request or the /resolve deadline); once admitted the lookup runs to the end regardless
+        // (its result serves later joiners and the cache). A Malformed answer is a failure (the next server is asked); a
+        // Partial one is used only when no later server gives a Valid one (4c2-R7-3). Not found only when EVERY server
+        // answered 404 (4c2-R6-2): a server that failed, timed out or answered something unreadable proves nothing.
         private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
         {
             var notFound = 0;
+            LookupAnswer? partial = null;
             for (var i = 0; i < urls.Length; i++)
             {
                 IDisposable lease;
@@ -472,13 +499,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                         var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
                         if (json != null)
                         {
-                            var answer = parse(json);
-                            if (answer.Status != LookupStatus.Transient)
+                            LookupAnswer answer;
+                            try
+                            {
+                                answer = parse(json);
+                            }
+                            catch (JsonException)
+                            {
+                                answer = LookupAnswer.Transient;
+                            }
+
+                            if (answer.Status != LookupStatus.Transient && answer.Verdict == ResponseVerdict.Valid)
                             {
                                 return answer;
                             }
 
-                            _logger.Debug($"[Lists] Seerr lookup {apiPath} answered something JE can't read");
+                            if (answer.Status != LookupStatus.Transient)
+                            {
+                                partial ??= answer; // used only if no later server answers in full
+                                _logger.Debug($"[Lists] Seerr lookup {apiPath} answered in part; asking the next server");
+                            }
+                            else
+                            {
+                                _logger.Debug($"[Lists] Seerr lookup {apiPath} answered something JE can't read");
+                            }
+
                             continue;
                         }
 
@@ -493,14 +538,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
                         _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
                     }
-                    catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException)
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
                     {
-                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {ex.Message}");
+                        // Any failure of this server (also a handler's own exception) is that server's: the next is asked.
+                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {UpstreamDiagnostics.Code(ex)}");
                     }
                 }
             }
 
-            return notFound == urls.Length ? LookupAnswer.NotFound : LookupAnswer.Transient;
+            return partial ?? (notFound == urls.Length ? LookupAnswer.NotFound : LookupAnswer.Transient);
         }
 
         // One in-flight lookup shared by every caller asking for the same key, with a waiter count so that a lookup
@@ -513,7 +559,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             private bool _admitted;
             private bool _abandoned;
 
-            public TaskCompletionSource<(LookupStatus Status, object? Value)> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public TaskCompletionSource<LookupAnswer> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
             public CancellationToken Abandoned => _abandon.Token;
 
@@ -585,25 +631,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
-        // Seerr's search answer (review round 6): titles found beside a row JE can't read are used but not kept; only such
-        // rows and nothing found is no proof of "no titles" (transient); an empty answer is never kept either (Seerr
-        // answers a TMDB error as no results).
+        // Seerr's search answer (review rounds 6 and 7: ResponseContract.SeerrSearch, rows by the movie/show row
+        // contracts): titles found beside a row JE can't read are used but not kept; only such rows and nothing found is no
+        // proof of "no titles" (transient); a valid empty answer is never kept either (Seerr answers a TMDB error as no
+        // results, Q-4C2AFIX5-1).
         private static LookupAnswer ParseSearch(string json)
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+            var root = doc.RootElement;
+            if (ResponseContract.SeerrSearch.Read(root).Verdict == ResponseVerdict.Malformed)
             {
                 return LookupAnswer.Transient;
             }
 
             var hits = new List<TitleHit>();
             var unusable = 0;
-            foreach (var result in results.EnumerateArray())
+            var verdict = ResponseVerdict.Valid;
+            foreach (var result in root.GetProperty("results").EnumerateArray())
             {
-                switch (ReadRow(result, out var hit))
+                switch (ReadRow(result, out var hit, out var rowVerdict))
                 {
                     case RowRead.Hit:
                         hits.Add(hit!);
+                        verdict = ResponseContract.Worst(verdict, rowVerdict);
                         break;
                     case RowRead.Unusable:
                         unusable++;
@@ -611,19 +661,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
             }
 
-            return hits.Count == 0 && unusable > 0 ? LookupAnswer.Transient : LookupAnswer.Ok(hits, hits.Count > 0 && unusable == 0);
+            if (hits.Count == 0 && unusable > 0)
+            {
+                return LookupAnswer.Transient;
+            }
+
+            return new LookupAnswer(LookupStatus.Ok, hits, unusable > 0 ? ResponseVerdict.Partial : verdict, Keep: hits.Count > 0);
         }
 
-        // Null when the answer isn't a whole title (also a season row JE can't read: a season missing from the list would
-        // be taken as "no such season").
-        private static TitleDetails? ParseDetails(string json, string mediaType)
+        // Seerr's movie or TV details by their contract (ResponseContract.SeerrMovieDetails / SeerrTvDetails): Malformed is
+        // transient; Partial details (an id or the season list unknown) are used, never kept, and never prove an id absent
+        // or a season missing (review round 7, 4c2-R7-1/2).
+        private static LookupAnswer ParseDetails(string json, string mediaType)
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var hit = ReadHit(root, mediaType);
+            var read = (mediaType == "movie" ? ResponseContract.SeerrMovieDetails : ResponseContract.SeerrTvDetails).Read(root);
+            var hit = read.Verdict == ResponseVerdict.Malformed ? null : ReadHit(root, mediaType);
             if (hit == null)
             {
-                return null;
+                return LookupAnswer.Transient;
             }
 
             string? imdb = ReadString(root, "imdbId", 12);
@@ -644,53 +701,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 foreach (var season in list.EnumerateArray())
                 {
-                    var number = season.ValueKind == JsonValueKind.Object ? ReadInt(season, "seasonNumber") : null;
-                    if (number is not >= 0)
-                    {
-                        return null;
-                    }
-
+                    var number = ReadInt(season, "seasonNumber")!.Value; // the contract read every row
                     if (number <= 500)
                     {
-                        seasons.Add(new SeasonFacts(number.Value, ReadInt(season, "episodeCount"), ReadDate(season, "airDate"), ReadString(season, "name", 100)));
+                        seasons.Add(new SeasonFacts(number, ReadInt(season, "episodeCount"), ReadDate(season, "airDate"), ReadString(season, "name", 100)));
                     }
                 }
             }
 
             bool? inProduction = root.TryGetProperty("inProduction", out var prod) && prod.ValueKind is JsonValueKind.True or JsonValueKind.False ? prod.GetBoolean() : null;
-            return new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, ReadString(root, "status", 40), inProduction, seasons);
+            var details = new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, ReadString(root, "status", 40), inProduction, seasons) { Verdict = read.Verdict };
+            return LookupAnswer.Ok(details, read.Verdict);
         }
 
-        // Null when the answer has no episode list or an episode row JE can't read (an episode missing from the list would
-        // be taken as "no such episode").
-        private static IReadOnlyList<EpisodeFacts>? ParseSeason(string json, int season)
+        // A season by its contract (ResponseContract.SeerrSeason): an episode row JE can't read makes it Malformed (an
+        // episode missing from the list would be taken as "no such episode"); a row's unreadable display field, Partial.
+        private static LookupAnswer ParseSeason(string json, int season)
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
+            var read = ResponseContract.SeerrSeason.Read(doc.RootElement);
+            if (read.Verdict == ResponseVerdict.Malformed)
             {
-                return null;
+                return LookupAnswer.Transient;
             }
 
             var list = new List<EpisodeFacts>();
-            foreach (var episode in episodes.EnumerateArray())
+            foreach (var episode in doc.RootElement.GetProperty("episodes").EnumerateArray())
             {
-                var number = episode.ValueKind == JsonValueKind.Object ? ReadInt(episode, "episodeNumber") : null;
-                if (number is not >= 0)
-                {
-                    return null;
-                }
-
-                list.Add(new EpisodeFacts(ReadInt(episode, "seasonNumber") ?? season, number.Value, ReadString(episode, "name", 200), ReadDate(episode, "airDate")));
+                list.Add(new EpisodeFacts(ReadInt(episode, "seasonNumber") ?? season, ReadInt(episode, "episodeNumber")!.Value, ReadString(episode, "name", 200), ReadDate(episode, "airDate")));
             }
 
-            return list;
+            return LookupAnswer.Ok(list, read.Verdict);
         }
 
         // One row of a search answer: a title, a deliberate drop (an adult title, a person or another kind that isn't a
-        // title), or a row that can't be read (not an object, no type, no id or no title).
-        private static RowRead ReadRow(JsonElement element, out TitleHit? hit)
+        // title), or a row that can't be read (not an object, no type, or not a title row by its contract).
+        private static RowRead ReadRow(JsonElement element, out TitleHit? hit, out ResponseVerdict verdict)
         {
             hit = null;
+            verdict = ResponseVerdict.Valid;
             var type = element.ValueKind == JsonValueKind.Object && element.TryGetProperty("mediaType", out var declared) && declared.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(declared.GetString())
                 ? declared.GetString()
                 : null;
@@ -704,7 +753,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return RowRead.Dropped;
             }
 
-            hit = ReadHit(element, type);
+            verdict = (type == "movie" ? ResponseContract.SeerrMovieRow : ResponseContract.SeerrTvRow).Read(element).Verdict;
+            hit = verdict == ResponseVerdict.Malformed ? null : ReadHit(element, type);
             return hit == null ? RowRead.Unusable : RowRead.Hit;
         }
 

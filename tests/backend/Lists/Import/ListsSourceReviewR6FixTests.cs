@@ -153,6 +153,9 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
 
     private const string ManOfSteel = "{\"id\":49521,\"title\":\"Man of Steel\",\"release_date\":\"2013-06-12\"}";
 
+    // Whole details (round 7: details without their external ids are Partial, never kept).
+    private const string ManOfSteelDetails = "{\"id\":49521,\"title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"imdb_id\":\"tt0770828\",\"external_ids\":{\"imdb_id\":\"tt0770828\"}}";
+
     private static readonly string[] Shapes = { "valid empty", "dropped rows", "{}", "null", "wrong type", "unusable row", "mixed" };
 
     // The routes of one search form answering in one shape, or (shape "found") with Man of Steel.
@@ -279,7 +282,9 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
 
         Assert.Equal(49521, Assert.Single(first.Value!).TmdbId);
         Assert.Equal(LookupStatus.Ok, second.Status);
-        Assert.Equal(2, w.Total); // the answer was incomplete: not remembered
+        // The answer was incomplete: not remembered (round 7: Seerr's partial answer also asks the next server, which
+        // has nothing here, so each search sends two requests).
+        Assert.Equal(lookup == "tmdb" ? 2 : 4, w.Total);
     }
 
     [Fact]
@@ -317,7 +322,8 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
             _ => Row(1) + ",{\"name\":\"no number\"}",
         };
         var at = (tmdb ? Tmdb : "seerr-a.test/api/v1/") + (kind == "season" ? "tv/1412/season/1" : "tv/1412");
-        w.Answer(at, kind == "season" ? "{\"episodes\":[" + rows + "]}" : "{\"id\":1412,\"name\":\"Arrow\",\"seasons\":[" + rows + "]}");
+        var ids = tmdb ? ",\"external_ids\":{\"imdb_id\":null,\"tvdb_id\":null}" : ",\"externalIds\":{\"imdbId\":null,\"tvdbId\":null}";
+        w.Answer(at, kind == "season" ? "{\"episodes\":[" + rows + "]}" : "{\"id\":1412,\"name\":\"Arrow\"" + ids + ",\"seasons\":[" + rows + "]}");
 
         async Task<(LookupStatus Status, int? Count)> Read()
         {
@@ -361,7 +367,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
     {
         using var w = new World();
         var path = kind == "details" ? "api/v1/tv/1412" : "api/v1/tv/1412/season/1";
-        var valid = kind == "details" ? "{\"id\":1412,\"name\":\"Arrow\",\"seasons\":[]}" : "{\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1}]}";
+        var valid = kind == "details" ? "{\"id\":1412,\"name\":\"Arrow\",\"externalIds\":{\"imdbId\":null,\"tvdbId\":null},\"seasons\":[]}" : "{\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1}]}";
         void Serve(string host, string outcome) => w.Answer(host + "/" + path, outcome switch
         {
             "valid" => valid,
@@ -664,14 +670,14 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
     public async Task EveryUpstreamRequestTakesItsOwnAdmission(string path, int expected)
     {
         using var w = new World();
-        w.Answer(Tmdb + "movie/49521", ManOfSteel);
+        w.Answer(Tmdb + "movie/49521", ManOfSteelDetails);
         w.Answer(Tmdb + "search/movie", "{\"results\":[" + ManOfSteel + "]}");
         w.Answer(Tmdb + "search/tv", "{\"results\":[]}");
         w.Answer(Tmdb + "search/multi", "{\"results\":[{\"media_type\":\"movie\",\"id\":49521,\"title\":\"Man of Steel\"}]}");
         w.Answer(Tmdb + "find/tt0770828", "{\"movie_results\":[" + ManOfSteel + "],\"tv_results\":[]}");
         w.Answer(Tmdb + "tv/1412/season/1", "{\"episodes\":[{\"episode_number\":1}]}");
         w.Answer(Tmdb + "find/tt2338304", "{\"tv_episode_results\":[" + Episode + "]}");
-        w.Answer("seerr-a.test/api/v1/movie/49521", "{\"id\":49521,\"title\":\"Man of Steel\"}");
+        w.Answer("seerr-a.test/api/v1/movie/49521", "{\"id\":49521,\"title\":\"Man of Steel\",\"imdbId\":null}");
         w.Answer("seerr-a.test/api/v1/tv/1412", "{}", 503);
         w.Answer("seerr-b.test/api/v1/tv/1412", "{\"id\":1412,\"name\":\"Arrow\",\"seasons\":[]}");
         w.Answer("seerr-a.test/api/v1/tv/1412/season/1", "{}", 503);

@@ -243,8 +243,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // One odd upstream answer must not fail the other 24 entries: report it as retryable.
-                _logger.Warning($"[Lists] Resolving import entry {index} failed: {ex.Message}");
+                // One odd upstream answer must not fail the other 24 entries: report it as retryable (a bounded code: an
+                // exception's message can carry an upstream URL with its key, review round 7).
+                _logger.Warning($"[Lists] Resolving import entry {index} failed: {UpstreamDiagnostics.Code(ex)}");
                 return Transient(index, wanted);
             }
         }
@@ -528,7 +529,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             for (var i = 0; i < verify.Count; i++)
             {
                 var candidate = verify[i];
-                if (details[i].Status == LookupStatus.Transient)
+                // Review round 7 (4c2-R7-2): a season is "missing" only on Valid details; details whose season list is
+                // unknown (Partial) can't tell, so they count like a failed read.
+                if (details[i].Status == LookupStatus.Transient
+                    || (details[i].Status == LookupStatus.Ok && (details[i].Verdict != ResponseVerdict.Valid || details[i].Value?.Verdict != ResponseVerdict.Valid)))
                 {
                     if (i == 0)
                     {
@@ -584,6 +588,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
 
                 var byNumber = seasons[i].Value!.GroupBy(e => e.Episode).ToDictionary(g => g.Key, g => g.First());
+                if (seasons[i].Verdict != ResponseVerdict.Valid && (wanted.OpenEnded || !wanted.Episodes.All(byNumber.ContainsKey)))
+                {
+                    // Review round 7: a Partial season is used for the episodes it lists, never as proof that one is missing
+                    // or that the season ends where its list does.
+                    if (i == 0)
+                    {
+                        throw new TransientLookupException();
+                    }
+
+                    continue;
+                }
+
                 candidate.Episodes = wanted.Episodes.Where(byNumber.ContainsKey).Select(e => byNumber[e]).ToList();
                 if (candidate.Episodes.Count < wanted.Episodes.Count)
                 {
@@ -803,7 +819,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 dto.EpisodeTotal = kind switch
                 {
                     PlaceholderKinds.Season => candidate.Season?.EpisodeCount,
-                    PlaceholderKinds.Series => candidate.Details?.Seasons.Where(s => s.SeasonNumber > 0).Sum(s => s.EpisodeCount ?? 0) is int total and > 0 ? total : null,
+                    PlaceholderKinds.Series => candidate.Details is { Verdict: ResponseVerdict.Valid } valid && valid.Seasons.Where(s => s.SeasonNumber > 0).Sum(s => s.EpisodeCount ?? 0) is int total and > 0 ? total : null,
                     _ => null,
                 };
             }
@@ -835,9 +851,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var details = await _lookup.GetDetailsAsync("tv", showTmdbId, context, cancellationToken).ConfigureAwait(false);
-            if (details.Status != LookupStatus.Ok || details.Value == null)
+            if (details.Status != LookupStatus.Ok || details.Value is not { Verdict: ResponseVerdict.Valid } || details.Verdict != ResponseVerdict.Valid)
             {
-                return null;
+                return null; // review round 7: only a Valid season list says what a whole season is
             }
 
             var counts = new Dictionary<int, int>();
