@@ -173,6 +173,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// downloads phase 3 only; with it off the clock counts from the arr's own dates, as before).
         /// </summary>
         public bool RequestClock { get; init; } = true;
+
+        /// <summary>
+        /// The episodes of a Jellyfin series item as the viewer sees them now (no virtual ones; hidden ones marked): what
+        /// tells an upgrade (a download of an episode they already play) from a download on the surfaces that read only
+        /// the queue. Asked only for a copy whose Sonarr has downloads; null: not known (every row reads as a download).
+        /// </summary>
+        public Func<Guid, IReadOnlyList<JfEpisode>>? EpisodesOf { get; init; }
     }
 
     /// <summary>
@@ -703,10 +710,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!item.Virtual)
             {
                 arr = copy?.Episodes?.Find(season, number);
-                var rows = copy == null ? Array.Empty<ArrQueueEntry>() : RowsFor(copy, season, number, arr);
-                state = rows.Count > 0
-                    ? new CopyState(StatusStage.Ready, StatusReasonCode.Upgrading, Progress: Progress(rows[0], c, copy), Since: item.DateCreated, Row: rows[0])
-                    : new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated);
+                state = (copy == null ? null : QueuedEpisode(copy, RowsFor(copy, season, number, arr), have: true, item.DateCreated, c))
+                    ?? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated);
             }
             else if (copy == null)
             {
@@ -751,16 +756,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// A series poster card: only what the queue says (downloading, almost ready, a problem), so a
-        /// library page of series posters costs no per-series episode reads. Quiet otherwise.
+        /// library page of series posters costs no per-series Sonarr episode reads. Quiet otherwise.
         /// Queue rows of episodes or seasons Jellyfin hides from the viewer (<paramref name="hidden"/>)
-        /// don't count. The card is of one series copy (the item, among the title's Jellyfin <paramref name="copies"/>):
+        /// don't count, and a row of an episode the viewer already plays is an upgrade, as on the pages
+        /// (<see cref="QueuedEpisodes"/>; the item's episodes are read only when its Sonarr has downloads).
+        /// The card is of one series copy (the item, among the title's Jellyfin <paramref name="copies"/>):
         /// it reads only the Sonarr that owns that copy for sure, as its pages do (<see cref="SeriesCopyFor"/>).
         /// </summary>
         public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null, IReadOnlyList<JfCopy>? copies = null)
         {
             var copy = SeriesCopyFor(facts, item.ItemId, copies, item);
-            var states = copy?.Queue.Where(r => hidden?.Hides(r.SeasonNumber, r.EpisodeNumber) != true).Select(r => (Row: r, State: FromQueue(r, c, copy))).ToList() ?? new List<(ArrQueueEntry Row, CopyState State)>();
-            int Count(Func<CopyState, bool> f) => states.Where(x => f(x.State)).Select(x => x.Row.EpisodeId ?? x.Row.Id).Distinct().Count();
+            var states = copy == null ? new List<(int Season, int Episode, CopyState State)>() : QueuedEpisodes(copy, copy.Queue.Count > 0 ? c.EpisodesOf?.Invoke(item.ItemId) : null, c, hidden);
+            int Count(Func<CopyState, bool> f) => states.Count(x => f(x.State));
             var summary = new StatusSummary
             {
                 Downloading = Count(s => s.Stage == StatusStage.Downloading),
@@ -773,11 +780,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var otherProblems = false;
             if (c.Viewer.IsAdmin && copy != null)
             {
-                var problems = states.Where(x => x.State.Attention).Select(x => (copy, x.Row.SeasonNumber ?? 0, x.Row.EpisodeNumber ?? 0, x.State)).ToList();
-                // Other instances (4K, anime): their problems only, as the card reads no episodes.
+                var problems = states.Where(x => x.State.Attention).Select(x => (copy, x.Season, x.Episode, x.State)).ToList();
+                var siblings = SeriesCopies(facts);
+                // Other instances (4K, anime): their problems only, as the card reads no Sonarr episodes.
                 foreach (var other in OtherSeriesCopies(facts, copy))
                 {
-                    var found = QueueProblems(other, null, null, c);
+                    var found = QueueProblems(other, FilesOf(other, copies != null ? MatchCopies(other, copies, siblings) : null, c), null, null, c);
                     otherProblems |= found.Count > 0;
                     problems.AddRange(found);
                 }
@@ -791,7 +799,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Stage = stage,
                 Reason = new StatusReason { Code = stage == StatusStage.Ready ? StatusReasonCode.Ready : SummaryReason(summary) },
                 Attention = summary.Attention > 0 || otherProblems,
-                Quiet = states.Count == 0 && !otherProblems,
+                // Upgrades only: Ready, as the series page says.
+                Quiet = states.All(x => IsUpgrade(x.State)) && !otherProblems,
                 Progress = progress.Count == 1 ? progress[0] : null,
                 Summary = summary,
                 Admin = admin,
@@ -807,9 +816,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var visible = copies.Any(x => x.Visible);
             var copy = PrimarySeriesCopy(facts);
             var family = SeriesCopyForViewer(facts, copies, c);
+            // The viewer's episodes of the copy it is (else of the copy shown): its downloads of those are upgrades.
+            var files = family == null || !visible ? null
+                : FilesOf(family, MatchCopies(family, copies, SeriesCopies(facts)), c) ?? FilesOf(family, copies, c);
             var state = family == null
                 ? (visible ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
-                : SeriesCopyState(WithoutHiddenRows(family, hidden), visible, c, facts.Request);
+                : SeriesCopyState(WithoutHiddenRows(family, hidden), visible, c, facts.Request, files);
             if (!visible && copies.Count > 0 && c.Viewer.IsAdmin && state.Stage == StatusStage.AlmostReady)
             {
                 // An admin is told why.
@@ -1055,14 +1067,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        /// <summary>Where a series copy has got to as a whole (keys path, admin line); a request that went out restarts the "still looking" clock.</summary>
-        internal static CopyState SeriesCopyState(ArrCopyFacts copy, bool inJellyfin, ComposeContext c, RequestFacts? request = null)
+        /// <summary>
+        /// Where a series copy has got to as a whole (keys path, admin line); a request that went out restarts the "still
+        /// looking" clock. Downloads of episodes the viewer already plays (<paramref name="files"/>, its Jellyfin copy's
+        /// episodes) are upgrades, as on its pages: never this copy's download (only upgrades: Ready).
+        /// </summary>
+        internal static CopyState SeriesCopyState(ArrCopyFacts copy, bool inJellyfin, ComposeContext c, RequestFacts? request = null, IReadOnlyList<JfEpisode>? files = null)
         {
             var series = copy.Series!;
-            if (copy.Queue.Count > 0)
+            var downloads = QueuedEpisodes(copy, inJellyfin ? files : null, c).Where(x => !IsUpgrade(x.State)).Select(x => x.State).ToList();
+            if (downloads.Count > 0)
             {
-                var row = FromQueue(BestRow(copy.Queue), c, copy);
-                return copy.Queue.Count > 1 ? row with { Progress = null, Params = Params(("count", Distinct(copy.Queue).ToString(CultureInfo.InvariantCulture))) } : row;
+                // Each episode's state is its best row's (QueuedEpisode): the best of those is the copy's.
+                var row = FromQueue(BestRow(downloads.Select(x => x.Row!).ToList()), c, copy);
+                return downloads.Count > 1 ? row with { Progress = null, Params = Params(("count", downloads.Count.ToString(CultureInfo.InvariantCulture))) } : row;
             }
             if (inJellyfin) return new CopyState(StatusStage.Ready, StatusReasonCode.Ready);
             if (series.EpisodeFileCount > 0) return new CopyState(StatusStage.AlmostReady, StatusReasonCode.LibraryPending);
@@ -1090,16 +1108,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var n in numbers)
             {
                 if (hidden?.Hides(season, n) == true) continue;
-                var have = files.FirstOrDefault(e => !e.Virtual && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
+                var have = Have(files, season, n);
                 var row = files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
                 var arr = copy.Episodes?.Find(season, n);
                 CopyState state;
                 if (have != null)
                 {
-                    var queued = RowsFor(copy, season, n, arr);
-                    state = queued.Count > 0
-                        ? new CopyState(StatusStage.Ready, StatusReasonCode.Upgrading, Progress: Progress(queued[0], c, copy), Since: have.DateCreated, Row: queued[0])
-                        : new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: have.DateCreated);
+                    state = QueuedEpisode(copy, RowsFor(copy, season, n, arr), have: true, have.DateCreated, c)
+                        ?? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: have.DateCreated);
                 }
                 else if (arr == null && copy.Episodes != null)
                 {
@@ -1121,8 +1137,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static CopyState EpisodeFromArr(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, RequestFacts? request = null)
         {
-            var rows = RowsFor(copy, season, episode, arr);
-            if (rows.Count > 0) return FromQueue(BestRow(rows), c, copy);
+            if (QueuedEpisode(copy, RowsFor(copy, season, episode, arr), have: false, null, c) is { } queued) return queued;
             if (arr == null) return new CopyState(StatusStage.None, StatusReasonCode.NotInArr);
             if (arr.HasFile) return new CopyState(StatusStage.AlmostReady, StatusReasonCode.LibraryPending, Since: RecentEpisodeImport(copy, season, episode, arr, c));
             if (!copy.QueueUnknown && RecentFailure(copy.History, arr.Id, c) is DateTime failedAt)
@@ -1231,8 +1246,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return rows;
         }
 
-        private static int Distinct(IReadOnlyList<ArrQueueEntry> rows)
-            => rows.Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
+        /// <summary>
+        /// The one reading of an episode's queue rows, on every surface that shows or counts it (D53): for an episode the
+        /// viewer already plays (<paramref name="have"/>: a Jellyfin file, since <paramref name="since"/>) an upgrade,
+        /// Ready with a better copy coming (never a download or a problem); otherwise its best row by the queue table
+        /// (<see cref="FromQueue"/>). Null when it has no rows.
+        /// </summary>
+        internal static CopyState? QueuedEpisode(ArrCopyFacts copy, IReadOnlyList<ArrQueueEntry> rows, bool have, DateTime? since, ComposeContext c)
+        {
+            if (rows.Count == 0) return null;
+            return have
+                ? new CopyState(StatusStage.Ready, StatusReasonCode.Upgrading, Progress: Progress(rows[0], c, copy), Since: since, Row: rows[0])
+                : FromQueue(BestRow(rows), c, copy);
+        }
+
+        /// <summary>
+        /// A copy's queue episode by episode, read as its pages read it (<see cref="QueuedEpisode"/>): each episode's rows
+        /// together, against the viewer's Jellyfin file of it in <paramref name="files"/> (its Jellyfin copy's episodes;
+        /// null: not known, every row reads as a download). Rows of parts Jellyfin hides from the viewer
+        /// (<paramref name="hidden"/>) are left out; <paramref name="season"/> keeps one season's.
+        /// </summary>
+        internal static List<(int Season, int Episode, CopyState State)> QueuedEpisodes(ArrCopyFacts copy, IReadOnlyList<JfEpisode>? files, ComposeContext c, HiddenParts? hidden = null, int? season = null)
+        {
+            var result = new List<(int, int, CopyState)>();
+            var groups = copy.Queue
+                .Where(r => (season == null || r.SeasonNumber == season) && hidden?.Hides(r.SeasonNumber, r.EpisodeNumber) != true)
+                // An episode's rows share its numbers; a row without them stands alone (by its episode id, else its own).
+                .GroupBy(r => r.SeasonNumber is int s && r.EpisodeNumber is int e ? (s, e, 0) : (-1, -1, r.EpisodeId ?? r.Id));
+            foreach (var group in groups)
+            {
+                var rows = group.ToList();
+                var (s, e) = (rows[0].SeasonNumber ?? 0, rows[0].EpisodeNumber ?? 0);
+                var have = rows[0].SeasonNumber.HasValue && rows[0].EpisodeNumber.HasValue ? Have(files, s, e) : null;
+                result.Add((s, e, QueuedEpisode(copy, rows, have != null, have?.DateCreated, c)!));
+            }
+            return result;
+        }
+
+        /// <summary>A queue state that is an upgrade (see <see cref="QueuedEpisode"/>).</summary>
+        private static bool IsUpgrade(CopyState state) => state.Reason == StatusReasonCode.Upgrading;
+
+        /// <summary>The Jellyfin episode the viewer plays an episode number from (a combined file covers its range), if any.</summary>
+        private static JfEpisode? Have(IReadOnlyList<JfEpisode>? files, int season, int episode)
+            => files?.FirstOrDefault(x => x.Season == season && !x.Hidden && !x.Virtual && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(episode));
+
+        /// <summary>
+        /// The viewer's episodes of the Jellyfin copy an arr copy is (the first of <paramref name="matched"/> they can open),
+        /// for telling its upgrades from its downloads; read only when its queue has rows. Null otherwise.
+        /// </summary>
+        private static IReadOnlyList<JfEpisode>? FilesOf(ArrCopyFacts copy, IReadOnlyList<JfCopy>? matched, ComposeContext c)
+            => copy.Queue.Count > 0 && c.EpisodesOf != null && matched?.FirstOrDefault(x => x.Visible) is { } jf ? c.EpisodesOf(jf.ItemId) : null;
 
         // ------------------------------------------------------------------ summaries
 
@@ -1294,10 +1357,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // Episodes Jellyfin hides from this viewer are neither theirs nor pending.
             var hiddenHere = hidden?.Episodes.CountInSeason(season) ?? 0;
             var hiddenFiles = hidden?.WithFile.CountInSeason(season) ?? 0;
-            var rows = copy.Queue.Where(r => r.SeasonNumber == season && hidden?.Hides(season, r.EpisodeNumber) != true).ToList();
-            var downloading = rows.Where(r => FromQueue(r, c, copy).Stage == StatusStage.Downloading).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
-            var almost = rows.Where(r => FromQueue(r, c, copy).Stage == StatusStage.AlmostReady).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
-            var attention = rows.Where(r => FromQueue(r, c, copy).Attention).Select(r => r.EpisodeId ?? r.Id).Distinct().Count();
+            // The queue as the season's page reads it: a download of an episode the viewer plays is an upgrade (ready).
+            var queued = QueuedEpisodes(copy, jfEpisodes, c, hidden, season);
+            var downloading = queued.Count(x => x.State.Stage == StatusStage.Downloading);
+            var almost = queued.Count(x => x.State.Stage == StatusStage.AlmostReady);
+            var attention = queued.Count(x => x.State.Attention);
             var aired = (int)Math.Max(Math.Max(0, (stats?.EpisodeCount ?? 0) - hiddenHere), ready);
             var files = (int)Math.Max(0, (stats?.EpisodeFileCount ?? 0) - hiddenFiles);
             var pending = Math.Max(0, files - ready);
@@ -1475,36 +1539,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var siblings = SeriesCopies(facts);
             foreach (var other in OtherSeriesCopies(facts, primary))
             {
-                var found = QueueProblems(other, season, episode, c);
+                // Its own Jellyfin copy's episodes tell its upgrades from its downloads, as that copy's pages do.
+                var matched = copies != null ? MatchCopies(other, copies, siblings) : new List<JfCopy>();
+                var files = FilesOf(other, matched, c);
+                var found = QueueProblems(other, files, season, episode, c);
                 any |= found.Count > 0;
                 if (episode.HasValue)
                 {
                     var rows = RowsFor(other, season ?? 0, episode.Value, other.Episodes?.Find(season ?? 0, episode.Value));
-                    if (rows.Count > 0) variants.Add((other, FromQueue(BestRow(rows), c, other), null));
+                    var have = Have(files, season ?? 0, episode.Value);
+                    if (QueuedEpisode(other, rows, have != null, have?.DateCreated, c) is { } state) variants.Add((other, state, null));
                     continue;
                 }
-                var matched = copies != null ? MatchCopies(other, copies, siblings) : new List<JfCopy>();
-                variants.Add((other, SeriesCopyState(other, matched.Count > 0, c, facts.Request), matched.FirstOrDefault()));
+                variants.Add((other, SeriesCopyState(other, matched.Count > 0, c, facts.Request, files), matched.FirstOrDefault()));
                 problems.AddRange(found);
             }
             return any;
         }
 
-        /// <summary>The queue rows of a series copy that need someone (import blocked, stalled, failed), one per episode.</summary>
-        private static List<(ArrCopyFacts, int, int, CopyState)> QueueProblems(ArrCopyFacts copy, int? season, int? episode, ComposeContext c)
-        {
-            var list = new List<(ArrCopyFacts, int, int, CopyState)>();
-            var seen = new HashSet<int>();
-            foreach (var row in copy.Queue)
-            {
-                if (season.HasValue && row.SeasonNumber != season) continue;
-                if (episode.HasValue && row.EpisodeNumber != episode) continue;
-                var state = FromQueue(row, c, copy);
-                if (!state.Attention || !seen.Add(row.EpisodeId ?? row.Id)) continue;
-                list.Add((copy, row.SeasonNumber ?? 0, row.EpisodeNumber ?? 0, state));
-            }
-            return list;
-        }
+        /// <summary>
+        /// The episodes of a series copy whose downloads need someone (import blocked, stalled, failed), one per episode,
+        /// read as its pages read them (<see cref="QueuedEpisodes"/>: an upgrade of an episode in <paramref name="files"/>
+        /// is none).
+        /// </summary>
+        private static List<(ArrCopyFacts, int, int, CopyState)> QueueProblems(ArrCopyFacts copy, IReadOnlyList<JfEpisode>? files, int? season, int? episode, ComposeContext c)
+            => QueuedEpisodes(copy, files, c, season: season)
+                .Where(x => x.State.Attention && (episode == null || x.Episode == episode))
+                .Select(x => (copy, x.Season, x.Episode, x.State))
+                .ToList();
 
         /// <summary>
         /// The Jellyfin viewer's episodes without the hidden ones, and what is hidden: episode numbers no

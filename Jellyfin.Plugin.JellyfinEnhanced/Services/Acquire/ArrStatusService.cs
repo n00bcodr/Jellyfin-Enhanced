@@ -1168,10 +1168,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private ComposeContext Context(StatusViewer viewer)
         {
             var config = _config();
+            // A series copy's episodes as the viewer sees them now (once per composition): the queue-only surfaces read
+            // them to tell an upgrade from a download, only for copies whose Sonarr has downloads.
+            var episodes = new Dictionary<Guid, IReadOnlyList<JfEpisode>>();
             return new(viewer, _now().UtcDateTime, config?.ArrStatusLookingHours ?? 24)
             {
                 HandoffGrace = HandoffGrace(config),
                 RequestClock = config is { ArrIntegrationEnabled: true, ArrPhase1Enabled: true, ArrPhase3Enabled: true },
+                EpisodesOf = id => episodes.TryGetValue(id, out var found) ? found : episodes[id] = _view.Episodes(id, null, viewer, includeVirtual: false),
             };
         }
 

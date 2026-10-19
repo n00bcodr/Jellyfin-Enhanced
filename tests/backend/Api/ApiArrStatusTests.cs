@@ -499,10 +499,12 @@ public class ApiArrStatusTests
             Assert.False(status.TryGetProperty("progress", out _));
         }
         Assert.True(card[0].GetProperty("quiet").GetBoolean());
-        // The admin (who sees E1) gets the upgrade on both.
+        // The admin plays E1, so its download is an upgrade: Ready on both, as the series page says (edition r11, D53). For
+        // the kid, who doesn't play it, only the hidden-parts rule keeps it from reading as a download.
         var admin = Items(await Batch(rig, rig.Admin, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
-        Assert.Equal(75, admin[0].GetProperty("progress").GetProperty("percent").GetInt32());
-        Assert.Equal("downloading", admin[1].GetProperty("stage").GetString());
+        Assert.Equal(("ready", true), (admin[0].GetProperty("stage").GetString(), admin[0].GetProperty("quiet").GetBoolean()));
+        Assert.False(admin[0].TryGetProperty("progress", out _));
+        Assert.Equal("ready", admin[1].GetProperty("stage").GetString());
     }
 
     /// <summary>Absent-title pages by id (the native details resolver of the Jellyfin 12 build).</summary>
