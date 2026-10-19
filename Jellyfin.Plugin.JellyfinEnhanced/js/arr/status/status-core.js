@@ -238,7 +238,8 @@
         const q = [`key=${encodeURIComponent(key)}`];
         if (itemId) q.push(`itemId=${encodeURIComponent(itemId)}`);
         if (seriesId) q.push(`seriesId=${encodeURIComponent(seriesId)}`);
-        return read(`/acquire/status/arrival?${q.join('&')}`, { signal });
+        // Admitted only for the session it was asked in, like every other status read (phase 4e's response guard).
+        return read(`/acquire/status/arrival?${q.join('&')}`, { signal }, responseGuard());
     }
 
     /**
