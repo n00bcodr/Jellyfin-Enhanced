@@ -173,7 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         /// <summary>A movie copy is 4K (its video is at least 3200 pixels wide or 2000 high), as list swap-in decides.</summary>
         /// <param name="item">The item.</param>
         /// <returns>Whether it is 4K.</returns>
-        public static bool IsFourK(BaseItem item) => item.Width >= 3200 || item.Height >= 2000;
+        public static bool IsFourK(BaseItem item) => EditionAvailability.IsFourK(item.Width, item.Height);
 
         /// <summary>Records first-arrival dates; each only ever moves earlier.</summary>
         /// <param name="seen">(content, creation date) pairs.</param>

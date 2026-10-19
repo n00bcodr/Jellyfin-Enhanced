@@ -804,9 +804,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             StatusBody Respond()
             {
-                IEnumerable<RequestScope?> ScopesOf(TitleKey t) => editions != null
-                    ? editions.Where(e => e.Key.Key.Equals(t)).OrderBy(e => e.Key.FourK).Select(e => (RequestScope?)e.Value)
-                    : new[] { scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null };
+                IEnumerable<RequestScope?> ScopesOf(TitleKey t)
+                {
+                    if (editions == null) return new[] { scopes != null && scopes.TryGetValue(t, out var scope) ? scope : null };
+                    var asked = editions.Where(e => e.Key.Key.Equals(t)).OrderBy(e => e.Key.FourK).Select(e => (RequestScope?)e.Value).ToList();
+                    // A title composed beside the requested editions without a request of its own (home rows' followed
+                    // titles) is composed whole.
+                    return asked.Count > 0 ? asked : new RequestScope?[] { null };
+                }
                 var cacheKey = CacheKey(now, route, what + "|" + string.Join(",", titles.SelectMany(t => ScopesOf(t).Select(scope => t + (scope != null ? "@" + scope : string.Empty)))), gather.Revision);
                 if (Cache.Get(cacheKey) is { } hit) return hit;
                 var result = new List<KeyedStatus>();

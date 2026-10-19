@@ -201,6 +201,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 if (gate.Read() is not { } policy || !HomeFlags.Rows(_config())) return null;
                 try { return await PrepareAsync(policy.Viewer, _hssNow?.Invoke() ?? hss, gate, policy, cancellationToken).ConfigureAwait(false); }
                 catch (AcquireResponseGate.Changed) { cancellationToken.ThrowIfCancellationRequested(); }
+                // The status service's own check after its arr reads (the viewer was removed or their policy changed
+                // meanwhile) is the same change: prepare again under the current policy, or fail closed.
+                catch (ArrStatusService.ViewerChangedException) { cancellationToken.ThrowIfCancellationRequested(); }
             }
             return null;
         }
@@ -262,7 +265,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private HomeAnswer Build(StatusViewer viewer, HomeRowChoice choice, bool hss, IReadOnlyList<HubEntry> entries, IReadOnlyList<ArrStatusService.KeyedStatus> composed, IReadOnlyList<FollowRow> follows, Dictionary<string, HubTitleMeta> meta, Dictionary<string, FollowDate> dates)
         {
             var now = Status.Now.UtcDateTime;
-            var byKey = composed.ToDictionary(t => t.Key.Title.ToString(), StringComparer.Ordinal);
+            // Followed titles only (a title the viewer asked for is the request's card). A title asked for in both editions is
+            // composed once per edition (phase 4b), so the map takes the first of each title.
+            var byKey = composed.GroupBy(t => t.Key.Title.ToString(), StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
             var requested = entries.Select(e => TitleKey.Parse(e.Key)?.Title.ToString()).OfType<string>().ToHashSet(StringComparer.Ordinal);
             // Follows of titles the viewer also asked for are the request's (one card per title).
             var followed = follows.GroupBy(f => TitleKey.Parse(f.Key)!.Title.ToString(), StringComparer.Ordinal)
@@ -463,7 +468,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private DateTime? EditionArrival(HomeItem item, string content, bool only4k)
         {
             if (item.Sources.Count == 0) return _arrivals.EditionAt(content, only4k) ?? item.Created;
-            var arrivals = item.Sources.Where(s => !only4k || AcquisitionCopyPolicy.IsFourK(s.Width, s.Height))
+            var arrivals = item.Sources.Where(s => !only4k || EditionAvailability.IsFourK(s.Width, s.Height))
                 .Select(s => _arrivals.SourceAt(s.Identity)).OfType<DateTime>().ToList();
             return arrivals.Count == 0 ? null : arrivals.Min();
         }

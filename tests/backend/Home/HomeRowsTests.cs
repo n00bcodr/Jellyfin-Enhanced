@@ -171,6 +171,25 @@ public class HomeRowsTests
         Assert.Empty((await home.Rows(home.Lab.Emma)).Arrived!);
     }
 
+    [Fact]
+    public async Task ATitleAskedForInBothEditionsKeepsBothRequestCardsBesideAFollow()
+    {
+        // Integration (4b per-edition composition with 4d home rows): the Requests page composes a title asked for in both
+        // editions once per edition; home rows used to map composed titles by title and threw on the second one.
+        using var home = new Home();
+        await home.Lab.Warm();
+        await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = Matrix });
+        await home.Lab.Ask(home.Lab.Emma, new MutationInput { Key = Matrix, Variant = "4k" });
+        await home.Lab.Outbox.TickAsync(default);
+        Assert.True(home.Notify.SetFollow(home.Lab.Emma.UserId, Inception, "title", false, false, home.Lab.Arr.Now));
+        home.Dates[Inception] = new FollowDate(home.Now.Date.AddDays(10), null, null);
+        await home.Lab.Warm();
+        var rows = await home.Rows(home.Lab.Emma);
+        Assert.Equal(2, rows.Requests!.Count(c => c.Key == Matrix));
+        // The followed title, composed beside the requested editions without a request of its own, still gets its card.
+        Assert.Contains(rows.Soon!, c => c.Key == Inception && c.Follow);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
