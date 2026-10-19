@@ -15,10 +15,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
     /// already holds them, and the arrs' history snapshots in memory.
     /// <list type="bullet">
     /// <item><description><b>New for you</b>: a movie or episode Jellyfin added is judged about a minute later (its media
-    /// info is read by then, so the 4K edition is known) and again by a catch-up of everything added within the New
+    /// info is usually read by then, so the 4K edition is known) and again by a catch-up of everything added within the New
     /// lifetime (at start, when badges are switched on, every ten minutes). A person gets the fact when their own
     /// request or follow came before the arrival, covers the part and edition, the item is that part's first arrival
-    /// (no earlier copy now, none recorded before) and they can open it. Each source is judged once; ItemUpdated queues newly added versions.</description></item>
+    /// (no earlier copy now, none recorded before) and they can open it. Each source is judged once, and only once
+    /// Jellyfin has read its dimensions: until then it is neither edition. Each round retries an unread source for ten
+    /// minutes; after that ItemUpdated (the probe) and the catch-up look again. ItemUpdated also queues newly added
+    /// versions.</description></item>
     /// <item><description><b>Upgraded</b>: an arr import whose old file the arr deleted for "Upgrade", recorded once
     /// Jellyfin has an item at the imported path. A webhook or a replayed event only makes the history fresher; it can't
     /// create a fact.</description></item>
@@ -187,6 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (now - queued < Settle) continue;
+                    // The wait only stops retrying an unread source every round; it never decides its edition.
                     if (Judge(id, now) != Outcome.Later || now - queued > ProbeWait) _pending.TryRemove(id, out _);
                 }
 
@@ -236,6 +240,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
             /// <summary>Nothing to judge (gone, virtual, not a movie or episode).</summary>
             Skipped,
+
+            /// <summary>
+            /// A source still has unknown dimensions after the probe wait: not judged (never as standard); the probe's
+            /// ItemUpdated or the catch-up looks again, not every round.
+            /// </summary>
+            Unprobed,
         }
 
         /// <summary>Judges one arrival (tests call it directly).</summary>
@@ -246,22 +256,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         {
             var generation = _store.Generation;
             if (_library.Item(itemId) is not { IsVideo: true, Virtual: false } item || item.Keys.Count == 0) return Outcome.Skipped;
-            var later = false;
+            bool later = false, unprobed = false;
             foreach (var source in item.SourceItems().Select(Arrival).OrderBy(s => s.DateCreated))
             {
                 if (source.SourceId != null && _store.Seen(itemId, source.SourceId)) continue;
                 // Unknown source arrival is not evidence of a new import. A later update can supply it.
                 if (source.DateCreated == DateTime.MinValue) continue;
-                if (source.Width == 0 && source.Height == 0 && now - source.DateCreated < ProbeWait)
+                // Jellyfin announces a file before it reads it: with unknown dimensions the edition is unknown, never
+                // standard (a first 4K file would become an upgrade of a standard copy that never existed). However long
+                // the probe takes, the source waits unjudged and unseen.
+                if (!source.EditionKnown)
                 {
-                    later = true;
+                    if (now - source.DateCreated < ProbeWait) later = true;
+                    else unprobed = true;
                     continue;
                 }
 
                 JudgeSource(source, item, now, generation);
             }
 
-            return later || generation != _store.Generation ? Outcome.Later : Outcome.Done;
+            return later || generation != _store.Generation ? Outcome.Later : unprobed ? Outcome.Unprobed : Outcome.Done;
         }
 
         private void JudgeSource(StampItem item, StampItem owner, DateTime now, long generation)
@@ -405,7 +419,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             {
                 var generation = _store.Generation;
                 foreach (var source in item.SourceItems().Select(Arrival).Where(s => s.DateCreated != DateTime.MinValue))
-                    _store.NoteArrival(AcquisitionStampStore.PartKeys(source), source.DateCreated, item.Id, generation: generation);
+                {
+                    // A file removed before Jellyfin read it: its content arrived, but no edition did.
+                    if (source.EditionKnown) _store.NoteArrival(AcquisitionStampStore.PartKeys(source), source.DateCreated, item.Id, generation: generation);
+                    else _store.NoteContentArrival(source, source.DateCreated, generation: generation);
+                }
                 _pending.TryRemove(item.Id, out _);
                 _removed[item.Id] = (item, generation);
             }

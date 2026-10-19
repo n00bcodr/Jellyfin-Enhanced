@@ -1761,7 +1761,9 @@ badge about what changed for the person looking at it. At most one per card, in 
    upgrade (a played mark carried over from the old file doesn't count), or for 7 days.
 3. **New for you**: something this person asked for (a request, also through Seerr) or follows arrived for the first
    time after they asked, and they can open it. It goes when they play it or mark it played, or after 7 days. A 4K
-   request waits for a 4K copy; a replacement of something already there is never "new".
+   request waits for a 4K copy; a replacement of something already there is never "new". A new file counts once
+   Jellyfin has read its picture size, however long that takes: until then it is neither a 4K nor a standard copy, so
+   a first 4K file Jellyfin reads late still gets its New badge (not Upgraded).
 4. **4K**: the person can open a 4K copy (a video at least 3200 pixels wide or 2000 high) of this movie or series, or of
    this season or episode.
 

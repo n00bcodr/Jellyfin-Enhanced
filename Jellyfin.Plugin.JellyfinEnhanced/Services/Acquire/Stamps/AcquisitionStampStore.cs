@@ -294,13 +294,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
 
         /// <summary>
         /// The keys under which an arrival is remembered: each movie key with its edition, or each series key with the
-        /// episode numbers and edition.
+        /// episode numbers and edition. None while the copy's edition is unknown (<see cref="StampItem.EditionKnown"/>:
+        /// Jellyfin hasn't read its dimensions), so no writer or reader ever takes it for the standard edition.
         /// </summary>
         /// <param name="item">A movie or an episode.</param>
-        /// <returns>Part keys.</returns>
+        /// <returns>Part keys (empty while the edition is unknown).</returns>
         public static IReadOnlyList<string> PartKeys(StampItem item)
+            => item.EditionKnown ? Parts(item, item.FourK ? "4k" : "std") : Array.Empty<string>();
+
+        /// <summary>
+        /// Records that the content of <paramref name="item"/> arrived at <paramref name="at"/>, whatever its edition (a
+        /// copy removed before Jellyfin read it): first content only, no edition.
+        /// </summary>
+        /// <param name="item">A movie or an episode.</param>
+        /// <param name="at">Arrival (UTC).</param>
+        /// <param name="generation">Database generation captured before reading inputs.</param>
+        public void NoteContentArrival(StampItem item, DateTime at, long? generation = null)
         {
-            var edition = item.FourK ? "4k" : "std";
+            if (!_db.Available) return;
+            var parts = Parts(item, "std").Distinct(StringComparer.Ordinal).ToList();
+            if (parts.Count == 0) return;
+            Guard(generation ?? Generation, Guid.Empty, (c, t) =>
+            {
+                foreach (var part in parts) ContentArrivalHistory.Record(c, t, part, Ms(at));
+                return 0;
+            });
+            Interlocked.Increment(ref _db.ArrivalRevision);
+        }
+
+        private static IReadOnlyList<string> Parts(StampItem item, string edition)
+        {
             var parts = new List<string>();
             foreach (var key in item.Keys)
             {

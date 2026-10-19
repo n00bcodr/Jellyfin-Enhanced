@@ -148,9 +148,13 @@ public class IntegrationAcquisitionStampFeederTests
         Assert.Equal(AcquisitionStampFeeder.Outcome.Done, w.Feeder.Judge(unprobed.Id, T0.AddMinutes(1)));
         Assert.Single(News(w, unprobed));
 
-        // Still unprobed after ten minutes: judged as it is (standard), so it doesn't wait forever.
+        // Still unprobed after ten minutes: no longer retried every round, but never judged as standard either
+        // (integration rebuild, stage 1 fix round 2, D53; before, it was judged as it was, so a 4K file probed late was
+        // a standard arrival): it stays unseen, with no edition, until its probe (IntegrationUnknownEditionTests).
         var stuck = w.Library.Put(new StampItem { Id = Guid.NewGuid(), Kind = "movie", Keys = new[] { StampWorld.Movie(7) }, DateCreated = T0.AddMinutes(-11) });
-        Assert.Equal(AcquisitionStampFeeder.Outcome.Done, w.Feeder.Judge(stuck.Id, T0));
+        Assert.Equal("Unprobed", w.Feeder.Judge(stuck.Id, T0).ToString());
+        Assert.False(w.Store.Seen(stuck.Id));
+        Assert.Null(w.Store.EditionArrival(new[] { "m|" + StampWorld.Movie(7) + "|std" }));
         Assert.Equal(AcquisitionStampFeeder.Outcome.Skipped, w.Feeder.Judge(Guid.NewGuid(), T0));
         var virtualEpisode = w.Library.Put(new StampItem { Id = Guid.NewGuid(), Kind = "episode", Keys = new[] { StampWorld.Show(1) }, Season = 1, Episode = 1, Virtual = true, DateCreated = T0 });
         Assert.Equal(AcquisitionStampFeeder.Outcome.Skipped, w.Feeder.Judge(virtualEpisode.Id, T0));

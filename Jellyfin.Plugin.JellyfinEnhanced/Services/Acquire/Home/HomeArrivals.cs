@@ -361,8 +361,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             {
                 // Jellyfin announces a new item before it has probed the file: with no dimensions yet the edition is
                 // unknown, and recording it as standard would make a first 4K copy an upgrade. ItemUpdated brings the
-                // probed source (its observation time is kept); the badge feeder waits for dimensions the same way.
-                if (source.Width == 0 && source.Height == 0) continue;
+                // probed source (its observation time is kept); the badge feeder waits for dimensions the same way, and
+                // PartKeys has no edition for it either.
+                if (!source.EditionKnown) continue;
                 var at = source.SourceId is { } identity ? SourceAt(identity) : source.DateCreated;
                 if (at is DateTime known && known != DateTime.MinValue)
                     _stamps.NoteArrival(AcquisitionStampStore.PartKeys(source), known, item.Id, generation);

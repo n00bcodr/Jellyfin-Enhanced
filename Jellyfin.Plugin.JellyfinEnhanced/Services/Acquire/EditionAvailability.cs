@@ -127,6 +127,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <returns>True when 4K.</returns>
         public static bool IsFourK(int? width, int? height) => (width ?? 0) >= FourKMinWidth || (height ?? 0) >= FourKMinHeight;
 
+        /// <summary>
+        /// Whether Jellyfin has read a source's dimensions. Until it has, the source is neither edition: not 4K, and never
+        /// a source known not to be 4K (the same rule as <see cref="Stamps.AcquisitionCopyPolicy.Known"/>).
+        /// </summary>
+        /// <param name="width">Width, or null/0 when unknown.</param>
+        /// <param name="height">Height, or null/0 when unknown.</param>
+        /// <returns>True when read.</returns>
+        public static bool DimensionsKnown(int? width, int? height) => (width ?? 0) > 0 || (height ?? 0) > 0;
+
         /// <summary>The edition a request for 4K (or not) asks for.</summary>
         public static Edition Of(bool fourK) => fourK ? Edition.FourK : Edition.Standard;
 
@@ -141,7 +150,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Qualifies(JfSource source, Edition edition) => edition switch
         {
             Edition.FourK => IsFourK(source.Width, source.Height),
-            _ => !StandardNeedsNonFourK || ((source.Width > 0 || source.Height > 0) && !IsFourK(source.Width, source.Height)),
+            _ => !StandardNeedsNonFourK || (DimensionsKnown(source.Width, source.Height) && !IsFourK(source.Width, source.Height)),
         };
 
         /// <summary>
@@ -169,7 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// standard copy plays the standard file when there is one), the copies' and sources' own order otherwise.
         /// </summary>
         private static List<EditionHit> Preferred(List<EditionHit> hits, Edition edition)
-            => edition == Edition.Standard ? hits.OrderBy(h => IsFourK(h.Source.Width, h.Source.Height) || (h.Source.Width is null && h.Source.Height is null) ? 1 : 0).ToList() : hits;
+            => edition == Edition.Standard ? hits.OrderBy(h => IsFourK(h.Source.Width, h.Source.Height) || !DimensionsKnown(h.Source.Width, h.Source.Height) ? 1 : 0).ToList() : hits;
 
         /// <summary>
         /// The qualifying episode sources of a series (one season, or all) across the series copies the viewer can

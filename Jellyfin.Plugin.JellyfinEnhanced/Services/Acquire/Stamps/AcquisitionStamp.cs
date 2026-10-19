@@ -102,6 +102,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <param name="height">Height in pixels (0 = unknown).</param>
         /// <returns>True for 4K.</returns>
         public static bool IsFourK(int width, int height) => width >= FourKWidth || height >= FourKHeight;
+
+        /// <summary>
+        /// Whether Jellyfin has read a copy's dimensions. A copy it hasn't read yet has no edition: never standard (a
+        /// first 4K file is announced before it is probed), and classified only when the probe arrives.
+        /// </summary>
+        /// <param name="width">Width in pixels (0 = unknown).</param>
+        /// <param name="height">Height in pixels (0 = unknown).</param>
+        /// <returns>True once read.</returns>
+        public static bool Known(int width, int height) => EditionAvailability.DimensionsKnown(width, height);
     }
 
     /// <summary>A playable library source, including its own identity and arrival.</summary>
@@ -165,6 +174,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         public bool FourK => Sources.Count > 0
             ? Sources.Any(s => AcquisitionCopyPolicy.IsFourK(s.Width, s.Height))
             : AcquisitionCopyPolicy.IsFourK(Width, Height);
+
+        /// <summary>
+        /// The edition is known: a 4K source, or every source's dimensions read (<see cref="AcquisitionCopyPolicy.Known"/>).
+        /// Until then the copy is neither standard nor 4K for any edition fact.
+        /// </summary>
+        public bool EditionKnown => FourK || (Sources.Count > 0
+            ? Sources.All(s => AcquisitionCopyPolicy.Known(s.Width, s.Height))
+            : AcquisitionCopyPolicy.Known(Width, Height));
 
         /// <summary>Identity while judging one source (null for legacy item facts).</summary>
         public string? SourceId { get; init; }
