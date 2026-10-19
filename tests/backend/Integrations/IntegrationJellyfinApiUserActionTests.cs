@@ -115,8 +115,8 @@ public class IntegrationJellyfinApiUserActionTests
     // action, each an event a plugin can subscribe to: SubtitleManager.SubtitleDownloadFailure 46, ApplicationHost.HasPendingRestartChanged 15,
     // BaseConfigurationManager.NamedConfigurationUpdating 11, LyricManager.LyricDownloadFailure 6, the Live TV timer
     // events 6, ServerConfigurationManager.ConfigurationUpdating 1, the collection events 3, on 12.2). 88 on 12.2, the same
-    // 88 plus LibraryStructureController.RenameVirtualFolder on 10.11.11 (12.2's reaches IUserManager.UpdateUserAsync,
-    // above). Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
+    // 88 plus LibraryStructureController.RenameVirtualFolder (12.2's reaches IUserManager.UpdateUserAsync, above) and
+    // without MediaInfoController.OpenLiveStream (round 18, below) on 10.11.11. Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
     // session's end, so they are bracketed for the request's person (16 by their userId argument, the rest the signed-in
     // person), never for everyone.
     private static readonly string[] Callbacks =
@@ -216,8 +216,14 @@ public class IntegrationJellyfinApiUserActionTests
         // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync); adding a user
         // to a session and removing one log the session's activity too.
         ["jf12"] = With(SessionActivity.Concat(Callbacks).Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
-        // 10.11: the easy (PIN) password still exists; renaming a library reaches only the callbacks.
-        ["jf10"] = With(SessionActivity.Concat(Callbacks).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
+        // 10.11: the easy (PIN) password still exists; renaming a library reaches only the callbacks. Round 18: OpenLiveStream
+        // reaches none on 10.11.11. Its old callback (NamedConfigurationUpdating, through a recording's onStarted) was an
+        // artefact of the retired "delegates the caller made before the call" rule: DirectRecorder's
+        // RecordFromDirectStreamProvider invokes its own onStarted, then calls the other five-parameter
+        // IStreamHelper.CopyToAsync overload (…, 81920, 1000, token), whose fourth argument is the constant 1000. The only
+        // onStarted handed to the overload that has one is SharedHttpStream's own lambda. 12.2's OpenLiveStream still reaches
+        // the provider-id validator callback.
+        ["jf10"] = With(SessionActivity.Concat(Callbacks.Where(c => c != "MediaInfoController.OpenLiveStream")).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
     };
 
     private static Dictionary<string, string> With(IEnumerable<string> person, params (string Action, string Key)[] more)

@@ -1224,6 +1224,177 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.Equal(disables > 0, Find(JellyfinUserActions.Scan(probe.Path("CycleProbe")), controller, action).Key != JellyfinUserKey.None);
     }
 
+    // 4a review round 18 (D53: composition gaps between rules added in different rounds). The reviewers' probes, as they
+    // wrote them: a delegate field stored through an identity helper (Same's body was followed, not its returned delegate),
+    // through a local or another object's constructor after an unrelated delegate was made (the old "delegates made before
+    // the call" heuristic took the decoy for the argument), a constrained call to a static abstract member .NET declares
+    // (IAdditionOperators.op_Addition: framework slots were consulted for callvirt only, and an implicit static
+    // implementation has no Virtual flag), a framework slot's implementation whose STATIC CONSTRUCTOR changes the user (a
+    // slot node got no initializer edges), and an array filled by a helper (array provenance saw only the invoking body's
+    // stores). All were None while the person was disabled. Now: one target resolver (dispatch for callvirt, ldvirtftn
+    // and any constrained call or pointer, a slot .NET declares included, static members by name), one "running a method"
+    // edge set (body, type initializer, module initializer) on every method node, and one provenance model for every
+    // delegate value (a field store is the stored value's provenance, a parameter the argument at each call site, an
+    // array that escapes into a call is unknown). The controls: the reviewers' handed-in callbacks (bracketed before and
+    // after), and QuietArrayController, a helper filling the array with a harmless lambda: bracketed now (the helper's
+    // writes aren't modelled, so its elements are unknown: fail closed, may over-bracket; Known limits).
+    private const string Round18SecurityProbes = """
+        using System;
+        using System.Threading.Tasks;
+        using Microsoft.AspNetCore.Mvc;
+        using System.Numerics;
+        using MediaBrowser.Controller.Library;
+        using MediaBrowser.Model.Users;
+        public static class Bootstrap { public static IUserManager Users = null!; public static Guid Person; }
+        public struct Changes : IAdditionOperators<Changes,Changes,Changes> {
+         public static Changes operator +(Changes a, Changes b) { Bootstrap.Users.UpdatePolicyAsync(Bootstrap.Person,new UserPolicy { IsDisabled=true }).GetAwaiter().GetResult(); return default; }
+        }
+        public static class Arithmetic {
+         public static T Add<T>(T a,T b) where T:IAdditionOperators<T,T,T> => a+b;
+        }
+        public sealed class FrameworkStaticController : ControllerBase {
+         [HttpPost] public void Disable(Guid userId) => Arithmetic.Add(default(Changes),default(Changes));
+        }
+        public struct ColdProgress : IProgress<int> {
+         static ColdProgress() { Bootstrap.Users.UpdatePolicyAsync(Bootstrap.Person,new UserPolicy { IsDisabled=true }).GetAwaiter().GetResult(); }
+         public void Report(int value) { }
+        }
+        public sealed class FrameworkInitializerController : ControllerBase {
+         [HttpPost] public void Disable(Guid userId) { IProgress<int> progress=default(ColdProgress); progress.Report(0); }
+        }
+        public sealed class ReturnVisibleFieldController : ControllerBase {
+         private readonly Action _callback;
+         static Action Same(Action callback) => callback;
+         public ReturnVisibleFieldController() { _callback = Same(() => Bootstrap.Users.UpdatePolicyAsync(Bootstrap.Person,new UserPolicy { IsDisabled=true }).GetAwaiter().GetResult()); }
+         [HttpPost] public void Disable(Guid userId) => _callback();
+        }
+        public sealed class ReturnFieldController : ControllerBase {
+         private readonly Action _callback;
+         static Action Same(Action callback) => callback;
+         public ReturnFieldController(Action callback) { _callback = Same(callback); }
+         [HttpPost] public void Disable(Guid userId) => _callback();
+        }
+        public sealed class LocalFieldController : ControllerBase {
+         private readonly Action _callback;
+         static void Harmless() { }
+         public LocalFieldController(Action callback) {
+           Action decoy = Harmless;
+           Action local = callback;
+           _callback = local;
+           GC.KeepAlive(decoy);
+         }
+         [HttpPost] public void Disable(Guid userId) => _callback();
+        }
+        public sealed class CallerFieldController : ControllerBase {
+         private readonly Slot _slot;
+         static void Harmless() { }
+         public CallerFieldController(Action callback) {
+           Action decoy = Harmless;
+           _slot = new Slot(callback);
+           GC.KeepAlive(decoy);
+         }
+         [HttpPost] public void Disable(Guid userId) => _slot.Run();
+        }
+        public sealed class Slot { private readonly Action _callback; public Slot(Action callback) { _callback=callback; } public void Run() => _callback(); }
+        public sealed class ControlController : ControllerBase {
+         private readonly Action _callback;
+         public ControlController(Action callback) { _callback=callback; }
+         [HttpPost] public void Disable(Guid userId) => _callback();
+        }
+        """;
+
+    private const string Round18BehaviourProbes = """
+        using System; using System.Threading.Tasks; using Microsoft.AspNetCore.Mvc;
+        public class Box {
+         readonly Func<Task> _callback;
+         public Box(Func<Task> callback) { _callback=callback; }
+         public Task Run() => _callback();
+        }
+        public sealed class FieldMixController : ControllerBase {
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) {
+         Func<Task> harmless = () => Task.CompletedTask; GC.KeepAlive(harmless);
+         return new Box(callback).Run();
+         }
+        }
+        public class BoxOnly {
+         readonly Func<Task> _callback;
+         public BoxOnly(Func<Task> callback) { _callback=callback; }
+         public Task Run() => _callback();
+        }
+        public sealed class FieldOnlyController : ControllerBase {
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => new BoxOnly(callback).Run();
+        }
+        public sealed class ArrayFillController : ControllerBase {
+         static void Fill(Func<Task>[] target, Func<Task> cb) { target[0]=cb; }
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) {
+         var target = new Func<Task>[1]; Fill(target, callback); return target[0]();
+         }
+        }
+        public sealed class LocalArrayController : ControllerBase {
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) {
+         var target = new Func<Task>[1]; target[0]=callback; return target[0]();
+         }
+        }
+        public sealed class ParameterController : ControllerBase {
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => callback();
+        }
+        public sealed class QuietArrayController : ControllerBase {
+         static void Fill(Func<Task>[] target) { target[0]=()=>Task.CompletedTask; }
+         [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) {
+         var target = new Func<Task>[1]; Fill(target); return target[0]();
+         }
+        }
+        """;
+
+    public static IEnumerable<object[]> Round18Cases()
+    {
+        foreach (var optimization in new[] { OptimizationLevel.Debug, OptimizationLevel.Release })
+        {
+            foreach (var controller in new[] { "FrameworkStaticController", "FrameworkInitializerController", "ReturnVisibleFieldController", "ReturnFieldController", "LocalFieldController", "CallerFieldController", "ControlController" })
+                yield return new object[] { optimization, "Round18Security", controller, 1 };
+            foreach (var controller in new[] { "FieldMixController", "FieldOnlyController", "ArrayFillController", "LocalArrayController", "ParameterController" })
+                yield return new object[] { optimization, "Round18Behaviour", controller, 1 };
+            yield return new object[] { optimization, "Round18Behaviour", "QuietArrayController", 0 };
+        }
+    }
+
+    // Scanned and run for real: each one disables the person once (the quiet array control: nobody) and is bracketed (the
+    // quiet control too: over-bracketed by design, fail closed).
+    [Theory]
+    [MemberData(nameof(Round18Cases))]
+    public async Task TheRound18ProbesAreBracketedAndReallyDoWhatTheyShould(OptimizationLevel optimization, string assembly, string controller, int disables)
+    {
+        using var probe = Probe.Build(optimization, (assembly, assembly == "Round18Security" ? Round18SecurityProbes : Round18BehaviourProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path(assembly)), controller, "Disable");
+        Assert.True(found.Key == JellyfinUserKey.User, controller + ": " + found.Key + " why=" + found.Why);
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var loaded = probe.Load(assembly);
+        Func<Task> closure = () => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true });
+        Action action = () => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
+        object instance;
+        object[] args;
+        if (assembly == "Round18Security")
+        {
+            var bootstrap = loaded.GetType("Bootstrap")!;
+            bootstrap.GetField("Users")!.SetValue(null, users);
+            bootstrap.GetField("Person")!.SetValue(null, person);
+            instance = controller is "FrameworkStaticController" or "FrameworkInitializerController" or "ReturnVisibleFieldController"
+                ? Activator.CreateInstance(loaded.GetType(controller)!)!
+                : Activator.CreateInstance(loaded.GetType(controller)!, action)!;
+            args = new object[] { person };
+        }
+        else
+        {
+            instance = Activator.CreateInstance(loaded.GetType(controller)!)!;
+            args = new object[] { person, closure };
+        }
+
+        Assert.Equal(0, disabled());
+        if (instance.GetType().GetMethod("Disable")!.Invoke(instance, args) is Task task) await task;
+        Assert.Equal(disables, disabled());
+    }
+
     // Round 17: a body whose stack the reading can't follow (here a backward branch carrying a value, which C# never emits
     // and Jellyfin has none of) records only unknowns: the delegate it invokes is an unresolved callback of unknown origin,
     // not the parameter the stack would otherwise show. Emitted directly (Roslyn can't write such IL); only read, never run.
@@ -1377,7 +1548,10 @@ public class IntegrationJellyfinUserDispatchTests
         }
 
         /// <summary>Compiles each (name, source, references to earlier ones) in order.</summary>
-        public static Probe Build(params (string Name, string Source, string[] References)[] assemblies)
+        public static Probe Build(params (string Name, string Source, string[] References)[] assemblies) => Build(OptimizationLevel.Debug, assemblies);
+
+        /// <summary>Compiles each (name, source, references to earlier ones) in order, optimized as asked.</summary>
+        public static Probe Build(OptimizationLevel optimization, params (string Name, string Source, string[] References)[] assemblies)
         {
             var probe = new Probe();
             Directory.CreateDirectory(probe._dir);
@@ -1388,7 +1562,7 @@ public class IntegrationJellyfinUserDispatchTests
             {
                 var compilation = CSharpCompilation.Create(name, new[] { CSharpSyntaxTree.ParseText(source) },
                     platform.Concat(references.Select(r => MetadataReference.CreateFromFile(probe.Path(r)))),
-                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
+                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: optimization, nullableContextOptions: NullableContextOptions.Enable, allowUnsafe: true));
                 using var output = File.Create(probe.Path(name));
                 var emitted = compilation.Emit(output);
                 if (!emitted.Success) throw new Xunit.Sdk.XunitException(name + ":\n" + string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));

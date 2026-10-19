@@ -50,7 +50,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// initializer's) put in it, an event to the handlers subscribed to it, and (round 17) a delegate invoked to what its
     /// provenance shows: a parameter to what the callers hand it, a call's result to what the callee returns, a local or an
     /// array element to what was stored in it, one handed to code outside the code read as run there; provenance the reading
-    /// can't establish (handed in from outside, a collection's value, an unknown) is an unresolved callback (fail closed);</description></item>
+    /// can't establish (handed in from outside, a collection's value, an array other code filled, an unknown) is an
+    /// unresolved callback (fail closed). Round 18: each rule lives in one place and applies in every combination: one
+    /// target resolver for every transfer (Targets), one "running a method" edge set on every method node (Running: body,
+    /// type initializer, module initializer), one provenance model for every delegate value (Flow → Sources: invoked,
+    /// stored in a field, handed to a method, returned), tested as a generated cross-product (IntegrationJellyfinUserMatrixTests);</description></item>
     /// <item><description>it isn't a GET and its code reaches a call that can't be followed whose contract can carry a user (an
     /// interface nothing read implements): it is bracketed for everyone (a GET isn't: it would hold automation on every
     /// page view);</description></item>
@@ -73,7 +77,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// slots declared outside the code read (Dispose, DisposeAsync, Finalize, ToString, Equals, GetHashCode, GetType) aren't
     /// followed into implementations; a compiler-generated state machine is followed from the method that creates it (a
     /// lazy sequence created by one action and enumerated by another counts where it is created); a generic parameter's
-    /// field (`T`) is followed to what the code read stores in it, not counted as handed in from outside.
+    /// field (`T`) is followed to what the code read stores in it, not counted as handed in from outside. It may
+    /// over-bracket (round 18): an array handed to other code (which may write it) has unknown elements.
     /// </para>
     /// </summary>
     public static class JellyfinUserActions
@@ -302,8 +307,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _nodes.Clear();
                 _nodeOf.Clear();
                 _stores.Clear();
-                _callSites.Clear();
-                _made.Clear();
                 _loads.Clear();
                 _fieldNodes.Clear();
                 _fieldTypes.Clear();
@@ -321,7 +324,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _returns.Clear();
                 _invokes.Clear();
                 _upDone.Clear();
-                _upPath.Clear();
+                _upOpen.Clear();
+                _upStack.Clear();
                 _descending.Clear();
             }
 
@@ -417,6 +421,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public bool Virtual { get; init; }
                 public bool Abstract { get; init; }
                 public bool NewSlot { get; init; }
+                public bool Static { get; init; }
                 public List<int> Calls { get; } = new();
                 public string? Reaches { get; set; }
                 public string? PersonReaches { get; set; }
@@ -431,25 +436,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 public bool HasBody { get; init; }
             }
 
-            // A value a delegate can come from: a method (a node) or another delegate field.
-            private readonly record struct Ref(int Node, string? Field);
-
-            // Where a stored delegate came from: what the body made (the methods or fields), or the method's own parameter
-            // (then: what each caller made before the call).
-            private sealed record Source(int Node, List<Ref> Made, bool Parameter);
-
-            // What the previous instruction left on the stack, as far as delegates go.
-            private enum Pushed { Other, Argument, Pointer, Delegate, Field, Call }
-
             private readonly List<TypeInfo> _types = new();
             private readonly Dictionary<string, List<int>> _typesByName = new(StringComparer.Ordinal);
             private readonly List<Node> _nodes = new();
             private readonly Dictionary<(int Module, int Token), int> _nodeOf = new();
             private readonly Dictionary<string, int> _terminals = new(StringComparer.Ordinal);
             private readonly Dictionary<string, int> _unresolved = new(StringComparer.Ordinal);
-            private readonly Dictionary<string, List<Source>> _stores = new(StringComparer.Ordinal);
-            private readonly Dictionary<int, List<(int Caller, int Made)>> _callSites = new();
-            private readonly Dictionary<int, List<Ref>> _made = new();
+            // Round 18: every store of a delegate field, with the stored value's provenance in the storing method.
+            private readonly Dictionary<string, List<(int Node, Prov Value)>> _stores = new(StringComparer.Ordinal);
             private readonly List<(int Node, string Field)> _loads = new();
             private readonly Dictionary<string, int> _fieldNodes = new(StringComparer.Ordinal);
             private readonly SortedSet<string> _contained = new(StringComparer.Ordinal);
@@ -467,7 +461,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private readonly Dictionary<int, int> _moduleInitializers = new();
 
             // Round 17: shared nodes for virtual slots declared outside the code read (null: nothing read fills it).
-            private readonly Dictionary<(string Type, string Method, int Params), int?> _frameworkSlots = new();
+            private readonly Dictionary<(string Type, string Method, int Params, bool Static), int?> _frameworkSlots = new();
 
             // The compiler-generated state machines: the types the code read's [*StateMachine] attributes name.
             private readonly HashSet<string> _stateMachines = new(StringComparer.Ordinal);
@@ -480,8 +474,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private readonly Dictionary<int, List<int>> _sitesOf = new();
             private readonly Dictionary<int, Prov> _returns = new();
             private readonly List<(int Node, Prov Receiver, string Type)> _invokes = new();
-            private readonly HashSet<(int Node, int Arg, string Type)> _upDone = new();
-            private readonly Dictionary<(int Node, int Arg, string Type), int> _upPath = new();
+            private readonly Dictionary<(int Node, int Arg), Src> _upDone = new();
+            private readonly Dictionary<(int Node, int Arg), UpState> _upOpen = new();
+            private readonly Stack<(int Node, int Arg)> _upStack = new();
+            private int _upIndex;
             private readonly HashSet<(int Node, int Site)> _descending = new();
             private int _budget;
 
@@ -511,6 +507,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                     set._modules.AddRange(modules);
                     for (var m = 0; m < modules.Count; m++) set.Index(modules[m], m);
+                    set.Running();
                     for (var m = 0; m < modules.Count; m++) set.Bodies(modules[m], m);
                     set.Delegates();
                     set.Propagate();
@@ -561,6 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             Virtual = (method.Attributes & MethodAttributes.Virtual) != 0,
                             Abstract = (method.Attributes & MethodAttributes.Abstract) != 0,
                             NewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
+                            Static = (method.Attributes & MethodAttributes.Static) != 0,
                             HasBody = method.RelativeVirtualAddress != 0,
                         };
                         foreach (var machine in StateMachines(md, method.GetCustomAttributes())) _stateMachines.Add(machine);
@@ -589,6 +587,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 }
             }
 
+            // Round 18: running a method runs its declaring type's static constructor and its module's initializer first (the
+            // runtime runs each once, before the first use; an edge on every use over-approximates). ONE edge set on the
+            // method node itself, so every way of reaching a method (a call, an override or implementation it dispatches to,
+            // a slot .NET declares, a delegate or method pointer to it, a field holding one) reaches them the same way.
+            private void Running()
+            {
+                for (var n = 0; n < _nodes.Count; n++)
+                {
+                    var node = _nodes[n];
+                    if (node.Type < 0) continue;
+                    foreach (var i in _types[node.Type].Methods)
+                        if (i != n && _nodes[i].Method == ".cctor") node.Calls.Add(i);
+                    if (_moduleInitializers.TryGetValue(node.Module, out var initializer) && initializer != n) node.Calls.Add(initializer);
+                }
+            }
+
             // Every body: its calls, the delegates it creates, stores and loads, and the events it subscribes to.
             private void Bodies(Module module, int m)
             {
@@ -612,16 +626,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private void Body(MetadataReader md, int m, MethodBodyBlock body, int node)
             {
                 var il = body.GetILReader();
-                // Round 15: the module's initializer runs before any of its code (once, at the first use).
-                if (_moduleInitializers.TryGetValue(m, out var initializer) && initializer != node) _nodes[node].Calls.Add(initializer);
-                // Every delegate the body made (a method pointer) or loaded from a delegate field, in order: what a call made
-                // after them can be handed (a prefix of it).
-                var made = new List<Ref>();
-                // What the last instruction left on the stack (a dup or a cast keeps it): where a stored delegate comes from.
-                var (pushed, from) = (Pushed.Other, new List<Ref>());
-                // Round 17: where every value on the stack came from, for the delegates the body invokes (Flow).
+                // Round 17: where every value on the stack came from (Flow), for every delegate value the body invokes, stores,
+                // hands on or returns. Round 18: the one provenance model (the old "what was pushed last" and "what the body
+                // made before the call" heuristics are gone).
                 var flow = new Flow(body);
                 var self = ShapeOf(md, m, MetadataTokens.MethodDefinitionHandle(_nodes[node].Token));
+                // A `constrained.` prefix applies to the next instruction (a call, callvirt or method pointer): it dispatches.
+                var constrained = false;
                 while (il.RemainingBytes > 0)
                 {
                     var start = il.Offset;
@@ -629,6 +640,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     var first = il.ReadByte();
                     var code = first == 0xfe ? TwoByte[il.ReadByte()] : OneByte[first];
                     var value = code.Value;
+                    var prefixed = constrained;
+                    constrained = false;
                     // Whether the case below applied the instruction's stack effect (otherwise its pops and pushes, unknown).
                     var stacked = true;
                     switch (code.OperandType)
@@ -636,41 +649,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         case OperandType.InlineMethod:
                         {
                             var handle = MetadataTokens.EntityHandle(il.ReadInt32());
-                            var virtualCall = value == OpCodes.Callvirt.Value || value == OpCodes.Ldvirtftn.Value;
-                            var pointer = value == OpCodes.Ldftn.Value || value == OpCodes.Ldvirtftn.Value;
-                            var targets = Targets(md, m, handle, virtualCall);
+                            var dispatch = value == OpCodes.Callvirt.Value || value == OpCodes.Ldvirtftn.Value || prefixed;
+                            var targets = Targets(md, m, handle, dispatch);
                             _nodes[node].Calls.AddRange(targets);
-                            // Round 15: the runtime runs a type's static constructor before the type's first use (a
-                            // static call, newobj, a method pointer to it); a use reaches it.
-                            // Round 16: also each method the call may really run (every implementation and override it
-                            // dispatches to): a static abstract call runs the implementing type's static method.
-                            var owners = new HashSet<string>(StringComparer.Ordinal);
-                            if (MethodOwner(md, m, handle) is { } owner) owners.Add(owner);
-                            foreach (var t in targets)
-                                if (_nodes[t].Type >= 0) owners.Add(_types[_nodes[t].Type].Name);
-                            foreach (var o in owners) _nodes[node].Calls.AddRange(TypeInitializers(o).Concat(ModuleInitializers(o)).Where(i => i != node));
-                            if (pointer)
-                            {
-                                made.AddRange(targets.Select(t => new Ref(t, null)));
-                                (pushed, from) = (Pushed.Pointer, targets.Select(t => new Ref(t, null)).ToList());
-                            }
-                            else if (value == OpCodes.Newobj.Value && pushed == Pushed.Pointer)
-                            {
-                                // A delegate made from the pointer just loaded.
-                                pushed = Pushed.Delegate;
-                            }
-                            else
-                            {
-                                foreach (var target in targets)
-                                {
-                                    if (!_callSites.TryGetValue(target, out var sites)) _callSites[target] = sites = new List<(int, int)>();
-                                    sites.Add((node, made.Count));
-                                }
-
-                                // A delegate a call returns (a factory's): what the call reaches.
-                                (pushed, from) = (Pushed.Call, targets.Select(t => new Ref(t, null)).ToList());
-                            }
-
+                            // Round 15: an access to a type by name (a static call, newobj, a method pointer naming it) runs its
+                            // static constructor and its module's initializer; what the call RUNS gets them from Running().
+                            if (MethodOwner(md, m, handle) is { } owner) _nodes[node].Calls.AddRange(TypeInitializers(owner).Concat(ModuleInitializers(owner)).Where(i => i != node));
                             Call(flow, node, value, ShapeOf(md, m, handle), targets);
                             break;
                         }
@@ -682,89 +666,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             // Round 16: the runtime runs a module's initializer before any access to its types, methods or
                             // data, a field included.
                             _nodes[node].Calls.AddRange(ModuleInitializers(FieldOwner(md, handle)).Where(i => i != node));
-                            var delegateField = DelegateField(md, handle);
-                            // A delegate field's value is one the reading follows (its field node, a generic parameter's
-                            // field `T` included: the stated limit of FieldNode), and a field whose type can't hold a delegate
-                            // holds none; anything else (an object field) is unknown.
-                            stacked = false;
+                            var field = DelegateField(md, handle);
+                            // A delegate field's value is what the field can hold (its field node: what the code read stores
+                            // there, a generic parameter's field `T` included: the stated limit of FieldNode); a field whose
+                            // type can't hold a delegate holds none; anything else (an object field) is unknown.
+                            Value Loaded() => field != null ? Value.FieldOf(field) : !CapableField(md, m, handle) ? Value.None : Value.Unknown;
                             if (value == OpCodes.Ldfld.Value || value == OpCodes.Ldsfld.Value)
                             {
                                 if (value == OpCodes.Ldfld.Value) flow.Pop();
-                                flow.Push(delegateField != null || !CapableField(md, m, handle) ? Value.Made : Value.Unknown);
-                                stacked = true;
+                                flow.Push(Loaded());
+                                if (field != null) _loads.Add((node, field));
                             }
-
-                            if (delegateField is not { } field)
+                            else if (value == OpCodes.Stfld.Value || value == OpCodes.Stsfld.Value)
                             {
-                                pushed = Pushed.Other;
-                                break;
-                            }
-
-                            if (value == OpCodes.Stfld.Value || value == OpCodes.Stsfld.Value)
-                            {
-                                Store(field, node, pushed, from, made);
-                                // A dup before the store leaves the same delegate for the next one.
-                            }
-                            else if (value == OpCodes.Ldflda.Value || value == OpCodes.Ldsflda.Value)
-                            {
-                                // Its address handed on (an event's add and remove: Interlocked.CompareExchange of the
-                                // parameter combined in): it can be stored with what the method was handed.
-                                Store(field, node, Pushed.Argument, new List<Ref>(), made);
-                                _loads.Add((node, field));
-                                pushed = Pushed.Other;
+                                // The stored value's provenance (resolved when the body is read), whatever it is.
+                                var stored = flow.Pop();
+                                if (value == OpCodes.Stfld.Value) flow.Pop();
+                                flow.Escapes.Add(stored);
+                                if (field != null) flow.Stores.Add((field, stored));
                             }
                             else
                             {
-                                _loads.Add((node, field));
-                                made.Add(new Ref(-1, field));
-                                (pushed, from) = (Pushed.Field, new List<Ref> { new(-1, field) });
+                                // An address (ldflda, ldsflda): a delegate field's is followed (what is written through it is
+                                // stored there; what is read is its value); anything else, unknown.
+                                if (value == OpCodes.Ldflda.Value) flow.Pop();
+                                flow.Push(field != null ? flow.Address(field) : Value.Unknown);
+                                if (field != null) _loads.Add((node, field));
                             }
 
                             break;
                         }
                         case OperandType.InlineNone:
-                            if (value is 0x02 or 0x03 or 0x04 or 0x05) pushed = Pushed.Argument;
-                            else if (value != OpCodes.Dup.Value) pushed = Pushed.Other;
                             if (value is >= 0x02 and <= 0x05) flow.Push(Value.Arg(value - 0x02));
                             else if (value is >= 0x06 and <= 0x09) flow.Push(Value.Local(value - 0x06));
                             else if (value is >= 0x0a and <= 0x0d) flow.Store(flow.Locals, value - 0x0a, flow.Pop());
-                            else if (value == OpCodes.Ldnull.Value) flow.Push(Value.Made);
+                            else if (value == OpCodes.Ldnull.Value) flow.Push(Value.None);
                             else if (value == OpCodes.Dup.Value) flow.Push(flow.Peek());
                             else if (value == OpCodes.Ret.Value)
                             {
                                 if (!self.Void)
                                 {
                                     var returned = flow.Pop();
+                                    flow.Escapes.Add(returned);
                                     if (self.CapableReturn) flow.Returns.Add(returned);
                                 }
                             }
-                            else if (value == OpCodes.Ldelem_Ref.Value)
-                            {
-                                flow.Pop();
-                                flow.Push(Value.Element(flow.Pop()));
-                            }
-                            else if (value == OpCodes.Stelem_Ref.Value)
-                            {
-                                var element = flow.Pop();
-                                flow.Pop();
-                                flow.Pop();
-                                flow.Elements.Add(element);
-                            }
+                            else if (value == OpCodes.Ldelem_Ref.Value) flow.LoadElement();
+                            else if (value == OpCodes.Stelem_Ref.Value) flow.StoreElement();
+                            else if (value == OpCodes.Ldind_Ref.Value) flow.Push(flow.Pop().Through());
+                            else if (value == OpCodes.Stind_Ref.Value) flow.StoreIndirect();
                             else stacked = false;
                             break;
                         case OperandType.ShortInlineVar:
                         case OperandType.InlineVar:
                         {
                             var index = code.OperandType == OperandType.ShortInlineVar ? il.ReadByte() : il.ReadUInt16();
-                            pushed = value == OpCodes.Ldarg_S.Value || value == OpCodes.Ldarg.Value ? Pushed.Argument : Pushed.Other;
                             if (value == OpCodes.Ldarg_S.Value || value == OpCodes.Ldarg.Value) flow.Push(Value.Arg(index));
                             else if (value == OpCodes.Ldloc_S.Value || value == OpCodes.Ldloc.Value) flow.Push(Value.Local(index));
                             else if (value == OpCodes.Starg_S.Value || value == OpCodes.Starg.Value) flow.Store(flow.Args, index, flow.Pop());
                             else if (value == OpCodes.Stloc_S.Value || value == OpCodes.Stloc.Value) flow.Store(flow.Locals, index, flow.Pop());
                             else
                             {
-                                // An address taken (ldarga, ldloca): anything can be written through it.
-                                flow.Store(value == OpCodes.Ldarga_S.Value || value == OpCodes.Ldarga.Value ? flow.Args : flow.Locals, index, Value.Unknown);
+                                // An address taken (ldarga, ldloca): anything can be written through it, and what it holds
+                                // (an array) escapes.
+                                var argument = value == OpCodes.Ldarga_S.Value || value == OpCodes.Ldarga.Value;
+                                flow.Escapes.Add(argument ? Value.Arg(index) : Value.Local(index));
+                                flow.Store(argument ? flow.Args : flow.Locals, index, Value.Unknown);
                                 flow.Push(Value.Unknown);
                             }
 
@@ -775,27 +742,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             // Round 16: a type token is an access to the type's module (its initializer runs first).
                             var handle = MetadataTokens.EntityHandle(il.ReadInt32());
                             _nodes[node].Calls.AddRange(ModuleInitializers(ParentName(md, handle)).Where(i => i != node));
-                            // castclass, isinst: the same delegate.
-                            if (value != OpCodes.Castclass.Value && value != OpCodes.Isinst.Value) pushed = Pushed.Other;
+                            // castclass, isinst, box, unbox.any: the same value.
                             if (value == OpCodes.Castclass.Value || value == OpCodes.Isinst.Value || value == OpCodes.Unbox_Any.Value || value == OpCodes.Box.Value) flow.Push(flow.Pop());
                             else if (value == OpCodes.Newarr.Value)
                             {
                                 flow.Pop();
-                                flow.Push(Value.Array);
+                                flow.Push(Value.Array(start));
                             }
-                            else if (value == OpCodes.Ldelem.Value)
+                            else if (value == OpCodes.Ldelem.Value) flow.LoadElement();
+                            else if (value == OpCodes.Stelem.Value) flow.StoreElement();
+                            else if (value == OpCodes.Ldobj.Value) flow.Push(flow.Pop().Through());
+                            else if (value == OpCodes.Stobj.Value) flow.StoreIndirect();
+                            else
                             {
-                                flow.Pop();
-                                flow.Push(Value.Element(flow.Pop()));
+                                if (value == OpCodes.Constrained.Value) constrained = true;
+                                stacked = false;
                             }
-                            else if (value == OpCodes.Stelem.Value)
-                            {
-                                var element = flow.Pop();
-                                flow.Pop();
-                                flow.Pop();
-                                flow.Elements.Add(element);
-                            }
-                            else stacked = false;
+
                             break;
                         }
                         case OperandType.InlineTok:
@@ -810,7 +773,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                                 _ => ParentName(md, handle),
                             };
                             _nodes[node].Calls.AddRange(ModuleInitializers(owner).Where(i => i != node));
-                            pushed = Pushed.Other;
                             stacked = false;
                             break;
                         }
@@ -818,7 +780,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         case OperandType.InlineBrTarget:
                         {
                             var delta = code.OperandType == OperandType.ShortInlineBrTarget ? il.ReadSByte() : il.ReadInt32();
-                            pushed = Pushed.Other;
                             // leave empties the stack; any other branch pops its operands first.
                             if (value == OpCodes.Leave.Value || value == OpCodes.Leave_S.Value) flow.Clear();
                             else flow.Generic(code);
@@ -826,12 +787,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             break;
                         }
                         case OperandType.ShortInlineI:
-                            pushed = Pushed.Other;
                             il.Offset += 1;
                             stacked = false;
                             break;
                         case OperandType.InlineI8 or OperandType.InlineR:
-                            pushed = Pushed.Other;
                             il.Offset += 8;
                             stacked = false;
                             break;
@@ -853,12 +812,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             if (signature is { } sig)
                             {
                                 flow.Pop();
-                                flow.Pop(sig.ParameterTypes.Length + (sig.Header.IsInstance && !sig.Header.HasExplicitThis ? 1 : 0));
+                                // The arguments go to code the reading can't see: an array among them escapes.
+                                for (var i = sig.ParameterTypes.Length + (sig.Header.IsInstance && !sig.Header.HasExplicitThis ? 1 : 0); i > 0; i--) flow.Escapes.Add(flow.Pop());
                                 if (sig.ReturnType != "System.Void") flow.Push(Value.Unknown);
                             }
                             else flow.Break();
 
-                            pushed = Pushed.Other;
                             break;
                         }
                         case OperandType.InlineSwitch:
@@ -869,14 +828,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             for (var i = 0; i < count; i++) deltas[i] = il.ReadInt32();
                             flow.Pop();
                             foreach (var delta in deltas) flow.Branch(start, il.Offset + delta);
-                            pushed = Pushed.Other;
                             break;
                         }
                         default:
-                            pushed = Pushed.Other;
                             il.Offset += 4;
                             // A string is no delegate.
-                            if (value == OpCodes.Ldstr.Value) flow.Push(Value.Made);
+                            if (value == OpCodes.Ldstr.Value) flow.Push(Value.None);
                             else stacked = false;
                             break;
                     }
@@ -886,14 +843,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     if (code.FlowControl is FlowControl.Branch or FlowControl.Return or FlowControl.Throw || value == OpCodes.Jmp.Value) flow.End();
                 }
 
-                if (made.Count > 0) _made[node] = made;
                 Settle(flow, node, self);
             }
 
             // Round 17: a call's stack effect, and what it does with delegates. A delegate's Invoke (BeginInvoke,
             // DynamicInvoke) runs its receiver; a call leaving the code read may run the delegates it is handed (Task.Run,
             // a framework callback); a call into the code read hands its arguments to the callee's parameters, and its
-            // result is what the callee returns (a site, recorded where a delegate can go in or come out).
+            // result is what the callee returns (a site, recorded where a delegate can go in or come out). Round 18: a method
+            // pointer is the methods the resolver returned for it (a delegate made from it, the same); every argument escapes
+            // (an array handed to a call can be written there), except a delegate field's address handed to code outside
+            // the code read (Interlocked.CompareExchange, Volatile.Write: an event's add and remove), which stores the other
+            // arguments in the field and returns its value or theirs.
             private void Call(Flow flow, int node, short value, Shape shape, List<int> targets)
             {
                 if (value == OpCodes.Ldftn.Value || value == OpCodes.Ldvirtftn.Value)
@@ -901,7 +861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     // A pointer to a delegate's Invoke (`new Action(callback.Invoke)`) runs that delegate when invoked.
                     var receiver = value == OpCodes.Ldvirtftn.Value ? flow.Pop() : shape.Invoke != null ? flow.Peek() : null;
                     if (shape.Invoke != null && receiver != null) flow.Invokes.Add((receiver, shape.Invoke));
-                    flow.Push(Value.Pointer);
+                    flow.Push(Value.Pointer(targets));
                     return;
                 }
 
@@ -926,7 +886,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     // The new object is the constructor's `this` (argument 0), not popped.
                     args = new Value[shape.Params + 1];
                     for (var i = shape.Params; i >= 1; i--) args[i] = flow.Pop();
-                    args[0] = Value.Made;
+                    args[0] = Value.None;
                 }
                 else
                 {
@@ -936,17 +896,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 // Leaving the code read: nothing read, or only members without IL (extern, runtime-implemented).
                 var outside = targets.All(t => _nodes[t].Type >= 0 && !_nodes[t].HasBody && !_nodes[t].Abstract);
+                var addresses = outside ? args.Where(a => a.Kind == ValueKind.Address).Select(a => a.Name!).ToList() : null;
+                foreach (var a in args)
+                    if (addresses is not { Count: > 0 } || a.Kind != ValueKind.Address) flow.Escapes.Add(a);
+                foreach (var field in addresses ?? Enumerable.Empty<string>())
+                    foreach (var a in args)
+                        if (a.Kind != ValueKind.Address) flow.Stores.Add((field, a));
                 if (shape.Invoke != null && args.Length > 0) flow.Invokes.Add((args[0], shape.Invoke));
                 else if (outside && shape.Delegates != null && !ReviewedRead(shape.Parent, shape.Name))
                     for (var i = 0; i < args.Length && i < shape.Delegates.Length; i++)
                         if (shape.Delegates[i] is { } type) flow.Invokes.Add((args[i], type));
                 var site = Record(flow, node, shape, targets, args);
                 if (value == OpCodes.Newobj.Value)
-                    // A delegate made from a method pointer is one the reading made (its edge is the pointer's); a new
-                    // object of any other type isn't a delegate.
-                    flow.Push(!shape.DelegateCtor || args[^1].Kind == ValueKind.Pointer ? Value.Made : Value.Unknown);
+                    // A delegate made from a method pointer is the pointer's methods; a new object of any other type isn't a
+                    // delegate.
+                    flow.Push(!shape.DelegateCtor ? Value.None : args[^1].Kind == ValueKind.Pointer ? args[^1] : Value.Unknown);
                 else if (!shape.Void)
-                    flow.Push(shape.Combine ? Value.Union(args[0], args[^1]) : !shape.CapableReturn ? Value.Made : site >= 0 ? Value.Result(site) : Value.Unknown);
+                    flow.Push(shape.Combine ? Value.Union(args[0], args[^1])
+                        : !shape.CapableReturn ? Value.None
+                        : addresses is { Count: > 0 } ? args.Select(a => a.Kind == ValueKind.Address ? a.Through() : a).Aggregate(Value.Union)
+                        : site >= 0 ? Value.Result(site) : Value.Unknown);
             }
 
             private int Record(Flow flow, int node, Shape shape, List<int> targets, Value[] args)
@@ -968,14 +937,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // Round 17: the body read, what it recorded becomes provenance (locals, arguments written to and array elements
-            // resolved within the body). A body the stack couldn't follow records only unknowns (fail closed).
+            // resolved within the body). A body the stack couldn't follow records only unknowns (fail closed). Round 18:
+            // its delegate-field stores too, each with the stored value's provenance, and an unknown store for every
+            // delegate field whose address escaped to code that may write anything through it.
             private void Settle(Flow flow, int node, Shape self)
             {
-                if (flow.Invokes.Count == 0 && flow.Sites.Count == 0 && !self.CapableReturn) return;
+                if (flow.Invokes.Count == 0 && flow.Sites.Count == 0 && flow.Stores.Count == 0 && flow.Addressed.Count == 0 && !self.CapableReturn) return;
                 var within = flow.Broken ? null : flow.Within();
                 Prov Of(Value v) => within == null ? Prov.Untracked : within.Of(v);
                 foreach (var (receiver, type) in flow.Invokes) _invokes.Add((node, Of(receiver), type));
                 foreach (var (site, given) in flow.Sites) _sites[site].Args = given.Select(g => g == null ? null : Of(g)).ToArray();
+                foreach (var (field, stored) in flow.Stores) Store(field, node, Of(stored));
+                foreach (var (address, stored) in flow.Indirect)
+                    foreach (var field in Of(address).Addresses ?? Enumerable.Empty<string>())
+                        Store(field, node, Of(stored));
+                foreach (var field in within?.EscapedAddresses ?? flow.Addressed)
+                    Store(field, node, Prov.Untracked);
                 if (self.CapableReturn)
                 {
                     var returns = new Prov();
@@ -985,32 +962,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 }
             }
 
-            // A store of a delegate field: from the pointer or field just loaded, from the method's parameter, or (anything
-            // else) from whatever the body made so far.
-            private void Store(string field, int node, Pushed pushed, List<Ref> from, List<Ref> made)
+            private void Store(string field, int node, Prov stored)
             {
-                if (!_stores.TryGetValue(field, out var sources)) _stores[field] = sources = new List<Source>();
-                sources.Add(pushed switch
-                {
-                    Pushed.Pointer or Pushed.Delegate or Pushed.Field or Pushed.Call when from.Count > 0 => new Source(node, from.ToList(), false),
-                    Pushed.Argument => new Source(node, new List<Ref>(), true),
-                    _ => new Source(node, made.ToList(), made.Count == 0),
-                });
+                if (!_stores.TryGetValue(field, out var stores)) _stores[field] = stores = new List<(int, Prov)>();
+                stores.Add((node, stored));
             }
 
-            // The nodes a call (or a method pointer) goes to: the method, and with virtual dispatch every implementation or
-            // override; a Mutates member's terminal; nothing for a reviewed read or a call outside the code read (the
-            // framework's); an unresolved node for a Jellyfin member nothing read declares or implements.
-            private List<int> Targets(MetadataReader md, int m, EntityHandle handle, bool virtualCall)
+            // Round 18: THE target resolver. Every transfer the IL loop reads asks it which methods may run: a call, callvirt,
+            // newobj, jmp, a method pointer (ldftn, ldvirtftn: what a delegate made from it runs), with or without a
+            // `constrained.` prefix; a delegate's own Invoke is judged by the delegate's provenance, whose methods were
+            // resolved here where the pointer was made. The nodes: the method, and with dispatch every implementation or
+            // override (an override of a code-read slot, an implementation of an interface member, static ones included,
+            // and the fills of a slot .NET declares, see FrameworkSlot); a Mutates member's terminal; nothing for a reviewed
+            // read or a call outside the code read (the framework's); an unresolved node for a Jellyfin member nothing read
+            // declares or implements. Dispatch: callvirt, ldvirtftn, any constrained call or pointer (C# 11 calls a static
+            // abstract member as `constrained. T call I::M`, an interface member on a type parameter as `constrained. T
+            // callvirt`), and any call or pointer whose target is an interface member the code read declares (Follow).
+            // Running what it returns is the method nodes' own edge set (Running): body, type initializer, module initializer.
+            private List<int> Targets(MetadataReader md, int m, EntityHandle handle, bool dispatch)
             {
                 switch (handle.Kind)
                 {
                     case HandleKind.MethodSpecification:
-                        return Targets(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method, virtualCall);
+                        return Targets(md, m, md.GetMethodSpecification((MethodSpecificationHandle)handle).Method, dispatch);
                     case HandleKind.MethodDefinition:
                     {
                         var target = _nodeOf[(m, MetadataTokens.GetToken(handle))];
-                        return Follow(_types[_nodes[target].Type].Name, _nodes[target].Method, _nodes[target].Params, new List<int> { target }, virtualCall);
+                        return Follow(_types[_nodes[target].Type].Name, _nodes[target].Method, _nodes[target].Params, new List<int> { target }, dispatch);
                     }
                     case HandleKind.MemberReference:
                     {
@@ -1023,17 +1001,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var found = Resolve(parent, called, count);
                         if (found.Count == 0 && !Mutates(parent, called) && !ReviewedRead(parent, called))
                         {
-                            // Round 17: a virtual call to a slot declared outside the code read (IDisposable.Dispose,
-                            // object.ToString, a framework interface or base class) still runs the implementations and
-                            // overrides the code read has: one shared slot node per declaration reaches them.
-                            if (virtualCall && FrameworkSlot(parent, called, count) is { } slotNode) return new List<int> { slotNode };
+                            // Round 17: a dispatched call to a slot declared outside the code read (a framework interface or
+                            // base class) still runs the implementations and overrides the code read has: one shared slot
+                            // node per declaration reaches them. Round 18: for every dispatching transfer (a constrained call
+                            // included), and a static slot (a static abstract member .NET declares) by its static fills.
+                            if (dispatch && FrameworkSlot(parent, called, count, !md.GetBlobReader(member.Signature).ReadSignatureHeader().IsInstance) is { } slotNode) return new List<int> { slotNode };
                             if (!JellyfinType(parent)) return found;
                             var signature = member.DecodeMethodSignature(Names.Instance, null);
                             var contract = UserContract(MethodTypes(md, signature), null);
                             return new List<int> { Unresolved(Simple(parent) + "." + called + " (not in the code read)", contract || HandsBackCallback(signature), callback: !contract) };
                         }
 
-                        return Follow(parent, called, count, found, virtualCall);
+                        return Follow(parent, called, count, found, dispatch);
                     }
                     default:
                         return new List<int>();
@@ -1047,14 +1026,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // any call or method pointer to an INTERFACE member, static ones included (C# 11 calls a static abstract or
             // static virtual member as `constrained. T call I::M`). A plain call to a class method runs that method only
             // (`base.M()`).
-            private List<int> Follow(string type, string name, int count, List<int> found, bool virtualCall)
+            private List<int> Follow(string type, string name, int count, List<int> found, bool dispatch)
             {
                 if (Mutates(type, name)) return new List<int> { Terminal(Simple(type) + "." + name) };
                 if (PersonScoped.ContainsKey(Simple(type) + "." + name)) return new List<int> { Terminal(Simple(type) + "." + name, person: true) };
                 if (ReviewedRead(type, name)) return new List<int>();
                 var targets = new List<int>(found);
                 foreach (var target in found.ToList())
-                    if (virtualCall || (_nodes[target].Type >= 0 && _types[_nodes[target].Type].Interface))
+                    if (dispatch || (_nodes[target].Type >= 0 && _types[_nodes[target].Type].Interface))
                         targets.AddRange(Dispatch(target));
                 return targets;
             }
@@ -1247,17 +1226,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return _nodes.Count - 1;
             }
 
-            // Each delegate field loaded: a node standing for what it can hold. Each store's source: the pointer or field it
-            // was made from, what the storing body had made, or, stored from the method's parameter (a constructor's, a
-            // property setter's, an event's add, a closure or state machine capturing it), what each caller had made before
-            // the call (followed up while a caller passes its own parameter on). Unresolved: a field nothing stores, or a
-            // parameter no caller in the code read hands anything (a delegate from outside it: dependency injection).
+            // Each delegate field loaded: a node standing for what it can hold, then every delegate invocation (Invocations).
             private void Delegates()
             {
                 foreach (var (node, field) in _loads) _nodes[node].Calls.Add(FieldNode(field, 0));
                 Invocations();
             }
 
+            // Round 18: what a delegate field can hold is what its stores put there, each by the stored value's provenance
+            // (Sources: the same model as an invocation's): the methods a delegate made from a pointer runs, the delegate
+            // fields it was loaded from, a parameter's value at each call site (in that caller, argument by argument), what
+            // a call returns. Where the provenance is lost (handed in from outside the code read, an unknown, a container
+            // that escaped) the field holds an unresolved callback: the methods that read it run it, not the one that stored
+            // it. Unresolved too: a field nothing in the code read stores.
             private int FieldNode(string field, int depth)
             {
                 if (_fieldNodes.TryGetValue(field, out var existing)) return existing;
@@ -1265,7 +1246,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _fieldNodes[field] = id;
                 var (owner, name) = (field.Split("::")[0], field.Split("::")[1]);
                 _nodes.Add(new Node { Name = "delegate " + Simple(owner) + "." + name });
-                var sources = _stores.GetValueOrDefault(field);
+                var stores = _stores.GetValueOrDefault(field);
                 // Round 11: a delegate whose target stays unresolved counts whatever its type (Q-4AF11-1): a Func<Task> carries
                 // no user, but the closure behind it can hold the user manager and a user id. One whose type can carry a
                 // user stays a call for everyone (round 10).
@@ -1273,43 +1254,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 var callback = !UserContract(new[] { fieldType }, null);
                 // Round 17: a field typed by a generic parameter (`T`) holds a delegate only in some constructed uses
                 // (ValueTuple items, anonymous types and event arguments are `T` fields too): it is followed to the delegates
-                // the code read is seen storing in it, and is not counted as "handed in" when its values come from outside
-                // (a stated limit; Jellyfin's user events cover it).
+                // the code read is seen storing in it, and what is lost on the way (stored from outside the code read, or
+                // a value of another type) isn't counted (a stated limit; Jellyfin's user events cover it).
                 var generic = fieldType.StartsWith("!", StringComparison.Ordinal);
-                if (!generic && (sources == null || sources.Count == 0)) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
-                foreach (var source in sources ?? new List<Source>())
+                if (!generic && (stores == null || stores.Count == 0)) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
+                foreach (var (storer, stored) in stores ?? new List<(int, Prov)>())
                 {
-                    var refs = source.Parameter ? HandedIn(source.Node, depth) : source.Made;
-                    if (refs == null && !generic) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (handed in from outside the code read)", callback: callback));
-                    foreach (var r in refs ?? new List<Ref>())
-                        _nodes[id].Calls.Add(r.Field is { } f ? (depth > MaxDepth ? Unresolved(_nodes[id].Name + " (too deep)") : FieldNode(f, depth + 1)) : r.Node);
+                    var sources = Sources(stored, storer);
+                    foreach (var n in sources.Nodes ?? Enumerable.Empty<int>()) _nodes[id].Calls.Add(n);
+                    foreach (var f in sources.Fields ?? Enumerable.Empty<string>())
+                        if (f != field) _nodes[id].Calls.Add(depth > MaxDepth ? Unresolved(_nodes[id].Name + " (too deep)") : FieldNode(f, depth + 1));
+                    if (!generic)
+                        foreach (var (_, where) in sources.Lost ?? Enumerable.Empty<(int, string)>())
+                            _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (" + where + ")", callback: callback));
                 }
 
                 return id;
-            }
-
-            // Round 17 (4a-behaviour-r17-2): a cycle contributes only what some path out of it resolves. Callers() gives an
-            // empty list only when every path met a method already on it: a group of methods no code outside it calls, so
-            // what it was handed came from outside the code read (null: handed in).
-            private List<Ref>? HandedIn(int node, int depth) => Callers(node, depth, new HashSet<int>()) is { Count: > 0 } refs ? refs : null;
-
-            // What the callers of a method made before calling it (a parameter's possible delegates); null when a call chain
-            // leaves the code read (no caller).
-            private List<Ref>? Callers(int node, int depth, HashSet<int> seen)
-            {
-                // Round 16: a cycle adds nothing; running past the safety bound fails closed (null: treated as handed in).
-                if (!seen.Add(node)) return new List<Ref>();
-                if (depth > MaxDepth) return null;
-                if (!_callSites.TryGetValue(node, out var sites) || sites.Count == 0) return null;
-                var refs = new List<Ref>();
-                foreach (var (caller, count) in sites)
-                {
-                    if (count > 0 && _made.TryGetValue(caller, out var made)) refs.AddRange(made.Take(count));
-                    else if (Callers(caller, depth + 1, seen) is { } further) refs.AddRange(further);
-                    else return null;
-                }
-
-                return refs;
             }
 
             // From each Mutates member (and each unresolved call) back to every caller, until nothing changes.
@@ -1438,17 +1398,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return false;
             }
 
-            // ------------------------------------------------------------------ delegate invocation (round 17)
+            // ------------------------------------------------------------------ delegate provenance (rounds 17–18)
 
-            // What a value on the stack (or in a local, an argument written to, an array's element) can be, as far as running
-            // a delegate goes: unknown; one the reading follows already (a delegate made in the body or loaded from a delegate
-            // field: its edge exists; null; anything that isn't a delegate); a method pointer; the method's own argument; a
-            // local; what a call returned (its site); a fresh array or one of its elements; or either of two.
-            private enum ValueKind { Unknown, Made, Pointer, Arg, Local, Result, Array, Element, Union }
+            // What a value on the stack (or in a local, an argument written to, an array's element) can be, as far as
+            // delegates go: unknown; none (null, a number, a string, anything whose type can't hold a delegate); a method
+            // pointer or a delegate made from one (the methods the target resolver returned); a delegate field's value; a
+            // delegate field's address; the method's own argument; a local; what a call returned (its site); a fresh array
+            // (its allocation) or one of its elements; or either of two.
+            private enum ValueKind { Unknown, None, Pointer, Field, Address, Arg, Local, Result, Array, Element, Union }
 
             private sealed class Value
             {
-                public static readonly Value Unknown = new(ValueKind.Unknown, 0), Made = new(ValueKind.Made, 0), Pointer = new(ValueKind.Pointer, 0), Array = new(ValueKind.Array, 0);
+                public static readonly Value Unknown = new(ValueKind.Unknown, 0), None = new(ValueKind.None, 0);
                 private static readonly Value[] Args = Enumerable.Range(0, 32).Select(i => new Value(ValueKind.Arg, i)).ToArray();
                 private static readonly Value[] Locals = Enumerable.Range(0, 64).Select(i => new Value(ValueKind.Local, i)).ToArray();
 
@@ -1462,40 +1423,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 public Value? B { get; private init; }
 
+                // A pointer's methods.
+                public IReadOnlyList<int>? Nodes { get; private init; }
+
+                // A field's or an address's delegate field ("Type::Name").
+                public string? Name { get; private init; }
+
                 public static Value Arg(int i) => i < Args.Length ? Args[i] : new Value(ValueKind.Arg, i);
 
                 public static Value Local(int i) => i < Locals.Length ? Locals[i] : new Value(ValueKind.Local, i);
 
                 public static Value Result(int site) => new(ValueKind.Result, site);
 
+                public static Value Pointer(IReadOnlyList<int> nodes) => new(ValueKind.Pointer, 0) { Nodes = nodes };
+
+                public static Value FieldOf(string field) => new(ValueKind.Field, 0) { Name = field };
+
+                public static Value AddressOf(string field) => new(ValueKind.Address, 0) { Name = field };
+
+                public static Value Array(int allocation) => new(ValueKind.Array, allocation);
+
                 public static Value Element(Value array) => new(ValueKind.Element, 0) { A = array };
 
-                public static Value Union(Value a, Value b)
-                    => ReferenceEquals(a, b) ? a
-                        : a.Kind == ValueKind.Unknown || b.Kind == ValueKind.Unknown ? Unknown
-                        : new Value(ValueKind.Union, 0) { A = a, B = b };
+                // Both kept (an unknown included): an array among them can still escape.
+                public static Value Union(Value a, Value b) => ReferenceEquals(a, b) ? a : new Value(ValueKind.Union, 0) { A = a, B = b };
+
+                // What is read through an address (ldind.ref, ldobj): a delegate field's address gives its value; any other,
+                // unknown.
+                public Value Through() => Kind == ValueKind.Address ? FieldOf(Name!) : Unknown;
             }
 
-            // Provenance resolved within a body: unknown, made (followed already), a fresh array, the arguments it came from,
-            // the call sites whose results it is.
+            // Provenance resolved within a body: unknown, none, the methods (pointers), delegate fields, fresh arrays and
+            // delegate-field addresses it can be, the arguments it came from, the call sites whose results it is.
             private sealed class Prov
             {
                 public static readonly Prov Untracked = new() { Unknown = true };
 
                 public bool Unknown { get; set; }
 
-                public bool Made { get; set; }
+                public bool None { get; set; }
 
-                public bool Fresh { get; set; }
+                public HashSet<int>? Methods { get; private set; }
+
+                public HashSet<string>? Fields { get; private set; }
+
+                public HashSet<int>? Arrays { get; private set; }
+
+                public HashSet<string>? Addresses { get; private set; }
 
                 public HashSet<int>? Args { get; private set; }
 
                 public HashSet<int>? Results { get; private set; }
 
-                public int Size => (Unknown ? 1 : 0) + (Made ? 1 : 0) + (Fresh ? 1 : 0) + (Args?.Count ?? 0) + (Results?.Count ?? 0);
+                public int Size => (Unknown ? 1 : 0) + (None ? 1 : 0) + (Methods?.Count ?? 0) + (Fields?.Count ?? 0) + (Arrays?.Count ?? 0) + (Addresses?.Count ?? 0) + (Args?.Count ?? 0) + (Results?.Count ?? 0);
 
-                // Only fresh arrays (or nothing yet): an element of it is one the body stored.
-                public bool OnlyFresh => !Unknown && !Made && Args == null && Results == null;
+                // Something other than the body's own fresh arrays (an array of that is one the reading can't see into).
+                public bool Foreign => Unknown || None || Methods != null || Fields != null || Addresses != null || Args != null || Results != null;
+
+                public void AddMethods(IEnumerable<int> nodes) => (Methods ??= new HashSet<int>()).UnionWith(nodes);
+
+                public void AddField(string field) => (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
+
+                public void AddArray(int allocation) => (Arrays ??= new HashSet<int>()).Add(allocation);
+
+                public void AddAddress(string field) => (Addresses ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
 
                 public void AddArg(int i) => (Args ??= new HashSet<int>()).Add(i);
 
@@ -1505,8 +1496,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 {
                     if (ReferenceEquals(other, this)) return;
                     Unknown |= other.Unknown;
-                    Made |= other.Made;
-                    Fresh |= other.Fresh;
+                    None |= other.None;
+                    if (other.Methods != null) AddMethods(other.Methods);
+                    if (other.Fields != null) foreach (var f in other.Fields) AddField(f);
+                    if (other.Arrays != null) foreach (var a in other.Arrays) AddArray(a);
+                    if (other.Addresses != null) foreach (var a in other.Addresses) AddAddress(a);
                     if (other.Args != null) foreach (var a in other.Args) AddArg(a);
                     if (other.Results != null) foreach (var r in other.Results) AddResult(r);
                 }
@@ -1639,9 +1633,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // exception), a finally or fault with none; after an unconditional transfer the stack is the next instruction's
             // snapshot, or empty (ECMA-335 III.1.7.5). Anything inconsistent (a pop of an empty stack, heights that disagree,
             // values carried round a backward branch, a call the stack can't size) breaks the body: everything it records is
-            // then unknown (fail closed).
+            // then unknown (fail closed). Round 18: it records the delegate-field stores, the array element stores (by
+            // array), stores through addresses, and every value that ESCAPES (handed to a call, stored in a field or another
+            // array, returned, its address taken): an array that escapes may be written where the reading doesn't follow, so
+            // its elements are unknown.
             private sealed class Flow
             {
+                // The opcodes that pop a value without letting it escape (a test, a comparison, an array access or length).
+                private static readonly HashSet<short> Inert = new HashSet<short>
+                {
+                    OpCodes.Pop.Value, OpCodes.Ldlen.Value, OpCodes.Ceq.Value, OpCodes.Cgt.Value, OpCodes.Cgt_Un.Value, OpCodes.Clt.Value, OpCodes.Clt_Un.Value,
+                }.Concat(Enumerable.Range(OpCodes.Ldelem_I1.Value, OpCodes.Stelem_Ref.Value - OpCodes.Ldelem_I1.Value + 1).Select(v => (short)v)).ToHashSet();
+
                 // The stack height each instruction was read with, plus one (0: not read yet), by offset.
                 private readonly int[] _heights;
                 private Dictionary<int, List<Value>>? _snapshots;
@@ -1665,7 +1668,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 public Dictionary<int, List<Value>> Args { get; } = new();
 
-                public List<Value> Elements { get; } = new();
+                public List<(Value Array, Value Element)> Elements { get; } = new();
+
+                public List<(string Field, Value Value)> Stores { get; } = new();
+
+                public List<(Value Address, Value Value)> Indirect { get; } = new();
+
+                public List<Value> Escapes { get; } = new();
+
+                // The delegate fields whose address the body took.
+                public HashSet<string> Addressed { get; } = new(StringComparer.Ordinal);
 
                 public List<(Value Receiver, string Type)> Invokes { get; } = new();
 
@@ -1696,6 +1708,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 public void Push(Value value) => _stack.Add(value);
 
+                public Value Address(string field)
+                {
+                    Addressed.Add(field);
+                    return Value.AddressOf(field);
+                }
+
                 public Value Peek()
                 {
                     if (_stack.Count > 0) return _stack[^1];
@@ -1710,16 +1728,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     return top;
                 }
 
-                public void Pop(int count)
-                {
-                    if (count < 0) Broken = true;
-                    for (var i = 0; i < count; i++) Pop();
-                }
-
                 public void Store(Dictionary<int, List<Value>> slots, int index, Value value)
                 {
                     if (!slots.TryGetValue(index, out var stored)) slots[index] = stored = new List<Value>();
                     stored.Add(value);
+                }
+
+                // ldelem: the index, then the array.
+                public void LoadElement()
+                {
+                    Pop();
+                    Push(Value.Element(Pop()));
+                }
+
+                // stelem: the value, the index, the array.
+                public void StoreElement()
+                {
+                    var element = Pop();
+                    Pop();
+                    Elements.Add((Pop(), element));
+                }
+
+                // stind.ref, stobj: the value, then the address.
+                public void StoreIndirect()
+                {
+                    var stored = Pop();
+                    Indirect.Add((Pop(), stored));
+                    Escapes.Add(stored);
                 }
 
                 // A branch: a forward target takes a snapshot (merged with others); a backward one must meet the height it
@@ -1738,8 +1773,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     else for (var i = 0; i < snapshot.Count; i++) snapshot[i] = Value.Union(snapshot[i], _stack[i]);
                 }
 
-                // An instruction with no effect on delegates: its pops, then its pushes (a number is no delegate; anything
-                // else is unknown).
+                // An instruction with no effect on delegates: its pops (which escape, but for a test, a comparison or an
+                // array access), then its pushes (a number is no delegate; anything else is unknown).
                 public void Generic(OpCode code)
                 {
                     var pops = code.StackBehaviourPop switch
@@ -1752,13 +1787,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             or StackBehaviour.Popref_popi_popr8 or StackBehaviour.Popref_popi_popref or StackBehaviour.Popref_popi_pop1 => 3,
                         _ => -1,
                     };
-                    Pop(pops);
+                    if (pops < 0) Broken = true;
+                    var inert = code.FlowControl == FlowControl.Cond_Branch || Inert.Contains(code.Value);
+                    for (var i = 0; i < pops; i++)
+                    {
+                        var popped = Pop();
+                        if (!inert) Escapes.Add(popped);
+                    }
+
                     switch (code.StackBehaviourPush)
                     {
                         case StackBehaviour.Push0:
                             break;
                         case StackBehaviour.Pushi or StackBehaviour.Pushi8 or StackBehaviour.Pushr4 or StackBehaviour.Pushr8:
-                            Push(Value.Made);
+                            Push(Value.None);
                             break;
                         case StackBehaviour.Push1 or StackBehaviour.Pushref:
                             Push(Value.Unknown);
@@ -1769,7 +1811,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     }
                 }
 
-                // What locals, arguments written to and array elements can hold, to a fixed point (they can feed each other).
+                // What locals, arguments written to and array elements can hold, and which arrays and field addresses
+                // escaped, to a fixed point (they feed each other).
                 public Within Within()
                 {
                     var within = new Within();
@@ -1781,7 +1824,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         changed = false;
                         foreach (var (i, stored) in Locals) foreach (var v in stored) changed |= within.Into(within.LocalProv[i], v);
                         foreach (var (i, stored) in Args) foreach (var v in stored) changed |= within.Into(within.ArgProv[i], v);
-                        foreach (var v in Elements) changed |= within.Into(within.ElementProv, v);
+                        foreach (var (array, element) in Elements)
+                        {
+                            var into = within.Of(array);
+                            // Stored in an array the body didn't make (or may not have): the value escapes with it.
+                            if (into.Foreign) changed |= within.Escape(element);
+                            foreach (var a in into.Arrays ?? Enumerable.Empty<int>()) changed |= within.Into(within.ElementOf(a), element);
+                        }
+
+                        foreach (var v in Escapes) changed |= within.Escape(v);
+                        // An array kept in an array that escaped escapes too.
+                        foreach (var a in within.Escaped.ToList())
+                            foreach (var inner in within.ElementOf(a).Arrays?.ToList() ?? new List<int>())
+                                changed |= within.Escaped.Add(inner);
                     }
                     while (changed);
                     return within;
@@ -1794,7 +1849,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 public Dictionary<int, Prov> ArgProv { get; } = new();
 
-                public Prov ElementProv { get; } = new();
+                // By allocation: what the body stored in that array.
+                public Dictionary<int, Prov> ElementProv { get; } = new();
+
+                public HashSet<int> Escaped { get; } = new();
+
+                public HashSet<string> EscapedAddresses { get; } = new(StringComparer.Ordinal);
+
+                public Prov ElementOf(int allocation) => ElementProv.TryGetValue(allocation, out var prov) ? prov : ElementProv[allocation] = new Prov();
+
+                // A value escaped: its arrays and delegate-field addresses; true when that grew.
+                public bool Escape(Value value)
+                {
+                    var prov = Of(value);
+                    var changed = false;
+                    foreach (var a in prov.Arrays ?? Enumerable.Empty<int>()) changed |= Escaped.Add(a);
+                    foreach (var f in prov.Addresses ?? Enumerable.Empty<string>()) changed |= EscapedAddresses.Add(f);
+                    return changed;
+                }
 
                 public Prov Of(Value value)
                 {
@@ -1804,7 +1876,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 }
 
                 // Adds what value can be to prov; true when prov grew.
-                public bool Into(Prov prov, Value value)
+                public bool Into(Prov prov, Value value) => Into(prov, value, null);
+
+                private bool Into(Prov prov, Value value, HashSet<Value>? seen)
                 {
                     var before = prov.Size;
                     switch (value.Kind)
@@ -1812,11 +1886,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         case ValueKind.Unknown:
                             prov.Unknown = true;
                             break;
-                        case ValueKind.Made or ValueKind.Pointer:
-                            prov.Made = true;
+                        case ValueKind.None:
+                            prov.None = true;
+                            break;
+                        case ValueKind.Pointer:
+                            if (value.Nodes!.Count == 0) prov.None = true;
+                            else prov.AddMethods(value.Nodes);
+                            break;
+                        case ValueKind.Field:
+                            prov.AddField(value.Name!);
+                            break;
+                        case ValueKind.Address:
+                            prov.AddAddress(value.Name!);
                             break;
                         case ValueKind.Array:
-                            prov.Fresh = true;
+                            prov.AddArray(value.Index);
                             break;
                         case ValueKind.Arg:
                             prov.AddArg(value.Index);
@@ -1825,22 +1909,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         case ValueKind.Local:
                             // A local nothing stores (read before any store; the runtime zeroes it): null.
                             if (LocalProv.TryGetValue(value.Index, out var local)) prov.Add(local);
-                            else prov.Made = true;
+                            else prov.None = true;
                             break;
                         case ValueKind.Result:
                             prov.AddResult(value.Index);
                             break;
                         case ValueKind.Element:
                         {
-                            // An element of an array the body made: what the body stored in its arrays; of any other: unknown.
+                            // An element of an array the body made and kept to itself: what the body stored in it; of any
+                            // other (an argument, a field's, a call's result, one that escaped): unknown.
                             var array = Of(value.A!);
-                            if (array.OnlyFresh) prov.Add(ElementProv);
-                            else prov.Unknown = true;
+                            if (array.Foreign) prov.Unknown = true;
+                            foreach (var a in array.Arrays ?? Enumerable.Empty<int>())
+                                if (Escaped.Contains(a)) prov.Unknown = true;
+                                else prov.Add(ElementOf(a));
                             break;
                         }
                         case ValueKind.Union:
-                            Into(prov, value.A!);
-                            Into(prov, value.B!);
+                            seen ??= new HashSet<Value>(ReferenceEqualityComparer.Instance);
+                            if (!seen.Add(value)) break;
+                            Into(prov, value.A!, seen);
+                            Into(prov, value.B!, seen);
                             break;
                     }
 
@@ -1848,49 +1937,106 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 }
             }
 
-            // Every delegate invocation read, judged by where its delegate came from. What the reading made or loaded from a
-            // delegate field is followed already (its edge is where it was made); what a parameter holds is what the callers
-            // hand it; what a call returns is what the callee returns (a pass-through: what that call handed it); anything
-            // the reading can't establish is an unresolved callback, judged by the delegate's type (round 11), at the method
-            // where the provenance is lost: the one handed it from outside the code read, or the one holding an unknown.
+            // Where a delegate value can come from, resolved across methods: the methods it may run (a pointer's, or a
+            // synthetic node: an unresolved call it came out of), the delegate fields it was loaded from, and where its
+            // provenance is lost (the method, and why). Found: anything was seen at all (none included).
+            private sealed class Src
+            {
+                public bool Found { get; set; }
+
+                public HashSet<int>? Nodes { get; private set; }
+
+                public HashSet<string>? Fields { get; private set; }
+
+                public HashSet<(int Node, string Where)>? Lost { get; private set; }
+
+                public void AddNodes(IEnumerable<int> nodes)
+                {
+                    Found = true;
+                    (Nodes ??= new HashSet<int>()).UnionWith(nodes);
+                }
+
+                public void AddField(string field)
+                {
+                    Found = true;
+                    (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(field);
+                }
+
+                public void Lose(int node, string where)
+                {
+                    Found = true;
+                    (Lost ??= new HashSet<(int, string)>()).Add((node, where));
+                }
+
+                public void Add(Src other)
+                {
+                    if (ReferenceEquals(other, this)) return;
+                    Found |= other.Found;
+                    if (other.Nodes != null) AddNodes(other.Nodes);
+                    if (other.Fields != null) foreach (var f in other.Fields) AddField(f);
+                    if (other.Lost != null) foreach (var (n, w) in other.Lost) Lose(n, w);
+                }
+            }
+
+            // A parameter's sources being found (Up): its index on the walk, the lowest index a cycle led back to, what its
+            // own call sites gave so far.
+            private sealed class UpState
+            {
+                public UpState(int index, Src partial) => (Index, Low, Partial) = (index, index, partial);
+
+                public int Index { get; }
+
+                public int Low { get; set; }
+
+                public Src Partial { get; }
+            }
+
+            // Round 18: every delegate invocation read, judged by where its delegate came from (Sources, the same model as a
+            // delegate field's stores). What the reading made or loaded from a delegate field is followed already (its edge
+            // is where it was made or loaded, so the reading stays as precise per action as before); where the provenance is
+            // lost (handed in from outside the code read, an unknown, an escaped container), an unresolved callback judged by
+            // the delegate's type (round 11), at the method where it is lost: the one handed it from outside, or the one
+            // holding the unknown.
             private void Invocations()
             {
                 foreach (var (node, receiver, type) in _invokes)
-                {
-                    _budget = 1 << 16;
-                    Resolve(receiver, new Context(node, null, null), node, 0, type);
-                }
+                    foreach (var (at, where) in Sources(receiver, node).Lost ?? Enumerable.Empty<(int, string)>())
+                        Attach(at, type, where);
+            }
+
+            // The sources of a value's provenance in the method that holds it (a store's or an invocation's).
+            private Src Sources(Prov prov, int node)
+            {
+                _budget = 1 << 16;
+                var sources = new Src();
+                var low = int.MaxValue;
+                Eval(prov, new Context(node, null, null), node, 0, sources, ref low);
+                return sources;
             }
 
             // Where a provenance is read: a method, and (inside what a call returns) the call site whose arguments its own
             // arguments are, read in the caller's context.
             private sealed record Context(int Node, Site? Site, Context? Caller);
 
-            // Found: a source was seen (a delegate the reading follows, or an unresolved callback attached). Low: the
-            // shallowest caller walk on the path a cycle led back to (int.MaxValue: none).
-            private (bool Found, int Low) Resolve(Prov prov, Context context, int at, int depth, string type)
+            // Adds prov's sources (read in context; losses attributed to `at`, the method on the caller's path) to into. Low:
+            // the lowest walk index of a parameter still being found that this led back to (a cycle).
+            private void Eval(Prov prov, Context context, int at, int depth, Src into, ref int low)
             {
-                var (found, low) = (prov.Made || prov.Fresh, int.MaxValue);
-                if (prov.Unknown)
-                {
-                    Attach(at, type, "of unknown origin in " + _nodes[context.Node].Name);
-                    found = true;
-                }
-
-                if (prov.Args == null && prov.Results == null) return (found, low);
+                if (prov.None || prov.Arrays != null || prov.Addresses != null) into.Found = true;
+                if (prov.Methods != null) into.AddNodes(prov.Methods);
+                if (prov.Fields != null) foreach (var f in prov.Fields) into.AddField(f);
+                if (prov.Unknown) into.Lose(at, "of unknown origin in " + _nodes[context.Node].Name);
+                if (prov.Args == null && prov.Results == null) return;
                 if (depth > MaxDepth || --_budget < 0)
                 {
-                    Attach(at, type, "too deep to follow from " + _nodes[context.Node].Name);
-                    return (true, low);
+                    into.Lose(at, "too deep to follow from " + _nodes[context.Node].Name);
+                    return;
                 }
 
                 foreach (var i in prov.Args ?? Enumerable.Empty<int>())
                 {
-                    var (f, l) = context.Site == null
-                        ? Up(context.Node, i, depth + 1, type)
-                        : Resolve(Given(context.Site, i), context.Caller!, at, depth + 1, type);
-                    found |= f;
-                    low = Math.Min(low, l);
+                    if (context.Site == null) into.Add(Up(context.Node, i, depth + 1, ref low));
+                    else Eval(Given(context.Site, i), context.Caller!, at, depth + 1, into, ref low);
                 }
 
                 foreach (var s in prov.Results ?? Enumerable.Empty<int>())
@@ -1898,8 +2044,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     var site = _sites[s];
                     if (site.Targets.Count == 0)
                     {
-                        Attach(at, type, "returned from outside the code read in " + _nodes[context.Node].Name);
-                        found = true;
+                        into.Lose(at, "returned from outside the code read in " + _nodes[context.Node].Name);
                         continue;
                     }
 
@@ -1908,69 +2053,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var target = _nodes[t];
                         if (target.Type < 0)
                         {
-                            // A user change or an unresolved call is reached already; a shared slot's result isn't followed.
-                            if (target.Reaches == null && target.PersonReaches == null && target.Unresolved == null && target.Callback == null)
-                                Attach(at, type, "returned by " + target.Name);
-                            found = true;
+                            // A user change or an unresolved call: what it hands back is that node (reached already by the
+                            // call; a field holding it reaches it too). A shared slot's result isn't followed.
+                            if (target.Reaches != null || target.PersonReaches != null || target.Unresolved != null || target.Callback != null) into.AddNodes(new[] { t });
+                            else into.Lose(at, "returned by " + target.Name);
                             continue;
                         }
 
+                        // An abstract target's implementations are targets too.
                         if (target.Abstract) continue;
                         if (!_descending.Add((t, s))) continue;
                         var returns = _returns.TryGetValue(t, out var r) ? r : target.HasBody ? null : Prov.Untracked;
-                        var (f, l) = returns == null ? (true, int.MaxValue) : Resolve(returns, new Context(t, site, context), at, depth + 1, type);
+                        if (returns == null) into.Found = true;
+                        else Eval(returns, new Context(t, site, context), at, depth + 1, into, ref low);
                         _descending.Remove((t, s));
-                        found |= f;
-                        low = Math.Min(low, l);
                     }
                 }
-
-                return (found, low);
             }
 
             private static Prov Given(Site site, int arg) => site.Args is { } args && arg < args.Length && args[arg] is { } given ? given : Prov.Untracked;
 
-            // What the callers hand a method's argument (4a-behaviour-r17-2: a caller cycle keeps "handed in"). Each site's
-            // value is resolved in its caller; no caller in the code read: handed in from outside (an unresolved callback
-            // attached to the method). A cycle contributes only what some path out of it resolves: a group of methods whose
-            // callers are all inside it (here found as the root of the cycle, Tarjan's low link) is handed in from outside.
-            private (bool Found, int Low) Up(int node, int arg, int depth, string type)
+            // What the callers hand a method's argument: each call site's value, read in its caller, argument by argument
+            // (4a-r18-1: never "what the caller made before the call"). No caller in the code read: handed in from outside
+            // (lost at the method). A caller cycle (4a-behaviour-r17-2) keeps "handed in": the parameters that feed each
+            // other form a strongly connected group (Tarjan, on the walk), all with the same sources, found at its root;
+            // when nothing outside the group feeds it, it was handed in from outside the code read.
+            private Src Up(int node, int arg, int depth, ref int callerLow)
             {
-                var key = (node, arg, type);
-                if (_upDone.Contains(key)) return (true, int.MaxValue);
-                if (_upPath.TryGetValue(key, out var at)) return (false, at);
+                var key = (node, arg);
+                if (_upDone.TryGetValue(key, out var done)) return done;
+                if (_upOpen.TryGetValue(key, out var open))
+                {
+                    callerLow = Math.Min(callerLow, open.Index);
+                    return new Src();
+                }
+
                 if (depth > MaxDepth)
                 {
-                    Attach(node, type, "too deep to follow to " + _nodes[node].Name);
-                    return (true, int.MaxValue);
+                    var deep = new Src();
+                    deep.Lose(node, "too deep to follow to " + _nodes[node].Name);
+                    return deep;
                 }
 
                 if (!_sitesOf.TryGetValue(node, out var sites) || sites.Count == 0)
                 {
-                    Attach(node, type, "handed to " + _nodes[node].Name + " from outside the code read");
-                    _upDone.Add(key);
-                    return (true, int.MaxValue);
+                    var outside = new Src();
+                    outside.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read");
+                    return _upDone[key] = outside;
                 }
 
-                _upPath[key] = depth;
-                var (found, low) = (false, int.MaxValue);
+                var state = new UpState(_upIndex++, new Src());
+                _upOpen[key] = state;
+                _upStack.Push(key);
                 foreach (var s in sites)
                 {
                     var site = _sites[s];
-                    var (f, l) = Resolve(Given(site, arg), new Context(site.Caller, null, null), site.Caller, depth + 1, type);
-                    found |= f;
-                    low = Math.Min(low, l);
+                    var low = state.Low;
+                    Eval(Given(site, arg), new Context(site.Caller, null, null), site.Caller, depth + 1, state.Partial, ref low);
+                    state.Low = Math.Min(state.Low, low);
                 }
 
-                _upPath.Remove(key);
-                if (!found && low >= depth)
+                if (state.Low < state.Index)
                 {
-                    Attach(node, type, "handed to " + _nodes[node].Name + " from outside the code read (its callers are a cycle no code read enters)");
-                    found = true;
+                    // Part of a group whose root is still being found: it merges every member's sources.
+                    callerLow = Math.Min(callerLow, state.Low);
+                    return state.Partial;
                 }
 
-                if (found || low >= depth) _upDone.Add(key);
-                return (found, low >= depth ? int.MaxValue : low);
+                var members = new List<(int, int)>();
+                var all = new Src();
+                (int, int) member;
+                do
+                {
+                    member = _upStack.Pop();
+                    members.Add(member);
+                    all.Add(_upOpen[member].Partial);
+                    _upOpen.Remove(member);
+                }
+                while (member != key);
+                if (!all.Found) all.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read (its callers are a cycle no code read enters)");
+                foreach (var m in members) _upDone[m] = all;
+                return all;
             }
 
             // An unresolved callback at the method where the delegate's provenance is lost, judged by the delegate's type.
@@ -2202,8 +2365,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             // Round 17: the shared node for a virtual slot declared outside the code read: it reaches every method of the code
             // read that fills it (implicit implementations and overrides by name and parameter count, explicit MethodImpl
-            // edges), and their own overrides through Dispatch. Null when nothing read fills it.
-            private int? FrameworkSlot(string type, string method, int count)
+            // edges), and their own overrides through Dispatch. Null when nothing read fills it. Round 18: a static slot (a
+            // static abstract or static virtual member .NET declares, IAdditionOperators.op_Addition, IParsable.Parse) is
+            // filled by the implementing types' STATIC methods, which carry no Virtual flag when implicit.
+            private int? FrameworkSlot(string type, string method, int count, bool isStatic)
             {
                 // A stated limit: object-lifecycle slots (disposal, finalization, ToString/Equals/GetHashCode) declared
                 // outside the code read aren't followed into implementations. A call site can't tell WHICH object it
@@ -2211,7 +2376,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 // actions (playback pings, display preferences) for nothing; Jellyfin's own lifecycle members change no user
                 // (reviewed in 12.2 and 10.11.11; pinned sets). Jellyfin's user events cover a plugin that would.
                 if (LifecycleMembers.Contains(method)) return null;
-                if (_frameworkSlots.TryGetValue((type, method, count), out var cached)) return cached;
+                if (_frameworkSlots.TryGetValue((type, method, count, isStatic), out var cached)) return cached;
                 var fills = new List<int>();
                 // A compiler-generated state machine (the type an async method's or iterator's [*StateMachine] attribute
                 // names) is no fill: its code is followed from the method that creates it, the only code that can hand one
@@ -2222,7 +2387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     foreach (var n in _types[t].Methods)
                     {
                         var other = _nodes[n];
-                        if (other.Params != count || other.Abstract || !other.Virtual || ReviewedRead(_types[t].Name, other.Method)) continue;
+                        if (other.Params != count || other.Abstract || other.Static != isStatic || (!isStatic && !other.Virtual) || ReviewedRead(_types[t].Name, other.Method)) continue;
                         if (other.Method == method || other.Method.EndsWith("." + method, StringComparison.Ordinal)) fills.Add(n);
                     }
 
@@ -2231,13 +2396,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 fills = fills.Distinct().ToList();
                 if (fills.Count == 0)
                 {
-                    _frameworkSlots[(type, method, count)] = null;
+                    _frameworkSlots[(type, method, count, isStatic)] = null;
                     return null;
                 }
 
                 var id = _nodes.Count;
                 _nodes.Add(new Node { Name = "slot " + Simple(type) + "." + method });
-                _frameworkSlots[(type, method, count)] = id;
+                _frameworkSlots[(type, method, count, isStatic)] = id;
                 foreach (var n in fills)
                 {
                     _nodes[id].Calls.Add(n);

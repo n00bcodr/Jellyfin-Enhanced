@@ -1401,15 +1401,22 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
   it back returns, what a local or an array held; a delegate handed to .NET code that may run it (`Task.Run`); and the
   static constructors and module initializers the runtime runs on a type's or module's first use. An indirect call
   through a pointer, and a callback the reading can't see into (one handed in from outside Jellyfin's code, one taken
-  out of a collection, one whose source it can't follow), count as a possible change. For each
+  out of a collection or out of an array other code filled, one whose source it can't follow), count as a possible
+  change. These rules apply in every combination, because each is applied in one place: one answer to "which methods
+  can this run" for every way of handing control on (a constrained call to a member .NET declares included), the same
+  static constructor and module initializer for every method that can run, and the same reading of where a delegate
+  came from wherever it is used (invoked, stored in a field, handed to a method, returned). The tests check this as a
+  generated grid: every combination of how control is handed on, what kind of method runs, where its user change is
+  and where the delegate comes from (832 combinations), each compiled, read and run for real. For each
   supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
   newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
   has been reviewed.
 - The reading errs towards bracketing: a call through an interface or a base class counts every implementation the
-  code has, whichever type a generic call is actually made with, so an action can be bracketed although the
-  implementation it really runs changes nobody. It is never left out when one could.
+  code has, whichever type a generic call is actually made with, and a delegate taken out of an array that other code
+  filled counts as one it can't see into, so an action can be bracketed although what it really runs changes nobody.
+  It is never left out when one could.
 - An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in
-  from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 and 89 actions, among them starting
+  from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 actions each, among them starting
   playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
   in the household whenever anyone did one of those.
 
