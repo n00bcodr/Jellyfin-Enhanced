@@ -258,7 +258,7 @@ test('Seerr requestMedia for an operation: override rules held, away and back â†
   const h = setup(t);
   const o = operationOf(h);
   const rules = h.hold('GET', '/jellyseerr/overrideRule');
-  const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }));
+  const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
   await settle();
   await awayAndBack(h);
   rules.resolve(); await assert.rejects(sent, e => e?.name === 'AbortError'); await settle();

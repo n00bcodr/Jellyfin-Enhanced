@@ -286,8 +286,11 @@
      * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
      */
     async function remind(key, itemId) {
+        // Pressed for a title action (the library More sheet's Remind): the POST is that operation's, checked by the
+        // transport right before it goes out.
+        const submitted = JE.captureSubmitted();
         try {
-            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null } });
+            const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound() });
             return { ok: true, nextAt: res?.nextAt };
         } catch (err) {
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };

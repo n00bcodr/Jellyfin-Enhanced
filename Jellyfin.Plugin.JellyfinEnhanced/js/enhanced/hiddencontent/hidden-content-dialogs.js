@@ -351,10 +351,13 @@
 
         const closeDialog = () => {
             release();
+            releaseScope();
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
         };
         const release = action.onCancel(closeDialog);
+        // Asked for a title action: the confirmation is in that operation's scope and closes once it ends.
+        const releaseScope = JE.openSurface(overlay, closeDialog, action.operation);
         overlay.jeDismiss = closeDialog;
         // Also reject detached old buttons, including the suppression checkbox write.
         overlay.addEventListener('click', event => {

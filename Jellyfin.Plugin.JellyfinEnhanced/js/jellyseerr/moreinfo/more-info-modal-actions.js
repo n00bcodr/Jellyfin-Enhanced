@@ -28,7 +28,7 @@ function buildSingle4kButton(data) {
         button.disabled = true;
         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
         try {
-            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+            await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data, null, { bound: JE.captureSubmitted(button).bound() });
             mountRequestedChip(data, 'movie', true);
         } catch (error) {
             // Quota errors get a themed dialog; restore button to idle.
@@ -86,7 +86,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             mainButton.disabled = true;
             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
-                const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data, null, { bound: JE.captureSubmitted(mainButton).bound() });
                 mountRequestedChip(data, 'movie', false, response);
             } catch (error) {
                 // Quota errors get a themed dialog; restore button to idle.
@@ -108,6 +108,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
     let open4k = null;
     const close4k = () => {
         if (open4k) {
+            open4k._jeReleaseScope?.();
             open4k.remove();
             open4k = null;
             document.removeEventListener('click', handleDocClick, true);
@@ -159,7 +160,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 option.disabled = true;
                 option.textContent = JE.t('jellyseerr_btn_requesting');
                 try {
-                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data);
+                    const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data, null, { bound: JE.captureSubmitted(option).bound() });
                     mountRequestedChip(data, 'movie', true, response);
                     close4k();
                 } catch (error) {
@@ -178,6 +179,9 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
 
         menu.appendChild(option);
         document.body.appendChild(menu);
+        // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
+        // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
+        menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
         const rect = arrowButton.getBoundingClientRect();
         menu.style.position = 'fixed';
         menu.style.left = `${rect.left}px`;
@@ -204,7 +208,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             requestButton.disabled = true;
             requestButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
             try {
-                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data);
+                await JE.jellyseerrAPI.requestMedia(data.id, 'movie', {}, false, data, null, { bound: JE.captureSubmitted(requestButton).bound() });
                 mountRequestedChip(data, 'movie', false);
             } catch (error) {
                 // Quota errors get a themed dialog; restore button to idle.

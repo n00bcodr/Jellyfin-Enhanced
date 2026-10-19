@@ -51,7 +51,11 @@
 
     /** @type {Object|null} the open sheet's state */
     let current = null;
-    /** @type {Map<string, Promise<Object|null>>} one-tap movie asks in flight, by key */
+    /**
+     * One-tap movie asks in flight, by key. Each entry belongs to its owner (the operation a title action submitted, or
+     * none natively) and the session it started in; only live work of the same owner is joined (D46S2-R5-2).
+     * @type {Map<string, Set<{operation: Object|null, epoch: number, live: function(): boolean, promise: Promise<Object|null>}>>}
+     */
     const inflight = new Map();
 
     /**
@@ -496,8 +500,9 @@
         state.backdrop = backdrop;
         state.sheet = sheet;
         state.onKey = (e) => onKey(state, e);
-        // A sheet opened for an operation that is no longer current (another page, mount or user) only closes.
-        JE.rejectEnded(backdrop, () => !state.submitted.current(), () => finish(state, null));
+        // Opened for an operation: the sheet is in its scope, so once the operation ends (another page, mount, user or
+        // the document leaving) it takes no more input and closes.
+        state.releaseScope = JE.openSurface(backdrop, () => finish(state, null), state.submitted.operation);
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) finish(state, null); });
         document.addEventListener('keydown', state.onKey, true);
         refresh(state);
@@ -932,6 +937,7 @@
         if (state.done) return;
         state.done = true;
         state.releaseAction?.();
+        state.releaseScope?.();
         document.removeEventListener('keydown', state.onKey, true);
         state.backdrop?.remove();
         if (current === state) current = null;
@@ -958,13 +964,16 @@
     function openOrAsk(title, options) {
         if (!JE.arrAsk?.enabled() || !title?.key) return Promise.resolve(null);
         if (title.kind !== 'movie') return open(title, options);
-        if (inflight.has(title.key)) return inflight.get(title.key);
         // Capabilities and allowance are read for this session: a sign-out (and someone else's
         // sign-in) before the ask goes out drops it instead of asking as the next person. So does
         // the end of the operation a title action submitted (if any): another page or mount.
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
         const submitted = JE.captureSubmitted(options?.operation);
         const sameSession = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch && submitted.current();
+        // A second tap while the first is out joins it, but only live work of the same owner: never an ended
+        // operation's (a fresh press after away and back), another operation's or a native tap's.
+        const entries = inflight.get(title.key) || new Set();
+        for (const entry of entries) if (entry.operation === submitted.operation && entry.epoch === epoch && entry.live()) return entry.promise;
         const run = (async () => {
             const caps = await JE.arrAsk.me();
             if (!sameSession()) return null;
@@ -982,9 +991,15 @@
             return result;
         })();
         const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, operation: submitted.operation, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
-        const settled = run.finally(() => inflight.delete(title.key));
+        const entry = { operation: submitted.operation, epoch, live: sameSession, promise: tracked };
+        entries.add(entry);
+        inflight.set(title.key, entries);
+        // Cleanup by identity: this entry only, never a later owner's.
+        const settled = run.finally(() => {
+            entries.delete(entry);
+            if (!entries.size && inflight.get(title.key) === entries) inflight.delete(title.key);
+        });
         settled.catch(() => {});
-        inflight.set(title.key, tracked);
         return tracked;
     }
 
@@ -1183,10 +1198,10 @@
                 try {
                     if (instanceId) {
                         label.textContent = tr('arr_ask_searching');
-                        const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId);
+                        const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId, { bound: submitted.bound() });
                         JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
-                    } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key))) {
+                    } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key, { bound: submitted.bound() }))) {
                         // Requests already sent it: search for it again instead of asking.
                         JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
@@ -1200,6 +1215,9 @@
                             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
                         }
                     }
+                } catch (err) {
+                    // Its operation ended before the Search went out: nothing was sent, nothing to say.
+                    if (err?.name !== 'AbortError') throw err;
                 } finally {
                     busy = false;
                     b.disabled = false;

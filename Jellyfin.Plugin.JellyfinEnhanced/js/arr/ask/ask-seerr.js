@@ -167,10 +167,14 @@
      * movies judged for them on the server).
      * @param {number|string} [collectionId] TMDB collection id.
      * @param {string} [collectionName] Collection name.
+     * @param {{operation?: Object|Node}} [options] The operation the picker is opened for (as Seerr's own Collection
+     *     modal): taken here, rechecked after each read, and the picker and its asks are in its scope.
      * @returns {Promise<void>}
      */
-    async function collectionAsk(collectionId, collectionName) {
+    async function collectionAsk(collectionId, collectionName, options) {
+        const submitted = JE.captureSubmitted(options?.operation);
         const caps = await JE.arrAsk.me();
+        if (!submitted.current()) return;
         if (!JE.arrAsk.canAsk(caps, 'movie')) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return;
@@ -192,6 +196,7 @@
         } catch {
             details = null;
         }
+        if (!submitted.current()) return;
         if (!details) {
             JE.arrAsk.toast(JE.arrAsk.tr('jellyseerr_toast_collection_fetch_failed'));
             return;
@@ -211,6 +216,7 @@
             Promise.all(candidates.map(movie => (typeof JE.arrAsk.check === 'function' ? JE.arrAsk.check(`movie:tmdb:${movie.id}`, 'standard') : null))),
             knownTitles(candidates.map(movie => `movie:tmdb:${movie.id}`))
         ]);
+        if (!submitted.current()) return;
         const paused = new Map();
         candidates.forEach((movie, i) => {
             const answer = answers[i];
@@ -251,7 +257,10 @@
                 + `<div class="jellyseerr-collection-list" style="max-height: 600px; overflow-y: auto;">${rows}</div>`,
             backdropPath: details.backdropPath || details.backdrop_path,
             buttonText: JE.arrAsk.tr('jellyseerr_modal_request_selected_movies'),
+            operation: submitted.operation,
             onSave: async (modalEl, button, closeFn) => {
+                // Each ask of the loop is the picker's operation's (if any), checked by the transport before each send.
+                const bound = JE.captureSubmitted(modalEl).bound();
                 const ids = [...modalEl.querySelectorAll('.jellyseerr-collection-checkbox:checked:not(:disabled)')]
                     .map(cb => Number.parseInt(cb.dataset.tmdbId, 10)).filter(n => Number.isInteger(n) && n > 0);
                 if (!ids.length) {
@@ -269,7 +278,7 @@
                 for (const tmdbId of ids) {
                     let result;
                     try {
-                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`));
+                        result = await JE.arrAsk.ask(JE.arrAsk.movieInput(`movie:tmdb:${tmdbId}`), { bound });
                     } catch {
                         result = { ok: false, state: 'failed' };
                     }
@@ -396,9 +405,9 @@
             };
         }
         if (typeof showCollection === 'function') {
-            ui.showCollectionRequestModal = function (collectionId, collectionName) {
+            ui.showCollectionRequestModal = function (collectionId, collectionName, item, options) {
                 if (!jeMode()) return showCollection.apply(this, arguments);
-                return collectionAsk(collectionId, collectionName);
+                return collectionAsk(collectionId, collectionName, options);
             };
         }
         if (typeof advanced === 'function') {

@@ -224,7 +224,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
     const h = setup(t);
     const o = operationOf(h);
     const rules = h.hold('GET', '/jellyseerr/overrideRule');
-    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }));
+    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
     await settle();
     assert.equal(h.sent('GET', '/jellyseerr/overrideRule').length, 1, 'the rules are read first');
     end(h, o);
@@ -236,7 +236,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
     const h = setup(t);
     const o = operationOf(h);
     const rules = h.hold('GET', '/jellyseerr/overrideRule');
-    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], {}, { id: 1399, originalLanguage: 'en' }));
+    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], {}, { id: 1399, originalLanguage: 'en' }, false, null, { bound: h.JE.captureSubmitted().bound() }));
     await settle();
     end(h, o);
     rules.resolve(); await assert.rejects(sent, e => e?.name === 'AbortError'); await settle();
@@ -247,7 +247,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
 test('controls: Seerr requestMedia for a current operation, and natively after navigating, posts once each', async t => {
   const h = setup(t);
   const o = operationOf(h);
-  await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }));
+  await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
   const rules = h.hold('GET', '/jellyseerr/overrideRule');
   const native = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }); await settle();

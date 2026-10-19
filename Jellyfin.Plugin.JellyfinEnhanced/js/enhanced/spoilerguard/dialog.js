@@ -38,11 +38,14 @@
                 const confirmed = ok && action.current();
                 if (confirmed && checkbox.checked) internal.setDisableSnooze();
                 release();
+                releaseScope();
                 dialog.close?.();
                 dialog.remove();
                 resolve(confirmed);
             }
             const release = action.onCancel(() => finish(false));
+            // Asked for a title action: the dialog is in that operation's scope and closes (declined) once it ends.
+            const releaseScope = JE.openSurface(dialog, () => finish(false), action.operation);
             cancel.onclick = () => finish(false);
             accept.onclick = () => finish(true);
             dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });

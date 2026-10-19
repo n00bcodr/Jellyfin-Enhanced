@@ -683,15 +683,20 @@
      * @param {boolean} [is4k=false] - Whether this is a 4K request.
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
+     * @param {{bound?: Object}} [options] - bound: the core transport binding of the operation that requests
+     *   (JE.captureSubmitted(origin).bound(); none natively). Every caller passes it (D46S2-R5, enforced by a source
+     *   scan); it is checked after the override-rule read and by the transport right before the POST.
      * @returns {Promise<any>}
      */
-    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null) {
-        // The person, and the title action that submitted it (if any), who asked: rechecked before the POST.
-        const action = JE.createSessionAction({ submitted: true });
+    api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null, options = {}) {
+        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
+        const action = JE.createSessionAction();
+        const bound = options?.bound;
+        const current = () => action.current() && (!bound || bound.current() !== false);
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
-            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            if (!current()) throw new DOMException('Cancelled', 'AbortError');
             if (overrideSettings) {
                 console.debug(`${logPrefix} Applying override rule settings:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
@@ -707,7 +712,7 @@
             ...(is4k ? { is4k: true } : {})
         };
 
-        const result = await post('/request', body, action.operationBound());
+        const result = await post('/request', body, bound);
 
         // Add to watchlist after successful request
         if (result) {
@@ -735,15 +740,18 @@
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for shows TMDB has none for (#653).
      *   Passed separately from advancedSettings so a manual match does not
      *   disable override-rule evaluation.
+     * @param {{bound?: Object}} [options] - bound: the operation's transport binding (as {@link api.requestMedia}).
      * @returns {Promise<any>}
      */
-    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null) {
-        // The person, and the title action that submitted it (if any), who asked: rechecked before the POST.
-        const action = JE.createSessionAction({ submitted: true });
+    api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null, options = {}) {
+        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
+        const action = JE.createSessionAction();
+        const bound = options?.bound;
+        const current = () => action.current() && (!bound || bound.current() !== false);
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
-            if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
+            if (!current()) throw new DOMException('Cancelled', 'AbortError');
             if (overrideSettings) {
                 console.debug(`${logPrefix} Applying override rule settings for TV seasons:`, overrideSettings);
                 advancedSettings = { ...overrideSettings };
@@ -758,7 +766,7 @@
             ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
-        const result = await post('/request', body, action.operationBound());
+        const result = await post('/request', body, bound);
 
         // Add to watchlist after successful request
         if (result) {

@@ -15,6 +15,8 @@
     let touch = null;
     let consumed = null;
     let receiving = null;
+    // Hosts shown when the document left (pagehide, freeze), reconciled fresh when it comes back.
+    let parked = null;
     // Every node this adapter created. Anything else carrying our classes is a host copy (no handler).
     const ours = new WeakSet();
     const CARD = '.card[data-id], .jellyseerr-card, .je-discover-card, [data-je-hide-title]';
@@ -422,7 +424,7 @@
         queued = false;
         if (disposed) return;
         // The action bar going off ends every operation it started, for good.
-        if (!enabled()) { if (active) { active = false; A.end(); } A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); return; }
+        if (!enabled()) { if (active) { active = false; A.end(); } A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); JE.endScopes?.(); return; }
         active = true;
         document.querySelectorAll(CARD).forEach(mountCard);
         for (const [root, host] of hosts) {
@@ -437,6 +439,21 @@
             if (state.root.matches('.je-more-info-modal')) JE.internals?.moreInfoModal?.reconcilePaused?.(state.row)?.catch(() => {});
             paintRow(state);
         });
+        // A mount that went (a row re-rendered, a card recycled) ended its operations: their UI closes now.
+        JE.endScopes?.();
+    }
+
+    /** The document is leaving (pagehide, freeze): its operations have ended; the hosts it shows are kept for a restore. */
+    function departed() {
+        parked = new Map([...(parked || []), ...[...hosts].map(([root, host]) => [root, host.c])]);
+        A.close(false);
+    }
+
+    /** The document came back (pageshow from the cache, resume): every host still shown gets fresh controls at once. */
+    function restored() {
+        for (const [root, c] of parked || []) if (hostShows(root, c)) hosts.set(root, { c, action: A.generation() });
+        parked = null;
+        if (started && !disposed) scan();
     }
 
     /** A host copy of an adapter node (our classes, not one of ours) needs reconciling. */
@@ -529,6 +546,6 @@
         disposed = true; A.end(); observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
         cancelTouch(); A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards();
     }
-    Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose });
+    Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose, departed, restored });
     JE.initializeTitleActions = initialize;
 })(window.JellyfinEnhanced);

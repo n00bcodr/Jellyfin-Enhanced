@@ -206,6 +206,9 @@
         const opening = current;
         // A stale drawer takes no input: a link in it opens nothing (D46S2-R4-3), and an ended operation closes it.
         JE.rejectEnded(overlay, () => current !== opening || !opening.action.current(), () => ended(opening));
+        // Opened for an operation: the drawer (and the Remove dialog it opens, which goes with it) is in its scope and
+        // closes once the operation ends, even untouched.
+        current.releaseScope = JE.openSurface(overlay, () => { if (current === opening) close(); }, submitted.operation);
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
@@ -346,6 +349,7 @@
         const state = current;
         current = null;
         state.releaseAction?.();
+        state.releaseScope?.();
         generation++;
         if (state.unsubscribe) state.unsubscribe();
         if (state.reloadTimer) clearTimeout(state.reloadTimer);

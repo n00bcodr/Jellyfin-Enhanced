@@ -91,13 +91,14 @@ const OWNERS = {
   'Seerr requestMedia (POST /jellyseerr/request)': {
     path: '/jellyseerr/request',
     load: h => h.load('jellyseerr/api.js'),
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false)),
+    // Every caller passes its operation's binding (D46S2-R5, shape 2), as the window's buttons and modals do.
+    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false, null, null, { bound: h.JE.captureSubmitted().bound() })),
     sent: h => h.writes('POST', '/jellyseerr/request').length,
   },
   'Seerr requestTvSeasons (POST /jellyseerr/request)': {
     path: '/jellyseerr/request',
     load: h => h.load('jellyseerr/api.js'),
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], { serverId: 1 })),
+    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], { serverId: 1 }, null, false, null, { bound: h.JE.captureSubmitted().bound() })),
     sent: h => h.writes('POST', '/jellyseerr/request').length,
   },
   'Report (POST /jellyseerr/issue)': {
@@ -207,7 +208,7 @@ test('natively (no operation) the same writes are unbound: a page change while q
 
 const WRITES = {
   'jellyseerr/api.js': [/async function post\(path, body, bound\)[\s\S]*?JE\.core\.api\.plugin\(`\/jellyseerr\$\{path\}`, \{ method: 'POST', body, skipRetry: true, bound \}\)/,
-    /post\('\/issue', body, submitted\.bound\(\)\)/, /post\('\/request', body, action\.operationBound\(\)\)/],
+    /post\('\/issue', body, submitted\.bound\(\)\)/, /post\('\/request', body, bound\)/],
   'arr/ask/ask-core.js': [/call\('\/acquire\/requests', \{ method: 'POST', body: \{ clientRequestId, input \}, signal: options\?\.signal, bound: options\?\.bound \}\)/],
   'arr/ask/ask-sheet.js': [/JE\.arrAsk\.ask\(input, \{ bound: state\.submitted\.bound\(\) \}\)/],
   'arr/manage/manage-drawer.js': [/JE\.core\.api\.plugin\(path, \{ \.\.\.options, bound: state\.action\.bound\(/],
@@ -225,7 +226,7 @@ test('source scan: every operation-owned write passes its operation to the trans
   assert.equal((sheet.match(/JE\.arrAsk\.ask\(/g) || []).length, (sheet.match(/JE\.arrAsk\.ask\([^;]*bound:/g) || []).length, 'every ask in the sheet is bound');
   const seerr = readFileSync(resolve(jsRoot, 'jellyseerr/api.js'), 'utf8');
   assert.equal((seerr.match(/method: 'POST'/g) || []).length, 1, 'jellyseerr/api.js POSTs only through post()');
-  assert.equal((seerr.match(/await post\(/g) || []).length, (seerr.match(/await post\([^)]*, (submitted\.bound|action\.operationBound)\(\)\)/g) || []).length, 'every Seerr write is bound');
+  assert.equal((seerr.match(/await post\(/g) || []).length, (seerr.match(/await post\([^)]*, (submitted\.bound\(\)|bound)\)/g) || []).length, 'every Seerr write is bound');
   const drawer = readFileSync(resolve(jsRoot, 'arr/manage/manage-drawer.js'), 'utf8');
   assert.equal((drawer.match(/JE\.core\.api\.(plugin|ajax|fetch|pluginResponse)\(/g) || []).length, 1, 'the drawer reaches the transport only through boundApi');
 });

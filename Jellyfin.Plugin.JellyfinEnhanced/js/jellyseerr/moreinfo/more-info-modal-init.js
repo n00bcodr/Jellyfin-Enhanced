@@ -130,8 +130,9 @@ function showModal(data, mediaType, scope, submitted) {
     modal.dataset.mediaType = mediaType;
     modal.jeActionScope = data.jeActionScope;
 
-    // Opened for a title action: once that operation ends, the window takes no more input and closes.
-    if (submitted) JE.rejectEnded(modal, () => !submitted.current(), () => moreInfoModal.close());
+    // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
+    // the Collection and request modals); once the operation ends, it takes no more input and closes.
+    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted?.operation ?? null);
 
     // Add event listeners
     modal.addEventListener('click', (e) => {
@@ -169,7 +170,8 @@ function showModal(data, mediaType, scope, submitted) {
             const collectionId = parseInt(collectionBtn.dataset.collectionId, 10);
             const collectionName = collectionBtn.dataset.collectionName;
             if (collectionId && collectionName) {
-                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName);
+                // A nested owner: the modal is the window's operation's (if any), taken before its details are read.
+                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName, null, { operation: collectionBtn });
             }
         });
     }
@@ -235,6 +237,7 @@ function closeCurrentModal() {
     if (state.currentModal) {
         if (state.currentModal._isClosing) return;
         state.currentModal._isClosing = true;
+        state.currentModal._releaseScope?.();
 
         // Clean up TV request listener if exists
         if (state.currentModal._cleanupTvListener) {

@@ -564,3 +564,21 @@ test('the real Guard dialog refuses its accept after away and back and closes', 
   dialog.querySelector('.je-spoiler-confirm-accept')?.click(); await settle();
   assert.deepEqual(h.writes, []);
 });
+
+// D46 slice 2 review round 5 (shape 1): a confirmation opened for an operation is in its scope, so it closes when
+// the operation ends, even untouched (nothing outlives its operation).
+for (const id of ['guard', 'hide']) {
+  test(`scope: the ${id === 'guard' ? 'real Guard dialog' : 'Hide confirmation'} closes when its row re-renders, untouched`, async t => {
+    const h = prepare(t, id); await settle();
+    if (id === 'guard') {
+      h.load('enhanced/spoilerguard/dialog.js');
+      Object.assign(h.guard, { whenLoaded: async () => {}, getUserPrefs: () => ({}), isDisableSnoozed: () => false, setDisableSnooze: () => h.writes.push(['snooze']) });
+    }
+    (await openSheet(h, id)).click(); await settle();
+    const surface = h.document.querySelector(id === 'guard' ? '.je-spoiler-confirm-dialog' : '.je-hide-confirm-overlay');
+    assert.ok(surface, 'the owner asks first');
+    const clone = cloneRow(h); h.a.mountRow(clone, h.page, h.a.fromKey('movie:tmdb:603')); h.a.scan(); await settle();
+    assert.equal(surface.isConnected, false, 'the confirmation did not outlive its operation');
+    assert.deepEqual(h.writes, []);
+  });
+}
