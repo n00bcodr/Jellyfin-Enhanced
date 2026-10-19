@@ -212,8 +212,8 @@ public class IntegrationEditionExhaustionTests
 
     [Theory]
     [InlineData("both")]    // the lookup saw both copies before it stopped: each pin is its own folder's Sonarr
-    [InlineData("hdOnly")]  // it saw only the standard copy: the 4K copy's owner is unknown
-    [InlineData("nothing")] // it saw nothing: neither copy's owner is known
+    [InlineData("hdOnly")]  // it saw only the standard copy: the 4K copy is still its own exact folder's (round 9)
+    [InlineData("nothing")] // it saw nothing: each page's own series is still its exact folder's (round 9)
     [InlineData("complete")] // control: a finished lookup
     public async Task ACopysPagesAndCardOverAnUnfinishedLookupReadOnlyTheSonarrThatOwnsIt(string seen)
     {
@@ -238,8 +238,9 @@ public class IntegrationEditionExhaustionTests
 
         foreach (var (pages, sonarr) in new[] { (uhd, "Sonarr4kZ"), (hd, "SonarrZ") })
         {
-            var known = seen is "both" or "complete" || (seen == "hdOnly" && pages == hd);
-            var owner = known ? sonarr : null;
+            // Round 9: the page's own series (the viewer opens it now) sits exactly in its Sonarr's mapped folder, so its
+            // owner is known whatever the lookup saw. Round 8 expected none for a copy the lookup didn't see.
+            var owner = sonarr;
             var standard = owner == "SonarrZ";
             var card = Assert.Single(Items(await rig.Service.ForBatchAsync(rig.Member, new[] { pages.Series }, Array.Empty<TitleKey>(), default)));
             Assert.Equal(standard, card.GetProperty("stage").GetString() == StatusStage.Downloading);
@@ -258,6 +259,91 @@ public class IntegrationEditionExhaustionTests
             var episode = await Item(rig, rig.Member, pages.Episode2);
             Assert.Equal(standard, episode.GetProperty("reason").GetProperty("code").GetString() == StatusReasonCode.Upgrading);
         }
+    }
+
+    // ------------------------------------------------------------------ round 9: the page's own series is an ownership fact
+
+    /// <summary>Twenty eligible copies of the title in other folders (a library she can't open), none of them the rig's.</summary>
+    private static JfCopy[] TwentyOthers()
+        => Enumerable.Range(1, 20).Select(n => new JfCopy { ItemId = Guid.NewGuid(), Visible = false, Path = $"/media/locked/Firefly {n:D2}", LibraryId = "Locked", LibraryName = "Locked" }).ToArray();
+
+    [Theory]
+    [InlineData("exact")]        // the finding: each pin is its own exactly-mapped folder's Sonarr, past twenty other copies
+    [InlineData("notExact")]     // control: neither page's folder is exactly a Sonarr's mapped folder: no owner
+    [InlineData("inaccessible")] // control: the member can't open the pinned series now: none on her season/episode pages
+    public async Task TwentyCopiesBeforeAnExactlyMappedPinnedSeriesLeaveItsPagesAndCardTheirSonarr(string shape)
+    {
+        using var rig = SeriesRig();
+        var uhd = PagesOf(rig, rig.UhdCopy);
+        var hd = PagesOf(rig, rig.HdCopy);
+        foreach (var pages in new[] { uhd, hd })
+        {
+            await rig.Service.ForItemAsync(rig.Admin, pages.Series, default);
+            await rig.Service.ForBatchAsync(rig.Member, new[] { pages.Series }, Array.Empty<TitleKey>(), default);
+        }
+        await Task.Delay(20);
+        foreach (var (id, path) in new[] { (rig.HdCopy, "/media/tv/Firefly"), (rig.UhdCopy, "/media/tv4k/Firefly") })
+        {
+            if (shape == "notExact") rig.View.AddItem(new JfItemRef { ItemId = id, Kind = "series", Key = Firefly, Path = path + " (2002)" });
+            if (shape == "inaccessible") rig.View.AddItem(new JfItemRef { ItemId = id, Kind = "series", Key = Firefly, Path = path }, rig.Admin.UserId);
+        }
+        rig.View.CopiesFrom = (key, _, _) => key.Title.ToString() == Firefly.ToString() ? CopyLookup.Incomplete(TwentyOthers()) : null;
+        rig.Service.Cache.Clear();
+
+        foreach (var (pages, sonarr) in new[] { (uhd, "Sonarr4kZ"), (hd, "SonarrZ") })
+        {
+            var adminOwner = shape is "exact" or "inaccessible" ? sonarr : null;
+            var memberStandard = shape == "exact" && sonarr == "SonarrZ";
+            var adminStandard = adminOwner == "SonarrZ";
+            if (shape != "inaccessible")
+            {
+                var card = Assert.Single(Items(await rig.Service.ForBatchAsync(rig.Member, new[] { pages.Series }, Array.Empty<TitleKey>(), default)));
+                Assert.Equal(memberStandard, card.GetProperty("stage").GetString() == StatusStage.Downloading);
+                var memberSeries = await Item(rig, rig.Member, pages.Series);
+                Assert.Equal(memberStandard, Summary(memberSeries, "downloading") > 0);
+            }
+            var series = await Item(rig, rig.Admin, pages.Series);
+            Assert.Equal(adminOwner, FirstInstance(series));
+            Assert.Equal(adminStandard, Summary(series, "downloading") > 0);
+            Assert.Equal(adminStandard, Summary(series, "almostReady") > 0);
+            var season = await Item(rig, rig.Admin, pages.Season);
+            Assert.Equal(adminOwner, FirstInstance(season));
+            Assert.Equal(adminStandard, Summary(season, "almostReady") > 0);
+            var missing = await Item(rig, rig.Admin, pages.Missing3);
+            Assert.Equal(adminOwner, FirstInstance(missing));
+            Assert.Equal(adminStandard, missing.GetProperty("stage").GetString() == StatusStage.AlmostReady);
+            var memberSeason = await Item(rig, rig.Member, pages.Season);
+            Assert.Equal(memberStandard, Summary(memberSeason, "almostReady") > 0);
+            var episode = await Item(rig, rig.Member, pages.Episode2);
+            Assert.Equal(memberStandard, episode.GetProperty("reason").GetProperty("code").GetString() == StatusReasonCode.Upgrading);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]  // the movie twin: the page's own movie file sits in its Radarr's exactly-mapped folder
+    [InlineData(false)] // control: its folder isn't exactly any Radarr's mapped folder: no Radarr claims it
+    public async Task TwentyCopiesBeforeAnExactlyMappedMovieLeaveItsPageItsRadarr(bool exact)
+    {
+        using var rig = new Rig(Layout.SeparateLibraries, Has.Both, movie: true);
+        var sintel = TitleKey.Parse("movie:tmdb:45745")!;
+        rig.Radarr.Queue.Add(FakeArr.RadarrQueueRow(1, 45745, "Sintel")); // the standard Radarr is upgrading its file
+        foreach (var id in new[] { rig.HdCopy, rig.UhdCopy }) await rig.Service.ForItemAsync(rig.Admin, id, default);
+        await Task.Delay(20);
+        if (!exact) rig.View.AddItem(new JfItemRef { ItemId = rig.HdCopy, Kind = "movie", Key = sintel, Path = "/media/movies/Sintel/Sintel (2010) - 1080p.mkv", LibraryId = "Movies", LibraryName = "Movies", DateCreated = rig.Now.AddDays(-1), Versions = 1 });
+        rig.View.CopiesFrom = (key, _, _) => key.Title.ToString() == sintel.ToString() ? CopyLookup.Incomplete(TwentyOthers()) : null;
+        rig.Service.Cache.Clear();
+
+        var member = await Item(rig, rig.Member, rig.HdCopy);
+        Assert.Equal(exact, member.GetProperty("reason").GetProperty("code").GetString() == StatusReasonCode.Upgrading);
+        var admin = await Item(rig, rig.Admin, rig.HdCopy);
+        string? LibraryOf(JsonElement status, string instance) => status.GetProperty("admin").GetProperty("variants").EnumerateArray().Single(v => v.GetProperty("instance").GetString() == instance) is var v && v.TryGetProperty("library", out var lib) && lib.ValueKind == JsonValueKind.String ? lib.GetString() : null;
+        Assert.Equal(exact ? "Movies" : null, LibraryOf(admin, "RadarrZ"));
+        Assert.Null(LibraryOf(admin, "Radarr4kZ"));
+        // The 4K page's own file is the 4K Radarr's folder's, never the standard Radarr's upgrade.
+        var uhd = await Item(rig, rig.Admin, rig.UhdCopy);
+        Assert.Equal("Movies 4K", LibraryOf(uhd, "Radarr4kZ"));
+        Assert.Null(LibraryOf(uhd, "RadarrZ"));
+        Assert.NotEqual(StatusReasonCode.Upgrading, uhd.GetProperty("reason").GetProperty("code").GetString());
     }
 
     [Theory]

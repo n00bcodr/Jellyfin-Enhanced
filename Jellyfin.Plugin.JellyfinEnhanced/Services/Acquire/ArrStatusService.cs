@@ -140,6 +140,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (!titleCopies.TryGetValue(facts.Key, out var found)) titleCopies[facts.Key] = found = gather.Copies.GetValueOrDefault(facts.Key) ?? CopiesOf(facts.Key, viewer);
                 return Shown(facts, found);
             }
+            // A season or episode card's series item as the viewer opens it now: its own folder names its Sonarr whatever
+            // the title's copy lookup saw (StatusComposer.SeriesCopyFor). Once per series.
+            var seriesItems = new Dictionary<Guid, JfItemRef?>();
+            JfItemRef? SeriesItemOf(TitleFacts facts, Guid? seriesId)
+            {
+                if (seriesId is not Guid id || !facts.Copies.Any(x => x.Series != null)) return null;
+                if (!seriesItems.TryGetValue(id, out var series)) seriesItems[id] = series = _view.Resolve(id, viewer);
+                return series;
+            }
             foreach (var item in items)
             {
                 var facts = gather.Facts[item.Key!.Title];
@@ -159,10 +168,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             jf = _view.Episodes(seriesId, null, viewer, includeVirtual: false);
                             seriesEpisodes[seriesId] = jf;
                         }
-                        statuses.Add(StatusComposer.Season(facts, item, jf, c, detail: false, SeriesCopiesOf(facts), seriesId));
+                        statuses.Add(StatusComposer.Season(facts, item, jf, c, detail: false, SeriesCopiesOf(facts), seriesId, SeriesItemOf(facts, seriesId)));
                         break;
                     case "episode":
-                        statuses.Add(StatusComposer.Episode(facts, item, c, detail: false, SeriesCopiesOf(facts), item.SeriesId));
+                        statuses.Add(StatusComposer.Episode(facts, item, c, detail: false, SeriesCopiesOf(facts), item.SeriesId, SeriesItemOf(facts, item.SeriesId)));
                         break;
                 }
                 if (statuses.Count > added) WithLiveKey(statuses[^1], facts);
@@ -272,6 +281,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // are in the library.
             var seriesCopies = item.Kind != "movie" && facts.Copies.Any(x => x.Series != null) ? Shown(facts, CopiesOf(title, viewer)) : null;
             var page = item.Kind == "series" ? item.ItemId : item.SeriesId;
+            // A season's or episode's series item as the viewer opens it now: its own folder names its Sonarr whatever the
+            // copy lookup saw (a series page is its own series item).
+            var seriesItem = item.Kind is "season" or "episode" && seriesCopies != null && item.SeriesId is Guid seriesId ? _view.Resolve(seriesId, viewer) : null;
             TitleStatus status;
             switch (item.Kind)
             {
@@ -288,10 +300,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     status.AskedSeasons = AskedSeasons(facts);
                     break;
                 case "season":
-                    status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? _view.Episodes(sid, item.Season, viewer, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies, page);
+                    status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? _view.Episodes(sid, item.Season, viewer, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies, page, seriesItem);
                     break;
                 default:
-                    status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies, page);
+                    status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies, page, seriesItem);
                     break;
             }
             return WithLiveKey(status, facts);

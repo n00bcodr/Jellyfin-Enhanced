@@ -223,12 +223,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </remarks>
         public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false)
         {
-            var jf = copies ?? (item != null ? new[] { new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } } : Array.Empty<JfCopy>());
+            var self = item != null ? new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } : null;
+            var jf = copies ?? (self != null ? new[] { self } : Array.Empty<JfCopy>());
+            // The page's own item as the viewer opens it now, when the copies don't list it (a lookup that couldn't finish):
+            // an arr copy whose folder is exactly its title folder owns it all the same (as SeriesCopyFor).
+            var unlisted = self != null && jf.All(x => x.ItemId != self.ItemId) && !string.IsNullOrWhiteSpace(self.Path) ? self : null;
             var variants = new List<(ArrCopyFacts Copy, CopyState State, JfCopy? Jf)>();
             var movieCopies = facts.Copies.Where(x => x.Movie != null).ToList();
             foreach (var copy in movieCopies)
             {
                 var matched = MatchCopies(copy, jf, movieCopies);
+                if (unlisted != null && HoldsFolder(copy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
                 var visible = own ?? matched.FirstOrDefault(m => m.Visible);
                 CopyState state;
@@ -539,7 +544,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, jfSeasons);
             jfEpisodes = visibleEpisodes;
-            var copy = SeriesCopyFor(facts, page, copies);
+            var copy = SeriesCopyFor(facts, page, copies, item);
             if (copy == null)
             {
                 var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
@@ -614,14 +619,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        /// <summary>A season page (or card): summary, and with <paramref name="detail"/> every episode.</summary>
-        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null)
+        /// <summary>
+        /// A season page (or card): summary, and with <paramref name="detail"/> every episode. <paramref name="series"/> is
+        /// its series item as the viewer opens it now (null when they can't), see <see cref="SeriesCopyFor"/>.
+        /// </summary>
+        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null)
         {
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, null);
             jfEpisodes = visibleEpisodes;
             var season = item.Season ?? 0;
             var key = facts.Key.WithSeason(season).ToString();
-            var copy = SeriesCopyFor(facts, page, copies);
+            var copy = SeriesCopyFor(facts, page, copies, series);
             if (copy == null)
             {
                 return new TitleStatus
@@ -681,12 +689,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        /// <summary>An episode page (or card); a virtual episode shows where the arr has got to.</summary>
-        public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null)
+        /// <summary>
+        /// An episode page (or card); a virtual episode shows where the arr has got to. <paramref name="series"/> is its
+        /// series item as the viewer opens it now (null when they can't), see <see cref="SeriesCopyFor"/>.
+        /// </summary>
+        public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null)
         {
             var season = item.Season ?? 0;
             var number = item.Episode ?? 0;
-            var copy = SeriesCopyFor(facts, page, copies);
+            var copy = SeriesCopyFor(facts, page, copies, series);
             CopyState state;
             ArrEpisodeEntry? arr = null;
             if (!item.Virtual)
@@ -747,7 +758,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null, IReadOnlyList<JfCopy>? copies = null)
         {
-            var copy = SeriesCopyFor(facts, item.ItemId, copies);
+            var copy = SeriesCopyFor(facts, item.ItemId, copies, item);
             var states = copy?.Queue.Where(r => hidden?.Hides(r.SeasonNumber, r.EpisodeNumber) != true).Select(r => (Row: r, State: FromQueue(r, c, copy))).ToList() ?? new List<(ArrQueueEntry Row, CopyState State)>();
             int Count(Func<CopyState, bool> f) => states.Where(x => f(x.State)).Select(x => x.Row.EpisodeId ?? x.Row.Id).Distinct().Count();
             var summary = new StatusSummary
@@ -1682,19 +1693,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <item><description>else, when it is the title's only Jellyfin copy and only Sonarr copy, that one, unless
         /// its linked library or path mapping leaves the copy out (however its folders are named).</description></item>
         /// </list>
+        /// The first rule also holds for the page's own series item as the viewer opens it now (<paramref name="own"/>,
+        /// resolved for them: the series page or card itself, or a season's or episode's series), whatever the title's copy
+        /// lookup saw: that copy, its access and its folder don't depend on the lookup.
         /// None (null) when ownership can't be established, never a default: also when the copy is unknown (not among the
-        /// copies given, or none given), and when the lookup couldn't finish unless the first rule holds for a copy it saw
-        /// (the others compare the copy with every other copy of the title). A read of the whole title (no
-        /// <paramref name="page"/>) follows the primary copy.
+        /// copies given, or none given) and its own item doesn't sit exactly in a Sonarr's folder, and when the lookup
+        /// couldn't finish unless the first rule holds (the others compare the copy with every other copy of the title). A
+        /// read of the whole title (no <paramref name="page"/>) follows the primary copy.
         /// </summary>
-        internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies)
+        internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies, JfItemRef? own = null)
         {
             var primary = PrimarySeriesCopy(facts);
             if (primary == null || page is not Guid id) return primary;
+            var siblings = SeriesCopies(facts);
+            if (own is { Kind: "series", Key: { } ownKey } && own.ItemId == id && ownKey.Title.Equals(facts.Key) && FolderOwner(siblings, own.Path) is { } pinned) return pinned;
             var (known, every) = OwnershipBasis(facts, copies);
             if (known.FirstOrDefault(x => x.ItemId == id) is not { } shown) return null;
-            var siblings = SeriesCopies(facts);
-            if (siblings.Where(x => HoldsFolder(x, shown)).OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() is { } owner) return owner;
+            if (FolderOwner(siblings, shown.Path) is { } owner) return owner;
             if (!every) return null;
             var only = siblings.Where(x => MatchCopies(x, known, siblings, soleFallback: false) is var m && m.Any(c => c.ItemId == id) && m.All(c => c.ItemId == id)).ToList();
             if (only.Count == 1) return only[0];
@@ -1712,16 +1727,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static (IReadOnlyList<JfCopy> Known, bool Every) OwnershipBasis(TitleFacts facts, IReadOnlyList<JfCopy>? copies)
             => facts.CopiesIncomplete ? (facts.SeenCopies, false) : (copies ?? Array.Empty<JfCopy>(), copies != null);
 
+        /// <summary>The Sonarr copy whose own folder is exactly <paramref name="path"/> (<see cref="HoldsFolder"/>); of two, the standard one.</summary>
+        private static ArrCopyFacts? FolderOwner(IReadOnlyList<ArrCopyFacts> siblings, string? path)
+            => siblings.Where(x => HoldsFolder(x, path)).OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault();
+
         /// <summary>
-        /// True when an arr copy's own folder is exactly the Jellyfin copy's folder: the mapped folder when the
-        /// instance's path mapping applies to it, else the same path.
+        /// True when an arr copy's own folder is exactly a Jellyfin copy's folder (<paramref name="path"/>): the mapped
+        /// folder when the instance's path mapping applies to it, else the same path.
         /// </summary>
-        private static bool HoldsFolder(ArrCopyFacts copy, JfCopy shown)
+        private static bool HoldsFolder(ArrCopyFacts copy, string? path)
         {
             var arrPath = ArrPathOf(copy);
-            if (string.IsNullOrWhiteSpace(arrPath) || string.IsNullOrWhiteSpace(shown.Path)) return false;
+            if (string.IsNullOrWhiteSpace(arrPath) || string.IsNullOrWhiteSpace(path)) return false;
             var (mapped, mapping) = BridgePaths.Map(arrPath, copy.Instance.PathMappings.ToList());
-            return BridgePaths.SamePath(mapping != null ? mapped : arrPath, shown.Path);
+            return BridgePaths.SamePath(mapping != null ? mapped : arrPath, path);
         }
 
         /// <summary>
