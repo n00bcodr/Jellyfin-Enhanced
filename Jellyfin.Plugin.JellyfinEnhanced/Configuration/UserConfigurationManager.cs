@@ -159,27 +159,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             return changed;
         }
 
-        /// <summary>
-        /// A settings.json document as bytes, through <see cref="GateSettingsDocument"/>: the same bytes when its display
-        /// language passes (or it is no JSON object, which every reader treats as unusable anyway), else the document with only
-        /// that field changed (every other field, date-like strings and decimals included, kept as written).
-        /// </summary>
-        public static byte[] GateSettingsBytes(byte[] bytes)
+        /// <summary>What <see cref="GateSettingsBytes"/> did with a settings.json document.</summary>
+        public enum SettingsGateOutcome
         {
-            JObject document;
+            /// <summary>Its display language passes (or it has none, or it is a JSON null): the same bytes.</summary>
+            Unchanged,
+
+            /// <summary>Only the value of its own DisplayLanguage key(s) was replaced; every other byte is the same.</summary>
+            Edited,
+
+            /// <summary>
+            /// The gate can't read it (not UTF-8, not one JSON object, syntax the reader refuses, deeper than it reads): it must
+            /// not be put in place as it is.
+            /// </summary>
+            Unreadable,
+        }
+
+        private static readonly byte[] Utf8Bom = { 0xEF, 0xBB, 0xBF };
+
+        /// <summary>
+        /// The display-language gate for a settings.json document JE puts in place without writing it itself (a JE backup
+        /// restore, the start-up folder migration). Lossless: the document is never re-serialized; the value of each of its
+        /// own DisplayLanguage keys (the top level only, any case or escaped spelling, duplicates each) is replaced at its token
+        /// offsets by <see cref="LanguageTags.Sanitize"/>'s answer, so every other byte stays (numbers of any size or precision,
+        /// a byte-order mark, comments, escapes, whitespace). A JSON null stays (it reads as Auto); any other non-string value is
+        /// replaced by Auto. Fails closed: a document it can't read is <see cref="SettingsGateOutcome.Unreadable"/>, and the
+        /// caller must not put it in place as it is.
+        /// </summary>
+        /// <param name="bytes">The document.</param>
+        /// <param name="gated">The document to put in place: <paramref name="bytes"/> unless edited; unusable when unreadable.</param>
+        /// <returns>What the gate did.</returns>
+        public static SettingsGateOutcome GateSettingsBytes(byte[] bytes, out byte[] gated)
+        {
+            gated = bytes;
+            // Invalid UTF-8 anywhere (UTF-16 included) would be read with replacement characters: not the document as written.
+            if (!System.Text.Unicode.Utf8.IsValid(bytes)) return SettingsGateOutcome.Unreadable;
+            var offset = bytes.AsSpan().StartsWith(Utf8Bom) ? Utf8Bom.Length : 0;
+            var edits = new List<(int Start, int End, string Value)>();
             try
             {
-                using var text = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-                using var reader = new JsonTextReader(text) { DateParseHandling = DateParseHandling.None, FloatParseHandling = FloatParseHandling.Decimal };
-                if (JToken.ReadFrom(reader) is not JObject parsed || reader.Read()) return bytes;
-                document = parsed;
+                var reader = new System.Text.Json.Utf8JsonReader(bytes.AsSpan(offset), new System.Text.Json.JsonReaderOptions
+                {
+                    // What JE's own reader (Newtonsoft) also accepts, and nothing it would read differently.
+                    CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                });
+                if (!reader.Read() || reader.TokenType != System.Text.Json.JsonTokenType.StartObject) return SettingsGateOutcome.Unreadable;
+                while (reader.Read() && reader.TokenType == System.Text.Json.JsonTokenType.PropertyName)
+                {
+                    var name = reader.GetString();
+                    reader.Read();
+                    var start = (int)reader.TokenStartIndex;
+                    string? value = null;
+                    var type = reader.TokenType;
+                    if (type == System.Text.Json.JsonTokenType.String) value = reader.GetString();
+                    else if (type is System.Text.Json.JsonTokenType.StartObject or System.Text.Json.JsonTokenType.StartArray) reader.Skip();
+                    var end = (int)reader.BytesConsumed;
+                    if (!string.Equals(name, nameof(JellyfinEnhancedUserSettings.DisplayLanguage), StringComparison.OrdinalIgnoreCase)
+                        || type == System.Text.Json.JsonTokenType.Null) continue;
+                    var sanitized = LanguageTags.Sanitize(value);
+                    if (type == System.Text.Json.JsonTokenType.String && string.Equals(value, sanitized, StringComparison.Ordinal)) continue;
+                    edits.Add((offset + start, offset + end, sanitized));
+                }
+
+                // The object's end, then nothing but whitespace or comments (a second value throws).
+                if (reader.TokenType != System.Text.Json.JsonTokenType.EndObject || reader.CurrentDepth != 0 || reader.Read())
+                {
+                    return SettingsGateOutcome.Unreadable;
+                }
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
             {
-                return bytes;
+                return SettingsGateOutcome.Unreadable;
             }
 
-            return GateSettingsDocument(document) ? System.Text.Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(document, Formatting.Indented)) : bytes;
+            if (edits.Count == 0) return SettingsGateOutcome.Unchanged;
+            var output = new MemoryStream(bytes.Length);
+            var position = 0;
+            foreach (var (start, end, value) in edits)
+            {
+                output.Write(bytes, position, start - position);
+                // A sanitized tag is ASCII letters, digits and hyphens: nothing to escape.
+                output.Write(System.Text.Encoding.UTF8.GetBytes("\"" + value + "\""));
+                position = end;
+            }
+
+            output.Write(bytes, position, bytes.Length - position);
+            gated = output.ToArray();
+            return SettingsGateOutcome.Edited;
         }
 
         /// <summary>
@@ -191,9 +258,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 if (!File.Exists(path)) return;
-                var bytes = File.ReadAllBytes(path);
-                var gated = GateSettingsBytes(bytes);
-                if (ReferenceEquals(gated, bytes)) return;
+                var outcome = GateSettingsBytes(File.ReadAllBytes(path), out var gated);
+                if (outcome == SettingsGateOutcome.Unreadable)
+                {
+                    // Not new data: the person's own file, now under the canonical folder. It is kept as it was: every reader
+                    // hands out its language gated, and a writer either refuses a file it can't read or rewrites it through the
+                    // document gate.
+                    _logger.Warning($"Could not read '{path}' to check its display language; kept as it was.");
+                    return;
+                }
+
+                if (outcome == SettingsGateOutcome.Unchanged) return;
                 var temp = path + ".tmp." + Guid.NewGuid().ToString("N");
                 File.WriteAllBytes(temp, gated);
                 File.Move(temp, path, overwrite: true);
@@ -670,6 +745,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         private static readonly Regex CanonicalGuidRe = new Regex("^[0-9a-f]{32}$", RegexOptions.Compiled);
         private static readonly Regex GuidShapeRe    = new Regex("^[0-9a-fA-F-]{32,36}$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// A folder name that is a person's: the canonical id (32 lower-case hex digits) or another spelling of it that the
+        /// start-up migration puts in place under the canonical name (upper case, hyphens).
+        /// </summary>
+        public static bool IsPersonFolderName(string name)
+            => GuidShapeRe.IsMatch(name) && CanonicalGuidRe.IsMatch(name.Replace("-", string.Empty).ToLowerInvariant());
 
         /// <summary>
         /// Scans <c>_configBaseDir</c> for case-variant or hyphenated user

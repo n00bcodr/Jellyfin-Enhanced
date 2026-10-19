@@ -12503,6 +12503,12 @@
             if (result.missingCredentials && result.missingCredentials.length) {
                 text += ' Enter these again: ' + result.missingCredentials.join(', ') + '.';
             }
+            // A person's settings file the server couldn't read to check its display language is left out.
+            if (result.refusedFiles && result.refusedFiles.length) {
+                var one = result.refusedFiles.length === 1;
+                text += ' Not restored, because ' + (one ? 'it' : 'they') + ' can\'t be read: ' + result.refusedFiles.join(', ')
+                    + (one ? ' (that person keeps their current settings).' : ' (those people keep their current settings).');
+            }
             if (result.safetyBackup) text += ' The previous data was saved as ' + result.safetyBackup + '.';
             return text + ' Restart Jellyfin, then reload this page.';
         }

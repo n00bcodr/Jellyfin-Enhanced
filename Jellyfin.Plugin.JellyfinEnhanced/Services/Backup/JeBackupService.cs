@@ -109,6 +109,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         /// </summary>
         [JsonPropertyName("missingCredentials")] public List<string> MissingCredentials { get; init; } = new();
 
+        /// <summary>
+        /// Files in the backup that were not restored because they can't be checked (a person's settings.json the display-language
+        /// gate can't read: <see cref="UserConfigurationManager.SettingsGateOutcome.Unreadable"/>), as paths in the JE data
+        /// folder; what was there before is kept.
+        /// </summary>
+        [JsonPropertyName("refusedFiles")] public List<string> RefusedFiles { get; init; } = new();
+
         /// <summary>File name of the safety copy taken before restoring (in <c>backups</c> in the JE data folder).</summary>
         [JsonPropertyName("safetyBackup")] public string? SafetyBackup { get; init; }
 
@@ -447,15 +454,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
 
             var written = 0;
             var keptHistory = 0;
-            foreach (var (entry, bytes) in files)
+            var refused = new List<string>();
+            foreach (var (entry, data) in files)
             {
                 if (!entry.StartsWith(DataPrefix, StringComparison.Ordinal)) continue;
-                if (IsInstallHistory(entry.Substring(DataPrefix.Length)))
+                var relative = entry.Substring(DataPrefix.Length);
+                if (IsInstallHistory(relative))
                 {
                     keptHistory++;
                     continue;
                 }
-                var target = TargetPath(entry.Substring(DataPrefix.Length));
+
+                // A person's settings.json passes the display-language gate (a backup from an older version may hold
+                // "en-US-US"): only that value changes, every other byte is written as the backup holds it. One the gate
+                // can't read is not restored (the person keeps what they have) and the outcome says so: never written ungated.
+                var bytes = data;
+                if (IsPersonalSettings(relative)
+                    && UserConfigurationManager.GateSettingsBytes(data, out bytes) == UserConfigurationManager.SettingsGateOutcome.Unreadable)
+                {
+                    refused.Add(relative);
+                    _logger?.Warning($"JE backup: '{relative}' can't be read to check its display language, so it was not restored.");
+                    continue;
+                }
+
+                var target = TargetPath(relative);
                 if (Acquire.AcquireDatabase.Shared is { } database && string.Equals(Path.GetFullPath(target), Path.GetFullPath(database.FilePath), StringComparison.Ordinal))
                 {
                     // The live database: copied in through SQLite while its reads and writes wait.
@@ -467,9 +489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 var temp = target + ".tmp." + Guid.NewGuid().ToString("N");
                 try
                 {
-                    // A person's settings.json passes the display-language gate (a backup from an older version may hold
-                    // "en-US-US"); every other field, and every other file, is written as the backup holds it.
-                    File.WriteAllBytes(temp, IsPersonalSettings(entry.Substring(DataPrefix.Length)) ? UserConfigurationManager.GateSettingsBytes(bytes) : bytes);
+                    File.WriteAllBytes(temp, bytes);
                     // People's settings files among them: put in place inside their version's bracket (the automatic-write
                     // check reads consents from them).
                     UserConfigurationManager.AllSettingsVersion.Mutate(() => File.Move(temp, target, overwrite: true));
@@ -508,13 +528,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
             }
 
             _logger?.Info($"JE backup: restored {written} data file(s), {secrets?.Count ?? 0} credential(s), configuration {(restoredConfig != null ? "replaced" : "not in backup")}; safety copy {safety}"
-                + (keptHistory > 0 ? $"; this install's arr audit log was kept ({keptHistory} audit file(s) in the backup were not restored)." : "."));
+                + (keptHistory > 0 ? $"; this install's arr audit log was kept ({keptHistory} audit file(s) in the backup were not restored)" : string.Empty)
+                + (refused.Count > 0 ? $"; not restored (unreadable): {string.Join(", ", refused)}." : "."));
             return new JeRestoreResult
             {
                 FilesRestored = written,
                 SecretsRestored = secrets?.Count ?? 0,
                 ConfigurationRestored = restoredConfig != null,
                 MissingCredentials = missing,
+                RefusedFiles = refused,
                 SafetyBackup = safety,
             };
         }
@@ -861,11 +883,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
 
         private static bool IsUserFolderName(string name) => name.Length == 32 && name.All(Uri.IsHexDigit);
 
-        // "<person's folder>/settings.json" (the folder names the backup lists are the canonical ids).
+        // "<person's folder>/settings.json": the canonical id, or another spelling of it that the start-up migration puts in
+        // place as the person's (so a restore can't bring one in ungated that way).
         private static bool IsPersonalSettings(string relative)
         {
             var parts = relative.Split('/');
-            return parts.Length == 2 && IsUserFolderName(parts[0]) && string.Equals(parts[1], UserConfigurationManager.SettingsFileName, StringComparison.OrdinalIgnoreCase);
+            return parts.Length == 2 && UserConfigurationManager.IsPersonFolderName(parts[0]) && string.Equals(parts[1], UserConfigurationManager.SettingsFileName, StringComparison.OrdinalIgnoreCase);
         }
 
         private sealed class SealedBox
