@@ -53,6 +53,7 @@
           this.progressMeta = null;
           this.focusStart = null;
           this.focusEnd = null;
+          this.closeButton = null;
 
           this.init();
         }
@@ -299,8 +300,13 @@
               z-index: 2;
               transition: background 0.2s;
             }
-            #pause-screen-close-btn:hover {
+            #pause-screen-close-btn:hover,
+            #pause-screen-close-btn:focus-visible {
               background: rgba(0,0,0,0.8);
+            }
+            #pause-screen-close-btn:focus-visible {
+              outline: 2px solid #fff;
+              outline-offset: 2px;
             }
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
@@ -443,6 +449,7 @@
           closeButton.onclick = () => {
               this.hideOverlay(true);
           };
+          this.closeButton = closeButton;
 
           // Assemble
           this.overlayContent.appendChild(this.overlayBackdrop);
@@ -483,10 +490,46 @@
           this.focusEnd.addEventListener('focus', trap);
         }
 
+        /**
+         * D-pad handling for TV layouts: the arrows stay on the overlay instead of
+         * reaching the player behind it, and Back closes only the overlay.
+         * @param {KeyboardEvent} e
+         * @returns {boolean} True when the event was consumed.
+         */
+        handleRemoteKey(e) {
+          const swallow = () => {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          };
+
+          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+            swallow();
+            this.closeButton.focus();
+            return true;
+          }
+          if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+            swallow();
+            this.overlayContent.focus();
+            return true;
+          }
+          if (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461) {
+            swallow();
+            this.hideOverlay(true);
+            return true;
+          }
+          if (e.key === 'Enter' && document.activeElement === this.closeButton) {
+            swallow();
+            this.hideOverlay(true);
+            return true;
+          }
+          return false;
+        }
+
         setupKeyboardAccessibility() {
           // Space/Enter resumes when overlay visible
           this.keyboardListener = (e) => {
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
+              if (JE.core.ui.isTvLayout() && this.handleRemoteKey(e)) return;
               if (e.code === 'Space' || e.code === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation(); // stop Jellyfin binding

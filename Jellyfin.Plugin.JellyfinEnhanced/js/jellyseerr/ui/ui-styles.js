@@ -402,6 +402,10 @@
             .jellyseerr-collection-movie-details .title { font-weight: 600; color: #e2e8f0; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .jellyseerr-collection-movie-details .year { font-size: 0.85rem; color: #94a3b8; }
             .jellyseerr-modal-footer { padding: 20px 24px; background: rgba(15, 23, 42, 0.3); border-top: 1px solid rgba(51, 65, 85, 0.3); display: flex; gap: 12px; justify-content: flex-end; flex-shrink: 0; }
+            .jellyseerr-tv-picker { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 40vh; overflow-y: auto; }
+            .jellyseerr-tv-picker-option { text-align: left; padding: 12px 16px; border-radius: 8px; border: 2px solid transparent; background: rgba(51, 65, 85, 0.5); color: #e2e8f0; font-size: 1rem; cursor: pointer; }
+            .jellyseerr-tv-picker-option[aria-selected="true"] { border-color: rgba(129, 140, 248, 0.6); }
+            .jellyseerr-tv-picker-option:focus { outline: none; background: #4f46e5; color: #fff; border-color: #fff; }
             .jellyseerr-modal-button { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 0.875rem; transition: all 0.2s ease; min-width: 120px; }
             .jellyseerr-modal-button:disabled { opacity: 0.6; cursor: not-allowed; }
             .jellyseerr-modal-button-primary { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); }

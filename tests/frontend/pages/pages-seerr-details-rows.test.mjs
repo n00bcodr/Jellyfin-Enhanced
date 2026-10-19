@@ -60,7 +60,7 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
     createJellyseerrCard:item=>{if(card)card(item);const el=h.document.createElement('div');el.className='card';el.textContent=item.title;return el;}},
    core:{lifecycle:{register:()=>({onTeardown:fn=>teardowns.push(fn),teardownOn:()=>{}})},
     navigation:{onNavigate:fn=>navs.push(fn),onViewPage:fn=>views.push(fn)},
-    ui:{addTouchTapListener:()=>{},addDelegatedTouchTapListener:()=>{}}},...je}});
+    ui:{addTouchTapListener:()=>{},addDelegatedTouchTapListener:()=>{},isTvLayout:()=>false}},...je}});
  t.after(()=>h.close());
  if(real)for(const file of ['seerr-status','ui/ui-icons','ui/ui-popover','ui/ui-badges','ui/ui-cards'])h.load(`jellyseerr/${file}.js`);
  // Every card built, and every root posters were released under.

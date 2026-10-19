@@ -369,6 +369,7 @@
         // External links - stop the click bubbling any further
         const externalLink = e.target.closest(".je-request-external-link");
         if (externalLink) {
+          if (JE.core.ui.isTvLayout()) e.preventDefault();
           e.stopPropagation();
           e.stopImmediatePropagation();
           return;

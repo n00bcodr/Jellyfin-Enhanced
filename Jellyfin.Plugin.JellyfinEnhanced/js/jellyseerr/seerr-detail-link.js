@@ -46,7 +46,7 @@
         }
 
         function createSeerrLink(tmdbId, mediaType) {
-            const useMoreInfoModal = !!JE.pluginConfig.JellyseerrUseMoreInfoModal;
+            const useMoreInfoModal = !!JE.pluginConfig.JellyseerrUseMoreInfoModal || JE.core.ui.isTvLayout();
             const base = JE.jellyseerrAPI?.resolveJellyseerrBaseUrl() || '';
             const jellyseerrUrl = base ? `${base}/${mediaType}/${tmdbId}` : null;
 

@@ -4,7 +4,7 @@ import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,enabled=true){
  let subscriptions=0,releases=0;const handlers=[];const h=createHarness({JE:{session:{onUserChange:(key,fn)=>handlers.push(fn)},currentSettings:{pauseScreenEnabled:enabled},t:key=>key,helpers:{onBodyMutation:()=>{subscriptions++;return {unsubscribe:()=>releases++};}}}});
  h.window.localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{Id:'wrong',UserId:'other',AccessToken:'wrong'},{Id:'server-a',UserId:'user-a',AccessToken:'test'}]}));
- h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
+ h.load('core/ui-kit.js');h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
 }
 test('disabled pause screen creates no DOM or observers',t=>{const h=setup(t,false);h.JE.initializePauseScreen();assert.equal(h.JE.pauseScreenInstance,undefined);assert.deepEqual(h.counts(),{subscriptions:0,releases:0});});
 test('pause screen uses active server credentials and has one instance after repeated initialization',t=>{
@@ -33,4 +33,23 @@ test('pause metadata arriving after user switch cannot restore old-user data',as
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;const pending=deferred();p.fetchWithRetry=()=>pending.promise;p.firstAvailableBlobURL=async()=>null;
  h.window.ApiClient.serverAddress=()=> 'http://local';p.showOverlay();const request=p.fetchItemInfo('secret');h.switchUser();pending.resolve({Overview:'old-user secret'});await request;
  assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(p.overlayPlot.textContent,'');assert.equal(p.itemCache.size,0);
+});
+test('pause overlay keeps remote keys on TV layout and Back closes only the overlay',t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;h.document.documentElement.classList.add('layout-tv');
+ let reached=0;h.document.addEventListener('keydown',()=>reached++);
+ const press=(init)=>{const e=new h.window.KeyboardEvent('keydown',{bubbles:true,cancelable:true,...init});h.document.dispatchEvent(e);return e;};
+ p.showOverlay();
+ for(const key of ['ArrowRight','ArrowLeft','ArrowDown','ArrowUp'])assert.equal(press({key}).defaultPrevented,true,key);
+ assert.equal(reached,0);
+ press({key:'ArrowRight'});assert.equal(h.document.activeElement,p.closeButton);
+ press({key:'ArrowLeft'});assert.equal(h.document.activeElement,p.overlayContent);
+ press({key:'ArrowUp'});press({key:'Enter',code:'Enter'});assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(p._dismissedThisPause,true);
+ p._dismissedThisPause=false;p.showOverlay();press({key:'Escape'});assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(p._dismissedThisPause,true);
+ p._dismissedThisPause=false;p.showOverlay();press({key:'Unidentified',keyCode:10009});assert.equal(p.overlay.getAttribute('aria-hidden'),'true');
+ assert.equal(reached,0);
+});
+test('pause overlay leaves arrow keys alone outside the TV layout',t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.showOverlay();
+ const e=new h.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true});h.document.dispatchEvent(e);
+ assert.equal(e.defaultPrevented,false);assert.equal(p.overlay.getAttribute('aria-hidden'),'false');
 });
