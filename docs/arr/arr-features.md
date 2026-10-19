@@ -416,8 +416,12 @@ looked at again, without waiting for a library scan or for Jellyfin to finish re
 (`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
 retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
 e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
-Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
-person switching theirs off) drops what was queued for that channel. When four or more alerts for one person are due on
+Switching notifications off holds what is queued until they are back on, including an alert that was being prepared at
+that moment; switching phone alerts or e-mail off (or a person switching theirs off) drops what was queued for that
+channel. Every alert is decided at the moment something is done with it (sent, counted in a summary, written to the bell,
+or put back to wait), from the settings, the person and the request as they are then: an alert about a request that has
+since moved on (an OK'd request sent back to waiting, a decline or an ask that no longer stands, in Jellyfin Enhanced or in
+Seerr) is dropped, and one about a person disabled meanwhile goes nowhere. When four or more alerts for one person are due on
 one channel at once (a backlog after quiet hours or after notifications were off), they go out as one "N new
 notifications" message linking to the bell instead of one push or e-mail each (new alerts wait up to a couple of seconds
 for others that follow, so a backlog that comes in one by one is grouped too). The count is decided at the moment the

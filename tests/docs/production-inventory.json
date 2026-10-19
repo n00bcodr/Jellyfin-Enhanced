@@ -667,6 +667,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyFinal.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyModels.cs",
       "category": "Services"
     },
@@ -10679,7 +10683,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 616,
+    "files": 617,
     "routes": 288,
     "configuration_properties": 626,
     "storage_references": 89,

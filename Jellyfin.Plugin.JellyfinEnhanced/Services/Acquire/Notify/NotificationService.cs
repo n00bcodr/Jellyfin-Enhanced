@@ -666,7 +666,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // they see it: an administrator with a parental limit or without its library is told nothing.
                 static bool Asks(RequestWant w) => w.Status == "pending" && w.Reason is ("awaiting_approval" or "over_quota");
                 if (n.Kind == "create" && key != null && Asks(want)
-                    && now - n.At <= ArrivalFreshFor && _users.Admins().Where(a => a != want.UserId && _users.IsActive(a)).ToList() is { Count: > 0 } approvers)
+                    && _now() - n.At <= ArrivalFreshFor && _users.Admins().Where(a => a != want.UserId && _users.IsActive(a)).ToList() is { Count: > 0 } approvers)
                 {
                     // Prepare (4f round 8): every administrator's view of the title and its name as they see it, all awaited
                     // before any of them is decided.
@@ -679,15 +679,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             : null;
                     }
 
-                    // Then decide, after the last await: the request, the administrators and what each may see, as they are now.
-                    if (!Enabled || _store.Generation != generation || !_ledger.Database.Available) break;
-                    var asked = _ledger.Find(want.Id);
-                    var admins = _users.Admins();
-                    var drafts = new List<NotificationDraft>();
+                    // Then the final gate for each administrator, after the last await (4f round 9): the request still waiting for
+                    // an OK, still an administrator, active, may see the title, as they are now. Notifications switched off (or
+                    // the request unreadable) meanwhile: the notice is left for a later round.
+                    if (_store.Generation != generation || !_ledger.Database.Available) break;
+                    var asked = _ledger.Find(want.Id) ?? want;
+                    var finals = new List<NotifyFinal>();
+                    var later = false;
                     foreach (var approver in approvers)
                     {
-                        if (asked == null || !Asks(asked) || !admins.Contains(approver) || !_users.IsActive(approver)) continue;
-                        if (_policy != null && !_policy.Evaluate(approver, asked.Input).Visible) continue;
                         var ask = TitleParams(key.Title, null);
                         if (names[approver] is { } askMeta)
                         {
@@ -698,22 +698,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         ask["user"] = _users.Name(asked.UserId) ?? string.Empty;
                         if (asked.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", asked.Input.Seasons.Order());
                         if (asked.Input.Variant == "4k") ask["variant"] = "4k";
-                        drafts.Add(Draft(approver, NotifyKind.Approval, "approval|je|" + asked.Id, key.Title.ToString(), null, ask, now, null));
+                        var verdict = _dispatcher.Final(Alert(approver, NotifyKind.Approval, NotifyDispatcher.AskEventPrefix + asked.Id, key.Title.ToString(), null, ask, n.At));
+                        if (verdict.Verdict is NotifyVerdict.Off or NotifyVerdict.Wait)
+                        {
+                            later = true;
+                            break;
+                        }
+                        finals.Add(verdict);
                     }
-                    var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? drafts.Where(d => d.Add(tx) != null).ToList() : new List<NotificationDraft>(), new List<NotificationDraft>()).Result;
-                    foreach (var d in created) Announce(d);
+                    if (later) break;
+                    var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? finals.Where(f => f.Sends && Add(tx, f) != null).ToList() : new List<NotifyFinal>(), new List<NotifyFinal>()).Result;
+                    foreach (var f in created) Announce(f);
                     told += created.Count;
                     continue;
                 }
-                // Whether the requester is told of the outcome, from the request and their switches as given.
-                bool Tells(RequestWant w, NotifyPrefs prefs) => kind != null && key != null && now - n.At <= ArrivalFreshFor && _users.IsActive(w.UserId)
-                    && (kind == NotifyKind.Declined ? w.Status == "declined" && prefs.Declined : w.Status is "queued" or "sent" or "stale" or "fulfilled" && prefs.Approved && n.Approver != w.UserId);
-                if (!Tells(want, _store.Prefs(want.UserId)))
+                // Not an alert to the requester (an ask told only to administrators, an auto-OK'd request, their own OK).
+                if (kind == null || key == null || (kind == NotifyKind.Approved && n.Approver == want.UserId))
                 {
                     _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
                     continue;
                 }
-                var p = TitleParams(key!.Title, null);
+                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : NotifyDispatcher.DeclinedEventPrefix) + want.Id;
+                var p = TitleParams(key.Title, null);
+                p["contact"] = Contact();
+                if (ScopeLabel(want.Input) is { } scope) p["scope"] = scope;
+                if (want.Input.Variant == "4k") p["variant"] = "4k";
+                // Released by someone else's request going out (no OK of its own): "on its way".
+                if (n.Kind == "merged") p["shared"] = "1";
+                if (kind == NotifyKind.Declined && !string.IsNullOrWhiteSpace(n.DeclineReason)) p["reason"] = n.DeclineReason!.Trim() is var r && r.Length > 300 ? r[..300] : r;
+                // Told at all? The final gate before the slow steps: one it refuses now (the request moved on, the requester gone
+                // or with the kind off, too old) ends here; notifications switched off leave it and the rest for a later round.
+                var early = _dispatcher.Final(Alert(want.UserId, kind, eventKey, key.Title.ToString(), null, p, n.At));
+                if (early.Verdict == NotifyVerdict.Off) break;
+                if (early.Verdict == NotifyVerdict.Refuse)
+                {
+                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                    continue;
+                }
                 if (_titleMeta != null && ActiveViewer(want.UserId) is { } viewer
                     && (await _titleMeta(new[] { key.ToString() }, viewer, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } meta)
                 {
@@ -721,41 +742,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (meta.Year is > 1800) p["year"] = meta.Year.Value.ToString(CultureInfo.InvariantCulture);
                     if (!string.IsNullOrEmpty(meta.Poster)) p["poster"] = meta.Poster!;
                 }
-                p["contact"] = Contact();
-                if (ScopeLabel(want.Input) is { } scope) p["scope"] = scope;
-                if (want.Input.Variant == "4k") p["variant"] = "4k";
-                // Released by someone else's request going out (no OK of its own): "on its way".
-                if (n.Kind == "merged") p["shared"] = "1";
-                if (kind == NotifyKind.Declined && !string.IsNullOrWhiteSpace(n.DeclineReason)) p["reason"] = n.DeclineReason!.Trim() is var r && r.Length > 300 ? r[..300] : r;
-                // May the requester be told (the one outcome policy every channel applies again right before its send:
-                // NotifyDispatcher.AlertCheck.Outcome): a title they can't see now or hid is handled with no notification;
-                // evidence that can't be read now moves the notice to the wait queue, in the same transaction (its own retries,
-                // fair between people, expiring from the notice's own time), so it never holds the ledger's page.
-                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : NotifyDispatcher.DeclinedEventPrefix) + want.Id;
                 // The policy's input is the request itself (edition, part, routing), prepared and judged as one (4f round 7).
                 if (_policy != null) await _policy.PrepareVisibilityAsync(want.UserId, _dispatcher.OutcomeInput(key, eventKey, p) ?? want.Input, cancellationToken).ConfigureAwait(false);
-                // Then decide, after the last await (4f round 8): notifications switched off meanwhile leave this notice and the
-                // rest for a later round; the request and the requester's switches as they are now.
-                if (!Enabled || _store.Generation != generation || !_ledger.Database.Available) break;
-                var prefs = _store.Prefs(want.UserId);
-                if (_ledger.Find(want.Id) is not { } current || !Tells(current, prefs))
+                // Then the final gate, after the last await (4f round 9: the one outcome policy every channel applies again right
+                // before its send): notifications switched off meanwhile leave this notice and the rest for a later round; a title
+                // they can't see now or hid, the kind switched off or the request moved on is handled with no notification;
+                // evidence that can't be read now moves the notice to the wait queue in the same transaction (its own retries,
+                // fair between people, expiring from the notice's own time), so it never holds the ledger's page.
+                if (_store.Generation != generation || !_ledger.Database.Available) break;
+                var final = _dispatcher.Final(Alert(want.UserId, kind, eventKey, key.Title.ToString(), null, p, n.At));
+                if (final.Verdict == NotifyVerdict.Off) break;
+                if (final.Verdict == NotifyVerdict.Wait)
                 {
-                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
-                    continue;
-                }
-                var verdict = ActiveViewer(want.UserId) is { } requester ? Outcome(want.UserId, requester, kind!, key.Title.ToString(), p, eventKey) : new NotifyDispatcher.AlertVerdict("unknown", true);
-                if (verdict.Wait)
-                {
-                    var wait = new AlertWait("notice", n.Id, want.UserId, kind!, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, now + NotifyDispatcher.WaitFor, 0);
+                    var wait = new AlertWait("notice", n.Id, want.UserId, kind, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, final.Until!.Value, 0);
                     _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) && tx.AddAlertWait(wait), false);
                     continue;
                 }
-                if (verdict.Why != null)
-                {
-                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
-                    continue;
-                }
-                if (Notify(want.UserId, kind!, eventKey, key.Title.ToString(), null, p, now, prefs, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
+                if (Notify(final, tx => tx.TakeRequestNotice(n.Id), generation)) told++;
                 else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
             }
             return told;
@@ -803,49 +806,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// (<see cref="Outcome"/>), on its own schedule, independent of the request ledger's notices and of Seerr's changes.
         /// Dropped unsent once the outcome itself is too old (its original time), the requester is gone or turned the kind off,
         /// or the request isn't in that outcome any more; told (its removal and the notification commit together) once it may
-        /// be; tried again a little later while the evidence still can't be read. Prepare, then decide (4f round 8): each wait's
-        /// evidence is prepared (awaited) first, then everything is decided from the state after that await (the switches, the
-        /// person, the request, the title); notifications switched off meanwhile leave it and the rest for a later round.
+        /// be; tried again a little later while the evidence still can't be read. Prepare, then decide (4f rounds 8 and 9): each
+        /// wait's evidence is prepared (awaited) first, then the final gate decides it from the state after that await (the
+        /// switches, the person, the request, the title); notifications switched off meanwhile leave it and the rest for a later
+        /// round.
         /// Returns how many were told.
         /// </summary>
         internal async Task<int> RetryAlertWaitsAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             var told = 0;
             var generation = _store.Generation;
-            // Never told any more (decided from now; a drop is used at once): too old, the requester gone or with the kind off, or
-            // the request moved on. Null when it still may be, with the request's state (null: it can't be read now).
-            NotifyPrefs? Kept(AlertWait wait, out bool? still)
-            {
-                var prefs = _store.Prefs(wait.User);
-                still = StillOutcome(wait);
-                return now - wait.OriginalAt > ArrivalFreshFor || !_users.IsActive(wait.User) || !(wait.Kind == NotifyKind.Declined ? prefs.Declined : prefs.Approved) || still == false ? null : prefs;
-            }
-
             foreach (var wait in _store.DueAlertWaits(now, AlertWaitsPerRound))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (_store.Generation != generation) break;
-                if (Kept(wait, out _) == null)
+                var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(wait.Payload), StringComparer.Ordinal);
+                // Before its preparation: one the final gate refuses now (too old, the requester gone or with the kind off, the
+                // request moved on) is dropped at once; notifications switched off leave it and the rest.
+                var early = _dispatcher.Final(WaitAlert(wait, payload));
+                if (early.Verdict == NotifyVerdict.Off) break;
+                if (early.Verdict == NotifyVerdict.Refuse)
                 {
                     _store.DropAlertWait(wait, generation);
                     continue;
                 }
-                var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(wait.Payload), StringComparer.Ordinal);
                 if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key && _dispatcher.OutcomeInput(key, wait.EventKey, payload) is { } input)
                     await _policy.PrepareVisibilityAsync(wait.User, input, cancellationToken).ConfigureAwait(false);
-                if (!Enabled || _store.Generation != generation) break;
-                if (Kept(wait, out var still) is not { } prefs)
+                if (_store.Generation != generation) break;
+                var final = _dispatcher.Final(WaitAlert(wait, payload));
+                if (final.Verdict == NotifyVerdict.Off) break;
+                if (final.Verdict == NotifyVerdict.Wait)
                 {
-                    _store.DropAlertWait(wait, generation);
+                    _store.RetryAlertWait(wait, final.Until!.Value, generation);
                     continue;
                 }
-                var verdict = still == null || ActiveViewer(wait.User) is not { } viewer ? new NotifyDispatcher.AlertVerdict("unknown", true) : Outcome(wait.User, viewer, wait.Kind, wait.TitleKey, payload, wait.EventKey);
-                if (verdict.Wait)
-                {
-                    _store.RetryAlertWait(wait, now + NotifyDispatcher.WaitFor, generation);
-                    continue;
-                }
-                if (verdict.Why != null || !Notify(wait.User, wait.Kind, wait.EventKey, wait.TitleKey, null, payload, now, prefs, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation))
+                if (!Notify(final, tx => tx.TakeAlertWait(wait.Source, wait.SourceId), generation))
                 {
                     _store.DropAlertWait(wait, generation);
                     continue;
@@ -855,32 +850,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return told;
         }
 
-        // Whether the request a waiting outcome alert is about is still in that outcome: true, false (moved on or gone: never
-        // told), or null when that can't be read now (the ledger or Seerr's list isn't there: tried again later).
-        private bool? StillOutcome(AlertWait wait)
-        {
-            if (wait.Source == "notice")
-            {
-                if (_ledger == null || !_ledger.Database.Available || wait.RequestId == null) return null;
-                var want = _ledger.Find(wait.RequestId);
-                return wait.Kind == NotifyKind.Declined ? want?.Status == "declined" : want?.Status is "queued" or "sent" or "stale" or "fulfilled";
-            }
-            if (!_requests.Active || !_requests.Loaded) return null;
-            var (source, all, floor) = _requests.Current;
-            if (source == null) return null;
-            var server = source.Length > 8 ? source[..8] : source;
-            if (!wait.SourceId.StartsWith(server + "|", StringComparison.Ordinal) || !int.TryParse(wait.RequestId, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) return false;
-            if (all.FirstOrDefault(r => r.Id == id) is { } request) return request.Status == SeerrRequestStatus.Declined;
-            // Below the list's floor a request not held is unknown, not gone.
-            return floor is int below && id < below ? null : false;
-        }
-
-        // The one outcome policy (NotifyDispatcher.AlertCheck.Outcome) for a requester now, for the alert's event (its request).
-        private NotifyDispatcher.AlertVerdict Outcome(Guid user, StatusViewer viewer, string kind, string titleKey, Dictionary<string, string> payload, string eventKey)
-        {
-            string? none = null;
-            return _dispatcher.Check(user, viewer).Decide(kind, titleKey, payload, ref none, eventKey);
-        }
+        // A waiting outcome alert as the final gate is asked about it (its own expiry: the outcome's original time).
+        private static NotifyAlert WaitAlert(AlertWait wait, IReadOnlyDictionary<string, string> payload)
+            => new(wait.User, wait.Kind, wait.TitleKey, null, wait.EventKey, payload) { Since = wait.OriginalAt };
 
         /// <summary>
         /// Whether an administrator may see the title an ask waiting for an OK (or a reminder about a title) names, by
@@ -1054,7 +1026,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // leaves it to the next look.
             var known = watch?.Known;
             var baseline = watch?.Baseline ?? now;
-            var prefs = _store.Prefs(viewer.UserId);
             bool Handle(NotifyTransaction tx)
             {
                 tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, ReadyItems(known, itemId), now);
@@ -1062,29 +1033,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
             }
-            if (!prefs.Ready || (arrived is DateTime at && now.UtcDateTime - at > ArrivalFreshFor))
-            {
-                Written(key, _store.InTransaction(generation, Handle, false).Done);
-                return;
-            }
             var p = TitleParams(key, itemId);
             if (interest.Scope?.Only4k == true) p["variant"] = "4k";
             if (interest.HasRequest) p["requested"] = "1";
-            // May the person be told (the same decision every channel makes right before its send): a title they hid
-            // (Hidden Content, on any copy of it) becomes handled with no notification; Hidden Content that can't be read
-            // now leaves it for the next look (nothing written).
-            var told = itemId?.ToString("N", CultureInfo.InvariantCulture);
-            var verdict = _dispatcher.Check(viewer.UserId, viewer).Decide(NotifyKind.Ready, key.ToString(), p, ref told);
-            if (verdict.Wait) return;
-            if (verdict.Why != null)
+            // One event per interest: a title asked for again after it was removed (its state forgotten,
+            // a new watch baseline) is a new event; the marks keep a flapping upgrade to one.
+            var eventKey = mark + "|" + baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+            // May the person be told: the final gate, after the look's last await (the same decision every channel makes right
+            // before its send). The kind switched off, an arrival too old to announce, a title they can't open or hid (Hidden
+            // Content, on any copy of it): handled with no notification. Hidden Content that can't be read now, or notifications
+            // switched off meanwhile: nothing written, looked at again (when they are back on, the first sweep looks again).
+            var since = arrived is DateTime at ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)) : (DateTimeOffset?)null;
+            var final = _dispatcher.Final(Alert(viewer.UserId, NotifyKind.Ready, eventKey, key.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p, since));
+            if (final.Verdict is NotifyVerdict.Off or NotifyVerdict.Wait) return;
+            if (final.Verdict == NotifyVerdict.Refuse)
             {
                 Written(key, _store.InTransaction(generation, Handle, false).Done);
                 return;
             }
-            // One event per interest: a title asked for again after it was removed (its state forgotten,
-            // a new watch baseline) is a new event; the marks keep a flapping upgrade to one.
-            var eventKey = mark + "|" + baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-            if (!Notify(viewer.UserId, NotifyKind.Ready, eventKey, key.ToString(), itemId, p, now, prefs, Handle, generation)) Written(key, _store.Generation == generation);
+            if (!Notify(final, Handle, generation)) Written(key, _store.Generation == generation);
         }
 
         // A request's part that arrived after it was asked for (so a first look that came late still tells it).
@@ -1451,24 +1418,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var only4k = key.EndsWith("|4k", StringComparison.Ordinal);
             var title = TitleKey.Parse(only4k ? key[..^3] : key);
             var state = Deserialize<BatchState>(json);
-            var viewer = ActiveViewer(user);
-            var prefs = viewer != null ? _store.Prefs(user) : null;
-            if (title == null || state == null || viewer == null || prefs?.Episodes != true)
+            if (title == null || state == null)
             {
+                // Not a batch that can be told (unreadable): forgotten.
                 DropBatch(user, key, json, generation);
                 return false;
             }
-            // Only what the viewer can still open (a library or parental limit may have changed), each
-            // number linked to an episode item the viewer can open now: the one stored when it was
-            // batched while it is still visible, else the copy that still is.
-            var copies = SeriesCopies(title, viewer, only4k);
+            // What the batch says, for the person as Jellyfin shows things to them now: only what they can still open (a library
+            // or parental limit may have changed), each number linked to an episode item they can open now (the one stored when
+            // it was batched while it is still visible, else the copy that still is) and, where their Hidden Content can be read,
+            // one they haven't hidden. Whether anything of it may be told is the final gate's.
+            var viewer = _view.Viewer(user);
+            var copies = viewer == null ? new List<JfCopy>() : SeriesCopies(title, viewer, only4k);
             foreach (var joined in state.Keys)
             {
-                if (TitleKey.Parse(joined) is { } k) copies.AddRange(SeriesCopies(k, viewer, only4k));
+                if (viewer != null && TitleKey.Parse(joined) is { } k) copies.AddRange(SeriesCopies(k, viewer, only4k));
             }
             copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
-            var files = copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
+            var files = viewer == null ? new List<JfEpisode>() : copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
                 .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).ToList();
             var coverage = new EpisodeCoverage(files);
             // A pending batch already supplies every number we need. Check full membership rather
@@ -1482,28 +1450,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     ids.Add(e.ItemId);
                 }
             }
-            // Each number linked to a copy the viewer can open and hasn't hidden (Hidden Content: the episode itself, its series
-            // or the title on any of its copies); a number whose every open copy is hidden isn't announced, and with nothing
-            // left there is no notification at all (no bell row, toast or delivery). Rules that can't be read now keep the
-            // batch for a later round (bounded), never a notification.
-            var check = _dispatcher.Check(user, viewer);
-            if (check.Hides(title.ToString()) is not { } hidden)
-            {
-                WaitBatch(user, key, json, now, generation);
-                return false;
-            }
+            // A number whose every open copy is hidden (the episode itself, its series or the title on any of its copies) isn't
+            // announced; with nothing left the gate refuses the batch (no bell row, toast or delivery).
+            var hidden = viewer == null ? null : _dispatcher.Check(user, viewer).Hides(title.ToString());
             foreach (var x in state.Episodes)
             {
-                if (!open.TryGetValue((x.S, x.E), out var visible)) continue;
+                if (hidden == null || !open.TryGetValue((x.S, x.E), out var visible)) continue;
                 visible.RemoveWhere(id => hidden(id));
                 if (visible.Count == 0) open.Remove((x.S, x.E));
             }
             var episodes = state.Episodes.Where(x => open.ContainsKey((x.S, x.E))).OrderBy(x => x.S).ThenBy(x => x.E).ToList();
-            if (episodes.Count == 0)
-            {
-                DropBatch(user, key, json, generation);
-                return false;
-            }
             foreach (var x in episodes)
             {
                 var visible = open[(x.S, x.E)];
@@ -1524,7 +1480,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 p["episode"] = episodes[0].E.ToString(CultureInfo.InvariantCulture);
                 itemId = episodes[0].I ?? itemId;
             }
-            else if (seasons.Count == 1 && seriesItem is Guid series && WholeSeason(title, only4k, coverage, seasons[0], episodes.Count))
+            else if (seasons.Count == 1 && seriesItem is Guid series && viewer != null && WholeSeason(title, only4k, coverage, seasons[0], episodes.Count))
             {
                 // A whole season arriving together (a season pack) collapses to one line.
                 p["mode"] = "season";
@@ -1535,18 +1491,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 p["mode"] = "many";
             }
-            // The same decision every channel makes right before its send, on what is about to be told.
-            if (check.Decide(NotifyKind.Episodes, title.ToString(), p, ref itemId).Why != null)
+            // One event per interest, like Ready: the same episodes told again after the series was
+            // asked for again (its state forgotten, a new watch baseline) are a new event.
+            string? eventKey = null;
+            if (episodes.Count > 0)
+            {
+                var first = episodes[0];
+                var baseline = _store.Watch(user, title.ToString(), only4k ? "eps4k" : "eps")?.Baseline.ToUnixTimeMilliseconds() ?? 0;
+                eventKey = (only4k ? "eps4k|" : "eps|") + title + "|s" + first.S.ToString(CultureInfo.InvariantCulture) + "e" + first.E.ToString(CultureInfo.InvariantCulture) + "|" + episodes.Count.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(".", episodes.Select(x => x.S.ToString(CultureInfo.InvariantCulture) + "x" + x.E.ToString(CultureInfo.InvariantCulture))))), 0, 6) + "|" + baseline.ToString(CultureInfo.InvariantCulture);
+            }
+            // The final gate on what is about to be told (the same decision every channel makes right before its send): the
+            // kind switched off, the person gone, nothing left they can open or haven't hidden: dropped; Hidden Content that
+            // can't be read now: kept for a later round (bounded); notifications switched off meanwhile: left as it is.
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Episodes, eventKey, title.ToString(), itemId, p));
+            if (final.Verdict == NotifyVerdict.Off) return false;
+            if (final.Verdict == NotifyVerdict.Wait)
+            {
+                WaitBatch(user, key, json, final.At, generation);
+                return false;
+            }
+            if (final.Verdict == NotifyVerdict.Refuse)
             {
                 DropBatch(user, key, json, generation);
                 return false;
             }
-            var first = episodes[0];
-            // One event per interest, like Ready: the same episodes told again after the series was
-            // asked for again (its state forgotten, a new watch baseline) are a new event.
-            var baseline = _store.Watch(user, title.ToString(), only4k ? "eps4k" : "eps")?.Baseline.ToUnixTimeMilliseconds() ?? 0;
-            var eventKey = (only4k ? "eps4k|" : "eps|") + title + "|s" + first.S.ToString(CultureInfo.InvariantCulture) + "e" + first.E.ToString(CultureInfo.InvariantCulture) + "|" + episodes.Count.ToString(CultureInfo.InvariantCulture) + "|" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(".", episodes.Select(x => x.S.ToString(CultureInfo.InvariantCulture) + "x" + x.E.ToString(CultureInfo.InvariantCulture))))), 0, 6) + "|" + baseline.ToString(CultureInfo.InvariantCulture);
-            if (Notify(user, NotifyKind.Episodes, eventKey, title.ToString(), itemId is { } i && Guid.TryParse(i, out var g) ? g : null, p, now, prefs, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
+            if (Notify(final, tx => tx.DeleteBatchIf(user, key, json) ? true : throw new BatchChangedException(), generation)) return true;
             if (_store.Generation != generation) throw new BatchChangedException();
             return false;
         }
@@ -1641,29 +1610,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // this time. An upgrade flapping under the same request is still told once.
                     ForgetTitle(asker, r.Key.Title);
                 }
-                if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && _users.IsActive(requester))
+                if (r.Status == SeerrRequestStatus.Declined && r.RequestedBy is Guid requester && (known || fresh) && r.Key != null)
                 {
-                    var prefs = _store.Prefs(requester);
-                    if (prefs.Declined && r.Key != null)
+                    var p = TitleParams(r.Key.Title, null, r);
+                    p["contact"] = Contact();
+                    // Every dimension the outcome policy reads travels with the alert (4f round 7): the edition (a 4K request
+                    // lands in the 4K instance's libraries) and the seasons, through the wait queue to every send and bell read.
+                    OutcomeParams(p, r);
+                    // The final gate (the requester, their switch, the one outcome policy, as for JE's own notices); evidence that
+                    // can't be read now: the decline goes to the wait queue (tried again on its own schedule, not on Seerr's next
+                    // change), and the change is seen. Notifications switched off meanwhile: nothing of this list is seen yet.
+                    var id = r.Id.ToString(CultureInfo.InvariantCulture);
+                    var eventKey = "declined|" + server + "|" + id;
+                    var final = _dispatcher.Final(Alert(requester, NotifyKind.Declined, eventKey, r.Key.Title.ToString(), null, p));
+                    if (final.Verdict == NotifyVerdict.Off) return false;
+                    if (final.Verdict == NotifyVerdict.Wait)
                     {
-                        var p = TitleParams(r.Key.Title, null, r);
-                        p["contact"] = Contact();
-                        // Every dimension the outcome policy reads travels with the alert (4f round 7): the edition (a 4K request
-                        // lands in the 4K instance's libraries) and the seasons, through the wait queue to every send and bell read.
-                        OutcomeParams(p, r);
-                        // The one outcome policy (as for JE's own notices); evidence that can't be read now: the decline goes to
-                        // the wait queue (tried again on its own schedule, not on Seerr's next change), and the change is seen.
-                        var id = r.Id.ToString(CultureInfo.InvariantCulture);
-                        var eventKey = "declined|" + server + "|" + id;
-                        var verdict = ActiveViewer(requester) is { } viewer ? Outcome(requester, viewer, NotifyKind.Declined, r.Key.Title.ToString(), p, eventKey) : new NotifyDispatcher.AlertVerdict("unknown", true);
-                        if (verdict.Wait)
-                        {
-                            var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id,
-                                r.UpdatedAt is DateTime updated ? new DateTimeOffset(DateTime.SpecifyKind(updated, DateTimeKind.Utc)) : now, now + NotifyDispatcher.WaitFor, 0);
-                            _store.InTransaction(tx => tx.AddAlertWait(wait));
-                        }
-                        else if (verdict.Why == null) Notify(requester, NotifyKind.Declined, eventKey, r.Key.Title.ToString(), null, p, now, prefs);
+                        var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id,
+                            r.UpdatedAt is DateTime updated ? new DateTimeOffset(DateTime.SpecifyKind(updated, DateTimeKind.Utc)) : now, final.Until!.Value, 0);
+                        _store.InTransaction(tx => tx.AddAlertWait(wait));
                     }
+                    else if (final.Sends) Notify(final, null);
                 }
                 if (r.Status == SeerrRequestStatus.Pending && fresh)
                 {
@@ -1674,9 +1641,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         var p = r.Key != null ? TitleParams(r.Key.Title, null, r) : new Dictionary<string, string>();
                         p["user"] = r.RequestedByName ?? (r.RequestedBy is Guid u ? _users.Name(u) : null) ?? string.Empty;
                         OutcomeParams(p, r);
-                        // Not an administrator who can't see the title (a parental limit, no access to its library).
-                        if (!MaySeeAsk(_policy, admin, r.Key?.Title.ToString(), p)) continue;
-                        Notify(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p, now, null);
+                        // The final gate: an administrator who can see the title (not one with a parental limit or without its
+                        // library), still one and active, while the request still waits for an OK.
+                        var final = _dispatcher.Final(Alert(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p));
+                        if (final.Verdict == NotifyVerdict.Off) return false;
+                        if (final.Sends) Notify(final, null);
                     }
                 }
             }
@@ -1866,8 +1835,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var eventKey = "remind|" + NotifyValues.Id(viewer.UserId) + "|" + title + "|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
             // Only the administrators who can see the title (as their Requests page shows its card), as for an ask
             // waiting for an OK: one with a parental limit or without its library is told nothing. Prepare, then decide (4f
-            // round 8): every administrator's view is prepared (awaited) first; then the administrators as they are now, each
-            // by what they may see now.
+            // rounds 8 and 9): every administrator's view is prepared (awaited) first; then the final gate for each
+            // administrator as they are now (still one, active, what they may see). Notifications switched off meanwhile:
+            // nothing is told and the reminder isn't spent.
             var input = AskInput(statusKey.Title, statusKey.Season is int season ? new[] { season } : Array.Empty<int>(), false);
             if (_policy != null)
             {
@@ -1876,20 +1846,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     await _policy.PrepareVisibilityAsync(admin, input, cancellationToken).ConfigureAwait(false);
                 }
             }
-            if (!Enabled) return new RemindOutcome("disabled");
-            var admins = _users.Admins().Where(admin => _policy == null || _policy.Evaluate(admin, input).Visible).ToList();
-            var drafts = admins.Select(admin => Draft(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId, p, now, null)).ToList();
+            var finals = new List<NotifyFinal>();
+            foreach (var admin in _users.Admins())
+            {
+                var final = _dispatcher.Final(Alert(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p));
+                if (final.Verdict == NotifyVerdict.Off) return new RemindOutcome("disabled");
+                if (final.Sends) finals.Add(final);
+            }
             var created = _store.InTransaction(tx =>
             {
                 if (!tx.ClaimMark(viewer.UserId, mark, now, RemindEvery)) return null;
-                return drafts.Where(d => d.Add(tx) != null).ToList();
+                return finals.Where(f => Add(tx, f) != null).ToList();
             });
             if (created == null)
             {
                 var last = _store.MarkAt(viewer.UserId, mark) ?? now;
                 return new RemindOutcome("too_soon", last + RemindEvery);
             }
-            foreach (var d in created) Announce(d);
+            foreach (var f in created) Announce(f);
             return new RemindOutcome("ok", now + RemindEvery);
         }
 
@@ -1943,13 +1917,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                             // The "told" marker and every administrator's alert commit together: a stop
                             // (or a failure) before the alerts exist leaves the outage to tell next round.
                             var p = new Dictionary<string, string> { ["instance"] = instance.Name, ["minutes"] = ((int)(now - start).TotalMinutes).ToString(CultureInfo.InvariantCulture) };
-                            var drafts = Admins().Select(admin => Draft(admin, NotifyKind.InstanceDown, "down|" + instance.Id + "|" + since, null, null, p, now, null)).ToList();
-                            NotifyAll(drafts, tx =>
+                            var told = TellAdmins(Admins(), NotifyKind.InstanceDown, "down|" + instance.Id + "|" + since, null, p, tx =>
                             {
                                 if (tx.Meta("down-told:" + instance.Id) != null) return false;
                                 tx.SetMeta("down-told:" + instance.Id, since);
                                 return true;
                             });
+                            if (!told) return;
                         }
                     }
                     continue;
@@ -1959,14 +1933,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // Clearing the outage and telling it ended commit together.
                     var told = _store.Meta("down-told:" + instance.Id);
                     var p = new Dictionary<string, string> { ["instance"] = instance.Name };
-                    var drafts = told == null ? new List<NotificationDraft>() : Admins().Select(admin => Draft(admin, NotifyKind.InstanceUp, "up|" + instance.Id + "|" + told, null, null, p, now, null)).ToList();
-                    NotifyAll(drafts, tx =>
+                    var cleared = TellAdmins(told == null ? Array.Empty<Guid>() : Admins(), NotifyKind.InstanceUp, "up|" + instance.Id + "|" + told, null, p, tx =>
                     {
                         if (tx.Meta("down-told:" + instance.Id) != told) return false;
                         tx.SetMeta(downKey, null);
                         tx.SetMeta("down-told:" + instance.Id, null);
                         return true;
                     });
+                    if (!cleared) return;
                 }
             }
 
@@ -1983,7 +1957,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     if (!item.Params.TryGetValue("used", out var usedText) || !int.TryParse(usedText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var used)) continue;
                     var free = item.Params.TryGetValue("free", out var freeText) && long.TryParse(freeText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes) ? bytes : 0;
                     var p = new Dictionary<string, string> { ["instance"] = item.Instance ?? string.Empty, ["path"] = item.Title, ["percent"] = (100 - used).ToString(CultureInfo.InvariantCulture), ["free"] = NotifyTexts.Size(free) };
-                    foreach (var admin in Admins()) Notify(admin, NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, null, p, now, null);
+                    if (!TellAdmins(Admins(), NotifyKind.LowDisk, "disk|" + item.InstanceId + "|" + item.Title + "|" + day, null, p, null)) return;
                     continue;
                 }
                 // A download's occurrence is when the arr added it (its "since" is when JE first saw the
@@ -1995,9 +1969,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // inbox's 90-day housekeeping never makes a row that is still there alert again.
                 var eventKey = "attention|" + item.Id + "|" + (occurred?.Ticks ?? 0).ToString(CultureInfo.InvariantCulture);
                 var payload = AttentionPayload(item);
-                foreach (var admin in Admins()) Notify(admin, NotifyKind.Attention, eventKey, item.Key, null, payload, now, null, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+                foreach (var admin in Admins())
+                {
+                    var final = _dispatcher.Final(Alert(admin, NotifyKind.Attention, eventKey, item.Key, null, payload));
+                    if (final.Verdict == NotifyVerdict.Off) return;
+                    if (final.Sends) Notify(final, tx => tx.KeepMark(admin, "told|" + eventKey, now));
+                }
             }
-            StuckDigest(config, attention, Admins, now);
+            StuckDigest(attention, Admins, now);
+        }
+
+        // One administrators' alert for each administrator the final gate lets it go to now, in one transaction with the event's
+        // "handled" state (<paramref name="first"/>, which commits even when nobody is told); false (nothing written) when
+        // notifications were switched off meanwhile.
+        private bool TellAdmins(IReadOnlyList<Guid> admins, string kind, string eventKey, string? titleKey, IReadOnlyDictionary<string, string> payload, Func<NotifyTransaction, bool>? first)
+        {
+            var finals = new List<NotifyFinal>();
+            foreach (var admin in admins)
+            {
+                var final = _dispatcher.Final(Alert(admin, kind, eventKey, titleKey, null, payload));
+                if (final.Verdict == NotifyVerdict.Off) return false;
+                if (final.Sends) finals.Add(final);
+            }
+            NotifyAll(finals, first ?? (_ => true));
+            return true;
         }
 
         // When the administrators' Needs attention alerts began (UTC): set at the first check and kept
@@ -2064,8 +2059,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return p;
         }
 
-        private void StuckDigest(PluginConfiguration? config, IReadOnlyList<AttentionItem> attention, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now)
+        private void StuckDigest(IReadOnlyList<AttentionItem> attention, Func<IReadOnlyList<Guid>> admins, DateTimeOffset now)
         {
+            var config = _config();
             var hour = Math.Clamp(config?.ArrNotifyDigestHour ?? 9, 0, 23);
             var local = TimeZoneInfo.ConvertTime(now, TimeZoneInfo.Local);
             if (local.Hour != hour) return;
@@ -2080,18 +2076,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 .ToList();
             // The day is marked done only once the list was read, in the same transaction as the
             // digests (a failure or a stop before they exist leaves the day's digest to the next round).
-            var drafts = new List<NotificationDraft>();
-            if (items.Count > 0)
+            var p = new Dictionary<string, string>
             {
-                var p = new Dictionary<string, string>
-                {
-                    ["count"] = items.Count.ToString(CultureInfo.InvariantCulture),
-                    ["hours"] = ((int)stuckFor.TotalHours).ToString(CultureInfo.InvariantCulture),
-                    ["items"] = string.Join("; ", items.Take(10)) + (items.Count > 10 ? $"; and {items.Count - 10} more" : string.Empty),
-                };
-                drafts.AddRange(admins().Select(admin => Draft(admin, NotifyKind.StuckDigest, "stuck|" + day, null, null, p, now, null)));
-            }
-            NotifyAll(drafts, tx =>
+                ["count"] = items.Count.ToString(CultureInfo.InvariantCulture),
+                ["hours"] = ((int)stuckFor.TotalHours).ToString(CultureInfo.InvariantCulture),
+                ["items"] = string.Join("; ", items.Take(10)) + (items.Count > 10 ? $"; and {items.Count - 10} more" : string.Empty),
+            };
+            TellAdmins(items.Count > 0 ? admins() : Array.Empty<Guid>(), NotifyKind.StuckDigest, "stuck|" + day, null, p, tx =>
             {
                 if (tx.Meta("digest-day") == day) return false;
                 tx.SetMeta("digest-day", day);
@@ -2101,10 +2092,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // ================================================================== creating notifications
 
+        /// <summary>An alert as the final gate is asked about it (its identifiers; the gate reads everything else itself).</summary>
+        private static NotifyAlert Alert(Guid user, string kind, string? eventKey, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset? since = null)
+            => new(user, kind, titleKey, itemId, eventKey, payload) { Since = since };
+
         /// <summary>
-        /// Creates a notification (once per user and event) with a delivery for each outbound channel
-        /// the user has on, held until their quiet hours end; announces it to the user's open pages.
-        /// Returns false when it already existed.
+        /// Creates the notification the final gate let go (<paramref name="final"/>, decided right before with no await in
+        /// between): once per user and event, with the deliveries the gate gave it (each channel the person has on, held until
+        /// their quiet hours end); announces it to the person's open pages. Returns false when it already existed (or the
+        /// verdict isn't to tell).
         /// </summary>
         /// <remarks>
         /// <paramref name="first"/> runs in the same transaction before the notification is added (the
@@ -2112,53 +2108,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// its changes commit but no notification is created. With <paramref name="generation"/>, nothing
         /// is written (false) when the database was restored since the event's rows were read.
         /// </remarks>
-        internal bool Notify(Guid user, string kind, string eventKey, string? titleKey, Guid? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset now, NotifyPrefs? prefs, Func<NotifyTransaction, bool>? first = null, long? generation = null)
+        internal bool Notify(NotifyFinal final, Func<NotifyTransaction, bool>? first, long? generation = null)
         {
-            var draft = Draft(user, kind, eventKey, titleKey, itemId, payload, now, prefs);
-            var id = _store.InTransaction(generation, tx => first != null && !first(tx) ? null : draft.Add(tx), null).Result;
+            if (!final.Sends || final.Alert.EventKey == null) return false;
+            var id = _store.InTransaction(generation, tx => first != null && !first(tx) ? null : Add(tx, final), null).Result;
             if (id == null) return false;
-            Announce(draft);
+            Announce(final);
             return true;
         }
 
         /// <summary>
-        /// Adds several notifications (one event for several administrators) in one transaction with
-        /// the event's "handled" state (<paramref name="first"/>; when it returns false nothing is added),
-        /// then announces the ones that were new.
+        /// Adds the notifications the final gate let go (one event for several administrators) in one transaction with the
+        /// event's "handled" state (<paramref name="first"/>; when it returns false nothing is added), then announces the ones
+        /// that were new.
         /// </summary>
-        private void NotifyAll(IReadOnlyList<NotificationDraft> drafts, Func<NotifyTransaction, bool> first)
+        private void NotifyAll(IReadOnlyList<NotifyFinal> finals, Func<NotifyTransaction, bool> first)
         {
-            var created = _store.InTransaction(tx => first(tx) ? drafts.Where(d => d.Add(tx) != null).ToList() : new List<NotificationDraft>());
-            foreach (var d in created) Announce(d);
+            var created = _store.InTransaction(tx => first(tx) ? finals.Where(f => Add(tx, f) != null).ToList() : new List<NotifyFinal>());
+            foreach (var f in created) Announce(f);
         }
 
-        /// <summary>A notification ready to be added: its deliveries are decided from the user's settings now.</summary>
-        private sealed record NotificationDraft(Guid User, string Kind, string EventKey, string? TitleKey, string? ItemId, IReadOnlyDictionary<string, string> Payload, IReadOnlyList<(string Channel, DateTimeOffset At)> Deliveries, DateTimeOffset Now)
-        {
-            public long? Add(NotifyTransaction tx) => tx.Add(User, EventKey, Kind, TitleKey, ItemId, Payload, Deliveries, Now);
-        }
-
-        private NotificationDraft Draft(Guid user, string kind, string eventKey, string? titleKey, Guid? itemId, IReadOnlyDictionary<string, string> payload, DateTimeOffset now, NotifyPrefs? prefs)
-        {
-            prefs ??= _store.Prefs(user);
-            var config = _config();
-            var deliveries = new List<(string, DateTimeOffset)>();
-            var external = !NotifyKind.IsAdminKind(kind) || prefs.AdminAlerts;
-            var at = QuietHours.EndsAt(prefs, now) ?? now;
-            if (external && prefs.Ntfy && NotifyEndpoints.IsTopic(prefs.NtfyTopic) && NotifyEndpoints.NtfyReady(config)) deliveries.Add((NotifyChannel.Ntfy, at));
-            if (external && prefs.Email && !string.IsNullOrEmpty(prefs.EmailAddress) && NotifyEndpoints.EmailReady(config)) deliveries.Add((NotifyChannel.Email, at));
-            // Phase 4f: a native on-screen message for what became ready (and a test), with the person's own consent. Due
-            // now: quiet hours, a busy or missing session end it at delivery instead of holding it.
-            if (kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Test && prefs.NativeReadyMessages && Ready.ReadyFlags.Messages(config)) deliveries.Add((NotifyChannel.DisplayMessage, now));
-            return new NotificationDraft(user, kind, eventKey, titleKey, itemId?.ToString("N", CultureInfo.InvariantCulture), payload, deliveries, now);
-        }
+        // A notification and its deliveries, as the final gate decided them; null when the person already has it.
+        private static long? Add(NotifyTransaction tx, NotifyFinal final)
+            => final.Sends && final.Alert.EventKey is { } eventKey
+                ? tx.Add(final.Alert.User, eventKey, final.Alert.Kind, final.Alert.TitleKey, final.ItemId, final.Payload, final.Deliveries, final.At)
+                : null;
 
         // After a notification committed: the user's open pages and the dispatcher hear of it.
-        private void Announce(NotificationDraft draft)
+        private void Announce(NotifyFinal final)
         {
             Interlocked.Increment(ref _created);
-            _feed.Bump(new[] { ArrTitleKey.UserInbox(draft.User) });
-            if (draft.Deliveries.Count > 0) _dispatcher.Wake();
+            _feed.Bump(new[] { ArrTitleKey.UserInbox(final.Alert.User) });
+            if (final.Deliveries.Count > 0) _dispatcher.Wake();
         }
 
         /// <summary>Tells the user's open pages that their inbox changed (read elsewhere, something new).</summary>
@@ -2168,7 +2149,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public bool SendTest(Guid user)
         {
             var now = _now();
-            return Notify(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now, null);
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>()));
+            return final.Sends && Notify(final, null);
         }
 
         /// <summary>
@@ -2178,7 +2160,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public bool TrySendTest(Guid user, TimeSpan every)
         {
             var now = _now();
-            return Notify(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>(), now, null, tx => tx.ClaimMark(user, "test", now, every));
+            var final = _dispatcher.Final(Alert(user, NotifyKind.Test, "test|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), null, null, new Dictionary<string, string>()));
+            return final.Sends && Notify(final, tx => tx.ClaimMark(user, "test", now, every));
         }
 
         // Title, year and poster for a title: Jellyfin's name for the item, else the arrs', else Seerr's.

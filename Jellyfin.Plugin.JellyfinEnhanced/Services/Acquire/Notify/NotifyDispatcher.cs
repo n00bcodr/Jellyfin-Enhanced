@@ -14,15 +14,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     /// Delivers notifications to phones (ntfy) and e-mail. Deliveries are rows in the database
     /// created with their notification, so nothing is lost across a restart; each is tried until it
     /// is sent, with backoff (30 s, 2 min, 10 min, 30 min, 2 h, 6 h), then marked failed for
-    /// administrators to see. A user's quiet hours hold their deliveries until the hours end
-    /// (checked again at send time, so a change of quiet hours applies to what is queued). At send
-    /// time the recipient and the settings are checked again too (each delivery reads the
-    /// configuration afresh): a user who is gone or disabled, an administrators' alert for someone
-    /// who is no longer one or switched those alerts off, a kind of alert the user switched off, a
-    /// channel switched off (by the administrator or the user) and a title the user can no longer
-    /// open end the delivery as "suppressed" (final, not a failure, never retried). Notifications
-    /// switched off as a whole leave what is queued pending until they are back. A restore of the
-    /// database while a delivery is on its way leaves the restored rows alone.
+    /// administrators to see. Every alert, here and where it is made (<see cref="NotificationService"/>), is decided by
+    /// one final gate, <see cref="Final"/> (4f round 9): synchronous, handed only the alert's identifiers, it reads at that
+    /// moment everything the decision depends on (the configuration and its master switch, the recipient's preferences and
+    /// quiet hours, the recipient, the request as it is now, the title's visibility and their Hidden Content), and each
+    /// action is taken from its verdict with no await in between (the network send itself excepted). A user's quiet hours
+    /// hold their deliveries until the hours end; a user who is gone or disabled, an administrators' alert for someone who is
+    /// no longer one or switched those alerts off, a kind of alert the user switched off, a channel switched off (by the
+    /// administrator or the user), a request that moved on and a title the user can no longer open or hid end the delivery as
+    /// "suppressed" (final, not a failure, never retried). Notifications switched off as a whole leave what is queued pending
+    /// until they are back, even a delivery being prepared at that moment. A restore of the database while a delivery is on
+    /// its way leaves the restored rows alone.
     /// </summary>
     public sealed class NotifyDispatcher : IHostedService, IDisposable
     {
@@ -44,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private readonly Requests.RequestLedger? _ledger;
         private readonly Requests.IRequestPolicy? _policy;
         private readonly Ready.ReadyNativeChannel? _native;
+        private readonly SeerrRequestReadModel? _requests;
         private readonly Logger? _logger;
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
@@ -53,8 +56,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private Task? _loopTask;
 
         /// <summary>The dispatcher (DI).</summary>
-        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy, Ready.ReadyNativeChannel native)
-            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy, native)
+        public NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, INotifyUsers users, IArrJellyfinView view, TitleAliases aliases, Logger logger, Requests.RequestLedger ledger, Requests.IRequestPolicy policy, Ready.ReadyNativeChannel native, SeerrRequestReadModel requests)
+            : this(store, ntfy, email, logger, null, null, users, view, aliases, ledger, policy, native, requests)
         {
         }
 
@@ -62,11 +65,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A dispatcher with explicit configuration and clock (tests). With <paramref name="ledger"/>, an OK of a request
         /// held (quiet hours, retries) isn't sent once it isn't OK'd any more (back to waiting, declined, cancelled, removed); with
         /// <paramref name="policy"/>, an ask waiting for an OK isn't sent to an administrator who can no longer see its title.
-        /// With <paramref name="native"/>, native Ready messages (phase 4f) go out; without it they end as suppressed.
+        /// With <paramref name="native"/>, native Ready messages (phase 4f) go out; without it they end as suppressed. With
+        /// <paramref name="requests"/>, a Seerr request's decline or ask isn't told once Seerr's list shows it moved on.
         /// </summary>
-        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null, Ready.ReadyNativeChannel? native = null)
+        internal NotifyDispatcher(NotifyStore store, NtfySender ntfy, EmailSender email, Logger? logger, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, INotifyUsers? users = null, IArrJellyfinView? view = null, TitleAliases? aliases = null, Requests.RequestLedger? ledger = null, Requests.IRequestPolicy? policy = null, Ready.ReadyNativeChannel? native = null, SeerrRequestReadModel? requests = null)
         {
             _native = native;
+            _requests = requests;
             _ledger = ledger;
             _policy = policy;
             _view = view;
@@ -109,8 +114,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // Before a send of an outcome alert: the rating facts its policy input needs are loaded (bounded by the policy; a failed
-        // lookup leaves them unverified, and the decision then waits). Never a decision: each delivery is decided after it (a
-        // single send right after its own; a summary's members after all of theirs, 4f round 8).
+        // lookup leaves them unverified, and the decision then waits). Never a decision: each delivery is decided by the final
+        // gate after it (a single send right after its own; a summary's members after all of theirs).
         private async Task PrepareOutcomeAsync(DueDelivery delivery, CancellationToken cancellationToken)
         {
             if (_policy == null || delivery.Kind is not (NotifyKind.Declined or NotifyKind.Approved) || TitleKey.Parse(delivery.TitleKey) is not { } key) return;
@@ -230,30 +235,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     foreach (var group in due.GroupBy(d => (d.UserId, d.Channel)))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        var config = _config();
-                        if (!NotifyFlags.Enabled(config)) return attempted;
                         var list = group.ToList();
-                        // Native Ready messages (phase 4f) have their own path: never held, never retried, one at a time.
+                        // Each delivery is decided by the final gate after its own last await: switched off as a whole meanwhile,
+                        // it and the rest stay pending (sent when notifications are back on).
+                        (int Attempted, bool Off) done;
                         if (group.Key.Channel == NotifyChannel.DisplayMessage)
                         {
-                            attempted += await DeliverDisplayAsync(config!, list, cancellationToken).ConfigureAwait(false);
-                            continue;
+                            // Native Ready messages (phase 4f) have their own path: never held, never retried, one at a time.
+                            done = await DeliverDisplayAsync(list, cancellationToken).ConfigureAwait(false);
                         }
-                        if (list.Count >= SummaryAt)
+                        else if (list.Count >= SummaryAt)
                         {
-                            attempted += await DeliverSummaryAsync(list, cancellationToken).ConfigureAwait(false);
-                            continue;
+                            done = await DeliverSummaryAsync(list, cancellationToken).ConfigureAwait(false);
                         }
-                        foreach (var delivery in list)
+                        else
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            // The settings as they are now, for each delivery: switched off as a whole, the
-                            // rest stay pending (sent when notifications are back on).
-                            config = _config();
-                            if (!NotifyFlags.Enabled(config)) return attempted;
-                            await DeliverAsync(config!, delivery, cancellationToken).ConfigureAwait(false);
-                            attempted++;
+                            done = (0, false);
+                            foreach (var delivery in list)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyVerdict.Off)
+                                {
+                                    done = (done.Attempted, true);
+                                    break;
+                                }
+                                done = (done.Attempted + 1, false);
+                            }
                         }
+                        attempted += done.Attempted;
+                        if (done.Off) return attempted;
                     }
                 }
                 return attempted;
@@ -273,38 +283,129 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>How many alerts due at once for one person on one channel go out as one summary.</summary>
         internal const int SummaryAt = 4;
 
-        // Whether a delivery may go out now: held by quiet hours (postponed), no longer for the recipient (suppressed), or
-        // ready with its message and link. Held back by quiet hours, a batch window or retries: whether the recipient may
-        // still get it is decided now, not when it was queued.
-        private (NotifyPrefs Prefs, NotifyMessage? Message, string? Link) Prepare(PluginConfiguration config, DueDelivery delivery)
+        // ================================================================== the final gate (4f round 9)
+
+        // What the final gate reads, all at once, when it is called: the configuration, the recipient's preferences and the
+        // clock. A ref struct: the compiler won't let it live across an await, so nothing a decision reads can be carried
+        // from before one into it.
+        private readonly ref struct GateRead
         {
-            var prefs = _store.Prefs(delivery.UserId);
-            if (QuietHours.EndsAt(prefs, _now()) is { } end)
+            public GateRead(PluginConfiguration config, NotifyPrefs prefs, DateTimeOffset now)
             {
-                _store.Postpone(delivery.Id, end, delivery.Generation);
-                return (prefs, null, null);
+                Config = config;
+                Prefs = prefs;
+                Now = now;
             }
-            var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-            var verdict = Suppression(delivery, prefs, payload, out var itemId);
-            if (verdict.Wait && _now() - delivery.CreatedAt <= WaitAtMost)
+
+            public PluginConfiguration Config { get; }
+
+            public NotifyPrefs Prefs { get; }
+
+            public DateTimeOffset Now { get; }
+        }
+
+        /// <summary>
+        /// THE final gate (4f round 9): whether an alert may be told now, and how. Synchronous, and handed nothing but the
+        /// alert's identifiers: it reads, at the moment it is called, everything the decision depends on — the configuration
+        /// (<c>_config()</c>: the master switch, the phase, channel and native-message switches, the household address), the
+        /// recipient's preferences (the kind of alert, their channels, quiet hours, hidden titles), the recipient (gone,
+        /// disabled, still an administrator), the request as the request ledger or Seerr's list holds it now (still OK'd,
+        /// still declined, still waiting for an OK), the title's visibility to them (library access, parental limits, the
+        /// request policy) and their Hidden Content. For a delivery (<see cref="NotifyAlert.Channel"/>): send it, wait (quiet
+        /// hours; evidence that can't be read now, at most a day) or refuse it; for the notification itself (no channel):
+        /// make it with its deliveries, wait for the evidence, or refuse it. Off when notifications are switched off as a
+        /// whole: nothing may be done. Every action on an alert — a send and its settling, a summary's count, a bell row and
+        /// its deliveries, a wait queued, retried or dropped, a notice or batch consumed — is taken from its verdict with no
+        /// await in between (the network send itself excepted); the source scan (tests: NotifyGateWalk) holds every caller to it.
+        /// </summary>
+        internal NotifyFinal Final(NotifyAlert alert)
+        {
+            var config = _config();
+            var now = _now();
+            if (!NotifyFlags.Enabled(config) || !_store.Available) return NotifyFinal.Off(alert, now);
+            var read = new GateRead(config!, _store.Prefs(alert.User), now);
+            return alert.Channel switch
             {
-                // The recipient's Hidden Content can't be read now: nothing is sent until it can (looked at again shortly).
-                _store.Postpone(delivery.Id, _now() + WaitFor, delivery.Generation);
-                return (prefs, null, null);
-            }
-            if (verdict.Why is { } reason)
+                null => Tell(in read, alert),
+                NotifyChannel.DisplayMessage => Display(in read, alert),
+                _ => Outbound(in read, alert),
+            };
+        }
+
+        // A phone or e-mail delivery: held by quiet hours, no longer for the recipient (refused), waiting for evidence, or ready
+        // with its message and link. Held back by quiet hours, a batch window or retries: whether the recipient may still get
+        // it is decided now, not when it was queued.
+        private NotifyFinal Outbound(in GateRead read, NotifyAlert alert)
+        {
+            if (QuietHours.EndsAt(read.Prefs, read.Now) is { } end) return NotifyFinal.Wait(alert, read.Now, "The recipient's quiet hours.", end);
+            var payload = new Dictionary<string, string>(alert.Payload);
+            var verdict = Suppression(in read, alert, payload, outbound: true, out var itemId);
+            // The recipient's Hidden Content (or the request, or the title's rating) can't be read now: nothing is sent until it
+            // can (looked at again shortly), for a day at most.
+            if (verdict.Wait && read.Now - alert.Queued <= WaitAtMost) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
+            if (verdict.Why is { } reason) return NotifyFinal.Refuse(alert, read.Now, verdict.Wait ? reason + " (for a day; not sent)" : reason);
+            // A channel switched off since the alert was queued (by the administrator or the user): nothing to retry, so not a
+            // failure either.
+            if (ChannelOff(in read, alert.Channel!) is { } off) return NotifyFinal.Refuse(alert, read.Now, off);
+            return NotifyFinal.Send(alert, read.Now, payload, itemId, NotifyTexts.Render(alert.Kind, payload, read.Prefs.HideTitles),
+                ExternalLink(read.Config, itemId, alert.Kind), ExternalLink(read.Config, null, null), read.Config, read.Prefs);
+        }
+
+        // A native Ready message: never held (quiet hours, unreadable evidence, a stale one end it), rendered from the person's
+        // settings as they are now.
+        private NotifyFinal Display(in GateRead read, NotifyAlert alert)
+        {
+            var payload = new Dictionary<string, string>(alert.Payload);
+            if (DisplayReason(in read, alert, payload) is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
+            return NotifyFinal.Send(alert, read.Now, payload, alert.ItemId, NotifyTexts.Render(alert.Kind, payload, read.Prefs.HideTitles), null, null, read.Config, read.Prefs);
+        }
+
+        // The notification itself (its bell row): too old to be told, refused or waiting as for a delivery (administrators'
+        // phone-and-e-mail switch aside: it decides only their deliveries), else made with a delivery for each channel the
+        // person has on now, held until their quiet hours end.
+        private NotifyFinal Tell(in GateRead read, NotifyAlert alert)
+        {
+            if (alert.Since is { } since && read.Now - since > NotificationService.ArrivalFreshFor)
+                return NotifyFinal.Refuse(alert, read.Now, "It happened too long ago to be told now.");
+            var payload = new Dictionary<string, string>(alert.Payload);
+            var verdict = Suppression(in read, alert, payload, outbound: false, out var itemId);
+            if (verdict.Wait) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
+            if (verdict.Why is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
+            return NotifyFinal.Tell(alert, read.Now, payload, itemId, Deliveries(in read, alert.Kind));
+        }
+
+        // A new notification's deliveries, from the person's settings and the channels as they are now.
+        private static IReadOnlyList<(string Channel, DateTimeOffset At)> Deliveries(in GateRead read, string kind)
+        {
+            var prefs = read.Prefs;
+            var deliveries = new List<(string, DateTimeOffset)>();
+            var external = !NotifyKind.IsAdminKind(kind) || prefs.AdminAlerts;
+            var at = QuietHours.EndsAt(prefs, read.Now) ?? read.Now;
+            if (external && prefs.Ntfy && NotifyEndpoints.IsTopic(prefs.NtfyTopic) && NotifyEndpoints.NtfyReady(read.Config)) deliveries.Add((NotifyChannel.Ntfy, at));
+            if (external && prefs.Email && !string.IsNullOrEmpty(prefs.EmailAddress) && NotifyEndpoints.EmailReady(read.Config)) deliveries.Add((NotifyChannel.Email, at));
+            // Phase 4f: a native on-screen message for what became ready (and a test), with the person's own consent. Due
+            // now: quiet hours, a busy or missing session end it at delivery instead of holding it.
+            if (kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Test && prefs.NativeReadyMessages && Ready.ReadyFlags.Messages(read.Config)) deliveries.Add((NotifyChannel.DisplayMessage, read.Now));
+            return deliveries;
+        }
+
+        // A delivery's verdict other than a send, acted on (right after the gate): waiting, postponed; refused, suppressed.
+        // True for a send (the caller sends it); false otherwise (Off: nothing is done).
+        private bool Act(DueDelivery delivery, NotifyFinal final)
+        {
+            switch (final.Verdict)
             {
-                _store.Suppress(delivery.Id, verdict.Wait ? reason + " (for a day; not sent)" : reason, delivery.Generation);
-                return (prefs, null, null);
+                case NotifyVerdict.Send:
+                    return true;
+                case NotifyVerdict.Wait:
+                    _store.Postpone(delivery.Id, final.Until!.Value, delivery.Generation);
+                    return false;
+                case NotifyVerdict.Refuse:
+                    _store.Suppress(delivery.Id, final.Why!, delivery.Generation);
+                    return false;
+                default:
+                    return false;
             }
-            // A channel switched off since the alert was queued (by the administrator or the user):
-            // nothing to retry, so not a failure either.
-            if (ChannelOff(config, delivery.Channel, prefs) is { } off)
-            {
-                _store.Suppress(delivery.Id, off, delivery.Generation);
-                return (prefs, null, null);
-            }
-            return (prefs, NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles), ExternalLink(config, itemId, delivery.Kind));
         }
 
         /// <summary>How long a delivery (or an episode batch) waits before its recipient's unreadable Hidden Content is read again.</summary>
@@ -313,20 +414,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>The longest a delivery or an episode batch waits for readable Hidden Content; then it is never sent.</summary>
         internal static readonly TimeSpan WaitAtMost = TimeSpan.FromHours(24);
 
-        private async Task<(bool Ok, string? Error)> SendAsync(PluginConfiguration config, string channel, NotifyPrefs prefs, NotifyMessage message, string? link, string kind, CancellationToken cancellationToken)
+        // The network send of a verdict to send: on the transport the gate read (its server and token, the person's topic or
+        // address).
+        private async Task<(bool Ok, string? Error)> SendAsync(NotifyFinal plan, NotifyMessage message, string? link, string kind, CancellationToken cancellationToken)
         {
             // Every channel by name: a channel this code doesn't know is never sent as an e-mail.
-            switch (channel)
+            switch (plan.Alert.Channel)
             {
                 case NotifyChannel.Ntfy:
                 {
-                    var result = await _ntfy.SendAsync(config.ArrNtfyServerUrl, config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), prefs.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false);
+                    var result = await _ntfy.SendAsync(plan.Config!.ArrNtfyServerUrl, plan.Config.GetSecret(nameof(PluginConfiguration.ArrNtfyToken)), plan.Prefs!.NtfyTopic!, message, link, Tags(kind), Priority(kind), cancellationToken).ConfigureAwait(false);
                     return (result.Ok, result.Error);
                 }
 
                 case NotifyChannel.Email:
                 {
-                    var result = await _email.SendAsync(config, prefs.EmailAddress!, message, link, SettingsLink(config), cancellationToken).ConfigureAwait(false);
+                    var result = await _email.SendAsync(plan.Config!, plan.Prefs!.EmailAddress!, message, link, SettingsLink(plan.Config), cancellationToken).ConfigureAwait(false);
                     return (result.Ok, result.Error);
                 }
 
@@ -338,49 +441,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         // ------------------------------------------------------------------ native Ready messages (phase 4f)
 
         /// <summary>
-        /// Native Ready messages due for one person: each is checked as it is now (the switches, their consent, quiet hours,
-        /// freshness, still theirs to see, Hidden Content, no earlier attempt), then one message (a summary for several) goes
-        /// to one idle session of theirs, read again right before the send. At that last moment, with no await before the
-        /// send, every one of them is checked again and the text is rendered from the person's settings as they are then
-        /// (hidden titles, a title they hid meanwhile, a kind they turned off): render last. Busy, unsupported, no session or
-        /// anything else ends them as suppressed: never held for later and never retried. Returns how many were attempted.
+        /// Native Ready messages due for one person: each is decided by the final gate now (the switches, their consent, quiet
+        /// hours, freshness, still theirs to see, Hidden Content, no earlier attempt), then one message (a summary for several)
+        /// goes to one idle session of theirs, read again right before the send. At that last moment, with no await before the
+        /// send, every one of them is decided by the gate again and the text is rendered from the person's settings as they are
+        /// then (hidden titles, a title they hid meanwhile, a kind they turned off): render last. Busy, unsupported, no session
+        /// or anything else ends them as suppressed: never held for later and never retried. Returns how many were attempted,
+        /// and whether notifications were switched off (the rest stay pending).
         /// </summary>
-        private async Task<int> DeliverDisplayAsync(PluginConfiguration config, IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
+        private async Task<(int Attempted, bool Off)> DeliverDisplayAsync(IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
         {
             var ready = new List<DueDelivery>();
             foreach (var delivery in deliveries)
             {
-                var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-                if (DisplayReason(config, delivery, _store.Prefs(delivery.UserId), payload, first: true) is { } why) _store.Suppress(delivery.Id, why, delivery.Generation);
-                else ready.Add(delivery);
+                var final = Final(NotifyAlert.Of(delivery));
+                if (final.Verdict == NotifyVerdict.Off) return (0, true);
+                if (Act(delivery, final)) ready.Add(delivery);
             }
-            if (ready.Count == 0 || _native == null) return deliveries.Count;
+            if (ready.Count == 0 || _native == null) return (deliveries.Count, false);
             var user = ready[0].UserId;
             var generation = ready[0].Generation;
             var vetoed = new Dictionary<long, string>();
-            // Right before the send: every delivery checked again and the message rendered from the settings as they are now.
-            (NotifyMessage Message, IReadOnlyList<long> Ids)? Final()
+            // Right before the send: every delivery decided again and the message rendered from the settings as they are now.
+            (NotifyMessage Message, IReadOnlyList<long> Ids)? Claim()
             {
                 vetoed.Clear();
-                var now = _config();
-                var prefs = _store.Prefs(user);
                 var going = new List<long>();
                 NotifyMessage? single = null;
                 foreach (var delivery in ready)
                 {
-                    var payload = new Dictionary<string, string>(Payload(delivery.Payload));
-                    if ((now == null ? "Notifications are switched off." : DisplayReason(now, delivery, prefs, payload, first: false)) is { } why)
+                    var final = Final(NotifyAlert.Of(delivery) with { Claimed = true });
+                    if (!final.Sends)
                     {
-                        vetoed[delivery.Id] = why;
+                        vetoed[delivery.Id] = final.Why ?? "Notifications are switched off.";
                         continue;
                     }
                     going.Add(delivery.Id);
-                    single = NotifyTexts.Render(delivery.Kind, payload, prefs.HideTitles);
+                    single = final.Message;
                 }
                 if (going.Count == 0) return null;
                 return (going.Count == 1 ? single! : NotifyTexts.Summary(going.Count), going);
             }
-            var (result, sent) = await _native.SendAsync(user, generation, Final, cancellationToken).ConfigureAwait(false);
+            var (result, sent) = await _native.SendAsync(user, generation, Claim, cancellationToken).ConfigureAwait(false);
             var claimed = sent.ToHashSet();
             foreach (var delivery in ready)
             {
@@ -400,22 +502,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         : "Native message not sent: " + result.Reason + ".", delivery.Generation);
                 }
             }
-            return deliveries.Count;
+            return (deliveries.Count, false);
         }
 
         // Why a native message must not go out (now), or null: no native channel, an earlier attempt (first look only), stale,
         // the switches, the person's consent, quiet hours, the kind, the recipient, their access and Hidden Content (Suppression,
         // which also narrows an episodes payload to what they may be told about).
-        private string? DisplayReason(PluginConfiguration config, DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, bool first)
+        private string? DisplayReason(in GateRead read, NotifyAlert alert, Dictionary<string, string> payload)
         {
             if (_native == null) return "Native messages aren't available on this server.";
-            if (first && _native.Attempted(delivery.Id)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
-            if (_now() - delivery.CreatedAt > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
-            if (!Ready.ReadyFlags.Messages(config)) return "Native Ready messages are switched off.";
-            if (!prefs.NativeReadyMessages) return "The recipient turned native messages off.";
-            if (QuietHours.EndsAt(prefs, _now()) != null) return "The recipient's quiet hours (native messages are never held).";
+            if (!alert.Claimed && _native.Attempted(alert.Delivery)) return "Native message: an earlier attempt's outcome is unknown; not sent again.";
+            if (read.Now - alert.Queued > Ready.ReadyNativeChannel.FreshFor) return "Native message is stale (it waited while notifications were off).";
+            if (!Ready.ReadyFlags.Messages(read.Config)) return "Native Ready messages are switched off.";
+            if (!read.Prefs.NativeReadyMessages) return "The recipient turned native messages off.";
+            if (QuietHours.EndsAt(read.Prefs, read.Now) != null) return "The recipient's quiet hours (native messages are never held).";
             // Never held: Hidden Content that can't be read now ends it too.
-            return Suppression(delivery, prefs, payload, out _).Why;
+            return Suppression(in read, alert, payload, outbound: true, out _).Why;
         }
 
         // Records one delivery's outcome: sent, or failed with the next retry (none after the last).
@@ -434,26 +536,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             _logger?.Warning($"Notifications: {delivery.Channel} delivery {delivery.Id} failed (attempt {attempt}){(retry.HasValue ? ", will retry" : ", giving up")}: {error}");
         }
 
-        private async Task DeliverAsync(PluginConfiguration config, DueDelivery delivery, CancellationToken cancellationToken)
+        // One delivery: its awaited preparation, then the final gate, then its action (the send and its settling).
+        private async Task<NotifyVerdict> DeliverAsync(DueDelivery delivery, CancellationToken cancellationToken)
         {
             await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
-            var (prefs, message, link) = Prepare(config, delivery);
-            if (message == null) return;
-            var (ok, error) = await SendAsync(config, delivery.Channel, prefs, message, link, delivery.Kind, cancellationToken).ConfigureAwait(false);
+            var final = Final(NotifyAlert.Of(delivery));
+            if (!Act(delivery, final)) return final.Verdict;
+            var (ok, error) = await SendAsync(final, final.Message!, final.Link, delivery.Kind, cancellationToken).ConfigureAwait(false);
             Settle(delivery, ok, error);
+            return NotifyVerdict.Send;
         }
 
         /// <summary>
         /// Several alerts due at once for one person on one channel (4f round 8: prepare, then decide, then send). Every
-        /// member's awaited preparation runs first; then one synchronous decision per member from the settings, the person's
-        /// preferences, their rules and the evidence as they are after that last await (quiet hours, still theirs to be told,
-        /// channel on: a member refused is suppressed, one that can't be decided now waits, neither is ever settled as sent);
-        /// then, with no await between that pass and the send, one summary of that pass's survivors when
-        /// <see cref="SummaryAt"/> or more are left (each survivor settled with its outcome), else the survivors one by one, each
-        /// prepared and decided again right before its own send. Notifications switched off meanwhile: none is decided, all
-        /// stay pending. Returns how many were attempted.
+        /// member's awaited preparation runs first; then the final gate decides each member, with no await between those
+        /// decisions and the send (quiet hours, still theirs to be told, channel on: a member refused is suppressed, one that
+        /// can't be decided now waits, neither is ever settled as sent); then one summary of the members it let go when
+        /// <see cref="SummaryAt"/> or more are left (each settled with its outcome), else those one by one, each prepared and
+        /// decided by the gate again right before its own send. Notifications switched off meanwhile: none is acted on, all
+        /// stay pending. Returns how many were attempted, and whether notifications were switched off.
         /// </summary>
-        private async Task<int> DeliverSummaryAsync(IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
+        private async Task<(int Attempted, bool Off)> DeliverSummaryAsync(IReadOnlyList<DueDelivery> deliveries, CancellationToken cancellationToken)
         {
             foreach (var delivery in deliveries)
             {
@@ -461,50 +564,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
             }
 
-            var config = _config();
-            if (!NotifyFlags.Enabled(config)) return 0;
-            var ready = new List<(DueDelivery Delivery, NotifyPrefs Prefs)>();
+            var going = new List<DueDelivery>();
+            NotifyFinal? first = null;
             foreach (var delivery in deliveries)
             {
-                var (prefs, message, _) = Prepare(config!, delivery);
-                if (message != null) ready.Add((delivery, prefs));
+                var final = Final(NotifyAlert.Of(delivery));
+                if (final.Verdict == NotifyVerdict.Off) return (0, true);
+                if (!Act(delivery, final)) continue;
+                going.Add(delivery);
+                first ??= final;
             }
 
-            if (ready.Count < SummaryAt)
+            if (going.Count < SummaryAt)
             {
                 // One by one, each decided again right before its own send (from the settings and Hidden Content as they are
                 // then: a send takes a while, and what the person hid or changed meanwhile counts).
-                foreach (var (delivery, _) in ready)
+                foreach (var delivery in going)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var now = _config();
-                    if (!NotifyFlags.Enabled(now)) break;
-                    await DeliverAsync(now!, delivery, cancellationToken).ConfigureAwait(false);
+                    if (await DeliverAsync(delivery, cancellationToken).ConfigureAwait(false) == NotifyVerdict.Off) return (deliveries.Count, true);
                 }
 
-                return deliveries.Count;
+                return (deliveries.Count, false);
             }
 
-            var first = ready[0];
-            var result = await SendAsync(config!, first.Delivery.Channel, first.Prefs, NotifyTexts.Summary(ready.Count), ExternalLink(config, null, null), NotifyKind.Ready, cancellationToken).ConfigureAwait(false);
-            foreach (var (delivery, _) in ready) Settle(delivery, result.Ok, result.Error);
-            return deliveries.Count;
+            var result = await SendAsync(first!, NotifyTexts.Summary(going.Count), first!.Home, NotifyKind.Ready, cancellationToken).ConfigureAwait(false);
+            foreach (var delivery in going) Settle(delivery, result.Ok, result.Error);
+            return (deliveries.Count, false);
         }
 
         /// <summary>
-        /// Why the delivery must not go out any more (or must wait), or nothing: the recipient switched this kind of
-        /// alert off (Ready, new episodes, declined); the recipient is gone or disabled; an
-        /// administrators' alert (paths, instance names, household requests) for someone who is no
-        /// longer an administrator or switched those alerts off; an ask waiting for an OK (or a reminder)
-        /// whose title the administrator can no longer see; a Ready or new-episodes alert, or a request's outcome (declined,
-        /// approved), the recipient may not be told about now (<see cref="AlertCheck.Decide"/>: a title they can no longer open
-        /// or have hidden, an episodes payload narrowed to what is left; Hidden Content or the title's copies that can't be read
-        /// now: wait); an OK of a request that isn't OK'd any more (back to waiting, declined, cancelled or removed since).
+        /// Why the alert must not be told any more (or must wait), or nothing, as the final gate reads it: the recipient switched
+        /// this kind of alert off (Ready, new episodes, declined, OK'd); the request it is about moved on (<see cref="Request"/>);
+        /// the recipient is gone or disabled; an administrators' alert (paths, instance names, household requests) for someone
+        /// who is no longer an administrator, or (a delivery, <paramref name="outbound"/>) switched those alerts to phone and
+        /// e-mail off; an ask waiting for an OK (or a reminder) whose title the administrator can no longer see; a Ready or
+        /// new-episodes alert, or a request's outcome (declined, approved), the recipient may not be told about now
+        /// (<see cref="AlertCheck.Decide"/>: a title they can no longer open or have hidden, an episodes payload narrowed to what
+        /// is left; Hidden Content or the title's copies that can't be read now: wait).
         /// </summary>
-        private AlertVerdict Suppression(DueDelivery delivery, NotifyPrefs prefs, Dictionary<string, string> payload, out string? itemId)
+        private AlertVerdict Suppression(in GateRead read, NotifyAlert alert, Dictionary<string, string> payload, bool outbound, out string? itemId)
         {
-            itemId = delivery.ItemId;
-            var kindOff = delivery.Kind switch
+            itemId = alert.ItemId;
+            var prefs = read.Prefs;
+            var kindOff = alert.Kind switch
             {
                 NotifyKind.Ready => !prefs.Ready,
                 NotifyKind.Episodes => !prefs.Episodes,
@@ -513,23 +616,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 _ => false,
             };
             if (kindOff) return new AlertVerdict("The recipient switched these alerts off.");
-            // "Dad OK'd it" held until quiet hours end (or retried): not once the request isn't OK'd any more, said as it is now.
-            if (delivery.Kind == NotifyKind.Approved && _ledger != null && _ledger.Database.Available
-                && delivery.EventKey is { } ok && ok.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal)
-                && _ledger.Find(ok[ApprovedEventPrefix.Length..]) is var want && want is not { Status: "queued" or "sent" or "stale" or "fulfilled" })
-                return new AlertVerdict(NoLongerOkd(want?.Status, want?.Reason));
+            if (Request(alert) is { Why: not null } moved) return moved;
             if (_users == null) return default;
-            if (!_users.IsActive(delivery.UserId)) return new AlertVerdict("The recipient no longer exists or is disabled.");
-            if (NotifyKind.IsAdminKind(delivery.Kind))
+            if (!_users.IsActive(alert.User)) return new AlertVerdict("The recipient no longer exists or is disabled.");
+            if (NotifyKind.IsAdminKind(alert.Kind))
             {
-                if (!_users.Admins().Contains(delivery.UserId)) return new AlertVerdict("The recipient is no longer an administrator.");
-                if (delivery.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, delivery.UserId, delivery.TitleKey, payload))
+                if (!_users.Admins().Contains(alert.User)) return new AlertVerdict("The recipient is no longer an administrator.");
+                if (alert.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, alert.User, alert.TitleKey, payload))
                     return new AlertVerdict("The recipient can no longer see this title.");
-                return prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
+                return !outbound || prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
             }
-            if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved)) return default;
-            if (_view.Viewer(delivery.UserId) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
-            return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId, delivery.EventKey);
+            if (_view == null || alert.Kind is not (NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved)) return default;
+            if (_view.Viewer(alert.User) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
+            return Check(alert.User, viewer).Decide(alert.Kind, alert.TitleKey, payload, ref itemId, alert.EventKey);
+        }
+
+        /// <summary>The event key prefix of a Jellyfin Enhanced ask waiting for an OK (followed by the request id).</summary>
+        internal const string AskEventPrefix = "approval|je|";
+
+        /// <summary>
+        /// The request an alert is about, as it is now, by the alert's event key (4f round 9: the ledger's state is one of the
+        /// gate's inputs): an OK of a Jellyfin Enhanced request that isn't OK'd any more (back to waiting, declined, cancelled,
+        /// removed), a decline of one that isn't declined any more, an ask that no longer waits for an OK; a Seerr request whose
+        /// decline or ask Seerr's list no longer shows as such (or that belongs to another Seerr server). The ledger or Seerr's
+        /// list not readable now: wait. An alert about no request: nothing to say.
+        /// </summary>
+        private AlertVerdict Request(NotifyAlert alert)
+        {
+            const string Unreadable = "The request can't be read now.";
+            if (alert.EventKey is not { } key) return default;
+            var je = key.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal) ? ApprovedEventPrefix
+                : key.StartsWith(DeclinedEventPrefix, StringComparison.Ordinal) ? DeclinedEventPrefix
+                : key.StartsWith(AskEventPrefix, StringComparison.Ordinal) ? AskEventPrefix : null;
+            if (je != null)
+            {
+                if (_ledger == null) return default;
+                if (!_ledger.Database.Available) return new AlertVerdict(Unreadable, true);
+                var want = _ledger.Find(key[je.Length..]);
+                if (je == ApprovedEventPrefix)
+                    return want is { Status: "queued" or "sent" or "stale" or "fulfilled" } ? default : new AlertVerdict(NoLongerOkd(want?.Status, want?.Reason));
+                if (je == DeclinedEventPrefix) return want is { Status: "declined" } ? default : new AlertVerdict("The request isn't declined any more.");
+                return want is { Status: "pending", Reason: "awaiting_approval" or "over_quota" } ? default : new AlertVerdict("The request isn't waiting for an OK any more.");
+            }
+
+            // Seerr's own requests: "declined|<server>|<id>" told to the requester, "approval|<server>|<id>" to administrators.
+            var parts = key.Split('|');
+            if (_requests == null || parts.Length != 3 || !(alert.Kind == NotifyKind.Declined && parts[0] == "declined" || alert.Kind == NotifyKind.Approval && parts[0] == "approval")) return default;
+            if (!_requests.Active || !_requests.Loaded) return new AlertVerdict(Unreadable, true);
+            var (source, all, floor) = _requests.Current;
+            if (source == null) return new AlertVerdict(Unreadable, true);
+            var server = source.Length > 8 ? source[..8] : source;
+            if (parts[1] != server || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var id)) return new AlertVerdict("The request belongs to another Seerr server.");
+            var wanted = alert.Kind == NotifyKind.Declined ? SeerrRequestStatus.Declined : SeerrRequestStatus.Pending;
+            if (all.FirstOrDefault(r => r.Id == id) is { } request)
+                return request.Status == wanted ? default : new AlertVerdict(alert.Kind == NotifyKind.Declined ? "The request isn't declined any more." : "The request isn't waiting for an OK any more.");
+            // Below the list's floor a request not held is unknown, not gone.
+            return floor is int below && id < below ? new AlertVerdict(Unreadable, true) : new AlertVerdict("The request was removed.");
         }
 
         /// <summary>
@@ -701,16 +843,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>
-        private static string? ChannelOff(PluginConfiguration config, string channel, NotifyPrefs prefs) => channel switch
+        private static string? ChannelOff(in GateRead read, string channel)
         {
-            NotifyChannel.Ntfy when !NotifyEndpoints.NtfyReady(config) => "Phone alerts (ntfy) are switched off or have no server.",
-            NotifyChannel.Ntfy when !prefs.Ntfy || !NotifyEndpoints.IsTopic(prefs.NtfyTopic) => "The user turned phone alerts off or has no topic.",
-            NotifyChannel.Ntfy => null,
-            NotifyChannel.Email when !NotifyEndpoints.EmailReady(config) => "E-mail alerts are switched off or have no mail server.",
-            NotifyChannel.Email when !prefs.Email || string.IsNullOrEmpty(prefs.EmailAddress) => "The user turned e-mail off or has no verified address.",
-            NotifyChannel.Email => null,
-            _ => "Unknown channel.",
-        };
+            var config = read.Config;
+            var prefs = read.Prefs;
+            return channel switch
+            {
+                NotifyChannel.Ntfy when !NotifyEndpoints.NtfyReady(config) => "Phone alerts (ntfy) are switched off or have no server.",
+                NotifyChannel.Ntfy when !prefs.Ntfy || !NotifyEndpoints.IsTopic(prefs.NtfyTopic) => "The user turned phone alerts off or has no topic.",
+                NotifyChannel.Ntfy => null,
+                NotifyChannel.Email when !NotifyEndpoints.EmailReady(config) => "E-mail alerts are switched off or have no mail server.",
+                NotifyChannel.Email when !prefs.Email || string.IsNullOrEmpty(prefs.EmailAddress) => "The user turned e-mail off or has no verified address.",
+                NotifyChannel.Email => null,
+                _ => "Unknown channel.",
+            };
+        }
 
         /// <summary>
         /// The deep link for pushes and e-mails: the item's details page, else the Requests page (the
