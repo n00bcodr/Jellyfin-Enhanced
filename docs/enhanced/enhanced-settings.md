@@ -196,6 +196,8 @@ Make text subtitles easier to read with your preferred colors, size, and positio
 
 See [Enhanced features](enhanced-features.md) for subtitle previews and rendering limits.
 
+Unfinished subtitle-position drags are cancelled when the panel closes or the signed-in session changes. Releasing an old mouse or touch gesture cannot save into the next session.
+
 ??? note "Details"
 
     The vertical position locates the subtitle stack's lower edge. The position reset icon sets horizontal 50%, vertical 95%. Missing-value client fallbacks also use 95% vertically.
@@ -348,6 +350,10 @@ To clear this browser's JE translations, click **Clear Translation Cache**. The 
     Changing **Display Language** saves the server preference and this browser's user-language key. An existing browser language key takes priority during translation loading. Changing the preference on another device does not automatically replace it. Choose the desired language in this browser if it continues to use an older choice.
 
     **Clear Translation Cache** removes this browser's JE translation-cache entries. It differs from the server's **Refresh Translation Cache** scheduled task, which signals invalidation on clients' next load. Clearing does not guarantee a newer translation: bundled translations are tried first.
+
+The browser language follows the settings that the server successfully saves, including a language choice carried by another control's save after the original save fails. It syncs and reloads once even if you close the panel. Changing the signed-in session cancels those browser follow-ups. If no save persists the choice, the browser keeps its previous language. Reading a language saved in another browser syncs the next load without reloading the current page.
+
+Language changes and clearing the translation cache share one reload. It waits until all queued personal settings saves finish, including choices made while the reload is waiting. If browser storage is full or disabled, successful saves, notifications and controls still update; the language mirror retries on the next save or settings read. Browser tag-cache cleanup also tolerates disabled or full storage. A failed renderer or panel update does not interrupt other settings updates or leave a save pending.
 
 ### About
 

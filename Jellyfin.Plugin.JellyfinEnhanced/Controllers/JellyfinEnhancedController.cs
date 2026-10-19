@@ -4085,6 +4085,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4c3a: list pages (each person may still hide them).
                 ArrListPlaylistUiEnabled = Services.Acquire.Lists.ListFlags.PlaylistUi(config),
                 ArrListCollectionUiEnabled = Services.Acquire.Lists.ListFlags.CollectionUi(config),
+                // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
+                ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
+                ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -5552,8 +5555,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 // Phase 4: the person's consents are their own. An administrator saving someone else's settings (this save
-                // replaces the whole file) keeps them as stored. Read, kept, compared and saved under the person's settings
-                // lock, so an overlapping save of the person's own can't be undone.
+                // replaces the whole file) keeps them as stored; the explicit-only consents (list swap-in) are kept by every
+                // whole-document save, the person's own included: those change only through the consent operation below.
+                // Read, kept, compared and saved under the person's settings lock.
                 var byThePerson = UserHelper.GetCurrentUserId(User)?.ToString("N") == authorizedUserId;
                 var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, byThePerson);
                 if (saved && changes.Count > 0)
@@ -5561,12 +5565,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
 
-                return Ok(new { success = true, file = "settings.json" });
+                return Ok(new { success = true, file = "settings.json", consents = new { userConfiguration.ListSwapIn } });
             }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>An explicit personal consent change. A whole-document save never changes these fields.</summary>
+        public sealed class PersonalConsentChange
+        {
+            /// <summary>The exact consent field name (currently ListSwapIn).</summary>
+            public string? Field { get; set; }
+            /// <summary>The intended consent; missing or null is not an explicit choice.</summary>
+            public bool? Value { get; set; }
+        }
+
+        /// <summary>Sets one consent for the authenticated person themselves, never on behalf of another user.</summary>
+        [HttpPatch("user-settings/{userId}/consent")]
+        [Authorize]
+        [BodyLimit]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult SetUserSettingsConsent(string userId, [FromBody] PersonalConsentChange change)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (UserHelper.GetCurrentUserId(User)?.ToString("N") != authorizedUserId) return Forbid();
+            if (change?.Field == null || !change.Value.HasValue)
+                return BadRequest(new { code = "invalid_consent", message = "A consent field and boolean value are required." });
+            try
+            {
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value.Value);
+                return Ok(new { success = true, consents = new { settings.ListSwapIn } });
+            }
+            catch (ArgumentException)
+            {
+                return BadRequest(new { code = "invalid_consent", message = "Unknown personal consent field." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save personal consent for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save personal consent." });
             }
         }
 

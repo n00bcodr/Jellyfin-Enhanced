@@ -372,6 +372,7 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 |---|---|---|
 | GET | `user-settings/{userId}/settings.json` | Enhanced settings |
 | POST | `user-settings/{userId}/settings.json` | Replace Enhanced settings |
+| PATCH | `user-settings/{userId}/consent` | Set one personal consent of the signed-in person (`{"Field":"ListSwapIn","Value":bool}`) |
 | GET | `user-settings/{userId}/shortcuts.json` | Shortcut list |
 | POST | `user-settings/{userId}/shortcuts.json` | Replace shortcut list |
 | GET | `user-settings/{userId}/elsewhere.json` | Provider preferences |
@@ -387,7 +388,9 @@ The bookmark GET/POST pair is listed in [Bookmarks API endpoints](#bookmarks-api
 
 Settings, shortcuts, Elsewhere, and bookmark whole-file saves do not strict-read the previous document.
 
-A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests, list swap-in) as they stored them; only the person changes those.
+A save of `settings.json` replaces the whole file. An administrator may save another person's, but that save keeps the person's own consents (automatic season and movie requests, list swap-in) as they stored them. The person's own save may change their automatic request consents; list swap-in is kept by every whole-document save, the person's own included, so a stale browser cannot restore a revoked agreement.
+
+To change list swap-in, the signed-in person uses `PATCH /JellyfinEnhanced/user-settings/{userId}/consent` with `{"Field":"ListSwapIn","Value":true}` (or `false` to revoke): own person only (`403` for anyone else, administrators included), `400 invalid_consent` for a missing value or an unknown field. The answer and the settings POST's answer carry `consents.ListSwapIn` as stored.
 
 Hidden Content and raw Spoiler Guard saves lock and strict-read first: corruption returns `503` with backup/retry guidance, temporary I/O failures `500`.
 
@@ -1527,6 +1530,7 @@ Pages read where titles have got to and long-poll the change feed for updates.
 
 | Method | Path | Access and contract |
 |---|---|---|
+| GET | `acquire/stamps?ids=` | Any signed-in person, acquisition badges on (phase 4; `403 feature_disabled` otherwise, `403 user_required` for API keys): the caller's acquisition badge for up to 100 Jellyfin item ids, `{"items":[{"itemId","stamp"}]}` with `stamp` `upgraded`, `new` or `fourK`. The `items` list omits items without a badge and items the caller cannot open. A separate `subscriptions` list (`{itemId,keys:[titleKey]}`) includes accessible titles even without a badge, so acquisition-only cards can follow changes. A person who hid badges gets both lists empty. Decided in memory (no arr, Seerr or database read). `400 invalid_id` / `too_many`; private `ETag` |
 | GET | `acquire/hub` | Any signed-in user, phase 1 and the Requests page on: the caller's own Seerr requests with their status (of the part asked for: the requested seasons of a series, the 4K copy of a 4K-only request): `mine` (groups `needsOk`, `onTheWay`, `notOut`, `declined`), `soon` (a date in the next 60 days), `ready` (arrived in the last 14 days), plus `seerr` (`configured`, `loaded`, `unavailable`). Administrators also get `admin` (`downloads`/`calendar` tabs, the request list's last read and error). Private `ETag` |
 | GET | `arr/admin/manage?itemId=` or `?key=` | Admin, phase 1 and the Manage button on: the Manage drawer for a Jellyfin item or a title key (`movie:…`, `tv:…[:s…[:e…]]`): the admin status (of that season or episode for a season or episode key), every instance of the title's kind (in it or not, monitored, profile, path, its Jellyfin copy, queue rows, timeline of added/history events/Jellyfin Enhanced actions; with phase 2 on also `downloads`, the whole downloads in scope as on `arr/admin/hub/activity`, with their `actions`) and Seerr's requests with who asked. `403` for anyone else |
 | POST | `arr/admin/manage/search` | Admin, same switches: Search now on one instance (body `{"instanceId","key","idempotencyKey"}`; movie, series, season or episode search; audited; the answer has `status`, `message`, `readBack`) |

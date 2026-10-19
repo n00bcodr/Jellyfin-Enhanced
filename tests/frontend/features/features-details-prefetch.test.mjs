@@ -15,7 +15,7 @@ const ITEMS={
 const RELEASES={results:[{iso_3166_1:'US',release_dates:[{type:3,release_date:'2025-03-01'}]}]};
 
 function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true},config={ShowReleaseDates:true,TmdbEnabled:true},stats,people}={}){
- const views=[],navs=[],debounced={},userHandlers=[],items=new Map(),plugin=[],tmdb=[];let epoch=0,lookups=0;
+ const views=[],navs=[],debounced={},scheduled=[],userHandlers=[],items=new Map(),plugin=[],tmdb=[];let epoch=0,lookups=0;
  const h=createHarness({html:PAGE,url:`http://jellyfin.test/web/index.html#/details?id=${id}`,
   fetch:async url=>{tmdb.push(String(url));return jsonResponse(RELEASES);},
   globals:{requestAnimationFrame:fn=>{fn();return 1;}},
@@ -23,7 +23,7 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
    helpers:{
     // The shared item cache: one request per item, every caller gets the same promise.
     getItemCached:itemId=>{lookups++;if(!items.has(itemId))items.set(itemId,deferred());return items.get(itemId).promise;},
-    debounce:(fn,wait)=>{debounced[wait]=fn;return ()=>{};},createObserver:()=>{},onViewPage:()=>{},addCSS:()=>{}},
+    debounce:(fn,wait)=>{debounced[wait]=fn;return ()=>scheduled.push(wait);},createObserver:()=>{},onViewPage:()=>{},addCSS:()=>{}},
    core:{navigation:{onViewPage:fn=>views.push(fn),onNavigate:fn=>navs.push(fn)},
     api:{plugin:(path,options)=>{plugin.push([path,options]);return stats?stats(path,options):Promise.resolve({size:1024,progress:50,totalPlaybackTicks:1,totalRuntimeTicks:2});},
      manager:{withConcurrencyLimit:fn=>fn()}}},
@@ -32,6 +32,7 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
  for(const file of ['features-details-media-info.js','features-release-dates.js','features-details-page.js'])h.load(`enhanced/itemdetails/${file}`);
  const page=h.document.getElementById('itemDetailPage'),row=page.querySelector('.itemMiscInfo-primary');
  return {...h,page,row,plugin,tmdb,
+  runScheduled(){while(scheduled.length)debounced[scheduled.shift()]();},
   itemRequests:()=>[...items.keys()],lookups:()=>lookups,
   bumpEpoch(){epoch++;},epoch:()=>epoch,
   giveItem(itemId=id){if(!items.has(itemId))items.set(itemId,deferred());items.get(itemId).resolve(ITEMS[itemId]);},
@@ -145,4 +146,20 @@ test('no people/info prefetch without people tags, after leaving, or on another 
  assert.deepEqual(both.calls,[]);
  const stale=peopleSpy();const e=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people:stale});
  e.viewshow();await e.resolveItem();e.bumpEpoch();await placeChips(e);assert.deepEqual(stale.calls,[],'the identity moved on');
+});
+
+
+test('the real settings store restores failed file-size visibility through the details dispatcher', async t => {
+ const h=setup(t,{settings:{showFileSizes:true,showWatchProgress:false},config:{}});
+ h.JE.userConfig={settings:{...h.JE.currentSettings}};
+ h.load('enhanced/config.js');h.JE.currentSettings=h.JE.loadSettings();
+ h.viewshow();await h.resolveItem();await placeChips(h);
+ assert.ok(h.row.querySelector('.mediaInfoItem-fileSize'));
+ const held=deferred();h.window.ApiClient.ajax=()=>held.promise;
+ const saving=h.JE.updateSettings({showFileSizes:false},{throwOnError:true}).catch(()=>{});
+ assert.equal(h.row.querySelector('.mediaInfoItem-fileSize'),null);
+ held.reject(new Error('display save fails'));await saving;
+ h.runScheduled();await h.flush();
+ assert.ok(h.row.querySelector('.mediaInfoItem-fileSize'),'document rollback schedules the real dispatcher');
+ assert.equal(h.plugin.length,1,'cached facts are reused');
 });

@@ -95,6 +95,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquisitionStampsController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
       "category": "Controllers"
     },
@@ -848,6 +852,26 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/SeerrRequestReadModel.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStamp.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampFeeder.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampResolver.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampSources.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampStore.cs",
       "category": "Services"
     },
     {
@@ -2809,6 +2833,15 @@
     },
     {
       "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/stamps",
+      "method": "GetStamps",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquisitionStampsController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
       "path": "/JellyfinEnhanced/arr/admin/manage/add-options",
       "method": "Options",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ArrAddController.cs",
@@ -3965,6 +3998,17 @@
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/consent",
+      "method": "SetUserSettingsConsent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
       ]
     },
     {
@@ -6889,6 +6933,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4AcquisitionBadgesEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4NativeStampsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAcquisitionNewDays",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrAcquisitionUpgradedDays",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -8913,6 +8989,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "AcquisitionBadges",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "NativeAcquisitionStamps",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "QualityTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -10146,6 +10238,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Stamps/AcquisitionStampSources.cs"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
@@ -10336,14 +10432,6 @@
     {
       "literal": "en.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-language.js"
-    },
-    {
-      "literal": "settings.json",
-      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
     },
     {
       "literal": "shortcuts.json",
@@ -10562,10 +10650,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 601,
-    "routes": 282,
-    "configuration_properties": 624,
-    "storage_references": 91,
+    "files": 607,
+    "routes": 284,
+    "configuration_properties": 630,
+    "storage_references": 90,
     "scheduled_tasks": 15,
     "locales": 33
   }

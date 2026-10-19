@@ -156,6 +156,7 @@ public class ApiArrRouteMatrixTests
                 new ArrLiveController(N.Feed, new ArrFeedLimits(), new ApiArrRoutesTests.KeyAudience(), Receiver, Provisioner, Live, Router, N.Store, Audit, users, logger, N.Requests) { Config = () => N.Config },
                 new JeBackupController(Backup, users, logger),
                 new ArrAddController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests.ArrAddService(N.Store, N.Arr.Factory, new ServicesForRequests(N).Service, () => N.Config)),
+                Stamps(),
                 new ArrAdminAutomationController(new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStatusService(
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationStore(N.Db),
                     new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation.AutomationBudgets(N.Db, () => N.Config, () => N.Arr.Now),
@@ -168,6 +169,20 @@ public class ApiArrRouteMatrixTests
                 controller.HttpContext.User = caller;
                 yield return controller;
             }
+        }
+
+        /// <summary>Acquisition badges (phase 4e) over the rig's database and an empty library.</summary>
+        private AcquisitionStampsController Stamps()
+        {
+            var library = new FakeStampLibrary();
+            var resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampResolver(library,
+                new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.AcquisitionStampStore(N.Db, () => N.Arr.Now), () => N.Config, () => N.Arr.Now);
+            return new AcquisitionStampsController(resolver, library, N.View, new NoBadgePreferences()) { Config = () => N.Config };
+        }
+
+        private sealed class NoBadgePreferences : Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps.IAcquisitionBadgePreferences
+        {
+            public bool? WebBadges(Guid user) => null;
         }
 
         /// <summary>The household routes over an empty directory and an offline TMDB (no title data).</summary>
@@ -292,6 +307,7 @@ public class ApiArrRouteMatrixTests
         // A member gets past the caller check (the refusals above are the caller, not the arguments).
         var member = await CallAll(rig, TestCallers.Principal(rig.N.Emma.UserId, admin: false), "user");
         Assert.Contains(member, r => r.Row.Route == "acquire/notify/inbox" && r.Reply.Status == 200);
+        Assert.Contains(member, r => r.Row.Route == "acquire/stamps" && (r.Reply.Status == 200 || (r.Reply.Status == 403 && r.Reply.Body.Contains("feature_disabled", StringComparison.Ordinal))));
         Assert.DoesNotContain(member, r => r.Reply.Body.Contains("user_required", StringComparison.Ordinal));
     }
 

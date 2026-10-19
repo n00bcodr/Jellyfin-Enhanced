@@ -229,6 +229,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.Lists.IListPagePreferences, Services.Acquire.Lists.UserSettingsListPreferences>();
             serviceCollection.AddSingleton<Services.Acquire.Lists.ListSummaryService>();
             // ---- end Phase 4c3a ----
+            // ---- Phase 4e: acquisition badges and native poster stamps (inert while off). Facts (acquire.db step 7) fed from
+            // library events, the ledger / Seerr requests / follows and the arrs' history in memory; the resolver the
+            // poster pipeline and GET acquire/stamps read; deleted users' facts removed.
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.AcquisitionStampStore>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.IStampLibrary, Services.Acquire.Stamps.JellyfinStampLibrary>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.IStampInterests, Services.Acquire.Stamps.StampInterests>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.IStampUpgrades, Services.Acquire.Stamps.ArrHistoryStampUpgrades>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.AcquisitionStampResolver>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.IAcquisitionBadgePreferences, Services.Acquire.Stamps.UserSettingsBadgePreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Stamps.AcquisitionStampFeeder>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Stamps.AcquisitionStampFeeder>());
+            serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Stamps.AcquisitionStampUserPurge>();
+            // ---- end Phase 4e ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();

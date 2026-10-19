@@ -1739,13 +1739,54 @@ follows Jellyfin's own rights and the household's request rules:
 
 Each person can, in the Jellyfin Enhanced panel (*Lists*): hide entries, hide their status, hide the entries on playlist
 pages or on collection pages, and agree that titles that arrive may take their place in lists they turned swap-in on
-for (off until they choose it). That agreement is theirs
-alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
+for (off until they choose it). Saving another preference in a stale browser keeps the current agreement. That agreement
+is theirs alone: an administrator saving their settings, or resetting everyone's, leaves it as it is.
 
 **Lists from the experimental list feature.** Administrators can bring over the lists of the earlier experimental
 list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that
 changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
 left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
+
+### Acquisition badges: New for you, Upgraded, 4K (phase 4)
+
+With *Poster badges: New for you, Upgraded, 4K* on (under phase 4, off by default), a poster card can carry one small
+badge about what changed for the person looking at it. At most one per card, in this order:
+
+1. The download ring (and the *taking longer* and *almost ready* badges) of the phase-1 poster badges, while something
+   is on its way. Season cards keep their ✓ / ◐ ready count next to it.
+2. **Upgraded**: Sonarr or Radarr replaced the file with a better copy (its history says the old file was deleted for an
+   upgrade, and Jellyfin has the new file), or the first 4K version arrived alongside an existing HD copy.
+   Alternate versions use their own first observed arrival, even when Jellyfin promotes one to the primary version
+   and keeps the title's older added date. Everyone who can open the new copy sees it until they play it after the
+   upgrade (a played mark carried over from the old file doesn't count), or for 7 days.
+3. **New for you**: something this person asked for (a request, also through Seerr) or follows arrived for the first
+   time after they asked, and they can open it. It goes when they play it or mark it played, or after 7 days. A 4K
+   request waits for a 4K copy; a replacement of something already there is never "new".
+4. **4K**: the person can open a 4K copy (a video at least 3200 pixels wide or 2000 high) of this movie or series, or of
+   this season or episode.
+
+A series or season card shows New or Upgraded when one of its episodes does. Partial playback clears those badges
+for that viewer too. Hiding badges takes effect immediately, including while a badge request is still loading.
+Showing them again refreshes cards after the preference saves. Both badge controls keep your latest choices while
+they save. Once saving finishes, the controls and cards match the last successful save, including when quick web and
+native changes have mixed save outcomes. Closing and reopening the panel while a save is pending keeps those
+choices and any earlier successful save. Language and translation-cache reloads wait for pending saves, and browser storage failures cannot prevent saved choices from reaching the controls. Switching users clears pending unsent saves and prevents old responses
+from changing the incoming person’s settings. Acquisition badges follow live title changes even with phase-1 status badges off.
+
+Badges come from what the server already knows (no call to Sonarr, Radarr or Seerr when a page or a poster loads).
+The server stops returning a badge as soon as it expires. Open web cards hear about settled imports, version
+upgrades, removals and expiry through the existing live feed. Expiry is announced on the existing 15-second badge
+background round. Removing the last 4K version also clears its live badge. Source and fact changes in one background
+round send one update per title, after the badge state is ready. Refreshing unchanged library metadata sends no
+acquisition update. A badge never shows a title the person can't open, and nothing is requested or changed by a badge.
+
+**On TV and phone apps** (*Draw the badges into posters for TV and phone apps*, which also needs
+[Native Poster Tags](../enhanced/enhanced-features.md)): the same badge is drawn into the poster images that person's
+apps load, as a small icon (NEW, an upgrade arrow, or 4K) in the first corner no poster tag uses. Each person gets their
+own poster address, so one person's badge never shows on another's screen, and an address changes when the badge does
+(watched, upgraded, expired). An app that still holds an old address gets the current picture, cached for an hour.
+
+Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin Enhanced panel (*Poster badges*).
 
 ### Privacy and Seerr scans
 

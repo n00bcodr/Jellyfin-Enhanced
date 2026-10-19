@@ -882,7 +882,7 @@ public class ListsSwapTests
             for (var i = 0; i < 500 && pending == null; i++)
             {
                 pending = h.Swap.GetPendingMatch(access.ListIdN, movie.Id);
-                await Task.Delay(10);
+                if (pending == null) await Task.Delay(10);
             }
 
             Assert.Equal(arrived, pending);

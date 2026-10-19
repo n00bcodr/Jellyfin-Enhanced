@@ -2725,6 +2725,17 @@
                                 <div class="je-setting-description" data-desc-for="arrPhase4ListCollectionUiEnabled"><div class="fieldDescription">Collection pages get a "Not in your library" section with the collection's entries that aren't in the library, by release date (dates still to be announced last). Everyone can hide this for themselves.</div></div>
                             </div>
                             <!-- /Phase 4c3a: list pages -->
+                            <!-- Phase 4e: acquisition badges -->
+                            <div id="arrAcquisitionSettings" class="je-arr-acquisition-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4AcquisitionBadgesEnabled" is="emby-checkbox" type="checkbox"/><span>Poster badges: New for you, Upgraded, 4K</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4AcquisitionBadgesEnabled"><div class="fieldDescription">Needs phase 4. Poster cards in the web client get one small badge: <strong>New for you</strong> when something the person asked for or follows has just arrived and they haven't watched it yet, <strong>Upgraded</strong> when Sonarr/Radarr replaced a copy with a better one, or <strong>4K</strong> when the person can watch a 4K copy. Download progress and "almost ready" badges always come first. Everyone can hide the badges for themselves.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4NativeStampsEnabled" is="emby-checkbox" type="checkbox"/><span>Draw the badges into posters for TV and phone apps</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4NativeStampsEnabled"><div class="fieldDescription">Needs the poster badges above and Native Poster Tags. The same badge is drawn into the poster image apps load, for each person, in the first corner no poster tag uses. Everyone can turn it off for themselves.</div></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAcquisitionNewDays">Days a title stays "New for you" (1–30)</label><input id="arrAcquisitionNewDays" is="emby-input" type="number" min="1" max="30"/></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrAcquisitionUpgradedDays">Days a title stays "Upgraded" (1–30)</label><input id="arrAcquisitionUpgradedDays" is="emby-input" type="number" min="1" max="30"/></div>
+                                <div class="je-setting-description" data-desc-for="arrAcquisitionUpgradedDays"><div class="fieldDescription">A badge also goes as soon as the person watches the title.</div></div>
+                            </div>
+                            <!-- /Phase 4e: acquisition badges -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6765,6 +6776,11 @@
             // Phase 4c3a: list pages
             document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked = config.ArrPhase4ListPlaylistUiEnabled === true;
             document.querySelector('#arrPhase4ListCollectionUiEnabled').checked = config.ArrPhase4ListCollectionUiEnabled === true;
+            // Phase 4e: acquisition badges
+            document.querySelector('#arrPhase4AcquisitionBadgesEnabled').checked = config.ArrPhase4AcquisitionBadgesEnabled === true;
+            document.querySelector('#arrPhase4NativeStampsEnabled').checked = config.ArrPhase4NativeStampsEnabled === true;
+            document.querySelector('#arrAcquisitionNewDays').value = num(config.ArrAcquisitionNewDays, 7);
+            document.querySelector('#arrAcquisitionUpgradedDays').value = num(config.ArrAcquisitionUpgradedDays, 7);
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6838,6 +6854,12 @@
             // Phase 4c3a: list pages
             config.ArrPhase4ListPlaylistUiEnabled = document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked;
             config.ArrPhase4ListCollectionUiEnabled = document.querySelector('#arrPhase4ListCollectionUiEnabled').checked;
+            // Phase 4e: acquisition badges
+            var days = function(id) { var n = parseInt(document.querySelector(id).value, 10); return isNaN(n) ? 7 : Math.min(30, Math.max(1, n)); };
+            config.ArrPhase4AcquisitionBadgesEnabled = document.querySelector('#arrPhase4AcquisitionBadgesEnabled').checked;
+            config.ArrPhase4NativeStampsEnabled = document.querySelector('#arrPhase4NativeStampsEnabled').checked;
+            config.ArrAcquisitionNewDays = days('#arrAcquisitionNewDays');
+            config.ArrAcquisitionUpgradedDays = days('#arrAcquisitionUpgradedDays');
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10605,6 +10627,10 @@
             { parent: 'arrPhase4ListRequestsEnabled', label: 'Ask for list entries', children: ['arrPhase4ListRequestAllEnabled'] },
             // Phase 4c3a: list pages
             { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListPlaylistUiEnabled', 'arrPhase4ListCollectionUiEnabled'] },
+            // Phase 4e: acquisition badges
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4AcquisitionBadgesEnabled'] },
+            { parent: 'arrPhase4AcquisitionBadgesEnabled', label: 'Poster badges: New for you, Upgraded, 4K', children: ['arrPhase4NativeStampsEnabled', 'arrAcquisitionNewDays', 'arrAcquisitionUpgradedDays'] },
+            { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['arrPhase4NativeStampsEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

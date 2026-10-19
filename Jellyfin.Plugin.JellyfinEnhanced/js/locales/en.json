@@ -1916,5 +1916,16 @@
     "arr_lists_preview_follow": "Someone already asked for this: you'll follow their request.",
     "arr_lists_preview_approval": "This will wait for an OK first.",
     "arr_lists_preview_cost": "Uses {count} request from your allowance.|Uses {count} requests from your allowance.",
-    "arr_lists_already": "You've already asked for this."
+    "arr_lists_already": "You've already asked for this.",
+    "arr_badge_new_title": "New for you",
+    "arr_badge_upgraded": "Upgraded",
+    "arr_badge_upgraded_title": "Upgraded to a better copy",
+    "arr_badge_fourk_title": "You can watch this in 4K",
+    "panel_settings_badges": "Poster badges",
+    "panel_settings_badges_desc": "New for you, Upgraded and 4K marks on posters.",
+    "panel_settings_badges_web": "Badges on poster cards",
+    "panel_settings_badges_native": "Badges drawn into posters on TV and phone apps",
+    "panel_settings_badges_follow": "Show (household setting)",
+    "panel_settings_badges_hide": "Hide",
+    "toast_badge_settings_saved": "Poster badge settings saved"
 }

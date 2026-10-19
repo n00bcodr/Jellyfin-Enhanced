@@ -873,7 +873,9 @@ public class IntegrationArrLiveTests
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
             Assert.Equal(1, tracker.FlushItems());
             Assert.True(rig.Feed.Revision("movie:tmdb:101") > before);
-            // Past the window its updates are no longer its arrival.
+            // Past the arrival window, metadata alone does not publish; the stamp feeder owns upgrades.
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4Enabled = true;
+            rig.Arr.Plugin.Plugin.Configuration.ArrPhase4AcquisitionBadgesEnabled = true;
             now = now.AddMinutes(11);
             library.Raise(l => l.ItemUpdated += null, library.Object, new ItemChangeEventArgs { Item = alpha });
             Assert.Equal(0, tracker.FlushItems());

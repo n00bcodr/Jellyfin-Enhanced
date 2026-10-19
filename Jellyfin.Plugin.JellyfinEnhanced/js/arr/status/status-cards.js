@@ -4,6 +4,9 @@
  * (IntersectionObserver), batched into one request per burst (up to 100 ids), at low priority;
  * answers are kept a minute per item so scrolling back or returning to a page costs nothing.
  * Quiet statuses draw nothing. A change event for a title re-fetches the cards showing it.
+ * Phase 4e: with acquisition badges on, the same batches also read each card's stamp (Upgraded,
+ * New for you, 4K) in parallel, painted when no in-progress badge takes the card; the person's
+ * own watch state changing (Jellyfin's UserDataChanged) re-reads those cards.
  */
 (function (JE) {
     'use strict';
@@ -13,12 +16,17 @@
     const FLUSH_MS = 300;
     const TTL_MS = 60000;
 
-    /** @type {Map<string, {status: Object|null, at: number}>} item id -> last answer */
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[], at: number}>} item id -> last answer */
     const cache = new Map();
+    /** @type {Map<string, {status: Object|null, stamp: string|null, keys: string[]}>} what was shown before an entry was dropped for a re-read */
+    const stale = new Map();
+    /** Stops listening to Jellyfin's UserDataChanged messages (phase 4e), or null. */
+    let stopUserData = null;
     /** @type {Map<string, Set<string>>} title key -> item ids shown with it */
     const idsByKey = new Map();
     const queued = new Set();
     const inFlight = new Set();
+    const revisions = new Map();
     let seen = new WeakSet();
     let io = null;
     let flushTimer = null;
@@ -70,23 +78,76 @@
     }
 
     /**
-     * Draws (or removes) a card's badge for a status.
+     * True when the phase-1 status badges are on (status feature and its poster-badge switch).
+     * @returns {boolean} On.
+     */
+    function statusBadgesOn() {
+        return JE.arrStatus?.enabled() === true && JE.pluginConfig?.ArrStatusPosterBadges === true;
+    }
+
+    /**
+     * True when acquisition badges (phase 4e) are on for this person.
+     * @returns {boolean} On.
+     */
+    function stampsOn() {
+        return JE.arrStatus?.stampsEnabled?.() === true;
+    }
+
+    /**
+     * Draws (or removes) a card's badge for a status and an acquisition stamp.
      * @param {Element} card Card element.
      * @param {Object|null} status Status (null: nothing known).
+     * @param {string|null} [stamp] Acquisition stamp (phase 4e).
      * @returns {void}
      */
-    function paint(card, status) {
+    function paint(card, status, stamp) {
         const host = card.querySelector('.cardScalable') || card.querySelector('.cardBox') || card;
         const old = host.querySelector(':scope > .je-arr-badge');
-        const badge = status ? JE.arrStatus.buildBadge(status) : null;
+        const badge = status || stamp ? JE.arrStatus.buildBadge(status || null, stamp || null) : null;
         if (!badge) {
             if (old) old.remove();
             return;
         }
         for (const part of badgeCorner().split(' ')) badge.classList.add(`je-arr-badge-${part}`);
-        if (old && old.outerHTML === badge.outerHTML) return;
+        const raised = badge.classList.contains('je-arr-badge-raised');
+        if (raised && old?.style.bottom) badge.style.bottom = old.style.bottom;
+        if (old && old.outerHTML === badge.outerHTML) {
+            if (raised) raise(card, host, old);
+            return;
+        }
         if (old) old.remove();
         host.appendChild(badge);
+        if (!raised) return;
+        raise(card, host, badge);
+        // The tags may draw after the badge (their data still loading): measure once more.
+        setTimeout(() => { if (badge.isConnected) raise(card, host, badge); }, 1500);
+    }
+
+    /** JE's poster tag groups. */
+    const TAG_GROUPS = '.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container';
+
+    /**
+     * With every corner taken, the badge sits above the bottom-left tag group. The group's real
+     * height is measured: two or three language flags are taller than the stylesheet's fixed raise.
+     * A group is in the bottom-left corner when it is nearer the card's bottom and left edges than
+     * the opposite ones (each tag group is anchored to its corner).
+     * @param {Element} card Card element.
+     * @param {Element} host The badge's positioned host.
+     * @param {HTMLElement} badge Badge.
+     * @returns {void}
+     */
+    function raise(card, host, badge) {
+        const box = host.getBoundingClientRect();
+        let top = Infinity;
+        card.querySelectorAll(TAG_GROUPS).forEach(group => {
+            if (!group.offsetHeight) return;
+            const r = group.getBoundingClientRect();
+            if (box.bottom - r.bottom >= r.top - box.top || r.left - box.left >= box.right - r.right) return;
+            top = Math.min(top, r.top);
+        });
+        const lift = Number.isFinite(top) ? Math.ceil(box.bottom - top) + 4 : 0;
+        const bottom = lift > 34 ? `${lift}px` : '';
+        if (badge.style.bottom !== bottom) badge.style.bottom = bottom;
     }
 
     /**
@@ -97,7 +158,9 @@
     function paintAll(ids) {
         document.querySelectorAll('.card[data-id]').forEach(card => {
             const id = cardId(card);
-            if (id && ids.has(id)) paint(card, cache.get(id)?.status || null);
+            if (!id || !ids.has(id)) return;
+            const entry = cache.get(id);
+            paint(card, entry?.status || null, entry?.stamp || null);
         });
     }
 
@@ -107,39 +170,74 @@
      */
     async function flush() {
         flushTimer = null;
-        if (!JE.arrStatus?.enabled()) return;
+        const withStatus = statusBadgesOn();
+        const withStamps = stampsOn();
+        if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
-        queued.clear();
+        ids.forEach(id => queued.delete(id));
+        const current = JE.arrStatus.responseGuard();
         for (let i = 0; i < ids.length; i += BATCH) {
+            if (!current()) return;
             const batch = ids.slice(i, i + BATCH);
+            const versions = new Map(batch.map(id => [id, revisions.get(id) || 0]));
             batch.forEach(id => inFlight.add(id));
-            const epoch = JE.session ? JE.session.getEpoch() : 0;
             let data = null;
+            let stampData = null;
             try {
-                data = await JE.arrStatus.fetchBatch(batch, []);
+                // Statuses and stamps are separate reads, sent together; either may fail alone.
+                [data, stampData] = await Promise.all([
+                    withStatus ? JE.arrStatus.fetchBatch(batch, []) : null,
+                    withStamps ? JE.arrStatus.fetchStamps(batch) : null
+                ]);
             } finally {
-                batch.forEach(id => inFlight.delete(id));
+                if (current()) batch.forEach(id => inFlight.delete(id));
+                // Invalidations queued during this read must survive and run once it releases the ids.
+                if (current() && queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
             }
-            if (JE.session && !JE.session.isCurrent(epoch)) return;
+            if (!current()) return;
+            const valid = batch.filter(id => current() && (revisions.get(id) || 0) === versions.get(id));
+            if (!valid.length) continue;
             const now = Date.now();
             const answered = new Map();
             for (const status of data?.items || []) {
                 if (!status.itemId) continue;
                 const id = status.itemId.toLowerCase();
                 answered.set(id, status);
-                if (status.key) follow(status.key, id);
-                if (status.liveKey) follow(status.liveKey, id);
             }
-            if (!data) {
+            const stamps = new Map();
+            for (const item of stampData?.items || []) {
+                if (item?.itemId && typeof item.stamp === 'string') stamps.set(item.itemId.replace(/-/g, '').toLowerCase(), item.stamp);
+            }
+            // A stamps read refused because the feature is off (403) is no failure: stamps just stop.
+            const statusFailed = withStatus && !data;
+            const stampsFailed = withStamps && !stampData && stampsOn();
+            if (!data && !stampData && (statusFailed || stampsFailed)) {
                 // Failed (a re-fetch after a change, or a first look): ask again for the cards
                 // still shown after a pause, so a badge doesn't stay at what it showed before.
-                retryLater(batch);
+                retryLater(valid);
                 continue;
             }
-            failures = 0;
-            noteSince(data.since);
-            for (const id of batch) cache.set(id, { status: answered.get(id) || null, at: now });
-            paintAll(new Set(batch));
+            if (data) noteSince(data.since);
+            if (stampData) noteSince(stampData.since);
+            const subscriptions = new Map((stampData?.subscriptions || []).map(item => [item.itemId, item.keys]));
+            for (const id of valid) {
+                const status = answered.get(id);
+                if (status?.key) follow(status.key, id);
+                if (status?.liveKey) follow(status.liveKey, id);
+                for (const key of subscriptions.get(id) || []) follow(key, id);
+                // The half that failed keeps what the card showed; the retry below reads it again.
+                const before = cache.get(id) || stale.get(id);
+                stale.delete(id);
+                cache.set(id, {
+                    status: data ? answered.get(id) || null : statusFailed ? before?.status || null : null,
+                    stamp: stampData ? stamps.get(id) || null : stampsFailed ? before?.stamp || null : null,
+                    keys: subscriptions.get(id) || before?.keys || [],
+                    at: now
+                });
+            }
+            paintAll(new Set(valid));
+            if (statusFailed || stampsFailed) retryLater(valid);
+            else failures = 0;
         }
         prune();
     }
@@ -176,6 +274,8 @@
         for (const [id, entry] of cache) {
             if (!present.has(id) || now - entry.at >= TTL_MS) cache.delete(id);
         }
+        for (const id of stale.keys()) if (!present.has(id)) stale.delete(id);
+        for (const id of revisions.keys()) if (!present.has(id) && !inFlight.has(id) && !queued.has(id)) revisions.delete(id);
         resubscribe();
     }
 
@@ -202,9 +302,9 @@
     function want(card, id) {
         const entry = cache.get(id);
         if (entry && Date.now() - entry.at < TTL_MS) {
-            paint(card, entry.status);
+            paint(card, entry.status, entry.stamp);
             // Painted from the cache: follow the title again (a prune may have dropped it), once per burst.
-            const followed = [entry.status?.key, entry.status?.liveKey].filter(Boolean).map(key => follow(key, id)).some(Boolean);
+            const followed = [entry.status?.key, entry.status?.liveKey, ...(entry.keys || [])].filter(Boolean).map(key => follow(key, id)).some(Boolean);
             if (followed && !resubscribeTimer) {
                 resubscribeTimer = setTimeout(() => {
                     resubscribeTimer = null;
@@ -222,6 +322,7 @@
      * @returns {void}
      */
     function scan() {
+        if (!statusBadgesOn() && !stampsOn()) return;
         if (!io) return;
         document.querySelectorAll('.card[data-id][data-type]').forEach(card => {
             if (seen.has(card)) return;
@@ -263,7 +364,7 @@
     function retryLater(ids) {
         failures++;
         ids.forEach(id => {
-            cache.delete(id);
+            forget(id);
             retryIds.add(id);
         });
         if (retryTimer) return;
@@ -302,7 +403,7 @@
         for (const [key, ids] of idsByKey) {
             if (!wanted.has(key) && !wanted.has(key.replace(/:s\d+(:e\d+)?$/, ''))) continue;
             ids.forEach(id => {
-                cache.delete(id);
+                forget(id);
                 // Only cards still shown are asked for again; the rest come back fresh when seen.
                 if (onPage.has(id)) queued.add(id);
             });
@@ -312,11 +413,127 @@
     }
 
     /**
-     * Starts the poster-badge surface (behind the status and poster-badge flags).
+     * Drops an item's answer so the next look reads it again, remembering what its card shows
+     * (a read that half fails keeps that half on screen).
+     * @param {string} id Item id.
+     * @returns {void}
+     */
+    function forget(id) {
+        revisions.set(id, (revisions.get(id) || 0) + 1);
+        const entry = cache.get(id);
+        if (entry) stale.set(id, { status: entry.status, stamp: entry.stamp || null, keys: entry.keys });
+        cache.delete(id);
+    }
+
+    /**
+     * Jellyfin says the person's own watch state of these items changed (UserDataChanged): their
+     * answers are dropped and the cards on the page asked for again, so a title just watched loses
+     * its New/Upgraded badge without a reload. A watched episode can also end the stamp of its
+     * season or series: played marks and partial playback refresh Season/Series cards too,
+     * including a parent whose first answer is still in flight.
+     * @param {Object} data The message's Data ({UserId, UserDataList: [{ItemId, Played, ...}]}).
+     * @returns {void}
+     */
+    function onUserData(data) {
+        if (!stampsOn()) return;
+        const list = Array.isArray(data?.UserDataList) ? data.UserDataList : [];
+        if (!list.length) return;
+        const changed = new Set(list.map(u => (typeof u?.ItemId === 'string' ? u.ItemId.replace(/-/g, '').toLowerCase() : '')).filter(Boolean));
+        const playback = list.some(u => u?.Played === true || !!u?.LastPlayedDate);
+        let any = false;
+        document.querySelectorAll('.card[data-id]').forEach(card => {
+            const id = cardId(card);
+            if (!id) return;
+            const type = card.getAttribute('data-type');
+            const parent = playback && (type === 'Series' || type === 'Season');
+            if (!changed.has(id) && !parent) return;
+            forget(id);
+            queued.add(id);
+            any = true;
+        });
+        for (const id of changed) if (cache.has(id)) forget(id);
+        if (any && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
+    }
+
+    /**
+     * Listens to Jellyfin's own UserDataChanged messages through jellyfin-web's ApiClient (no socket
+     * of JE's own): `ApiClient.subscribe` on Jellyfin 12, else jellyfin-web's global `Events` on the
+     * ApiClient's 'message' event (10.11). Only with acquisition badges on.
+     * @returns {void}
+     */
+    function listenUserData() {
+        if (typeof stopUserData === 'function') stopUserData();
+        stopUserData = null;
+        if (!stampsOn()) return;
+        const client = window.ApiClient;
+        if (!client) return;
+        try {
+            if (typeof client.subscribe === 'function') {
+                const off = client.subscribe(['UserDataChanged'], (msg) => onUserData(msg?.Data));
+                stopUserData = typeof off === 'function' ? off : null;
+                return;
+            }
+            const events = window.Events;
+            if (typeof events?.on !== 'function') return;
+            const handler = (_e, msg) => {
+                if (msg?.MessageType === 'UserDataChanged') onUserData(msg.Data);
+            };
+            events.on(client, 'message', handler);
+            stopUserData = () => events.off?.(client, 'message', handler);
+        } catch (err) {
+            console.warn('🪼 Jellyfin Enhanced: Status: watch-state listener failed', err);
+        }
+    }
+
+    /**
+     * Forgets every answer, followed title and badge, and looks at the cards on the page again
+     * (a user switch).
+     * @returns {void}
+     */
+    function clearAll() {
+        JE.arrStatus.invalidateResponses();
+        inFlight.clear();
+        revisions.clear();
+        for (const timer of [flushTimer, retryTimer, resubscribeTimer]) if (timer) clearTimeout(timer);
+        flushTimer = retryTimer = resubscribeTimer = null;
+        cache.clear();
+        stale.clear();
+        idsByKey.clear();
+        queued.clear();
+        retryIds.clear();
+        failures = 0;
+        followSince = null;
+        followUnknown = false;
+        seen = new WeakSet();
+        if (typeof unsubscribe === 'function') unsubscribe();
+        unsubscribe = null;
+        subscribedKeys = '';
+        document.querySelectorAll('.je-arr-badge').forEach(n => n.remove());
+        if (io) {
+            io.disconnect();
+            setTimeout(scan, 0);
+            // The next person may not want acquisition badges (or may).
+            listenUserData();
+        }
+    }
+
+    /**
+     * The person changed their acquisition-badge preference (settings panel): every card is
+     * looked at afresh, and the surface starts if it wasn't running and now should.
+     * @returns {void}
+     */
+    function reset() {
+        clearAll();
+        if (!started) initialize();
+    }
+
+    /**
+     * Starts the poster-badge surface: behind the status and poster-badge flags, or the
+     * acquisition-badge flag (phase 4e).
      * @returns {void}
      */
     function initialize() {
-        if (started || !JE.arrStatus?.enabled() || JE.pluginConfig?.ArrStatusPosterBadges !== true) return;
+        if (started || (!statusBadgesOn() && !stampsOn())) return;
         if (typeof IntersectionObserver !== 'function') return;
         started = true;
         io = new IntersectionObserver((entries) => {
@@ -341,29 +558,13 @@
         // Leaving a page drops the titles only it showed (after the new page has rendered its cards).
         const onNav = JE.core?.navigation?.onNavigate?.(() => setTimeout(() => prune(), 1000));
         if (lifecycle && onNav) lifecycle.track(onNav);
+        listenUserData();
         setTimeout(scan, 400);
     }
 
-    JE.session?.onUserChange?.('arr-status-cards', () => {
-        cache.clear();
-        idsByKey.clear();
-        queued.clear();
-        retryIds.clear();
-        failures = 0;
-        followSince = null;
-        followUnknown = false;
-        seen = new WeakSet();
-        if (typeof unsubscribe === 'function') unsubscribe();
-        unsubscribe = null;
-        subscribedKeys = '';
-        document.querySelectorAll('.je-arr-badge').forEach(n => n.remove());
-        if (io) {
-            io.disconnect();
-            setTimeout(scan, 0);
-        }
-    });
+    JE.session?.onUserChange?.('arr-status-cards', clearAll);
 
     JE.internals = JE.internals || {};
-    JE.internals.arrStatusCards = { scan, flush, paint, refreshKeys, prune, badgeCorner, cache, idsByKey };
+    JE.internals.arrStatusCards = { scan, flush, paint, refreshKeys, prune, badgeCorner, reset, onUserData, cache, idsByKey };
     JE.initializeArrStatusCards = initialize;
 })(window.JellyfinEnhanced);

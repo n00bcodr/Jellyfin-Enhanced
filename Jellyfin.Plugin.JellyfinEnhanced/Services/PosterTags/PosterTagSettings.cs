@@ -56,6 +56,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool AnyGroupEnabled => QualityTagsEnabled || GenreTagsEnabled || LanguageTagsEnabled || RatingTagsEnabled || AgeRatingTagsEnabled;
 
         /// <summary>
+        /// Requests &amp; downloads acquisition stamps (phase 4e) are drawn for this user: the stamp switches
+        /// (<see cref="Acquire.Stamps.AcquisitionStampFlags.NativeStamps"/>), native poster tags on for the user, and the
+        /// user's <c>nativeAcquisitionStamps</c> not false (null follows the administrator).
+        /// </summary>
+        public bool AcquisitionStampsEnabled { get; private init; }
+
+        /// <summary>
+        /// The corner the acquisition stamp takes: the first one no enabled tag group is configured for (bottom-left,
+        /// bottom-right, top-left, top-right — the web badge rule), else bottom-left, stacked after the groups there.
+        /// </summary>
+        public string AcquisitionStampPosition { get; private init; } = "bottom-left";
+
+        /// <summary>True when anything at all can be drawn: a tag group or acquisition stamps.</summary>
+        public bool AnyContentEnabled => AnyGroupEnabled || AcquisitionStampsEnabled;
+
+        /// <summary>
         /// Stable lowercase hex hash (16 characters) over every rendering-relevant effective value,
         /// including admin-only keys and <see cref="ResolverVersion"/>. Values of disabled groups are
         /// left out so changing them does not invalidate cached posters.
@@ -331,8 +347,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
                 Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty,
+                AcquisitionStampsEnabled = Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config) && useNative && user.NativeAcquisitionStamps != false,
             };
 
+            settings = settings with { AcquisitionStampPosition = settings.FreeCorner() };
             return settings with { Digest = settings.ComputeDigest() };
         }
 
@@ -357,8 +375,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsPosition,
             PosterTagGroup.Rating => RatingTagsPosition,
             PosterTagGroup.AgeRating => AgeRatingTagsPosition,
+            PosterTagGroup.Acquisition => AcquisitionStampPosition,
             _ => LanguageTagsPosition,
         };
+
+        /// <summary>status-cards.js badgeCorner: the first corner no enabled tag group's position string names.</summary>
+        private string FreeCorner()
+        {
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            if (QualityTagsEnabled) used.Add(QualityTagsPosition);
+            if (GenreTagsEnabled) used.Add(GenreTagsPosition);
+            if (LanguageTagsEnabled) used.Add(LanguageTagsPosition);
+            if (RatingTagsEnabled) used.Add(RatingTagsPosition);
+            if (AgeRatingTagsEnabled) used.Add(AgeRatingTagsPosition);
+            foreach (var corner in new[] { "bottom-left", "bottom-right", "top-left", "top-right" })
+            {
+                if (!used.Contains(corner)) return corner;
+            }
+
+            return "bottom-left";
+        }
 
         /// <summary>Whether a quality category (model key) is shown.</summary>
         internal bool IsQualityCategoryShown(string category) => category switch
@@ -520,6 +556,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!Styles.IsEmpty)
             {
                 values["style.overrides"] = Styles.Hash;
+            }
+
+            // Only while stamps are drawn, so with them off every digest (and URL) is what it was before phase 4e.
+            if (AcquisitionStampsEnabled)
+            {
+                values["stamp.enabled"] = "1";
+                values["stamp.position"] = AcquisitionStampPosition;
             }
 
             var canonical = new StringBuilder(512);

@@ -800,6 +800,27 @@ writers do not take JE's lock, so native saves within that window remain a host 
 refresh, scan or metadata save can also conservatively retire a misplaced plan.
 There is no new setting or automatic retry after abandonment.
 
+#### Acquisition badges (phase 4)
+
+All off by default; they need phase 4 (not *Ask for it*). See
+[Acquisition badges](arr-features.md#acquisition-badges-new-for-you-upgraded-4k-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Poster badges: New for you, Upgraded, 4K (`ArrPhase4AcquisitionBadgesEnabled`) | off | One badge per poster card in the web client, after the download ring. Off: nothing about these badges is shown or recorded. |
+| Draw the badges into posters for TV and phone apps (`ArrPhase4NativeStampsEnabled`) | off | The same badge in each person's poster images. Also needs Native Poster Tags. Off: poster addresses and images are exactly as without it. |
+| Days a title stays "New for you" (`ArrAcquisitionNewDays`) | 7 | 1–30. A badge also goes as soon as the person watches the title. |
+| Days a title stays "Upgraded" (`ArrAcquisitionUpgradedDays`) | 7 | 1–30. Includes the first 4K version added alongside HD; playback after its own arrival clears it for that viewer. |
+
+Per person (Jellyfin Enhanced panel, *Poster badges*, shown while the badges are on): *Badges on poster cards* and
+*Badges drawn into posters on TV and phone apps* follow the household (default) or are hidden / off. Hiding web badges
+takes effect immediately; showing them refreshes the cards once the choice has saved. Both controls keep your latest
+choices while they save. Once saving finishes, the controls and cards match the last successful save, including when
+quick web and native changes have mixed save outcomes. Saved notifications follow the settings document that actually commits, including choices carried by a later save after an earlier failure. Closing the panel lets submitted saves finish their session-bound follow-ups; switching users or sessions discards outgoing follow-ups. Reopening the panel while saving keeps those choices and
+earlier successful saves. Language and translation-cache reloads wait for queued saves to finish. Full or disabled browser storage, a failed tag renderer, or a failed panel update cannot interrupt the other save updates or leave a save pending. The consent control still follows the server. A user switch clears pending unsent saves; old responses cannot change the next person’s
+settings. Live acquisition badges work independently of the phase-1
+poster status switch.
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.
@@ -875,3 +896,5 @@ Personal controls in **Hidden Content**:
 | **Filter Requests** | On | Starts with the admin default. Hides matching hidden items in **Downloads** and **Requests**; **History** and **Issues** remain unchanged. |
 
 See [Hidden Content filtering](troubleshooting-support.md#hidden-content-filtering) for these surface differences and [Enhanced features](../enhanced/enhanced-features.md#content-management) for the full Hidden Content workflow.
+
+Your list swap-in agreement changes only when you explicitly choose Yes or No in your own settings. Saving display preferences from another browser, administrator edits, and resetting display defaults preserve your current agreement. An older cached web client must reload to use the explicit agreement control.

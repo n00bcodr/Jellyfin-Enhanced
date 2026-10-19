@@ -492,6 +492,8 @@ test('keyboard and TV focus stays on the control after each settings change and 
   h.state.inbox = { unread: 2, more: true, items: [item(5, 'ready', { title: 'A' }), item(4, 'ready', { title: 'B' })] };
   h.JE.initializeArrNotify();
   await until(() => h.document.getElementById('je-notify-bell'));
+  // Wait for the delayed startup read before replacing the mock's newest page with an older page.
+  await until(() => h.subscriptions.some(subscription => subscription.active));
   await h.JE.arrNotify.refresh();
   h.document.getElementById('je-notify-bell').click();
   const panel = h.document.querySelector('.je-notify-panel');

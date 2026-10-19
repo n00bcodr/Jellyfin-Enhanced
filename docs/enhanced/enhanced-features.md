@@ -363,6 +363,8 @@ Admin **Pages → Bookmarks**:
 
 ??? info "Bookmark storage and matching"
 
+Panel edits belong to the current signed-in session. Closing the panel or switching users cancels an unfinished subtitle-position drag.
+
     Plugin Pages uses `/JellyfinEnhanced/bookmarksPage`. For manual Custom Tabs setup, use:
 
     ```html

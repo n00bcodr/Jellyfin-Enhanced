@@ -497,5 +497,7 @@
     );
     // A cached detail page re-shown by a class toggle alone produces no
     // childList mutation, so re-run on view show as well.
+    // Settings document publications refresh existing chips after commits and rollbacks too.
+    internal.refreshDetailsSettings = handleItemDetails;
     JE.helpers.onViewPage(() => handleItemDetails());
 })(window.JellyfinEnhanced);
