@@ -96,9 +96,13 @@
             const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
                 name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
-            const reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
-                ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
+            // The transport checks the operation (if any) again right before the bytes go out.
+            let reply;
+            try {
+                reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json', bound: submitted.operationBound(),
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
+                    ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
+            } catch (err) { if (err?.name === 'AbortError' && !submitted.current()) return false; throw err; }
             if (!action.current()) return false;
             const current = getHiddenData();
             const authoritative = reply?.items || reply?.Items;

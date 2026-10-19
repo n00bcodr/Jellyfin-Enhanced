@@ -322,8 +322,10 @@
      * lost answer reuses the same clientRequestId; a definitive answer (any HTTP status but 5xx) ends it.
      * On success the surfaces showing the title refresh.
      * @param {Object} input Mutation input (see movieInput / seasonsInput / episodesInput).
-     * @param {{clientRequestId?: string, signal?: AbortSignal}} [options] Options.
-     * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came.
+     * @param {{clientRequestId?: string, signal?: AbortSignal, bound?: Object}} [options] Options; bound: the core
+     *     transport binding of the operation that asks (JE.captureSubmitted().bound()), checked right before the POST.
+     * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came, plus `stale`
+     *     when a bound ask was never sent (its operation or session ended).
      */
     async function ask(input, options) {
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
@@ -333,8 +335,10 @@
         const started = epoch();
         let answer;
         try {
-            answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal });
+            answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal, bound: options?.bound });
         } catch (err) {
+            // Bound to an operation or session that ended before the send: nothing was sent, nothing to say.
+            if (err?.name === 'AbortError' && options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
             if (err?.name === 'AbortError') throw err;
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };

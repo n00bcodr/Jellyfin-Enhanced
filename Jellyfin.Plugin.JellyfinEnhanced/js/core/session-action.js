@@ -25,7 +25,14 @@
      */
     JE.captureSubmitted = function (explicit) {
         const operation = explicit || submitted;
-        return { operation, current: () => !operation || operation.current() !== false, run: next => JE.runSubmitted(operation, next) };
+        const session = operation ? JE.createSessionAction().session : null;
+        return { operation, current: () => !operation || operation.current() !== false, run: next => JE.runSubmitted(operation, next),
+            /**
+             * The transport binding of a write this operation owns (core api-client `bound`): sent only while the
+             * session at the entry point is the signed-in one, the operation is current and `owner()` (when given)
+             * is true, checked right before the bytes go out. Natively (no operation) none: the call is unchanged.
+             */
+            bound: owner => operation ? { session, current: () => operation.current() !== false && (!owner || owner() === true) } : undefined };
     };
 
     /**
@@ -60,16 +67,19 @@
         const current = () => identity() && (!operation || operation.current() !== false);
         /** The captured session as the core transport's bound requests carry it (JE.core.api.session()'s shape). */
         const session = Object.freeze({ userId: user, serverId: server, token, epoch, current: identity });
+        /**
+         * The request binding for work this action owns: the transport sends it only while this session is the
+         * signed-in one, the operation it is bound to (if any) is current and `owner()` (when given) is true,
+         * checked immediately before the bytes go out.
+         * @param {() => boolean} [owner]
+         */
+        const bound = owner => ({ session, current: () => (!operation || operation.current() !== false) && (!owner || owner() === true) });
         return {
             current,
             session,
-            /**
-             * The request binding for work this action owns: the transport sends it only while this session is the
-             * signed-in one, the operation it is bound to (if any) is current and `owner()` (when given) is true,
-             * checked immediately before the bytes go out.
-             * @param {() => boolean} [owner]
-             */
-            bound: owner => ({ session, current: () => (!operation || operation.current() !== false) && (!owner || owner() === true) }),
+            bound,
+            /** `bound(owner)` for a write that belongs to a submitted operation; natively none (the call is unchanged). */
+            operationBound: owner => operation ? bound(owner) : undefined,
             /** Rejects a deferred callback after either identity or epoch changes. */
             bind: callback => (...args) => current() ? callback(...args) : false,
             /** Registers owned UI cleanup; returns a release function for normal dismissal. */

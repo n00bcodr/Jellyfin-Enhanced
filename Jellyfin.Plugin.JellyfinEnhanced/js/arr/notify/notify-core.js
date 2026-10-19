@@ -266,9 +266,12 @@
      */
     async function setFollow(key, on) {
         const action = JE.createSessionAction();
+        // Pressed for a title action: the PUT is that operation's, checked by the transport right before it goes out.
+        const submitted = JE.captureSubmitted();
         try {
-            await api('/acquire/follows', { method: 'PUT', body: { key, on } });
+            await api('/acquire/follows', { method: 'PUT', body: { key, on }, bound: submitted.bound() });
         } catch (err) {
+            if (err?.name === 'AbortError' && !submitted.current()) return { ok: false, code: 'cancelled' };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
         }
         if (!action.current()) return { ok: false, code: 'cancelled' };

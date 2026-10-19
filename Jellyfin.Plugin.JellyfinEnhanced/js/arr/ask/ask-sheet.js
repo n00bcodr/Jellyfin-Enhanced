@@ -814,11 +814,11 @@
         showMessage(state, '', false);
         let result;
         try {
-            result = await JE.arrAsk.ask(input);
+            result = await JE.arrAsk.ask(input, { bound: state.submitted.bound() });
         } catch (err) {
             result = { ok: false, status: 0, state: 'failed', outcome: '', reason: err?.name === 'AbortError' ? 'aborted' : 'network', certainty: '', requestId: null };
         }
-        if (!state.action.current()) { finish(state, null); return; }
+        if (!state.action.current() || result.stale) { finish(state, null); return; }
         state.busy = false;
         state.primary.disabled = false;
         state.primary.removeAttribute('aria-busy');
@@ -975,7 +975,7 @@
             const quota = await JE.arrAsk.quota('movie');
             if (!sameSession()) return null;
             if (needsSheet(caps, quota, 'movie')) return { sheet: true, caps, quota };
-            const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key));
+            const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() });
             if (result.stale) return null;
             const allowance = result.state === 'quota' ? (await JE.arrAsk.quota('movie')) || quota : quota;
             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
@@ -1191,8 +1191,8 @@
                         JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else if (submitted.current()) {
-                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key)) : await open(title, { opener: b, operation: submitted.operation });
-                        if (result && (result.ok || result.state === 'unknown')) {
+                        const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() }) : await open(title, { opener: b, operation: submitted.operation });
+                        if (result?.stale) { /* its operation ended before the send: nothing was sent */ } else if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);
                             if (kind === 'movie') JE.arrAsk.toast(said.text);
                             words = said.chip ? { chip: said.chip, tone: said.tone } : null;

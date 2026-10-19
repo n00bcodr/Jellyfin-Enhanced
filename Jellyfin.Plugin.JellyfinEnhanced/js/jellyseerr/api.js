@@ -106,11 +106,12 @@
      * Performs a POST request to the Seerr proxy endpoint.
      * @param {string} path - The API path (e.g., '/request').
      * @param {object} body - The JSON body to send with the request.
+     * @param {object} [bound] - The core transport binding of the operation that writes (if any): checked right before the send.
      * @returns {Promise<any>} - The server's response.
      */
-    async function post(path, body) {
+    async function post(path, body, bound) {
         // skipRetry: POSTs are not idempotent — never auto-retry them.
-        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true });
+        return JE.core.api.plugin(`/jellyseerr${path}`, { method: 'POST', body, skipRetry: true, bound });
     }
 
     /**
@@ -706,7 +707,7 @@
             ...(is4k ? { is4k: true } : {})
         };
 
-        const result = await post('/request', body);
+        const result = await post('/request', body, action.operationBound());
 
         // Add to watchlist after successful request
         if (result) {
@@ -757,7 +758,7 @@
             ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
-        const result = await post('/request', body);
+        const result = await post('/request', body, action.operationBound());
 
         // Add to watchlist after successful request
         if (result) {
@@ -1015,7 +1016,7 @@
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
             if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
-            const result = await post('/issue', body);
+            const result = await post('/issue', body, submitted.bound());
             if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
