@@ -173,8 +173,8 @@ public class IntegrationUnknownEditionTests
             var hits = editions.Movie(new StatusViewer { UserId = Guid.NewGuid() }, new[] { new JfCopy { ItemId = item, Visible = true } }, Edition.Standard);
             Assert.Equal(hd.SourceId, hits[0].Source.SourceId);
             Assert.Equal(needsNonFourK ? 1 : 2, hits.Count);                    // with the switch, the unread one never qualifies
-            Assert.Empty(editions.Movie(new StatusViewer { UserId = Guid.NewGuid() }, new[] { new JfCopy { ItemId = item, Visible = true } }, Edition.FourK)
-                .Where(h => h.Source.SourceId == unread.SourceId));
+            Assert.DoesNotContain(editions.Movie(new StatusViewer { UserId = Guid.NewGuid() }, new[] { new JfCopy { ItemId = item, Visible = true } }, Edition.FourK),
+                h => h.Source.SourceId == unread.SourceId);
         }
     }
 }
