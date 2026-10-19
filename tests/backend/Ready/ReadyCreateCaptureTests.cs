@@ -25,11 +25,16 @@ public class ReadyCreateCaptureTests
     private static Playlist Allocated(Guid id, Guid? owner = null, string name = Name)
         => new() { Id = id, Name = name, OwnerUserId = owner ?? Owner, DateCreated = Made, Path = "/config/data/playlists/" + name };
 
-    private static (JellyfinReadyPlaylistHost Host, Mock<ILibraryManager> Library, Mock<IPlaylistManager> Playlists) Host()
+    // The host over Jellyfin's managers; its create's folder gives the playlist <paramref name="expected"/> (as Jellyfin derives it).
+    private static (JellyfinReadyPlaylistHost Host, Mock<ILibraryManager> Library, Mock<IPlaylistManager> Playlists) Host(Guid? expected = null)
     {
         var library = new Mock<ILibraryManager>();
         var playlists = new Mock<IPlaylistManager>();
-        return (new JellyfinReadyPlaylistHost(library.Object, playlists.Object, Mock.Of<MediaBrowser.Model.IO.IFileSystem>()), library, playlists);
+        var files = new Mock<MediaBrowser.Model.IO.IFileSystem>();
+        files.Setup(f => f.GetValidFilename(It.IsAny<string>())).Returns<string>(name => name);
+        playlists.Setup(p => p.GetPlaylistsFolder()).Returns(new Folder { Path = "/config/data/playlists" });
+        if (expected is Guid id) library.Setup(l => l.GetNewItemId("/config/data/playlists/" + Name, typeof(Playlist))).Returns(id);
+        return (new JellyfinReadyPlaylistHost(library.Object, playlists.Object, files.Object), library, playlists);
     }
 
     private static void Raise(Mock<ILibraryManager> library, BaseItem item)
@@ -38,8 +43,8 @@ public class ReadyCreateCaptureTests
     [Fact]
     public async Task TheCreatesOwnPlaylistCarriesJesNonceAndItsSecondFromTheCreateItself()
     {
-        var (host, library, playlists) = Host();
         var id = Guid.NewGuid();
+        var (host, library, playlists) = Host(id);
         var playlist = Allocated(id);
         PlaylistCreationRequest? asked = null;
         playlists.Setup(p => p.CreatePlaylist(It.IsAny<PlaylistCreationRequest>())).Returns<PlaylistCreationRequest>(request =>
@@ -67,8 +72,8 @@ public class ReadyCreateCaptureTests
     [InlineData("later")]         // raised only after the create returned its task (not the create's own synchronous add)
     public async Task WithoutExactlyTheCreatesOwnPlaylistNothingIsJes(string how)
     {
-        var (host, library, playlists) = Host();
         var id = Guid.NewGuid();
+        var (host, library, playlists) = Host(id);
         var playlist = Allocated(how == "other-owner" ? id : id, how == "other-owner" ? Guid.NewGuid() : null, how == "other-name" ? "Ready to watch" : Name);
         var later = new TaskCompletionSource<PlaylistCreationResult>();
         playlists.Setup(p => p.CreatePlaylist(It.IsAny<PlaylistCreationRequest>())).Returns<PlaylistCreationRequest>(_ =>

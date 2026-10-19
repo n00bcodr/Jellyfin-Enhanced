@@ -481,6 +481,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return IsAllowed(signature, mediaType, policy);
         }
 
+        /// <summary>
+        /// The cache-only absent-title decision as a verdict (4f round 7): true or false once the title's rating (and tags, when
+        /// the person's rules need them) was verified, or the answer can never change (no TMDB id; tag rules without Seerr);
+        /// null while it is unverified (not read yet, or the lookup failed lately): evidence to prepare, never a refusal.
+        /// </summary>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbId">TMDB id.</param>
+        /// <param name="userId">The person (Jellyfin user id, any format).</param>
+        /// <returns>Whether the person may see it, or null when that isn't known yet.</returns>
+        public bool? AbsentVerdict(string mediaType, int tmdbId, string userId)
+        {
+            if (!TryGetRestrictedPolicy(userId, out var policy) || !policy.IsRestricted) return true;
+            if (tmdbId <= 0 || (policy.HasTagRules && !HasSeerr())) return false;
+            var key = mediaType + ":" + tmdbId.ToString(CultureInfo.InvariantCulture) + ":" + Region();
+            if (!TryGetFreshSignature(key, policy.HasTagRules, out var signature) || signature == null) return null;
+            return signature.Score != null && IsAllowed(signature, mediaType, policy);
+        }
+
         /// <summary>Bounded absent-title check; lookup failures and unrated titles refuse restricted users.</summary>
         public async Task<bool> MaySeeAbsentAsync(string mediaType, int tmdbId, string userId, CancellationToken ct)
         {

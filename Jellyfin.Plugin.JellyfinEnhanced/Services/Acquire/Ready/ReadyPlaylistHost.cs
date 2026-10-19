@@ -78,11 +78,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
     /// The production <see cref="IReadyPlaylistHost"/> over Jellyfin's playlist and library managers. Reads go to what Jellyfin
     /// stored (its repository), not its cached instance: Jellyfin's own share, publish and rename materialize another
     /// instance and save it, leaving the cached one as it was. Its membership update saves the whole cached instance, so
-    /// right before one the cached instance's metadata JE doesn't own (name, shares, privacy, owner and the rest the person
-    /// may edit) is set from the stored one (heal-then-write, D49): a membership write never undoes the person's change.
-    /// After the heal the latest stored playlist goes through the whole gate again: when it is no longer the one the gate passed
-    /// (another nonce, creation time or owner: deleted and made again with the same id in between), or its privacy, shares or
-    /// name changed in between, nothing is written.
+    /// right before one the cached instance's metadata JE doesn't own (name, shares, privacy and the rest the person may
+    /// edit) is set from the stored one (heal-then-write, D49): a membership write never undoes the person's change.
+    /// No write before proof (4f round 7): nothing is written to an object, the cached instance included, until that very
+    /// object has shown it is JE's own: the stored playlist passes the whole gate, then the cached instance itself carries the
+    /// same id, owner, JE's nonce, exact creation second and folder, read from it before anything is copied into it. The heal
+    /// never copies identity (owner, nonce, creation time). After the heal the latest stored playlist goes through the whole
+    /// gate again: when it is no longer the one the gate passed (deleted and made again with the same id in between), or its
+    /// privacy, shares or name changed in between, nothing is written to Jellyfin.
     /// </summary>
     /// <remarks>
     /// Provenance at the create (4f round 6): Jellyfin's create returns only an id, and a playlist made again under the same
@@ -128,11 +131,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>One create of JE's while its call into Jellyfin runs: what it expects and what it saw.</summary>
         internal sealed class CreateScope
         {
-            internal CreateScope(Guid owner, string name, string nonce)
+            internal CreateScope(Guid owner, string name, string nonce, Guid expected)
             {
                 Owner = owner;
                 Name = name;
                 Nonce = nonce;
+                Expected = expected;
             }
 
             internal Guid Owner { get; }
@@ -140,6 +144,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             internal string Name { get; }
 
             internal string Nonce { get; }
+
+            /// <summary>The id Jellyfin's create gives the playlist it makes (derived from the folder it makes it in).</summary>
+            internal Guid Expected { get; }
+
+            /// <summary>The object the nonce was written into (the same object raised again is not another playlist).</summary>
+            internal Playlist? Taken { get; set; }
 
             /// <summary>False once JE's call into Jellyfin returned its task: later events are never this create's.</summary>
             internal bool Open { get; set; } = true;
@@ -157,13 +167,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         /// <summary>
         /// The create's own playlist as Jellyfin added it, on JE's call path, synchronously and before the create's refresh: its
         /// id and creation second are taken, and JE's nonce is written into that object (the refresh then saves it with it).
-        /// Anything else (no create of JE's running here, another item, owner or name) is left alone.
+        /// The write comes only after the object itself proved it is the create's own: added on JE's call path while JE's
+        /// create runs, a playlist of the owner under the create's name, with exactly the id the create's folder gives, and the
+        /// only such playlist so far. Anything else (no create of JE's running here, another item, owner, name or id, or a
+        /// second candidate) is never written; a second candidate makes the create ambiguous (nothing of it is JE's).
         /// </summary>
         internal static void Observe(CreateScope? scope, BaseItem? item)
         {
             if (scope is not { Open: true } || item is not Playlist playlist || playlist.OwnerUserId != scope.Owner
-                || !string.Equals(playlist.Name, scope.Name, StringComparison.Ordinal)) return;
-            if (++scope.Matches > 1) return;
+                || !string.Equals(playlist.Name, scope.Name, StringComparison.Ordinal) || ReferenceEquals(playlist, scope.Taken)) return;
+            if (++scope.Matches > 1 || playlist.Id != scope.Expected || scope.Expected == Guid.Empty) return;
+            scope.Taken = playlist;
             scope.Id = playlist.Id;
             scope.CreatedSecond = new DateTimeOffset(DateTime.SpecifyKind(playlist.DateCreated, DateTimeKind.Utc)).ToUnixTimeSeconds();
             playlist.ExternalId = NoncePrefix + scope.Nonce;
@@ -206,7 +220,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
         public async Task<(ReadyCreated? Made, string? Refused)> CreateAsync(Guid ownerId, string name, string nonce, ReadyGate gate)
         {
             if (gate(null) is { } refused) return (null, refused);
-            var scope = new CreateScope(ownerId, name, nonce);
+            // The id the create's folder will give its playlist, as Jellyfin derives it: the only object the nonce may go into.
+            if (NewPlaylistId(name) is not Guid expected || expected == Guid.Empty) return (null, "native_error");
+            var scope = new CreateScope(ownerId, name, nonce, expected);
             Task<PlaylistCreationResult> creating;
             var outer = Creating.Value;
             Creating.Value = scope;
@@ -232,7 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
             var result = await creating.ConfigureAwait(false);
             var id = Guid.Parse(result.Id);
-            return scope.Matches == 1 && scope.Id == id ? (new ReadyCreated(id, scope.CreatedSecond), null) : (null, "provenance");
+            return scope.Matches == 1 && scope.Taken != null && scope.Id == id ? (new ReadyCreated(id, scope.CreatedSecond), null) : (null, "provenance");
         }
 
         /// <inheritdoc />
@@ -260,12 +276,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             return Task.FromResult<string?>(null);
         }
 
-        // The stored playlist through the gate, then the cached instance healed from it, then the latest stored playlist through
-        // the WHOLE gate again (owner, privacy, shares, JE's nonce, creation second and the caller's own conditions): it and the
-        // healed instance Jellyfin is about to save must still be the playlist the gate passed, with the owner, privacy, shares
-        // and name the heal gave the instance (a change in between would be undone by the save: nothing is written, the next
-        // look sees it). Nothing awaited in between, and the caller calls Jellyfin right after. Jellyfin has no conditional
-        // save: a native edit landing inside its own save is a Jellyfin limitation (D49).
+        // No write before proof (4f round 7). 1: the stored playlist through the WHOLE gate (owner, privacy, shares, JE's nonce,
+        // creation second, marker and the caller's own conditions). 2: the cached instance Jellyfin is about to save proves,
+        // from its own fields and before anything is copied into it, that it is that same playlist (id, owner, nonce, exact
+        // creation second, folder): a playlist put in its place between the stored read and the cache lookup is refused and
+        // left exactly as it was. 3: only then is the cached instance healed from the stored one (never its identity). 4: the
+        // latest stored playlist through the whole gate again, and it and the healed instance must still be the playlist the
+        // gate passed, with the privacy, shares and name the heal gave the instance (a change in between would be undone by
+        // the save: nothing is written, the next look sees it). Nothing awaited in between, and the caller calls Jellyfin
+        // right after. Jellyfin has no conditional save: a native edit landing inside its own save is a Jellyfin limitation (D49).
         private string? Checked(Guid playlistId, ReadyGate gate, out Playlist? cached)
         {
             cached = null;
@@ -273,14 +292,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             var passed = Info(stored);
             if (gate(passed) is { } refused) return refused;
             if (_library.GetItemById(playlistId) is not Playlist live || stored == null || passed == null) return "missing";
+            if (Proof(passed, live) is { } foreign) return foreign;
             Heal(stored, live);
             var again = Info(Stored(playlistId));
             if (gate(again) is { } late) return late;
             if (again == null) return "missing";
-            if (!SameItem(passed, again) || !SameItem(passed, Info(live)!)) return "identity";
+            if (!SameItem(passed, again) || Proof(passed, live) != null) return "identity";
             if (!SameState(passed, again)) return "changed";
             cached = live;
             return null;
+        }
+
+        // Whether the object Jellyfin would save is, by its own fields, the playlist the gate passed: null when it is; else
+        // "identity" (another playlist in its place: never JE's) or "owner_changed" (the cached instance names another owner).
+        internal static string? Proof(ReadyPlaylistInfo passed, Playlist live)
+        {
+            var own = Info(live)!;
+            if (!SameItem(passed, own with { OwnerId = passed.OwnerId })) return "identity";
+            return own.OwnerId == passed.OwnerId ? null : "owner_changed";
         }
 
         private static bool SameItem(ReadyPlaylistInfo a, ReadyPlaylistInfo b)
@@ -293,8 +322,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
 
         private Playlist? Stored(Guid playlistId) => playlistId == Guid.Empty ? null : _library.RetrieveItem(playlistId) as Playlist;
 
-        // Jellyfin's item editor's fields and the playlist's own (owner, privacy, shares), as stored; membership, path and
-        // identity stay with Jellyfin's manager.
+        // Jellyfin's item editor's fields and the playlist's privacy and shares, as stored, into an instance already proven to be
+        // the same playlist; membership, path and identity (owner, JE's nonce, creation time) stay as they are: never copied.
         private static void Heal(Playlist stored, Playlist cached)
         {
             if (ReferenceEquals(stored, cached)) return;
@@ -313,7 +342,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             cached.PremiereDate = stored.PremiereDate;
             cached.EndDate = stored.EndDate;
             cached.ProductionYear = stored.ProductionYear;
-            cached.DateCreated = stored.DateCreated;
             cached.PreferredMetadataLanguage = stored.PreferredMetadataLanguage;
             cached.PreferredMetadataCountryCode = stored.PreferredMetadataCountryCode;
             cached.IsLocked = stored.IsLocked;
@@ -324,13 +352,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready
             cached.ProductionLocations = (stored.ProductionLocations ?? Array.Empty<string>()).ToArray();
             cached.ProviderIds = new Dictionary<string, string>(stored.ProviderIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
             cached.ImageInfos = (stored.ImageInfos ?? Array.Empty<ItemImageInfo>()).ToArray();
-            cached.ExternalId = stored.ExternalId;
-            cached.OwnerUserId = stored.OwnerUserId;
             cached.OpenAccess = stored.OpenAccess;
             cached.Shares = (stored.Shares ?? Array.Empty<PlaylistUserPermissions>()).ToArray();
         }
 
-        private static ReadyPlaylistInfo? Info(Playlist? p)
+        internal static ReadyPlaylistInfo? Info(Playlist? p)
             => p == null ? null : new ReadyPlaylistInfo(p.Id, p.OwnerUserId, p.OpenAccess, p.Shares?.Count() ?? 0,
                 string.IsNullOrEmpty(p.Path) ? string.Empty : Path.GetFileName(p.Path.TrimEnd('/', '\\')), p.Name ?? string.Empty,
                 new DateTimeOffset(DateTime.SpecifyKind(p.DateCreated, DateTimeKind.Utc)),
