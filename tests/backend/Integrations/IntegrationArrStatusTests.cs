@@ -925,6 +925,9 @@ public class IntegrationArrStatusTests
 
     private static readonly Guid SeriesItem = Guid.NewGuid();
 
+    /// <summary>The card's own series copy, in the standard Sonarr's folder: a card reads the Sonarr that owns its copy.</summary>
+    private static readonly JfCopy[] SeriesItemCopy = { new() { ItemId = SeriesItem, Visible = true, Path = "/data/tv/The Flash (2014)" } };
+
     private static ArrSeriesEntry Series(bool monitored = true, string path = "/data/tv/The Flash (2014)") => new()
     {
         Id = 3, TvdbId = 279121, Title = "The Flash", Monitored = monitored, Path = path, Added = Now.AddDays(-400), EpisodeFileCount = 9, EpisodeCount = 12,
@@ -1022,7 +1025,7 @@ public class IntegrationArrStatusTests
         Assert.False(status.Quiet);
 
         // The poster card for the series only reads the queue.
-        var card = StatusComposer.SeriesCard(facts, item, Ctx());
+        var card = StatusComposer.SeriesCard(facts, item, Ctx(), copies: SeriesItemCopy);
         Assert.Equal((StatusStage.Downloading, 1, 1, true), (card.Stage, card.Summary!.Downloading, card.Summary.AlmostReady, card.Attention));
     }
 
@@ -1195,7 +1198,7 @@ public class IntegrationArrStatusTests
 
         var page = StatusComposer.Series(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(Admin), detail: true);
         Assert.Contains(page.Admin!.Variants, v => v.Instance == "Sonarr 4K (lab)" && v.Scope == "S08E02");
-        var card = StatusComposer.SeriesCard(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, Ctx(Admin));
+        var card = StatusComposer.SeriesCard(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, Ctx(Admin), copies: SeriesItemCopy);
         Assert.Contains(card.Admin!.Variants, v => v.Instance == "Sonarr 4K (lab)" && v.Scope == "S08E02");
         Assert.True(card.Attention);
         var byKey = StatusComposer.SeriesByKey(facts, Array.Empty<JfCopy>(), Ctx(Admin));
@@ -1293,7 +1296,7 @@ public class IntegrationArrStatusTests
         var visibleCopy = new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/media/tv/Show" };
         // S1E2 is hidden (in Jellyfin with its own tag: an upgrade) and season 3 too.
         var (_, hidden) = StatusComposer.SplitHidden(new[] { new JfEpisode { Season = 1, Episode = 2, Hidden = true } }, new[] { new JfSeason { Season = 3, Hidden = true } });
-        var card = StatusComposer.SeriesCard(facts, item, Ctx(), hidden);
+        var card = StatusComposer.SeriesCard(facts, item, Ctx(), hidden, new[] { visibleCopy });
         Assert.Equal((StatusStage.Ready, true, 0), (card.Stage, card.Quiet, card.Summary!.Downloading));
         Assert.Null(card.Progress);
         var byKey = StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(), hidden);
@@ -1302,11 +1305,13 @@ public class IntegrationArrStatusTests
 
         // Only season 3 hidden: E2's download still counts.
         var (_, season3) = StatusComposer.SplitHidden(null, new[] { new JfSeason { Season = 3, Hidden = true } });
-        var partly = StatusComposer.SeriesCard(facts, item, Ctx(), season3);
+        var partly = StatusComposer.SeriesCard(facts, item, Ctx(), season3, new[] { visibleCopy });
         Assert.Equal((StatusStage.Downloading, 1, 50), (partly.Stage, partly.Summary!.Downloading, partly.Progress!.Percent));
         Assert.Equal(StatusStage.Downloading, StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(), season3).Stage);
         // Nothing hidden: both.
-        Assert.Equal(2, StatusComposer.SeriesCard(facts, item, Ctx()).Summary!.Downloading);
+        Assert.Equal(2, StatusComposer.SeriesCard(facts, item, Ctx(), copies: new[] { visibleCopy }).Summary!.Downloading);
+        // A card whose copy is unknown reads no Sonarr's queue (never the primary one by default).
+        Assert.Equal((StatusStage.Ready, 0), (StatusComposer.SeriesCard(facts, item, Ctx()).Stage, StatusComposer.SeriesCard(facts, item, Ctx()).Summary!.Downloading));
     }
 
     [Fact]

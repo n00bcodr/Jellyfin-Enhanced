@@ -715,7 +715,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ApplyRequests(gather, viewer);
             var facts = gather.Facts[title];
             var c = Context(viewer);
-            var series = CopiesOf(title, viewer).Display.FirstOrDefault(x => x.Visible);
+            // The key's arr facts are the primary Sonarr copy's, so the Jellyfin episodes read with them are those of a copy it
+            // owns, never another copy's (a 4K copy's episodes against the standard Sonarr's files); none: the arr's view alone.
+            var copies = Shown(facts, CopiesOf(title, viewer));
+            var primary = StatusComposer.SeriesCopyFor(facts, null, copies);
+            var series = primary == null ? null : copies.Where(x => x.Visible).FirstOrDefault(x => ReferenceEquals(StatusComposer.SeriesCopyFor(facts, x.ItemId, copies), primary));
             // A stand-in for the missing Jellyfin item (no id): the arr's view of that season or episode.
             var standIn = new JfItemRef { Kind = key.Episode.HasValue ? "episode" : "season", Key = key, SeriesId = series?.ItemId, Season = season, Episode = key.Episode, Virtual = true };
             var status = key.Episode.HasValue
@@ -1062,12 +1066,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The copies a status composed from <paramref name="lookup"/> shows (<see cref="CopyLookup.Display"/>), noting on
-        /// the facts whether the lookup finished: one that couldn't reads as not found but never as "since removed" or
-        /// "declined" (<see cref="TitleFacts.CopiesIncomplete"/>).
+        /// the facts whether the lookup finished and what it saw: one that couldn't reads as not found but never as "since
+        /// removed" or "declined" (<see cref="TitleFacts.CopiesIncomplete"/>), and which arr copy owns a page's copy is then
+        /// judged from the copies it saw only (<see cref="TitleFacts.SeenCopies"/>).
         /// </summary>
         private static IReadOnlyList<JfCopy> Shown(TitleFacts facts, CopyLookup lookup)
         {
             facts.CopiesIncomplete = !lookup.IsComplete;
+            facts.SeenCopies = lookup.Seen;
             return lookup.Display;
         }
 

@@ -46,7 +46,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The work ceiling: native pages per lookup, every row counted, so a lookup always ends.</summary>
         internal const int CopyPageCeiling = 100;
 
-        private const int CopyBudget = 20;
+        /// <summary>Distinct eligible copies a lookup lists; a further one makes it incomplete.</summary>
+        internal const int CopyBudget = 20;
         private static readonly TimeSpan BoundLogEvery = TimeSpan.FromHours(1);
         private const int BoundLogTitles = 256;
         private readonly Dictionary<string, DateTimeOffset> _boundLogged = new(StringComparer.Ordinal);
@@ -215,10 +216,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Complete only on established exhaustion: every query read to its short page. Every other stop leaves rows or
+        /// queries unread and returns what it saw as incomplete: the observable-row bound, the page ceiling, a copy past
+        /// the eligible budget (<see cref="CopyBudget"/>), and a viewer the view can't check.
+        /// </remarks>
         public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
         {
             var user = viewer.Handle as User;
-            if (user == null && !viewer.IsLibraryContext) return CopyLookup.Absent;
+            // Nothing read: no proof of absence (and, like every incomplete read, never cached).
+            if (user == null && !viewer.IsLibraryContext)
+            {
+                CopyLookupBound.Note();
+                return CopyLookup.Incomplete(Array.Empty<JfCopy>());
+            }
             // The key and its aliases of the same kind, one query per set of distinct providers
             // (Jellyfin matches any of the ids a query names; an item is listed once).
             var libraries = LiveLibraries(viewer);
@@ -229,7 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             string? bound = null;
             foreach (var providers in queries)
             {
-                if (items.Count == CopyBudget || bound != null) break;
+                if (bound != null) break;
                 searched++;
                 for (var page = 0; ; page++)
                 {
@@ -260,12 +271,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         var roots = CurrentRoots(item, libraries);
                         if (roots.Count == 0) continue;
                         if (roots.Exists(f => libraries[f.Id].Openable)) observable++;
-                        if (!found.Add(item.Id)) continue;
+                        if (found.Contains(item.Id)) continue;
+                        // A full budget still reads on: only the end of every query proves there is no other copy.
+                        if (items.Count == CopyBudget)
+                        {
+                            bound = "budget of " + CopyBudget.ToString(CultureInfo.InvariantCulture) + " eligible copies";
+                            break;
+                        }
+                        found.Add(item.Id);
                         items.Add(item);
-                        if (items.Count == CopyBudget) break;
                     }
                     // A full page is not evidence of absence, even when every row was filtered.
-                    if (rows.Count < CopyPageSize || items.Count == CopyBudget) break;
+                    if (bound != null || rows.Count < CopyPageSize) break;
                     if (observable >= ObservableBound)
                     {
                         bound = "bound of " + ObservableBound.ToString(CultureInfo.InvariantCulture) + " observable native rows";
@@ -290,7 +307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     DateCreated = Utc(item.DateCreated),
                 });
             }
-            // Reaching a bound proves nothing about absence: what was seen comes back as an incomplete answer.
+            // Any stop before exhaustion proves nothing about absence: what was seen comes back as an incomplete answer.
             return bound != null ? CopyLookup.Incomplete(copies) : CopyLookup.Complete(copies);
         }
 

@@ -67,7 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The scan finished and found none: the title is proven absent.</summary>
         ProvenAbsent,
 
-        /// <summary>The scan reached its bound first: the copies it saw are facts, absence is not proven.</summary>
+        /// <summary>The scan stopped with rows or queries unread (a bound, the page ceiling, the copy budget): the copies it saw are facts, absence is not proven.</summary>
         Incomplete,
     }
 
@@ -96,7 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <returns>The lookup.</returns>
         public static CopyLookup Complete(IReadOnlyList<JfCopy> copies) => copies.Count == 0 ? Absent : new(CopyLookupOutcome.Found, copies);
 
-        /// <summary>A scan that reached its bound.</summary>
+        /// <summary>A scan that stopped before it had read everything.</summary>
         /// <param name="seen">The copies it saw before (in the order a finished scan lists them first).</param>
         /// <returns>The lookup.</returns>
         public static CopyLookup Incomplete(IReadOnlyList<JfCopy> seen) => new(CopyLookupOutcome.Incomplete, seen);
@@ -350,8 +350,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
         /// current library: the key's kind only, once per item, up to twenty eligible copies. Native
-        /// query limits apply after current-library membership, with bounded paging. A scan that reaches its
-        /// bound is <see cref="CopyLookupOutcome.Incomplete"/> with the copies it saw, and tells <see cref="CopyLookupBound"/>.
+        /// query limits apply after current-library membership, with bounded paging. Only a scan that read every query
+        /// to its end is complete; one that stops first (a bound, the page ceiling, a twenty-first eligible copy) is
+        /// <see cref="CopyLookupOutcome.Incomplete"/> with the copies it saw, and tells <see cref="CopyLookupBound"/>.
         /// </summary>
         CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 

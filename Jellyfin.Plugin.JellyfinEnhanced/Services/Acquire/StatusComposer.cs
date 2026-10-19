@@ -103,6 +103,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// status reads it as not found, but nothing says it is gone because of that (never "since removed" or "declined").
         /// </summary>
         public bool CopiesIncomplete { get; set; }
+
+        /// <summary>
+        /// The copies that lookup saw (<see cref="CopyLookup.Seen"/>; every copy when it finished). When it couldn't finish,
+        /// which arr copy owns a Jellyfin copy is judged from these alone, never from a default.
+        /// </summary>
+        public IReadOnlyList<JfCopy> SeenCopies { get; set; } = Array.Empty<JfCopy>();
     }
 
     /// <summary>
@@ -806,7 +812,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var problems = new List<(ArrCopyFacts, int, int, CopyState)>();
                 if (copy != null)
                 {
-                    variants.Add((copy, state, MatchCopies(copy, copies, SeriesCopies(facts)).FirstOrDefault() ?? copies.FirstOrDefault()));
+                    variants.Add((copy, state, MatchCopies(copy, copies, SeriesCopies(facts)).FirstOrDefault()));
                     AddOtherSeriesCopies(facts, copy, copies, null, null, c, variants, problems);
                 }
                 admin = WithTitleHandoff(AdminFor(facts, variants, problems), state, facts, c);
@@ -835,10 +841,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private static ArrCopyFacts? SeriesCopyForViewer(TitleFacts facts, IReadOnlyList<JfCopy> copies, ComposeContext c)
         {
-            if (copies.Count == 0 || copies.Any(x => x.Visible) || c.Viewer.IsAdmin) return PrimarySeriesCopy(facts);
+            if (c.Viewer.IsAdmin) return PrimarySeriesCopy(facts);
+            var (known, every) = OwnershipBasis(facts, copies);
+            if (known.Any(x => x.Visible) || (every && known.Count == 0)) return PrimarySeriesCopy(facts);
+            // Which Sonarr copies are (or may be) their hidden series can only be told from every copy of the title: none.
+            if (!every) return null;
             var siblings = SeriesCopies(facts);
             return siblings
-                .Where(x => MatchCopies(x, copies, siblings).Count == 0 && x.Series!.EpisodeFileCount == 0 && RecentImport(x, c, TimeSpan.FromDays(30)) == null)
+                .Where(x => MatchCopies(x, known, siblings).Count == 0 && x.Series!.EpisodeFileCount == 0 && RecentImport(x, c, TimeSpan.FromDays(30)) == null)
                 .OrderBy(x => RoleOrder(x.Instance.Role))
                 .FirstOrDefault();
         }
@@ -1672,22 +1682,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <item><description>else, when it is the title's only Jellyfin copy and only Sonarr copy, that one, unless
         /// its linked library or path mapping leaves the copy out (however its folders are named).</description></item>
         /// </list>
-        /// None (null) when ownership can't be established. The primary copy when the copy is unknown.
+        /// None (null) when ownership can't be established, never a default: also when the copy is unknown (not among the
+        /// copies given, or none given), and when the lookup couldn't finish unless the first rule holds for a copy it saw
+        /// (the others compare the copy with every other copy of the title). A read of the whole title (no
+        /// <paramref name="page"/>) follows the primary copy.
         /// </summary>
         internal static ArrCopyFacts? SeriesCopyFor(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies)
         {
             var primary = PrimarySeriesCopy(facts);
-            if (page is not Guid id || copies == null || primary == null || copies.FirstOrDefault(x => x.ItemId == id) is not { } shown) return primary;
+            if (primary == null || page is not Guid id) return primary;
+            var (known, every) = OwnershipBasis(facts, copies);
+            if (known.FirstOrDefault(x => x.ItemId == id) is not { } shown) return null;
             var siblings = SeriesCopies(facts);
             if (siblings.Where(x => HoldsFolder(x, shown)).OrderBy(x => RoleOrder(x.Instance.Role)).FirstOrDefault() is { } owner) return owner;
-            var only = siblings.Where(x => MatchCopies(x, copies, siblings, soleFallback: false) is var m && m.Any(c => c.ItemId == id) && m.All(c => c.ItemId == id)).ToList();
+            if (!every) return null;
+            var only = siblings.Where(x => MatchCopies(x, known, siblings, soleFallback: false) is var m && m.Any(c => c.ItemId == id) && m.All(c => c.ItemId == id)).ToList();
             if (only.Count == 1) return only[0];
-            bool Leaves(ArrCopyFacts x, JfCopy c) => Claimed(x, copies) is { } claim && claim.All(y => y.ItemId != c.ItemId);
+            bool Leaves(ArrCopyFacts x, JfCopy c) => Claimed(x, known) is { } claim && claim.All(y => y.ItemId != c.ItemId);
             var named = siblings.Where(x => !Leaves(x, shown) && EndsLike(x, shown)).ToList();
-            if (named.Count == 1 && !copies.Any(c => c.ItemId != id && EndsLike(named[0], c))) return named[0];
-            var sole = copies.All(x => x.ItemId == id) && siblings.Count == 1;
+            if (named.Count == 1 && !known.Any(c => c.ItemId != id && EndsLike(named[0], c))) return named[0];
+            var sole = known.All(x => x.ItemId == id) && siblings.Count == 1;
             return sole && !Leaves(siblings[0], shown) ? siblings[0] : null;
         }
+
+        /// <summary>
+        /// The Jellyfin copies which arr copy owns a copy is judged from, and whether they are every copy of the title: the
+        /// given ones (a finished lookup's) or, when the lookup couldn't finish, only the ones it saw.
+        /// </summary>
+        private static (IReadOnlyList<JfCopy> Known, bool Every) OwnershipBasis(TitleFacts facts, IReadOnlyList<JfCopy>? copies)
+            => facts.CopiesIncomplete ? (facts.SeenCopies, false) : (copies ?? Array.Empty<JfCopy>(), copies != null);
 
         /// <summary>
         /// True when an arr copy's own folder is exactly the Jellyfin copy's folder: the mapped folder when the
@@ -1839,7 +1862,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts FourKOnly(TitleFacts facts)
         {
-            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
+            var fourK = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             fourK.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role == "4k"));
             fourK.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role == "4k"));
             fourK.Stale.AddRange(facts.Stale.Where(i => i.Role == "4k"));
@@ -1850,7 +1873,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A copy of the facts (every instance's), for an edition any copy satisfies (see <see cref="RequestedEdition"/>).</summary>
         internal static TitleFacts EveryEdition(TitleFacts facts)
         {
-            var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
+            var every = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             every.Copies.AddRange(facts.Copies);
             every.Unreadable.AddRange(facts.Unreadable);
             every.Stale.AddRange(facts.Stale);
@@ -1864,7 +1887,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         internal static TitleFacts StandardOnly(TitleFacts facts)
         {
-            var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete };
+            var standard = new TitleFacts(facts.Key) { Request = facts.Request, LiveKey = facts.LiveKey, CopiesIncomplete = facts.CopiesIncomplete, SeenCopies = facts.SeenCopies };
             standard.Copies.AddRange(facts.Copies.Where(x => x.Instance.Role != "4k"));
             standard.Unreadable.AddRange(facts.Unreadable.Where(u => u.Instance.Role != "4k"));
             standard.Stale.AddRange(facts.Stale.Where(i => i.Role != "4k"));

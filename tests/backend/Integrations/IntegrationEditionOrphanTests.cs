@@ -532,8 +532,11 @@ public class IntegrationEditionOrphanTests
     }
 
     [Fact]
-    public void PagingCountsDistinctEligibleCopiesAcrossAliasesAndStopsAtTwenty()
+    public void PagingCountsDistinctEligibleCopiesAcrossAliasesAndATwentyFirstMakesItIncomplete()
     {
+        // 21 distinct copies (each listed twice): the budget lists twenty, and the 21st, read but not listed, proves the
+        // lookup did not see every copy. It used to read as Found, so a copy the viewer can open past the twenty was
+        // taken as absent by every reader that concludes absence (edition round 8).
         using var l = new Library();
         var rows = PagedRows(l, 210, false, live: false);
         for (var n = 0; n < 21; n++)
@@ -543,7 +546,8 @@ public class IntegrationEditionOrphanTests
             rows.Add(row); rows.Add(row);
         }
         var lookup = l.View.Copies(Matrix, StatusViewer.Library, Enumerable.Range(604, 5).Select(n => TitleKey.Parse("movie:tmdb:" + n)!).ToArray());
-        Assert.Equal(CopyLookupOutcome.Found, lookup.Outcome);
+        Assert.Equal(CopyLookupOutcome.Incomplete, lookup.Outcome);
+        Assert.Empty(lookup.Display);
         var copies = lookup.Seen;
         Assert.Equal(20, copies.Count); Assert.Equal(20, copies.Select(c => c.ItemId).Distinct().Count());
         l.Manager.Verify(m => m.GetItemList(It.IsAny<InternalItemsQuery>()), Times.AtMost(10));
