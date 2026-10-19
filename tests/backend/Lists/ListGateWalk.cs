@@ -44,6 +44,9 @@ internal sealed class ListGateWalk
     /// <summary>The plugin as it is on disk.</summary>
     internal static ListGateWalk Plugin => _plugin.Value;
 
+    /// <summary>The plugin's compilation (other walks over the same source share it).</summary>
+    internal CSharpCompilation Source => _compilation;
+
     private INamedTypeSymbol Type(string name) => _compilation.GetTypeByMetadataName(name) ?? throw new Xunit.Sdk.XunitException(name + " does not exist");
 
     private INamedTypeSymbol ListWrite => Type(Lists + "ListWrite");

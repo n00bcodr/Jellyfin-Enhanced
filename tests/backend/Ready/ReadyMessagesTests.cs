@@ -450,6 +450,10 @@ public class ReadyMessagesTests
 [Collection("Plugin singleton")]
 public class ReadyMessagesDraftTests
 {
+    // A notification made through the final gate (4f round 9), as every producer makes one.
+    private static bool Tell(IntegrationNotificationsTests.Rig rig, Guid user, string kind, string eventKey, string titleKey, Guid? item, Dictionary<string, string> payload)
+        => rig.Service.Notify(rig.Dispatcher.Final(new NotifyAlert(user, kind, titleKey, item?.ToString("N"), eventKey, payload)), null);
+
     [Fact]
     public async Task AReadyNotificationGetsANativeMessageOnlyWithBothSwitchesAndTheConsentAndPhoneAndMailStillGoOut()
     {
@@ -460,19 +464,19 @@ public class ReadyMessagesDraftTests
 
         // Consent but no switch: no native delivery.
         rig.Prefs(rig.Emma, p => p.NativeReadyMessages = true);
-        Assert.True(rig.Service.Notify(rig.Emma.UserId, NotifyKind.Ready, "ready|a", "movie:tmdb:693134", movie, payload, rig.Arr.Now, null));
+        Assert.True(Tell(rig, rig.Emma.UserId, NotifyKind.Ready, "ready|a", "movie:tmdb:693134", movie, payload));
         Assert.Equal(0L, Count(rig, NotifyChannel.DisplayMessage));
 
         rig.Config.ArrPhase4Enabled = true;
         rig.Config.ArrPhase4ReadyMessagesEnabled = true;
         // Switch on but no consent (missing means off): none.
         rig.Prefs(rig.Sam, p => p.Ready = true);
-        Assert.True(rig.Service.Notify(rig.Sam.UserId, NotifyKind.Ready, "ready|b", "movie:tmdb:693134", movie, payload, rig.Arr.Now, null));
+        Assert.True(Tell(rig, rig.Sam.UserId, NotifyKind.Ready, "ready|b", "movie:tmdb:693134", movie, payload));
         Assert.Equal(0L, Count(rig, NotifyChannel.DisplayMessage));
 
         // Both: one native delivery next to ntfy and e-mail; not for a kind that isn't about something being ready.
-        Assert.True(rig.Service.Notify(rig.Emma.UserId, NotifyKind.Ready, "ready|c", "movie:tmdb:693134", movie, payload, rig.Arr.Now, null));
-        Assert.True(rig.Service.Notify(rig.Emma.UserId, NotifyKind.Declined, "declined|d", "movie:tmdb:693134", null, payload, rig.Arr.Now, null));
+        Assert.True(Tell(rig, rig.Emma.UserId, NotifyKind.Ready, "ready|c", "movie:tmdb:693134", movie, payload));
+        Assert.True(Tell(rig, rig.Emma.UserId, NotifyKind.Declined, "declined|d", "movie:tmdb:693134", null, payload));
         Assert.Equal(1L, Count(rig, NotifyChannel.DisplayMessage));
 
         // No session (the app is closed): the native message ends, the phone push and the e-mail are sent.
