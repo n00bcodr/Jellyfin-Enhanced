@@ -1794,6 +1794,28 @@ other placeholder swaps. A write explicitly anchored to a pending entry answers 
 
 Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
 
+#### Home rows (phase 4)
+
+| Method and path | Who | Answer |
+|---|---|---|
+| `GET /acquire/home` | signed-in people (API keys, unknown and disabled users: `403 user_required`); `404 {"outcome":"refused","reason":"disabled"}` while home rows are off | `{requests, soon, arrived, hss, ops}`: each row is a list of cards, or `null` when the person switched it off. Card: `key`, `liveKey?`, `kind` (`movie`/`tv`), `tmdbId?`, `title`, `year?`, `poster?` (TMDB path), `itemId?` (a Jellyfin item the person can open; for an arrived episode, the episode), `posterItemId?` (an episode card: its series item, whose poster it shows), `hssId?` (the card's id in a Home Screen Sections row), `status` (the shared status), `date?` (Coming soon: the next date; Just arrived: the first arrival), `day?` (`yyyy-MM-dd` when the date is a calendar day), `season?`/`episode?`/`episodeTitle?`, `is4k`, `follow`. Only the caller's own requests and follows; at most 20 cards per row. `private, no-cache` with an `ETag`; memory only (no Sonarr, Radarr or Seerr call). |
+| `GET /arr/admin/home/ops` | administrators; `404` while the strip is off for them | `{actionable, downloading, importBlocked, attention, disks: [{name, usedPercent}]}`; `private, no-store`. |
+
+Home Screen Sections calls Jellyfin Enhanced in process for its sections `JellyfinEnhancedYourRequests`,
+`JellyfinEnhancedComingSoon` and `JellyfinEnhancedJustArrived` (through its own `GET /HomeScreen/Section/{id}`); the
+answer is empty unless the signed-in caller is the user that request names.
+
+The home `hss` flag means all three JE sections registered successfully, with native absent-title pages enabled; merely
+finding the HSS assembly does not enable it. First-arrival dates refer to content, across editions. A later 4K version
+fulfils that edition but is an upgrade, excluded from new-content arrivals. `ICollectionCoverage` projections recheck
+list access and parental limits at the final answer and return only visible movie title keys.
+
+Home rows and collection gaps prepare remote facts first, then use a shared synchronous response gate. The
+gate resolves the current viewer and policy again before serializing or returning cached home bytes. Policy
+changes restart preparation up to three times; continued changes fail closed. Home cache identities include
+that policy revision, effective switches, row choices and current follows. Collection coverage is projected
+from current list access, entries and preferences after the storage wait.
+
 ### Backup & restore
 
 Admin only. Jellyfin's own backups don't include plugin data.

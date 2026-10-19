@@ -57,9 +57,13 @@
     "ArrPhase3Enabled": "Requests & downloads (new)",
     "ArrPhase4AcquisitionBadgesEnabled": "Requests & downloads (new)",
     "ArrPhase4AutomationEnabled": "Requests & downloads (new)",
+    "ArrPhase4CollectionGapsEnabled": "Requests & downloads (new)",
     "ArrPhase4Enabled": "Requests & downloads (new)",
     "ArrPhase4GroupQuotasEnabled": "Requests & downloads (new)",
+    "ArrPhase4HomeOpsStripEnabled": "Requests & downloads (new)",
+    "ArrPhase4HomeRowsEnabled": "Requests & downloads (new)",
     "ArrPhase4HouseholdRulesEnabled": "Requests & downloads (new)",
+    "ArrPhase4HssSectionsEnabled": "Requests & downloads (new)",
     "ArrPhase4ListAuthoringEnabled": "Requests & downloads (new)",
     "ArrPhase4ListCollectionUiEnabled": "Requests & downloads (new)",
     "ArrPhase4ListMaintenanceEnabled": "Requests & downloads (new)",
@@ -476,9 +480,13 @@
     "ArrPhase3Enabled": "Ask for it (durable requests, phase 3)",
     "ArrPhase4AcquisitionBadgesEnabled": "Poster badges: New for you, Upgraded, 4K",
     "ArrPhase4AutomationEnabled": "Automation engine (recipe modes, budgets, kill switches)",
+    "ArrPhase4CollectionGapsEnabled": "Collection gaps: leave out titles the collection's list already holds",
     "ArrPhase4Enabled": "Everywhere and gentle automation (phase 4)",
     "ArrPhase4GroupQuotasEnabled": "Group quotas (shared request pools)",
+    "ArrPhase4HomeOpsStripEnabled": "Administrators: a strip of what needs doing above the rows",
+    "ArrPhase4HomeRowsEnabled": "Home rows: Your requests, Coming soon for you, Just arrived for you",
     "ArrPhase4HouseholdRulesEnabled": "Household rules: the Trusted role and fixed conditions per role",
+    "ArrPhase4HssSectionsEnabled": "Use Home Screen Sections for the home rows",
     "ArrPhase4ListAuthoringEnabled": "Adding and editing list entries",
     "ArrPhase4ListCollectionUiEnabled": "Show list entries on collection pages",
     "ArrPhase4ListMaintenanceEnabled": "Daily list maintenance",
@@ -883,9 +891,13 @@
     "ArrPhase3Enabled": "*arr",
     "ArrPhase4AcquisitionBadgesEnabled": "*arr",
     "ArrPhase4AutomationEnabled": "*arr",
+    "ArrPhase4CollectionGapsEnabled": "*arr",
     "ArrPhase4Enabled": "*arr",
     "ArrPhase4GroupQuotasEnabled": "*arr",
+    "ArrPhase4HomeOpsStripEnabled": "*arr",
+    "ArrPhase4HomeRowsEnabled": "*arr",
     "ArrPhase4HouseholdRulesEnabled": "*arr",
+    "ArrPhase4HssSectionsEnabled": "*arr",
     "ArrPhase4ListAuthoringEnabled": "*arr",
     "ArrPhase4ListCollectionUiEnabled": "*arr",
     "ArrPhase4ListMaintenanceEnabled": "*arr",
@@ -1364,9 +1376,13 @@
     "ArrPhase3Enabled": false,
     "ArrPhase4AcquisitionBadgesEnabled": false,
     "ArrPhase4AutomationEnabled": false,
+    "ArrPhase4CollectionGapsEnabled": false,
     "ArrPhase4Enabled": false,
     "ArrPhase4GroupQuotasEnabled": false,
+    "ArrPhase4HomeOpsStripEnabled": false,
+    "ArrPhase4HomeRowsEnabled": false,
     "ArrPhase4HouseholdRulesEnabled": false,
+    "ArrPhase4HssSectionsEnabled": false,
     "ArrPhase4ListAuthoringEnabled": false,
     "ArrPhase4ListCollectionUiEnabled": false,
     "ArrPhase4ListMaintenanceEnabled": false,
@@ -1748,6 +1764,22 @@
     },
     "AutoSeasonRequests": {
       "class": "consent",
+      "unset": "follow-admin"
+    },
+    "HomeOpsStrip": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
+    "HomeRowArrived": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
+    "HomeRowRequests": {
+      "class": "display",
+      "unset": "follow-admin"
+    },
+    "HomeRowSoon": {
+      "class": "display",
       "unset": "follow-admin"
     },
     "ListCollectionUi": {

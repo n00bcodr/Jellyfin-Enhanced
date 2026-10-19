@@ -4,6 +4,9 @@
 // One-shot spec over JE.discoveryBase — the base owns page dedup, abort,
 // metrics and lifecycle wiring; this module keeps only the BoxSet lookup
 // and the missing-movies render.
+// Requests & downloads, phase 4 (ArrCollectionGapsPhase4): when the collection
+// gaps block ("You have 4 of 6 · Get the 2 missing") answers the page, this row
+// stays away, so no movie is offered twice (the block removes a row that raced in).
 (function(JE) {
     'use strict';
 
@@ -108,6 +111,22 @@
     }
 
     /**
+     * Phase 4: whether the Requests & downloads collection gaps block answers this collection page (it waits briefly
+     * for that block's read when one is in flight). False with the switch off or the block absent.
+     * @param {string} itemId - BoxSet item ID
+     * @returns {Promise<boolean>} true when this row must stay away
+     */
+    async function gapsBlockAnswers(itemId) {
+        const gaps = JE.internals?.arrAskCollection;
+        if (JE.pluginConfig?.ArrCollectionGapsPhase4 !== true || typeof gaps?.settled !== 'function') return false;
+        try {
+            return (await gaps.settled(itemId)) === true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Renders the collection discovery section (one-shot body).
      * @param {{id: string, signal: AbortSignal, waitForPageReady: (signal?: AbortSignal) => Promise<HTMLElement|null>}} ctx
      * @returns {Promise<boolean|undefined>} true when the section was rendered
@@ -117,6 +136,8 @@
         const isBoxSet = await isBoxSetPage(itemId, signal);
         if (signal.aborted) return;
         if (!isBoxSet) return;
+        // Phase 4: the gaps block already answers this page (no Seerr reads either).
+        if (JE.internals?.arrAskCollection?.covers?.(itemId) && JE.pluginConfig?.ArrCollectionGapsPhase4 === true) return;
 
         // Fetch boxset info, user status, and page readiness in parallel
         // pageReadyPromise is started here but awaited later to overlap DOM wait with API calls
@@ -128,7 +149,9 @@
 
         if (signal.aborted) return;
 
-        if (!status?.active || !boxsetInfo?.tmdbId) {
+        // A person with no Seerr account (userFound false) can't read Seerr's collection through the per-user proxy:
+        // no row rather than a failed read.
+        if (!status?.active || status.userFound === false || !boxsetInfo?.tmdbId) {
             if (!boxsetInfo?.tmdbId) {
                 console.debug(`${logPrefix} No TMDB collection ID for BoxSet ${itemId}`);
             }
@@ -178,6 +201,10 @@
             console.debug(`${logPrefix} Could not find detail section to insert into`);
             return;
         }
+
+        // Phase 4: the gaps block answered meanwhile (or is about to): no second offer of the same movies.
+        if (await gapsBlockAnswers(itemId)) return;
+        if (signal.aborted) return;
 
         // Remove existing section
         const existing = document.querySelector('.jellyseerr-collection-discovery-section');

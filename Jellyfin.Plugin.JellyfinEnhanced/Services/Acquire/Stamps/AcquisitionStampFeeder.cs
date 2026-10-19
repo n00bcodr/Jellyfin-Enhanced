@@ -268,8 +268,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         {
             if (item.FourK) _resolver.NoteFourKCopy();
             var parts = AcquisitionStampStore.PartKeys(item);
-            var recorded = _store.FirstArrival(parts);
-            var recordedAny = _store.FirstArrival(AllEditions(parts));
+            var recorded = _store.EditionArrival(parts);
+            var recordedAny = _store.FirstContentArrival(parts);
             DateTime? earlierAny = recordedAny < item.DateCreated ? recordedAny : null;
             DateTime? earlierSame = recorded < item.DateCreated ? recorded : null;
             // Alternate sources of this item and separate accessible copies use the same first-arrival rule.
@@ -279,7 +279,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             {
                 if (copy.Virtual || copy.DateCreated == DateTime.MinValue || copy.DateCreated >= item.DateCreated) continue;
                 earlierAny = Min(earlierAny, copy.DateCreated);
-                if (copy.FourK == item.FourK) earlierSame = Min(earlierSame, copy.DateCreated);
             }
 
             _store.NoteArrival(parts, item.DateCreated, item.Id, generation: generation);
@@ -292,7 +291,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             {
                 foreach (var interest in _interests.For(item.Keys).GroupBy(i => i.UserId))
                 {
-                    var match = interest.FirstOrDefault(i => Gives(i, item, i.FourKOnly ? earlierSame : earlierAny));
+                    var match = interest.FirstOrDefault(i => Gives(i, item, earlierAny));
                     if (match == null || !_library.CanOpen(match.UserId, item.Id)) continue;
                     _store.AddNew(match.UserId, item, item.DateCreated, match.Source, generation: generation);
                 }
@@ -305,9 +304,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             ? item with { DateCreated = at } : item;
 
         // An interest gives "New for you" for this arrival: made before it, covering its part and edition, and nothing of
-        // that edition (any edition for a standard interest) arrived earlier.
+        // that content, in any edition, arrived earlier.
         private static bool Gives(StampInterest interest, StampItem item, DateTime? earlier)
-            => interest.Since < item.DateCreated
+            => ContentArrivalHistory.InterestPrecedes(interest.Since, item.DateCreated)
                 && (!interest.FourKOnly || item.FourK)
                 && interest.Covers(item.Season, item.Episode, item.EpisodeEnd)
                 && earlier == null;

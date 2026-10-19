@@ -275,6 +275,12 @@
     "arr/lists/list-collection.js",
     "arr/lists/list-grid.js",
     "arr/lists/list-pages.js",
+    "// home rows (Requests & downloads, phase 4d): after status-core, arr-live and the hub (chip bar) modules,",
+    "// which they use when drawing; home-rows.js last: it starts itself behind ArrHomeRowsEnabled (first read after a moment).",
+    "arr/home/home-styles.js",
+    "arr/home/home-render.js",
+    "arr/home/home-hss.js",
+    "arr/home/home-rows.js",
 
     "// extras",
     "extras/colored-activity-icons.js",

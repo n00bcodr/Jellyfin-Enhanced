@@ -1050,6 +1050,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Acquisition badges: days an "Upgraded" badge lasts unless watched first (1–30, default 7).</summary>
         public int ArrAcquisitionUpgradedDays { get; set; } = 7;
+        // ---- Phase 4d: home rows, Home Screen Sections, collection gaps ----
+
+        /// <summary>
+        /// Home rows: "Your requests", "Coming soon for you" (requests and follows dated in the next 30 days) and "Just
+        /// arrived for you" (arrived in the last 7 days, upgrades left out) on the home screen. Each row hides when empty
+        /// and each person can switch each row off. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/>.
+        /// Off by default.
+        /// </summary>
+        public bool ArrPhase4HomeRowsEnabled { get; set; }
+
+        /// <summary>
+        /// Home rows as Home Screen Sections: with that plugin installed, the rows are registered as its sections (placed
+        /// and switched on in its settings) instead of being added to the home screen, never both. Titles not in the
+        /// library need the native pages for them (<see cref="NativeAbsentDetailsEnabled"/>). Needs
+        /// <see cref="ArrPhase4HomeRowsEnabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4HssSectionsEnabled { get; set; }
+
+        /// <summary>
+        /// Home rows: an administrator's strip above them ("2 downloading · 1 import blocked · /movies4k 94%") that shows
+        /// only when something needs doing. Needs <see cref="ArrPhase4HomeRowsEnabled"/> and <see cref="ArrPhase2Enabled"/>.
+        /// Off by default.
+        /// </summary>
+        public bool ArrPhase4HomeOpsStripEnabled { get; set; }
+
+        /// <summary>
+        /// Collection gaps, phase 4 additions: titles a collection's list already holds as entries are left out of
+        /// "Get the N missing", and the older Seerr "Missing from" row stays away while the gaps block shows. The
+        /// gaps block itself keeps its phase 3 switch. Needs <see cref="ArrPhase4Enabled"/> and
+        /// <see cref="ArrPhase3Enabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4CollectionGapsEnabled { get; set; }
 
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 

@@ -4088,6 +4088,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4e: effective acquisition badge switches (parents included; per-person preferences are in user settings).
                 ArrAcquisitionBadgesEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.Badges(config),
                 ArrNativeStampsEnabled = Services.Acquire.Stamps.AcquisitionStampFlags.NativeStamps(config),
+                // Phase 4d: effective home-row and collection-gap switches (parents included; per-person row preferences are in user settings).
+                ArrHomeRowsEnabled = Services.Acquire.Home.HomeFlags.Rows(config),
+                ArrHomeHssSections = Services.Acquire.Home.HomeFlags.HssSections(config) && Services.Acquire.Home.HssSectionsAdapter.Present,
+                ArrHomeOpsStripEnabled = Services.Acquire.Home.HomeFlags.OpsStrip(config),
+                ArrCollectionGapsPhase4 = Services.Acquire.Home.HomeFlags.CollectionGaps(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,

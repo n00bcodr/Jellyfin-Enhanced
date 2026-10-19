@@ -60,6 +60,11 @@ USER_PREFERENCE_CLASSES = {
     # Phase 4e: acquisition badges (web) and the native-poster stamps follow the administrator.
     "AcquisitionBadges": {"class": "display", "unset": "follow-admin"},
     "NativeAcquisitionStamps": {"class": "display", "unset": "follow-admin"},
+    # Phase 4d: home rows. Display preferences follow the administrator.
+    "HomeRowRequests": {"class": "display", "unset": "follow-admin"},
+    "HomeRowSoon": {"class": "display", "unset": "follow-admin"},
+    "HomeRowArrived": {"class": "display", "unset": "follow-admin"},
+    "HomeOpsStrip": {"class": "display", "unset": "follow-admin"},
 }
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

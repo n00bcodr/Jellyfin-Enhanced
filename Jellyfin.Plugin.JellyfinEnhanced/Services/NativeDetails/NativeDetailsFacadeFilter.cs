@@ -626,7 +626,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
 
         private async Task<IActionResult> ImageAsync(ActionExecutingContext context, SyntheticId owner, string serverId, CancellationToken ct)
         {
-            var tag = Arg<string>(context, "tag");
+            // A synthetic card served outside this facade (a Home Screen Sections row, for one) passes JE's
+            // response filters, which decorate every image tag ("sb-…", "-jet…", "-jeu…"); the grant is the base.
+            var tag = Services.ImageTagDecoration.StripAll(Arg<string>(context, "tag"));
             if (!_artwork.TryRead(tag, out var grant) || grant == null) return new NotFoundResult();
             var itemId = Arg<Guid?>(context, "itemId");
             var type = context.ActionArguments.TryGetValue("imageType", out var t) && t is ImageType it ? it : (ImageType?)null;

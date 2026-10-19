@@ -1788,6 +1788,41 @@ own poster address, so one person's badge never shows on another's screen, and a
 
 Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin Enhanced panel (*Poster badges*).
 
+### Home rows (phase 4)
+
+With *Home rows* on (under phase 4 and *Ask for it*, off by default), each person's home screen gets up to three rows,
+built from their own requests and the titles they follow:
+
+- **Your requests**: what they asked for that isn't here yet, each with a progress ring and one word for where it stands
+  ("Downloading", "Waiting for an OK", "Not out yet"). A Manager sees only their own requests here; the ones waiting for
+  their OK stay in the chip bar above the rows ("3 need your OK · 1 stuck").
+- **Coming soon for you**: their requests and follows with a date in the next 30 days (the next episode, a release),
+  soonest first. A followed title no Sonarr/Radarr holds yet gets its date from TMDB: a series' next episode, a movie's
+  digital (else physical) release; cinema dates aren't shown, as they can't be watched at home.
+- **Just arrived for you**: what arrived in the last 7 days, newest first; for a series, its newest new episode
+  ("S9E5 · Episode title"). An upgrade of something already here doesn't count: Jellyfin Enhanced remembers when each
+  movie and each episode first arrived, across editions, so a better file (even a 4K one replacing a 1080p one) keeps the first
+  date. A 4K request counts its 4K copy.
+
+A row with nothing in it isn't shown, and each person can switch each row off in the Jellyfin Enhanced panel (*Home
+rows*); left alone, they follow the administrator. Follows count while notifications are on (that's where *Notify me*
+lives); a muted title doesn't count. Merely adding a title to a list isn't a request or a follow, so it doesn't fill
+these rows; asking for it from the list does. The rows update live as statuses change, with one call for the whole home
+screen (never one per card), and open titles the usual way (the Jellyfin item, else the title's page).
+
+**Administrators** can also get a strip above the rows (*Administrators: a strip of what needs doing above the rows*,
+needs phase 2): "2 downloading · 1 import blocked · /movies4k 94%", shown only while an import is blocked, something needs
+attention or a disk is nearly full, linking to the Requests page. Each administrator can hide it.
+
+**Home Screen Sections.** With the [Home Screen Sections](https://github.com/IAmParadox27/jellyfin-plugin-home-sections)
+plugin installed and *Use Home Screen Sections for the home rows* on, the three rows are registered as its sections
+(*Your requests*, *Coming soon for you*, *Just arrived for you*): turn them on and place them in that plugin's *Section
+Settings* (the *Portrait* view suits them). On a Home Screen Sections home they then appear only there, never also as
+added rows; with that setting off, or without the plugin, the rows are added to whichever home screen is shown. Titles
+that aren't in the library appear in those sections through their native pages (*Native pages for titles not in the
+library*, Jellyfin 12), with their poster, and open there. Each section answers only the signed-in person it is drawn
+for. Home Screen Sections keeps a registration until Jellyfin restarts; switching the setting off empties the sections.
+
 ### Privacy and Seerr scans
 
 These rules apply to Seerr answers, the Calendar, and Seerr's scan trigger.
@@ -1806,3 +1841,19 @@ These rules apply to Seerr answers, the Calendar, and Seerr's scan trigger.
   Enhanced adds to Radarr or Sonarr also triggers Seerr's Radarr or Sonarr scan, so Seerr shows it as requested.
   If the trigger (or Seerr) is turned off while a scan waits for its debounce, it isn't sent. *Trigger scan now* is
   unaffected.
+
+First content arrival is independent of edition for both home rows and acquisition badges. A 4K copy added after an
+HD copy fulfils a 4K request and counts as an upgrade; it does not start another “Just arrived” window or a “New for you”
+badge. A 4K series request cannot use an HD episode for its arrival card. Arrival history survives badge expiry,
+restarts, removed files and restores. Both home rows and badges use the same first observed source arrival;
+an earlier Jellyfin creation date cannot make that first source look like an upgrade.
+
+The HSS adapter supports Home Screen Sections 3.0.3.0 on Jellyfin 12 with native absent-title pages and their Seerr metadata source configured and enabled. Successful
+registration of all three sections is required. A missing or incompatible registration API, or registration failure,
+uses the native home rows. Jellyfin 10.11 uses native injection because it has no native absent-title pages. Section
+placement and activation remain in HSS's own settings; individual users can still hide each row in JE's panel.
+
+Home Screen Sections rows update their cards and visibility when a fresh home answer arrives, including after
+an opt-out. If HSS draws a section late, its placement is kept and duplicate sections are removed.
+A later 4K version fulfils a 4K request without making the title new again, even when the request
+was placed before the original HD copy arrived.

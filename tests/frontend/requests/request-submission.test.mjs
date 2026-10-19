@@ -420,3 +420,12 @@ test("the search page's Seerr icon offers its double-click filter only where it 
   assert.ok(icon.classList.contains('is-active'));
   assert.ok(!icon.classList.contains('is-filter-active'));
 });
+
+test('JE handling does not tell a person Seerr linkage is required to enable requests', t => {
+  const h = setup(t, { config: { ArrRequestsJeMode: true } });
+  h.api.surfaceUserStatusBanner({ reason: 'unlinked' });
+  assert.equal(h.toasts.length, 0);
+  h.JE.pluginConfig.ArrRequestsJeMode = false;
+  h.api.surfaceUserStatusBanner({ reason: 'unlinked' });
+  assert.equal(h.toasts.length, 1);
+});

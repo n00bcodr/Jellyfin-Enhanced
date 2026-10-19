@@ -821,6 +821,21 @@ earlier successful saves. Language and translation-cache reloads wait for queued
 settings. Live acquisition badges work independently of the phase-1
 poster status switch.
 
+#### Home rows (phase 4)
+
+All off by default. See [Home rows](arr-features.md#home-rows-phase-4).
+
+| Setting | Default | What it does |
+|---|---|---|
+| Home rows: Your requests, Coming soon for you, Just arrived for you (`ArrPhase4HomeRowsEnabled`) | off | The three rows on each person's home screen. Needs phase 4 and *Ask for it*. |
+| Use Home Screen Sections for the home rows (`ArrPhase4HssSectionsEnabled`) | off | With the Home Screen Sections plugin installed, the rows are its sections instead of added rows. Needs *Home rows* and, for titles not in the library, *Native pages for titles not in the library* (Jellyfin 12). |
+| Administrators: a strip of what needs doing above the rows (`ArrPhase4HomeOpsStripEnabled`) | off | Downloads, blocked imports and nearly full disks, only when something needs doing. Needs *Home rows* and phase 2. |
+| Collection gaps: leave out titles the collection's list already holds (`ArrPhase4CollectionGapsEnabled`) | off | See [Collection gaps](arr-features.md#asking-for-titles). Needs phase 4 and *Ask for it*. |
+
+Per person (Jellyfin Enhanced panel, *Home rows*, shown while home rows are on): *Your requests*, *Coming soon for you*
+and *Just arrived for you* each follow the household (default) or are hidden; administrators also choose whether to see
+the strip.
+
 #### Household tab
 
 Admins can edit the preset, default role, quota limit, per-role limits, and each person's role and limit from the Household tab of the Requests page instead of the JSON fields.
@@ -898,3 +913,10 @@ Personal controls in **Hidden Content**:
 See [Hidden Content filtering](troubleshooting-support.md#hidden-content-filtering) for these surface differences and [Enhanced features](../enhanced/enhanced-features.md#content-management) for the full Hidden Content workflow.
 
 Your list swap-in agreement changes only when you explicitly choose Yes or No in your own settings. Saving display preferences from another browser, administrator edits, and resetting display defaults preserve your current agreement. An older cached web client must reload to use the explicit agreement control.
+
+HSS sections also require the native absent-title pages and their configured Seerr metadata source. When either is
+unavailable in configuration, JE uses native home injection. The request backend may still be Jellyfin Enhanced.
+
+Home row and list display choices take effect on the next live refresh. Responses recheck current viewer
+access, parental limits, preferences and follows after slow reads, so a change made while a request is waiting
+also applies to that answer.

@@ -56,9 +56,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!_service.Ledger.Database.Available) return Reply(RequestOutcome.Refused("database_unavailable", 503, "unavailable"));
             if (!Guid.TryParse(itemId, out var id) || id == Guid.Empty) return Reply(RequestOutcome.Refused("invalid_id", 400));
             if (_collections == null) return Reply(RequestOutcome.Refused("feature_disabled"));
-            var (gaps, refusal) = await _collections.ForCollectionAsync(viewer, id, language, ct).ConfigureAwait(false);
-            if (gaps == null) return Reply(RequestOutcome.Refused(refusal ?? "not_found", 404));
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "collection", certainty = "Succeeded", message = "Collection", collection = gaps });
+            var (bytes, refusal) = await _collections.ProjectAsync(viewer, id, language, gaps => JsonSerializer.SerializeToUtf8Bytes(new { outcome = "accepted", reason = "collection", certainty = "Succeeded", message = "Collection", collection = gaps }), ct).ConfigureAwait(false);
+            if (bytes == null) return Reply(RequestOutcome.Refused(refusal ?? "not_found", 404));
             var etag = "\"" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(viewer.UserId.ToString("N") + "|").Concat(bytes).ToArray()), 0, 16) + "\"";
             Response.Headers["Cache-Control"] = "private, no-cache";
             Response.Headers["ETag"] = etag;

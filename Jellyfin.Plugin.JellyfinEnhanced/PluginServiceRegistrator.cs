@@ -223,6 +223,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 sp.GetRequiredService<Services.Acquire.Lists.ListSwapService>()));
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Lists.ListLifecycle>());
             serviceCollection.AddHostedService<Services.Acquire.Lists.ListSwapMonitor>();
+            // Phase 4d: home rows (Your requests, Coming soon for you, Just arrived for you), the first-arrival dates that
+            // keep upgrades out of Just arrived, and the rows as Home Screen Sections sections when that plugin is installed
+            // (found by reflection; nothing happens without it).
+            serviceCollection.AddSingleton<Services.Acquire.Home.ICollectionCoverage, Services.Acquire.Home.ListCollectionCoverage>();
+            serviceCollection.AddSingleton<Services.Acquire.Home.HomeArrivals>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<Services.Acquire.Home.HomeArrivals>());
+            serviceCollection.AddSingleton<Services.Acquire.Home.IHomePreferences, Services.Acquire.Home.UserSettingsHomePreferences>();
+            serviceCollection.AddSingleton<Services.Acquire.Home.HomeProjection>();
+            serviceCollection.AddHostedService<Services.Acquire.Home.HssSectionsAdapter>();
+            serviceCollection.AddHttpContextAccessor();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Lists.ListUserPurge>();
             // ---- end Phase 4c1 ----
             // ---- Phase 4c3a: list pages. Playlists page summaries (which lists have entries not in the library). ----

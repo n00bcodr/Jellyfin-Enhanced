@@ -61,6 +61,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool? AcquisitionBadges { get; set; }
         /// <summary>Requests &amp; downloads: the same badges drawn into this person's poster images on native apps. Null follows the administrator; false turns them off for this person.</summary>
         public bool? NativeAcquisitionStamps { get; set; }
+        // Phase 4d (home rows): per-person row preferences.
+        /// <summary>Requests &amp; downloads home rows: show "Your requests". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowRequests { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show "Coming soon for you". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowSoon { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show "Just arrived for you". Null follows the administrator; false hides it for this person.</summary>
+        public bool? HomeRowArrived { get; set; }
+        /// <summary>Requests &amp; downloads home rows: show the administrator's strip (administrators only). Null follows the administrator; false hides it.</summary>
+        public bool? HomeOpsStrip { get; set; }
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
