@@ -40,6 +40,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         public static LookupResult<T> NotFound { get; } = new(LookupStatus.NotFound, default);
     }
 
+    /// <summary>
+    /// One upstream answer as an import lookup read it (review round 6, D53 "NotFound = proven absence"): its status, its
+    /// value and whether it is DEFINITIVE, i.e. a valid, whole answer that may be remembered. Only a definitive answer is
+    /// cached; "not found" or "no titles" needs a valid answer from every source asked whose every row was read.
+    /// </summary>
+    /// <param name="Status">Status.</param>
+    /// <param name="Value">Value when Ok.</param>
+    /// <param name="Definitive">A valid, whole answer (every row read): it may be remembered.</param>
+    internal readonly record struct LookupAnswer(LookupStatus Status, object? Value, bool Definitive)
+    {
+        /// <summary>A failure, or an answer that proves nothing: asked again next time.</summary>
+        public static LookupAnswer Transient => new(LookupStatus.Transient, null, false);
+
+        /// <summary>A proven absence (TMDB's or every Seerr server's 404, an episode find's valid empty list).</summary>
+        public static LookupAnswer NotFound => new(LookupStatus.NotFound, null, true);
+
+        /// <summary>Remembered: a definitive answer (a transient one never is).</summary>
+        public bool Remembered => Definitive && Status != LookupStatus.Transient && (Status == LookupStatus.NotFound || Value != null);
+
+        /// <summary>An answer.</summary>
+        /// <param name="value">Value.</param>
+        /// <param name="definitive">Every row was read.</param>
+        /// <returns>The answer.</returns>
+        public static LookupAnswer Ok(object value, bool definitive = true) => new(LookupStatus.Ok, value, definitive);
+    }
+
+    /// <summary>How one row of a search answer read (review round 6).</summary>
+    internal enum RowRead
+    {
+        /// <summary>A title.</summary>
+        Hit,
+
+        /// <summary>A valid row deliberately left out: an adult title, a person or another kind that isn't a title.</summary>
+        Dropped,
+
+        /// <summary>A row JE can't read (not an object, no type, no id or no title): the answer isn't whole.</summary>
+        Unusable,
+    }
+
     /// <summary>A sanitized TMDB title as Seerr returns it in search results and details.</summary>
     /// <param name="MediaType">"movie" or "tv".</param>
     /// <param name="TmdbId">TMDB id.</param>
@@ -164,10 +203,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// <see cref="IImportLookup"/> over Seerr's API (admin API key, no <c>X-Api-User</c>: search and details don't vary
     /// by user except watchlists) with E3/E4 semantics:
     /// <list type="bullet">
-    /// <item>Every upstream call goes through the shared <see cref="MetadataCallLimiter"/> and has a 15 s timeout; the
-    /// configured Seerr URLs are tried in order.</item>
-    /// <item>Only sanitized, successful, NON-EMPTY results are cached (30 min, keyed by the Seerr instance fingerprint
-    /// and the normalized query); empty searches and errors never are, so a swallowed TMDB 429 can recover.</item>
+    /// <item>Every upstream request takes its own turn at the shared <see cref="MetadataCallLimiter"/> and has a 15 s
+    /// timeout; the configured Seerr URLs are tried in order until one gives a readable answer (review round 6, 4c2-R6-4:
+    /// each fallback request is its own turn).</item>
+    /// <item>Only sanitized, whole (every row read), NON-EMPTY results and proven absences are cached (30 min, keyed by
+    /// the Seerr instance fingerprint and the normalized query); empty searches and errors never are, so a swallowed TMDB
+    /// 429 can recover. "Not found" needs EVERY server's 404: one that failed or answered something unreadable makes the
+    /// lookup transient (review round 6, 4c2-R6-2).</item>
     /// <item>Identical concurrent lookups share one upstream call, which is not cancelled when one waiter gives up (its
     /// result still warms the cache for the resubmitted entries).</item>
     /// </list>
@@ -235,8 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "search|" + normalized,
                 "/api/v1/search?query=" + Uri.EscapeDataString(normalized) + "&page=1",
                 context,
-                json => ParseSearch(json),
-                v => ((IReadOnlyList<TitleHit>)v).Count > 0, // Seerr answers a TMDB error as no results: never definitive
+                ParseSearch,
                 cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<TitleHit>>(status, status == LookupStatus.Ok ? (IReadOnlyList<TitleHit>)value! : null);
         }
@@ -254,8 +295,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "details|" + mediaType + "|" + id,
                 "/api/v1/" + mediaType + "/" + id,
                 context,
-                json => ParseDetails(json, mediaType),
-                _ => true,
+                json => ParseDetails(json, mediaType) is { } details ? LookupAnswer.Ok(details) : LookupAnswer.Transient,
                 cancellationToken).ConfigureAwait(false);
             return new LookupResult<TitleDetails>(status, status == LookupStatus.Ok ? (TitleDetails)value! : null);
         }
@@ -273,8 +313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "season|" + path,
                 path,
                 context,
-                json => ParseSeason(json, season),
-                _ => true,
+                json => ParseSeason(json, season) is { } episodes ? LookupAnswer.Ok(episodes) : LookupAnswer.Transient,
                 cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<EpisodeFacts>>(status, status == LookupStatus.Ok ? (IReadOnlyList<EpisodeFacts>)value! : null);
         }
@@ -288,67 +327,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return LookupResult<ImdbEpisodeFind>.NotFound;
             }
 
-            // Review round 5: a definitive answer is reused with its status without waiting for the limiter, and a call
-            // to TMDB takes its turn at the shared limiter (it had neither).
+            // Review round 5: a definitive answer is reused with its status without waiting for the limiter. Review round 6:
+            // the request is the TMDB lookup's own (TmdbCall: its own turn at the limiter, TMDB's find answer read by the
+            // same reader, so an answer that isn't a valid, empty list is never a remembered "not found").
             var cacheKey = "tmdb-find|" + Fingerprint(new[] { "tmdb" }, key) + "|" + imdbId;
             if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return new LookupResult<ImdbEpisodeFind>(cached.Status, cached.Value as ImdbEpisodeFind);
             }
 
-            context.CountCall();
-            LookupResult<ImdbEpisodeFind> result;
-            using (await _limiter.AcquireAsync(context.Owner, context.Background, cancellationToken).ConfigureAwait(false))
+            var answer = await new TmdbCall(_tmdb, _limiter, _logger, context, key.Trim(), cancellationToken)
+                .GetAsync("find/" + imdbId, "?external_source=imdb_id", TmdbImportLookup.ReadEpisodeFind).ConfigureAwait(false);
+            if (answer.Remembered)
             {
-                result = await FindUpstreamAsync(imdbId!, key, cancellationToken).ConfigureAwait(false);
+                Remember(cacheKey, answer.Status, answer.Value);
             }
 
-            if (result.Status is LookupStatus.Ok or LookupStatus.NotFound)
-            {
-                Remember(cacheKey, result.Status, result.Value);
-            }
-
-            return result;
-        }
-
-        private async Task<LookupResult<ImdbEpisodeFind>> FindUpstreamAsync(string imdbId, string key, CancellationToken cancellationToken)
-        {
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(CallTimeout);
-                var response = await _tmdb!.GetAsync("find/" + imdbId, "?external_source=imdb_id", key, timeout.Token).ConfigureAwait(false);
-                if (!response.IsSuccess)
-                {
-                    return response.StatusCode == 404 ? LookupResult<ImdbEpisodeFind>.NotFound : LookupResult<ImdbEpisodeFind>.Transient;
-                }
-
-                using var doc = JsonDocument.Parse(response.Content);
-                if (doc.RootElement.TryGetProperty("tv_episode_results", out var episodes) && episodes.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var episode in episodes.EnumerateArray())
-                    {
-                        var show = ReadInt(episode, "show_id");
-                        var s = ReadInt(episode, "season_number");
-                        var e = ReadInt(episode, "episode_number");
-                        if (show > 0 && s >= 0 && e >= 0)
-                        {
-                            return new LookupResult<ImdbEpisodeFind>(LookupStatus.Ok, new ImdbEpisodeFind(show!.Value, s!.Value, e!.Value, ReadString(episode, "name", 200), ReadDate(episode, "air_date")));
-                        }
-                    }
-                }
-
-                return LookupResult<ImdbEpisodeFind>.NotFound;
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return LookupResult<ImdbEpisodeFind>.Transient;
-            }
-            catch (Exception ex) when (ex is HttpRequestException or JsonException)
-            {
-                _logger.Debug($"[Lists] TMDB find {imdbId} failed: {ex.Message}");
-                return LookupResult<ImdbEpisodeFind>.Transient;
-            }
+            return new LookupResult<ImdbEpisodeFind>(answer.Status, answer.Value as ImdbEpisodeFind);
         }
 
         // ── Plumbing ─────────────────────────────────────────────────────────
@@ -357,8 +352,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             string cacheKey,
             string apiPath,
             ImportCallContext context,
-            Func<string, object?> parse,
-            Func<object, bool> cacheable,
+            Func<string, LookupAnswer> parse,
             CancellationToken cancellationToken)
         {
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
@@ -383,8 +377,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 {
                     if (ReferenceEquals(shared, mine))
                     {
-                        context.CountCall();
-                        _ = RunSharedAsync(key, mine, cacheable, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine));
+                        _ = RunSharedAsync(key, mine, () => FetchAsync(urls, apiKey, apiPath, context, parse, mine));
                     }
 
                     break;
@@ -409,85 +402,105 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
         }
 
-        private async Task RunSharedAsync(string key, SharedLookup shared, Func<object, bool> cacheable, Func<Task<(LookupStatus Status, object? Value)>> fetch)
+        private async Task RunSharedAsync(string key, SharedLookup shared, Func<Task<LookupAnswer>> fetch)
         {
-            (LookupStatus Status, object? Value) result;
+            LookupAnswer answer;
             try
             {
-                result = await fetch().ConfigureAwait(false);
+                answer = await fetch().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 _logger.Debug($"[Lists] Seerr lookup failed: {ex.Message}");
-                result = (LookupStatus.Transient, null);
+                answer = LookupAnswer.Transient;
             }
 
-            if ((result.Status == LookupStatus.Ok && result.Value != null && cacheable(result.Value)) || result.Status == LookupStatus.NotFound)
+            if (answer.Remembered)
             {
-                Remember(key, result.Status, result.Value);
+                Remember(key, answer.Status, answer.Value);
             }
 
             _inFlight.TryRemove(new KeyValuePair<string, SharedLookup>(key, shared));
-            shared.Result.TrySetResult(result);
+            shared.Result.TrySetResult((answer.Status, answer.Value));
         }
 
-        private async Task<(LookupStatus Status, object? Value)> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, object?> parse, SharedLookup shared)
+        // Every configured server in order until one gives a readable answer (review round 6). Each request takes its own
+        // turn at the limiter and is counted (4c2-R6-4). The first turn is queued like the shared lookup (cancelled once
+        // every waiter is gone: an aborted request or the /resolve deadline); once admitted the lookup runs to the end
+        // regardless (its result serves later joiners and the cache). Not found only when EVERY server answered 404
+        // (4c2-R6-2): a server that failed, timed out or answered something unreadable proves nothing, so the lookup is
+        // transient and asked again.
+        private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
         {
-            // Queued: cancelled once every waiter is gone (aborted request or /resolve deadline). Admitted: runs to the
-            // end regardless (the result serves later joiners and the cache).
-            IDisposable lease;
-            try
+            var notFound = 0;
+            for (var i = 0; i < urls.Length; i++)
             {
-                lease = await _limiter.AcquireAsync(context.Owner, context.Background, shared.Abandoned).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return (LookupStatus.Transient, null);
-            }
-
-            if (!shared.TryAdmit())
-            {
-                lease.Dispose();
-                return (LookupStatus.Transient, null);
-            }
-
-            using var admitted = lease;
-            var notFound = false;
-            foreach (var baseUrl in urls)
-            {
-                var url = baseUrl + apiPath;
-                try
+                IDisposable lease;
+                if (i == 0)
                 {
-                    using var timeout = new CancellationTokenSource(CallTimeout);
-                    var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
-                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                    using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
-                    var status = (int)response.StatusCode;
-                    var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
-                    if (json != null)
+                    try
                     {
-                        var value = parse(json);
-                        return value == null ? (LookupStatus.Transient, null) : (LookupStatus.Ok, value);
+                        lease = await _limiter.AcquireAsync(context.Owner, context.Background, shared.Abandoned).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return LookupAnswer.Transient;
                     }
 
-                    // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown
-                    // season, but also a TMDB 429 or timeout). Seasons are only looked up when the show's details list
-                    // them, so a 500 there is retried (transient, never cached), not taken as a missing season.
-                    if (status == 404)
+                    if (!shared.TryAdmit())
                     {
-                        notFound = true;
-                        continue;
+                        lease.Dispose();
+                        return LookupAnswer.Transient;
                     }
-
-                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
                 }
-                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
+                else
                 {
-                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {ex.Message}");
+                    lease = await _limiter.AcquireAsync(context.Owner, context.Background, CancellationToken.None).ConfigureAwait(false);
+                }
+
+                using (lease)
+                {
+                    context.CountCall();
+                    var url = urls[i] + apiPath;
+                    try
+                    {
+                        using var timeout = new CancellationTokenSource(CallTimeout);
+                        var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
+                        using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                        using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                        var status = (int)response.StatusCode;
+                        var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
+                        if (json != null)
+                        {
+                            var answer = parse(json);
+                            if (answer.Status != LookupStatus.Transient)
+                            {
+                                return answer;
+                            }
+
+                            _logger.Debug($"[Lists] Seerr lookup {apiPath} answered something JE can't read");
+                            continue;
+                        }
+
+                        // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown
+                        // season, but also a TMDB 429 or timeout). Seasons are only looked up when the show's details list
+                        // them, so a 500 there is retried (transient, never cached), not taken as a missing season.
+                        if (status == 404)
+                        {
+                            notFound++;
+                            continue;
+                        }
+
+                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or InvalidOperationException)
+                    {
+                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {ex.Message}");
+                    }
                 }
             }
 
-            return (notFound ? LookupStatus.NotFound : LookupStatus.Transient, null);
+            return notFound == urls.Length ? LookupAnswer.NotFound : LookupAnswer.Transient;
         }
 
         // One in-flight lookup shared by every caller asking for the same key, with a waiter count so that a lookup
@@ -572,27 +585,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             _cache[key] = (DateTime.UtcNow + CacheTtl, status, value);
         }
 
-        private static IReadOnlyList<TitleHit>? ParseSearch(string json)
+        // Seerr's search answer (review round 6): titles found beside a row JE can't read are used but not kept; only such
+        // rows and nothing found is no proof of "no titles" (transient); an empty answer is never kept either (Seerr
+        // answers a TMDB error as no results).
+        private static LookupAnswer ParseSearch(string json)
         {
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
             {
-                return null;
+                return LookupAnswer.Transient;
             }
 
             var hits = new List<TitleHit>();
+            var unusable = 0;
             foreach (var result in results.EnumerateArray())
             {
-                var hit = ReadHit(result, ReadString(result, "mediaType", 10));
-                if (hit != null)
+                switch (ReadRow(result, out var hit))
                 {
-                    hits.Add(hit);
+                    case RowRead.Hit:
+                        hits.Add(hit!);
+                        break;
+                    case RowRead.Unusable:
+                        unusable++;
+                        break;
                 }
             }
 
-            return hits;
+            return hits.Count == 0 && unusable > 0 ? LookupAnswer.Transient : LookupAnswer.Ok(hits, hits.Count > 0 && unusable == 0);
         }
 
+        // Null when the answer isn't a whole title (also a season row JE can't read: a season missing from the list would
+        // be taken as "no such season").
         private static TitleDetails? ParseDetails(string json, string mediaType)
         {
             using var doc = JsonDocument.Parse(json);
@@ -621,8 +644,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 foreach (var season in list.EnumerateArray())
                 {
-                    var number = ReadInt(season, "seasonNumber");
-                    if (number is >= 0 and <= 500)
+                    var number = season.ValueKind == JsonValueKind.Object ? ReadInt(season, "seasonNumber") : null;
+                    if (number is not >= 0)
+                    {
+                        return null;
+                    }
+
+                    if (number <= 500)
                     {
                         seasons.Add(new SeasonFacts(number.Value, ReadInt(season, "episodeCount"), ReadDate(season, "airDate"), ReadString(season, "name", 100)));
                     }
@@ -633,10 +661,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             return new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, ReadString(root, "status", 40), inProduction, seasons);
         }
 
+        // Null when the answer has no episode list or an episode row JE can't read (an episode missing from the list would
+        // be taken as "no such episode").
         private static IReadOnlyList<EpisodeFacts>? ParseSeason(string json, int season)
         {
             using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
             {
                 return null;
             }
@@ -644,14 +674,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var list = new List<EpisodeFacts>();
             foreach (var episode in episodes.EnumerateArray())
             {
-                var number = ReadInt(episode, "episodeNumber");
-                if (number is >= 0)
+                var number = episode.ValueKind == JsonValueKind.Object ? ReadInt(episode, "episodeNumber") : null;
+                if (number is not >= 0)
                 {
-                    list.Add(new EpisodeFacts(ReadInt(episode, "seasonNumber") ?? season, number.Value, ReadString(episode, "name", 200), ReadDate(episode, "airDate")));
+                    return null;
                 }
+
+                list.Add(new EpisodeFacts(ReadInt(episode, "seasonNumber") ?? season, number.Value, ReadString(episode, "name", 200), ReadDate(episode, "airDate")));
             }
 
             return list;
+        }
+
+        // One row of a search answer: a title, a deliberate drop (an adult title, a person or another kind that isn't a
+        // title), or a row that can't be read (not an object, no type, no id or no title).
+        private static RowRead ReadRow(JsonElement element, out TitleHit? hit)
+        {
+            hit = null;
+            var type = element.ValueKind == JsonValueKind.Object && element.TryGetProperty("mediaType", out var declared) && declared.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(declared.GetString())
+                ? declared.GetString()
+                : null;
+            if (type == null)
+            {
+                return RowRead.Unusable;
+            }
+
+            if (type is not ("movie" or "tv") || (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True))
+            {
+                return RowRead.Dropped;
+            }
+
+            hit = ReadHit(element, type);
+            return hit == null ? RowRead.Unusable : RowRead.Hit;
         }
 
         private static TitleHit? ReadHit(JsonElement element, string? mediaType)

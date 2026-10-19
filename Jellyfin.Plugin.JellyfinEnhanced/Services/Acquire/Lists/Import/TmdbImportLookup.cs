@@ -17,10 +17,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
     /// so imports work in a household without Seerr (JE mode). It answers the same query language as Seerr's search: plain
     /// titles (<c>search/multi</c>), <c>title year:YYYY</c> (<c>search/movie</c> + <c>search/tv</c> with the year),
     /// <c>tmdb:N</c> (the movie and the show with that id), <c>imdb:tt…</c> and <c>tvdb:N</c> (<c>find</c>). Adult titles
-    /// and people are dropped; every upstream call goes through the shared <see cref="MetadataCallLimiter"/> with a 15 s
-    /// timeout; definitive answers (a parsed answer, and "not found": review round 5, 4c2-R5-4) are reused with their status
-    /// for 30 minutes per key identity (a changed key never reuses another's answers), and a reused answer never waits for
-    /// the limiter. TMDB's own errors and unreadable answers are transient (never cached, retried); a 404 is "not found".
+    /// and people are dropped; every upstream request is a <see cref="TmdbCall"/> (its own turn at the shared
+    /// <see cref="MetadataCallLimiter"/>, a 15 s timeout); definitive answers (a whole, valid answer: found, or "not found":
+    /// review rounds 5 and 6) are reused with their status for 30 minutes per key identity (a changed key never reuses
+    /// another's answers), and a reused answer never waits for the limiter. TMDB's own errors, unreadable or malformed
+    /// answers and answers with a row JE can't read are never remembered: "nothing found" needs a valid answer whose every
+    /// row was read (review round 6, 4c2-R6-1); a 404 is "not found".
     /// </summary>
     public sealed class TmdbImportLookup : IImportLookup
     {
@@ -74,7 +76,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var lower = normalized.ToLowerInvariant();
-            var (status, value) = await CachedAsync("search|" + lower, context, () => SearchUpstreamAsync(normalized, cancellationToken), cancellationToken).ConfigureAwait(false);
+            var (status, value) = await CachedAsync("search|" + lower, context, call => SearchUpstreamAsync(normalized, call), cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<TitleHit>>(status, status == LookupStatus.Ok ? (IReadOnlyList<TitleHit>)value! : null);
         }
 
@@ -87,11 +89,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var id = tmdbId.ToString(CultureInfo.InvariantCulture);
-            var (status, value) = await CachedAsync("details|" + mediaType + "|" + id, context, async () =>
-            {
-                var (code, json) = await GetJsonAsync(mediaType + "/" + id, "?append_to_response=external_ids", cancellationToken).ConfigureAwait(false);
-                return code == LookupStatus.Ok ? Parse(json!, root => ParseDetails(root, mediaType)) : (code, null);
-            }, cancellationToken).ConfigureAwait(false);
+            var (status, value) = await CachedAsync("details|" + mediaType + "|" + id, context, call =>
+                call.GetAsync(mediaType + "/" + id, "?append_to_response=external_ids", root => ParseDetails(root, mediaType) is { } details ? LookupAnswer.Ok(details) : LookupAnswer.Transient), cancellationToken).ConfigureAwait(false);
             return new LookupResult<TitleDetails>(status, status == LookupStatus.Ok ? (TitleDetails)value! : null);
         }
 
@@ -104,11 +103,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             var path = "tv/" + tvTmdbId.ToString(CultureInfo.InvariantCulture) + "/season/" + season.ToString(CultureInfo.InvariantCulture);
-            var (status, value) = await CachedAsync("season|" + path, context, async () =>
-            {
-                var (code, json) = await GetJsonAsync(path, string.Empty, cancellationToken).ConfigureAwait(false);
-                return code == LookupStatus.Ok ? Parse(json!, root => (object?)ParseSeason(root, season)) : (code, null);
-            }, cancellationToken).ConfigureAwait(false);
+            var (status, value) = await CachedAsync("season|" + path, context, call =>
+                call.GetAsync(path, string.Empty, root => ParseSeason(root, season) is { } episodes ? LookupAnswer.Ok(episodes) : LookupAnswer.Transient), cancellationToken).ConfigureAwait(false);
             return new LookupResult<IReadOnlyList<EpisodeFacts>>(status, status == LookupStatus.Ok ? (IReadOnlyList<EpisodeFacts>)value! : null);
         }
 
@@ -121,60 +117,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             }
 
             // Review round 5: through the shared limiter and the cache like every other lookup (it had neither).
-            var (status, value) = await CachedAsync("episode|" + imdbId, context, async () =>
-            {
-                var (code, json) = await GetJsonAsync("find/" + imdbId, "?external_source=imdb_id", cancellationToken).ConfigureAwait(false);
-                return code == LookupStatus.Ok ? FindEpisode(json!) : (code, null);
-            }, cancellationToken).ConfigureAwait(false);
+            var (status, value) = await CachedAsync("episode|" + imdbId, context, call =>
+                call.GetAsync("find/" + imdbId, "?external_source=imdb_id", ReadEpisodeFind), cancellationToken).ConfigureAwait(false);
             return new LookupResult<ImdbEpisodeFind>(status, status == LookupStatus.Ok ? (ImdbEpisodeFind)value! : null);
         }
 
-        // The first usable episode of a TMDB find answer (NotFound: none).
-        private static (LookupStatus, object?) FindEpisode(string json)
+        /// <summary>
+        /// TMDB's <c>find</c> answer for an IMDb EPISODE id (review round 6, 4c2-R6-1; both lookups read it here): the
+        /// episode of its first usable row; NotFound only when <c>tv_episode_results</c> is a valid, empty list; Transient
+        /// when the answer isn't an object, the list is missing or not a list, or holds only rows without coordinates.
+        /// </summary>
+        /// <param name="root">The answer.</param>
+        /// <returns>The read answer.</returns>
+        internal static LookupAnswer ReadEpisodeFind(JsonElement root)
         {
-            using var doc = JsonDocument.Parse(json);
-            foreach (var episode in Array(doc.RootElement, "tv_episode_results"))
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("tv_episode_results", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
             {
-                var show = Int(episode, "show_id");
-                var s = Int(episode, "season_number");
-                var e = Int(episode, "episode_number");
+                return LookupAnswer.Transient;
+            }
+
+            ImdbEpisodeFind? found = null;
+            var unusable = false;
+            foreach (var episode in episodes.EnumerateArray())
+            {
+                var show = episode.ValueKind == JsonValueKind.Object ? Int(episode, "show_id") : null;
+                var s = show == null ? null : Int(episode, "season_number");
+                var e = show == null ? null : Int(episode, "episode_number");
                 if (show > 0 && s >= 0 && e >= 0)
                 {
-                    return (LookupStatus.Ok, new ImdbEpisodeFind(show!.Value, s!.Value, e!.Value, Str(episode, "name", 200), Date(episode, "air_date")));
+                    found ??= new ImdbEpisodeFind(show!.Value, s!.Value, e!.Value, Str(episode, "name", 200), Date(episode, "air_date"));
+                }
+                else
+                {
+                    unusable = true;
                 }
             }
 
-            return (LookupStatus.NotFound, null);
+            return found != null ? LookupAnswer.Ok(found, !unusable) : unusable ? LookupAnswer.Transient : LookupAnswer.NotFound;
         }
 
         // ── Search forms ─────────────────────────────────────────────────────
 
-        private async Task<(LookupStatus, object?)> SearchUpstreamAsync(string query, CancellationToken cancellationToken)
+        // Each form's answer is the rows of every request it made (review round 6): a request that failed or answered
+        // something that isn't a whole answer makes the search Transient; "no titles" needs every row read (a deliberate
+        // drop, an adult title or a person, is read); titles found beside a row that couldn't be read are used, not kept.
+        private static async Task<LookupAnswer> SearchUpstreamAsync(string query, TmdbCall call)
         {
-            var hits = new List<TitleHit>();
+            var rows = new HitRows();
             if (query.StartsWith("tmdb:", StringComparison.OrdinalIgnoreCase))
             {
                 if (!int.TryParse(query.AsSpan(5), NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0)
                 {
-                    return (LookupStatus.Ok, hits);
+                    return rows.Answer;
                 }
 
-                // A bare TMDB id names a movie or a show: both answer (Seerr's tmdb: search does the same).
+                // A bare TMDB id names a movie or a show: both answer (Seerr's tmdb: search does the same), each request
+                // with its own turn at the limiter (4c2-R6-4). A 404 is that type's proven "no such id".
                 foreach (var type in new[] { "movie", "tv" })
                 {
-                    var (code, json) = await GetJsonAsync(type + "/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, cancellationToken).ConfigureAwait(false);
-                    if (code == LookupStatus.Transient)
+                    var leg = await call.GetAsync(type + "/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, root => HitRows.Of(root, type)).ConfigureAwait(false);
+                    if (leg.Status == LookupStatus.Transient)
                     {
-                        return (code, null);
+                        return LookupAnswer.Transient;
                     }
 
-                    if (code == LookupStatus.Ok && Parse(json!, root => ReadHit(root, type)).Item2 is TitleHit hit)
-                    {
-                        hits.Add(hit);
-                    }
+                    rows.Merge(leg);
                 }
 
-                return (LookupStatus.Ok, hits);
+                return rows.Answer;
             }
 
             if (query.StartsWith("imdb:", StringComparison.OrdinalIgnoreCase) || query.StartsWith("tvdb:", StringComparison.OrdinalIgnoreCase))
@@ -183,19 +193,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 var imdb = query.StartsWith("imdb:", StringComparison.OrdinalIgnoreCase);
                 if (imdb ? !ImdbRegex.IsMatch(id) : !int.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out _))
                 {
-                    return (LookupStatus.Ok, hits);
+                    return rows.Answer;
                 }
 
-                var (code, json) = await GetJsonAsync("find/" + id, imdb ? "?external_source=imdb_id" : "?external_source=tvdb_id", cancellationToken).ConfigureAwait(false);
-                if (code != LookupStatus.Ok)
+                var found = await call.GetAsync("find/" + id, imdb ? "?external_source=imdb_id" : "?external_source=tvdb_id", root =>
                 {
-                    return code == LookupStatus.NotFound ? (LookupStatus.Ok, hits) : (code, null);
+                    // Both result lists must be there, as lists: an answer without them is no proof of "no titles".
+                    if (root.ValueKind != JsonValueKind.Object
+                        || !root.TryGetProperty("movie_results", out var movies) || movies.ValueKind != JsonValueKind.Array
+                        || !root.TryGetProperty("tv_results", out var shows) || shows.ValueKind != JsonValueKind.Array)
+                    {
+                        return LookupAnswer.Transient;
+                    }
+
+                    var read = new HitRows();
+                    read.Read(movies, "movie");
+                    read.Read(shows, "tv");
+                    return read.Leg;
+                }).ConfigureAwait(false);
+                if (found.Status == LookupStatus.Transient)
+                {
+                    return found;
                 }
 
-                using var doc = JsonDocument.Parse(json!);
-                hits.AddRange(Array(doc.RootElement, "movie_results").Select(r => ReadHit(r, "movie")).OfType<TitleHit>());
-                hits.AddRange(Array(doc.RootElement, "tv_results").Select(r => ReadHit(r, "tv")).OfType<TitleHit>());
-                return (LookupStatus.Ok, hits);
+                rows.Merge(found); // a 404 of find is "no titles"
+                return rows.Answer;
             }
 
             var year = YearSuffix.Match(query);
@@ -205,124 +227,123 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 var y = year.Groups["year"].Value;
                 foreach (var (type, param) in new[] { ("movie", "year"), ("tv", "first_air_date_year") })
                 {
-                    var (code, json) = await GetJsonAsync("search/" + type, "?query=" + title + "&" + param + "=" + y + "&include_adult=false&page=1", cancellationToken).ConfigureAwait(false);
-                    if (code != LookupStatus.Ok)
+                    var leg = await call.GetAsync("search/" + type, "?query=" + title + "&" + param + "=" + y + "&include_adult=false&page=1", root => HitRows.Results(root, type)).ConfigureAwait(false);
+                    if (leg.Status != LookupStatus.Ok)
                     {
-                        return (LookupStatus.Transient, null);
+                        return LookupAnswer.Transient;
                     }
 
-                    using var doc = JsonDocument.Parse(json!);
-                    if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
-                    {
-                        return (LookupStatus.Transient, null);
-                    }
-
-                    hits.AddRange(results.EnumerateArray().Select(r => ReadHit(r, type)).OfType<TitleHit>());
+                    rows.Merge(leg);
                 }
 
-                return (LookupStatus.Ok, hits);
+                return rows.Answer;
             }
 
-            var (multiCode, multi) = await GetJsonAsync("search/multi", "?query=" + Uri.EscapeDataString(query) + "&include_adult=false&page=1", cancellationToken).ConfigureAwait(false);
-            if (multiCode != LookupStatus.Ok)
+            var multi = await call.GetAsync("search/multi", "?query=" + Uri.EscapeDataString(query) + "&include_adult=false&page=1", root => HitRows.Results(root, null)).ConfigureAwait(false);
+            if (multi.Status != LookupStatus.Ok)
             {
-                return (LookupStatus.Transient, null);
+                return LookupAnswer.Transient; // an answer without its list is an error, never "no titles"
             }
 
-            using (var doc = JsonDocument.Parse(multi!))
+            rows.Merge(multi);
+            return rows.Answer;
+        }
+
+        // The rows of one or more search answers (review round 6): the titles read, and how many rows couldn't be read.
+        private sealed class HitRows
+        {
+            private readonly List<TitleHit> _hits = new();
+            private int _unusable;
+
+            // One answer's rows, kept by the response cache only when every row was read.
+            public LookupAnswer Leg => LookupAnswer.Ok(this, _unusable == 0);
+
+            // The search's answer: nothing found and a row unread is no proof of "no titles".
+            public LookupAnswer Answer => _hits.Count == 0 && _unusable > 0 ? LookupAnswer.Transient : LookupAnswer.Ok(_hits, _unusable == 0);
+
+            // A title's own answer (tmdb:N): the title, a deliberate drop, or a row that can't be read.
+            public static LookupAnswer Of(JsonElement root, string type)
             {
-                if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                var rows = new HitRows();
+                rows.Add(root, type);
+                return rows.Leg;
+            }
+
+            // A search answer: its `results` must be a list (else Transient); `type` null reads each row's media_type.
+            public static LookupAnswer Results(JsonElement root, string? type)
+            {
+                if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
                 {
-                    return (LookupStatus.Transient, null); // an answer without its list is an error, never "no titles"
+                    return LookupAnswer.Transient;
                 }
 
-                hits.AddRange(results.EnumerateArray().Select(r => ReadHit(r, Str(r, "media_type", 10))).OfType<TitleHit>());
+                var rows = new HitRows();
+                rows.Read(results, type);
+                return rows.Leg;
             }
 
-            return (LookupStatus.Ok, hits);
+            public void Read(JsonElement array, string? type)
+            {
+                foreach (var row in array.EnumerateArray())
+                {
+                    Add(row, type ?? MediaType(row));
+                }
+            }
+
+            public void Merge(LookupAnswer leg)
+            {
+                if (leg.Value is HitRows other)
+                {
+                    _hits.AddRange(other._hits);
+                    _unusable += other._unusable;
+                }
+            }
+
+            private void Add(JsonElement row, string? type)
+            {
+                switch (ReadRow(row, type, out var hit))
+                {
+                    case RowRead.Hit:
+                        _hits.Add(hit!);
+                        break;
+                    case RowRead.Unusable:
+                        _unusable++;
+                        break;
+                }
+            }
+
+            // A multi-search row's declared type (null: missing or not a type, so the row can't be read).
+            private static string? MediaType(JsonElement row) =>
+                row.ValueKind == JsonValueKind.Object && row.TryGetProperty("media_type", out var type) && type.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(type.GetString())
+                    ? type.GetString()
+                    : null;
         }
 
         // ── Plumbing ─────────────────────────────────────────────────────────
 
-        private async Task<(LookupStatus Status, object? Value)> CachedAsync(string cacheKey, ImportCallContext context, Func<Task<(LookupStatus, object?)>> fetch, CancellationToken cancellationToken)
+        private async Task<(LookupStatus Status, object? Value)> CachedAsync(string cacheKey, ImportCallContext context, Func<TmdbCall, Task<LookupAnswer>> fetch, CancellationToken cancellationToken)
         {
-            var key = Fingerprint(Key) + "|" + cacheKey;
-            if (!IsConfigured)
+            var apiKey = Key; // one key for the whole lookup: its cache identity and every request it sends
+            if (apiKey.Length == 0)
             {
                 return (LookupStatus.Transient, null);
             }
 
             // A definitive answer is reused with its status, and without waiting for the limiter (review round 5, 4c2-R5-4:
             // a budgeted review that met the same stale ids again re-spent its budget on them and never got further).
+            var key = Fingerprint(apiKey) + "|" + cacheKey;
             if (_cache.TryGetValue(key, out var cached) && cached.ExpiresUtc > DateTime.UtcNow)
             {
                 return (cached.Status, cached.Value);
             }
 
-            context.CountCall();
-            (LookupStatus Status, object? Value) result;
-            using (await _limiter.AcquireAsync(context.Owner, context.Background, cancellationToken).ConfigureAwait(false))
+            var answer = await fetch(new TmdbCall(_tmdb, _limiter, _logger, context, apiKey, cancellationToken)).ConfigureAwait(false);
+            if (answer.Remembered)
             {
-                try
-                {
-                    result = await fetch().ConfigureAwait(false);
-                }
-                catch (JsonException ex)
-                {
-                    _logger.Debug($"[Lists] TMDB lookup {cacheKey} unreadable: {ex.Message}");
-                    result = (LookupStatus.Transient, null);
-                }
+                Remember(key, answer.Status, answer.Value);
             }
 
-            if ((result.Status == LookupStatus.Ok && result.Value != null) || result.Status == LookupStatus.NotFound)
-            {
-                Remember(key, result.Status, result.Value);
-            }
-
-            return result;
-        }
-
-        private async Task<(LookupStatus Status, string? Json)> GetJsonAsync(string path, string query, CancellationToken cancellationToken)
-        {
-            var key = Key;
-            if (key.Length == 0)
-            {
-                return (LookupStatus.Transient, null);
-            }
-
-            try
-            {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(CallTimeout);
-                var response = await _tmdb.GetAsync(path, query, key, timeout.Token).ConfigureAwait(false);
-                if (response.IsSuccess)
-                {
-                    return (LookupStatus.Ok, response.Content);
-                }
-
-                if (response.StatusCode != 404)
-                {
-                    _logger.Debug($"[Lists] TMDB lookup {path} answered {response.StatusCode.ToString(CultureInfo.InvariantCulture)}");
-                }
-
-                return (response.StatusCode == 404 ? LookupStatus.NotFound : LookupStatus.Transient, null);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return (LookupStatus.Transient, null);
-            }
-            catch (System.Net.Http.HttpRequestException ex)
-            {
-                _logger.Debug($"[Lists] TMDB lookup {path} failed: {ex.Message}");
-                return (LookupStatus.Transient, null);
-            }
-        }
-
-        private static (LookupStatus, object?) Parse(string json, Func<JsonElement, object?> parse)
-        {
-            using var doc = JsonDocument.Parse(json);
-            var value = parse(doc.RootElement);
-            return value == null ? (LookupStatus.Transient, null) : (LookupStatus.Ok, value);
+            return (answer.Status, answer.Value);
         }
 
         private void Remember(string key, LookupStatus status, object? value)
@@ -352,6 +373,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         // ── TMDB shapes (snake_case) ─────────────────────────────────────────
 
+        // Null when the answer isn't a whole title (also a season row JE can't read: a season missing from the list would
+        // be taken as "no such season").
         private static TitleDetails? ParseDetails(JsonElement root, string mediaType)
         {
             var hit = ReadHit(root, mediaType);
@@ -378,8 +401,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 foreach (var season in Array(root, "seasons"))
                 {
-                    var number = Int(season, "season_number");
-                    if (number is >= 0 and <= 500)
+                    var number = season.ValueKind == JsonValueKind.Object ? Int(season, "season_number") : null;
+                    if (number is not >= 0)
+                    {
+                        return null;
+                    }
+
+                    if (number <= 500)
                     {
                         seasons.Add(new SeasonFacts(number.Value, Int(season, "episode_count"), Date(season, "air_date"), Str(season, "name", 100)));
                     }
@@ -390,9 +418,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             return new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, Str(root, "status", 40), inProduction, seasons);
         }
 
+        // Null when the answer has no episode list or an episode row JE can't read (an episode missing from the list would
+        // be taken as "no such episode").
         private static IReadOnlyList<EpisodeFacts>? ParseSeason(JsonElement root, int season)
         {
-            if (!root.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
             {
                 return null;
             }
@@ -400,14 +430,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var list = new List<EpisodeFacts>();
             foreach (var episode in episodes.EnumerateArray())
             {
-                var number = Int(episode, "episode_number");
-                if (number is >= 0)
+                var number = episode.ValueKind == JsonValueKind.Object ? Int(episode, "episode_number") : null;
+                if (number is not >= 0)
                 {
-                    list.Add(new EpisodeFacts(Int(episode, "season_number") ?? season, number.Value, Str(episode, "name", 200), Date(episode, "air_date")));
+                    return null;
                 }
+
+                list.Add(new EpisodeFacts(Int(episode, "season_number") ?? season, number.Value, Str(episode, "name", 200), Date(episode, "air_date")));
             }
 
             return list;
+        }
+
+        // One row of a search or find answer: a title, a deliberate drop (an adult title, a person or another kind that
+        // isn't a title), or a row that can't be read (not an object, no type, no id or no title).
+        private static RowRead ReadRow(JsonElement element, string? mediaType, out TitleHit? hit)
+        {
+            hit = null;
+            if (element.ValueKind != JsonValueKind.Object || mediaType == null)
+            {
+                return RowRead.Unusable;
+            }
+
+            if (mediaType is not ("movie" or "tv") || (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True))
+            {
+                return RowRead.Dropped;
+            }
+
+            hit = ReadHit(element, mediaType);
+            return hit == null ? RowRead.Unusable : RowRead.Hit;
         }
 
         private static TitleHit? ReadHit(JsonElement element, string? mediaType)
@@ -468,6 +519,114 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         {
             var value = Str(element, name, 10);
             return value != null && DateRegex.IsMatch(value) && ListRules.TryParseDate(value, out _) ? value : null;
+        }
+    }
+
+    /// <summary>
+    /// THE upstream TMDB request of the import lookups (review round 6, D53; <see cref="TmdbImportLookup"/> and the IMDb
+    /// episode find of <see cref="SeerrImportLookup"/>). One request is one turn at the shared limiter, counted on the
+    /// caller's context, so every search leg and fallback is paced like any other call (4c2-R6-4: two TMDB requests went
+    /// out on one turn). An answer TMDB already gave (the response cache, filled by any feature) is used without a request
+    /// or a turn when it reads as a whole answer; an answer that doesn't is dropped from the response cache, so the next
+    /// read asks TMDB again instead of meeting the same malformed answer for the cache's TTL (4c2-R6-1).
+    /// </summary>
+    internal sealed class TmdbCall
+    {
+        private readonly TmdbResponseCache _tmdb;
+        private readonly MetadataCallLimiter _limiter;
+        private readonly Logger _logger;
+        private readonly ImportCallContext _context;
+        private readonly string _apiKey;
+        private readonly CancellationToken _cancellationToken;
+
+        /// <summary>Creates the call context of one lookup.</summary>
+        /// <param name="tmdb">JE's TMDB response cache.</param>
+        /// <param name="limiter">Shared metadata limiter.</param>
+        /// <param name="logger">JE logger.</param>
+        /// <param name="context">The caller (limiter owner and priority; counts the requests).</param>
+        /// <param name="apiKey">The TMDB key every request of the lookup carries.</param>
+        /// <param name="cancellationToken">Stops the caller waiting.</param>
+        public TmdbCall(TmdbResponseCache tmdb, MetadataCallLimiter limiter, Logger logger, ImportCallContext context, string apiKey, CancellationToken cancellationToken)
+        {
+            _tmdb = tmdb;
+            _limiter = limiter;
+            _logger = logger;
+            _context = context;
+            _apiKey = apiKey;
+            _cancellationToken = cancellationToken;
+        }
+
+        /// <summary>One TMDB read: a 404 is NotFound, an error Transient, and a successful answer is what <paramref name="read"/> makes of it.</summary>
+        /// <param name="path">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="read">Reads a successful answer (Transient when it isn't one).</param>
+        /// <returns>The answer.</returns>
+        public async Task<LookupAnswer> GetAsync(string path, string query, Func<JsonElement, LookupAnswer> read)
+        {
+            if (_tmdb.TryGetCached(path, query, _apiKey, out var cached))
+            {
+                var known = Read(cached, path, read);
+                if (known.Definitive)
+                {
+                    return known;
+                }
+
+                _tmdb.Forget(path, query, _apiKey);
+            }
+
+            _context.CountCall();
+            TmdbResponseCache.TmdbResponse response;
+            using (await _limiter.AcquireAsync(_context.Owner, _context.Background, _cancellationToken).ConfigureAwait(false))
+            {
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken);
+                    timeout.CancelAfter(TmdbImportLookup.CallTimeout);
+                    response = await _tmdb.GetAsync(path, query, _apiKey, timeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!_cancellationToken.IsCancellationRequested)
+                {
+                    return LookupAnswer.Transient;
+                }
+                catch (System.Net.Http.HttpRequestException ex)
+                {
+                    _logger.Debug($"[Lists] TMDB lookup {path} failed: {ex.Message}");
+                    return LookupAnswer.Transient;
+                }
+            }
+
+            var answer = Read(response, path, read);
+            if (!answer.Definitive && response.IsSuccess)
+            {
+                _tmdb.Forget(path, query, _apiKey);
+            }
+
+            return answer;
+        }
+
+        private LookupAnswer Read(TmdbResponseCache.TmdbResponse response, string path, Func<JsonElement, LookupAnswer> read)
+        {
+            if (response.IsSuccess)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(response.Content);
+                    return read(doc.RootElement);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.Debug($"[Lists] TMDB lookup {path} unreadable: {ex.Message}");
+                    return LookupAnswer.Transient;
+                }
+            }
+
+            if (response.StatusCode == 404)
+            {
+                return LookupAnswer.NotFound;
+            }
+
+            _logger.Debug($"[Lists] TMDB lookup {path} answered {response.StatusCode.ToString(CultureInfo.InvariantCulture)}");
+            return LookupAnswer.Transient;
         }
     }
 

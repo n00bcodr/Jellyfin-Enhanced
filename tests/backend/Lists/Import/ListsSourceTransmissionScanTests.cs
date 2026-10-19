@@ -253,20 +253,21 @@ public class ListsSourceTransmissionScanTests
         var reserve = Body(code, "ReserveAsync");
         var finish = Body(code, "Finish");
         var rest = code.Replace(hold, string.Empty, StringComparison.Ordinal).Replace(reserve, string.Empty, StringComparison.Ordinal).Replace(finish, string.Empty, StringComparison.Ordinal);
-        rest = Regex.Replace(rest, @"private\s+(?:int|long)\s+_(?:outstanding|finished|heldFinished)\b[^;]*;", string.Empty); // their declarations
+        rest = Regex.Replace(rest, @"public\s+(?:int|long|MdblistAccountStatus\?)\s+(?:Outstanding|Finished|HeldFinished|Status)\s*\{\s*get;\s*set;\s*\}(?:\s*=\s*-1;)?", string.Empty); // the account's declarations
 
         // A status read replaces MDBList's count only through Hold, which never changes it; a reservation is charged only
         // in ReserveAsync and finished only in Finish (review round 5: it stays outstanding until then, whatever a refresh
-        // says), and what may be spent is always MDBList's count minus every reservation it can't have counted.
-        Assert.DoesNotMatch(@"_accountStatus\s*=[^=]", rest);
+        // says), and what may be spent is always MDBList's count minus every reservation it can't have counted, all of it
+        // per account (review round 6: one API key's status, leases and counters; no global balance).
+        Assert.DoesNotMatch(@"\.Status\s*=[^=]", rest);
         Assert.DoesNotMatch(@"RateLimitRemaining\s*(?:-=|--|\+=|\+\+)", code);
-        Assert.DoesNotMatch(@"RateLimitRemaining\s*=[^=>]", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal).Replace("RateLimitRemaining = SpendableLocked()", string.Empty, StringComparison.Ordinal));
+        Assert.DoesNotMatch(@"RateLimitRemaining\s*=[^=>]", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal).Replace("RateLimitRemaining = SpendableLocked(account)", string.Empty, StringComparison.Ordinal));
         Assert.DoesNotMatch(@"RateLimitRemaining", hold);
-        Assert.DoesNotMatch(@"_outstanding\s*(?:\+\+|--|[+-]?=[^=])|_finished\s*(?:\+\+|--|[+-]?=[^=])|_heldFinished\s*=[^=]", rest);
-        Assert.Matches(@"_outstanding\s*-\s*\(\s*_finished\s*-\s*_heldFinished\s*\)", Body(code, "SpendableLocked"));
-        Assert.Matches(@"_statusRefresh\.WaitAsync", reserve); // one refresh at a time
+        Assert.DoesNotMatch(@"\.(?:Outstanding|Finished)\s*(?:\+\+|--|[+-]?=[^=])|\.HeldFinished\s*=[^=]", rest);
+        Assert.Matches(@"account\.Outstanding\s*-\s*\(\s*account\.Finished\s*-\s*account\.HeldFinished\s*\)", Body(code, "SpendableLocked"));
+        Assert.Matches(@"account\.Refresh\.WaitAsync", reserve); // one refresh at a time, per account
         var locked = Body("private void L() " + reserve[reserve.LastIndexOf("lock (_accountStatusLock)", StringComparison.Ordinal)..], "L");
-        Assert.Matches(@"FreshLocked\(\)[\s\S]*SpendableLocked\(\)\s*<=\s*Math\.Max\(SafetyMargin,[\s\S]*_outstanding\+\+", locked); // checked and charged in one step
+        Assert.Matches(@"FreshLocked\(account\)[\s\S]*SpendableLocked\(account\)\s*<=\s*Math\.Max\(SafetyMargin,[\s\S]*account\.Outstanding\+\+", locked); // checked and charged in one step
     }
 
     // ── Review round 4 (D53 rule 1 over its whole class): every send that spends the MDBList quota reserves first ──
@@ -323,7 +324,7 @@ public class ListsSourceTransmissionScanTests
 
         Assert.Equal(3, senders); // the status read, the ratings lookup, the media batch
         var (reserveStart, reserveLength) = BodyAt(code, "ReserveAsync");
-        var charges = Regex.Matches(code, @"\b_outstanding\s*\+\+");
+        var charges = Regex.Matches(code, @"\.Outstanding\s*\+\+");
         Assert.Single(charges);
         Assert.InRange(charges[0].Index, reserveStart, reserveStart + reserveLength);
 

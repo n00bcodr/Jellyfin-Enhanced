@@ -353,13 +353,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             throw Upstream(api, "MDBList");
         }
 
-        // The quota's account status (MDBList's /user, which doesn't count against the quota), read through the gate like
+        // The quota's account status for `key` (MDBList's /user, which doesn't count against the quota), read through the gate like
         // every other transmission of a list read (4C2-R2-SEC-01): the switch re-checked, admission charged, over the
         // source transport. A refused or blocked read is a typed failure; an error answer is an unknown status, which the
         // quota treats like the ratings path does (it fails open).
-        private async Task<MdblistAccountStatus?> QuotaStatusAsync(SourceFetchOptions options, CancellationToken cancellationToken)
+        private async Task<MdblistAccountStatus?> QuotaStatusAsync(string key, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            var key = MdblistKey;
             var response = await SendAsync(new Transmission(MdblistStatusProvider, "https://api.mdblist.com/user?apikey=" + Uri.EscapeDataString(key)) { Credential = key }, options, cancellationToken).ConfigureAwait(false);
             return response.Status == 200 && response.Body != null ? MdblistService.ParseAccountStatus(response.Body) : null;
         }
@@ -1443,10 +1442,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 Admit(transmission.Provider == MdblistStatusProvider ? MdblistApiProvider : transmission.Provider, options);
                 // Every MDBList API read reserves its request of the shared daily quota first (review round 4: the one
                 // reservation the ratings lookups use too); without the quota's bookkeeping it isn't sent at all. The
-                // reservation stays outstanding until this attempt has finished (review round 5), whatever its outcome.
+                // reservation stays outstanding until this attempt has finished (review round 5), whatever its outcome, and
+                // it is the account of the key this request carries, whose status is read with that same key (review
+                // round 6: a key replaced meanwhile is another account, and GateOpen refuses the stale one anyway).
                 IDisposable? reservation = null;
                 if (transmission.Provider == MdblistApiProvider
-                    && (_mdblist == null || (reservation = await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false)) == null))
+                    && (_mdblist == null || (reservation = await _mdblist.TryReserveListRequestAsync(transmission.Credential!, ct => QuotaStatusAsync(transmission.Credential!, options, ct), cancellationToken).ConfigureAwait(false)) == null))
                 {
                     throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
                 }

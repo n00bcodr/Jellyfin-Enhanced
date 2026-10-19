@@ -1432,7 +1432,9 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   people are pointed to an MDBList mirror or a CSV export.
 - **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
   says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
-  already in the library.
+  already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
+  or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
+  exist" needs every one of them to say so).
 - **Privacy.** A person with parental limits gets only titles whose rating is verified to be within them, and source
   counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
   Guard on, overviews and episode titles of guarded titles are left out. A title, season or episode the library holds
@@ -1448,7 +1450,8 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
 - **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
   for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
   its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so
-  imports and ratings together never go below the quota's safety margin. Every
+  imports and ratings together never go below the quota's safety margin. The quota is tracked per API key: after the
+  key is changed, the new key's balance is read from MDBList before its first request. Every
   request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
   redirects and only at public addresses.

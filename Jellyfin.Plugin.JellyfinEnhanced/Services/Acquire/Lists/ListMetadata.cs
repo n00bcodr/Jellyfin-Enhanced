@@ -662,74 +662,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        // Every configured server in order until one gives a readable answer (review round 6, as 4c2-R6-2 in the import
+        // lookup): "not found" only when EVERY server answered 404 (a stale address, or a proxy without Seerr's route,
+        // answers 404 too); a 500 (Seerr's "Unable to retrieve …", for unknown ids but also when TMDB failed behind it) is
+        // remembered only briefly, and only when no server failed otherwise; an error or an unreadable answer from any of
+        // them is never remembered. Each request takes its own Seerr slot.
         private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, string scope, CancellationToken cancellationToken)
         {
-            await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
+            var answered = false;
+            var notFound = 0;
+            var unavailable = false;
+            var failed = false;
+            foreach (var baseUrl in urls)
             {
-                var answered = false;
-                foreach (var baseUrl in urls)
+                await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    try
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    cts.CancelAfter(Timeout);
+                    var url = baseUrl + apiPath;
+                    var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
+                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
+                    answered = true;
+                    _unreachableUntil.TryRemove(scope, out _);
+                    if ((int)response.StatusCode == 404)
                     {
-                        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                        cts.CancelAfter(Timeout);
-                        var url = baseUrl + apiPath;
-                        var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
-                        using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                        using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
-                        answered = true;
-                        _unreachableUntil.TryRemove(scope, out _);
-                        if ((int)response.StatusCode == 404)
-                        {
-                            return new CacheEntry(default, DateTime.UtcNow, NotFoundTtl);
-                        }
-
-                        if ((int)response.StatusCode == 500)
-                        {
-                            // Seerr answers 500 "Unable to retrieve …" for unknown TMDB ids and seasons, but also when
-                            // TMDB failed or rate-limited it: remembered only briefly.
-                            return new CacheEntry(default, DateTime.UtcNow, UnavailableTtl);
-                        }
-
-                        var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, cts.Token).ConfigureAwait(false);
-                        if (error != null || json == null)
-                        {
-                            _logger.Debug($"[Lists] Seerr details {apiPath} failed: {error?.Code}");
-                            continue;
-                        }
-
-                        using var document = JsonDocument.Parse(json);
-                        if (document.RootElement.ValueKind != JsonValueKind.Object)
-                        {
-                            continue;
-                        }
-
-                        return new CacheEntry(document.RootElement.Clone(), DateTime.UtcNow, null);
+                        notFound++;
+                        continue;
                     }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+                    if ((int)response.StatusCode == 500)
                     {
-                        throw;
+                        unavailable = true;
+                        continue;
                     }
-                    catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
+
+                    var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, cts.Token).ConfigureAwait(false);
+                    if (error != null || json == null)
                     {
-                        answered |= ex is JsonException;
-                        _logger.Debug($"[Lists] Seerr details {apiPath} failed: {ex.Message}");
+                        failed = true;
+                        _logger.Debug($"[Lists] Seerr details {apiPath} failed: {error?.Code}");
+                        continue;
                     }
+
+                    using var document = JsonDocument.Parse(json);
+                    if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    {
+                        failed = true;
+                        continue;
+                    }
+
+                    return new CacheEntry(document.RootElement.Clone(), DateTime.UtcNow, null);
                 }
-
-                if (!answered)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    _unreachableUntil[scope] = DateTime.UtcNow + UnreachableBackoff;
-                    _logger.Debug($"[Lists] Seerr didn't answer; metadata reads pause for {UnreachableBackoff.TotalSeconds:0} s.");
+                    throw;
                 }
-
-                return null;
+                catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
+                {
+                    failed = true;
+                    answered |= ex is JsonException;
+                    _logger.Debug($"[Lists] Seerr details {apiPath} failed: {ex.Message}");
+                }
+                finally
+                {
+                    _concurrency.Release();
+                }
             }
-            finally
+
+            if (!answered)
             {
-                _concurrency.Release();
+                _unreachableUntil[scope] = DateTime.UtcNow + UnreachableBackoff;
+                _logger.Debug($"[Lists] Seerr didn't answer; metadata reads pause for {UnreachableBackoff.TotalSeconds:0} s.");
             }
+
+            if (notFound == urls.Length)
+            {
+                return new CacheEntry(default, DateTime.UtcNow, NotFoundTtl);
+            }
+
+            return unavailable && !failed ? new CacheEntry(default, DateTime.UtcNow, UnavailableTtl) : null;
         }
 
         /// <summary>True when JE has a TMDB API key (the parental filter then reads ratings from TMDB, Seerr or not).</summary>
@@ -815,7 +828,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 var body = await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(body);
-                var poster = document.RootElement.ValueKind == JsonValueKind.Object ? Str(document.RootElement, "poster_path") : null;
+                // Review round 6: "no poster" needs TMDB's answer to say so (poster_path there, a path or null); an answer
+                // that isn't a title's is a failed read, never remembered (a season's would let the show's poster stand in).
+                if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("poster_path", out var declared)
+                    || declared.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+                {
+                    _logger.Debug($"[Lists] TMDB poster {apiPath} answered something JE can't read");
+                    return (null, false, false);
+                }
+
+                var poster = Str(document.RootElement, "poster_path");
                 poster = poster != null && PosterRegex.IsMatch(poster) ? poster : null;
                 if (_tmdbPosters.Count >= MaxCacheEntries)
                 {

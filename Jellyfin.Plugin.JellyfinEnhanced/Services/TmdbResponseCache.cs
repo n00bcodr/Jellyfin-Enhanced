@@ -277,6 +277,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return shared.WaitAsync(cancellationToken);
         }
 
+        /// <summary>
+        /// Phase 4c2 (list imports): the fresh cached answer for <c>{apiPath}{query}</c>, without any upstream call (false
+        /// when there is none), so a caller that paces its own upstream calls takes a turn only for a real one.
+        /// </summary>
+        /// <param name="apiPath">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="apiKey">The key the answer was read with.</param>
+        /// <param name="response">The cached answer.</param>
+        /// <returns>True when a fresh answer is cached.</returns>
+        public bool TryGetCached(string apiPath, string query, string apiKey, out TmdbResponse response)
+        {
+            lock (_lock)
+            {
+                return TryGetFreshLocked(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out response);
+            }
+        }
+
+        /// <summary>
+        /// Phase 4c2 (list imports): drops the cached answer for <c>{apiPath}{query}</c>, for a caller that found it
+        /// unusable (malformed, or not a whole answer), so the next read asks TMDB again instead of keeping it for the TTL.
+        /// </summary>
+        /// <param name="apiPath">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="apiKey">The key the answer was read with.</param>
+        public void Forget(string apiPath, string query, string apiKey)
+        {
+            lock (_lock)
+            {
+                if (_entries.TryGetValue(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out var node))
+                {
+                    RemoveNode(node);
+                    ScheduleDebouncedSave();
+                }
+            }
+        }
+
         private static string UpstreamUrl(string apiPath, string query) => $"https://api.themoviedb.org/3/{apiPath}{query}";
 
         private static string AppendApiKey(string upstreamUrl, string apiKey)
