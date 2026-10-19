@@ -95,16 +95,16 @@
     }
 
     function onToggle(button, itemId, kind, page) {
-        const action = JE.createSessionAction();
+        const action = JE.createSessionAction({ submitted: true });
         if (button.disabled || stateOf(kind, itemId) === null) return;
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
         if (enable) {
-            performToggle(button, itemId, kind, page, true);
+            JE.runSubmitted(action, () => performToggle(button, itemId, kind, page, true));
             return;
         }
         internal.confirmDisableSpoiler().then(function(proceed) {
-            if (proceed && action.current()) performToggle(button, itemId, kind, page, false);
+            if (proceed && action.current()) JE.runSubmitted(action, () => performToggle(button, itemId, kind, page, false));
             else button.disabled = false;
         }).catch(function(err) {
             console.warn(`${logPrefix} disable confirmation failed:`, err);

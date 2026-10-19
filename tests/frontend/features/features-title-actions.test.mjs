@@ -339,12 +339,17 @@ test('a library detail page already mounted when the bundle finishes receives th
   assert.equal(h.document.querySelectorAll('.je-actions-wide-more').length, 1);
 });
 
-test('closing a sheet cancels an admission still awaiting and never opens a later owner view', async t => {
+// D53 r2: the sheet is the offer (closing it before a press cancels); a press is an operation that outlives it.
+test('a sheet closed before the press runs nothing; a press followed by closing the sheet still completes', async t => {
   const gate = deferred(); let opened = 0;
   const { actions: a, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
   a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }]);
-  d.querySelector('[data-action="manage"]').click(); a.close(); gate.resolve({ allowed: true });
-  await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 0);
+  const entry = d.querySelector('[data-action="manage"]');
+  a.close(); entry.click(); gate.resolve({ allowed: true });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 0, 'dismissed offer');
+  a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }]);
+  d.querySelector('[data-action="manage"]').click(); a.close();
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 1, 'submitted operation');
 });
 
 test('observer reconciliation preserves restored focus on the compact More control', async t => {

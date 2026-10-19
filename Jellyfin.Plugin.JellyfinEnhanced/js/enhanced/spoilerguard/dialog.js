@@ -55,7 +55,7 @@
     }
 
     internal.confirmDisableSpoiler = function() {
-        const action = JE.createSessionAction();
+        const action = JE.createSessionAction({ submitted: true });
         return internal.whenLoaded().then(function() {
             if (!action.current()) return false;
             if (internal.getUserPrefs().SkipDisableConfirm) return true;

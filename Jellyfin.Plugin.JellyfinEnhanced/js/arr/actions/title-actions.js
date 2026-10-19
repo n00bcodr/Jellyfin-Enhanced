@@ -3,6 +3,8 @@
     'use strict';
     const providers = new Map();
     const admissions = new WeakMap();
+    const pressing = new Set();
+    const presses = new WeakMap();
     const A = JE.titleActions = {};
 
     /** Normalizes known metadata without guessing a media kind or making a native write ID. */
@@ -40,6 +42,9 @@
     /**
      * One owner generation (D53): the session, the mount (`mount()` says the owning host is still
      * this one) and the route. Every setup/action continuation checks `current()` after each await.
+     * Two owners use it. The OFFER is whatever showed a choice (a sheet, row or menu); a press counts
+     * only while it is current. The OPERATION starts when the person submits: it belongs to the
+     * session, the route and the owning row/card, not to the offer, so it survives the offer closing.
      */
     function generation(mount = () => true) {
         const session = JE.createSessionAction();
@@ -93,20 +98,54 @@
         } catch (_) { return false; }
     }
 
-    /** One action invocation retains its submission identity through admission and each owner's await. */
-    async function invoke(c, entry, opener, action = generation()) {
-        if (!action.current() || entry.disabled || entry.valid?.() === false) return false;
+    /**
+     * Presses an owner's control for a submitted operation. Owners whose write follows a confirmation
+     * or an await (Spoiler Guard, Hide, Report) take the operation and recheck it right before writing.
+     */
+    function dispatch(source, operation, press = () => source.click()) {
+        pressing.add(source);
+        try { return JE.runSubmitted(operation, press); } finally { pressing.delete(source); }
+    }
+
+    /**
+     * Makes a direct press on an owner's Guard, Hide or Report control in a row the adapter manages an
+     * operation of that row (`owner`): the press is re-dispatched with it, so the owner's confirmation
+     * and write recheck it. One listener per node; a remount only updates its owner. When the owner is
+     * no longer current, an adapter-made control does nothing and a native one behaves as without us.
+     */
+    function bindPress(node, owner, { native = false } = {}) {
+        const bound = presses.has(node);
+        presses.set(node, { owner, native });
+        if (bound) return;
+        node.addEventListener('click', event => {
+            const { owner: live, native: own } = presses.get(node);
+            if (pressing.has(node) || (own && !live.current())) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            // A fresh event: click() is a no-op while this element's own click is still in progress.
+            if (live.current()) dispatch(node, generation(() => live.current()), () => node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+        }, true);
+    }
+
+    /** A source control can still be pressed: sheet-owned controls go with their sheet, row controls stay. */
+    function pressable(entry) {
+        const source = entry.source;
+        return (source === entry.control || source.isConnected) && !source.disabled && source.getAttribute('aria-disabled') !== 'true';
+    }
+
+    /** One submitted operation, carried through admission, the owner's run and its confirmations. */
+    async function invoke(c, entry, opener, operation = generation()) {
+        if (!operation.current() || entry.disabled) return false;
         if (entry.source) {
-            if (c?.absent && !await admit(c, action)) return false;
-            if (!action.current() || entry.valid?.() === false || !entry.source.isConnected || entry.source.disabled || entry.source.getAttribute('aria-disabled') === 'true') return false;
+            if (c?.absent && !await admit(c, operation)) return false;
+            if (!operation.current() || !pressable(entry)) return false;
             entry.beforeRun?.();
-            entry.source.click();
+            dispatch(entry.source, operation);
             return true;
         }
-        if (!await admit(c, action) || !action.current() || entry.valid?.() === false) return false;
+        if (!await admit(c, operation) || !operation.current()) return false;
         entry.beforeRun?.();
-        const result = await entry.run(opener, action);
-        return action.current() && result !== false;
+        const result = await JE.runSubmitted(operation, () => entry.run(opener, operation));
+        return operation.current() && result !== false;
     }
 
     /** Registers a lazy capability (4c3b: provider returns null until permitted). No list storage lives here. */
@@ -204,5 +243,5 @@
         }
         return action.current() ? out : [];
     }
-    Object.assign(A, { context, fromKey, routeKey, generation, cancelled, admit, shareUrl, receive, invoke, register, entries });
+    Object.assign(A, { context, fromKey, routeKey, generation, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
 })(window.JellyfinEnhanced);

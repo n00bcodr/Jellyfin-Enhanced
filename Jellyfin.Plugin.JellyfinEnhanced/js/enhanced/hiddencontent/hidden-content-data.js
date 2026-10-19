@@ -86,11 +86,13 @@
         if (!title) return Promise.resolve(false);
         const user = ApiClient.getCurrentUserId();
         const action = JE.createSessionAction();
+        // A submitted operation (a title action press) must still be current right before the write.
+        const submitted = JE.createSessionAction({ submitted: true });
         const previous = ruleWrites.get(title.key) || Promise.resolve();
         // Queue the pending debounce before the atomic write; its acknowledgement is our rule base.
         const flushed = internal.flushPendingSave?.() || Promise.resolve();
         const task = flushed.then(() => previous.catch(() => {})).then(() => enqueuePersistence(async () => {
-            if (!action.current()) return false;
+            if (!action.current() || !submitted.current()) return false;
             const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
                 name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
@@ -157,18 +159,20 @@
         paint();
         button.onclick = async e => {
             e.preventDefault(); e.stopPropagation();
+            // A press dispatched for a title action stays bound to that operation up to the write.
+            const action = JE.createSessionAction({ submitted: true });
             if (!hiddenTmdbIdSet.has(title.key) && internal.showHideConfirmation && !internal.isConfirmationSuppressed()) {
-                internal.showHideConfirmation(title.name || title.title || '', () => run());
+                internal.showHideConfirmation(title.name || title.title || '', () => run(action));
                 return;
             }
-            return run();
+            return run(action);
         };
         /** Persists before acknowledging the action and leaves a retryable failure on the control. */
-        async function run() {
+        async function run(action) {
             button.disabled = true;
             try {
                 const hidden = !hiddenTmdbIdSet.has(title.key);
-                if (await saveTitleRule(title, hidden)) options.onChanged?.(hidden);
+                if (await JE.runSubmitted(action, () => saveTitleRule(title, hidden))) options.onChanged?.(hidden);
                 paint();
             } catch (_) {
                 delete button.dataset.jeHideIcon;

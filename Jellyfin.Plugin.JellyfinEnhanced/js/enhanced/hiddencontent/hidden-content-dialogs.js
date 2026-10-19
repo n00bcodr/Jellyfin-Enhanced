@@ -315,7 +315,7 @@
      * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
-        const action = JE.createSessionAction();
+        const action = JE.createSessionAction({ submitted: true });
         onConfirm = action.bind(onConfirm);
         dialogOptions = { ...dialogOptions };
         for (const key of ['onChooseShow', 'onChooseScoped']) {

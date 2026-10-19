@@ -14,6 +14,8 @@
     let touch = null;
     let consumed = null;
     let receiving = null;
+    // Every node this adapter created. Anything else carrying our classes is a host copy (no handler).
+    const ours = new WeakSet();
     const CARD = '.card[data-id], .jellyseerr-card, .je-discover-card, [data-je-hide-title]';
     const rowSelector = '.mainDetailButtons, .detailButtons';
     const WATCH = ['replay', 'shuffle', 'instant-mix', 'trailer', 'played'];
@@ -39,8 +41,11 @@
     /** Builds a visible keyboard/touch button. */
     function button(id, label, glyph) {
         const node = document.createElement('button'); node.type = 'button'; node.dataset.action = id;
-        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); return node;
+        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); ours.add(node); return node;
     }
+
+    /** True when the layout is jellyfin-web's desktop one (phones use layout-mobile, TVs layout-tv). */
+    const desktopLayout = () => document.documentElement.classList.contains('layout-desktop');
 
     /** Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale. */
     async function openCard(card, opener) {
@@ -58,7 +63,10 @@
         const c = enabled() && cardContext(card);
         const prior = cards.get(card);
         if (!c) { removeCard(card); return; }
-        if (prior?.key === c.key && prior.button.isConnected && prior.button.parentNode === card) return;
+        if (prior?.key === c.key && prior.button.parentNode === card) {
+            card.querySelectorAll(':scope > .je-card-more').forEach(n => { if (n !== prior.button) n.remove(); });
+            return;
+        }
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
         A.styles(); card.classList.add('je-actions-card');
         const node = button('more', JE.t('title_actions_more'), 'more_horiz'); node.className = 'je-card-more'; node.dataset.jeActionKey = c.key;
@@ -218,10 +226,8 @@
             state.layoutSize = size;
             const wasCompact = row.classList.contains('je-actions-compact');
             const wasRibbon = parent?.classList.contains('je-actions-ribbon');
-            const wasPhone = state.root.classList.contains('je-actions-phone-page');
             if (wasCompact) row.classList.remove('je-actions-compact');
             if (wasRibbon) parent.classList.remove('je-actions-ribbon');
-            if (wasPhone) state.root.classList.remove('je-actions-phone-page');
             const style = parent && getComputedStyle(parent);
             const width = parent?.getBoundingClientRect().width || row.getBoundingClientRect().width || window.innerWidth - 32;
             state.available = width - (parseFloat(style?.paddingLeft) || 0) - (parseFloat(style?.paddingRight) || 0);
@@ -229,7 +235,6 @@
             for (const node of sources) state.widths.set(node, Math.max(48, node.getBoundingClientRect().width || 52));
             if (wasCompact) row.classList.add('je-actions-compact');
             if (wasRibbon) parent.classList.add('je-actions-ribbon');
-            if (wasPhone) state.root.classList.add('je-actions-phone-page');
         }
         for (const node of sources) if (!state.widths.has(node)) state.widths.set(node, Math.max(48, node.getBoundingClientRect().width || 52));
         const needed = visible.reduce((sum, n) => sum + state.widths.get(n) + 10, 52) +
@@ -250,28 +255,41 @@
                 focus?.focus();
             }
         }
-        if (row.parentElement?.matches('.detailRibbon')) {
-            const phone = compact && window.innerWidth <= 600;
-            row.parentElement.classList.toggle('je-actions-ribbon', phone);
-            state.root.classList.toggle('je-actions-phone-page', phone);
-        }
+        // Phones (layout-mobile) already give the native row its own line under an untouched header.
+        // Only desktop at a narrow width, natively broken (the buttons sit beside a zero-width title),
+        // stacks its ribbon so the row gets that line too.
+        if (row.parentElement?.matches('.detailRibbon'))
+            row.parentElement.classList.toggle('je-actions-ribbon', compact && window.innerWidth <= 600 && desktopLayout());
         sources.forEach(n => { if (!n.classList.contains('je-actions-original')) n.classList.add('je-actions-original'); });
-        let compactRow = row.querySelector(':scope > .je-actions-row');
-        if (!compact) { compactRow?.remove(); return; }
-        if (!compactRow) { compactRow = document.createElement('div'); compactRow.className = 'je-actions-row'; row.append(compactRow); }
+        // Native Guard, Hide and Report controls in this row confirm before writing: a direct press is an
+        // operation of the row while it is current (our own adapted controls are bound when created).
+        sources.forEach(n => { if (!n.dataset.jeActionKind && ['guard', 'hide', 'report'].includes(classify(n, state.c))) A.bindPress(n, state.action, { native: true }); });
+        // The compact row, its proxies and More are tracked by identity: a host copy is replaced.
+        const owned = state.compact || (state.compact = { row: null, more: null, proxies: new Map() });
+        row.querySelectorAll(':scope > .je-actions-row').forEach(n => { if (n !== owned.row) n.remove(); });
+        if (!compact) { owned.row?.remove(); return; }
+        if (!owned.row) { owned.row = document.createElement('div'); owned.row.className = 'je-actions-row'; ours.add(owned.row); }
+        const compactRow = owned.row;
+        if (compactRow.parentElement !== row) row.append(compactRow);
         const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'replay');
         const favorite = visible.find(n => classify(n, state.c) === (state.c?.absent ? 'follow' : 'favorite'));
         const report = visible.find(n => classify(n, state.c) === 'report' && !n.disabled && n.getAttribute('aria-disabled') !== 'true');
         const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : state.c?.absent ? 'add' : 'play_arrow';
         const selected = [['primary', primary, primaryIcon], [state.c?.absent ? 'follow' : 'favorite', favorite, state.c?.absent ? 'notifications_none' : 'favorite_border'], ['report', report, 'warning']];
+        for (const [id, , ] of [...owned.proxies]) if (!selected.some(([want, source]) => want === id && source)) { owned.proxies.get(id).remove(); owned.proxies.delete(id); }
         for (const [id, source, glyph] of selected) {
-            let proxy = compactRow.querySelector('[data-action="' + id + '"]');
-            if (!source) { proxy?.remove(); continue; }
+            if (!source) continue;
+            let proxy = owned.proxies.get(id);
             if (!proxy || proxy.jeActionSource !== source) {
                 proxy?.remove(); proxy = button(id, source.title || '', glyph); proxy.className = 'je-actions-' + id; proxy.jeActionSource = source;
-                proxy.onclick = e => { e.preventDefault(); e.stopPropagation(); if (rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true') source.click(); };
+                // A press is an operation on this row's mount; owners that confirm first carry it.
+                proxy.onclick = e => {
+                    e.preventDefault(); e.stopPropagation();
+                    if (rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
+                        A.dispatch(source, A.generation(() => rowCurrent(state)));
+                };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
-                compactRow.append(proxy);
+                owned.proxies.set(id, proxy);
             }
             syncProxy(proxy, source);
             if (id === 'primary') {
@@ -279,13 +297,28 @@
                 if (label.textContent !== text) label.textContent = text;
             }
         }
-        let more = compactRow.querySelector('.je-actions-more');
-        if (!more) { more = button('more', JE.t('title_actions_more'), 'more_horiz'); more.className = 'je-actions-more'; more.onclick = () => openRow(state, more); compactRow.append(more); }
+        if (!owned.more) { owned.more = button('more', JE.t('title_actions_more'), 'more_horiz'); owned.more.className = 'je-actions-more'; owned.more.onclick = () => openRow(state, owned.more); }
         // Insert only misplaced controls: moving an already focused node makes browsers drop focus.
-        const desired = ['primary', state.c?.absent ? 'follow' : 'favorite', 'report', 'more']
-            .map(id => compactRow.querySelector('[data-action="' + id + '"]')).filter(Boolean);
+        const desired = ['primary', state.c?.absent ? 'follow' : 'favorite', 'report'].map(id => owned.proxies.get(id)).filter(Boolean).concat(owned.more);
+        [...compactRow.children].forEach(n => { if (!desired.includes(n)) n.remove(); });
         desired.forEach((node, index) => { if (compactRow.children[index] !== node) compactRow.insertBefore(node, compactRow.children[index] || null); });
+        fitLabel(state, compactRow, owned.proxies.get('primary')?.querySelector('.je-actions-primary-label'));
+    }
 
+    /**
+     * Keeps the primary label whole (Rule 2b): Report moves to More first (it is always there too),
+     * then the label wraps onto two lines. Measured only when its inputs change, so it can't oscillate.
+     */
+    function fitLabel(state, compactRow, label) {
+        const levels = ['je-actions-fit-1', 'je-actions-fit-2'];
+        // The row's own width (fit classes never change it) covers layout changes the window size misses.
+        const key = [state.layoutSize, compactRow.clientWidth, label?.textContent, [...compactRow.children].map(n => n.dataset.action).join()].join('|');
+        if (state.fitKey === key) return;
+        compactRow.classList.remove(...levels);
+        // Not rendered yet (hidden page): measure at the next pass.
+        if (!label || !label.clientWidth) { state.fitKey = null; return; }
+        state.fitKey = key;
+        for (const level of levels) { if (label.scrollWidth <= label.clientWidth) break; compactRow.classList.add(level); }
     }
 
     /**
@@ -331,6 +364,8 @@
             for (const entry of entries) {
                 if (entry.source && !row.contains(entry.source) && ['guard', 'hide', 'follow', 'manage'].includes(entry.id)) {
                     state.externalSources.add(entry.source);
+                    // The host's own Guard/Hide outside the row (More Info's secondary actions) confirm too.
+                    if (['guard', 'hide'].includes(entry.id)) A.bindPress(entry.source, action, { native: true });
                     if (entry.id !== 'follow') continue;
                 }
                 if (!['request', 'open', 'follow', 'report', 'guard', 'hide'].includes(entry.id)) continue;
@@ -343,9 +378,13 @@
                 if (!entry.control) {
                     node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
                     if (entry.reason) node.dataset.jeActionReason = entry.reason;
-                    node.onclick = () => action.current() && A.invoke(c, entry, node, action).catch(() => { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); });
-                }
-                state.owned.add(node); row.append(node);
+                    node.onclick = () => {
+                        if (!action.current()) return;
+                        const operation = A.generation(() => action.current());
+                        A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
+                    };
+                } else A.bindPress(node, action);
+                ours.add(node); state.owned.add(node); row.append(node);
                 if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(node, c.tmdbId, c.type, action.current);
             }
             paintRow(state);
@@ -356,7 +395,6 @@
     function disposeRow(state) {
         state.row.classList.remove('je-actions-compact');
         state.row.parentElement?.classList.remove('je-actions-ribbon');
-        state.root.classList.remove('je-actions-phone-page');
         state.externalSources.forEach(node => node.classList.remove('je-actions-external-original'));
         if (state.rowHome) {
             const { parent, next } = state.rowHome;
@@ -368,6 +406,7 @@
         // Adapter nodes (and host copies of them) never outlive their generation; native originals stay.
         state.row.querySelectorAll('.je-actions-row, .je-actions-wide-more, .je-actions-adapted').forEach(n => n.remove());
         state.owned?.forEach(n => n.remove()); state.owned?.clear();
+        state.compact = null;
         if (rows.get(state.row) === state) rows.delete(state.row);
         A.close(false, state.action);
     }
@@ -392,10 +431,14 @@
         });
     }
 
+    /** A host copy of an adapter node (our classes, not one of ours) needs reconciling. */
+    const copied = r => r.type === 'childList' && [...r.addedNodes].some(n => n.nodeType === 1 && !ours.has(n) &&
+        (n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more, .je-actions-adapted') || r.target.matches?.('.je-actions-row')));
+
     /** Coalesces unrelated changes; mutations inside our own controls never queue another pass. */
     function schedule(records) {
-        if (records && !records.some(r => !r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
-            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more'))))) return;
+        if (records && !records.some(r => copied(r) || (!r.target.closest?.('.je-actions-row, .je-actions-backdrop, .je-card-more') &&
+            (r.type !== 'childList' || r.target.closest?.('.je-actions-original') || [...r.addedNodes, ...r.removedNodes].some(n => n.nodeType === 1 && !n.matches?.('.je-actions-row, .je-actions-wide-more, .je-card-more')))))) return;
         if (queued || disposed) return; queued = true; frame = requestAnimationFrame(scan);
     }
 

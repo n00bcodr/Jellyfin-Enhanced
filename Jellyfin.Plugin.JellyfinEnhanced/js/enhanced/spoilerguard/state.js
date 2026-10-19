@@ -109,8 +109,11 @@
     /** All controls share one ordered write, authoritative read and policy notification path. */
     function mutateState(path, options, project) {
         const action = JE.createSessionAction();
+        // A submitted operation (a title action press) must still be current right before the write;
+        // what follows an accepted write stays bound to the session only.
+        const submitted = JE.createSessionAction({ submitted: true });
         const task = mutationQueue.catch(() => {}).then(async () => {
-            if (!action.current()) return;
+            if (!action.current() || !submitted.current()) return;
             const response = await request(path, options);
             if (!action.current()) return response;
             generation++;

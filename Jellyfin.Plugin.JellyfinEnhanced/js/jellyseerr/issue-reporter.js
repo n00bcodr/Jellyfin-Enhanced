@@ -110,7 +110,7 @@
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      */
     issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
-        const action = JE.createSessionAction();
+        const action = JE.createSessionAction({ submitted: true });
         // Absent titles can report catalogue/acquisition issues, not problems with a nonexistent file.
         const absent = item?.jeAbsent === true || !!JE.titleDetails?.parse?.(item?.Id);
         const ISSUE_TYPES = getIssueTypes().filter(type => !absent || type.value === '4');

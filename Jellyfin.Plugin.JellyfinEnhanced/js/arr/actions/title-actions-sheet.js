@@ -34,22 +34,10 @@
 .je-actions-compact{min-width:0!important;max-width:calc(100vw - 32px)!important;width:100%}.je-actions-compact>:not(.je-actions-row){display:none!important}.je-actions-wide-more{display:inline-flex}.je-actions-compact>.je-actions-wide-more{display:none!important}
 .je-actions-card .je-hide-btn{top:calc(var(--je-title-menu-top,6px) + 50px)}.je-card-more{position:absolute;top:var(--je-title-menu-top,6px);right:6px;width:44px;height:44px;display:flex!important;align-items:center;justify-content:center;border:0;border-radius:22px;background:#1c1c1ce6;color:white;z-index:11;cursor:pointer}.je-actions-card{position:relative}
 .je-actions-link{box-sizing:border-box;width:100%;padding:12px;background:#101010;color:white;border:1px solid #555}
-@media(max-width:600px){.detailRibbon.je-actions-ribbon{padding-left:16px!important;padding-right:16px!important;flex-direction:column;align-items:stretch}.detailRibbon.je-actions-ribbon>.infoWrapper{width:100%;flex:none;min-width:0}.detailRibbon.je-actions-ribbon .mainDetailButtons{flex:none}.je-actions-backdrop{align-items:flex-end}.je-actions-sheet{border-radius:20px 20px 0 0;max-height:94dvh;padding-bottom:max(20px,env(safe-area-inset-bottom))}}
-@media(max-width:600px){
-.je-actions-phone-page>.detailPageWrapperContainer{display:block;margin-top:-56px!important}
-.je-actions-phone-page .detailPagePrimaryContainer{display:grid!important;grid-template-columns:112px minmax(0,1fr);gap:20px 16px;padding:0 16px!important;box-sizing:border-box;width:100%}
-.je-actions-phone-page .detailImageContainer{grid-column:1;grid-row:1;width:112px!important;height:168px!important;margin:0!important;padding:0!important;display:block!important}
-.je-actions-phone-page .detailImageContainer>.card{width:112px!important;max-width:none!important;margin:0!important;left:0!important;top:0!important}
-.je-actions-phone-page .detailRibbon.je-actions-ribbon{display:contents!important;height:auto!important;margin:0!important;padding:0!important}
-.je-actions-phone-page .detailRibbon.je-actions-ribbon>.infoWrapper{grid-column:2;grid-row:1;align-self:start;padding-top:64px;width:auto!important;min-width:0;overflow:hidden}
-.je-actions-phone-page .infoWrapper .itemName{font-size:24px!important;line-height:1.2;white-space:normal!important;text-overflow:clip}
-.je-actions-phone-page .infoWrapper .originalTitle{font-size:14px!important;white-space:normal!important}
-.je-actions-phone-page .infoWrapper .miscInfo{display:flex;flex-wrap:wrap;gap:6px}
-.je-actions-phone-page .mainDetailButtons.je-actions-compact{grid-column:1/-1;grid-row:2;margin:0!important;max-width:100%!important}
-.je-actions-phone-page .detailPagePrimaryContent{grid-column:1/-1;grid-row:3;margin:0!important;padding:0!important;width:100%!important;min-width:0}
-}
-@media(max-width:600px){.je-actions-phone-page .infoWrapper>.detailImageContainer{display:none!important}.je-actions-phone-page .infoWrapper .itemMiscInfo{display:flex;flex-wrap:wrap;gap:6px}}
-@media(max-width:360px){.je-actions-row .je-actions-primary{padding:0 6px;gap:4px}.je-actions-row .je-actions-primary>.material-icons{font-size:20px}.je-more-info-modal .je-actions-row .je-actions-primary{padding:0 3px}}
+@media(max-width:600px){.je-actions-backdrop{align-items:flex-end}.je-actions-sheet{border-radius:20px 20px 0 0;max-height:94dvh;padding-bottom:max(20px,env(safe-area-inset-bottom))}}
+@media(max-width:600px){.layout-desktop .detailRibbon.je-actions-ribbon{flex-direction:column;align-items:stretch;height:auto!important;padding-left:16px!important;padding-right:16px!important}.layout-desktop .detailRibbon.je-actions-ribbon>.infoWrapper{width:auto;min-width:0}}
+@media(max-width:360px){.je-actions-row{gap:8px}.je-actions-row button{height:48px;min-width:48px;width:48px;flex-basis:48px;border-radius:24px}.je-actions-row .je-actions-primary{padding:0 6px;gap:4px}.je-actions-row .je-actions-primary>.material-icons{font-size:20px}.je-more-info-modal .je-actions-row .je-actions-primary{padding:0 3px}}
+.je-actions-row.je-actions-fit-1>.je-actions-report{display:none!important}.je-actions-row.je-actions-fit-2 .je-actions-primary-label{white-space:normal;text-overflow:clip;overflow-wrap:break-word;font-size:14px;line-height:1.1;text-align:center}
 .je-more-info-modal .header-section.je-actions-modal-header{flex-wrap:wrap}.je-more-info-modal .je-actions-modal-header>.je-more-info-actions{flex:0 0 100%;width:100%;max-width:100%!important;margin:0}
 .layout-tv .je-actions-sheet{max-height:95dvh;width:min(680px,100%)}.layout-tv .je-actions-entry{min-height:60px}
 `;
@@ -74,6 +62,11 @@
         }
     }
 
+    /** Closes one particular sheet if it is still the open one (a later sheet is left alone). */
+    function closeLease(lease, restore = true) {
+        if (current?.lease === lease) close(restore);
+    }
+
     /** Synchronizes labels and state from original native/JE controls, including issue counts. */
     function sync(entry, button) {
         const source = entry.source || entry.control;
@@ -94,9 +87,10 @@
     }
 
     /**
-     * Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. Its
-     * actions belong to the sheet's generation: this session and route, while the sheet is open and
-     * its owning host (a row or card, `owner.current()`) is still mounted.
+     * Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. The sheet
+     * is the OFFER: a press counts only while it is open, its session and route are current and its
+     * owning host (a row or card, `owner.current()`) is still mounted. The press starts an OPERATION
+     * owned by the session, the route and that host, so it outlives the sheet (D53).
      */
     function show(c, entries, opener = document.activeElement, owner = null) {
         close(false); styles();
@@ -119,22 +113,19 @@
             for (const entry of rows) {
                 const button = el('button', 'je-actions-entry'); button.type = 'button'; button.dataset.action = entry.id;
                 const label = el('span', 'je-actions-entry-label'); label.append(document.createTextNode(entry.label || ''));
-                const owner = entry.source || entry.control;
-                const disabled = entry.disabled || owner?.disabled || owner?.getAttribute('aria-disabled') === 'true';
-                const reason = entry.reason || owner?.dataset.jeActionReason || owner?.title;
+                const control = entry.source || entry.control;
+                const disabled = entry.disabled || control?.disabled || control?.getAttribute('aria-disabled') === 'true';
+                const reason = entry.reason || control?.dataset.jeActionReason || control?.title;
                 if (reason && disabled) label.append(el('span', 'je-actions-reason', reason));
                 button.append(icon(entry.icon), label, el('span', 'je-actions-state'));
                 if (entry.control) { entry.control.classList.add('je-actions-control'); sheet.append(entry.control); }
                 sync(entry, button); pairs.push([entry, button]);
                 button.onclick = async () => {
                     if (!action.current() || button.disabled) return;
-                    const source = entry.source || entry.control;
+                    const operation = A.generation(() => owner?.current?.() !== false);
                     // Close before opening the owner's modal; that modal owns focus from this point.
-                    try {
-                        const pending = A.invoke(c, { ...entry, ...(source ? { source } : {}), valid: () => lease.open, beforeRun: () => close() }, opener, action);
-                        await pending;
-                    }
-                    catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
+                    try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
+                    catch (_) { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); }
                 };
                 sheet.append(button);
             }
@@ -144,7 +135,7 @@
         inert.forEach(([n]) => { n.inert = true; });
         document.body.append(backdrop);
         pairs.forEach(([entry]) => {
-            if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(entry.control, c.tmdbId, c.type);
+            if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(entry.control, c.tmdbId, c.type, action.current);
         });
         const observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button)));
         pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) observer.observe(source, { subtree: true, childList: true, attributes: true }); });

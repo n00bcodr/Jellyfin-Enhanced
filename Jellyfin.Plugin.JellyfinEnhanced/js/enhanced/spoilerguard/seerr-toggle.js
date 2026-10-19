@@ -76,17 +76,17 @@
             event.stopPropagation();
             if (button.disabled || !viewAction.current()) return;
             button.disabled = true;
-            const action = JE.createSessionAction();
+            const action = JE.createSessionAction({ submitted: true });
             const wasEnabled = current();
             void (async function() {
                 try {
                     if (wasEnabled) {
                         if (!await internal.confirmDisableSpoiler()) return;
                         if (!action.current()) return;
-                        await internal.disableForTmdb(mediaType, tmdbId);
+                        await JE.runSubmitted(action, () => internal.disableForTmdb(mediaType, tmdbId));
                         if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
-                        await internal.enableForTmdb(mediaType, tmdbId, displayName);
+                        await JE.runSubmitted(action, () => internal.enableForTmdb(mediaType, tmdbId, displayName));
                         if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
                 } catch (e) {
