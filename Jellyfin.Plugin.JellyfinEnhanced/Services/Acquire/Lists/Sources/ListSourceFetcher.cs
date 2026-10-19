@@ -784,7 +784,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             _ => SourceRow.Malformed,
         };
 
-        // A TMDB row: a movie or show with its id; a person is a counted exclusion where the endpoint mixes types (a list,
+        // A TMDB row: a movie or show with its id; an adult title is a counted exclusion, and so is a person where the
+        // endpoint mixes types (a list,
         // trending "all"); a row of a chart, trending window or collection of one type takes that type when it doesn't
         // declare one, and any other declared type there is malformed; an unknown type, a missing one where types mix, or
         // a movie or show without an id, is malformed.
@@ -799,6 +800,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             if (Unkeyed(kind) is { } unkeyed)
             {
                 return unkeyed;
+            }
+
+            // An adult title is never imported (the title lookups drop them too): a counted exclusion, never a key.
+            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
+            {
+                return SourceRow.Excluded();
             }
 
             var id = Int(element, "id");
@@ -824,6 +831,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             if (Unkeyed(kind) is { } unkeyed)
             {
                 return unkeyed;
+            }
+
+            // An adult title is never imported (the title lookups drop them too): a counted exclusion, never a key.
+            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
+            {
+                return SourceRow.Excluded();
             }
 
             var id = Int(element, "id");

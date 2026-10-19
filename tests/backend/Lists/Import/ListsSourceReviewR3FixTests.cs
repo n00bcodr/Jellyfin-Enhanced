@@ -306,6 +306,8 @@ public class ListsSourceReviewR3FixTests
         var traktRow = 0;
         string TraktValid(int id) => TraktRowOf(900 + Interlocked.Increment(ref traktRow), id);
 
+        string TmdbAdult(int id) => "{\"id\":" + id + ",\"media_type\":\"movie\",\"adult\":true,\"title\":\"A\",\"release_date\":\"2001-01-01\"}";
+        string SeerrAdult(int id) => "{\"id\":" + id + ",\"mediaType\":\"movie\",\"adult\":true,\"title\":\"A\",\"releaseDate\":\"2001-01-01\"}";
         string TmdbPerson(int id) => "{\"id\":" + id + ",\"media_type\":\"person\",\"name\":\"P\"}";
         string TmdbUnknown(int id) => "{\"id\":" + id + ",\"media_type\":\"collection\",\"name\":\"C\"}";
         string TmdbUntyped(int id) => "{\"id\":" + id + ",\"title\":\"M" + id + "\",\"release_date\":\"2001-01-01\"}";
@@ -330,22 +332,22 @@ public class ListsSourceReviewR3FixTests
         }
 
         yield return new("tmdb list", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"name\":\"L\",\"total_pages\":1,\"item_count\":" + rows.Length + ",\"items\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/list/7", null); },
-            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbPerson,
+            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
             Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped);
         yield return new("tmdb trending", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/trending/all/week"] = _ => Json("{\"page\":1,\"total_pages\":1,\"total_results\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/trending/all/week", null); },
-            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbPerson,
+            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
             Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped);
         yield return new("tmdb chart", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/movie/popular"] = _ => Json("{\"page\":1,\"total_pages\":1,\"total_results\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/movie", null); },
-            TmdbUntyped, "{\"title\":\"No id\"}", null,
+            TmdbUntyped, "{\"title\":\"No id\"}", TmdbAdult,
             Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow);
         yield return new("tmdb collection", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/collection/10", null); },
-            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", null,
+            TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
             Explicit: TmdbPerson, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Infers: true, Changed: TmdbShow);
         yield return new("seerr trending", (net, rows) => { SeerrOnly(net); net.Routes["http://seerr.test/api/v1/discover/trending"] = _ => Json("{\"page\":1,\"totalPages\":1,\"totalResults\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/trending/all/week", null); },
-            SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", SeerrPerson,
+            SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", SeerrAdult,
             Explicit: SeerrPerson, Excludes: true, Unknown: SeerrUnknown, Untyped: SeerrUntyped);
         yield return new("seerr collection", (net, rows) => { SeerrOnly(net); net.Routes["http://seerr.test/api/v1/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/collection/10", null); },
-            SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", null,
+            SeerrRowOf, "{\"mediaType\":\"movie\",\"title\":\"No id\"}", SeerrAdult,
             Explicit: SeerrPerson, Unknown: SeerrUnknown, Untyped: SeerrUntyped, Infers: true, Changed: SeerrShow);
         yield return new("trakt list", (net, rows) => { Trakt(net).Routes["https://api.trakt.tv/users/me/lists/mine/items/movie,show,season,episode"] = _ => TraktAnswer(rows); return ("https://trakt.tv/users/me/lists/mine", null); },
             TraktValid, "{\"id\":899,\"type\":\"movie\",\"movie\":{\"title\":\"No ids\",\"ids\":{\"trakt\":5}}}", _ => "{\"id\":898,\"type\":\"person\",\"person\":{\"name\":\"P\",\"ids\":{\"trakt\":5}}}",
