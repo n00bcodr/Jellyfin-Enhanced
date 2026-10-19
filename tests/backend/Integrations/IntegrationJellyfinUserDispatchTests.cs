@@ -954,6 +954,302 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.Equal(1, disabled());
     }
 
+    // 4a review round 17 (4a-behaviour-r17-1): invoking a delegate is an edge of its own, judged by where the delegate came
+    // from (its provenance), not only by a delegate FIELD being loaded. Round 16 followed a delegate made in the body or loaded
+    // from a field; one handed in as a parameter, kept in a local or returned by a call reached nothing (Key None while the
+    // runtime disables the person). Now: a parameter is what the callers hand it, and nothing visible hands it (DI, model
+    // binding, a caller outside the code read) makes it an unresolved callback, judged by its delegate type (round 11); a
+    // local is what was stored in it; a call's result is what the callee returns (a pass-through returns what its caller
+    // handed it); a delegate handed to code outside the code read (Task.Run) may be invoked there; DynamicInvoke and a
+    // method group of Invoke run it too; an array element or a cast from object is what was stored in it. The stated limit
+    // (pinned below): a generic parameter's field of a type outside the code read (a tuple's item) is followed only to what
+    // the code read stores there (round 17's generic `T` limit); treating it as unknown bracketed Jellyfin 12.2's and
+    // 10.11.11's CreateBackup for lambdas the action makes itself. The controls: a
+    // parameter every caller fills with a harmless lambda, a pass-through of a harmless method, and a GET (round 11: no
+    // bracket for callbacks on a GET).
+    private const string InvocationProbes = Usings + """
+
+        public static class Quiet { public static Task Nothing() => Task.CompletedTask; }
+        public static class Helpers {
+          public static Task Run(Func<Task> work) => work();
+          public static Func<Task> Same(Func<Task> work) => work;
+        }
+        public sealed class ParameterCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => callback();
+          [HttpGet] public Task Peek(Guid userId, [FromServices] Func<Task> callback) => callback();
+        }
+        public sealed class ArgumentCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Guid, Task> apply) => apply(userId);
+        }
+        public sealed class LocalCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) {
+            Func<Task> next = Quiet.Nothing;
+            if (userId != Guid.Empty) next = callback;
+            return next();
+          }
+        }
+        public sealed class ForwardedCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => Helpers.Run(callback);
+        }
+        public sealed class ReturnedCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => Helpers.Same(callback)();
+        }
+        public sealed class OutsideCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => Task.Run(callback);
+        }
+        public sealed class DynamicCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => (Task)callback.DynamicInvoke()!;
+        }
+        public sealed class MethodGroupCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) { Func<Task> again = callback.Invoke; return again(); }
+        }
+        public sealed class ArrayCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) { var all = new[] { callback }; return all[0](); }
+        }
+        public sealed class ObjectCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) { object held = callback; return ((Func<Task>)held)(); }
+        }
+        public sealed class GenericCallbackController : ControllerBase {
+          private static T Same<T>(T value) => value;
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => Same(callback)();
+        }
+        public sealed class TupleCallbackController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) { var pair = (callback, 1); return pair.Item1(); }
+        }
+        public sealed class ResolvedParameterController : ControllerBase {
+          [HttpPost] public Task Note(Guid userId) => Helpers.Run(() => Task.CompletedTask);
+        }
+        public sealed class ReturnedResolvedController : ControllerBase {
+          [HttpPost] public Task Note(Guid userId) => Helpers.Same(Quiet.Nothing)();
+        }
+        """;
+
+    [Theory]
+    [InlineData("ParameterCallbackController", "unresolved callback ")]
+    [InlineData("ArgumentCallbackController", "unresolved ")]
+    [InlineData("LocalCallbackController", "unresolved callback ")]
+    [InlineData("ForwardedCallbackController", "unresolved callback ")]
+    [InlineData("ReturnedCallbackController", "unresolved callback ")]
+    [InlineData("OutsideCallbackController", "unresolved callback ")]
+    [InlineData("DynamicCallbackController", "unresolved callback ")]
+    [InlineData("MethodGroupCallbackController", "unresolved callback ")]
+    [InlineData("ArrayCallbackController", "unresolved callback ")]
+    [InlineData("ObjectCallbackController", "unresolved callback ")]
+    [InlineData("GenericCallbackController", "unresolved callback ")]
+    public void ADelegateInvokedIsJudgedByWhereItCameFrom(string controller, string why)
+    {
+        using var probe = Probe.Build(("InvocationProbe", InvocationProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("InvocationProbe")), controller, "Disable");
+        Assert.NotEqual(JellyfinUserKey.None, found.Key);
+        Assert.StartsWith(why, found.Why, StringComparison.Ordinal);
+        // A Func<Guid, Task> can carry a user id (round 10): everyone's. A Func<Task> carries none (round 11): the person's.
+        Assert.Equal(why == "unresolved " ? JellyfinUserKey.Global : JellyfinUserKey.User, found.Key);
+    }
+
+    [Theory]
+    [InlineData("ParameterCallbackController", "Peek")]
+    [InlineData("ResolvedParameterController", "Note")]
+    [InlineData("ReturnedResolvedController", "Note")]
+    // The stated limit, pinned so a change to it is deliberate (the probe really disables the person; Known limits).
+    [InlineData("TupleCallbackController", "Disable")]
+    public void ADelegateWhoseSourceIsKnownAndHarmlessOrAGetStaysUnbracketed(string controller, string action)
+    {
+        using var probe = Probe.Build(("InvocationProbe", InvocationProbes, Array.Empty<string>()));
+        Assert.Equal(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("InvocationProbe")), controller, action).Key);
+    }
+
+    // Run for real: each one disables the person once with the closure DI hands in (the stated limit's included: the scan
+    // says None for it); the controls disable nobody.
+    [Theory]
+    [InlineData("ParameterCallbackController", "Disable", 1, true)]
+    [InlineData("ArgumentCallbackController", "Disable", 1, true)]
+    [InlineData("LocalCallbackController", "Disable", 1, true)]
+    [InlineData("ForwardedCallbackController", "Disable", 1, true)]
+    [InlineData("ReturnedCallbackController", "Disable", 1, true)]
+    [InlineData("OutsideCallbackController", "Disable", 1, true)]
+    [InlineData("DynamicCallbackController", "Disable", 1, true)]
+    [InlineData("MethodGroupCallbackController", "Disable", 1, true)]
+    [InlineData("ArrayCallbackController", "Disable", 1, true)]
+    [InlineData("ObjectCallbackController", "Disable", 1, true)]
+    [InlineData("GenericCallbackController", "Disable", 1, true)]
+    [InlineData("TupleCallbackController", "Disable", 1, false)]
+    [InlineData("ResolvedParameterController", "Note", 0, false)]
+    [InlineData("ReturnedResolvedController", "Note", 0, false)]
+    public async Task TheInvocationProbesReallyDoWhatTheScanSays(string controller, string action, int disables, bool bracketed)
+    {
+        using var probe = Probe.Build(("InvocationProbe", InvocationProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var instance = Activator.CreateInstance(probe.Load("InvocationProbe").GetType(controller)!)!;
+        Func<Task> closure = () => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true });
+        Func<Guid, Task> apply = id => users.UpdatePolicyAsync(id, new UserPolicy { IsDisabled = true });
+        object[] args = controller switch
+        {
+            "ArgumentCallbackController" => new object[] { person, apply },
+            _ when action == "Disable" => new object[] { person, closure },
+            _ => new object[] { person },
+        };
+        await (Task)instance.GetType().GetMethod(action)!.Invoke(instance, args)!;
+        Assert.Equal(disables, disabled());
+        Assert.Equal(bracketed, Find(JellyfinUserActions.Scan(probe.Path("InvocationProbe")), controller, action).Key != JellyfinUserKey.None);
+    }
+
+    // 4a review round 17 (4a-behaviour-r17-2): a caller-graph cycle keeps "handed in". Round 16's Callers() returned an
+    // empty list on meeting a method already on the path, so a group of forwarding methods that no code outside the
+    // group calls (here reached by reflection or DI, as in the reviewer's probe) read as "nothing handed": Key None while
+    // the runtime disables the person. A cycle contributes only what some path out of it resolves; when no path leaves it
+    // to a maker, the delegate is handed in from outside (an unresolved callback). The controls: a cycle whose way out is
+    // a maker in the code read resolves to that maker (a harmless one: None; a disabling one: the change), and a cycle
+    // entered from an action that passes its own parameter is handed in through that action.
+    private const string CycleProbes = Usings + """
+
+        public class CallbackService {
+          private readonly Func<Task> _callback;
+          public CallbackService(Func<Task> callback) { _callback = callback; }
+          public static CallbackService Create(Func<Task> callback, int levels) => levels > 0 ? Create(callback, levels - 1) : new CallbackService(callback);
+          public Task Run() => _callback();
+        }
+        public sealed class RecursiveCallbackController(CallbackService service) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => service.Run();
+        }
+        public class PingPongService {
+          private readonly Func<Task> _callback;
+          private PingPongService(Func<Task> callback) { _callback = callback; }
+          public static PingPongService Ping(Func<Task> callback, int levels) => levels > 0 ? Pong(callback, levels - 1) : new PingPongService(callback);
+          public static PingPongService Pong(Func<Task> callback, int levels) => Ping(callback, levels);
+          public Task Run() => _callback();
+        }
+        public sealed class MutualCallbackController(PingPongService service) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => service.Run();
+        }
+        public static class Loops {
+          public static Task Loop(Func<Task> callback, int levels) => levels > 0 ? Loop(callback, levels - 1) : callback();
+        }
+        public sealed class DelegatedLoopController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) { Func<Func<Task>, int, Task> loop = Loops.Loop; return loop(callback, 3); }
+        }
+        public class QuietService {
+          private readonly Func<Task> _callback;
+          private QuietService(Func<Task> callback) { _callback = callback; }
+          public static QuietService Create(Func<Task> callback, int levels) => levels > 0 ? Create(callback, levels - 1) : new QuietService(callback);
+          public static QuietService Quiet(int levels) => Create(() => Task.CompletedTask, levels);
+          public Task Run() => _callback();
+        }
+        public sealed class QuietCycleController(QuietService service) : ControllerBase {
+          [HttpPost] public Task Note(Guid userId) => service.Run();
+        }
+        public class ArmedService {
+          private readonly Func<Task> _callback;
+          private ArmedService(Func<Task> callback) { _callback = callback; }
+          public static ArmedService Create(Func<Task> callback, int levels) => levels > 0 ? Create(callback, levels - 1) : new ArmedService(callback);
+          public static ArmedService Armed(IUserManager users, Guid person, int levels) => Create(() => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }), levels);
+          public Task Run() => _callback();
+        }
+        public sealed class ArmedCycleController(ArmedService service) : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId) => service.Run();
+        }
+        public class EnteredService {
+          private readonly Func<Task> _callback;
+          private EnteredService(Func<Task> callback) { _callback = callback; }
+          public static EnteredService Create(Func<Task> callback, int levels) => levels > 0 ? Create(callback, levels - 1) : new EnteredService(callback);
+          public Task Run() => _callback();
+        }
+        public sealed class EnteredCycleController : ControllerBase {
+          [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> callback) => EnteredService.Create(callback, 3).Run();
+        }
+        """;
+
+    [Theory]
+    [InlineData("RecursiveCallbackController", "Disable", "unresolved callback ")]
+    [InlineData("MutualCallbackController", "Disable", "unresolved callback ")]
+    [InlineData("DelegatedLoopController", "Disable", "unresolved callback ")]
+    [InlineData("EnteredCycleController", "Disable", "unresolved callback ")]
+    [InlineData("ArmedCycleController", "Disable", "reaches IUserManager.UpdatePolicyAsync")]
+    [InlineData("QuietCycleController", "Note", null)]
+    public void ACallerCycleKeepsHandedIn(string controller, string action, string? why)
+    {
+        using var probe = Probe.Build(("CycleProbe", CycleProbes, Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("CycleProbe")), controller, action);
+        if (why == null)
+        {
+            Assert.Equal(JellyfinUserKey.None, found.Key);
+            return;
+        }
+
+        Assert.StartsWith(why, found.Why, StringComparison.Ordinal);
+        Assert.NotEqual(JellyfinUserKey.None, found.Key);
+    }
+
+    // Run for real: the reviewer's shape (the service made by reflection, as DI would) and the others disable the person
+    // once; the quiet cycle disables nobody.
+    [Theory]
+    [InlineData("RecursiveCallbackController", "CallbackService", 1)]
+    [InlineData("MutualCallbackController", "PingPongService", 1)]
+    [InlineData("DelegatedLoopController", null, 1)]
+    [InlineData("EnteredCycleController", null, 1)]
+    [InlineData("ArmedCycleController", "ArmedService", 1)]
+    [InlineData("QuietCycleController", "QuietService", 0)]
+    public async Task TheCycleProbesReallyDoWhatTheScanSays(string controller, string? service, int disables)
+    {
+        using var probe = Probe.Build(("CycleProbe", CycleProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("CycleProbe");
+        Func<Task> closure = () => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true });
+        object instance;
+        object[] args;
+        if (service == null)
+        {
+            instance = Activator.CreateInstance(assembly.GetType(controller)!)!;
+            args = new object[] { person, closure };
+        }
+        else
+        {
+            var type = assembly.GetType(service)!;
+            var made = service switch
+            {
+                "PingPongService" => type.GetMethod("Ping")!.Invoke(null, new object[] { closure, 3 }),
+                "QuietService" => type.GetMethod("Quiet")!.Invoke(null, new object[] { 3 }),
+                "ArmedService" => type.GetMethod("Armed")!.Invoke(null, new object[] { users, person, 3 }),
+                _ => type.GetMethod("Create")!.Invoke(null, new object[] { closure, 3 }),
+            };
+            instance = Activator.CreateInstance(assembly.GetType(controller)!, made)!;
+            args = new object[] { person };
+        }
+
+        var action = controller == "QuietCycleController" ? "Note" : "Disable";
+        Assert.Equal(0, disabled());
+        await (Task)instance.GetType().GetMethod(action)!.Invoke(instance, args)!;
+        Assert.Equal(disables, disabled());
+        Assert.Equal(disables > 0, Find(JellyfinUserActions.Scan(probe.Path("CycleProbe")), controller, action).Key != JellyfinUserKey.None);
+    }
+
+    // Round 17: a body whose stack the reading can't follow (here a backward branch carrying a value, which C# never emits
+    // and Jellyfin has none of) records only unknowns: the delegate it invokes is an unresolved callback of unknown origin,
+    // not the parameter the stack would otherwise show. Emitted directly (Roslyn can't write such IL); only read, never run.
+    [Fact]
+    public void ABodyTheStackCantFollowFailsClosed()
+    {
+        using var probe = Probe.Build();
+        var assembly = new System.Reflection.Emit.PersistedAssemblyBuilder(new System.Reflection.AssemblyName("BrokenProbe"), typeof(object).Assembly);
+        var type = assembly.DefineDynamicModule("BrokenProbe").DefineType("BrokenController", System.Reflection.TypeAttributes.Public | System.Reflection.TypeAttributes.Sealed, typeof(Microsoft.AspNetCore.Mvc.ControllerBase));
+        var method = type.DefineMethod("Disable", System.Reflection.MethodAttributes.Public, typeof(Task), new[] { typeof(Guid), typeof(Func<Task>) });
+        method.SetCustomAttribute(new System.Reflection.Emit.CustomAttributeBuilder(typeof(Microsoft.AspNetCore.Mvc.HttpPostAttribute).GetConstructor(Type.EmptyTypes)!, Array.Empty<object>()));
+        var il = method.GetILGenerator();
+        var top = il.DefineLabel();
+        il.MarkLabel(top);
+        il.Emit(System.Reflection.Emit.OpCodes.Ldarg_2);
+        il.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_0);
+        il.Emit(System.Reflection.Emit.OpCodes.Brtrue, top);
+        il.Emit(System.Reflection.Emit.OpCodes.Callvirt, typeof(Func<Task>).GetMethod("Invoke")!);
+        il.Emit(System.Reflection.Emit.OpCodes.Ret);
+        type.CreateType();
+        assembly.Save(probe.Path("BrokenProbe"));
+        var found = Find(JellyfinUserActions.Scan(probe.Path("BrokenProbe")), "BrokenController", "Disable");
+        Assert.Equal(JellyfinUserKey.User, found.Key);
+        Assert.StartsWith("unresolved callback Func<Task> of unknown origin in BrokenController.Disable", found.Why, StringComparison.Ordinal);
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a

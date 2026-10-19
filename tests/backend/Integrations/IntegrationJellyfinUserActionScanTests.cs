@@ -78,8 +78,13 @@ namespace JE.Tests
             var reached = JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession");
             Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, reached.Where(r => !r.StartsWith("callback ", StringComparison.Ordinal)));
             // Round 11: the plugin event handlers its session code can raise (unresolved callbacks) bracket that same person,
-            // as the review does; nothing else.
-            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.StartsWith("callback delegate ", r, StringComparison.Ordinal));
+            // as the review does; nothing else. Round 17 (a delegate invoked is judged by where it came from): on 12.2 also
+            // the provider-id validator ProviderIdsExtensions.IsValidProviderId runs, taken from a dictionary by TryGetValue
+            // (the reading doesn't follow a collection's values). Reviewed (12.2 MediaBrowser.Model, decompiled): the
+            // dictionary is private, static and read-only, filled only by its initializer with the IMDb regex, positive-number
+            // and GUID checks. A callback, so the same person.
+            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.True(
+                r.StartsWith("callback delegate ", StringComparison.Ordinal) || r == "callback Func<String,Boolean> of unknown origin in ProviderIdsExtensions.IsValidProviderId", r));
             Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 

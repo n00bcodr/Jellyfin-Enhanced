@@ -1395,9 +1395,13 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
 - Every action of Jellyfin's own server code that reaches a user change or a sign-in runs inside the check's bracket,
   whichever way the compiled code hands control on: a direct call; a virtual or interface call (static interface members
   included) to every implementation and override (sealed, covariant-return and explicit ones, whatever the replacing
-  method is called); a delegate or function pointer to what was stored in it, events Jellyfin's own code subscribes to
-  included; and the static constructors and module initializers the runtime runs on a type's or module's first use. An
-  indirect call through a pointer, and a callback the reading can't see into, count as a possible change. For each
+  method is called), interfaces and base classes .NET itself declares included (a progress report, an observer, a
+  hand-written enumerator); a delegate or function pointer, judged by where it came from: what was stored in it (events
+  Jellyfin's own code subscribes to included), what the callers handed the method that runs it, what the call that gave
+  it back returns, what a local or an array held; a delegate handed to .NET code that may run it (`Task.Run`); and the
+  static constructors and module initializers the runtime runs on a type's or module's first use. An indirect call
+  through a pointer, and a callback the reading can't see into (one handed in from outside Jellyfin's code, one taken
+  out of a collection, one whose source it can't follow), count as a possible change. For each
   supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
   newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
   has been reviewed.
@@ -1408,6 +1412,19 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
   from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 and 89 actions, among them starting
   playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
   in the household whenever anyone did one of those.
+
+Three shapes the reading deliberately doesn't follow, because following them would bracket ordinary actions (playback,
+display preferences, backups) for nothing; Jellyfin's own code changes no user through them, and the tests pin each one:
+
+- Disposal, finalizers, and an object's text, equality and hash code, when called through a type .NET declares
+  (`IDisposable`, `object`): a `using` can't tell which object it disposes, so following it reached every disposal in
+  Jellyfin.
+- The code of an async method or an iterator counts where it is created: a lazy sequence one action creates and
+  another enumerates counts for the action that created it.
+- A delegate kept in a field typed by a generic parameter (a `Slot<T>`, a tuple's item) is followed to what Jellyfin's
+  code stores there; one stored there from outside that code isn't.
+
+A user change made through one of them is covered afterwards, as below.
 
 What reading the code can't see: code found by reflection or created while the server runs, a service looked up by name
 at run time, and code outside Jellyfin's server (another plugin's own code, another process). A user change made there
