@@ -395,6 +395,8 @@ Two different caches are involved, refreshed independently:
 
 The plugin reads your account's actual remaining quota live from MDBList (`GET /user`) rather than guessing - this call doesn't itself count against the limit, so it's checked freely (e.g. every time the config page loads, or every few minutes internally). There's nothing to manually configure for the daily limit itself; it's always read from your real account, so it stays correct if you upgrade your MDBList plan.
 
+Every request that counts against the quota (a title's ratings, a batch of the Fetch task, a list read through MDBList's API) takes its request from the remaining count before it is sent, in one step, so requests made at the same time can't both pass the check. Lookups stop at a safety margin of 5 remaining requests, and the Fetch task's batches at the **Fetch Task Reserve**.
+
 ---
 
 ## Hidden Content

@@ -60,16 +60,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             private readonly ImportCallContext _context;
             private readonly ConcurrentDictionary<string, Lazy<Task<CompletedIdentity?>>> _completed = new(StringComparer.Ordinal);
             private readonly ConcurrentDictionary<string, bool> _beyond = new(StringComparer.Ordinal);
+            private readonly SemaphoreSlim? _lookups;
 
             /// <summary>Creates the step.</summary>
             /// <param name="physical">The library reader (null: nothing is held anywhere, so the ids at hand are complete).</param>
             /// <param name="lookup">The title lookup (null: an identity that needs completing can't be completed).</param>
             /// <param name="context">The call's lookup context.</param>
-            public Completion(IImportPhysicalTitles? physical, IImportLookup? lookup, ImportCallContext context)
+            /// <param name="maxLookups">Completions looking titles up at once (0: no bound of its own; every lookup still
+            /// takes its turn at the shared metadata limiter).</param>
+            public Completion(IImportPhysicalTitles? physical, IImportLookup? lookup, ImportCallContext context, int maxLookups = 0)
             {
                 _physical = physical;
                 _lookup = lookup;
                 _context = context;
+                _lookups = maxLookups > 0 ? new SemaphoreSlim(maxLookups, maxLookups) : null;
             }
 
             /// <summary>The completed identity; null when it needed completing and the lookup failed (the caller retries or leaves the entry out).</summary>
@@ -94,8 +98,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     return new CompletedIdentity(identity); // every copy of this kind carries one of the ids at hand
                 }
 
-                var completed = await LookupAsync(identity, cancellationToken).ConfigureAwait(false);
-                return completed == null ? null : new CompletedIdentity(completed);
+                if (_lookups != null)
+                {
+                    await _lookups.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                try
+                {
+                    var completed = await LookupAsync(identity, cancellationToken).ConfigureAwait(false);
+                    return completed == null ? null : new CompletedIdentity(completed);
+                }
+                finally
+                {
+                    _lookups?.Release();
+                }
             }
 
             private async Task<ImportIdentity?> LookupAsync(ImportIdentity identity, CancellationToken cancellationToken)

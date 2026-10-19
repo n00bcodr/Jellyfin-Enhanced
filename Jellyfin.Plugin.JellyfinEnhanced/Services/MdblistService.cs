@@ -203,9 +203,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="readStatus">Reads the account status (MDBList's /user) through the caller's transport.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>True when one request was reserved.</returns>
-        public async Task<bool> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
+        public Task<bool> TryReserveListRequestAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(readStatus);
+            return ReserveAsync(readStatus, SafetyMargin, cancellationToken);
+        }
+
+        // THE reservation of the quota (review round 4, 4c2-R4-1; D53 rule 1 over every request that spends it): list reads,
+        // ratings lookups and media batches each take one request here BEFORE they send, checked against the balance as
+        // it is now and charged in the same step, so two spenders can never both pass a check the first one's charge
+        // would have failed. A request refused or failed after its reservation stays charged (the safe side). A status
+        // that isn't fresh is read first by `readStatus` (one refresh at a time); an unknown status fails open.
+        private async Task<bool> ReserveAsync(Func<CancellationToken, Task<MdblistAccountStatus?>> readStatus, int floor, CancellationToken cancellationToken)
+        {
             if (FreshStatus() == null)
             {
                 // Single flight: one refresh at a time; a caller that waited takes the status the refresh before it read.
@@ -231,7 +241,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_accountStatusLock)
             {
                 var current = FreshLocked();
-                if (current != null && current.RateLimitRemaining <= SafetyMargin)
+                if (current != null && current.RateLimitRemaining <= Math.Max(SafetyMargin, floor))
                 {
                     return false;
                 }
@@ -358,22 +368,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var issuedAt = Consumed();
-                var client = _httpClientFactory.CreateClient();
-                client.Timeout = RequestTimeout;
-
-                var url = $"{ApiBase}/user?apikey={Uri.EscapeDataString(apiKey)}";
-                using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.Warning($"[MDBList] Account status query failed ({(int)response.StatusCode})");
-                    return null;
-                }
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-                var status = StatusOf(doc.RootElement);
-
-                if (!testingOverride)
+                var status = await ReadStatusAsync(apiKey, cancellationToken).ConfigureAwait(false);
+                if (status != null && !testingOverride)
                 {
                     Hold(status, issuedAt);
                 }
@@ -393,6 +389,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        // MDBList's GET /user (doesn't count against the quota) with this service's client: the status, or null when the
+        // answer isn't one. The caller holds the single-flight refresh and keeps the answer with Hold.
+        private async Task<MdblistAccountStatus?> ReadStatusAsync(string apiKey, CancellationToken cancellationToken)
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = RequestTimeout;
+
+            var url = $"{ApiBase}/user?apikey={Uri.EscapeDataString(apiKey)}";
+            using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.Warning($"[MDBList] Account status query failed ({(int)response.StatusCode})");
+                return null;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return StatusOf(doc.RootElement);
+        }
+
+        // The ratings path's reservation: its status read is this service's own (failures are an unknown status, which
+        // fails open like it always has).
+        private Task<bool> ReserveRatingsRequestAsync(string apiKey, int floor, CancellationToken cancellationToken) =>
+            ReserveAsync(async ct =>
+            {
+                try
+                {
+                    return await ReadStatusAsync(apiKey, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"[MDBList] Failed to fetch account status: {ex.Message}");
+                    return null;
+                }
+            }, floor, cancellationToken);
+
         private async Task<MdblistCacheEntry> FetchFromMdblistAsync(string mediaType, string tmdbId, CancellationToken cancellationToken)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -402,16 +434,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
 
-            // Fail OPEN if account status is unknown (e.g. the one /user probe
-            // itself failed); a defensive check layered on top of the real
-            // request, not a hard requirement to proceed.
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status != null && status.RateLimitRemaining <= SafetyMargin)
+            // One request of the quota is reserved before the lookup is sent (review round 4, 4c2-R4-1), so a list
+            // import reserving at the same time can't spend past the margin. Fails OPEN if the account status is
+            // unknown (e.g. the one /user probe itself failed); a defensive check layered on top of the real request,
+            // not a hard requirement to proceed.
+            if (!await ReserveRatingsRequestAsync(apiKey, SafetyMargin, cancellationToken).ConfigureAwait(false))
             {
                 // Not a real "MDBList has no data" answer, so Confirmed=false
                 // retries on the short RetryTtl instead of being trusted as a
                 // negative result for NegativeTtl's much longer window.
-                _logger.Warning($"[MDBList] Only {status.RateLimitRemaining} requests remaining today, skipping lookup for {mediaType}:{tmdbId}");
+                _logger.Warning($"[MDBList] Only {RemainingQuota()} requests remaining today, skipping lookup for {mediaType}:{tmdbId}");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
             }
 
@@ -423,15 +455,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 var url = $"{ApiBase}/tmdb/{mdblistType}/{tmdbId}?apikey={Uri.EscapeDataString(apiKey)}";
                 using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
-
-                // The request was made either way, so reflect that in the cached
-                // status immediately: a burst of back-to-back calls within the
-                // same AccountStatusTtl window should still throttle correctly
-                // rather than all reading the same stale "remaining" value.
-                lock (_accountStatusLock)
-                {
-                    ConsumeLocked();
-                }
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -470,17 +493,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// MDBList data, not an error). Returns null on failure (bad key,
         /// network error, quota exhausted).
         /// </summary>
-        public async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="tmdbIds">TMDB ids.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <param name="reserve">Requests to keep (the scheduled fetch's reserve; never fewer than <see cref="SafetyMargin"/>).</param>
+        /// <returns>The matched entries, or null.</returns>
+        public async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken, int reserve = 0)
         {
             if (tmdbIds == null || tmdbIds.Count == 0) return new Dictionary<string, MdblistCacheEntry>();
 
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.GetMdblistApiKey();
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
-            if (status != null && status.RateLimitRemaining <= SafetyMargin)
+            // Reserved before the batch is sent, against the larger of the margin and the caller's reserve (4c2-R4-1).
+            if (!await ReserveRatingsRequestAsync(apiKey, reserve, cancellationToken).ConfigureAwait(false))
             {
-                _logger.Warning($"[MDBList] Only {status.RateLimitRemaining} requests remaining today, skipping media batch lookup for {mediaType} ({tmdbIds.Count} ids)");
+                _logger.Warning($"[MDBList] Only {RemainingQuota()} requests remaining today, skipping media batch lookup for {mediaType} ({tmdbIds.Count} ids)");
                 return null;
             }
 
@@ -500,13 +528,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var payloadJson = JsonSerializer.Serialize(new { ids = idsAsLongs });
                 using var payload = new StringContent(payloadJson, Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync(url, payload, cancellationToken).ConfigureAwait(false);
-
-                // The request was made either way; see the matching comment in
-                // FetchFromMdblistAsync for why this decrements immediately.
-                lock (_accountStatusLock)
-                {
-                    ConsumeLocked();
-                }
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 

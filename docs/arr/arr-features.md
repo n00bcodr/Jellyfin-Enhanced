@@ -1437,12 +1437,18 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
   Guard on, overviews and episode titles of guarded titles are left out. A title, season or episode the library holds
   in a library the person can't open is never offered as missing, whichever id the library knows it by (TMDB, TVDB or
-  IMDb): when some library items lack a TMDB id, the title's other ids are looked up first.
+  IMDb): when some library items lack a TMDB id, the title's other ids are looked up first, up to 4 at a time and for
+  at most 30 seconds per list review. A title whose ids weren't found in that time is left out with the counts hidden;
+  reviewing the list again goes on from the lookups already made.
 - **Whole lists only.** A list read counts as complete only when the site itself says it ended and its page and item
-  counts add up (no empty page in the middle, no error). Anything less is shown as partial (or cut off at the
-  1000-entry cap), so nothing would ever be removed because of it.
+  counts add up (no empty page in the middle, no error). Each row's own type is checked before it counts as a title:
+  a person, game or adult title in a list that mixes types is counted and skipped; a type JE doesn't know, a missing
+  type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
+  Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
 - **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
-  for people over background work. MDBList's API is used only when an administrator chooses it for a list. Every
+  for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
+  its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so
+  imports and ratings together never go below the quota's safety margin. Every
   request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
   redirects and only at public addresses.

@@ -191,10 +191,12 @@ public class ListsSourceTransmissionScanTests
     public void TheQuotaReservationNeverReadsTheAccountStatusItself()
     {
         var code = Code(File.ReadAllText(Path.Combine(Root(), "Services", "MdblistService.cs")));
-        var reserve = Body(code, "TryReserveListRequestAsync");
+        foreach (var reserve in new[] { Body(code, "TryReserveListRequestAsync"), Body(code, "ReserveAsync") })
+        {
+            Assert.DoesNotMatch(@"CreateClient|GetAccountStatusAsync|GetAsync\s*\(|SendAsync\s*\(", reserve);
+        }
 
-        Assert.DoesNotMatch(@"CreateClient|GetAccountStatusAsync|GetAsync\s*\(|SendAsync\s*\(", reserve);
-        Assert.DoesNotMatch(@"\bvirtual\b[^;{]*TryReserveListRequestAsync", code); // tests use the real quota
+        Assert.DoesNotMatch(@"\bvirtual\b[^;{]*(?:TryReserveListRequestAsync|ReserveAsync)", code); // tests use the real quota
     }
 
     // ── Review round 3 (D53 rule 3): the final check is the last step before the bytes leave ──
@@ -255,10 +257,82 @@ public class ListsSourceTransmissionScanTests
         // a request is charged only through ConsumeLocked (which counts it).
         Assert.DoesNotMatch(@"_accountStatus\s*=[^=]", rest);
         Assert.DoesNotMatch(@"RateLimitRemaining\s*(?:=[^=>]|-=|--)", rest.Replace("RateLimitRemaining = GetNullableInt", string.Empty, StringComparison.Ordinal));
-        var reserve = Body(code, "TryReserveListRequestAsync");
+        var reserve = Body(code, "ReserveAsync");
         Assert.Matches(@"_statusRefresh\.WaitAsync", reserve); // one refresh at a time
         var locked = Body("private void L() " + reserve[reserve.LastIndexOf("lock (_accountStatusLock)", StringComparison.Ordinal)..], "L");
-        Assert.Matches(@"FreshLocked\(\)[\s\S]*RateLimitRemaining\s*<=\s*SafetyMargin[\s\S]*ConsumeLocked\(\)", locked); // checked and charged in one step
+        Assert.Matches(@"FreshLocked\(\)[\s\S]*RateLimitRemaining\s*<=\s*Math\.Max\(SafetyMargin,[\s\S]*ConsumeLocked\(\)", locked); // checked and charged in one step
+    }
+
+    // ── Review round 4 (D53 rule 1 over its whole class): every send that spends the MDBList quota reserves first ──
+
+    /// <summary>The start and length of the named method's body in blanked code (offsets match the raw source).</summary>
+    private static (int Start, int Length) BodyAt(string code, string method)
+    {
+        var body = Body(code, method);
+        var declaration = Regex.Match(code, @"(?:private|public|internal|protected)[^;{}=]*?\b" + Regex.Escape(method) + @"\s*(?:<[^>]*>)?\s*\(");
+        return (code.IndexOf(body, declaration.Index, StringComparison.Ordinal), body.Length);
+    }
+
+    [Fact]
+    public void EveryRequestThatSpendsTheMdblistQuotaReservesBeforeItIsSentAndIsChargedOnlyThere()
+    {
+        // Only two files talk to MDBList's API: its service (ratings, media batches, the status) and the list fetcher.
+        var callers = Directory.EnumerateFiles(Root(), "*.cs", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(Root(), f).Replace('\\', '/'))
+            .Where(f => !f.StartsWith("obj/", StringComparison.Ordinal) && !f.StartsWith("bin/", StringComparison.Ordinal))
+            .Where(f => File.ReadAllText(Path.Combine(Root(), f)).Contains("api.mdblist.com", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new[] { "Services/Acquire/Lists/Sources/ListSourceFetcher.cs", "Services/MdblistService.cs" }, callers);
+
+        // MdblistService: every method that sends either reads the account status (/user, which isn't counted) or
+        // reserves its request first, and a request is charged only inside the one reservation (never after a send).
+        var raw = File.ReadAllText(Path.Combine(Root(), "Services", "MdblistService.cs"));
+        var code = Code(raw);
+        var methods = Regex.Matches(code, @"(?:private|public|internal|protected)\s+(?:static\s+)?(?:async\s+)?[\w<>\[\]?,\s]+?\s+(\w+)\s*\([^;{}]*\)\s*\{")
+            .Select(m => m.Groups[1].Value).Distinct().ToList();
+        var senders = 0;
+        foreach (var method in methods)
+        {
+            var (start, length) = BodyAt(code, method);
+            var body = code.Substring(start, length);
+            var send = Regex.Match(body, @"\.(?:GetAsync|PostAsync|SendAsync|PutAsync)\s*\(");
+            if (!send.Success)
+            {
+                continue;
+            }
+
+            senders++;
+            if (raw.Substring(start, length).Contains("/user?apikey=", StringComparison.Ordinal))
+            {
+                Assert.Equal("ReadStatusAsync", method); // the status read alone, and nothing else is sent there
+                Assert.Single(Regex.Matches(body, @"\.(?:GetAsync|PostAsync|SendAsync|PutAsync)\s*\("));
+                continue;
+            }
+
+            var reserve = Regex.Match(body, @"if\s*\(\s*!\s*await\s+Reserve\w*Async\s*\(");
+            Assert.True(reserve.Success && reserve.Index < send.Index, method + " sends to MDBList without reserving first");
+        }
+
+        Assert.Equal(3, senders); // the status read, the ratings lookup, the media batch
+        var (reserveStart, reserveLength) = BodyAt(code, "ReserveAsync");
+        foreach (Match charge in Regex.Matches(code, @"\bConsumeLocked\s*\(\s*\)\s*;"))
+        {
+            Assert.InRange(charge.Index, reserveStart, reserveStart + reserveLength);
+        }
+
+        // The fetcher: every api.mdblist.com request is a list read (which the gate reserves for) or the status read, and
+        // the gate refuses an API read it can't reserve for (no quota means no read, never an unreserved one).
+        var fetcherRaw = File.ReadAllText(Path.Combine(Lists, "Sources", "ListSourceFetcher.cs"));
+        var transmissions = Regex.Matches(fetcherRaw, @"new\s+Transmission\(\s*(\w+)\s*,\s*""https://api\.mdblist\.com([^""]*)""");
+        Assert.Equal(2, transmissions.Count);
+        foreach (Match t in transmissions)
+        {
+            Assert.True(t.Groups[1].Value == "MdblistApiProvider" || (t.Groups[1].Value == "MdblistStatusProvider" && t.Groups[2].Value == "/user?apikey="), t.Value);
+        }
+
+        var gate = Body(Code(fetcherRaw), "SendAsync");
+        Assert.Matches(@"Provider\s*==\s*MdblistApiProvider\s*&&\s*\(\s*_mdblist\s*==\s*null\s*\|\|\s*!\s*await\s+_mdblist\.TryReserveListRequestAsync", gate);
     }
 
     // ── Review round 3 (D53 rule 1): completeness is decided on the parsed rows ──

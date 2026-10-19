@@ -2,6 +2,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model.ListPlaceholders;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources;
+using MediaBrowser.Common.Configuration;
+using Moq;
 
 namespace JE.Tests;
 
@@ -17,10 +19,13 @@ public class ListsImportSourceRulesTests
     private sealed class Net : IDisposable
     {
         public ApiPluginFixture Plugin { get; } = new();
+        private readonly string _quotaCache = Path.Combine(Path.GetTempPath(), "je-4c2r4-" + Guid.NewGuid().ToString("N"));
+
         public List<HttpRequestMessage> Requests { get; } = new();
         public Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> Routes { get; } = new(StringComparer.Ordinal);
         public IntegrationTransport Transport { get; }
         public TmdbResponseCache Tmdb { get; }
+        public MdblistService Quota { get; }
         public ListSourceFetcher Fetcher { get; private set; }
 
         public Net(SourceReadLimits? limits = null, ISourceReadAdmission? admission = null)
@@ -37,7 +42,9 @@ public class ListsImportSourceRulesTests
             });
             Tmdb = new TmdbResponseCache(Transport, TimeProvider.System);
             ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
-            Fetcher = new ListSourceFetcher(Transport, Tmdb, null, new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger, limits, admission);
+            // The real MDBList quota: review round 4 never reads the MDBList API without its reservation.
+            Quota = new MdblistService(Transport, Mock.Of<IApplicationPaths>(p => p.PluginsPath == _quotaCache), Plugin.Core.Logger);
+            Fetcher = new ListSourceFetcher(Transport, Tmdb, Quota, new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger, limits, admission);
         }
 
         public Task<SourceFetchResult> Fetch(string url, SourceFetchOptions? options = null)
@@ -48,6 +55,7 @@ public class ListsImportSourceRulesTests
 
         public void Dispose()
         {
+            Quota.Dispose();
             Tmdb.Dispose();
             Transport.Dispose();
             Plugin.Dispose();

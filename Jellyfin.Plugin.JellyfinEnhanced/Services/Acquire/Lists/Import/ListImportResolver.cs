@@ -940,6 +940,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// <summary>The title lookup (the source preview completes its entries' identities through it).</summary>
         internal IImportLookup Lookup => _lookup;
 
+        /// <summary>The shared metadata limiter every lookup takes its turn at.</summary>
+        internal MetadataCallLimiter Limiter => _limiter;
+
         // Leaves out the candidates `remove` names; a lost top match lowers the entry's confidence (none without any).
         private static void Remove(ResolvedEntryDto result, Func<ImportCandidateDto, bool> remove)
         {

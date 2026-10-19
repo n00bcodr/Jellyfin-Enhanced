@@ -117,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>Creates the fetcher with explicit read limits (tests; 4c2b's admission).</summary>
         /// <param name="httpClientFactory">HTTP client factory.</param>
         /// <param name="tmdb">TMDB cache or null.</param>
-        /// <param name="mdblist">MDBList service or null (no quota bookkeeping).</param>
+        /// <param name="mdblist">MDBList service or null (no quota bookkeeping: the MDBList API is never read).</param>
         /// <param name="limiter">Limiter.</param>
         /// <param name="logger">Logger.</param>
         /// <param name="limits">Read limits (null: defaults).</param>
@@ -399,10 +399,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             return more;
         }
 
+        // MDBList's row types (its `mediatype`): movies and shows; a person is deliberately unsupported.
+        private static string? MdblistMedia(string type) => type switch
+        {
+            "movie" => "movie",
+            "show" or "tv" => "tv",
+            _ => null,
+        };
+
         // Every element of the answer is reported into the read as one row (D53 rule 1): an entry, a counted exclusion (an
-        // adult title, kept as an id-less gap) or a malformed row (not an object, no usable id).
+        // adult title, kept as an id-less gap; a person in a list that mixes types) or a malformed row (not an object, a
+        // type JE doesn't know or none, no usable id). Review round 4 (4c2-R4-2): the row's declared type is classified
+        // before it is keyed (SourceTypes): an official list of movies or shows fixes the type of rows that don't declare
+        // one, and a row declaring another type there is malformed; user and external lists mix types, so a row there
+        // must declare its own.
         private static List<SourceItem> MdblistItems(ParsedSourceUrl source, string body, SourceRead read)
         {
+            var context = source.Shape == "official" ? (source.Part("media") == "shows" ? "show" : "movie") : null;
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
             var elements = new List<JsonElement>();
@@ -449,8 +462,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     continue;
                 }
 
-                var media = Str(element, "mediatype") ?? Str(element, "media_type");
-                var mediaType = media is "show" or "tv" ? "tv" : media == "movie" ? "movie" : source.Part("media") == "shows" ? "tv" : "movie";
+                var (kind, type) = SourceTypes.Classify(Str(element, "mediatype") ?? Str(element, "media_type"), context, MdblistMedia, PersonOnly);
+                if (kind != SourceRowKind.Usable)
+                {
+                    read.Row(kind == SourceRowKind.Excluded ? SourceRow.Excluded() : SourceRow.Malformed);
+                    continue;
+                }
+
+                var mediaType = MdblistMedia(type!)!;
                 int? tmdb = Int(element, "id");
                 string? imdb = Str(element, "imdb_id");
                 int? tvdb = Int(element, "tvdbid") ?? Int(element, "tvdb_id");
@@ -751,19 +770,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
-        // A TMDB row: a movie or show with its id; a person (trending "all") is a counted exclusion; anything else, or a
-        // movie or show without an id, is malformed.
-        private static SourceRow TmdbRow(JsonElement element, string? defaultType, string? dateField)
+        // The one deliberately unsupported type of TMDB, Seerr, Trakt and MDBList rows.
+        private static readonly HashSet<string> PersonOnly = new(StringComparer.Ordinal) { "person" };
+
+        // TMDB's (and Seerr's) row types: movies and shows.
+        private static string? TmdbMedia(string type) => type is "movie" or "tv" ? type : null;
+
+        // The class of a row by its declared type (review round 4, 4c2-R4-2), or null when it is a supported type to key.
+        private static SourceRow? Unkeyed(SourceRowKind kind) => kind switch
+        {
+            SourceRowKind.Usable => null,
+            SourceRowKind.Excluded => SourceRow.Excluded(),
+            _ => SourceRow.Malformed,
+        };
+
+        // A TMDB row: a movie or show with its id; a person is a counted exclusion where the endpoint mixes types (a list,
+        // trending "all"); a row of a chart, trending window or collection of one type takes that type when it doesn't
+        // declare one, and any other declared type there is malformed; an unknown type, a missing one where types mix, or
+        // a movie or show without an id, is malformed.
+        private static SourceRow TmdbRow(JsonElement element, string? context, string? dateField)
         {
             if (element.ValueKind != JsonValueKind.Object)
             {
                 return SourceRow.Malformed;
             }
 
-            var mediaType = Str(element, "media_type") ?? defaultType;
-            if (mediaType is not ("movie" or "tv"))
+            var (kind, mediaType) = SourceTypes.Classify(Str(element, "media_type"), context, TmdbMedia, PersonOnly);
+            if (Unkeyed(kind) is { } unkeyed)
             {
-                return mediaType == "person" ? SourceRow.Excluded() : SourceRow.Malformed;
+                return unkeyed;
             }
 
             var id = Int(element, "id");
@@ -774,21 +809,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var title = mediaType == "movie" ? Str(element, "title") : Str(element, "name");
             var date = Str(element, dateField ?? (mediaType == "movie" ? "release_date" : "first_air_date"));
-            return SourceRow.Of(new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null));
+            return SourceRow.Of(new SourceItem(mediaType!, id, null, null, title, YearOf(date), null, null, null));
         }
 
         // A Seerr row (TMDB's, in Seerr's field names): the same rule.
-        private static SourceRow SeerrRow(JsonElement element, string? defaultType)
+        private static SourceRow SeerrRow(JsonElement element, string? context)
         {
             if (element.ValueKind != JsonValueKind.Object)
             {
                 return SourceRow.Malformed;
             }
 
-            var mediaType = Str(element, "mediaType") ?? defaultType;
-            if (mediaType is not ("movie" or "tv"))
+            var (kind, mediaType) = SourceTypes.Classify(Str(element, "mediaType"), context, TmdbMedia, PersonOnly);
+            if (Unkeyed(kind) is { } unkeyed)
             {
-                return mediaType == "person" ? SourceRow.Excluded() : SourceRow.Malformed;
+                return unkeyed;
             }
 
             var id = Int(element, "id");
@@ -799,7 +834,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var title = mediaType == "movie" ? Str(element, "title") : Str(element, "name");
             var date = mediaType == "movie" ? Str(element, "releaseDate") : Str(element, "firstAirDate");
-            return SourceRow.Of(new SourceItem(mediaType, id, null, null, title, YearOf(date), null, null, null));
+            return SourceRow.Of(new SourceItem(mediaType!, id, null, null, title, YearOf(date), null, null, null));
         }
 
         // ── Trakt ───────────────────────────────────────────────────────────
@@ -963,17 +998,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
+        // Trakt's row types: movies, shows, seasons and episodes.
+        private static string? TraktMedia(string type) => type switch
+        {
+            "movie" => "movie",
+            "show" or "season" or "episode" => "tv",
+            _ => null,
+        };
+
         // A Trakt row: a movie, show, season or episode (malformed without an id JE can key, or without its season or
-        // episode number); a person (lists can hold people) is a counted exclusion; any other type is malformed.
-        private static SourceRow TraktRow(JsonElement element, string? defaultType)
+        // episode number); a person (lists can hold people) is a counted exclusion; any other type is malformed. Review
+        // round 4 (4c2-R4-2): list and watchlist rows declare their `type` (none: malformed); a chart's rows declare it by
+        // the object they carry (`movie`, `show`…) or are a bare title of the chart's type, and a row of another type
+        // there (a show in a movie chart, a person) is malformed.
+        private static SourceRow TraktRow(JsonElement element, string? context)
         {
             if (element.ValueKind != JsonValueKind.Object)
             {
                 return SourceRow.Malformed;
             }
 
-            var type = Str(element, "type") ?? (element.TryGetProperty("episode", out _) ? "episode" : element.TryGetProperty("season", out _) ? "season"
-                : element.TryGetProperty("movie", out _) ? "movie" : element.TryGetProperty("show", out _) ? "show" : element.TryGetProperty("person", out _) ? "person" : defaultType);
+            var carried = element.TryGetProperty("episode", out _) ? "episode" : element.TryGetProperty("season", out _) ? "season"
+                : element.TryGetProperty("movie", out _) ? "movie" : element.TryGetProperty("show", out _) ? "show" : element.TryGetProperty("person", out _) ? "person" : null;
+            var (kind, type) = SourceTypes.Classify(Str(element, "type") ?? (context != null ? carried : null), context, TraktMedia, PersonOnly);
+            if (Unkeyed(kind) is { } unkeyed)
+            {
+                return unkeyed;
+            }
             var note = Str(element, "notes");
             JsonElement show = default;
             var hasShow = element.TryGetProperty("show", out show) && show.ValueKind == JsonValueKind.Object;
@@ -1015,9 +1066,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var (tmdb, imdb, tvdb) = TraktIds(show);
                     return SourceRow.Of(new SourceItem("tv", tmdb, imdb, tvdb, Str(show, "title"), Year(Int(show, "year")), season, number, note));
                 }
-
-                case "person":
-                    return SourceRow.Excluded();
 
                 default:
                     return SourceRow.Malformed;
@@ -1075,7 +1123,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             // Every page reports into the read (its edges, total, hasNextPage, cursor, GraphQL errors);
-            // SourceCompleteness.Cursor decides whether the whole list was read.
+            // SourceCompleteness.Cursor decides whether the whole list was read. A chart's titles are of its one type.
+            var context = source.Shape == "chart" ? (ImdbCharts[source.Part("chart")].Contains("_TV_", StringComparison.Ordinal) ? "tvSeries" : "movie") : null;
             var read = new SourceRead();
             var items = new List<SourceItem>();
             string? title = null;
@@ -1110,7 +1159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
 
                     var item = node.TryGetProperty("item", out var inner) ? inner : node;
-                    if (read.Row(ImdbRow(item)) is { } parsed)
+                    if (read.Row(ImdbRow(item, context)) is { } parsed)
                     {
                         items.Add(parsed);
                     }
@@ -1215,11 +1264,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // IMDb title types JE never imports (counted exclusions): games, music videos, podcasts, pilots.
         private static readonly HashSet<string> ImdbExcludedTypes = new(StringComparer.Ordinal) { "videoGame", "musicVideo", "podcastSeries", "podcastEpisode", "tvPilot" };
 
+        // IMDb's title types JE imports.
+        private static string? ImdbMedia(string type) => type switch
+        {
+            "movie" or "tvMovie" or "short" or "tvShort" or "video" or "tvSpecial" => "movie",
+            "tvSeries" or "tvMiniSeries" or "tvEpisode" => "tv",
+            _ => null,
+        };
+
         // An IMDb list item: a title of a type JE imports, keyed by its IMDb id (an episode by its show's id, season and
-        // number); a non-title item (a person: the Title fragment matched nothing, so the item is empty) or a title type
-        // JE never imports is a counted exclusion; a title without a valid id, of an unknown type, or an episode without
-        // its show, season or number, is malformed.
-        private static SourceRow ImdbRow(JsonElement item)
+        // number); in a list or watchlist (types mix), a non-title item (a person: the Title fragment matched nothing, so
+        // the item is empty) or a title type JE never imports is a counted exclusion; a title without a valid id, of an
+        // unknown type or none (IMDb declares every title's type), or an episode without its show, season or number, is
+        // malformed. Review round 4 (4c2-R4-2): a chart is of movies or of shows (`context`): a title of another type
+        // there, an excluded one included, is malformed.
+        private static SourceRow ImdbRow(JsonElement item, string? context)
         {
             if (item.ValueKind != JsonValueKind.Object)
             {
@@ -1228,14 +1287,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             if (!item.EnumerateObject().Any())
             {
-                return SourceRow.Excluded();
+                return context == null ? SourceRow.Excluded() : SourceRow.Malformed;
             }
 
             var id = ValidImdb(Str(item, "id"));
-            var type = item.TryGetProperty("titleType", out var titleType) && titleType.ValueKind == JsonValueKind.Object ? Str(titleType, "id") : null;
-            if (type != null && ImdbExcludedTypes.Contains(type))
+            var declared = item.TryGetProperty("titleType", out var titleType) && titleType.ValueKind == JsonValueKind.Object ? Str(titleType, "id") : null;
+            var (kind, type) = SourceTypes.Classify(declared, context, ImdbMedia, ImdbExcludedTypes, alwaysDeclared: true);
+            if (Unkeyed(kind) is { } unkeyed)
             {
-                return SourceRow.Excluded();
+                return unkeyed;
             }
 
             if (id == null)
@@ -1358,8 +1418,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             {
                 GateOpen(transmission);
                 Admit(transmission.Provider == MdblistStatusProvider ? MdblistApiProvider : transmission.Provider, options);
-                if (transmission.Provider == MdblistApiProvider && _mdblist != null
-                    && !await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false))
+                // Every MDBList API read reserves its request of the shared daily quota first (review round 4: the one
+                // reservation the ratings lookups use too); without the quota's bookkeeping it isn't sent at all.
+                if (transmission.Provider == MdblistApiProvider
+                    && (_mdblist == null || !await _mdblist.TryReserveListRequestAsync(ct => QuotaStatusAsync(options, ct), cancellationToken).ConfigureAwait(false)))
                 {
                     throw new SourceHttpException("quota_exhausted", "The MDBList API quota for today is used up; try again after it resets.");
                 }

@@ -39,6 +39,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         public static readonly SourceRow Malformed = new(SourceRowKind.Malformed, null);
     }
 
+    /// <summary>
+    /// A row's declared type, classified BEFORE the row is keyed (review round 4, 4c2-R4-2; D53 rule 2: a row whose type
+    /// JE doesn't import must never become a key of a title it isn't). Per provider, every row's type is one of:
+    /// <list type="bullet">
+    /// <item><b>supported</b> (keyed as that type);</item>
+    /// <item><b>deliberately unsupported</b> (a person, a game…): a counted exclusion, only where the source mixes types;</item>
+    /// <item><b>malformed</b> (partial): a type JE doesn't know; no type where the source declares one; or, in a context
+    /// that fixes one type, any other type, an unsupported one included (the source changed shape).</item>
+    /// </list>
+    /// A missing type is taken from the context only where the context fixes it reliably (a chart or collection of one
+    /// media type, an MDBList official list of movies or shows) and the provider doesn't always declare one. The provider
+    /// rules are in each parser (ListSourceFetcher: TmdbRow, SeerrRow, TraktRow, ImdbRow, MdblistItems; ChronolistsPage).
+    /// </summary>
+    internal static class SourceTypes
+    {
+        /// <summary>Classifies a row's declared type.</summary>
+        /// <param name="declared">The type the row declares (null: none).</param>
+        /// <param name="context">The type the source context fixes, in the provider's own words (null: the source mixes types).</param>
+        /// <param name="media">The JE media type ("movie", "tv") of a supported provider type, else null.</param>
+        /// <param name="excluded">The provider's deliberately unsupported types.</param>
+        /// <param name="alwaysDeclared">The provider declares a type on every row (a missing one is malformed in any context).</param>
+        /// <returns><see cref="SourceRowKind.Usable"/> with the type to key the row as (its entry still needs a key), or
+        /// <see cref="SourceRowKind.Excluded"/> / <see cref="SourceRowKind.Malformed"/>.</returns>
+        public static (SourceRowKind Kind, string? Type) Classify(string? declared, string? context, System.Func<string, string?> media, IReadOnlySet<string> excluded, bool alwaysDeclared = false)
+        {
+            if (declared == null)
+            {
+                return context == null || alwaysDeclared ? (SourceRowKind.Malformed, null) : (SourceRowKind.Usable, context);
+            }
+
+            if (excluded.Contains(declared))
+            {
+                return (context == null ? SourceRowKind.Excluded : SourceRowKind.Malformed, declared);
+            }
+
+            var kind = media(declared);
+            return kind == null || (context != null && kind != media(context)) ? (SourceRowKind.Malformed, declared) : (SourceRowKind.Usable, declared);
+        }
+    }
+
     /// <summary>What one page of a paged list read said about the list (each paging loop reports every page it read).</summary>
     /// <param name="Rows">Rows the parser read on the page (every kind), counted by <see cref="SourceRead"/>, never by the caller.</param>
     /// <param name="PageCount">The page count the page reported (TMDB <c>total_pages</c>, Seerr <c>totalPages</c>, Trakt <c>X-Pagination-Page-Count</c>).</param>

@@ -30,6 +30,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// get no whole-season entries).</summary>
         public static readonly TimeSpan SeasonCountBudget = TimeSpan.FromSeconds(10);
 
+        /// <summary>
+        /// How long one preview completes its entries' identities (review round 4, Q-4C2AFIX4-1): lookups run at most
+        /// <see cref="MetadataCallLimiter.MaxConcurrent"/> at once, each through the shared limiter; an entry not completed
+        /// by then is left out with counts hidden (as a failed lookup), and the lookups it did finish stay cached, so a new
+        /// preview goes on from there. Measured (12.2 and 10.11): the limiter's spacing bounds completion at about 10
+        /// lookups a second, so 30 s completes a TMDB list of 250-300 entries (one lookup each) in one review, and the
+        /// whole request (a large paged read took up to 10 s) stays under a reverse proxy's usual 60 s.
+        /// </summary>
+        public static readonly TimeSpan DefaultCompletionBudget = TimeSpan.FromSeconds(30);
+
         private readonly IListSourceFetcher _fetcher;
         private readonly ListImportResolver _resolver;
         private readonly ListAccessService _access;
@@ -53,6 +63,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             _viewer = viewer;
             _physical = physical;
         }
+
+        /// <summary>The identity completion budget of a preview (tests shorten it).</summary>
+        internal TimeSpan CompletionBudget { get; set; } = DefaultCompletionBudget;
 
         /// <summary>Provider capabilities (GET import/providers).</summary>
         /// <param name="caller">The caller (the MDBList API path is only reported to administrators).</param>
@@ -276,20 +289,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         // D53 rule 2 / SEC-02 / R2-B1: every entry's identity (TMDB, TVDB, IMDb) is completed once through the title lookup
         // when the library holds copies those ids can't find (one completion per identity); an entry whose ids couldn't
-        // be completed (the lookup failed) is left out (fails closed). Then entries for a title the library holds but the
+        // be completed (the lookup failed) is left out (fails closed). Review round 4 (Q-4C2AFIX4-1): the completions run
+        // concurrently, at most the shared limiter's concurrency looking up at once, within CompletionBudget for the whole
+        // preview; one not finished by then is left out the same way. Then entries for a title the library holds but the
         // caller can't open (no copy they can open; the season or episode hidden from them) are left out, asked under the
         // completed identity. One read per title and season. Returns the kept entries and their completed identities.
         private async Task<(List<SourceItem> Held, Dictionary<SourceItem, CompletedIdentity> Identities)> CompleteAndFilterAsync(List<SourceItem> items, User caller, CancellationToken cancellationToken)
         {
-            var completion = new CompletedIdentity.Completion(_physical, _resolver.Lookup, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false));
+            var completion = new CompletedIdentity.Completion(_physical, _resolver.Lookup, new ImportCallContext(caller.Id.ToString("N", CultureInfo.InvariantCulture), false), _resolver.Limiter.MaxConcurrent);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(CompletionBudget);
+            var completed = await Task.WhenAll(items.Select(async item =>
+            {
+                var movie = item.MediaType == "movie";
+                try
+                {
+                    return await completion.CompleteAsync(new ImportIdentity(movie, item.TmdbId, movie ? null : item.TvdbId, item.ImdbId), budget.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    return null; // not completed within the budget
+                }
+            })).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (budget.IsCancellationRequested && completed.Any(c => c == null))
+            {
+                _logger.Info($"[Lists] {completed.Count(c => c == null).ToString(CultureInfo.InvariantCulture)} of {items.Count.ToString(CultureInfo.InvariantCulture)} entries' ids weren't completed within {CompletionBudget.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s; they are left out (counts hidden), and a new review goes on from the lookups already made.");
+            }
+
             var projection = _physical == null ? null : new ImportPhysicalProjection(_physical, caller);
             var held = new List<SourceItem>();
             var identities = new Dictionary<SourceItem, CompletedIdentity>(ReferenceEqualityComparer.Instance);
-            foreach (var item in items)
+            for (var i = 0; i < items.Count; i++)
             {
+                var item = items[i];
                 var movie = item.MediaType == "movie";
-                var identity = await completion.CompleteAsync(new ImportIdentity(movie, item.TmdbId, movie ? null : item.TvdbId, item.ImdbId), cancellationToken).ConfigureAwait(false);
-                if (identity == null)
+                if (completed[i] is not { } identity)
                 {
                     continue;
                 }
