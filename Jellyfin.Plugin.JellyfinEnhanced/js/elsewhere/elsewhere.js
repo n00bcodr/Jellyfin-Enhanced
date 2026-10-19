@@ -535,12 +535,19 @@
         // Fetch streaming data. Kept in the core response cache (30 minutes,
         // dropped on a user switch; the same key the Seerr TMDB helper would use)
         // so revisiting a title costs no request — the server keeps it for hours.
-        function fetchStreamingData(tmdbId, mediaType, callback) {
+        function fetchStreamingData(tmdbId, mediaType, callback, attempt = 1) {
             const path = `/${mediaType}/${tmdbId}/watch/providers`;
             const url = ApiClient.getUrl(`/JellyfinEnhanced/tmdb${path}`);
             JE.core.api.fetch(url, { cacheKey: `tmdb:${path}` })
                 .then(data => callback(null, data))
                 .catch(error => {
+                    // A Hidden Content or Spoiler Guard save while this ran aborts it (its answer belonged to the old
+                    // policy). That is not a failure: ask again under the new policy, a bounded number of times.
+                    if (error?.name === 'AbortError') {
+                        if (attempt < 3) fetchStreamingData(tmdbId, mediaType, callback, attempt + 1);
+                        else callback(null, null);
+                        return;
+                    }
                     let errorMessage;
                     const errorMessageText = error.message || '';
 
@@ -1035,6 +1042,7 @@
                         resultContainer.innerHTML = `<div style="color: #ff6b6b; font-size: 13px; margin-top: 8px;">${JE.t('elsewhere_panel_error', { error })}</div>`;
                         return;
                     }
+                    if (!data) return;
 
                     // Show results for multiple regions
                     const regionsToSearch = userRegions.length > 0 ? userRegions : [userRegion];
@@ -1288,6 +1296,7 @@
                     container.appendChild(errorDiv);
                     return;
                 }
+                if (!data) return;
 
                 let seasonView = {};
                 if (mediaType === 'tv' && SEASON_PROVIDERS_ADMIN && userSeasonProviders) {
