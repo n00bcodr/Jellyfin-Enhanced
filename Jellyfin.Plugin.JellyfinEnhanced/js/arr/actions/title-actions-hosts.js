@@ -2,9 +2,10 @@
 (function (JE) {
     'use strict';
     const A = JE.titleActions;
-    const cards = new WeakMap();
+    let cards = new WeakMap();
     const rows = new Map();
     const hosts = new Map();
+    const homes = new WeakMap();
     let started = false;
     let queued = false;
     let observer;
@@ -15,6 +16,7 @@
     let receiving = null;
     const CARD = '.card[data-id], .jellyseerr-card, .je-discover-card, [data-je-hide-title]';
     const rowSelector = '.mainDetailButtons, .detailButtons';
+    const WATCH = ['replay', 'shuffle', 'instant-mix', 'trailer', 'played'];
 
     /** Existing administrator switches own the corresponding action surfaces; all-off is inert. */
     function enabled() {
@@ -40,29 +42,41 @@
         node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); return node;
     }
 
-    /** Opens a current card's capability menu and rejects recycled nodes or outgoing sessions. */
+    /** Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale. */
     async function openCard(card, opener) {
         const c = cardContext(card); if (!c || !enabled()) return;
-        const action = JE.createSessionAction();
-        const route = location.href;
+        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cardContext(card)?.key === c.key);
         try {
-            if (!await A.admit(c, action)) return;
-            const entries = await A.entries(c, { action, surface: 'recommendations' });
-            if (action.current() && location.href === route && card.isConnected && cardContext(card)?.key === c.key) A.show(c, entries, opener || card.querySelector('.je-card-more'));
-        } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
+            if (!await A.admit(c, owner)) return;
+            const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
+            if (owner.current()) A.show(c, entries, opener || card.querySelector('.je-card-more'), owner);
+        } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
     }
 
     /** Reconciles a retained/recycled card without retaining detached nodes. */
     function mountCard(card) {
         const c = enabled() && cardContext(card);
         const prior = cards.get(card);
-        if (!c) { card.classList.remove('je-actions-card'); card.querySelectorAll('.je-card-more').forEach(n => n.remove()); cards.delete(card); return; }
+        if (!c) { removeCard(card); return; }
         if (prior?.key === c.key && prior.button.isConnected && prior.button.parentNode === card) return;
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
         A.styles(); card.classList.add('je-actions-card');
         const node = button('more', JE.t('title_actions_more'), 'more_horiz'); node.className = 'je-card-more'; node.dataset.jeActionKey = c.key;
         node.onclick = e => { e.preventDefault(); e.stopPropagation(); openCard(card, node); };
         card.append(node); cards.set(card, { key: c.key, button: node });
+    }
+
+    /** Removes a card's adapter button; the card's own nodes stay as they are. */
+    function removeCard(card) {
+        card.classList.remove('je-actions-card'); card.querySelectorAll('.je-card-more').forEach(n => n.remove()); cards.delete(card);
+    }
+
+    /** Removes every card adapter button, to be rebuilt by the next scan for the current identity. */
+    function removeCards() {
+        cards = new WeakMap();
+        if (!document) return; // the owning document has already gone
+        document.querySelectorAll('.je-card-more').forEach(n => n.remove());
+        document.querySelectorAll('.je-actions-card').forEach(n => n.classList.remove('je-actions-card'));
     }
 
     /** The source row's current controls, without copies of our proxies. */
@@ -75,7 +89,12 @@
     function classify(node, c) {
         if (node.dataset.jeActionKind) return ['request', 'open'].includes(node.dataset.jeActionKind) ? 'primary' : node.dataset.jeActionKind;
         const match = selector => node.matches(selector);
-        if (c?.absent && match('.btnPlay, .btnResume, [data-action="play"], .btnDownload, .btnDelete, .btnMediaInfo')) return null;
+        if (c?.absent && match('.btnPlay, .btnResume, .btnReplay, .btnShuffle, .btnInstantMix, [data-action="play"], [data-action="resume"], .btnDownload, .btnDelete, .btnMediaInfo')) return null;
+        // Every distinct playback action keeps a place: with progress, Jellyfin shows Resume (.btnPlay)
+        // and Play from beginning (.btnReplay, data-action="play") side by side.
+        if (match('.btnReplay')) return 'replay';
+        if (match('.btnShuffle')) return 'shuffle';
+        if (match('.btnInstantMix')) return 'instant-mix';
         if (match('.btnPlay, .btnResume, [data-action="play"], .je-native-absent-open, .je-ask-mount-request, .jellyseerr-request-button, .je-native-absent-legacy-request')) return 'primary';
         if (match('.btnUserRating, .btnFavorite')) return c?.absent ? null : 'favorite';
         if (match('.je-notify-follow')) return 'follow';
@@ -93,43 +112,49 @@
     function nativeEntries(state) {
         return originals(state.row).map(source => {
             const id = classify(source, state.c); if (!id || ['primary', 'favorite', 'follow'].includes(id)) return null;
-            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: ['trailer', 'played'].includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage'].includes(id) ? 'requests' : 'other',
-                label: ['guard', 'follow', 'manage', 'native-more'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
-                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
-                icon: { trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
+            return { id, source, disabled: source.disabled, reason: source.dataset.jeActionReason, group: WATCH.includes(id) ? 'watch' : ['guard', 'hide'].includes(id) ? 'view' : ['report', 'manage'].includes(id) ? 'requests' : 'other',
+                label: ['guard', 'follow', 'manage', 'native-more', 'replay'].includes(id) ? JE.t({ guard: 'title_actions_guard', follow: 'title_actions_follow', manage: 'title_actions_manage', 'native-more': 'title_actions_native_more', replay: 'title_actions_replay' }[id]) : source.getAttribute('aria-label') || source.title || source.textContent.trim() || JE.t('title_actions_native_more'),
+                fixedLabel: ['guard', 'follow', 'manage', 'native-more', 'report', 'replay'].includes(id), state: id === 'manage' ? JE.t('title_actions_admin') : undefined,
+                icon: { replay: 'replay', shuffle: 'shuffle', 'instant-mix': 'explore', trailer: 'movie', played: 'done', guard: 'blur_on', hide: 'visibility', report: 'warning', manage: 'tune', 'native-more': 'more_vert' }[id] || source.querySelector('.material-icons')?.textContent || 'more_horiz' };
         }).filter(Boolean);
     }
 
-    /** A retained row can act only for its current host identity and opening session. */
-    function rowCurrent(state) {
-        if (disposed || !state.action.current() || !state.root.isConnected || state.root._isClosing || state.root.classList.contains('hide')) return false;
-        if (state.root.matches('.je-more-info-modal')) return String(state.root.dataset.tmdbId) === String(state.c?.tmdbId);
-        const expected = state.c?.data?.itemId || state.c?.data?.Id;
+    /** The host still shows the identity a row was mounted for. */
+    function hostShows(root, c) {
+        if (!root.isConnected || root._isClosing || root.classList.contains('hide')) return false;
+        if (root.matches('.je-more-info-modal')) return String(root.dataset.tmdbId) === String(c?.tmdbId);
+        const expected = c?.data?.itemId || c?.data?.Id;
         const shown = new URLSearchParams(location.hash.split('?')[1] || '').get('id');
         return !expected || !shown || String(expected).replace(/-/g, '') === String(shown).replace(/-/g, '');
     }
 
+    /** A row, its adapter nodes and every continuation act only while its generation is current. */
+    function rowCurrent(state) {
+        return state.action.current();
+    }
+
     /** Opens the same sheet for native library and provider pages, merging by action identity. */
     async function openRow(state, opener) {
-        if (!rowCurrent(state)) return;
-        const action = JE.createSessionAction();
+        const action = state.action;
+        if (!action.current()) return;
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
-                if (!action.current() || !rowCurrent(state)) return;
+                if (!action.current()) return;
             }
             if (state.c) {
                 let admitted = false;
-                try { admitted = await A.admit(state.c, action); } catch (_) { /* native controls still work */ }
-                if (state.c.absent && !admitted) return;
+                // A cancelled admission ends the opening; any other failure leaves the native controls.
+                try { admitted = await A.admit(state.c, action); } catch (error) { if (A.cancelled(error)) return; }
+                if (!action.current() || (state.c.absent && !admitted)) return;
             }
             const adapted = state.c ? await A.entries(state.c, { action, root: state.root, surface: 'details' }) : [];
-            if (!action.current() || !rowCurrent(state) || rows.get(state.row) !== state || !state.row.isConnected) return;
+            if (!action.current()) return;
             const entries = nativeEntries(state);
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
             const title = state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
-            A.show({ ...state.c, name: title }, entries, opener);
+            A.show({ ...state.c, name: title }, entries, opener, action);
         } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
     }
 
@@ -165,6 +190,12 @@
     function paintRow(state) {
         const row = state.row;
         if (!row.isConnected) { rows.delete(row); return; }
+        // A host copy of an adapter node has neither listener nor owner: it gives way to the live node.
+        const copies = [...row.querySelectorAll('.je-actions-adapted')].filter(n => !state.owned.has(n));
+        if (copies.length) {
+            copies.forEach(n => n.remove());
+            state.owned.forEach(n => { if (!row.contains(n)) row.append(n); });
+        }
         if (state.more) {
             row.querySelectorAll('.je-actions-wide-more').forEach(n => { if (n !== state.more) n.remove(); });
             if (state.more.parentElement !== row) row.append(state.more);
@@ -172,7 +203,7 @@
         let sources = originals(row);
         // Native owners arriving late supersede our adapted fallback, without duplicate actions.
         const nativeKinds = new Set(sources.filter(n => !n.dataset.jeActionKind).map(n => classify(n, state.c)));
-        for (const node of sources) if (node.dataset.jeActionKind && nativeKinds.has(classify(node, state.c))) node.remove();
+        for (const node of sources) if (node.dataset.jeActionKind && nativeKinds.has(classify(node, state.c))) { node.remove(); state.owned.delete(node); }
         sources = originals(row);
         for (const node of sources.filter(n => n.dataset.jeActionKind === 'follow')) {
             const following = JE.arrNotify?.isFollowing?.(state.c?.key) === true;
@@ -228,7 +259,7 @@
         let compactRow = row.querySelector(':scope > .je-actions-row');
         if (!compact) { compactRow?.remove(); return; }
         if (!compactRow) { compactRow = document.createElement('div'); compactRow.className = 'je-actions-row'; row.append(compactRow); }
-        const primary = visible.find(n => classify(n, state.c) === 'primary');
+        const primary = visible.find(n => classify(n, state.c) === 'primary') || visible.find(n => classify(n, state.c) === 'replay');
         const favorite = visible.find(n => classify(n, state.c) === (state.c?.absent ? 'follow' : 'favorite'));
         const report = visible.find(n => classify(n, state.c) === 'report' && !n.disabled && n.getAttribute('aria-disabled') !== 'true');
         const primaryIcon = primary?.dataset.jeActionKind === 'open' || primary?.matches('.je-native-absent-open') ? 'open_in_new' : state.c?.absent ? 'add' : 'play_arrow';
@@ -238,8 +269,7 @@
             if (!source) { proxy?.remove(); continue; }
             if (!proxy || proxy.jeActionSource !== source) {
                 proxy?.remove(); proxy = button(id, source.title || '', glyph); proxy.className = 'je-actions-' + id; proxy.jeActionSource = source;
-                const action = state.action;
-                proxy.onclick = e => { e.preventDefault(); e.stopPropagation(); if (rowCurrent(state) && state.row.isConnected && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true') source.click(); };
+                proxy.onclick = e => { e.preventDefault(); e.stopPropagation(); if (rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true') source.click(); };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
                 compactRow.append(proxy);
             }
@@ -258,51 +288,68 @@
 
     }
 
-    /** Mounts one session/identity-owned row; copied DOM is reconstructed with live listeners. */
+    /**
+     * Mounts one row generation (session, this mount, route). Adapter nodes from an earlier mount or
+     * copied by the host (a cloned row) carry no listener or owner, so they are removed and rebuilt.
+     */
     function mountRow(row, root, c) {
-        if (!enabled()) return;
-        hosts.set(root, { c, action: JE.createSessionAction() });
+        if (!enabled() || disposed) return;
+        hosts.set(root, { c, action: A.generation() });
         let state = rows.get(row);
         if (state && state.c?.key === c?.key && state.action.current()) { paintRow(state); return; }
         if (state) disposeRow(state);
-        row.querySelectorAll('.je-actions-row, .je-actions-wide-more').forEach(n => n.remove());
-        A.styles(); state = { row, root, c, action: JE.createSessionAction(), widths: new WeakMap(), externalSources: new Set() }; rows.set(row, state);
-        if (root.matches('.je-more-info-modal') && row.parentElement?.matches('.header-info') && row.parentElement.parentElement?.matches('.header-section'))
-            state.rowHome = { parent: row.parentElement, next: row.nextSibling };
+        row.querySelectorAll('.je-actions-row, .je-actions-wide-more, .je-actions-adapted').forEach(n => n.remove());
+        row.querySelectorAll('.je-actions-original').forEach(n => n.classList.remove('je-actions-original'));
+        A.styles(); state = { row, root, c, widths: new WeakMap(), externalSources: new Set(), owned: new Set() };
+        const mine = state;
+        state.action = A.generation(() => !disposed && enabled() && rows.get(row) === mine && row.isConnected && hostShows(root, c));
+        rows.set(row, state);
+        if (root.matches('.je-more-info-modal')) {
+            // The window's action mount has one home; a copy the host put in its narrow place keeps it.
+            if (row.parentElement?.matches('.header-info') && row.parentElement.parentElement?.matches('.header-section'))
+                homes.set(root, { parent: row.parentElement, next: row.nextSibling });
+            const home = homes.get(root);
+            if (home && (row.parentElement === home.parent || row.parentElement === home.parent.parentElement)) state.rowHome = home;
+        }
         const more = button('more', JE.t('title_actions_more'), 'more_horiz'); more.className = 'button-flat detailButton emby-button je-actions-wide-more';
         more.onclick = () => openRow(state, more); state.more = more; row.append(more);
         paintRow(state);
-        if (c) {
-            const action = state.action;
-            (async () => {
-                let admitted = false; try { admitted = await A.admit(c, action); } catch (_) { /* native source controls remain available */ }
-                if (c.absent && !admitted) return [];
-                return A.entries(c, { action, root, surface: 'details' });
-            })().then(entries => {
-                if (!action.current() || rows.get(row) !== state || !row.isConnected) return;
-                for (const entry of entries) {
-                    if (entry.source && !row.contains(entry.source) && ['guard', 'hide', 'follow', 'manage'].includes(entry.id)) {
-                        state.externalSources.add(entry.source);
-                        if (entry.id !== 'follow') continue;
-                    }
-                    if (!['request', 'open', 'follow', 'report', 'guard', 'hide'].includes(entry.id)) continue;
-                    const kind = ['request', 'open'].includes(entry.id) ? 'primary' : entry.id;
-                    if (originals(row).some(n => classify(n, c) === kind)) continue;
-                    const node = entry.control || button(entry.id, entry.label, entry.icon);
-                    if (entry.source) node.jeActionOwner = entry.source;
-                    node.dataset.jeActionKind = entry.id;
-                    node.classList.add('button-flat', 'detailButton', 'emby-button', 'je-actions-adapted');
-                    if (!entry.control) {
-                        node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
-                        if (entry.reason) node.dataset.jeActionReason = entry.reason;
-                        node.onclick = () => rowCurrent(state) && A.invoke(c, entry, node, action).catch(() => { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); });
-                    }
-                    row.append(node);
-                    if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(node, c.tmdbId, c.type);
+        if (c) setupRow(state);
+    }
+
+    /** Adds the provider's adapted controls; every continuation stops once the row's generation is stale. */
+    function setupRow(state) {
+        const { row, root, c, action } = state;
+        (async () => {
+            try { if (!await A.admit(c, action) && c.absent) return []; }
+            // A cancelled admission ends the setup; a refused one leaves a library row its native controls.
+            catch (error) { if (A.cancelled(error) || c.absent) return []; }
+            if (!action.current()) return [];
+            return A.entries(c, { action, root, surface: 'details' });
+        })().then(entries => {
+            if (!action.current()) return;
+            for (const entry of entries) {
+                if (entry.source && !row.contains(entry.source) && ['guard', 'hide', 'follow', 'manage'].includes(entry.id)) {
+                    state.externalSources.add(entry.source);
+                    if (entry.id !== 'follow') continue;
                 }
-                paintRow(state);
-            }).catch(() => {});
-        }
+                if (!['request', 'open', 'follow', 'report', 'guard', 'hide'].includes(entry.id)) continue;
+                const kind = ['request', 'open'].includes(entry.id) ? 'primary' : entry.id;
+                if (originals(row).some(n => classify(n, c) === kind)) continue;
+                const node = entry.control || button(entry.id, entry.label, entry.icon);
+                if (entry.source) node.jeActionOwner = entry.source;
+                node.dataset.jeActionKind = entry.id;
+                node.classList.add('button-flat', 'detailButton', 'emby-button', 'je-actions-adapted');
+                if (!entry.control) {
+                    node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
+                    if (entry.reason) node.dataset.jeActionReason = entry.reason;
+                    node.onclick = () => action.current() && A.invoke(c, entry, node, action).catch(() => { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); });
+                }
+                state.owned.add(node); row.append(node);
+                if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(node, c.tmdbId, c.type, action.current);
+            }
+            paintRow(state);
+        }).catch(() => {});
     }
 
     /** Removes only this row's owned UI and restores original controls. */
@@ -314,20 +361,25 @@
         if (state.rowHome) {
             const { parent, next } = state.rowHome;
             parent.parentElement?.classList.remove('je-actions-modal-header');
-            if (state.row.parentElement !== parent) parent.insertBefore(state.row, next?.parentNode === parent ? next : null);
+            // Only a row still in the document returns home; a row the host replaced stays detached.
+            if (state.row.isConnected && state.row.parentElement !== parent) parent.insertBefore(state.row, next?.parentNode === parent ? next : null);
         }
         state.row.querySelectorAll('.je-actions-original').forEach(n => n.classList.remove('je-actions-original'));
-        state.row.querySelectorAll('.je-actions-row, .je-actions-wide-more').forEach(n => n.remove()); rows.delete(state.row);
+        // Adapter nodes (and host copies of them) never outlive their generation; native originals stay.
+        state.row.querySelectorAll('.je-actions-row, .je-actions-wide-more, .je-actions-adapted').forEach(n => n.remove());
+        state.owned?.forEach(n => n.remove()); state.owned?.clear();
+        if (rows.get(state.row) === state) rows.delete(state.row);
+        A.close(false, state.action);
     }
 
     /** Bounded DOM reconciliation, triggered by host navigation and external mutations. */
     function scan() {
         queued = false;
         if (disposed) return;
-        if (!enabled()) { rows.forEach(disposeRow); document.querySelectorAll('.je-card-more').forEach(n => n.remove()); document.querySelectorAll('.je-actions-card').forEach(n => n.classList.remove('je-actions-card')); return; }
+        if (!enabled()) { A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); return; }
         document.querySelectorAll(CARD).forEach(mountCard);
         for (const [root, host] of hosts) {
-            if (!rowCurrent({ ...host, root })) { hosts.delete(root); continue; }
+            if (!host.action.current() || !hostShows(root, host.c)) { hosts.delete(root); continue; }
             const row = root.matches(rowSelector) ? root : root.querySelector(rowSelector + ', [data-mount="je-actions"]');
             if (row) mountRow(row, root, host.c);
         }
@@ -388,7 +440,7 @@
             const id = new URLSearchParams(location.hash.split('?')[1] || '').get('id');
             const page = element || document.querySelector('#itemDetailPage:not(.hide), .itemDetailPage:not(.hide)');
             if (!id || !page || JE.titleDetails?.parse?.(id)) return;
-            const action = JE.createSessionAction();
+            const action = A.generation(() => !disposed && page.isConnected);
             try {
                 let item = await JE.helpers?.getItemCached?.(id, { userId: ApiClient.getCurrentUserId() });
                 if (!action.current()) return;
@@ -405,7 +457,7 @@
         window.addEventListener('popstate', () => A.close());
         window.addEventListener('resize', () => schedule());
         window.addEventListener('hashchange', () => { A.close(); schedule(); sharedLink(); });
-        JE.session?.onUserChange?.('title-actions', () => { A.close(false); rows.forEach(disposeRow); hosts.clear(); cancelTouch(); receiving = null; schedule(); sharedLink(); });
+        JE.session?.onUserChange?.('title-actions', () => { A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); cancelTouch(); receiving = null; schedule(); sharedLink(); });
         JE.arrNotify?.onChange?.(what => { if (what === 'follows') schedule(); });
         scan(); sharedLink();
     }
@@ -415,12 +467,16 @@
         const key = new URLSearchParams(location.hash.split('?')[1] || '').get('jeTitle');
         if (!key || !ApiClient.getCurrentUserId() || receiving === key) return;
         receiving = key;
-        if (!await A.receive(key)) JE.toast?.(JE.t('title_actions_unavailable'));
+        const owner = A.generation();
+        if (await A.receive(key)) return;
+        if (owner.current()) JE.toast?.(JE.t('title_actions_unavailable'));
+        // Left before it resolved: coming back to the link resolves it again.
+        else if (receiving === key) receiving = null;
     }
     /** Releases the global observer and queued paint when the owning document is disposed. */
     function dispose() {
         disposed = true; observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
-        cancelTouch(); A.close(false); rows.forEach(disposeRow); hosts.clear();
+        cancelTouch(); A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards();
     }
     Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose });
     JE.initializeTitleActions = initialize;

@@ -317,7 +317,7 @@
      * Opens a title known by provider key (Requests hub, notifications, calendar): a library copy the
      * viewer can open first (the season or episode when named), else the native page, else the modal.
      * @param {string} key Title key such as movie:tmdb:603 or tv:tvdb:81189 (season/episode suffixes allowed).
-     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean}} [options] Scope and fallback identity (modal: false, no modal fallback).
+     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, current?: function(): boolean}} [options] Scope and fallback identity (modal: false, no modal fallback; current: the caller's owner is still current).
      * @returns {Promise<boolean>} True when something opened.
      */
     async function openKey(key, options = {}) {
@@ -327,7 +327,8 @@
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
         if (available() && key) {
             const answer = await resolve({ key, season: options.season, episode: options.episode });
-            if (!action.current()) return false;
+            // A caller-owned route/mount generation (a shared link) stops here as well.
+            if (!action.current() || options.current?.() === false) return false;
             if (answer?.itemId && /^[0-9a-f-]{32,36}$/i.test(answer.itemId)) {
                 go(answer.itemId);
                 return true;
@@ -338,7 +339,7 @@
             }
         }
         if (options.modal === false) return false;
-        return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options);
+        return action.current() && options.current?.() !== false && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options);
     }
 
     // ------------------------------------------------------------------ page adapter

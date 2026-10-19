@@ -30,6 +30,27 @@
         return m ? context({ mediaType: m[1], id: Number(m[2]), ...(m[3] != null ? { season: Number(m[3]) } : {}), ...(m[4] != null ? { episode: Number(m[4]) } : {}) }) : null;
     }
 
+    /** The route a continuation belongs to: the view, the shown item and a shared-title link. */
+    function routeKey() {
+        const [path, query] = window.location.hash.replace(/^#!?/, '').split('?');
+        const params = new URLSearchParams(query || '');
+        return [path, params.get('id') || '', params.get('jeTitle') || ''].join('|');
+    }
+
+    /**
+     * One owner generation (D53): the session, the mount (`mount()` says the owning host is still
+     * this one) and the route. Every setup/action continuation checks `current()` after each await.
+     */
+    function generation(mount = () => true) {
+        const session = JE.createSessionAction();
+        const route = routeKey();
+        const current = () => session.current() && routeKey() === route && mount() !== false;
+        return { current, route, bind: callback => (...args) => current() ? callback(...args) : false, onCancel: session.onCancel };
+    }
+
+    /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
+    const cancelled = error => error?.name === 'AbortError';
+
     /** Reuses the server's provider admission, with fresh scope/access checks after metadata awaits. */
     async function admit(c, action) {
         if (!c || !action.current()) return false;
@@ -54,7 +75,7 @@
     async function receive(key) {
         const c = fromKey(key);
         if (!c) return false;
-        const action = JE.createSessionAction();
+        const action = generation();
         try {
             if (!await admit(c, action)) return false;
             if (!admissions.get(c)?.itemId) {
@@ -65,14 +86,15 @@
             }
             if (!await admit(c, action)) return false;
             const actual = admissions.get(c)?.itemId;
-            if (actual && JE.titleDetails.openItem) JE.titleDetails.openItem(actual);
-            else await JE.titleDetails.openKey(c.key);
-            return action.current();
+            if (!action.current()) return false;
+            // Opening navigates, so the route changes: report the opening itself, not the generation after it.
+            if (actual && JE.titleDetails.openItem) { JE.titleDetails.openItem(actual); return true; }
+            return await JE.titleDetails.openKey(c.key, { current: action.current }) === true;
         } catch (_) { return false; }
     }
 
     /** One action invocation retains its submission identity through admission and each owner's await. */
-    async function invoke(c, entry, opener, action = JE.createSessionAction()) {
+    async function invoke(c, entry, opener, action = generation()) {
         if (!action.current() || entry.disabled || entry.valid?.() === false) return false;
         if (entry.source) {
             if (c?.absent && !await admit(c, action)) return false;
@@ -97,7 +119,7 @@
     /** Existing owner controls supplied by a host take precedence over adapted provider entries. */
     async function entries(c, options = {}) {
         if (!c) return [];
-        const action = options.action || JE.createSessionAction();
+        const action = options.action || generation();
         const out = [];
         const root = options.root;
         const displayName = () => c.name || root?.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
@@ -140,7 +162,7 @@
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
                 const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;
-                if (!action.current()) return [];
+                if (!action.current() || status?.cancelled) return [];
                 const permitted = status?.active === true && status.userFound === true && status.canReportIssues !== false;
                 const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type) : null;
                 if (!action.current()) return [];
@@ -152,7 +174,8 @@
                     ...(control ? { control } : { run: () => JE.jellyseerrIssueReporter.showReportModal(String(c.tmdbId), displayName(), c.type, null, item) }) });
             }
         }
-        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.key) : null;
+        // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
+        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
         if (!action.current()) return [];
         const titleStatus = status?.items?.[0];
         if (JE.pluginConfig?.ArrManageDrawerEnabled && JE.arrManage && titleStatus?.admin) {
@@ -161,7 +184,9 @@
                     state: JE.t('title_actions_admin'), run: () => JE.arrManage.open({ key: c.key }) });
         }
         const proof = admissions.get(c);
-        if (proof?.action.current() && proof.itemId) out.push({ id: 'open', group: 'watch', icon: 'open_in_new', label: JE.t('native_details_open'), run: () => {
+        // Open goes to the accessible actual copy; never offered on that copy's own page.
+        const same = id => id && String(id).replace(/-/g, '').toLowerCase() === String(proof.itemId).replace(/-/g, '').toLowerCase();
+        if (proof?.action.current() && proof.itemId && !same(c.shownItemId)) out.push({ id: 'open', group: 'watch', icon: 'open_in_new', label: JE.t('native_details_open'), run: () => {
             const latest = admissions.get(c);
             if (!latest?.action.current() || !latest.itemId) return false;
             JE.titleDetails.openItem(latest.itemId);
@@ -179,5 +204,5 @@
         }
         return action.current() ? out : [];
     }
-    Object.assign(A, { context, fromKey, admit, shareUrl, receive, invoke, register, entries });
+    Object.assign(A, { context, fromKey, routeKey, generation, cancelled, admit, shareUrl, receive, invoke, register, entries });
 })(window.JellyfinEnhanced);
