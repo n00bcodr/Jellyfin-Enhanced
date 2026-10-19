@@ -1036,10 +1036,13 @@ public class IntegrationJellyfinUserDispatchTests
     [InlineData("ArrayCallbackController", "unresolved callback ")]
     [InlineData("ObjectCallbackController", "unresolved callback ")]
     [InlineData("GenericCallbackController", "unresolved callback ")]
-    public void ADelegateInvokedIsJudgedByWhereItCameFrom(string controller, string why)
+    // Round 21 (open-world inputs): Helpers.Run is public, so code outside the code read may hand it anything; the harmless
+    // lambda every caller in the code read hands it doesn't narrow that (the reading doesn't tell one call from another).
+    [InlineData("ResolvedParameterController", "unresolved callback Func<Task> handed to Helpers.Run from outside the code read", "Note")]
+    public void ADelegateInvokedIsJudgedByWhereItCameFrom(string controller, string why, string action = "Disable")
     {
         using var probe = Probe.Build(("InvocationProbe", InvocationProbes, Array.Empty<string>()));
-        var found = Find(JellyfinUserActions.Scan(probe.Path("InvocationProbe")), controller, "Disable");
+        var found = Find(JellyfinUserActions.Scan(probe.Path("InvocationProbe")), controller, action);
         Assert.NotEqual(JellyfinUserKey.None, found.Key);
         Assert.StartsWith(why, found.Why, StringComparison.Ordinal);
         // A Func<Guid, Task> can carry a user id (round 10): everyone's. A Func<Task> carries none (round 11): the person's.
@@ -1048,7 +1051,6 @@ public class IntegrationJellyfinUserDispatchTests
 
     [Theory]
     [InlineData("ParameterCallbackController", "Peek")]
-    [InlineData("ResolvedParameterController", "Note")]
     [InlineData("ReturnedResolvedController", "Note")]
     // The stated limit, pinned so a change to it is deliberate (the probe really disables the person; Known limits).
     [InlineData("TupleCallbackController", "Disable")]
@@ -1073,7 +1075,7 @@ public class IntegrationJellyfinUserDispatchTests
     [InlineData("ObjectCallbackController", "Disable", 1, true)]
     [InlineData("GenericCallbackController", "Disable", 1, true)]
     [InlineData("TupleCallbackController", "Disable", 1, false)]
-    [InlineData("ResolvedParameterController", "Note", 0, false)]
+    [InlineData("ResolvedParameterController", "Note", 0, true)]
     [InlineData("ReturnedResolvedController", "Note", 0, false)]
     public async Task TheInvocationProbesReallyDoWhatTheScanSays(string controller, string action, int disables, bool bracketed)
     {
@@ -1165,7 +1167,9 @@ public class IntegrationJellyfinUserDispatchTests
     [InlineData("DelegatedLoopController", "Disable", "unresolved callback ")]
     [InlineData("EnteredCycleController", "Disable", "unresolved callback ")]
     [InlineData("ArmedCycleController", "Disable", "reaches IUserManager.UpdatePolicyAsync")]
-    [InlineData("QuietCycleController", "Note", null)]
+    // Round 21: QuietService.Create is public: code outside the code read may hand it any callback (its harmless caller in
+    // the code read doesn't narrow that), so the quiet cycle is bracketed too, for the person.
+    [InlineData("QuietCycleController", "Note", "unresolved callback delegate QuietService._callback")]
     public void ACallerCycleKeepsHandedIn(string controller, string action, string? why)
     {
         using var probe = Probe.Build(("CycleProbe", CycleProbes, Array.Empty<string>()));
@@ -1181,14 +1185,15 @@ public class IntegrationJellyfinUserDispatchTests
     }
 
     // Run for real: the reviewer's shape (the service made by reflection, as DI would) and the others disable the person
-    // once; the quiet cycle disables nobody.
+    // once. Round 21: the quiet cycle too, when code outside the code read calls its public Create with a callback that
+    // does (what the open-world rule brackets it for).
     [Theory]
     [InlineData("RecursiveCallbackController", "CallbackService", 1)]
     [InlineData("MutualCallbackController", "PingPongService", 1)]
     [InlineData("DelegatedLoopController", null, 1)]
     [InlineData("EnteredCycleController", null, 1)]
     [InlineData("ArmedCycleController", "ArmedService", 1)]
-    [InlineData("QuietCycleController", "QuietService", 0)]
+    [InlineData("QuietCycleController", "QuietService", 1)]
     public async Task TheCycleProbesReallyDoWhatTheScanSays(string controller, string? service, int disables)
     {
         using var probe = Probe.Build(("CycleProbe", CycleProbes, Array.Empty<string>()));
@@ -1209,7 +1214,6 @@ public class IntegrationJellyfinUserDispatchTests
             var made = service switch
             {
                 "PingPongService" => type.GetMethod("Ping")!.Invoke(null, new object[] { closure, 3 }),
-                "QuietService" => type.GetMethod("Quiet")!.Invoke(null, new object[] { 3 }),
                 "ArmedService" => type.GetMethod("Armed")!.Invoke(null, new object[] { users, person, 3 }),
                 _ => type.GetMethod("Create")!.Invoke(null, new object[] { closure, 3 }),
             };
@@ -1606,8 +1610,8 @@ public class IntegrationJellyfinUserDispatchTests
         foreach (var optimization in new[] { OptimizationLevel.Debug, OptimizationLevel.Release })
         {
             yield return new object[] { optimization, "InheritedSlotController", "Disable", 1, "reaches IUserManager.UpdatePolicyAsync" };
-            yield return new object[] { optimization, "DerivedFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to DerivedFrameworkController.Disable from outside the code read)" };
-            yield return new object[] { optimization, "NearestFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to NearestFrameworkController.Disable from outside the code read)" };
+            yield return new object[] { optimization, "DerivedFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to Sink..ctor from outside the code read)" };
+            yield return new object[] { optimization, "NearestFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to Sink..ctor from outside the code read)" };
             yield return new object[] { optimization, "RotatingReturnController", "Disable", 1, "unresolved callback Func<Task> handed to RotatingReturnController.Disable from outside the code read" };
             yield return new object[] { optimization, "RotatingStoreController", "Disable", 1, "unresolved callback delegate RotatingStoreController._d (handed to RotatingStoreController.Disable from outside the code read)" };
             yield return new object[] { optimization, "RotatingPairController", "Disable", 1, "unresolved callback delegate RotatingPairController._second (handed to RotatingPairController.Disable from outside the code read)" };

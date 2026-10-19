@@ -94,8 +94,11 @@ namespace JE.Tests
             // (the reading doesn't follow a collection's values). Reviewed (12.2 MediaBrowser.Model, decompiled): the
             // dictionary is private, static and read-only, filled only by its initializer with the IMDb regex, positive-number
             // and GUID checks. A callback, so the same person.
+            // Round 21 (open-world inputs): also the callbacks a public helper on its way may be handed from outside the code
+            // read (the reading doesn't tell one call of a method from another). All callbacks: the same person.
             Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.True(
-                r.StartsWith("callback delegate ", StringComparison.Ordinal) || r == "callback Func<String,Boolean> of unknown origin in ProviderIdsExtensions.IsValidProviderId", r));
+                r.StartsWith("callback delegate ", StringComparison.Ordinal) || r == "callback Func<String,Boolean> of unknown origin in ProviderIdsExtensions.IsValidProviderId"
+                || r.EndsWith(" from outside the code read", StringComparison.Ordinal), r));
             Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 

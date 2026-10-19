@@ -48,12 +48,17 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     /// assemblies, a slot .NET declares), a slot .NET declares reached through a FRAMEWORK INTERMEDIATE base (MemoryStream
     /// between Stream and the override), an abstract chain through a framework type (a code-read abstract re-declaration of
     /// TextWriter.Write), an interface RE-IMPLEMENTED by a derived type (code read, .NET), generic VARIANCE (code read,
-    /// .NET), a default interface method, static abstract members (code read, .NET).</summary>
+    /// .NET), a default interface method, static abstract members (code read, .NET).
+    /// Round 21 (D53: exact identity): an inherited fill behind a nearer overload of the same name and parameter count that
+    /// doesn't match (another parameter type, a generic method, a by-reference parameter; and for a slot .NET declares),
+    /// a base named like a type of another assembly (both in the code read, both outside it), and slot chains through
+    /// MethodImpls outside the code read (a covariant override chain; an interface implemented under another name).</summary>
     public enum Target
     {
         Method, Override, Explicit, FrameworkSlot, StaticAbstract, FrameworkStaticAbstract,
         Inherited, InheritedAcrossAssemblies, FrameworkInherited, FrameworkIntermediate, FrameworkAbstractChain, Reimplementation, FrameworkReimplementation,
         Variance, FrameworkVariance, DefaultImplementation,
+        ShadowByType, ShadowByArity, ShadowByRef, FrameworkShadow, DuplicateRead, DuplicateOutside, ExternalCovariant, ExternalInterfaceImpl,
     }
 
     /// <summary>Where the method's user change is.</summary>
@@ -72,22 +77,34 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     // The round-18 table (kept whole: 810 visible cells, 22 handed in).
     private static readonly HashSet<Target> Round18Targets = new() { Target.Method, Target.Override, Target.Explicit, Target.FrameworkSlot, Target.StaticAbstract, Target.FrameworkStaticAbstract };
 
+    // The round-19 table (kept whole: 3,246 visible cells, 34 handed in).
+    private static readonly HashSet<Target> Round19Targets = Enum.GetValues<Target>().Where(t => t <= Target.DefaultImplementation).ToHashSet();
+
+    private static readonly HashSet<Entry> Round18Entries = new() { Entry.Constructor, Entry.Action };
+
     private static readonly HashSet<Source> Round18Sources = Enum.GetValues<Source>().Where(s => s <= Source.Collection).ToHashSet();
 
     /// <summary>Where a delegate handed in from outside the code read enters: the controller's constructor (dependency
-    /// injection) or the action ([FromServices]).</summary>
-    public enum Entry { Constructor, Action }
+    /// injection) or the action ([FromServices]). Round 21 (open-world inputs): the same, with an internal caller too that
+    /// hands it a harmless delegate (a factory building the controller; a [NonAction] method calling the action), which
+    /// must not narrow what outside callers hand in.</summary>
+    public enum Entry { Constructor, Action, ConstructorMixed, ActionMixed }
 
-    /// <summary>One cell of the matrix: a visible delegate (or none), or (Entry set) one handed in from outside.</summary>
-    public sealed record Cell(int Id, Transfer Transfer, Target Target, Effect Effect, Source Source, Entry? Entry = null)
+    /// <summary>Round 21 (MVC's own action discovery): where the action a cell's controller has is declared: an abstract
+    /// base controller in the same assembly, or one in another assembly of the code read.</summary>
+    public enum Place { AbstractBase, OtherModule }
+
+    /// <summary>One cell of the matrix: a visible delegate (or none), or (Entry set) one handed in from outside, or (Place
+    /// set) a direct transfer in an action the controller inherits.</summary>
+    public sealed record Cell(int Id, Transfer Transfer, Target Target, Effect Effect, Source Source, Entry? Entry = null, Place? Place = null)
     {
         public string Name => "Cell" + Id;
 
         public string Controller => Name + "Controller";
 
-        public string Group => Entry == null ? Effect.ToString() : "HandedIn";
+        public string Group => Place != null ? "Inherited" : Entry == null ? Effect.ToString() : "HandedIn";
 
-        public override string ToString() => Entry == null ? $"{Name} {Transfer}/{Target}/{Effect}/{Source}" : $"{Name} handed in/{Entry}/{Source}";
+        public override string ToString() => Place != null ? $"{Name} inherited/{Place}/{Transfer}/{Target}" : Entry == null ? $"{Name} {Transfer}/{Target}/{Effect}/{Source}" : $"{Name} handed in/{Entry}/{Source}";
     }
 
     // The stated-limit cells ("Transfer/Target/Effect/Source"), pinned as None (the runtime still disables the person).
@@ -97,7 +114,9 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
 
     public IntegrationJellyfinUserMatrixTests(Matrix matrix) => _matrix = matrix;
 
-    public static IEnumerable<object[]> Cells() => Matrix.All.Where(c => c.Entry == null).Select(c => new object[] { c.Id, c.Transfer, c.Target, c.Effect, c.Source });
+    public static IEnumerable<object[]> Cells() => Matrix.All.Where(c => c.Entry == null && c.Place == null).Select(c => new object[] { c.Id, c.Transfer, c.Target, c.Effect, c.Source });
+
+    public static IEnumerable<object[]> InheritedCells() => Matrix.All.Where(c => c.Place != null).Select(c => new object[] { c.Id, c.Transfer, c.Target, c.Place!.Value });
 
     public static IEnumerable<object[]> HandedInCells() => Matrix.All.Where(c => c.Entry != null).Select(c => new object[] { c.Id, c.Entry!.Value, c.Source });
 
@@ -141,6 +160,35 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         Assert.Equal((0, 1), (construction, total));
     }
 
+    // Round 21 (4a-r21-5): an action a controller inherits (declared in an abstract base, or in a base in another assembly of
+    // the code read) is MVC's action of that controller: it has its own entry, classified like any other, and KeyOf answers
+    // for the MethodInfo MVC hands the filter (the base's method, reflected on the controller).
+    [Theory]
+    [MemberData(nameof(InheritedCells))]
+    public void EveryInheritedActionIsBracketedUnderItsControllerAndReallyDisablesThePersonOnce(int id, Transfer transfer, Target target, Place place)
+    {
+        var cell = Matrix.All[id];
+        Assert.Equal((transfer, target, place), (cell.Transfer, cell.Target, cell.Place));
+        var evidence = FormOf(transfer, target)!.Evidence;
+        Assert.True(_matrix.Exercises(cell, evidence), cell + ": its IL has no " + evidence);
+        var action = _matrix.Scanned(cell);
+        Assert.True(action.Key == JellyfinUserKey.User, $"{cell}: scan {action.Key} why={action.Why} via={string.Join(" > ", action.Via ?? Array.Empty<string>())}");
+        Assert.Equal("reaches IUserManager.UpdatePolicyAsync", action.Why);
+        Assert.Equal(JellyfinUserKey.User, _matrix.KeyThroughMvc(cell));
+        var (construction, total) = _matrix.Run(cell);
+        Assert.Equal((0, 1), (construction, total));
+    }
+
+    // Round 21: every group's actions are the ones a real MVC application model finds in its controllers' assembly (the same
+    // controllers, the same methods: declared, inherited, overridden), each with its own entry.
+    [Theory]
+    [InlineData("Body")]
+    [InlineData("TypeInitializer")]
+    [InlineData("ModuleInitializer")]
+    [InlineData("HandedIn")]
+    [InlineData("Inherited")]
+    public void EveryGroupsActionsAreMvcsOwn(string group) => _matrix.AssertMvcsActions(group);
+
     // The table is the full product of what C# can write: every transfer/kind pair FormOf allows, with every place of the
     // change and every source (a delegate's Invoke has no "none" source: that is the method pointer row).
     [Fact]
@@ -148,9 +196,10 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     {
         var pairs = Enum.GetValues<Transfer>().SelectMany(t => Enum.GetValues<Target>().Where(k => FormOf(t, k) != null).Select(k => (t, k))).ToList();
         var expected = pairs.Sum(p => Enum.GetValues<Effect>().Length * Enum.GetValues<Source>().Count(s => s != Source.Direct || p.t != Transfer.Invoke));
-        Assert.Equal(expected, Matrix.All.Count(c => c.Entry == null));
+        Assert.Equal(expected, Matrix.All.Count(c => c.Entry == null && c.Place == null));
         Assert.Equal(Enum.GetValues<Entry>().Length * (Enum.GetValues<Source>().Length - 1), Matrix.All.Count(c => c.Entry != null));
-        Assert.Equal(Matrix.All.Count, Matrix.All.Select(c => (c.Transfer, c.Target, c.Effect, c.Source, c.Entry)).Distinct().Count());
+        Assert.Equal(pairs.Count(p => p.t != Transfer.Invoke) * Enum.GetValues<Place>().Length, Matrix.All.Count(c => c.Place != null));
+        Assert.Equal(Matrix.All.Count, Matrix.All.Select(c => (c.Transfer, c.Target, c.Effect, c.Source, c.Entry, c.Place)).Distinct().Count());
         // Each transfer reaches at least one kind; each kind is reached by at least two transfers.
         Assert.All(Enum.GetValues<Transfer>(), t => Assert.Contains(pairs, p => p.t == t));
         Assert.All(Enum.GetValues<Target>(), k => Assert.True(pairs.Count(p => p.k == k) >= 2, k + " is reached by fewer than two transfers"));
@@ -160,9 +209,19 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     [Fact]
     public void TheRound18CellsAreKept()
     {
-        Assert.Equal(810, Matrix.All.Count(c => c.Entry == null && Round18Targets.Contains(c.Target) && Round18Sources.Contains(c.Source)));
-        Assert.Equal(22, Matrix.All.Count(c => c.Entry != null && Round18Sources.Contains(c.Source)));
+        Assert.Equal(810, Matrix.All.Count(c => c.Entry == null && c.Place == null && Round18Targets.Contains(c.Target) && Round18Sources.Contains(c.Source)));
+        Assert.Equal(22, Matrix.All.Count(c => c.Entry is { } e && Round18Entries.Contains(e) && Round18Sources.Contains(c.Source)));
         Assert.Equal(23, Enum.GetValues<Transfer>().Sum(t => Round18Targets.Count(k => FormOf(t, k) != null)));
+    }
+
+    // Round 21: the round-19 cells are all still here (the 61 transfer/kind pairs, three places, the eighteen sources; the
+    // two entries).
+    [Fact]
+    public void TheRound19CellsAreKept()
+    {
+        Assert.Equal(3246, Matrix.All.Count(c => c.Entry == null && c.Place == null && Round19Targets.Contains(c.Target)));
+        Assert.Equal(34, Matrix.All.Count(c => c.Entry is { } e && Round18Entries.Contains(e)));
+        Assert.Equal(61, Enum.GetValues<Transfer>().Sum(t => Round19Targets.Count(k => FormOf(t, k) != null)));
     }
 
     // ------------------------------------------------------------------ the table
@@ -199,6 +258,18 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     private const string ComparerTarget = "public sealed class Target : IComparer<object> { {CCTOR} public int Compare(object? x, object? y) { {BODY} return 0; } }";
     private const string DefaultTarget = "public interface Target : IFace { {CCTOR} void IFace.Run() { {BODY} } } public sealed class Child : Target { }";
     private const string CallFace = "public static class Helpers { public static void Call<T>(T t) where T : IFace => t.Run(); }";
+
+    // Round 21: the identity kinds. A shadow: Mid declares a Run of the same name and parameter count that isn't the slot's.
+    private const string RunFace = "public interface IRun { void Run(int value); }";
+    private const string CallRun = "public static class Helpers { public static void Call<T>(T t) where T : IRun => t.Run(0); }";
+    private static string ShadowTarget(string shadow) => "public class Target { {CCTOR} public virtual void Run(int value) { {BODY} } } public class Mid : Target { " + shadow + " } public sealed class Child : Mid, IRun { }";
+    private const string ObserverTarget = "public class Target { {CCTOR} public virtual void OnNext(int value) { {BODY} } public virtual void OnError(Exception error) { } public virtual void OnCompleted() { } } public class Mid : Target { public virtual void OnNext(string value) { } } public sealed class Child : Mid, IObserver<int> { }";
+    // Two code-read assemblies define CellN.Twin (MatrixBase's plain, MatrixTargets' a MemoryStream).
+    private const string TwinRead = "public sealed class Target : Twin { {CCTOR} public override void SetLength(long value) { {BODY} } }";
+    // Twins.Mid in two assemblies outside the code read (System.MatrixTwinA plain, System.MatrixTwinB a MemoryStream).
+    private const string TwinOutside = "public sealed class Target : Twins.Mid { {CCTOR} public override void Flush() { {BODY} } }";
+    private const string CovariantTarget = "public sealed class Target : Cov.Parent { {CCTOR} public override Cov.R2 Make() { {BODY} return new Cov.R2(); } }";
+    private const string HookTarget = "public sealed class Target : Slots.Parent { {CCTOR} public override void Hook() { {BODY} } }";
 
     // Which transfer can reach which kind of method in C#; null: it can't (a plain call reaches an override only as a base
     // call, an explicit implementation or a slot only through dispatch, a static abstract member only constrained; newobj
@@ -290,8 +361,56 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         (Transfer.Constrained, Target.DefaultImplementation) => new(Face, DefaultTarget, CallFace, "Helpers.Call(new Child());", "constrained."),
         (Transfer.Pointer, Target.DefaultImplementation) => new(Face, DefaultTarget, "", "IFace f = new Child(); Action g = f.Run; g();", "ldvirtftn IFace::Run"),
         (Transfer.Invoke, Target.DefaultImplementation) => new(Face, DefaultTarget, "", null, "ldvirtftn IFace::Run", Group: "new Action(((IFace)new Child()).Run)"),
+
+        // Round 21 (4a-r21-1): the inherited fill is found past a nearer method of the same name and parameter count that
+        // isn't the slot's (the runtime compares whole signatures).
+        (Transfer.Callvirt, Target.ShadowByType or Target.ShadowByArity or Target.ShadowByRef) => new(RunFace, ShadowTarget(Shadow(target)), "", "IRun f = new Child(); f.Run(0);", "callvirt IRun::Run"),
+        (Transfer.Constrained, Target.ShadowByType or Target.ShadowByArity or Target.ShadowByRef) => new(RunFace, ShadowTarget(Shadow(target)), CallRun, "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.ShadowByType or Target.ShadowByArity or Target.ShadowByRef) => new(RunFace, ShadowTarget(Shadow(target)), "", "IRun f = new Child(); Action<int> g = f.Run; g(0);", "ldvirtftn IRun::Run"),
+        (Transfer.Invoke, Target.ShadowByType or Target.ShadowByArity or Target.ShadowByRef) => new(RunFace, ShadowTarget(Shadow(target)), "", null, "ldvirtftn IRun::Run", "Action<int>", "new Action<int>(((IRun)new Child()).Run)", "(0)"),
+
+        (Transfer.Callvirt, Target.FrameworkShadow) => new("", ObserverTarget, "", "IObserver<int> o = new Child(); o.OnNext(0);", "callvirt IObserver`1::OnNext"),
+        (Transfer.Constrained, Target.FrameworkShadow) => new("", ObserverTarget, "public static class Helpers { public static void Call<T>(T t) where T : IObserver<int> => t.OnNext(0); }", "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.FrameworkShadow) => new("", ObserverTarget, "", "IObserver<int> o = new Child(); Action<int> g = o.OnNext; g(0);", "ldvirtftn IObserver`1::OnNext"),
+        (Transfer.Invoke, Target.FrameworkShadow) => new("", ObserverTarget, "", null, "ldvirtftn IObserver`1::OnNext", "Action<int>", "new Action<int>(((IObserver<int>)new Child()).OnNext)", "(0)"),
+
+        // Round 21 (4a-r21-2): a base whose full name another assembly defines too is its own assembly's (code read; outside).
+        (Transfer.Callvirt, Target.DuplicateRead) => new("public class Twin { }", "public class Twin : System.IO.MemoryStream { } " + TwinRead, "", "System.IO.Stream s = new Target(); s.SetLength(0);", "callvirt Stream::SetLength"),
+        (Transfer.Pointer, Target.DuplicateRead) => new("public class Twin { }", "public class Twin : System.IO.MemoryStream { } " + TwinRead, "", "System.IO.Stream s = new Target(); Action<long> g = s.SetLength; g(0);", "ldvirtftn Stream::SetLength"),
+        (Transfer.Invoke, Target.DuplicateRead) => new("public class Twin { }", "public class Twin : System.IO.MemoryStream { } " + TwinRead, "", null, "ldvirtftn Stream::SetLength", "Action<long>", "new Action<long>(((System.IO.Stream)new Target()).SetLength)", "(0)"),
+        (Transfer.Callvirt, Target.DuplicateOutside) => new("", TwinOutside, "", "System.IO.Stream s = new Target(); s.Flush();", "callvirt Stream::Flush"),
+        (Transfer.Pointer, Target.DuplicateOutside) => new("", TwinOutside, "", "System.IO.Stream s = new Target(); Action g = s.Flush; g();", "ldvirtftn Stream::Flush"),
+        (Transfer.Invoke, Target.DuplicateOutside) => new("", TwinOutside, "", null, "ldvirtftn Stream::Flush", Group: "new Action(((System.IO.Stream)new Target()).Flush)"),
+
+        // Round 21 (4a-r21-3): slot chains through MethodImpls outside the code read.
+        (Transfer.Callvirt, Target.ExternalCovariant) => new("", CovariantTarget, "", "Cov.Root r = new Target(); r.Make();", "callvirt Root::Make"),
+        (Transfer.Pointer, Target.ExternalCovariant) => new("", CovariantTarget, "", "Cov.Root r = new Target(); Func<Cov.R0> g = r.Make; g();", "ldvirtftn Root::Make"),
+        (Transfer.Invoke, Target.ExternalCovariant) => new("", CovariantTarget, "", null, "ldvirtftn Root::Make", "Func<Cov.R0>", "new Func<Cov.R0>(((Cov.Root)new Target()).Make)"),
+        (Transfer.Callvirt, Target.ExternalInterfaceImpl) => new("", HookTarget, "", "Slots.IHook h = new Target(); h.Run();", "callvirt IHook::Run"),
+        (Transfer.Constrained, Target.ExternalInterfaceImpl) => new("", HookTarget, "public static class Helpers { public static void Call<T>(T t) where T : Slots.IHook => t.Run(); }", "Helpers.Call(new Target());", "constrained."),
+        (Transfer.Pointer, Target.ExternalInterfaceImpl) => new("", HookTarget, "", "Slots.IHook h = new Target(); Action g = h.Run; g();", "ldvirtftn IHook::Run"),
+        (Transfer.Invoke, Target.ExternalInterfaceImpl) => new("", HookTarget, "", null, "ldvirtftn IHook::Run", Group: "new Action(((Slots.IHook)new Target()).Run)"),
         _ => null,
     };
+
+    private static string Shadow(Target target) => target switch
+    {
+        Target.ShadowByType => "public virtual void Run(string value) { }",
+        Target.ShadowByArity => "public virtual void Run<T>(int value) { }",
+        _ => "public virtual void Run(ref int value) { }",
+    };
+
+    // The shared assemblies outside the code read (named like .NET's: only their metadata is read).
+    private const string CovariantBase = "namespace Cov { public class R0 {} public class R1 : R0 {} public class R2 : R1 {} public class Root { public virtual R0 Make() => new R0(); } public class Parent : Root { public override R1 Make() => new R1(); } }";
+
+    // Round 21: an inherited action's controller. AbstractBase: the base (with the transfer) and the controller, here;
+    // OtherModule: the base in MatrixActions (BaseOf), only the controller here.
+    private static string InheritedOf(Cell cell, Form form)
+        => cell.Place == Place.AbstractBase ? BaseOf(cell, form) + $" public sealed class {cell.Controller} : {cell.Controller}Base {{ }}"
+            : $"public sealed class {cell.Controller} : {cell.Controller}Base {{ }}";
+
+    private static string BaseOf(Cell cell, Form form)
+        => form.Helpers + $" public abstract class {cell.Controller}Base : ControllerBase {{ [HttpPost] public void Disable(Guid userId) {{ {form.Run} }} }}";
 
     // The controller of a cell. Direct: the action transfers control itself. Otherwise the delegate D (the method's own for
     // a delegate's Invoke, else a lambda running the transfer) is made by the controller's constructor, not the action, and
@@ -305,8 +424,14 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         var make = cell.Entry != null ? "cb" : form!.Group ?? "new Action(() => { " + form.Run + " })";
         var call = form?.Arguments ?? "()";
         var c = cell.Controller;
-        var action = cell.Entry == Entry.Action ? "[HttpPost] public void Disable(Guid userId, [FromServices] Action cb)" : "[HttpPost] public void Disable(Guid userId)";
-        var ctor = cell.Entry == Entry.Constructor ? $"public {c}(Action cb)" : $"public {c}()";
+        var inAction = cell.Entry is Entry.Action or Entry.ActionMixed;
+        var inConstructor = cell.Entry is Entry.Constructor or Entry.ConstructorMixed;
+        var action = inAction ? "[HttpPost] public void Disable(Guid userId, [FromServices] Action cb)" : "[HttpPost] public void Disable(Guid userId)";
+        var ctor = inConstructor ? $"public {c}(Action cb)" : $"public {c}()";
+        // Round 21: the internal caller handing in a harmless delegate (it must not narrow what outside callers hand in).
+        var quiet = cell.Entry == Entry.ConstructorMixed ? $" public static {c} Quiet() => new {c}(() => {{ }});"
+            : cell.Entry == Entry.ActionMixed ? " [NonAction] public void Quiet() => Disable(Guid.Empty, () => { });"
+            : string.Empty;
         // Only what the source uses: a helper nobody calls whose parameter reaches the field would make it "handed in".
         var field = $"private {d} _d = null!;";
         const string Harmless = "private static void Harmless() { }";
@@ -321,9 +446,10 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         var spin = $"private void Spin({d} a, {d} b, {d} c, int n) {{ if (n == 0) _d = a; else Spin(b, c, a, n - 1); }}";
         var deepReturned = $"private static {d} D0({d} d) => D1(d); private static {d} D1({d} d) => D2(d); private static {d} D2({d} d) => D3(d); private static {d} D3({d} d) => d;";
         var deepStored = $"private void S0({d} d) => S1(d); private void S1({d} d) => S2(d); private void S2({d} d) => S3(d); private void S3({d} d) {{ _d = d; }}";
+        if (cell.Place != null) return InheritedOf(cell, form!);
         if (cell.Source == Source.Direct) return form!.Helpers + $" public sealed class {c} : ControllerBase {{ {action} {{ {form.Run} }} }}";
         string members, body, outside = string.Empty;
-        if (cell.Entry == Entry.Action)
+        if (inAction)
         {
             (members, body) = cell.Source switch
             {
@@ -347,7 +473,7 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                 _ => throw new ArgumentOutOfRangeException(nameof(cell)),
             };
             if (cell.Source == Source.FieldThroughConstructor) outside = holder;
-            return (form?.Helpers ?? string.Empty) + " " + outside + $" public sealed class {c} : ControllerBase {{ {members} {action} {{ {body} }} }}";
+            return (form?.Helpers ?? string.Empty) + " " + outside + $" public sealed class {c} : ControllerBase {{ {members} {action} {{ {body} }}{quiet} }}";
         }
 
         string into;
@@ -374,7 +500,7 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         };
         if (cell.Source == Source.FieldThroughConstructor) outside = holder;
         var invoke = cell.Source == Source.FieldThroughConstructor ? "_holder.Run();" : $"_d{call};";
-        return (form?.Helpers ?? string.Empty) + " " + outside + $" public sealed class {c} : ControllerBase {{ {members} {ctor} {{ {into} }} {action} {{ {invoke} }} }}";
+        return (form?.Helpers ?? string.Empty) + " " + outside + $" public sealed class {c} : ControllerBase {{ {members} {ctor} {{ {into} }} {action} {{ {invoke} }}{quiet} }}";
     }
 
     // ------------------------------------------------------------------ building, scanning and running the cells
@@ -398,6 +524,28 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
 
         public Matrix() => _groups = All.GroupBy(c => c.Group).ToDictionary(g => g.Key, g => new Lazy<Group>(() => Group.Build(g.First().Entry == null ? g.First().Effect : null, g.ToList())));
 
+        /// <summary>The bracket KeyOf gives the cell's action as a real MVC application model hands it to the filter.</summary>
+        public JellyfinUserKey KeyThroughMvc(Cell cell)
+            => _groups[cell.Group].Value.WithMvc(actions =>
+            {
+                var action = actions.Single(a => a.ControllerTypeInfo.Name == cell.Controller && a.MethodInfo.Name == "Disable");
+                return JellyfinUserActions.KeyOf(action.MethodInfo, action.ControllerTypeInfo.Name, "POST");
+            });
+
+        /// <summary>The group's scanned actions are the ones MVC finds (by controller and method identity).</summary>
+        public void AssertMvcsActions(string name)
+        {
+            var group = _groups[name].Value;
+            var tokenProperty = typeof(JellyfinUserAction).GetProperty("Token");
+            var moduleProperty = typeof(JellyfinUserAction).GetProperty("Module");
+            Assert.True(tokenProperty != null && moduleProperty != null, "JellyfinUserAction carries no method identity (Module, Token)");
+            var scanned = group.All.Select(a => a.Controller + " " + moduleProperty!.GetValue(a) + ":" + ((int)tokenProperty!.GetValue(a)!).ToString("x8")).OrderBy(a => a, StringComparer.Ordinal).ToList();
+            var mvc = group.WithMvc(actions => actions.Select(a => a.ControllerTypeInfo.Name + " " + a.MethodInfo.Module.Assembly.GetName().Name + ":" + a.MethodInfo.MetadataToken.ToString("x8")).Distinct().OrderBy(a => a, StringComparer.Ordinal).ToList());
+            var problems = mvc.Except(scanned).Select(a => "MVC has " + a + ", the scan doesn't").Concat(scanned.Except(mvc).Select(a => "the scan has " + a + ", MVC doesn't")).Take(40).ToList();
+            Assert.True(problems.Count == 0, string.Join("\n", problems));
+            Assert.Equal(mvc.Count, scanned.Count);
+        }
+
         /// <summary>Every cell of the table, by id.</summary>
         public static IReadOnlyList<Cell> All { get; } = Generate();
 
@@ -416,6 +564,12 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
             foreach (var entry in Enum.GetValues<Entry>())
                 foreach (var source in Enum.GetValues<Source>().Where(s => s != Source.Direct))
                     cells.Add(new Cell(cells.Count, default, default, default, source, entry));
+
+            // Round 21: every direct transfer/kind pair in an action the controller inherits, from each place.
+            foreach (var transfer in Enum.GetValues<Transfer>().Where(t => t != Transfer.Invoke))
+                foreach (var target in Enum.GetValues<Target>().Where(k => FormOf(transfer, k) != null))
+                    foreach (var place in Enum.GetValues<Place>())
+                        cells.Add(new Cell(cells.Count, transfer, target, Effect.Body, Source.Direct, null, place));
             return cells;
         }
 
@@ -452,9 +606,9 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                 var type = Load("MatrixCells").GetType(cell.Name + "." + cell.Controller)!;
                 // The closure a delegate handed in stands for (dependency injection, [FromServices]).
                 Action closure = () => users.Object.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
-                var instance = (cell.Entry == Entry.Constructor ? Activator.CreateInstance(type, closure) : Activator.CreateInstance(type))!;
+                var instance = (cell.Entry is Entry.Constructor or Entry.ConstructorMixed ? Activator.CreateInstance(type, closure) : Activator.CreateInstance(type))!;
                 var construction = Volatile.Read(ref count);
-                type.GetMethod("Disable")!.Invoke(instance, cell.Entry == Entry.Action ? new object[] { person, closure } : new object[] { person });
+                type.GetMethod("Disable")!.Invoke(instance, cell.Entry is Entry.Action or Entry.ActionMixed ? new object[] { person, closure } : new object[] { person });
                 return (construction, Volatile.Read(ref count));
             }
             finally
@@ -481,6 +635,13 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
 
             public Dictionary<string, JellyfinUserAction> Actions { get; } = new(StringComparer.Ordinal);
 
+            // Every action the scan found in the controllers' assembly.
+            public IReadOnlyList<JellyfinUserAction> All { get; private set; } = Array.Empty<JellyfinUserAction>();
+
+            // Round 21: the group's assemblies loaded from their files and a real MVC application model of its controllers.
+            private System.Runtime.Loader.AssemblyLoadContext? _mvcContext;
+            private List<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>? _mvc;
+
             // By cell: each instruction that transfers control ("callvirt IFace::Run", "constrained.").
             public Dictionary<string, List<string>> Il { get; } = new(StringComparer.Ordinal);
 
@@ -490,7 +651,7 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                 var group = new Group();
                 Directory.CreateDirectory(group._dir);
                 var forms = cells.ToDictionary(c => c, c => c.Entry == null ? FormOf(c.Transfer, c.Target) : null);
-                string Place(string declarations) => declarations
+                string Placed(string declarations) => declarations
                     .Replace("{BODY}", effect == Effect.Body ? "Bootstrap.Disable();" : string.Empty, StringComparison.Ordinal)
                     .Replace("{CCTOR}", effect == Effect.TypeInitializer ? "static Target() { Bootstrap.Disable(); }" : string.Empty, StringComparison.Ordinal);
                 var bases = Usings + """
@@ -502,27 +663,79 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                         public static void Disable() => Users?.UpdatePolicyAsync(Person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
                       }
                     }
-                    """ + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Place(forms[c]?.Base ?? string.Empty)} }}"));
-                var targets = Usings + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Place(forms[c]?.Targets ?? string.Empty)} }}"))
+                    """ + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Placed(forms[c]?.Base ?? string.Empty)} }}"));
+                var targets = Usings + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Placed(forms[c]?.Targets ?? string.Empty)} }}"))
                     + (effect == Effect.ModuleInitializer ? "\nnamespace Matrix { internal static class ModuleStart { [System.Runtime.CompilerServices.ModuleInitializer] internal static void Run() => Bootstrap.Disable(); } }" : string.Empty);
-                var controllers = Usings + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {ControllerOf(c, forms[c])} }}"));
+                // Round 21: a type deriving from System.MatrixTwinA's Twins.Mid in the controllers' assembly (read first), so the
+                // other Twins.Mid (System.MatrixTwinB's, which DuplicateOutside's targets derive from) is met after it.
+                var controllers = "extern alias TwinA;\n" + Usings + "\nnamespace Matrix { public class PlainTwin : TwinA::Twins.Mid { } }"
+                    + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {ControllerOf(c, forms[c])} }}"));
+                // Round 21: the assemblies outside the code read some kinds derive from (named like .NET's: only their metadata
+                // is read): Twins.Mid twice, a covariant override chain, an interface implemented under another name.
+                group.Compile("System.MatrixTwinA", "namespace Twins { public class Mid { } }");
+                group.Compile("System.MatrixTwinB", "namespace Twins { public class Mid : System.IO.MemoryStream { } }");
+                group.Compile("System.MatrixCovariant", CovariantBase);
+                group.Emit("System.MatrixSlots", IntegrationJellyfinUserIdentityTests.HookAssembly);
+                var outside = new[] { "System.MatrixTwinB", "System.MatrixCovariant", "System.MatrixSlots" };
                 group.Compile("MatrixBase", bases);
-                group.Compile("MatrixTargets", targets, "MatrixBase");
-                group.Compile("MatrixCells", controllers, "MatrixBase", "MatrixTargets");
-                foreach (var action in JellyfinUserActions.Scan(Path.Combine(group._dir, "MatrixCells.dll"))) group.Actions[action.Controller] = action;
+                group.Compile("MatrixTargets", targets, outside.Prepend("MatrixBase").ToArray());
+                var references = new List<string> { "MatrixBase", "MatrixTargets" };
+                if (cells.Any(c => c.Place == Place.OtherModule))
+                {
+                    group.Compile("MatrixActions", Usings + string.Concat(cells.Where(c => c.Place == Place.OtherModule).Select(c => $"\nnamespace {c.Name} {{ {BaseOf(c, forms[c]!)} }}")), references.Concat(outside).ToArray());
+                    references.Add("MatrixActions");
+                }
+
+                group.Compile("MatrixCells", controllers, references.Concat(outside).Select(r => (r, (string?)null)).Append(("System.MatrixTwinA", "TwinA")));
+                group.All = JellyfinUserActions.Scan(Path.Combine(group._dir, "MatrixCells.dll"));
+                foreach (var action in group.All) group.Actions[action.Controller] = action;
                 return group;
             }
 
-            private void Compile(string name, string source, params string[] references)
+            /// <summary>Runs f on the controller actions a real MVC application model finds in MatrixCells (loaded from its file,
+            /// so KeyOf reads it as the filter would).</summary>
+            public T WithMvc<T>(Func<List<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>, T> f)
+            {
+                lock (Images)
+                {
+                    if (_mvc == null)
+                    {
+                        _mvcContext = new System.Runtime.Loader.AssemblyLoadContext("matrix-mvc-" + Guid.NewGuid().ToString("N"), isCollectible: true);
+                        var context = _mvcContext;
+                        context.Resolving += (_, name) => name.Name != null && Images.ContainsKey(name.Name) ? context.LoadFromAssemblyPath(Path.Combine(_dir, name.Name + ".dll")) : null;
+                        var cells = context.LoadFromAssemblyPath(Path.Combine(_dir, "MatrixCells.dll"));
+                        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+                        Microsoft.Extensions.DependencyInjection.LoggingServiceCollectionExtensions.AddLogging(services);
+                        Microsoft.Extensions.DependencyInjection.MvcCoreMvcBuilderExtensions.AddApplicationPart(Microsoft.Extensions.DependencyInjection.MvcServiceCollectionExtensions.AddControllers(services), cells);
+                        using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+                        _mvc = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Microsoft.AspNetCore.Mvc.Infrastructure.IActionDescriptorCollectionProvider>(provider)
+                            .ActionDescriptors.Items.OfType<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>().Where(a => a.ControllerTypeInfo.Assembly == cells).ToList();
+                    }
+
+                    return f(_mvc);
+                }
+            }
+
+            private void Compile(string name, string source, params string[] references) => Compile(name, source, references.Select(r => (r, (string?)null)));
+
+            private void Compile(string name, string source, IEnumerable<(string Name, string? Alias)> references)
             {
                 var compilation = CSharpCompilation.Create(name, new[] { CSharpSyntaxTree.ParseText(source) },
-                    Platform.Value.Concat(references.Select(r => MetadataReference.CreateFromImage(Images[r]))),
+                    Platform.Value.Concat(references.Select(r => r.Alias == null ? MetadataReference.CreateFromImage(Images[r.Name]) : MetadataReference.CreateFromImage(Images[r.Name]).WithAliases(new[] { r.Alias }))),
                     new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
                 using var output = new MemoryStream();
                 var emitted = compilation.Emit(output);
                 if (!emitted.Success) throw new Xunit.Sdk.XunitException(name + ":\n" + string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(20)));
                 Images[name] = output.ToArray();
                 File.WriteAllBytes(Path.Combine(_dir, name + ".dll"), Images[name]);
+                Read(Images[name]);
+            }
+
+            // An assembly written by code (what C# can't express).
+            private void Emit(string name, Action<string> write)
+            {
+                write(Path.Combine(_dir, name + ".dll"));
+                Images[name] = File.ReadAllBytes(Path.Combine(_dir, name + ".dll"));
                 Read(Images[name]);
             }
 
@@ -630,6 +843,8 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
 
             public void Dispose()
             {
+                _mvc = null;
+                _mvcContext?.Unload();
                 try { Directory.Delete(_dir, recursive: true); }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }

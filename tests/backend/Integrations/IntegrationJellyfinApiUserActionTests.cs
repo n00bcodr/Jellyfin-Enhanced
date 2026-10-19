@@ -115,8 +115,10 @@ public class IntegrationJellyfinApiUserActionTests
     // action, each an event a plugin can subscribe to: SubtitleManager.SubtitleDownloadFailure 46, ApplicationHost.HasPendingRestartChanged 15,
     // BaseConfigurationManager.NamedConfigurationUpdating 11, LyricManager.LyricDownloadFailure 6, the Live TV timer
     // events 6, ServerConfigurationManager.ConfigurationUpdating 1, the collection events 3, on 12.2). 88 on 12.2, the same
-    // 88 plus LibraryStructureController.RenameVirtualFolder (12.2's reaches IUserManager.UpdateUserAsync, above) and
-    // without MediaInfoController.OpenLiveStream (round 18, below) on 10.11.11. Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
+    // 88 plus LibraryStructureController.RenameVirtualFolder (12.2's reaches IUserManager.UpdateUserAsync, above) on
+    // 10.11.11; round 21 adds OpenWorld (below) to both: 93 on 12.2, 94 on 10.11.11. Round 21 also changes which callback
+    // is found first for many (an event the code read subscribes to is handed in from outside too: a plugin can subscribe).
+    // Among them the hot paths: POST PlaybackInfo and OpenLiveStream, user data, favourites, ratings and the
     // session's end, so they are bracketed for the request's person (16 by their userId argument, the rest the signed-in
     // person), never for everyone.
     private static readonly string[] Callbacks =
@@ -211,19 +213,35 @@ public class IntegrationJellyfinApiUserActionTests
         "VideosController.MergeVersions",
     };
 
+    // 4a review round 21 (open-world inputs: what code outside the code read can hand a method it can call, its callers in
+    // the code read never narrow): the non-GET actions newly bracketed for the request's person, each by an unresolved
+    // callback (12.2 and 10.11.11 alike). Three are where a plugin's code runs inside the request: a handler subscribed to
+    // DeviceManager.DeviceOptionsUpdated (UpdateDeviceOptions raises it), the close function a plugin's live-TV tuner hands
+    // ExclusiveLiveStream's public constructor (CloseLiveStream runs it), a plugin's BasePlugin<T>.ConfigurationChanged handler
+    // (UpdatePluginConfiguration raises it). Three are public helpers the reading can't tell apart by caller (it isn't
+    // context-sensitive): TranscodeManager.KillTranscodingJobs keeps its deleteFiles delegate in a closure
+    // (StopEncodingProcess), TranscodingJob.StartKillTimer hands its callback to a Timer (PingPlaybackSession), and on
+    // 10.11.11 ReadOnlyListExtension.FindIndex invokes its predicate (OpenLiveStream, through the subtitle stream scores; 12.2's
+    // OpenLiveStream was bracketed already, Callbacks).
+    private static readonly string[] OpenWorld =
+    {
+        "DevicesController.UpdateDeviceOptions",
+        "HlsSegmentController.StopEncodingProcess",
+        "MediaInfoController.CloseLiveStream",
+        "PlaystateController.PingPlaybackSession",
+        "PluginsController.UpdatePluginConfiguration",
+    };
+
     private static readonly Dictionary<string, Dictionary<string, string>> Reviewed = new(StringComparer.Ordinal)
     {
         // 12.2: renaming a library rewrites every user's library preferences (IUserManager.UpdateUserAsync); adding a user
         // to a session and removing one log the session's activity too.
-        ["jf12"] = With(SessionActivity.Concat(Callbacks).Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
+        ["jf12"] = With(SessionActivity.Concat(Callbacks).Concat(OpenWorld).Concat(new[] { "SessionController.AddUserToSession", "SessionController.RemoveUserFromSession" }), ("LibraryStructureController.RenameVirtualFolder", "global")),
         // 10.11: the easy (PIN) password still exists; renaming a library reaches only the callbacks. Round 18: OpenLiveStream
-        // reaches none on 10.11.11. Its old callback (NamedConfigurationUpdating, through a recording's onStarted) was an
-        // artefact of the retired "delegates the caller made before the call" rule: DirectRecorder's
-        // RecordFromDirectStreamProvider invokes its own onStarted, then calls the other five-parameter
-        // IStreamHelper.CopyToAsync overload (…, 81920, 1000, token), whose fourth argument is the constant 1000. The only
-        // onStarted handed to the overload that has one is SharedHttpStream's own lambda. 12.2's OpenLiveStream still reaches
-        // the provider-id validator callback.
-        ["jf10"] = With(SessionActivity.Concat(Callbacks.Where(c => c != "MediaInfoController.OpenLiveStream")).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
+        // reached none on 10.11.11 (its old callback, NamedConfigurationUpdating through a recording's onStarted, was an
+        // artefact of the retired "delegates the caller made before the call" rule). Round 21: it is bracketed again, by the
+        // open-world rule (ReadOnlyListExtension.FindIndex, public, may be handed any predicate: OpenWorld above).
+        ["jf10"] = With(SessionActivity.Concat(Callbacks).Concat(OpenWorld).Append("LibraryStructureController.RenameVirtualFolder"), ("UserController.UpdateUserEasyPassword", "user")),
     };
 
     private static Dictionary<string, string> With(IEnumerable<string> person, params (string Action, string Key)[] more)
