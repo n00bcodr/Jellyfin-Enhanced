@@ -56,7 +56,7 @@ You can choose a JE language independently of Jellyfin's language.
 
 ??? info "How it works"
 
-    With **Auto** in your personal settings, JE follows Jellyfin's language and uses English if that translation is unavailable. JE saves a language only when it includes that translation, or a regional variant of one it includes (for example `en-AU` uses English); anything else is saved as **Auto**, and the menu shows what was saved. **Clear Translation Cache** clears this browser's saved translations and reloads. It normally reloads the translation included with your installed plugin. See [Contributing Translations](contributing-translations.md) for languages, loading order, and release timing.
+    With **Auto** in your personal settings, JE follows Jellyfin's language and uses English if that translation is unavailable. JE saves a language only when it includes that translation, or a regional variant of one it includes (for example `en-AU` uses English); anything else is saved as **Auto**, and the menu shows what was saved. Choosing a JE language also sets this browser's Jellyfin display language (both use the same setting); saving other JE settings never changes a language you chose in Jellyfin's own **Display** settings. **Clear Translation Cache** clears this browser's saved translations and reloads. It normally reloads the translation included with your installed plugin. See [Contributing Translations](contributing-translations.md) for languages, loading order, and release timing.
 
 ### Where is the userscript version?
 

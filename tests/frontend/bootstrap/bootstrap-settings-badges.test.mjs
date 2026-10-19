@@ -757,10 +757,30 @@ test('a read while French is pending mirrors only persisted English, never the s
   expectReload(h, false);
 });
 
-test('an unrelated settings commit mirrors Auto language as an empty value without a language panel', async t => {
+// Stage 1 fix round 3 (found live): Jellyfin's own Display settings write the same `${userId}-language` key. JE writes it
+// only when its own display language changes, so an unrelated JE save or a settings read keeps a language chosen there
+// (this test used to assert the opposite: an unrelated commit wrote JE's Auto as '' over the person's Jellyfin choice, which
+// put Jellyfin back in the browser's language after a reload). A JE language change, including back to Auto, still writes.
+test('an unrelated settings commit or read keeps a language chosen in Jellyfin; a JE language change writes it', async t => {
   const h = panel(t, { settings: { displayLanguage: '' } });
   h.window.localStorage.setItem('user-a-language', 'fr');
   await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  h.window.ApiClient.ajax = async () => ({ displayLanguage: '', showFileSizes: true });
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'fr');
+  h.JE.internals.scheduleReloadWhenIdle = () => {};
+  h.window.ApiClient.ajax = async () => [];
+  await h.JE.updateSettings({ displayLanguage: 'de' }, { throwOnError: true });
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'de');
+  await h.JE.updateSettings({ showFileSizes: false }, { throwOnError: true });
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'de');
+  // Another browser changed JE's language: a read brings it.
+  h.window.ApiClient.ajax = async () => ({ displayLanguage: 'pt-BR', showFileSizes: false });
+  await h.JE.readUserSettings('settings.json');
+  assert.equal(h.window.localStorage.getItem('user-a-language'), 'pt-BR');
+  h.window.ApiClient.ajax = async () => [];
+  await h.JE.updateSettings({ displayLanguage: '' }, { throwOnError: true });
   assert.equal(h.window.localStorage.getItem('user-a-language'), '');
 });
 
@@ -989,7 +1009,11 @@ for (const mode of ['quota', 'setItem', 'accessor']) {
     }
     h.JE.internals.observeSettingsDocument('r10-proof', () => observed++);
     h.window.ApiClient.ajax = async () => ({ Consents: { ListSwapIn: false } });
-    await assert.doesNotReject(h.JE.updateSettings({ acquisitionBadges: false }, { throwOnError: true }));
+    // The commit changes JE's language (stage 1 fix round 3: JE writes the shared key only then; an unrelated commit
+    // no longer does, see above), so the mirror has something to write. The page reload a language change schedules
+    // isn't what this test is about.
+    h.JE.internals.scheduleReloadWhenIdle = () => {};
+    await assert.doesNotReject(h.JE.updateSettings({ acquisitionBadges: false, displayLanguage: 'fr' }, { throwOnError: true }));
     assert.equal(h.JE.currentSettings.listSwapIn, false);
     assert.equal(h.document.getElementById('listSwapInSelect').value, '');
     assert.ok(h.toasts.includes(tr('toast_badge_settings_saved')));
@@ -1002,7 +1026,7 @@ for (const mode of ['quota', 'setItem', 'accessor']) {
     assert.equal(warnings, 1, 'a failed mirror warns once per session');
     restore();
     await h.JE.updateSettings({ showAudioLanguages: false }, { throwOnError: true });
-    assert.equal(storage.getItem('user-a-language'), 'en-US', 'mirror recovers after storage is available');
+    assert.equal(storage.getItem('user-a-language'), 'fr', 'mirror recovers after storage is available');
   });
 }
 test('unchanged language does not rewrite its mirror on unrelated saves or accepted reads', async t => {

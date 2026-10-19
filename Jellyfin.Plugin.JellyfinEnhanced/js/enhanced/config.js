@@ -104,7 +104,8 @@
             const own = JE.userConfig?.[fileName.replace(/\.json$/, '')];
             const persisted = copyDocument(own);
             state = { fileName, identity, persisted, shown: copyDocument(persisted), pending: [],
-                revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map(), effectWarnings: new Set() };
+                revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map(), effectWarnings: new Set(),
+                mirroredLanguage: undefined };
             documents.set(fileName, state);
         }
         return state;
@@ -248,15 +249,21 @@
         if (['homeRowRequests', 'homeRowSoon', 'homeRowArrived', 'homeOpsStrip']
             .some(key => (previousPersisted[key] ?? null) !== (state.persisted[key] ?? null))) return JE.arrHome?.refresh?.({ fresh: true });
     });
-    settingsEffects.set('language-mirror', ({ state, reason }) => {
+    settingsEffects.set('language-mirror', ({ state, previousPersisted, reason }) => {
         if (reason !== 'saved' && reason !== 'read') return;
         // What the server stored is mirrored (a save's answer sets it as persisted; reads hand out the gated value). The
         // same rule again here: a stored "undefined" or "null", a malformed value or a language JE ships no bundle for
         // mirrors as Auto (''). Without the translations module's check nothing is written.
         if (typeof JE.supportedLanguageCode !== 'function') return;
         const language = JE.supportedLanguageCode(resolveSettings(state.persisted).displayLanguage);
+        // Jellyfin's own Display settings write the same key: JE writes it only when its own display language differs from
+        // the one it last mirrored (a save, or a read of another browser's change), so saving any other JE setting never
+        // replaces the person's choice there. A failed write is retried at the next publication.
+        if (state.mirroredLanguage === undefined) state.mirroredLanguage = JE.supportedLanguageCode(resolveSettings(previousPersisted).displayLanguage);
+        if (language === state.mirroredLanguage) return;
         const key = `${ApiClient.getCurrentUserId()}-language`;
         if (localStorage.getItem(key) !== language) localStorage.setItem(key, language);
+        state.mirroredLanguage = language;
     });
     for (const [kind, effect] of [
         ['language-toast', () => JE.toast?.(JE.t('toast_language_changed'))],
@@ -344,12 +351,13 @@
         const response = await ApiClient.ajax({ type: 'GET',
             url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}?_=${Date.now()}`), dataType: 'json' });
         if (!isActiveDocument(state)) return false;
+        const previousPersisted = state.persisted;
         if (response && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision) {
             state.persisted = copyDocument(JE.toCamelCase ? JE.toCamelCase(response) : response);
             // A fresh read may reflect another browser's write: invalidate POST deduplication.
             state.serialized = undefined;
         }
-        publishDocument(state, state.persisted, 'read');
+        publishDocument(state, previousPersisted, 'read');
         return true;
     };
 
