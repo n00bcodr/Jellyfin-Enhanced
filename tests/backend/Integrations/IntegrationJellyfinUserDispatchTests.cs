@@ -763,6 +763,197 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("ModuleApi")), "ModuleFieldController", "Disable").Key);
     }
 
+    // 4a review round 17 (4a-security-r17-1/-2): a virtual call to a slot DECLARED outside the code read runs the code read's
+    // implementations (IProgress<T>.Report, IComparer<T>.Compare…), and a delegate kept in a field typed by a generic
+    // parameter (`T`) is followed to what the code read stores in it. Round 16 dropped both (Key None). Object-lifecycle
+    // slots (IDisposable.Dispose, object.ToString…) are a STATED LIMIT, not followed: a call site can't tell which object
+    // it disposes, so following them reached every Dispose in Jellyfin (bracketing playback pings); Jellyfin's own
+    // lifecycle members change no user (pinned sets).
+    private const string FrameworkSlotProbes = Usings + """
+
+        public sealed class ReportingChanges(IUserManager users) : IProgress<Guid> {
+          public void Report(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); }
+        }
+        public sealed class ExplicitReportingChanges(IUserManager users) : IObserver<Guid> {
+          void IObserver<Guid>.OnNext(Guid userId) { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); }
+          void IObserver<Guid>.OnCompleted() { }
+          void IObserver<Guid>.OnError(Exception error) { }
+        }
+        public sealed class DisposingChanges(IUserManager users, Guid person) : IDisposable {
+          public void Dispose() { _ = users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }); }
+        }
+        public sealed class ProgressController(IProgress<Guid> progress) : ControllerBase { [HttpPost] public void Disable(Guid userId) => progress.Report(userId); }
+        public sealed class ObserverController(IObserver<Guid> observer) : ControllerBase { [HttpPost] public void Disable(Guid userId) => observer.OnNext(userId); }
+        public sealed class DisposeController(IDisposable resource) : ControllerBase { [HttpPost] public void Disable() => resource.Dispose(); }
+        public sealed class CloneController(ICloneable value) : ControllerBase { [HttpPost] public object Note() => value.Clone(); }
+        public sealed class Slot<T> { private T? _value; public void Store(T value) => _value = value; public T Load() => _value!; }
+        public sealed class GenericSlotController(Slot<Action> slot, IUserManager users) : ControllerBase {
+          [HttpPost] public void Arm(Guid userId) => slot.Store(() => { _ = users.UpdatePolicyAsync(userId, new UserPolicy { IsDisabled = true }); });
+          [HttpPost] public void Fire() => slot.Load()();
+        }
+        """;
+
+    [Theory]
+    [InlineData("ProgressController", "Disable")]
+    [InlineData("ObserverController", "Disable")]
+    [InlineData("GenericSlotController", "Fire")]
+    public void FrameworkSlotsAndGenericFieldsAreFollowed(string controller, string action)
+    {
+        using var probe = Probe.Build(("FrameworkProbe", FrameworkSlotProbes, Array.Empty<string>()));
+        var scanned = JellyfinUserActions.Scan(probe.Path("FrameworkProbe"));
+        var found = Find(scanned, controller, action);
+        Assert.NotEqual(JellyfinUserKey.None, found.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", found.Reaches);
+        // A framework slot nothing in the code read fills reaches nothing.
+        Assert.Equal(JellyfinUserKey.None, Find(scanned, "CloneController", "Note").Key);
+    }
+
+    // The stated limit, pinned so a change to it is deliberate: a lifecycle slot declared outside the code read isn't
+    // followed (the probe really disables the person; the scan says None, as Known limits documents).
+    [Fact]
+    public void ALifecycleSlotDeclaredOutsideTheCodeReadIsAStatedLimit()
+    {
+        using var probe = Probe.Build(("FrameworkProbe", FrameworkSlotProbes, Array.Empty<string>()));
+        Assert.Equal(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("FrameworkProbe")), "DisposeController", "Disable").Key);
+    }
+
+    // Run for real: each one disables the person once through the framework slot or the generic field.
+    [Theory]
+    [InlineData("ProgressController")]
+    [InlineData("ObserverController")]
+    [InlineData("GenericSlotController")]
+    public void TheFrameworkSlotProbesReallyDisableThePerson(string controller)
+    {
+        using var probe = Probe.Build(("FrameworkProbe", FrameworkSlotProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var assembly = probe.Load("FrameworkProbe");
+        object instance;
+        string action;
+        if (controller == "GenericSlotController")
+        {
+            var slot = Activator.CreateInstance(assembly.GetType("Slot`1")!.MakeGenericType(typeof(Action)))!;
+            instance = Activator.CreateInstance(assembly.GetType(controller)!, slot, users)!;
+            instance.GetType().GetMethod("Arm")!.Invoke(instance, new object[] { person });
+            Assert.Equal(0, disabled());
+            instance.GetType().GetMethod("Fire")!.Invoke(instance, null);
+            action = "Fire";
+        }
+        else
+        {
+            var target = controller == "ProgressController" ? "ReportingChanges" : "ExplicitReportingChanges";
+            var changes = Activator.CreateInstance(assembly.GetType(target)!, users)!;
+            instance = Activator.CreateInstance(assembly.GetType(controller)!, changes)!;
+            instance.GetType().GetMethod("Disable")!.Invoke(instance, new object[] { person });
+            action = "Disable";
+        }
+
+        Assert.Equal(1, disabled());
+        Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("FrameworkProbe")), controller, action).Key);
+    }
+
+    // Round 17, the enumeration protocol: a foreach over IEnumerable<T> calls GetEnumerator and MoveNext through slots declared
+    // outside the code read, so a hand-written enumerator the code read has is followed through them. A compiler-generated
+    // state machine isn't: an iterator's code is followed from the method that creates it (the only code that can hand one
+    // out), so enumerating a sequence doesn't reach every iterator in Jellyfin (on 12.2 that bracketed backups, display
+    // preferences and playback pings through one iterator). Stated limit: a lazy sequence created by one action and
+    // enumerated by another counts where it is created (EnumeratedElsewhereController below; the probe really disables).
+    private const string EnumerationProbes = Usings + """
+
+        using System.Collections;
+        using System.Collections.Generic;
+        public sealed class ChangingSequence(IUserManager users, Guid person) : IEnumerable<Guid> {
+          public IEnumerator<Guid> GetEnumerator() => new ChangingCursor(users, person);
+          IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+        public sealed class ChangingCursor(IUserManager users, Guid person) : IEnumerator<Guid> {
+          private bool _done;
+          public Guid Current => person;
+          object IEnumerator.Current => person;
+          public bool MoveNext() { if (_done) return false; _done = true; _ = users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }); return true; }
+          public void Reset() { }
+          public void Dispose() { }
+        }
+        public sealed class SequenceController(IEnumerable<Guid> people) : ControllerBase {
+          [HttpPost] public int Count() { var n = 0; foreach (var _ in people) n++; return n; }
+        }
+        """;
+
+    private const string IteratorProbes = Usings + """
+
+        using System.Collections.Generic;
+        public static class Iterators {
+          public static IEnumerable<Guid> Disabling(IUserManager users, Guid person) {
+            _ = users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true });
+            yield return person;
+          }
+        }
+        public sealed class IteratorController(IUserManager users) : ControllerBase {
+          [HttpPost] public int Disable(Guid userId) { var n = 0; foreach (var _ in Iterators.Disabling(users, userId)) n++; return n; }
+        }
+        public sealed class EnumeratedElsewhereController(IEnumerable<Guid> people) : ControllerBase {
+          [HttpPost] public int Count() { var n = 0; foreach (var _ in people) n++; return n; }
+        }
+        """;
+
+    [Fact]
+    public void AHandWrittenEnumeratorIsFollowedAndAnIteratorFromWhereItIsCreated()
+    {
+        // Two folders: a scan reads its assembly's folder, and the stated limit needs no hand-written enumerator in it.
+        using var enumeration = Probe.Build(("EnumerationProbe", EnumerationProbes, Array.Empty<string>()));
+        using var probe = Probe.Build(("IteratorProbe", IteratorProbes, Array.Empty<string>()));
+        var sequence = Find(JellyfinUserActions.Scan(enumeration.Path("EnumerationProbe")), "SequenceController", "Count");
+        Assert.NotEqual(JellyfinUserKey.None, sequence.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", sequence.Reaches);
+        var iterators = JellyfinUserActions.Scan(probe.Path("IteratorProbe"));
+        var iterator = Find(iterators, "IteratorController", "Disable");
+        Assert.NotEqual(JellyfinUserKey.None, iterator.Key);
+        Assert.Equal("IUserManager.UpdatePolicyAsync", iterator.Reaches);
+        // The stated limit, pinned so a change to it is deliberate: enumerating a sequence another action created.
+        Assert.Equal(JellyfinUserKey.None, Find(iterators, "EnumeratedElsewhereController", "Count").Key);
+    }
+
+    // Run for real: each one disables the person once, the stated limit's included.
+    [Theory]
+    [InlineData("SequenceController")]
+    [InlineData("IteratorController")]
+    [InlineData("EnumeratedElsewhereController")]
+    public void TheEnumerationProbesReallyDisableThePerson(string controller)
+    {
+        using var probe = Probe.Build(("EnumerationProbe", EnumerationProbes, Array.Empty<string>()), ("IteratorProbe", IteratorProbes, Array.Empty<string>()));
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        switch (controller)
+        {
+            case "SequenceController":
+            {
+                var assembly = probe.Load("EnumerationProbe");
+                var people = Activator.CreateInstance(assembly.GetType("ChangingSequence")!, users, person)!;
+                var instance = Activator.CreateInstance(assembly.GetType(controller)!, people)!;
+                Assert.Equal(0, disabled());
+                Assert.Equal(1, instance.GetType().GetMethod("Count")!.Invoke(instance, null));
+                break;
+            }
+            case "IteratorController":
+            {
+                var instance = Activator.CreateInstance(probe.Load("IteratorProbe").GetType(controller)!, users)!;
+                Assert.Equal(1, instance.GetType().GetMethod("Disable")!.Invoke(instance, new object[] { person }));
+                break;
+            }
+            default:
+            {
+                var assembly = probe.Load("IteratorProbe");
+                var people = assembly.GetType("Iterators")!.GetMethod("Disabling")!.Invoke(null, new object[] { users, person })!;
+                Assert.Equal(0, disabled());
+                var instance = Activator.CreateInstance(assembly.GetType(controller)!, people)!;
+                Assert.Equal(1, instance.GetType().GetMethod("Count")!.Invoke(instance, null));
+                break;
+            }
+        }
+
+        Assert.Equal(1, disabled());
+    }
+
     // 4a review round 11 (4a-security-r11-2): a callback the code read can't resolve is judged by what it can do, not by
     // its signature. A Func<Task> handed in by DI carries no user type, yet its closure can hold IUserManager and a user id
     // (the reviewer's probe disables that user). Round 10 counted an unresolved delegate only when its type could carry a

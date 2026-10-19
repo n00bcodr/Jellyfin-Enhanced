@@ -82,7 +82,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// Members followed into that change a user's record but no authority the automatic-write check reads ("Type.Member",
         /// the declaring type's simple name), each reviewed in the 12.2 and 10.11.11 sources. A call of one isn't followed.
         /// </summary>
-        public static readonly IReadOnlyDictionary<string, string> NotAuthority = new Dictionary<string, string>(StringComparer.Ordinal);
+        public static readonly IReadOnlyDictionary<string, string> NotAuthority = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            // Round 17 (reviewed in 12.2 and 10.11.11, Jellyfin.Database.Implementations PessimisticLockBehavior.DbLock):
+            // Dispose runs the Action DbLock's own EnterWrite/EnterRead factories gave it (ExitWriteLock / ExitReadLock of
+            // the database lock) or nothing (the shared no-lock instance). It changes no user; following it through every
+            // `using` of a database lock would bracket ordinary actions (playback pings, display preferences) for nothing.
+            ["DbLock.Dispose"] = "releases the database read/write lock",
+        };
 
         /// <summary>
         /// Members whose user change is only ever to the person the request is for: its <c>userId</c> argument, else the
@@ -122,7 +129,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// </summary>
         /// <param name="type">The declaring type's full name.</param>
         /// <param name="member">The member's metadata name (<c>set_X</c> for a property setter).</param>
-        public static bool Mutates(string type, string member) => type switch
+        // Round 17: object-lifecycle members (disposal, finalization, identity and text) change no user on any of the types
+        // below; a virtual call to such a slot declared outside the code read (IDisposable, object) reaches them on every
+        // implementation, so without this every `using` would count as a user change.
+        private static readonly HashSet<string> LifecycleMembers = new(StringComparer.Ordinal)
+        {
+            "Dispose", "DisposeAsync", "Finalize", "ToString", "Equals", "GetHashCode", "GetType",
+        };
+
+        public static bool Mutates(string type, string member) => !LifecycleMembers.Contains(member) && type switch
         {
             "MediaBrowser.Controller.Library.IUserManager" or "Jellyfin.Server.Implementations.Users.UserManager" => !UserManagerReads.Contains(member) && !member.StartsWith("get_", StringComparison.Ordinal),
             "MediaBrowser.Controller.Session.ISessionManager" or "Emby.Server.Implementations.Session.SessionManager" => member.StartsWith("Authenticate", StringComparison.Ordinal),
@@ -290,6 +305,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _derived = null;
                 _explicit.Clear();
                 _moduleInitializers.Clear();
+                _frameworkSlots.Clear();
+                _stateMachines.Clear();
             }
 
             private static bool Writes(JellyfinUserAction action) => action.Verbs.Any(v => v is not ("GET" or "HEAD"));
@@ -430,6 +447,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // Each module's initializer (`<Module>`'s .cctor): the runtime runs it before any of the module's code.
             private readonly Dictionary<int, int> _moduleInitializers = new();
 
+            // Round 17: shared nodes for virtual slots declared outside the code read (null: nothing read fills it).
+            private readonly Dictionary<(string Type, string Method, int Params), int?> _frameworkSlots = new();
+
+            // The compiler-generated state machines: the types the code read's [*StateMachine] attributes name.
+            private readonly HashSet<string> _stateMachines = new(StringComparer.Ordinal);
+
             public static CodeSet Read(string path) => Read(path, null);
 
             // With member: also everything that member's own code reaches (a Mutates member, a reviewed person's change, a
@@ -507,6 +530,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                             Abstract = (method.Attributes & MethodAttributes.Abstract) != 0,
                             NewSlot = (method.Attributes & MethodAttributes.NewSlot) != 0,
                         };
+                        foreach (var machine in StateMachines(md, method.GetCustomAttributes())) _stateMachines.Add(machine);
                         _nodeOf[(m, MetadataTokens.GetToken(methodHandle))] = _nodes.Count;
                         info.Methods.Add(_nodes.Count);
                         _nodes.Add(node);
@@ -761,6 +785,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         var found = Resolve(parent, called, count);
                         if (found.Count == 0 && !Mutates(parent, called) && !ReviewedRead(parent, called))
                         {
+                            // Round 17: a virtual call to a slot declared outside the code read (IDisposable.Dispose,
+                            // object.ToString, a framework interface or base class) still runs the implementations and
+                            // overrides the code read has: one shared slot node per declaration reaches them.
+                            if (virtualCall && FrameworkSlot(parent, called, count) is { } slotNode) return new List<int> { slotNode };
                             if (!JellyfinType(parent)) return found;
                             var signature = member.DecodeMethodSignature(Names.Instance, null);
                             var contract = UserContract(MethodTypes(md, signature), null);
@@ -1002,12 +1030,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 // Round 11: a delegate whose target stays unresolved counts whatever its type (Q-4AF11-1): a Func<Task> carries
                 // no user, but the closure behind it can hold the user manager and a user id. One whose type can carry a
                 // user stays a call for everyone (round 10).
-                var callback = !UserContract(new[] { _fieldTypes.GetValueOrDefault(field, string.Empty) }, null);
-                if (sources == null || sources.Count == 0) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
+                var fieldType = _fieldTypes.GetValueOrDefault(field, string.Empty);
+                var callback = !UserContract(new[] { fieldType }, null);
+                // Round 17: a field typed by a generic parameter (`T`) holds a delegate only in some constructed uses
+                // (ValueTuple items, anonymous types and event arguments are `T` fields too): it is followed to the delegates
+                // the code read is seen storing in it, and is not counted as "handed in" when its values come from outside
+                // (a stated limit; Jellyfin's user events cover it).
+                var generic = fieldType.StartsWith("!", StringComparison.Ordinal);
+                if (!generic && (sources == null || sources.Count == 0)) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (nothing in the code read stores it)", callback: callback));
                 foreach (var source in sources ?? new List<Source>())
                 {
                     var refs = source.Parameter ? Callers(source.Node, depth, new HashSet<int>()) : source.Made;
-                    if (refs == null) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (handed in from outside the code read)", callback: callback));
+                    if (refs == null && !generic) _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (handed in from outside the code read)", callback: callback));
                     foreach (var r in refs ?? new List<Ref>())
                         _nodes[id].Calls.Add(r.Field is { } f ? (depth > MaxDepth ? Unresolved(_nodes[id].Name + " (too deep)") : FieldNode(f, depth + 1)) : r.Node);
                 }
@@ -1305,8 +1339,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     code = blob.ReadSignatureTypeCode();
                 }
 
-                // Round 15: a function pointer (`delegate*`) is stored and invoked (calli) like a delegate.
-                if (code != SignatureTypeCode.FunctionPointer)
+                // Round 15: a function pointer (`delegate*`) is stored and invoked (calli) like a delegate. Round 17: so is a
+                // field typed by a generic parameter (`T`): it can hold a delegate in a constructed use.
+                if (code is not (SignatureTypeCode.FunctionPointer or SignatureTypeCode.GenericTypeParameter or SignatureTypeCode.GenericMethodParameter))
                 {
                     if (code == SignatureTypeCode.GenericTypeInstance) code = blob.ReadSignatureTypeCode();
                     if (code is not (SignatureTypeCode.TypeHandle or (SignatureTypeCode)0x12 or (SignatureTypeCode)0x11)) return null;
@@ -1374,6 +1409,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     HandleKind.TypeDefinition => md.GetString(md.GetTypeDefinition((TypeDefinitionHandle)type).Name),
                     _ => null,
                 };
+            }
+
+            // Round 17: the shared node for a virtual slot declared outside the code read: it reaches every method of the code
+            // read that fills it (implicit implementations and overrides by name and parameter count, explicit MethodImpl
+            // edges), and their own overrides through Dispatch. Null when nothing read fills it.
+            private int? FrameworkSlot(string type, string method, int count)
+            {
+                // A stated limit: object-lifecycle slots (disposal, finalization, ToString/Equals/GetHashCode) declared
+                // outside the code read aren't followed into implementations. A call site can't tell WHICH object it
+                // disposes, so the slot would reach every Dispose in Jellyfin and their event chains, bracketing ordinary
+                // actions (playback pings, display preferences) for nothing; Jellyfin's own lifecycle members change no user
+                // (reviewed in 12.2 and 10.11.11; pinned sets). Jellyfin's user events cover a plugin that would.
+                if (LifecycleMembers.Contains(method)) return null;
+                if (_frameworkSlots.TryGetValue((type, method, count), out var cached)) return cached;
+                var fills = new List<int>();
+                // A compiler-generated state machine (the type an async method's or iterator's [*StateMachine] attribute
+                // names) is no fill: its code is followed from the method that creates it, the only code that can hand one
+                // out, so a hand-written enumerator is followed through IEnumerator.MoveNext and the state machines of
+                // Jellyfin's iterators aren't (each foreach would otherwise reach every one of them). Stated limit: a lazy
+                // sequence created by one action and enumerated by another counts where it is created.
+                foreach (var t in Implementers(type).Concat(Derived(type)).Distinct().Where(t => !_stateMachines.Contains(_types[t].Name)))
+                    foreach (var n in _types[t].Methods)
+                    {
+                        var other = _nodes[n];
+                        if (other.Params != count || other.Abstract || !other.Virtual || ReviewedRead(_types[t].Name, other.Method)) continue;
+                        if (other.Method == method || other.Method.EndsWith("." + method, StringComparison.Ordinal)) fills.Add(n);
+                    }
+
+                if (_explicit.TryGetValue((type, method, count), out var bodies))
+                    fills.AddRange(bodies.Where(n => !_stateMachines.Contains(_types[_nodes[n].Type].Name)));
+                fills = fills.Distinct().ToList();
+                if (fills.Count == 0)
+                {
+                    _frameworkSlots[(type, method, count)] = null;
+                    return null;
+                }
+
+                var id = _nodes.Count;
+                _nodes.Add(new Node { Name = "slot " + Simple(type) + "." + method });
+                _frameworkSlots[(type, method, count)] = id;
+                foreach (var n in fills)
+                {
+                    _nodes[id].Calls.Add(n);
+                    _nodes[id].Calls.AddRange(Dispatch(n));
+                }
+
+                return id;
             }
 
             // A type's static constructors in the code read (the runtime runs one before the type's first use).
