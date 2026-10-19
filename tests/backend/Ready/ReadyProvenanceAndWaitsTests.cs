@@ -179,6 +179,9 @@ public class ReadyProvenanceAndWaitsTests
         public RequestLedger? Ledger { get; }
         public RequestService? Requests { get; }
 
+        /// <summary>Runs inside every title-metadata lookup (an await of the notices' production), before it answers.</summary>
+        public Func<StatusViewer, Task>? OnMeta { get; set; }
+
         public World(IntegrationNotificationsTests.Rig rig, bool jeMode)
         {
             Rig = rig;
@@ -198,7 +201,7 @@ public class ReadyProvenanceAndWaitsTests
 
             Dispatcher = new NotifyDispatcher(rig.NotifyStore, new NtfySender(rig.Ntfy), new EmailSender(rig.Mail), null, () => rig.Config, () => rig.Arr.Now, rig.Users, rig.View, rig.Status.Aliases, Ledger, Policy, channel);
             Func<IEnumerable<string>, StatusViewer, CancellationToken, Task<Dictionary<string, HubTitleMeta>>> meta = (keys, viewer, ct)
-                => Task.FromResult(keys.ToDictionary(k => k, k => new HubTitleMeta { Title = k == Dune ? "Dune: Part Two" : k == Severance ? "Severance" : "Film " + k.Split(':')[^1], Year = 2024 }));
+                => (OnMeta?.Invoke(viewer) ?? Task.CompletedTask).ContinueWith(_ => keys.ToDictionary(k => k, k => new HubTitleMeta { Title = k == Dune ? "Dune: Part Two" : k == Severance ? "Severance" : "Film " + k.Split(':')[^1], Year = 2024 }), TaskScheduler.Default);
             Service = new NotificationService(rig.NotifyStore, rig.Status, rig.Requests, rig.View, rig.Feed, rig.Store, rig.Users, Dispatcher, null, null, () => rig.Config, () => rig.Arr.Now, rig.Hub, rig.Bridge, Ledger, meta, Policy);
         }
 

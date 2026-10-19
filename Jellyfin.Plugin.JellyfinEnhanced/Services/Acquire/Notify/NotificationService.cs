@@ -664,39 +664,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Seerr does; not one held back at sending (Requests shows it as stuck) or one that moved on since.
                 // Only those who can see the title (as their Requests page shows its card), each told its name as
                 // they see it: an administrator with a parental limit or without its library is told nothing.
-                if (n.Kind == "create" && key != null && want.Status == "pending" && want.Reason is ("awaiting_approval" or "over_quota")
+                static bool Asks(RequestWant w) => w.Status == "pending" && w.Reason is ("awaiting_approval" or "over_quota");
+                if (n.Kind == "create" && key != null && Asks(want)
                     && now - n.At <= ArrivalFreshFor && _users.Admins().Where(a => a != want.UserId && _users.IsActive(a)).ToList() is { Count: > 0 } approvers)
                 {
+                    // Prepare (4f round 8): every administrator's view of the title and its name as they see it, all awaited
+                    // before any of them is decided.
+                    var names = new Dictionary<Guid, HubTitleMeta?>();
+                    foreach (var approver in approvers)
+                    {
+                        if (_policy != null) await _policy.PrepareVisibilityAsync(approver, want.Input, cancellationToken).ConfigureAwait(false);
+                        names[approver] = _titleMeta != null && ActiveViewer(approver) is { } admin
+                            ? (await _titleMeta(new[] { key.ToString() }, admin, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString())
+                            : null;
+                    }
+
+                    // Then decide, after the last await: the request, the administrators and what each may see, as they are now.
+                    if (!Enabled || _store.Generation != generation || !_ledger.Database.Available) break;
+                    var asked = _ledger.Find(want.Id);
+                    var admins = _users.Admins();
                     var drafts = new List<NotificationDraft>();
                     foreach (var approver in approvers)
                     {
-                        if (_policy != null)
-                        {
-                            await _policy.PrepareVisibilityAsync(approver, want.Input, cancellationToken).ConfigureAwait(false);
-                            if (!_policy.Evaluate(approver, want.Input, want.TargetKey).Visible) continue;
-                        }
+                        if (asked == null || !Asks(asked) || !admins.Contains(approver) || !_users.IsActive(approver)) continue;
+                        if (_policy != null && !_policy.Evaluate(approver, asked.Input, asked.TargetKey).Visible) continue;
                         var ask = TitleParams(key.Title, null);
-                        if (_titleMeta != null && ActiveViewer(approver) is { } admin
-                            && (await _titleMeta(new[] { key.ToString() }, admin, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString()) is { } askMeta)
+                        if (names[approver] is { } askMeta)
                         {
                             if (!string.IsNullOrEmpty(askMeta.Title)) ask["title"] = askMeta.Title!.Length > 200 ? askMeta.Title[..200] : askMeta.Title;
                             if (askMeta.Year is > 1800) ask["year"] = askMeta.Year.Value.ToString(CultureInfo.InvariantCulture);
                             if (!string.IsNullOrEmpty(askMeta.Poster)) ask["poster"] = askMeta.Poster!;
                         }
-                        ask["user"] = _users.Name(want.UserId) ?? string.Empty;
-                        if (want.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", want.Input.Seasons.Order());
-                        if (want.Input.Variant == "4k") ask["variant"] = "4k";
-                        drafts.Add(Draft(approver, NotifyKind.Approval, "approval|je|" + want.Id, key.Title.ToString(), null, ask, now, null));
+                        ask["user"] = _users.Name(asked.UserId) ?? string.Empty;
+                        if (asked.Input.Seasons.Length > 0) ask["seasons"] = string.Join(", ", asked.Input.Seasons.Order());
+                        if (asked.Input.Variant == "4k") ask["variant"] = "4k";
+                        drafts.Add(Draft(approver, NotifyKind.Approval, "approval|je|" + asked.Id, key.Title.ToString(), null, ask, now, null));
                     }
                     var created = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? drafts.Where(d => d.Add(tx) != null).ToList() : new List<NotificationDraft>(), new List<NotificationDraft>()).Result;
                     foreach (var d in created) Announce(d);
                     told += created.Count;
                     continue;
                 }
-                var prefs = _store.Prefs(want.UserId);
-                var tell = kind != null && key != null && now - n.At <= ArrivalFreshFor && _users.IsActive(want.UserId)
-                    && (kind == NotifyKind.Declined ? want.Status == "declined" && prefs.Declined : want.Status is "queued" or "sent" or "stale" or "fulfilled" && prefs.Approved && n.Approver != want.UserId);
-                if (!tell)
+                // Whether the requester is told of the outcome, from the request and their switches as given.
+                bool Tells(RequestWant w, NotifyPrefs prefs) => kind != null && key != null && now - n.At <= ArrivalFreshFor && _users.IsActive(w.UserId)
+                    && (kind == NotifyKind.Declined ? w.Status == "declined" && prefs.Declined : w.Status is "queued" or "sent" or "stale" or "fulfilled" && prefs.Approved && n.Approver != w.UserId);
+                if (!Tells(want, _store.Prefs(want.UserId)))
                 {
                     _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
                     continue;
@@ -722,6 +734,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : NotifyDispatcher.DeclinedEventPrefix) + want.Id;
                 // The policy's input is the request itself (edition, part, routing), prepared and judged as one (4f round 7).
                 if (_policy != null) await _policy.PrepareVisibilityAsync(want.UserId, _dispatcher.OutcomeInput(key, eventKey, p) ?? want.Input, cancellationToken).ConfigureAwait(false);
+                // Then decide, after the last await (4f round 8): notifications switched off meanwhile leave this notice and the
+                // rest for a later round; the request and the requester's switches as they are now.
+                if (!Enabled || _store.Generation != generation || !_ledger.Database.Available) break;
+                var prefs = _store.Prefs(want.UserId);
+                if (_ledger.Find(want.Id) is not { } current || !Tells(current, prefs))
+                {
+                    _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
+                    continue;
+                }
                 var verdict = ActiveViewer(want.UserId) is { } requester ? Outcome(want.UserId, requester, kind!, key.Title.ToString(), p, eventKey) : new NotifyDispatcher.AlertVerdict("unknown", true);
                 if (verdict.Wait)
                 {
@@ -782,19 +803,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// (<see cref="Outcome"/>), on its own schedule, independent of the request ledger's notices and of Seerr's changes.
         /// Dropped unsent once the outcome itself is too old (its original time), the requester is gone or turned the kind off,
         /// or the request isn't in that outcome any more; told (its removal and the notification commit together) once it may
-        /// be; tried again a little later while the evidence still can't be read. Returns how many were told.
+        /// be; tried again a little later while the evidence still can't be read. Prepare, then decide (4f round 8): each wait's
+        /// evidence is prepared (awaited) first, then everything is decided from the state after that await (the switches, the
+        /// person, the request, the title); notifications switched off meanwhile leave it and the rest for a later round.
+        /// Returns how many were told.
         /// </summary>
         internal async Task<int> RetryAlertWaitsAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             var told = 0;
             var generation = _store.Generation;
+            // Never told any more (decided from now; a drop is used at once): too old, the requester gone or with the kind off, or
+            // the request moved on. Null when it still may be, with the request's state (null: it can't be read now).
+            NotifyPrefs? Kept(AlertWait wait, out bool? still)
+            {
+                var prefs = _store.Prefs(wait.User);
+                still = StillOutcome(wait);
+                return now - wait.OriginalAt > ArrivalFreshFor || !_users.IsActive(wait.User) || !(wait.Kind == NotifyKind.Declined ? prefs.Declined : prefs.Approved) || still == false ? null : prefs;
+            }
+
             foreach (var wait in _store.DueAlertWaits(now, AlertWaitsPerRound))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (_store.Generation != generation) break;
-                var prefs = _store.Prefs(wait.User);
-                var still = StillOutcome(wait);
-                if (now - wait.OriginalAt > ArrivalFreshFor || !_users.IsActive(wait.User) || !(wait.Kind == NotifyKind.Declined ? prefs.Declined : prefs.Approved) || still == false)
+                if (Kept(wait, out _) == null)
                 {
                     _store.DropAlertWait(wait, generation);
                     continue;
@@ -802,6 +833,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(wait.Payload), StringComparer.Ordinal);
                 if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key && _dispatcher.OutcomeInput(key, wait.EventKey, payload) is { } input)
                     await _policy.PrepareVisibilityAsync(wait.User, input, cancellationToken).ConfigureAwait(false);
+                if (!Enabled || _store.Generation != generation) break;
+                if (Kept(wait, out var still) is not { } prefs)
+                {
+                    _store.DropAlertWait(wait, generation);
+                    continue;
+                }
                 var verdict = still == null || ActiveViewer(wait.User) is not { } viewer ? new NotifyDispatcher.AlertVerdict("unknown", true) : Outcome(wait.User, viewer, wait.Kind, wait.TitleKey, payload, wait.EventKey);
                 if (verdict.Wait)
                 {
@@ -947,14 +984,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // One look per title, under its canonical key (TMDB movie, TVDB series) when an arr knows
                 // it: the same title announced under another id is the same interest, the same watch state.
                 if (TitleKey.Parse(raw)?.Title is not { } parsed || Canonical(parsed) is not { } title || !seen.Add(title.ToString())) continue;
-                foreach (var interest in InterestsIn(title, onlyUser))
+                foreach (var listed in InterestsIn(title, onlyUser))
                 {
                     try
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (ActiveViewer(interest.User) is not { } viewer) continue;
-                        if (title.IsMovie) await EvaluateMovieAsync(viewer, interest, cancellationToken).ConfigureAwait(false);
-                        else EvaluateSeries(viewer, interest);
+                        if (ActiveViewer(listed.User) is not { } viewer) continue;
+                        // The interests were listed before the looks before this one were awaited: a series look (no await of
+                        // its own) takes the person's interest as it is now; a movie's takes it again after its own await.
+                        if (title.IsMovie) await EvaluateMovieAsync(viewer, listed, cancellationToken).ConfigureAwait(false);
+                        else if (Current(title, listed) is { } interest) EvaluateSeries(viewer, interest);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -968,6 +1007,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
         }
 
+        /// <summary>
+        /// A person's interest in a title as it is now (4f round 8: prepare, then decide): the one under the same watch scope
+        /// (standard or 4K only), or null when they no longer follow it or ask for it (muted, unfollowed, the request gone or
+        /// not followed any more).
+        /// </summary>
+        private Interest? Current(TitleKey title, Interest listed)
+            => InterestsIn(title, listed.User).FirstOrDefault(i => i.Only4k == listed.Only4k && (i.Scope?.Only4k == true) == (listed.Scope?.Only4k == true));
+
         // The viewer of a user who may be told things: null for a user who is gone or disabled.
         private StatusViewer? ActiveViewer(Guid user) => _users.IsActive(user) ? _view.Viewer(user) : null;
 
@@ -978,6 +1025,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var generation = _store.Generation;
             var scopes = interest.Scope != null ? new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = interest.Scope } : null;
             var composed = (await _status.ComposeForAsync(viewer, new[] { key }, scopes, cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+            // Decided after that await: the person's interest as it is now (nothing written when it is gone).
+            if (Current(key, interest) is not { } current) return;
+            interest = current;
             var stage = composed?.Status.Stage ?? "hidden";
             var scopeName = interest.Scope?.Only4k == true ? "m4k" : "m";
             var mark = "ready|" + key + "|" + scopeName;
@@ -1822,18 +1872,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (statusKey.Episode is int e) p["episode"] = e.ToString(CultureInfo.InvariantCulture);
             var eventKey = "remind|" + NotifyValues.Id(viewer.UserId) + "|" + title + "|" + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
             // Only the administrators who can see the title (as their Requests page shows its card), as for an ask
-            // waiting for an OK: one with a parental limit or without its library is told nothing.
-            var admins = new List<Guid>();
-            foreach (var admin in _users.Admins())
+            // waiting for an OK: one with a parental limit or without its library is told nothing. Prepare, then decide (4f
+            // round 8): every administrator's view is prepared (awaited) first; then the administrators as they are now, each
+            // by what they may see now.
+            var input = AskInput(statusKey.Title, statusKey.Season is int season ? new[] { season } : Array.Empty<int>(), false);
+            if (_policy != null)
             {
-                if (_policy != null)
+                foreach (var admin in _users.Admins())
                 {
-                    var input = AskInput(statusKey.Title, statusKey.Season is int season ? new[] { season } : Array.Empty<int>(), false);
                     await _policy.PrepareVisibilityAsync(admin, input, cancellationToken).ConfigureAwait(false);
-                    if (!_policy.Evaluate(admin, input).Visible) continue;
                 }
-                admins.Add(admin);
             }
+            if (!Enabled) return new RemindOutcome("disabled");
+            var admins = _users.Admins().Where(admin => _policy == null || _policy.Evaluate(admin, input).Visible).ToList();
             var drafts = admins.Select(admin => Draft(admin, NotifyKind.Remind, eventKey, statusKey.ToString(), itemId, p, now, null)).ToList();
             var created = _store.InTransaction(tx =>
             {
@@ -1872,12 +1923,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         internal async Task AdminChecksAsync(CancellationToken cancellationToken)
         {
             if (_hub == null) return;
+            var attention = await _hub.NeedsAttentionAsync(cancellationToken, background: true).ConfigureAwait(false);
+            // Decided after that await (4f round 8): the settings, the clock and the administrators as they are now.
+            if (!Enabled) return;
             var config = _config();
             var now = _now();
             var downAfter = TimeSpan.FromMinutes(Math.Clamp(config?.ArrNotifyAdminDownMinutes ?? 10, 1, 1440));
             IReadOnlyList<Guid>? admins = null;
             IReadOnlyList<Guid> Admins() => admins ??= _users.Admins();
-            var attention = await _hub.NeedsAttentionAsync(cancellationToken, background: true).ConfigureAwait(false);
             var instances = _arr.Instances(ArrKind.Radarr).Concat(_arr.Instances(ArrKind.Sonarr)).ToList();
             foreach (var instance in instances)
             {
