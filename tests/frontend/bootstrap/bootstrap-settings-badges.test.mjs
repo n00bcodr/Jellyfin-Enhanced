@@ -250,14 +250,15 @@ for (const [id, key, value, initial] of [
   ['nativePosterTagsToggle', 'useNativePosterTags', false, true],
   ['autoSeasonRequestsSelect', 'autoSeasonRequests', 'on', null],
   ['listStatusSelect', 'listStatus', 'off', null],
+  ['homeRowSoonSelect', 'homeRowSoon', 'off', null],
   ['pauseScreenDelayInput', 'pauseScreenDelaySeconds', '12', 5]
 ]) test(`shared settings store rolls back the other queued control ${id}`, async t => {
-  const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrAutomationEngineEnabled: true, ArrListsEnabled: true, ArrListStatusEnabled: true }, settings: { [key]: initial } });
+  const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrAutomationEngineEnabled: true, ArrListsEnabled: true, ArrListStatusEnabled: true, ArrHomeRowsEnabled: true }, settings: { [key]: initial } });
   h.wire();
   const held = deferred();
   // The automatic-request choice is a consent: it goes through the consent operation (PATCH), never a whole document.
   h.window.ApiClient.ajax = request => request.type === 'POST' || request.type === 'PATCH' ? held.promise : Promise.resolve([]);
-  if (id !== 'listStatusSelect' && id !== 'autoSeasonRequestsSelect') h.expectConsoleError(/Failed to save settings.json/);
+  if (!['listStatusSelect', 'autoSeasonRequestsSelect', 'homeRowSoonSelect'].includes(id)) h.expectConsoleError(/Failed to save settings.json/);
   const input = h.document.getElementById(id);
   if (input.type === 'checkbox') input.checked = value; else input.value = value;
   input.dispatchEvent(new h.window.Event('change', { bubbles: true }));
@@ -613,11 +614,12 @@ for (const [id, key, initial, target, toast] of [
   ['nativeAcquisitionStampsSelect', 'nativeAcquisitionStamps', null, 'off', 'toast_badge_settings_saved'],
   ['listPlaceholdersSelect', 'listPlaceholders', null, 'off', 'toast_list_settings_saved'],
   ['listStatusSelect', 'listStatus', null, 'off', 'toast_list_settings_saved'],
-  ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved']
+  ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved'],
+  ['homeRowSoonSelect', 'homeRowSoon', null, 'off', 'panel_settings_home_saved']
 ]) for (const carried of [false, true]) {
   test(`${key} saved notification follows authoritative ${carried ? 'carried commit' : 'failure'}`, async t => {
     const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrListsEnabled: true,
-      ArrListStatusEnabled: true, ArrAutomationEngineEnabled: true }, settings: { [key]: initial } });
+      ArrListStatusEnabled: true, ArrAutomationEngineEnabled: true, ArrHomeRowsEnabled: true }, settings: { [key]: initial } });
     const held = [deferred(), deferred()];
     h.window.ApiClient.ajax = request => {
       if (request.type === 'GET') return Promise.resolve([]);

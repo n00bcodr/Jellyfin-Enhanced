@@ -41,6 +41,7 @@
             listPlaceholdersSelect: 'listPlaceholders', listStatusSelect: 'listStatus', listSwapInSelect: 'listSwapIn',
             listPlaylistUiSelect: 'listPlaylistUi', listCollectionUiSelect: 'listCollectionUi',
             acquisitionBadgesSelect: 'acquisitionBadges', nativeAcquisitionStampsSelect: 'nativeAcquisitionStamps',
+            homeRowRequestsSelect: 'homeRowRequests', homeRowSoonSelect: 'homeRowSoon', homeRowArrivedSelect: 'homeRowArrived', homeOpsStripSelect: 'homeOpsStrip',
             watchProgressModeSelect: 'watchProgressMode', watchProgressTimeFormatSelect: 'watchProgressTimeFormat',
             qualityTagsAudioLanguageSelect: 'qualityTagsPreferredAudioLanguage', pauseScreenDelayInput: 'pauseScreenDelaySeconds',
             randomIncludeMovies: 'randomIncludeMovies', randomIncludeShows: 'randomIncludeShows', randomSourceSelect: 'randomSourceId',
@@ -56,7 +57,7 @@
                     || control.closest('[data-rating-key]')?.dataset.ratingKey;
                 const value = JE.currentSettings[key];
                 if (control.type === 'checkbox') control.checked = !!value;
-                else if (key === 'acquisitionBadges' || key === 'nativeAcquisitionStamps') control.value = value === false ? 'off' : '';
+                else if (['acquisitionBadges', 'nativeAcquisitionStamps', 'homeRowRequests', 'homeRowSoon', 'homeRowArrived', 'homeOpsStrip'].includes(key)) control.value = value === false ? 'off' : '';
                 else if (key === 'listSwapIn') control.value = value === true ? 'on' : '';
                 else if (['autoSeasonRequests', 'autoMovieRequests', 'listPlaceholders', 'listStatus', 'listPlaylistUi', 'listCollectionUi'].includes(key)) {
                     control.value = value === true ? 'on' : value === false ? 'off' : '';
@@ -191,18 +192,15 @@
                 }
             });
         }
-        // Phase 4d: home rows per person ("" = null: follow the administrator; "off" = false: hide). The home
-        // page reads its rows again once the choice is saved.
+        // Phase 4d: home rows per person ("" = null: follow the administrator; "off" = false: hide). Saved through the
+        // settings store like every other preference: the home page reads its rows again, and "saved" shows, only once
+        // the choice is persisted (store effects); a failed save puts the select back.
         for (const [id, key] of [['homeRowRequestsSelect', 'homeRowRequests'], ['homeRowSoonSelect', 'homeRowSoon'], ['homeRowArrivedSelect', 'homeRowArrived'], ['homeOpsStripSelect', 'homeOpsStrip']]) {
-            document.getElementById(id)?.addEventListener('change', (event) => {
+            listen(document.getElementById(id), 'change', (event) => {
                 if (JE.pluginConfig?.ArrHomeRowsEnabled !== true) return;
                 const value = event.target.value === 'off' ? false : null;
-                JE.userConfig = JE.userConfig || {};
-                JE.userConfig.settings = JE.userConfig.settings || {};
-                JE.userConfig.settings[key] = value;
-                JE.currentSettings[key] = value;
-                Promise.resolve(JE.saveUserSettings('settings.json', JE.currentSettings)).then(() => JE.arrHome?.refresh?.({ fresh: true }));
-                JE.toast(JE.t('panel_settings_home_saved'));
+                JE.updateSettings({ [key]: value }, { throwOnError: true })
+                    .catch(err => { if (scope.session.isCurrent()) console.warn('🪼 Jellyfin Enhanced: home row settings save failed', err); });
                 resetAutoCloseTimer();
             });
         }

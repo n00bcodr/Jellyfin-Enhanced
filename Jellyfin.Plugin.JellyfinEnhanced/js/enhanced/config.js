@@ -242,6 +242,12 @@
         // Phase 4c3a: list pages follow a list preference change at once (drawn entries go when hidden).
         if (changed(['listPlaceholders', 'listStatus', 'listPlaylistUi', 'listCollectionUi'])) return JE.arrListPages?.settingsChanged?.();
     });
+    settingsEffects.set('home-rows', ({ state, previousPersisted, reason }) => {
+        // Phase 4d: the home page reads its rows again once a home-row choice is persisted.
+        if (reason !== 'saved') return;
+        if (['homeRowRequests', 'homeRowSoon', 'homeRowArrived', 'homeOpsStrip']
+            .some(key => (previousPersisted[key] ?? null) !== (state.persisted[key] ?? null))) return JE.arrHome?.refresh?.({ fresh: true });
+    });
     settingsEffects.set('language-mirror', ({ state, reason }) => {
         if (reason !== 'saved' && reason !== 'read') return;
         // Only a real language tag is mirrored: a stored "undefined" or "null" mirrors as Auto ('').
@@ -263,7 +269,8 @@
         [['acquisitionBadges', 'nativeAcquisitionStamps'], 'toast_badge_settings_saved'],
         [['listPlaceholders', 'listStatus', 'listSwapIn', 'listPlaylistUi', 'listCollectionUi'], 'toast_list_settings_saved'],
         [['useNativePosterTags'], 'toast_native_poster_tags_saved'],
-        [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved']
+        [['autoSeasonRequests', 'autoMovieRequests'], 'toast_auto_requests_saved'],
+        [['homeRowRequests', 'homeRowSoon', 'homeRowArrived', 'homeOpsStrip'], 'panel_settings_home_saved']
     ]) {
         settingsEffects.set(toastKey, ({ state, previousPersisted, reason }) => {
             if (reason !== 'saved') return;
