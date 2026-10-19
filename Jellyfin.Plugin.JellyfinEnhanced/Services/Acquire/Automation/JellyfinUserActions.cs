@@ -54,7 +54,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// unresolved callback (fail closed). Round 18: each rule lives in one place and applies in every combination: one
     /// target resolver for every transfer (Targets), one "running a method" edge set on every method node (Running: body,
     /// type initializer, module initializer), one provenance model for every delegate value (Flow → Sources: invoked,
-    /// stored in a field, handed to a method, returned), tested as a generated cross-product (IntegrationJellyfinUserMatrixTests);</description></item>
+    /// stored in a field, handed to a method, returned), tested as a generated cross-product (IntegrationJellyfinUserMatrixTests).
+    /// Round 19: the model's inputs are complete. One fill rule for every slot (SlotFills: ECMA-335 interface and virtual
+    /// method resolution) over each type's COMPLETE ancestry (LineageOf: the bases and interfaces outside the code read are
+    /// read from their assemblies' metadata, found by the assembly a reference names, never loaded); a step that can't be
+    /// read fails closed. Every recursive provenance is a monotone fixed point (Summaries: what a method returns as a
+    /// function of its arguments; Up: the parameters callers feed, solved as strongly connected groups), never cut by a
+    /// depth or a step budget;</description></item>
     /// <item><description>it isn't a GET and its code reaches a call that can't be followed whose contract can carry a user (an
     /// interface nothing read implements): it is bracketed for everyone (a GET isn't: it would hold automation on every
     /// page view);</description></item>
@@ -71,14 +77,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// one of its actions that isn't GET, globally. JE's own actions are left to the brackets inside them.
     /// <para>
     /// Known limits (docs/arr/arr-features.md, "Known limits"): this is static analysis of the metadata. It can't see
-    /// reflection, dynamic code (code generated at run time, a service resolved by name from a service locator) or code
-    /// outside the assemblies read (another plugin's, another process); a change made there is covered by Jellyfin's
+    /// reflection, dynamic code (code generated at run time, a service resolved by name from a service locator), code
+    /// outside the assemblies read (another plugin's, another process) or (round 19, Q-4AFIX19-1) a method of theirs that
+    /// .NET's code calls back on an object handed to it (a stream's Write in a copy); a change made there is covered by Jellyfin's
     /// user events after it commits (JellyfinUserChangeVersion). Stated limits (round 17, each pinned by a test): lifecycle
     /// slots declared outside the code read (Dispose, DisposeAsync, Finalize, ToString, Equals, GetHashCode, GetType) aren't
     /// followed into implementations; a compiler-generated state machine is followed from the method that creates it (a
     /// lazy sequence created by one action and enumerated by another counts where it is created); a generic parameter's
     /// field (`T`) is followed to what the code read stores in it, not counted as handed in from outside. It may
-    /// over-bracket (round 18): an array handed to other code (which may write it) has unknown elements.
+    /// over-bracket (round 18): an array handed to other code (which may write it) has unknown elements; (round 19) a type
+    /// whose ancestry can't be read whole may fill any slot it has a method for, and a type that can't be read may be a
+    /// delegate (AncestryGaps lists them; none for Jellyfin 12.2 and 10.11.11 with their own files).
     /// </para>
     /// </summary>
     public static class JellyfinUserActions
@@ -226,6 +235,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="member">The member.</param>
         public static IReadOnlyList<string> ReachedFrom(string path, string member) => CodeSet.Read(path, member).Reached;
 
+        /// <summary>
+        /// Round 19: the ancestry steps the reading of the assembly at <paramref name="path"/> couldn't read (a base, an
+        /// interface or a type outside the code read whose assembly isn't found or doesn't define it), for review: each makes
+        /// its types possible fills of any slot, and a type that can't be read a possible delegate (fail closed).
+        /// </summary>
+        /// <param name="path">The controller assembly.</param>
+        public static IReadOnlyList<string> AncestryGaps(string path) => CodeSet.Read(path).Gaps;
+
         /// <summary>The assembly files read with the one at <paramref name="path"/> (it comes first).</summary>
         /// <param name="path">The controller assembly.</param>
         public static IReadOnlyList<string> CodeOf(string path) => CodeSet.Files(path);
@@ -251,9 +268,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         // assembly's actions, classified. Only the actions are kept once read.
         private sealed class CodeSet
         {
-            // Round 16: only a fail-closed safety bound for chains of delegate fields and callers (anything past it counts as
-            // a possible change); type graphs are walked whole.
-            private const int MaxDepth = 256;
             private static readonly OpCode[] OneByte = new OpCode[0x100];
             private static readonly OpCode[] TwoByte = new OpCode[0x100];
 
@@ -280,6 +294,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             /// <summary>What the member asked for reaches (see <see cref="Read(string, string?)"/>).</summary>
             public IReadOnlyList<string> Reached { get; private set; } = Array.Empty<string>();
+
+            /// <summary>The ancestry steps that couldn't be read (each brackets as a possible fill of any slot).</summary>
+            public IReadOnlyList<string> Gaps { get; private set; } = Array.Empty<string>();
 
             // Everything a member's code reaches, by the calls (not through the member's own PersonScoped stop).
             private List<string> From(string member)
@@ -324,9 +341,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 _returns.Clear();
                 _invokes.Clear();
                 _upDone.Clear();
-                _upOpen.Clear();
-                _upStack.Clear();
-                _descending.Clear();
+                _summaries.Clear();
+                _readers.Clear();
+                _refs.Clear();
+                _lineages.Clear();
+                _unreadable.Clear();
+                _assemblyFiles = null;
+                _declared.Clear();
+                _outsides.Clear();
+                foreach (var (key, weak) in Outsides)
+                    if (!weak.TryGetTarget(out _)) Outsides.TryRemove(key, out _);
+                _incomplete = null;
+                _slotFills.Clear();
             }
 
             private static bool Writes(JellyfinUserAction action) => action.Verbs.Any(v => v is not ("GET" or "HEAD"));
@@ -391,6 +417,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return files;
             }
 
+            // Round 19: the folders an assembly outside the code read is looked for in first (the code read's: Jellyfin's
+            // own holds its third-party libraries), before the runtime's (AssemblyFile).
+            private static IEnumerable<string> Folders(string path)
+            {
+                var folder = Path.GetDirectoryName(Path.GetFullPath(path));
+                if (!string.IsNullOrEmpty(folder)) yield return folder;
+                var jellyfin = Path.GetDirectoryName(typeof(MediaBrowser.Controller.Library.IUserManager).Assembly.Location);
+                if (!string.IsNullOrEmpty(jellyfin) && !string.Equals(jellyfin, folder, StringComparison.Ordinal)) yield return jellyfin;
+            }
+
             // ------------------------------------------------------------------ the model
 
             private sealed class Module
@@ -402,12 +438,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private sealed class TypeInfo
             {
                 public required string Name { get; init; }
-                public string? Base { get; set; }
                 public bool Interface { get; init; }
-                public List<string> Interfaces { get; } = new();
+
+                // Round 19: the base type and the interfaces the type itself lists, each with the assembly a reference names
+                // (to read it when it is outside the code read). An interface, System.Object and <Module> have no base.
+                public TypeRef? Base { get; init; }
+                public List<TypeRef> Interfaces { get; } = new();
                 public List<int> Methods { get; } = new();
                 public HashSet<string> Events { get; } = new(StringComparer.Ordinal);
                 public int Module { get; init; } = -1;
+
+                // Round 19: a type outside the code read, read for its ancestry only (no method nodes): the assembly file it
+                // is defined in (Declares reads its methods' names and parameter counts when asked).
+                public bool External { get; init; }
+                public string? File { get; init; }
             }
 
             private sealed class Node
@@ -453,6 +497,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private Dictionary<string, List<int>>? _implementers;
             private Dictionary<string, List<int>>? _derived;
 
+            // Round 19: the complete ancestry of every type (LineageOf). The types outside the code read are read from their
+            // assemblies' metadata, found by the assembly a reference names (_refs: each name the code read references, and
+            // where) in the code read's folders, then the runtime's (AssemblyFile); _readTypes: the code read's own types
+            // (they come first in _types). A step that can't be read is a gap: the type's ancestry is incomplete, and it may
+            // fill any slot (_incomplete, fail closed).
+            private readonly Dictionary<string, string> _refs = new(StringComparer.Ordinal);
+            private readonly Dictionary<int, Lineage> _lineages = new();
+            private readonly HashSet<string> _unreadable = new(StringComparer.Ordinal);
+            private readonly SortedSet<string> _gaps = new(StringComparer.Ordinal);
+            private readonly List<string> _folders = new();
+            private Dictionary<string, string>? _assemblyFiles;
+            private readonly Dictionary<string, HashSet<(string Name, int Params)>?> _declared = new(StringComparer.Ordinal);
+            private List<int>? _incomplete;
+            private int _readTypes;
+
+            // Round 19: each slot's fills (SlotFills), once.
+            private readonly Dictionary<(string Type, string Method, int Params, bool Static), List<int>> _slotFills = new();
+
             // Explicit overrides: a slot (declaring type, method, parameter count, as a call names it) → the bodies a
             // MethodImpl entry maps to it.
             private readonly Dictionary<(string Type, string Method, int Params), List<int>> _explicit = new();
@@ -475,11 +537,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private readonly Dictionary<int, Prov> _returns = new();
             private readonly List<(int Node, Prov Receiver, string Type)> _invokes = new();
             private readonly Dictionary<(int Node, int Arg), Src> _upDone = new();
-            private readonly Dictionary<(int Node, int Arg), UpState> _upOpen = new();
-            private readonly Stack<(int Node, int Arg)> _upStack = new();
-            private int _upIndex;
-            private readonly HashSet<(int Node, int Site)> _descending = new();
-            private int _budget;
+
+            // Round 19: what each method returns as a function of its arguments, to a fixed point (Summaries); who reads
+            // whose (to iterate); the delegate fields whose node is made but not yet filled.
+            private readonly Dictionary<int, Summary> _summaries = new();
+            private readonly Dictionary<int, HashSet<int>> _readers = new();
+            private readonly Queue<string> _pendingFields = new();
 
             public static CodeSet Read(string path) => Read(path, null);
 
@@ -506,13 +569,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     }
 
                     set._modules.AddRange(modules);
+                    set._folders.AddRange(Folders(path));
                     for (var m = 0; m < modules.Count; m++) set.Index(modules[m], m);
+                    set._readTypes = set._types.Count;
                     set.Running();
                     for (var m = 0; m < modules.Count; m++) set.Bodies(modules[m], m);
                     set.Delegates();
                     set.Propagate();
                     set.Actions(modules[0]);
                     set.Contained = set._contained.ToList();
+                    set.Gaps = set._gaps.ToList();
                     if (member != null) set.Reached = set.From(member);
                     set.Drop();
                 }
@@ -528,13 +594,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             private void Index(Module module, int m)
             {
                 var md = module.Md;
+                var self = AssemblyName(md);
+                // Round 19: where each type the module names but doesn't define is (the assembly its reference names).
+                foreach (var reference in md.TypeReferences)
+                    if (Scope(md, reference) is { } assembly) _refs.TryAdd(FullName(md, reference), assembly);
                 foreach (var handle in md.TypeDefinitions)
                 {
                     var type = md.GetTypeDefinition(handle);
-                    var info = new TypeInfo { Name = FullName(md, handle), Interface = (type.Attributes & TypeAttributes.Interface) != 0, Module = m };
-                    info.Base = type.BaseType.IsNil ? null : ParentName(md, type.BaseType);
-                    foreach (var implementation in type.GetInterfaceImplementations())
-                        if (ParentName(md, md.GetInterfaceImplementation(implementation).Interface) is { } name) info.Interfaces.Add(name);
+                    var info = new TypeInfo { Name = FullName(md, handle), Interface = (type.Attributes & TypeAttributes.Interface) != 0, Module = m, Base = type.BaseType.IsNil ? null : Locate(md, type.BaseType, self) };
+                    foreach (var implementation in type.GetInterfaceImplementations()) info.Interfaces.Add(Locate(md, md.GetInterfaceImplementation(implementation).Interface, self));
                     foreach (var e in type.GetEvents()) info.Events.Add(md.GetString(md.GetEventDefinition(e).Name));
                     var id = _types.Count;
                     _types.Add(info);
@@ -1038,155 +1106,195 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return targets;
             }
 
-            // A method of a type by name and parameter count, on the type or the nearest base declaring it.
+            // A method of a type by name and parameter count, on the type or the nearest base declaring it (round 19: over its
+            // complete ancestry; a base outside the code read that declares it ends the search: the runtime runs that one).
             private List<int> Resolve(string type, string name, int count)
             {
-                var name0 = type;
-                // Round 16: the whole base chain (finite; the visited set only guards malformed metadata), never a depth cut.
-                var visited = new HashSet<string>(StringComparer.Ordinal);
-                while (name0 != null && visited.Add(name0) && _typesByName.TryGetValue(name0, out var ids))
+                // A type outside the code read: none of its methods is the code read's.
+                var t = TypeId(type, null);
+                if (t < 0 || _types[t].External) return new List<int>();
+                foreach (var c in LineageOf(t).Bases.Prepend(t))
                 {
-                    var found = ids.SelectMany(t => _types[t].Methods).Where(n => _nodes[n].Method == name && _nodes[n].Params == count).ToList();
+                    if (_types[c].External)
+                    {
+                        if (Declares(c, name, count)) break;
+                        continue;
+                    }
+
+                    var found = _typesByName[_types[c].Name].Where(i => !_types[i].External).SelectMany(i => _types[i].Methods).Where(n => _nodes[n].Method == name && _nodes[n].Params == count).ToList();
                     if (found.Count > 0) return found;
-                    name0 = _types[ids[0]].Base;
                 }
 
                 return new List<int>();
             }
 
-            // Where a virtual call of target can go, by the runtime's two rules for filling a slot: an implicit override (a
-            // virtual method of a derived class that is not a new slot, with the same name and parameter count, sealed or
-            // not) and an explicit one (a MethodImpl entry naming the slot, whatever the body is called). Every method
-            // reached fills its own slot in turn, so an override of an override, an explicit body overridden again and an
-            // explicit entry naming a base's base are followed (each slot once; the graph is finite). An interface member also reaches every
-            // implementation by name (explicit C# implementations included) and one inherited from a base type. An
-            // abstract or interface member nothing implements is unresolved.
+            // Where a dispatched call of target can go: the fills of its slot (SlotFills), whatever they reach (Mapped). An
+            // abstract or interface member nothing fills is unresolved.
             private IEnumerable<int> Dispatch(int target)
             {
                 var node = _nodes[target];
-                if (node.Type < 0) yield break;
+                if (node.Type < 0) return Array.Empty<int>();
                 var type = _types[node.Type];
-                if (!type.Interface && !node.Virtual) yield break;
-                var found = 0;
-                var seen = new HashSet<int> { target };
-                var slots = new Queue<(int Node, int Depth)>();
-                slots.Enqueue((target, 0));
-                if (type.Interface)
-                {
-                    var implementers = Implementers(type.Name);
-                    foreach (var t in implementers)
-                    {
-                        var own = _types[t].Methods.Where(n => _nodes[n].Params == node.Params
-                            && (_nodes[n].Method == node.Method || _nodes[n].Method.EndsWith("." + node.Method, StringComparison.Ordinal))).ToList();
-                        // Implemented through a base type's method of that name (an interface member inherited, not redeclared).
-                        if (own.Count == 0) own = Resolve(_types[t].Base ?? string.Empty, node.Method, node.Params);
-                        foreach (var n in own)
-                        {
-                            if (!seen.Add(n)) continue;
-                            slots.Enqueue((n, 1));
-                            if (_nodes[n].Abstract) continue;
-                            found++;
-                            yield return n;
-                        }
-                    }
-                }
-
-                while (slots.Count > 0)
-                {
-                    var (s, depth) = slots.Dequeue();
-                    var slot = _nodes[s];
-                    if (slot.Type < 0) continue;
-                    var slotType = _types[slot.Type];
-                    var reached = new List<int>();
-                    if (!slotType.Interface && (slot.Virtual || slot.Abstract))
-                        foreach (var t in Derived(slotType.Name))
-                            foreach (var n in _types[t].Methods)
-                            {
-                                var other = _nodes[n];
-                                if (other.Params == slot.Params && other.Method == slot.Method && other.Virtual && !other.NewSlot) reached.Add(n);
-                            }
-
-                    if (_explicit.TryGetValue((slotType.Name, slot.Method, slot.Params), out var bodies)) reached.AddRange(bodies);
-                    foreach (var n in reached)
-                    {
-                        if (!seen.Add(n)) continue;
-                        slots.Enqueue((n, depth + 1));
-                        if (_nodes[n].Abstract) continue;
-                        found++;
-                        yield return n;
-                    }
-                }
-
-                if (found == 0 && (node.Abstract || type.Interface))
+                if (!type.Interface && !node.Virtual) return Array.Empty<int>();
+                var fills = SlotFills(type.Name, node.Method, node.Params, node.Static).Where(n => n != target).ToList();
+                if (fills.Count == 0 && (node.Abstract || type.Interface))
                 {
                     var contract = UserContract(node);
-                    yield return Unresolved(node.Name + " (nothing read implements it)", contract || HandsBackCallback(node), callback: !contract);
+                    return new[] { Unresolved(node.Name + " (nothing read implements it)", contract || HandsBackCallback(node), callback: !contract) };
                 }
+
+                return Mapped(fills);
             }
 
+            // A fill reached by dispatch counts as a call of it: a Mutates member is reached (its terminal), a reviewed change
+            // to the request's person likewise, a reviewed read is nothing; anything else is followed.
+            private List<int> Mapped(IEnumerable<int> fills)
+            {
+                var mapped = new List<int>();
+                foreach (var n in fills)
+                {
+                    var type = _types[_nodes[n].Type].Name;
+                    var method = _nodes[n].Method;
+                    if (Mutates(type, method)) mapped.Add(Terminal(Simple(type) + "." + method));
+                    else if (PersonScoped.ContainsKey(Simple(type) + "." + method)) mapped.Add(Terminal(Simple(type) + "." + method, person: true));
+                    else if (!ReviewedRead(type, method)) mapped.Add(n);
+                }
+
+                return mapped.Distinct().ToList();
+            }
+
+            // Round 19 (4a-r19-1, 4a-r19-2): THE fill rule, for every slot, declared in the code read or outside it (a virtual
+            // or abstract member of a class, an interface member, static ones included). ECMA-335 II.10.3 and II.12.2 over
+            // each type's COMPLETE ancestry (LineageOf: bases and interfaces outside the code read included, read from their
+            // metadata): a type fills an interface slot it implements (directly, through a base class or an interface's
+            // bases) with its own method of that name and parameter count, else the nearest base's (an implementation
+            // inherited from a class that doesn't itself declare the interface); a class's virtual slot is filled by every
+            // descendant's override (not a new slot), framework intermediate bases included (a sink deriving from
+            // MemoryStream overrides Stream.Write); and any type's MethodImpl entry naming the slot fills it whatever its
+            // name. Every fill fills its own slot in turn (overrides of overrides, an override of an inherited
+            // implementation, an explicit entry naming it), each slot once. An instance slot is filled by virtual methods, a
+            // static slot by static ones. Generic arguments aren't read, so variance (an IProgress<object> called as an
+            // IProgress<string>) is covered. A type whose ancestry can't be read whole may fill any slot (fail closed). A
+            // compiler-generated state machine is no fill (see FrameworkSlot). Abstract fills aren't returned (nothing
+            // runs there), but their slots are followed.
+            private List<int> SlotFills(string type, string method, int count, bool isStatic)
+            {
+                var key = (type, method, count, isStatic);
+                if (_slotFills.TryGetValue(key, out var cached)) return cached;
+                var fills = new List<int>();
+                var seen = new HashSet<int>();
+                var slots = new HashSet<(string, string, int, bool)> { key };
+                var queue = new Queue<(string Type, string Method, int Params, bool Static)>();
+                queue.Enqueue(key);
+                while (queue.Count > 0)
+                {
+                    var slot = queue.Dequeue();
+                    foreach (var n in DirectFills(slot.Type, slot.Method, slot.Params, slot.Static))
+                    {
+                        if (!seen.Add(n) || _stateMachines.Contains(_types[_nodes[n].Type].Name)) continue;
+                        if (!_nodes[n].Abstract) fills.Add(n);
+                        var own = (_types[_nodes[n].Type].Name, _nodes[n].Method, _nodes[n].Params, _nodes[n].Static);
+                        if (slots.Add(own)) queue.Enqueue(own);
+                    }
+                }
+
+                return _slotFills[key] = fills;
+            }
+
+            // The methods that fill one slot directly (SlotFills follows them on).
+            private IEnumerable<int> DirectFills(string type, string method, int count, bool isStatic)
+            {
+                // An interface slot, a class's, or (its type can't be read) both.
+                var kind = IsInterface(type);
+                if (kind != false)
+                {
+                    foreach (var t in Implementers(type))
+                    {
+                        var own = Matching(t, method, count, isStatic).ToList();
+                        // Implemented through a base class's method (that class need not declare the interface).
+                        if (own.Count == 0) own = Inherited(t, method, count, isStatic);
+                        foreach (var n in own) yield return n;
+                    }
+                }
+
+                if (kind != true)
+                {
+                    foreach (var t in Derived(type))
+                        foreach (var n in Matching(t, method, count, isStatic))
+                            if (!_nodes[n].NewSlot) yield return n;
+                }
+
+                if (_explicit.TryGetValue((type, method, count), out var bodies))
+                    foreach (var n in bodies) yield return n;
+            }
+
+            // A type's own methods that can fill a slot by name (an explicit C# implementation's name ends with it).
+            private IEnumerable<int> Matching(int t, string method, int count, bool isStatic)
+                => _types[t].Methods.Where(n => _nodes[n].Params == count && _nodes[n].Static == isStatic && (isStatic || _nodes[n].Virtual)
+                    && (_nodes[n].Method == method || _nodes[n].Method.EndsWith("." + method, StringComparison.Ordinal)));
+
+            // The nearest base's fill (in the code read; one outside it that declares the method ends the search: the
+            // runtime runs that one).
+            private List<int> Inherited(int t, string method, int count, bool isStatic)
+            {
+                foreach (var b in LineageOf(t).Bases)
+                {
+                    if (_types[b].External)
+                    {
+                        if (Declares(b, method, count)) break;
+                        continue;
+                    }
+
+                    var found = Matching(b, method, count, isStatic).ToList();
+                    if (found.Count > 0) return found;
+                }
+
+                return new List<int>();
+            }
+
+            // The code read's types implementing an interface (through their complete ancestry), and those whose ancestry
+            // can't be read whole (fail closed).
             private List<int> Implementers(string name)
             {
                 if (_implementers == null)
                 {
                     _implementers = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-                    for (var t = 0; t < _types.Count; t++)
+                    for (var t = 0; t < _readTypes; t++)
                     {
                         if (_types[t].Interface) continue;
-                        foreach (var i in AllInterfaces(t, 0))
+                        foreach (var i in LineageOf(t).Interfaces)
                         {
-                            if (!_implementers.TryGetValue(i, out var list)) _implementers[i] = list = new List<int>();
+                            if (!_implementers.TryGetValue(_types[i].Name, out var list)) _implementers[_types[i].Name] = list = new List<int>();
                             if (!list.Contains(t)) list.Add(t);
                         }
                     }
                 }
 
-                return _implementers.TryGetValue(name, out var found) ? found : new List<int>();
+                var found = _implementers.TryGetValue(name, out var listed) ? listed : new List<int>();
+                return found.Concat(Incomplete().Where(t => !_types[t].Interface)).Distinct().ToList();
             }
 
-            // Round 16: every interface a type implements, through its interfaces' bases and its own base types, each once.
-            private IEnumerable<string> AllInterfaces(int t, int depth)
-            {
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                var types = new Queue<int>();
-                var visitedTypes = new HashSet<int> { t };
-                types.Enqueue(t);
-                while (types.Count > 0)
-                {
-                    var current = types.Dequeue();
-                    foreach (var i in _types[current].Interfaces)
-                    {
-                        if (!seen.Add(i)) continue;
-                        yield return i;
-                        if (_typesByName.TryGetValue(i, out var ids))
-                            foreach (var id in ids) if (visitedTypes.Add(id)) types.Enqueue(id);
-                    }
-
-                    if (_types[current].Base is { } b && _typesByName.TryGetValue(b, out var bases))
-                        foreach (var id in bases) if (visitedTypes.Add(id)) types.Enqueue(id);
-                }
-            }
-
+            // The code read's types deriving from a class (through their complete ancestry), and those whose ancestry can't
+            // be read whole (fail closed).
             private List<int> Derived(string name)
             {
                 if (_derived == null)
                 {
                     _derived = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-                    for (var t = 0; t < _types.Count; t++)
-                    {
-                        var b = _types[t].Base;
-                        // Round 16: every ancestor (finite chain), never a depth cut.
-                        var visited = new HashSet<string>(StringComparer.Ordinal);
-                        while (b != null && visited.Add(b))
+                    for (var t = 0; t < _readTypes; t++)
+                        foreach (var b in LineageOf(t).Bases)
                         {
-                            if (!_derived.TryGetValue(b, out var list)) _derived[b] = list = new List<int>();
+                            if (!_derived.TryGetValue(_types[b].Name, out var list)) _derived[_types[b].Name] = list = new List<int>();
                             list.Add(t);
-                            b = _typesByName.TryGetValue(b, out var ids) ? _types[ids[0]].Base : null;
                         }
-                    }
                 }
 
-                return _derived.TryGetValue(name, out var found) ? found : new List<int>();
+                var found = _derived.TryGetValue(name, out var listed) ? listed : new List<int>();
+                return found.Concat(Incomplete()).Distinct().ToList();
             }
+
+            private List<int> Incomplete()
+                => _incomplete ??= Enumerable.Range(0, _readTypes).Where(t => LineageOf(t).Incomplete).ToList();
 
             // A Mutates member reached (or a reviewed change to the request's own person, PersonScoped).
             private int Terminal(string reaches, bool person = false)
@@ -1227,10 +1335,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // Each delegate field loaded: a node standing for what it can hold, then every delegate invocation (Invocations).
+            // Round 19: what each method returns is summarized first, to a fixed point (Summaries); the field nodes are filled
+            // from a work list (a field fed by another makes that one's node), never cut by a depth.
             private void Delegates()
             {
-                foreach (var (node, field) in _loads) _nodes[node].Calls.Add(FieldNode(field, 0));
+                Summaries();
+                foreach (var (node, field) in _loads) _nodes[node].Calls.Add(FieldNode(field));
+                while (_pendingFields.Count > 0) FieldEdges(_pendingFields.Dequeue());
                 Invocations();
+            }
+
+            private int FieldNode(string field)
+            {
+                if (_fieldNodes.TryGetValue(field, out var existing)) return existing;
+                var id = _nodes.Count;
+                _fieldNodes[field] = id;
+                var (owner, name) = (field.Split("::")[0], field.Split("::")[1]);
+                _nodes.Add(new Node { Name = "delegate " + Simple(owner) + "." + name });
+                _pendingFields.Enqueue(field);
+                return id;
             }
 
             // Round 18: what a delegate field can hold is what its stores put there, each by the stored value's provenance
@@ -1239,13 +1362,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             // a call returns. Where the provenance is lost (handed in from outside the code read, an unknown, a container
             // that escaped) the field holds an unresolved callback: the methods that read it run it, not the one that stored
             // it. Unresolved too: a field nothing in the code read stores.
-            private int FieldNode(string field, int depth)
+            private void FieldEdges(string field)
             {
-                if (_fieldNodes.TryGetValue(field, out var existing)) return existing;
-                var id = _nodes.Count;
-                _fieldNodes[field] = id;
-                var (owner, name) = (field.Split("::")[0], field.Split("::")[1]);
-                _nodes.Add(new Node { Name = "delegate " + Simple(owner) + "." + name });
+                var id = _fieldNodes[field];
                 var stores = _stores.GetValueOrDefault(field);
                 // Round 11: a delegate whose target stays unresolved counts whatever its type (Q-4AF11-1): a Func<Task> carries
                 // no user, but the closure behind it can hold the user manager and a user id. One whose type can carry a
@@ -1263,13 +1382,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     var sources = Sources(stored, storer);
                     foreach (var n in sources.Nodes ?? Enumerable.Empty<int>()) _nodes[id].Calls.Add(n);
                     foreach (var f in sources.Fields ?? Enumerable.Empty<string>())
-                        if (f != field) _nodes[id].Calls.Add(depth > MaxDepth ? Unresolved(_nodes[id].Name + " (too deep)") : FieldNode(f, depth + 1));
+                        if (f != field) _nodes[id].Calls.Add(FieldNode(f));
                     if (!generic)
                         foreach (var (_, where) in sources.Lost ?? Enumerable.Empty<(int, string)>())
                             _nodes[id].Calls.Add(Unresolved(_nodes[id].Name + " (" + where + ")", callback: callback));
                 }
-
-                return id;
             }
 
             // From each Mutates member (and each unresolved call) back to every caller, until nothing changes.
@@ -1353,7 +1470,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 foreach (var typeHandle in md.TypeDefinitions)
                 {
                     var type = md.GetTypeDefinition(typeHandle);
-                    if (!Controller(md, type)) continue;
+                    if (!Controller(md, typeHandle)) continue;
                     var controller = Simple(FullName(md, typeHandle));
                     foreach (var methodHandle in type.GetMethods())
                     {
@@ -1383,19 +1500,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // A public class that MVC would treat as a controller: named *Controller, or deriving from ControllerBase.
-            private bool Controller(MetadataReader md, TypeDefinition type)
+            private bool Controller(MetadataReader md, TypeDefinitionHandle handle)
             {
+                var type = md.GetTypeDefinition(handle);
                 if ((type.Attributes & TypeAttributes.VisibilityMask) != TypeAttributes.Public || (type.Attributes & (TypeAttributes.Abstract | TypeAttributes.Interface)) != 0) return false;
                 if (md.GetString(type.Name).EndsWith("Controller", StringComparison.Ordinal)) return true;
-                var name = type.BaseType.IsNil ? null : ParentName(md, type.BaseType);
-                var visited = new HashSet<string>(StringComparer.Ordinal);
-                while (name != null && visited.Add(name))
-                {
-                    if (name is "Microsoft.AspNetCore.Mvc.ControllerBase" or "Microsoft.AspNetCore.Mvc.Controller") return true;
-                    name = _typesByName.TryGetValue(name, out var ids) ? _types[ids[0]].Base : null;
-                }
-
-                return false;
+                // Round 19: its complete ancestry (an intermediate base outside the code read included). One that can't be
+                // read isn't counted: MVC's actions the reading has no entry for are bracketed when they aren't GETs (KeyOf).
+                var t = _typesByName.TryGetValue(FullName(md, handle), out var ids) ? ids.FirstOrDefault(i => _types[i].Module == 0, -1) : -1;
+                return t >= 0 && LineageOf(t).Bases.Any(b => _types[b].Name is "Microsoft.AspNetCore.Mvc.ControllerBase" or "Microsoft.AspNetCore.Mvc.Controller");
             }
 
             // ------------------------------------------------------------------ delegate provenance (rounds 17–18)
@@ -1968,27 +2081,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                     (Lost ??= new HashSet<(int, string)>()).Add((node, where));
                 }
 
-                public void Add(Src other)
+                public void Add(Src other) => Merge(other);
+
+                // Adds other's sources; true when anything was new.
+                public bool Merge(Src other)
                 {
-                    if (ReferenceEquals(other, this)) return;
+                    if (ReferenceEquals(other, this)) return false;
+                    var grew = other.Found && !Found;
                     Found |= other.Found;
-                    if (other.Nodes != null) AddNodes(other.Nodes);
-                    if (other.Fields != null) foreach (var f in other.Fields) AddField(f);
-                    if (other.Lost != null) foreach (var (n, w) in other.Lost) Lose(n, w);
+                    if (other.Nodes != null) foreach (var n in other.Nodes) grew |= (Nodes ??= new HashSet<int>()).Add(n);
+                    if (other.Fields != null) foreach (var f in other.Fields) grew |= (Fields ??= new HashSet<string>(StringComparer.Ordinal)).Add(f);
+                    if (other.Lost != null) foreach (var l in other.Lost) grew |= (Lost ??= new HashSet<(int, string)>()).Add(l);
+                    return grew;
                 }
             }
 
-            // A parameter's sources being found (Up): its index on the walk, the lowest index a cycle led back to, what its
-            // own call sites gave so far.
-            private sealed class UpState
+            // Round 19: what a method returns, as a function of its arguments: what it returns whatever they are (Src, its
+            // losses attributed where the summary is used), and which of its own arguments it may return.
+            private sealed class Summary
             {
-                public UpState(int index, Src partial) => (Index, Low, Partial) = (index, index, partial);
+                public Src Src { get; } = new();
 
-                public int Index { get; }
-
-                public int Low { get; set; }
-
-                public Src Partial { get; }
+                public HashSet<int> Args { get; } = new();
             }
 
             // Round 18: every delegate invocation read, judged by where its delegate came from (Sources, the same model as a
@@ -2004,70 +2118,103 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                         Attach(at, type, where);
             }
 
-            // The sources of a value's provenance in the method that holds it (a store's or an invocation's).
+            // The sources of a value's provenance in the method that holds it (a store's or an invocation's): what it is in
+            // that method (Walk), and for each of the method's own arguments it may be, what the callers hand it (Up).
             private Src Sources(Prov prov, int node)
             {
-                _budget = 1 << 16;
-                var sources = new Src();
-                var low = int.MaxValue;
-                Eval(prov, new Context(node, null, null), node, 0, sources, ref low);
+                var (sources, args) = Walk(prov, node, node, -1);
+                foreach (var i in args) sources.Add(Up(node, i));
                 return sources;
             }
 
-            // Where a provenance is read: a method, and (inside what a call returns) the call site whose arguments its own
-            // arguments are, read in the caller's context.
-            private sealed record Context(int Node, Site? Site, Context? Caller);
-
-            // Adds prov's sources (read in context; losses attributed to `at`, the method on the caller's path) to into. Low:
-            // the lowest walk index of a parameter still being found that this led back to (a cycle).
-            private void Eval(Prov prov, Context context, int at, int depth, Src into, ref int low)
+            // Round 19 (4a-r19-3): what a provenance in method m can be, across methods, as a monotone union (no cut, no depth
+            // bound, no edge dropped): the methods (pointers), delegate fields and losses it reaches (losses attributed to
+            // `at`; a summary keeps them unattributed, at -1), and which of m's own arguments it may be. What a call returns is
+            // its target's Summary, with the target's arguments bound to that site's (each (site, argument) once: the union
+            // is the same however often it is reached). reader: the method whose summary this is (it reads the targets').
+            private (Src Sources, HashSet<int> Args) Walk(Prov prov, int m, int at, int reader)
             {
-                if (prov.None || prov.Arrays != null || prov.Addresses != null) into.Found = true;
-                if (prov.Methods != null) into.AddNodes(prov.Methods);
-                if (prov.Fields != null) foreach (var f in prov.Fields) into.AddField(f);
-                if (prov.Unknown) into.Lose(at, "of unknown origin in " + _nodes[context.Node].Name);
-                if (prov.Args == null && prov.Results == null) return;
-                if (depth > MaxDepth || --_budget < 0)
+                var sources = new Src();
+                var args = new HashSet<int>();
+                var seen = new HashSet<Prov>(ReferenceEqualityComparer.Instance);
+                var bound = new HashSet<(int Site, int Arg)>();
+                var stack = new Stack<Prov>();
+                stack.Push(prov);
+                while (stack.Count > 0)
                 {
-                    into.Lose(at, "too deep to follow from " + _nodes[context.Node].Name);
-                    return;
-                }
-
-                foreach (var i in prov.Args ?? Enumerable.Empty<int>())
-                {
-                    if (context.Site == null) into.Add(Up(context.Node, i, depth + 1, ref low));
-                    else Eval(Given(context.Site, i), context.Caller!, at, depth + 1, into, ref low);
-                }
-
-                foreach (var s in prov.Results ?? Enumerable.Empty<int>())
-                {
-                    var site = _sites[s];
-                    if (site.Targets.Count == 0)
+                    var p = stack.Pop();
+                    if (!seen.Add(p)) continue;
+                    if (p.None || p.Arrays != null || p.Addresses != null) sources.Found = true;
+                    if (p.Methods != null) sources.AddNodes(p.Methods);
+                    if (p.Fields != null) foreach (var f in p.Fields) sources.AddField(f);
+                    if (p.Unknown) sources.Lose(at, "of unknown origin in " + _nodes[m].Name);
+                    if (p.Args != null) args.UnionWith(p.Args);
+                    foreach (var s in p.Results ?? Enumerable.Empty<int>())
                     {
-                        into.Lose(at, "returned from outside the code read in " + _nodes[context.Node].Name);
-                        continue;
-                    }
-
-                    foreach (var t in site.Targets.Distinct())
-                    {
-                        var target = _nodes[t];
-                        if (target.Type < 0)
+                        var site = _sites[s];
+                        if (site.Targets.Count == 0)
                         {
-                            // A user change or an unresolved call: what it hands back is that node (reached already by the
-                            // call; a field holding it reaches it too). A shared slot's result isn't followed.
-                            if (target.Reaches != null || target.PersonReaches != null || target.Unresolved != null || target.Callback != null) into.AddNodes(new[] { t });
-                            else into.Lose(at, "returned by " + target.Name);
+                            sources.Lose(at, "returned from outside the code read in " + _nodes[m].Name);
                             continue;
                         }
 
-                        // An abstract target's implementations are targets too.
-                        if (target.Abstract) continue;
-                        if (!_descending.Add((t, s))) continue;
-                        var returns = _returns.TryGetValue(t, out var r) ? r : target.HasBody ? null : Prov.Untracked;
-                        if (returns == null) into.Found = true;
-                        else Eval(returns, new Context(t, site, context), at, depth + 1, into, ref low);
-                        _descending.Remove((t, s));
+                        foreach (var t in site.Targets.Distinct())
+                        {
+                            var target = _nodes[t];
+                            if (target.Type < 0)
+                            {
+                                // A user change or an unresolved call: what it hands back is that node (reached already by the
+                                // call; a field holding it reaches it too). A shared slot's result isn't followed.
+                                if (target.Reaches != null || target.PersonReaches != null || target.Unresolved != null || target.Callback != null) sources.AddNodes(new[] { t });
+                                else sources.Lose(at, "returned by " + target.Name);
+                                continue;
+                            }
+
+                            // An abstract target's implementations are targets too.
+                            if (target.Abstract) continue;
+                            if (_summaries.TryGetValue(t, out var summary))
+                            {
+                                if (reader >= 0)
+                                {
+                                    if (!_readers.TryGetValue(t, out var readers)) _readers[t] = readers = new HashSet<int>();
+                                    readers.Add(reader);
+                                }
+
+                                if (summary.Src.Found) sources.Found = true;
+                                if (summary.Src.Nodes != null) sources.AddNodes(summary.Src.Nodes);
+                                if (summary.Src.Fields != null) foreach (var f in summary.Src.Fields) sources.AddField(f);
+                                if (summary.Src.Lost != null) foreach (var (_, where) in summary.Src.Lost) sources.Lose(at, where);
+                                foreach (var j in summary.Args)
+                                    if (bound.Add((s, j))) stack.Push(Given(site, j));
+                            }
+                            else if (target.HasBody) sources.Found = true;
+                            else sources.Lose(at, "of unknown origin in " + target.Name);
+                        }
                     }
+                }
+
+                return (sources, args);
+            }
+
+            // Round 19: every method's Summary, to the least fixed point: each starts empty, a method whose summary grew
+            // re-reads its readers (Walk records them), until nothing changes (sets only grow; finite, so it ends). A
+            // recursive return, one through a cycle of methods and one rotating its arguments are all followed to the end.
+            private void Summaries()
+            {
+                foreach (var t in _returns.Keys) _summaries[t] = new Summary();
+                var queue = new Queue<int>(_returns.Keys);
+                var queued = new HashSet<int>(_returns.Keys);
+                while (queue.Count > 0)
+                {
+                    var t = queue.Dequeue();
+                    queued.Remove(t);
+                    var (sources, args) = Walk(_returns[t], t, -1, t);
+                    var summary = _summaries[t];
+                    var grew = summary.Src.Merge(sources);
+                    foreach (var a in args) grew |= summary.Args.Add(a);
+                    if (grew && _readers.TryGetValue(t, out var readers))
+                        foreach (var r in readers)
+                            if (queued.Add(r)) queue.Enqueue(r);
                 }
             }
 
@@ -2075,65 +2222,99 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
             // What the callers hand a method's argument: each call site's value, read in its caller, argument by argument
             // (4a-r18-1: never "what the caller made before the call"). No caller in the code read: handed in from outside
-            // (lost at the method). A caller cycle (4a-behaviour-r17-2) keeps "handed in": the parameters that feed each
-            // other form a strongly connected group (Tarjan, on the walk), all with the same sources, found at its root;
-            // when nothing outside the group feeds it, it was handed in from outside the code read.
-            private Src Up(int node, int arg, int depth, ref int callerLow)
+            // (lost at the method). Round 19: a union system over (method, argument), solved whole: the parameters that feed
+            // each other form a strongly connected group (Tarjan, iterative: no depth bound), all with the same sources (the
+            // union of every member's and of what feeds the group); when nothing outside the group feeds it, it was handed in
+            // from outside the code read (4a-behaviour-r17-2).
+            private Src Up(int node, int arg)
             {
-                var key = (node, arg);
-                if (_upDone.TryGetValue(key, out var done)) return done;
-                if (_upOpen.TryGetValue(key, out var open))
+                var root = (node, arg);
+                if (_upDone.TryGetValue(root, out var done)) return done;
+                var index = new Dictionary<(int, int), int>();
+                var low = new Dictionary<(int, int), int>();
+                var local = new Dictionary<(int, int), (Src Sources, List<(int, int)> Feeds)>();
+                var group = new Stack<(int, int)>();
+                var open = new HashSet<(int, int)>();
+                var work = new Stack<((int Node, int Arg) Key, int Next)>();
+                void Enter((int Node, int Arg) key)
                 {
-                    callerLow = Math.Min(callerLow, open.Index);
-                    return new Src();
+                    low[key] = index.Count;
+                    index[key] = index.Count;
+                    group.Push(key);
+                    open.Add(key);
+                    local[key] = Callers(key.Node, key.Arg);
+                    work.Push((key, 0));
                 }
 
-                if (depth > MaxDepth)
+                Enter(root);
+                while (work.Count > 0)
                 {
-                    var deep = new Src();
-                    deep.Lose(node, "too deep to follow to " + _nodes[node].Name);
-                    return deep;
+                    var (key, next) = work.Pop();
+                    var feeds = local[key].Feeds;
+                    if (next < feeds.Count)
+                    {
+                        work.Push((key, next + 1));
+                        var feed = feeds[next];
+                        if (_upDone.ContainsKey(feed)) continue;
+                        if (!index.ContainsKey(feed)) Enter(feed);
+                        else if (open.Contains(feed)) low[key] = Math.Min(low[key], index[feed]);
+                        continue;
+                    }
+
+                    if (low[key] == index[key])
+                    {
+                        var members = new List<(int, int)>();
+                        (int, int) member;
+                        do
+                        {
+                            member = group.Pop();
+                            open.Remove(member);
+                            members.Add(member);
+                        }
+                        while (member != key);
+                        var all = new Src();
+                        foreach (var m in members)
+                        {
+                            all.Add(local[m].Sources);
+                            foreach (var feed in local[m].Feeds)
+                                if (_upDone.TryGetValue(feed, out var fed)) all.Add(fed);
+                        }
+
+                        if (!all.Found) all.Lose(key.Node, "handed to " + _nodes[key.Node].Name + " from outside the code read (its callers are a cycle no code read enters)");
+                        foreach (var m in members) _upDone[m] = all;
+                    }
+
+                    if (work.Count > 0)
+                    {
+                        var parent = work.Peek().Key;
+                        low[parent] = Math.Min(low[parent], low[key]);
+                    }
                 }
 
+                return _upDone[root];
+            }
+
+            // One parameter's own sources: what each call site hands it, read in the caller (Walk), and the caller's arguments
+            // that value may be (which feed it: Up solves them together).
+            private (Src Sources, List<(int, int)> Feeds) Callers(int node, int arg)
+            {
+                var sources = new Src();
+                var feeds = new List<(int, int)>();
                 if (!_sitesOf.TryGetValue(node, out var sites) || sites.Count == 0)
                 {
-                    var outside = new Src();
-                    outside.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read");
-                    return _upDone[key] = outside;
+                    sources.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read");
+                    return (sources, feeds);
                 }
 
-                var state = new UpState(_upIndex++, new Src());
-                _upOpen[key] = state;
-                _upStack.Push(key);
                 foreach (var s in sites)
                 {
                     var site = _sites[s];
-                    var low = state.Low;
-                    Eval(Given(site, arg), new Context(site.Caller, null, null), site.Caller, depth + 1, state.Partial, ref low);
-                    state.Low = Math.Min(state.Low, low);
+                    var (found, args) = Walk(Given(site, arg), site.Caller, site.Caller, -1);
+                    sources.Add(found);
+                    foreach (var a in args) feeds.Add((site.Caller, a));
                 }
 
-                if (state.Low < state.Index)
-                {
-                    // Part of a group whose root is still being found: it merges every member's sources.
-                    callerLow = Math.Min(callerLow, state.Low);
-                    return state.Partial;
-                }
-
-                var members = new List<(int, int)>();
-                var all = new Src();
-                (int, int) member;
-                do
-                {
-                    member = _upStack.Pop();
-                    members.Add(member);
-                    all.Add(_upOpen[member].Partial);
-                    _upOpen.Remove(member);
-                }
-                while (member != key);
-                if (!all.Found) all.Lose(node, "handed to " + _nodes[node].Name + " from outside the code read (its callers are a cycle no code read enters)");
-                foreach (var m in members) _upDone[m] = all;
-                return all;
+                return (sources, feeds);
             }
 
             // An unresolved callback at the method where the delegate's provenance is lost, judged by the delegate's type.
@@ -2144,7 +2325,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             private static string ShortType(string type)
-                => System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(type, @"[A-Za-z_][A-Za-z0-9_]*\.", string.Empty), @"`\d+", string.Empty);
+                => System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(Unescape(type), @"[A-Za-z_][A-Za-z0-9_]*\.", string.Empty), @"`\d+", string.Empty);
+
+            // A name from a signature (Names) as the metadata writes it.
+            private static string Unescape(string name) => name.Replace('\u2039', '<').Replace('\u203a', '>');
 
             // ------------------------------------------------------------------ what a call's contract can carry
 
@@ -2237,9 +2421,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
 
                 public string GetSZArrayType(string elementType) => elementType + "[]";
 
-                public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => FullName(reader, handle);
+                // Round 19: a compiler-generated name's angle brackets (`<>c`, `<>f__AnonymousDelegate0`) are escaped, so the
+                // signature's own brackets (generic arguments) are the only ones a split on them sees (Unescape restores them).
+                public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => Escape(FullName(reader, handle));
 
-                public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => FullName(reader, handle);
+                public string GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => Escape(FullName(reader, handle));
+
+                private static string Escape(string name) => name.Replace('<', '\u2039').Replace('>', '\u203a');
 
                 public string GetTypeFromSpecification(MetadataReader reader, object? genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
                     => reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
@@ -2308,13 +2496,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 return key;
             }
 
+            // Round 19: a delegate type is one whose base is System.MulticastDelegate (ECMA-335 II.14.6), wherever it is
+            // defined: the code read's, or .NET's and a library's read from their metadata (TimerCallback, RequestDelegate).
+            // One that can't be read may be a delegate (fail closed). A primitive (a signature's own code) is none.
             private bool DelegateType(string name)
             {
+                name = Unescape(name);
                 if (name.StartsWith("System.Func`", StringComparison.Ordinal) || name.StartsWith("System.Action", StringComparison.Ordinal)
                     || name is "System.Predicate`1" or "System.Comparison`1" or "System.Converter`2" or "System.EventHandler" or "System.EventHandler`1" or "System.Delegate" or "System.MulticastDelegate")
                     return true;
-                return _typesByName.TryGetValue(name, out var ids) && ids.Any(t => _types[t].Base is "System.MulticastDelegate");
+                if (Primitives.Contains(name) || name.StartsWith('!')) return false;
+                if (_typesByName.TryGetValue(name, out var ids)) return ids.Any(t => _types[t].Base?.Name is "System.MulticastDelegate");
+                var t = TypeId(name, null);
+                if (t >= 0) return _types[t].Base?.Name is "System.MulticastDelegate";
+                _gaps.Add(name + " in " + (_refs.GetValueOrDefault(name) ?? "an assembly it doesn't name") + " can't be read: it may be a delegate");
+                return true;
             }
+
+            // The names a signature gives its primitive types (Names.GetPrimitiveType), and a function pointer's.
+            private static readonly HashSet<string> Primitives = Enum.GetNames<PrimitiveTypeCode>().Select(n => "System." + n).Append("fnptr").ToHashSet(StringComparer.Ordinal);
 
             private static readonly Dictionary<string, string> VerbAttributes = new(StringComparer.Ordinal)
             {
@@ -2364,10 +2564,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
             }
 
             // Round 17: the shared node for a virtual slot declared outside the code read: it reaches every method of the code
-            // read that fills it (implicit implementations and overrides by name and parameter count, explicit MethodImpl
-            // edges), and their own overrides through Dispatch. Null when nothing read fills it. Round 18: a static slot (a
-            // static abstract or static virtual member .NET declares, IAdditionOperators.op_Addition, IParsable.Parse) is
-            // filled by the implementing types' STATIC methods, which carry no Virtual flag when implicit.
+            // read that fills it. Null when nothing read fills it. Round 19: the fills are the one fill rule's (SlotFills:
+            // the complete ancestry, an inherited implementation, a framework intermediate base, static slots by static
+            // methods), reached as a call of them would be (Mapped).
             private int? FrameworkSlot(string type, string method, int count, bool isStatic)
             {
                 // A stated limit: object-lifecycle slots (disposal, finalization, ToString/Equals/GetHashCode) declared
@@ -2377,23 +2576,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 // (reviewed in 12.2 and 10.11.11; pinned sets). Jellyfin's user events cover a plugin that would.
                 if (LifecycleMembers.Contains(method)) return null;
                 if (_frameworkSlots.TryGetValue((type, method, count, isStatic), out var cached)) return cached;
-                var fills = new List<int>();
                 // A compiler-generated state machine (the type an async method's or iterator's [*StateMachine] attribute
                 // names) is no fill: its code is followed from the method that creates it, the only code that can hand one
                 // out, so a hand-written enumerator is followed through IEnumerator.MoveNext and the state machines of
                 // Jellyfin's iterators aren't (each foreach would otherwise reach every one of them). Stated limit: a lazy
                 // sequence created by one action and enumerated by another counts where it is created.
-                foreach (var t in Implementers(type).Concat(Derived(type)).Distinct().Where(t => !_stateMachines.Contains(_types[t].Name)))
-                    foreach (var n in _types[t].Methods)
-                    {
-                        var other = _nodes[n];
-                        if (other.Params != count || other.Abstract || other.Static != isStatic || (!isStatic && !other.Virtual) || ReviewedRead(_types[t].Name, other.Method)) continue;
-                        if (other.Method == method || other.Method.EndsWith("." + method, StringComparison.Ordinal)) fills.Add(n);
-                    }
-
-                if (_explicit.TryGetValue((type, method, count), out var bodies))
-                    fills.AddRange(bodies.Where(n => !_stateMachines.Contains(_types[_nodes[n].Type].Name)));
-                fills = fills.Distinct().ToList();
+                var fills = Mapped(SlotFills(type, method, count, isStatic));
                 if (fills.Count == 0)
                 {
                     _frameworkSlots[(type, method, count, isStatic)] = null;
@@ -2403,13 +2591,280 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
                 var id = _nodes.Count;
                 _nodes.Add(new Node { Name = "slot " + Simple(type) + "." + method });
                 _frameworkSlots[(type, method, count, isStatic)] = id;
-                foreach (var n in fills)
+                _nodes[id].Calls.AddRange(fills);
+                return id;
+            }
+
+            // ------------------------------------------------------------------ the complete ancestry (round 19)
+
+            // A type as a reference names it: its full name and the assembly (simple name) it is in.
+            private readonly record struct TypeRef(string Name, string? Assembly);
+
+            // A type's complete ancestry: its base classes (nearest first) and every interface it implements (its own, its
+            // bases', their base interfaces), whether or not the code read defines them; Incomplete: a step couldn't be read.
+            private sealed class Lineage
+            {
+                public List<int> Bases { get; } = new();
+
+                public List<int> Interfaces { get; } = new();
+
+                public bool Incomplete { get; set; }
+            }
+
+            private Lineage LineageOf(int t)
+            {
+                if (_lineages.TryGetValue(t, out var cached)) return cached;
+                var lineage = new Lineage();
+                _lineages[t] = lineage;
+                var visited = new HashSet<int> { t };
+                for (var current = t; _types[current].Base is { } b;)
                 {
-                    _nodes[id].Calls.Add(n);
-                    _nodes[id].Calls.AddRange(Dispatch(n));
+                    var next = TypeId(b.Name, b.Assembly);
+                    if (next < 0)
+                    {
+                        lineage.Incomplete = true;
+                        _gaps.Add(_types[current].Name + ": its base " + Unread(b));
+                        break;
+                    }
+
+                    // A cycle is malformed metadata: the chain read so far.
+                    if (!visited.Add(next)) break;
+                    lineage.Bases.Add(next);
+                    current = next;
                 }
 
-                return id;
+                var seen = new HashSet<int>();
+                var queue = new Queue<int>(lineage.Bases.Prepend(t));
+                while (queue.Count > 0)
+                {
+                    var current = queue.Dequeue();
+                    foreach (var i in _types[current].Interfaces)
+                    {
+                        var id = TypeId(i.Name, i.Assembly);
+                        if (id < 0)
+                        {
+                            lineage.Incomplete = true;
+                            _gaps.Add(_types[current].Name + ": its interface " + Unread(i));
+                        }
+                        else if (seen.Add(id))
+                        {
+                            lineage.Interfaces.Add(id);
+                            queue.Enqueue(id);
+                        }
+                    }
+                }
+
+                return lineage;
+            }
+
+            private static string Unread(TypeRef type) => (type.Name.Length == 0 ? "(a type it can't name)" : type.Name) + " in " + (type.Assembly ?? "an assembly it doesn't name") + " can't be read";
+
+            // Whether a type is an interface; null when it can't be read.
+            private bool? IsInterface(string name)
+            {
+                var t = TypeId(name, null);
+                return t < 0 ? null : _types[t].Interface;
+            }
+
+            // A type by name: the code read's, else (round 19) read from the metadata of the assembly that defines it, found
+            // by the assembly its reference names (and the type forwarders on the way); -1 when it can't be read.
+            private int TypeId(string name, string? assembly)
+            {
+                if (_typesByName.TryGetValue(name, out var ids)) return ids[0];
+                if (name.Length == 0 || _unreadable.Contains(name)) return -1;
+                assembly ??= _refs.GetValueOrDefault(name);
+                var hops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                while (assembly != null && hops.Add(assembly) && AssemblyFile(assembly) is { } file && ReadOutside(file) is { } outside)
+                {
+                    if (outside.Types.TryGetValue(name, out var shape))
+                    {
+                        var info = new TypeInfo { Name = name, Interface = shape.Interface, Base = shape.Base, External = true, File = file };
+                        info.Interfaces.AddRange(shape.Interfaces);
+                        _typesByName[name] = new List<int> { _types.Count };
+                        _types.Add(info);
+                        return _types.Count - 1;
+                    }
+
+                    assembly = outside.Forwarded.GetValueOrDefault(name);
+                }
+
+                _unreadable.Add(name);
+                return -1;
+            }
+
+            // An assembly's file by simple name: the code read's folders first (Jellyfin's holds its libraries), then the
+            // runtime's (the trusted platform assemblies, the runtime's folder).
+            private string? AssemblyFile(string name)
+            {
+                if (_assemblyFiles == null)
+                {
+                    _assemblyFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var folder in _folders.Where(Directory.Exists))
+                        foreach (var file in Directory.EnumerateFiles(folder, "*.dll").OrderBy(f => f, StringComparer.Ordinal))
+                            _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                    foreach (var file in (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                        _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                    var runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+                    if (Directory.Exists(runtime))
+                        foreach (var file in Directory.EnumerateFiles(runtime, "*.dll").OrderBy(f => f, StringComparer.Ordinal))
+                            _assemblyFiles.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+                }
+
+                return _assemblyFiles.GetValueOrDefault(name);
+            }
+
+            // Whether a type outside the code read declares a method (name, parameter count): read from its assembly's
+            // metadata when asked (rare: a base outside the code read met while looking for a method up a chain), once per
+            // type per reading. One that can't be read declares it (the search ends: nothing of the code read is assumed).
+            private bool Declares(int t, string name, int count)
+            {
+                var type = _types[t];
+                if (!_declared.TryGetValue(type.Name, out var methods))
+                {
+                    methods = null;
+                    try
+                    {
+                        using var pe = new PEReader(System.IO.File.OpenRead(type.File!));
+                        var md = pe.GetMetadataReader();
+                        // Every type of that file at once (the next one asked is likely there too).
+                        foreach (var handle in md.TypeDefinitions)
+                        {
+                            var declared = new HashSet<(string, int)>();
+                            foreach (var m in md.GetTypeDefinition(handle).GetMethods())
+                            {
+                                var method = md.GetMethodDefinition(m);
+                                declared.Add((md.GetString(method.Name), ParamCount(md, method.Signature)));
+                            }
+
+                            var other = FullName(md, handle);
+                            if (_typesByName.TryGetValue(other, out var ids) && _types[ids[0]].External && _types[ids[0]].File == type.File) _declared.TryAdd(other, declared);
+                            if (other == type.Name) methods = declared;
+                        }
+                    }
+                    catch (Exception e) when (e is BadImageFormatException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                    {
+                        methods = null;
+                    }
+
+                    _declared[type.Name] = methods;
+                }
+
+                return methods == null || methods.Contains((name, count));
+            }
+
+            // What an assembly outside the code read says about its types' ancestry, METADATA ONLY: each type's kind, base
+            // type and interfaces, and the types it forwards. Never a body, never loaded. Shared by the readings running or
+            // close together (keyed by the file's path, size and time), held only by them (a weak reference: Jellyfin reads
+            // its controllers once, and keeps none of this afterwards); no methods (Declares reads those when asked).
+            private sealed record OutsideType(bool Interface, TypeRef? Base, TypeRef[] Interfaces);
+
+            private sealed class Outside
+            {
+                public Dictionary<string, OutsideType> Types { get; } = new(StringComparer.Ordinal);
+
+                public Dictionary<string, string> Forwarded { get; } = new(StringComparer.Ordinal);
+            }
+
+            private static readonly ConcurrentDictionary<(string Path, long Length, DateTime Written), WeakReference<Outside>> Outsides = new();
+
+            // The assemblies outside the code read this reading uses (it holds them while it runs).
+            private readonly Dictionary<string, Outside?> _outsides = new(StringComparer.Ordinal);
+
+            private Outside? ReadOutside(string path)
+            {
+                if (_outsides.TryGetValue(path, out var held)) return held;
+                FileInfo info;
+                try
+                {
+                    info = new FileInfo(path);
+                    if (!info.Exists) return null;
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    return null;
+                }
+
+                var key = (info.FullName, info.Length, info.LastWriteTimeUtc);
+                if (!Outsides.TryGetValue(key, out var weak) || !weak.TryGetTarget(out var outside))
+                {
+                    outside = ReadOutsideNow(info.FullName);
+                    if (outside != null) Outsides[key] = new WeakReference<Outside>(outside);
+                }
+
+                return _outsides[path] = outside;
+            }
+
+            private static Outside? ReadOutsideNow(string path)
+            {
+                try
+                {
+                    using var pe = new PEReader(File.OpenRead(path));
+                    if (!pe.HasMetadata) return null;
+                    var md = pe.GetMetadataReader();
+                    var self = AssemblyName(md) ?? Path.GetFileNameWithoutExtension(path);
+                    var outside = new Outside();
+                    foreach (var handle in md.TypeDefinitions)
+                    {
+                        var type = md.GetTypeDefinition(handle);
+                        var interfaces = type.GetInterfaceImplementations().Select(i => Locate(md, md.GetInterfaceImplementation(i).Interface, self)).ToArray();
+                        outside.Types.TryAdd(FullName(md, handle), new OutsideType((type.Attributes & TypeAttributes.Interface) != 0, type.BaseType.IsNil ? null : Locate(md, type.BaseType, self), interfaces));
+                    }
+
+                    foreach (var handle in md.ExportedTypes)
+                    {
+                        var exported = md.GetExportedType(handle);
+                        var implementation = exported.Implementation;
+                        while (implementation.Kind == HandleKind.ExportedType) implementation = md.GetExportedType((ExportedTypeHandle)implementation).Implementation;
+                        if (implementation.Kind == HandleKind.AssemblyReference)
+                            outside.Forwarded.TryAdd(ExportedName(md, exported), md.GetString(md.GetAssemblyReference((AssemblyReferenceHandle)implementation).Name));
+                    }
+
+                    return outside;
+                }
+                catch (Exception e) when (e is BadImageFormatException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                {
+                    return null;
+                }
+            }
+
+            private static string ExportedName(MetadataReader md, ExportedType exported)
+            {
+                var name = md.GetString(exported.Name);
+                if (exported.Implementation.Kind == HandleKind.ExportedType) return ExportedName(md, md.GetExportedType((ExportedTypeHandle)exported.Implementation)) + "+" + name;
+                var space = md.GetString(exported.Namespace);
+                return space.Length == 0 ? name : space + "." + name;
+            }
+
+            private static string? AssemblyName(MetadataReader md) => md.IsAssembly ? md.GetString(md.GetAssemblyDefinition().Name) : null;
+
+            // A base or interface as a reference: its name and assembly (a type the module defines: the module's own; a
+            // generic instantiation: its generic type's). An empty name when it can't be named (an unreadable step).
+            private static TypeRef Locate(MetadataReader md, EntityHandle handle, string? self)
+            {
+                switch (handle.Kind)
+                {
+                    case HandleKind.TypeDefinition:
+                        return new TypeRef(FullName(md, (TypeDefinitionHandle)handle), self);
+                    case HandleKind.TypeReference:
+                        return new TypeRef(FullName(md, (TypeReferenceHandle)handle), Scope(md, (TypeReferenceHandle)handle) ?? self);
+                    case HandleKind.TypeSpecification:
+                    {
+                        var blob = md.GetBlobReader(md.GetTypeSpecification((TypeSpecificationHandle)handle).Signature);
+                        if (blob.ReadSignatureTypeCode() != SignatureTypeCode.GenericTypeInstance) break;
+                        blob.ReadSignatureTypeCode();
+                        return Locate(md, blob.ReadTypeHandle(), self);
+                    }
+                }
+
+                return new TypeRef(string.Empty, self);
+            }
+
+            // The assembly a type reference names (through its declaring types' references); null: the module itself.
+            private static string? Scope(MetadataReader md, TypeReferenceHandle handle)
+            {
+                var scope = md.GetTypeReference(handle).ResolutionScope;
+                while (scope.Kind == HandleKind.TypeReference) scope = md.GetTypeReference((TypeReferenceHandle)scope).ResolutionScope;
+                return scope.Kind == HandleKind.AssemblyReference ? md.GetString(md.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) : null;
             }
 
             // A type's static constructors in the code read (the runtime runs one before the type's first use).

@@ -1517,6 +1517,209 @@ public class IntegrationJellyfinUserDispatchTests
         Assert.NotEqual(JellyfinUserKey.None, Find(JellyfinUserActions.Scan(probe.Path("CallbackProbe")), "InjectedNoArgumentController", "Disable").Key);
     }
 
+    // ------------------------------------------------------------------ round 19: complete ancestry, fixed points
+
+    private const string Round19Bootstrap = """
+        using System; using System.IO; using System.Threading; using System.Threading.Tasks; using Microsoft.AspNetCore.Mvc;
+        using MediaBrowser.Controller.Library; using MediaBrowser.Model.Users;
+        public static class Bootstrap {
+         public static IUserManager Users = null!; public static Guid Person;
+         public static void Disable() => Users.UpdatePolicyAsync(Person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
+        }
+        """;
+
+    // The reviewers' round-19 probes (4a-r19-1: an interface .NET declares implemented through a method a base class has
+    // without declaring it; 4a-r19-2: a Stream.Write override behind MemoryStream, called through a Stream and through a
+    // MemoryStream; 4a-r19-3: a callback returned through a recursion that rotates its arguments), the shapes next to them
+    // (the rotation into a field; a delegate type .NET declares, handed in and invoked; chains 300 deep, past the old
+    // bound), and controls. Each in an assembly of its own: a slot .NET declares is one node for all its fills, so one
+    // probe's fill would otherwise bracket another's call.
+    private static readonly Dictionary<string, string> Round19Probes = new(StringComparer.Ordinal)
+    {
+        ["InheritedSlotController"] = """
+            public class Parent { public void Report(int value) => Bootstrap.Disable(); }
+            public class Child : Parent, IProgress<int> { }
+            public sealed class InheritedSlotController : ControllerBase { [HttpPost] public void Disable(Guid userId) { IProgress<int> p = new Child(); p.Report(1); } }
+            """,
+        ["DerivedFrameworkController"] = """
+            public sealed class DerivedFrameworkController : ControllerBase {
+             sealed class Sink : MemoryStream { readonly Func<Task> _cb; public Sink(Func<Task> cb) { _cb = cb; } public override void Write(byte[] buffer, int offset, int count) { _cb().GetAwaiter().GetResult(); } }
+             private Stream _stream = null!;
+             [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) { _stream = new Sink(cb); _stream.Write(new byte[1], 0, 1); return Task.CompletedTask; }
+            }
+            """,
+        ["NearestFrameworkController"] = """
+            public sealed class NearestFrameworkController : ControllerBase {
+             sealed class Sink : MemoryStream { readonly Func<Task> _cb; public Sink(Func<Task> cb) { _cb = cb; } public override void Write(byte[] buffer, int offset, int count) { _cb().GetAwaiter().GetResult(); } }
+             private MemoryStream _stream = null!;
+             [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) { _stream = new Sink(cb); _stream.Write(new byte[1], 0, 1); return Task.CompletedTask; }
+            }
+            """,
+        ["RotatingReturnController"] = """
+            public sealed class RotatingReturnController : ControllerBase {
+             static Func<Task> Rotate(Func<Task> a, Func<Task> b, Func<Task> c, int n) => n == 0 ? a : Rotate(b, c, a, n - 1);
+             [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) => Rotate(() => Task.CompletedTask, () => Task.CompletedTask, cb, 2)();
+            }
+            """,
+        ["RotatingStoreController"] = """
+            public sealed class RotatingStoreController : ControllerBase {
+             private Func<Task> _d = null!;
+             void Spin(Func<Task> a, Func<Task> b, Func<Task> c, int n) { if (n == 0) _d = a; else Spin(b, c, a, n - 1); }
+             [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) { Spin(() => Task.CompletedTask, () => Task.CompletedTask, cb, 2); return _d(); }
+            }
+            """,
+        // Two fields stored from one rotating recursion: the parameters form one strongly connected group, found from the
+        // first field read (Note's); the second (Disable's) is another member of the group, which must have the group's
+        // sources too, not only what its own call sites hand it.
+        ["RotatingPairController"] = """
+            public sealed class RotatingPairController : ControllerBase {
+             private Func<Task> _first = null!, _second = null!;
+             void Spin(Func<Task> a, Func<Task> b, Func<Task> c, int n) { if (n == 0) { _first = a; _second = b; } else Spin(b, c, a, n - 1); }
+             [HttpPost] public Task Note(Guid userId) => _first();
+             [HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) { Spin(() => Task.CompletedTask, () => Task.CompletedTask, cb, 1); return _second(); }
+            }
+            """,
+        ["TimerCallbackController"] = """
+            public sealed class TimerCallbackController : ControllerBase { [HttpPost] public void Disable(Guid userId, [FromServices] TimerCallback cb) => cb(null); }
+            """,
+        ["DeepHandedController"] = "public sealed class DeepHandedController : ControllerBase { "
+            + string.Concat(Enumerable.Range(0, 300).Select(i => $"static Task F{i}(Func<Task> cb) => F{i + 1}(cb); ")) + "static Task F300(Func<Task> cb) => cb(); "
+            + "[HttpPost] public Task Disable(Guid userId, [FromServices] Func<Task> cb) => F0(cb); }",
+        ["DeepVisibleController"] = "public sealed class DeepVisibleController : ControllerBase { "
+            + string.Concat(Enumerable.Range(0, 300).Select(i => $"static Func<Task> G{i}(Func<Task> cb) => G{i + 1}(cb); ")) + "static Func<Task> G300(Func<Task> cb) => cb; "
+            + "[HttpPost] public Task Disable(Guid userId) => G0(() => { Bootstrap.Disable(); return Task.CompletedTask; })(); }",
+        ["QuietRotateController"] = """
+            public sealed class QuietRotateController : ControllerBase {
+             static Func<Task> Rotate(Func<Task> a, Func<Task> b, Func<Task> c, int n) => n == 0 ? a : Rotate(b, c, a, n - 1);
+             [HttpPost] public Task Note(Guid userId) => Rotate(() => Task.CompletedTask, () => Task.CompletedTask, () => Task.CompletedTask, 2)();
+            }
+            """,
+        ["QuietInheritedController"] = """
+            public class QuietParent { public void Report(int value) { } }
+            public class QuietChild : QuietParent, IProgress<int> { }
+            public sealed class QuietInheritedController : ControllerBase { [HttpPost] public void Note(Guid userId) { IProgress<int> p = new QuietChild(); p.Report(1); } }
+            """,
+    };
+
+    public static IEnumerable<object[]> Round19Cases()
+    {
+        foreach (var optimization in new[] { OptimizationLevel.Debug, OptimizationLevel.Release })
+        {
+            yield return new object[] { optimization, "InheritedSlotController", "Disable", 1, "reaches IUserManager.UpdatePolicyAsync" };
+            yield return new object[] { optimization, "DerivedFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to DerivedFrameworkController.Disable from outside the code read)" };
+            yield return new object[] { optimization, "NearestFrameworkController", "Disable", 1, "unresolved callback delegate Sink._cb (handed to NearestFrameworkController.Disable from outside the code read)" };
+            yield return new object[] { optimization, "RotatingReturnController", "Disable", 1, "unresolved callback Func<Task> handed to RotatingReturnController.Disable from outside the code read" };
+            yield return new object[] { optimization, "RotatingStoreController", "Disable", 1, "unresolved callback delegate RotatingStoreController._d (handed to RotatingStoreController.Disable from outside the code read)" };
+            yield return new object[] { optimization, "RotatingPairController", "Disable", 1, "unresolved callback delegate RotatingPairController._second (handed to RotatingPairController.Disable from outside the code read)" };
+            yield return new object[] { optimization, "TimerCallbackController", "Disable", 1, "unresolved callback TimerCallback handed to TimerCallbackController.Disable from outside the code read" };
+            // No depth bound: followed to the end, not cut (a cut would read "too deep").
+            yield return new object[] { optimization, "DeepHandedController", "Disable", 1, "unresolved callback Func<Task> handed to DeepHandedController.Disable from outside the code read" };
+            yield return new object[] { optimization, "DeepVisibleController", "Disable", 1, "reaches IUserManager.UpdatePolicyAsync" };
+            yield return new object[] { optimization, "QuietRotateController", "Note", 0, null! };
+            yield return new object[] { optimization, "QuietInheritedController", "Note", 0, null! };
+        }
+    }
+
+    // Scanned and run for real: each disables the person once and is bracketed for the reason given (exactly); the controls
+    // disable nobody and aren't bracketed.
+    [Theory]
+    [MemberData(nameof(Round19Cases))]
+    public async Task TheRound19ProbesAreBracketedAndReallyDoWhatTheyShould(OptimizationLevel optimization, string controller, string action, int disables, string? why)
+    {
+        using var probe = Probe.Build(optimization, (controller, Round19Bootstrap + Round19Probes[controller], Array.Empty<string>()));
+        var found = Find(JellyfinUserActions.Scan(probe.Path(controller)), controller, action);
+        if (why == null) Assert.True(found.Key == JellyfinUserKey.None, controller + ": " + found.Key + " why=" + found.Why);
+        else
+        {
+            Assert.True(found.Key == JellyfinUserKey.User, controller + ": " + found.Key + " why=" + found.Why);
+            Assert.Equal(why, found.Why);
+        }
+
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var loaded = probe.Load(controller);
+        loaded.GetType("Bootstrap")!.GetField("Users")!.SetValue(null, users);
+        loaded.GetType("Bootstrap")!.GetField("Person")!.SetValue(null, person);
+        var instance = Activator.CreateInstance(loaded.GetType(controller)!)!;
+        var method = instance.GetType().GetMethod(action)!;
+        var args = method.GetParameters().Select(p => p.ParameterType == typeof(Guid) ? (object)person
+            : p.ParameterType == typeof(Func<Task>) ? (Func<Task>)(() => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }))
+            : p.ParameterType == typeof(TimerCallback) ? (TimerCallback)(_ => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult())
+            : throw new Xunit.Sdk.XunitException("unexpected parameter " + p.ParameterType)).ToArray();
+        Assert.Equal(0, disabled());
+        if (method.Invoke(instance, args) is Task task) await task;
+        Assert.Equal(disables, disabled());
+    }
+
+    // Round 19: the ancestry of a type outside the code read is read from its assembly's metadata; when that assembly can't
+    // be read, the step fails closed. Here the base Mid (between MemoryStream and the sink overriding Stream.Write) and the
+    // delegate type Hook are in an assembly named like .NET's (so it isn't code read, only its metadata): present, the
+    // sink's override is reached through Stream.Write and Hook is a delegate; deleted, the sink may fill any slot it has a
+    // method for (Stream.Write: bracketed) and Hook may be a delegate (bracketed), each listed as a gap; a type with no such
+    // method (the quiet sink, Stream.Flush) stays unbracketed either way.
+    [Fact]
+    public void AnAncestryStepThatCantBeReadFailsClosed()
+    {
+        const string Outside = "namespace Gap { public class Mid : System.IO.MemoryStream { } public delegate void Hook(); }";
+        var gapProbe = Usings + """
+            using Gap;
+            public static class Bootstrap {
+             public static IUserManager Users = null!; public static Guid Person;
+             public static void Disable() => Users.UpdatePolicyAsync(Person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
+            }
+            public sealed class Sink : Mid { public override void Write(byte[] buffer, int offset, int count) => Bootstrap.Disable(); }
+            public sealed class GapController : ControllerBase { [HttpPost] public void Disable(Guid userId) { System.IO.Stream s = new Sink(); s.Write(new byte[1], 0, 1); } }
+            public sealed class HookController : ControllerBase { [HttpPost] public void Disable(Guid userId, [FromServices] Hook hook) => hook(); }
+            public sealed class QuietSink : Mid { }
+            public sealed class QuietGapController : ControllerBase { [HttpPost] public void Note(Guid userId) { System.IO.Stream s = new QuietSink(); s.Flush(); } }
+            """;
+        using var probe = Probe.Build(("System.JeAncestry", Outside, Array.Empty<string>()), ("GapProbe", gapProbe, new[] { "System.JeAncestry" }));
+        Assert.DoesNotContain(JellyfinUserActions.CodeOf(probe.Path("GapProbe")), f => f.EndsWith("System.JeAncestry.dll", StringComparison.Ordinal));
+        var read = JellyfinUserActions.Scan(probe.Path("GapProbe"));
+        Assert.Equal("reaches IUserManager.UpdatePolicyAsync", Find(read, "GapController", "Disable").Why);
+        Assert.StartsWith("unresolved callback Hook handed to HookController.Disable", Find(read, "HookController", "Disable").Why, StringComparison.Ordinal);
+        Assert.Equal(JellyfinUserKey.None, Find(read, "QuietGapController", "Note").Key);
+        Assert.DoesNotContain(JellyfinUserActions.AncestryGaps(probe.Path("GapProbe")), g => g.Contains("Gap.", StringComparison.Ordinal));
+
+        // Run for real (the assembly present): the sink's override and the hook each disable the person once.
+        var person = Guid.NewGuid();
+        var (users, disabled) = Users(person);
+        var context = new System.Runtime.Loader.AssemblyLoadContext("gap-" + Guid.NewGuid().ToString("N"), isCollectible: true);
+        var outside = context.LoadFromStream(new MemoryStream(File.ReadAllBytes(probe.Path("System.JeAncestry"))));
+        var loaded = context.LoadFromStream(new MemoryStream(File.ReadAllBytes(probe.Path("GapProbe"))));
+        try
+        {
+            loaded.GetType("Bootstrap")!.GetField("Users")!.SetValue(null, users);
+            loaded.GetType("Bootstrap")!.GetField("Person")!.SetValue(null, person);
+            var gap = Activator.CreateInstance(loaded.GetType("GapController")!)!;
+            gap.GetType().GetMethod("Disable")!.Invoke(gap, new object[] { person });
+            Assert.Equal(1, disabled());
+            var hookType = outside.GetType("Gap.Hook")!;
+            Action closure = () => users.UpdatePolicyAsync(person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
+            var hook = Delegate.CreateDelegate(hookType, closure.Target, closure.Method);
+            var hooked = Activator.CreateInstance(loaded.GetType("HookController")!)!;
+            hooked.GetType().GetMethod("Disable")!.Invoke(hooked, new object[] { person, hook });
+            Assert.Equal(2, disabled());
+            var quiet = Activator.CreateInstance(loaded.GetType("QuietGapController")!)!;
+            quiet.GetType().GetMethod("Note")!.Invoke(quiet, new object[] { person });
+            Assert.Equal(2, disabled());
+        }
+        finally
+        {
+            context.Unload();
+        }
+
+        // The assembly gone: fail closed.
+        File.Delete(probe.Path("System.JeAncestry"));
+        var unread = JellyfinUserActions.Scan(probe.Path("GapProbe"));
+        Assert.Equal("reaches IUserManager.UpdatePolicyAsync", Find(unread, "GapController", "Disable").Why);
+        Assert.Equal(JellyfinUserKey.User, Find(unread, "HookController", "Disable").Key);
+        Assert.Equal(JellyfinUserKey.None, Find(unread, "QuietGapController", "Note").Key);
+        var gaps = JellyfinUserActions.AncestryGaps(probe.Path("GapProbe"));
+        Assert.Contains("Sink: its base Gap.Mid in System.JeAncestry can't be read", gaps);
+        Assert.Contains("Gap.Hook in System.JeAncestry can't be read: it may be a delegate", gaps);
+    }
+
     // A user manager that counts the policy saves disabling the person.
     private static (IUserManager Users, Func<int> Disabled) Users(Guid person)
     {

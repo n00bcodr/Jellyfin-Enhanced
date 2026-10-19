@@ -1396,9 +1396,16 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
   whichever way the compiled code hands control on: a direct call; a virtual or interface call (static interface members
   included) to every implementation and override (sealed, covariant-return and explicit ones, whatever the replacing
   method is called), interfaces and base classes .NET itself declares included (a progress report, an observer, a
-  hand-written enumerator); a delegate or function pointer, judged by where it came from: what was stored in it (events
+  hand-written enumerator). Implementations are found over each type's complete ancestry, the way the runtime finds
+  them: a method a class inherits from a base that doesn't itself declare the interface, an override with a .NET class
+  in between (a stream deriving from `MemoryStream` that overrides `Stream.Write`), an abstract re-declaration on the
+  way, an interface a derived class implements again, generic variance, a default interface method. The bases and
+  interfaces outside Jellyfin's code are read from the assemblies Jellyfin runs with (their metadata only: nothing is
+  loaded or run). A delegate or function pointer is judged by where it came from: what was stored in it (events
   Jellyfin's own code subscribes to included), what the callers handed the method that runs it, what the call that gave
-  it back returns, what a local or an array held; a delegate handed to .NET code that may run it (`Task.Run`); and the
+  it back returns, what a local or an array held, followed to the end however it recurses (a method that passes it to
+  itself, a cycle of methods, calls that rotate their arguments, chains of any depth); delegate types .NET or a library
+  declares (a timer's callback) count like Jellyfin's own; a delegate handed to .NET code that may run it (`Task.Run`); and the
   static constructors and module initializers the runtime runs on a type's or module's first use. An indirect call
   through a pointer, and a callback the reading can't see into (one handed in from outside Jellyfin's code, one taken
   out of a collection or out of an array other code filled, one whose source it can't follow), count as a possible
@@ -1407,14 +1414,18 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
   static constructor and module initializer for every method that can run, and the same reading of where a delegate
   came from wherever it is used (invoked, stored in a field, handed to a method, returned). The tests check this as a
   generated grid: every combination of how control is handed on, what kind of method runs, where its user change is
-  and where the delegate comes from (832 combinations), each compiled, read and run for real. For each
+  and where the delegate comes from, each way of finding an implementation and each kind of recursion included (3,280
+  combinations), each compiled, read and run for real. For each
   supported Jellyfin release (12.2 and 10.11.11) the full list is pinned in the tests, and a test runner checks the
   newest Jellyfin image the same way, so a Jellyfin update that adds or changes such an action fails the tests until it
   has been reviewed.
 - The reading errs towards bracketing: a call through an interface or a base class counts every implementation the
   code has, whichever type a generic call is actually made with, and a delegate taken out of an array that other code
   filled counts as one it can't see into, so an action can be bracketed although what it really runs changes nobody.
-  It is never left out when one could.
+  A type whose bases or interfaces can't be read (an assembly missing from Jellyfin's folder) counts as a possible
+  implementation of anything it has a method for, and a type that can't be read at all as a possible delegate; with
+  Jellyfin's own files in place (12.2 and 10.11.11 are checked) every step is read. It is never left out when one
+  could.
 - An action that hands control to code the reading can't see (an event another plugin listens to, a callback passed in
   from outside) is bracketed for the person it is for: on 12.2 and 10.11.11, 88 actions each, among them starting
   playback, favourites, ratings and watched-state saves. Bracketing them for everyone would hold every automatic check
@@ -1434,7 +1445,9 @@ display preferences, backups) for nothing; Jellyfin's own code changes no user t
 A user change made through one of them is covered afterwards, as below.
 
 What reading the code can't see: code found by reflection or created while the server runs, a service looked up by name
-at run time, and code outside Jellyfin's server (another plugin's own code, another process). A user change made there
+at run time, code outside Jellyfin's server (another plugin's own code, another process), and a method of Jellyfin's that
+.NET's own code calls back on an object Jellyfin handed it (a stream's `Write` during a copy .NET makes; a delegate
+handed to .NET counts as run there). A user change made there
 through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
 covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
 that person's version when it does, so the next check reads the change. A check already deciding in the moment between

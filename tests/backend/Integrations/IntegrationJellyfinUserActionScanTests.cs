@@ -67,6 +67,17 @@ namespace JE.Tests
             Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), "read in " + timer.Elapsed);
         }
 
+        // Round 19: the classifier reads the complete ancestry of Jellyfin's types (the bases and interfaces they have in .NET
+        // and in Jellyfin's libraries) from the metadata of the assemblies next to them, as in a running Jellyfin (the pinned
+        // copy holds the image's whole /jellyfin: tests/backend/jellyfin_api.py). Every step is read: no type of Jellyfin's
+        // falls back to the fail-closed reading (a possible fill of any slot, a possible delegate).
+        [Fact]
+        public void JellyfinsAncestryIsReadWhole()
+        {
+            using var api = JellyfinApiAssembly.Load();
+            Assert.Empty(JellyfinUserActions.AncestryGaps(api.Path));
+        }
+
         // Round 10: a reviewed person-scoped member (JellyfinUserActions.PersonScoped) is held to what it was reviewed for:
         // in Jellyfin's own code, GetSession's calls reach only LogSessionActivity's save of that user (its activity date
         // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call other than a callback,

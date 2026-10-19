@@ -19,9 +19,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def server_assembly(name):
-    """Jellyfin's own server assemblies in /jellyfin, as tests/backend/jellyfin_api.py keeps them."""
-    return (name.endswith(".dll") and (name.startswith(("Jellyfin.", "MediaBrowser.", "Emby.")) or name == "jellyfin.dll")
-            and not name.startswith("Jellyfin.Plugin."))
+    """The assemblies of /jellyfin, as tests/backend/jellyfin_api.py keeps them: Jellyfin's own server assemblies and (4a
+    round 19: their types' ancestry is read from them) the runtime and libraries it ships with."""
+    return name.endswith(".dll") and not name.startswith("Jellyfin.Plugin.")
 
 # Floating tags: each run pulls the newest release of its compatibility line and
 # records the digest and server version it actually tested in report.json.
@@ -197,7 +197,7 @@ def user_actions(target, image, temp, output, name):
         command("docker", "cp", container + ":/jellyfin/.", str(staging))
     finally:
         owned("docker", "rm", "-f", container)
-    # The same server assemblies the pinned cache keeps (tests/backend/jellyfin_api.py).
+    # The same assemblies the pinned cache keeps (tests/backend/jellyfin_api.py).
     for entry in staging.iterdir():
         if entry.is_file() and server_assembly(entry.name):
             entry.replace(api / entry.name)

@@ -42,14 +42,37 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     /// <summary>How control reaches the method.</summary>
     public enum Transfer { Call, Callvirt, Constrained, Pointer, Invoke, Newobj }
 
-    /// <summary>What kind of method runs.</summary>
-    public enum Target { Method, Override, Explicit, FrameworkSlot, StaticAbstract, FrameworkStaticAbstract }
+    /// <summary>What kind of method runs. Round 19: derived from the resolution rules (ECMA-335 II.10.3, II.12.2) the
+    /// classifier implements, each over the complete ancestry: a type's own method, MethodImpl (explicit), a base's override,
+    /// an interface implemented through a method INHERITED from a base that doesn't declare it (same assembly, across
+    /// assemblies, a slot .NET declares), a slot .NET declares reached through a FRAMEWORK INTERMEDIATE base (MemoryStream
+    /// between Stream and the override), an abstract chain through a framework type (a code-read abstract re-declaration of
+    /// TextWriter.Write), an interface RE-IMPLEMENTED by a derived type (code read, .NET), generic VARIANCE (code read,
+    /// .NET), a default interface method, static abstract members (code read, .NET).</summary>
+    public enum Target
+    {
+        Method, Override, Explicit, FrameworkSlot, StaticAbstract, FrameworkStaticAbstract,
+        Inherited, InheritedAcrossAssemblies, FrameworkInherited, FrameworkIntermediate, FrameworkAbstractChain, Reimplementation, FrameworkReimplementation,
+        Variance, FrameworkVariance, DefaultImplementation,
+    }
 
     /// <summary>Where the method's user change is.</summary>
     public enum Effect { Body, TypeInitializer, ModuleInitializer }
 
-    /// <summary>Where the delegate that runs it comes from.</summary>
-    public enum Source { Direct, Field, FieldThroughIdentity, FieldAfterDecoy, FieldThroughConstructor, Parameter, Local, Returned, ArrayInPlace, ArrayByHelper, ObjectCast, Collection }
+    /// <summary>Where the delegate that runs it comes from. Round 19: the recursion shapes too (each a monotone fixed point
+    /// in the classifier, never cut): returned through self recursion, mutual recursion, an argument rotation (3-cycle
+    /// permutation), a chain deeper than two; stored in a field from a parameter that rotates through recursive calls, and
+    /// through a chain deeper than two.</summary>
+    public enum Source
+    {
+        Direct, Field, FieldThroughIdentity, FieldAfterDecoy, FieldThroughConstructor, Parameter, Local, Returned, ArrayInPlace, ArrayByHelper, ObjectCast, Collection,
+        Recursive, Mutual, Rotation, RotationStored, DeepReturned, DeepStored,
+    }
+
+    // The round-18 table (kept whole: 810 visible cells, 22 handed in).
+    private static readonly HashSet<Target> Round18Targets = new() { Target.Method, Target.Override, Target.Explicit, Target.FrameworkSlot, Target.StaticAbstract, Target.FrameworkStaticAbstract };
+
+    private static readonly HashSet<Source> Round18Sources = Enum.GetValues<Source>().Where(s => s <= Source.Collection).ToHashSet();
 
     /// <summary>Where a delegate handed in from outside the code read enters: the controller's constructor (dependency
     /// injection) or the action ([FromServices]).</summary>
@@ -133,6 +156,15 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         Assert.All(Enum.GetValues<Target>(), k => Assert.True(pairs.Count(p => p.k == k) >= 2, k + " is reached by fewer than two transfers"));
     }
 
+    // Round 19: the round-18 cells are all still here (the same 23 transfer/kind pairs, three places, the twelve sources).
+    [Fact]
+    public void TheRound18CellsAreKept()
+    {
+        Assert.Equal(810, Matrix.All.Count(c => c.Entry == null && Round18Targets.Contains(c.Target) && Round18Sources.Contains(c.Source)));
+        Assert.Equal(22, Matrix.All.Count(c => c.Entry != null && Round18Sources.Contains(c.Source)));
+        Assert.Equal(23, Enum.GetValues<Transfer>().Sum(t => Round18Targets.Count(k => FormOf(t, k) != null)));
+    }
+
     // ------------------------------------------------------------------ the table
 
     /// <summary>
@@ -152,6 +184,21 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     private const string StaticFace = "public interface IStatic { static abstract void Run(); }";
     private const string StaticTargetImpl = "public struct Target : IStatic { {CCTOR} public static void Run() { {BODY} } }";
     private const string ParsableTarget = "public struct Target : IParsable<Target> { {CCTOR} public static Target Parse(string s, IFormatProvider? provider) { {BODY} return default; } public static bool TryParse(string? s, IFormatProvider? provider, out Target result) { result = default; return false; } }";
+
+    // Round 19: the resolution rules' kinds. Target is always the type whose method runs (its {CCTOR} and {BODY}).
+    private const string InheritedTarget = "public class Target { {CCTOR} public void Run() { {BODY} } } public sealed class Child : Target, IFace { }";
+    private const string AcrossBase = "public interface IFace { void Run(); } public class Target { {CCTOR} public void Run() { {BODY} } }";
+    private const string AcrossChild = "public sealed class Child : Target, IFace { }";
+    private const string FormatTarget = "public class Target { {CCTOR} public object? GetFormat(Type? formatType) { {BODY} return null; } } public sealed class Child : Target, IFormatProvider { }";
+    private const string StreamTarget = "public sealed class Target : System.IO.MemoryStream { {CCTOR} public override void Write(byte[] buffer, int offset, int count) { {BODY} } }";
+    private const string WriterTarget = "public abstract class Mid : System.IO.TextWriter { public abstract override void Write(char value); } public sealed class Target : Mid { {CCTOR} public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8; public override void Write(char value) { {BODY} } }";
+    private const string ReimplementedTarget = "public class Plain : IFace { public void Run() { } } public sealed class Target : Plain, IFace { {CCTOR} void IFace.Run() { {BODY} } }";
+    private const string ComparableTarget = "public class Plain : IComparable<int> { public int CompareTo(int other) => 0; } public sealed class Target : Plain, IComparable<int> { {CCTOR} int IComparable<int>.CompareTo(int other) { {BODY} return 0; } }";
+    private const string InFace = "public interface IIn<in T> { void Run(T value); }";
+    private const string VariantTarget = "public sealed class Target : IIn<object> { {CCTOR} public void Run(object value) { {BODY} } }";
+    private const string ComparerTarget = "public sealed class Target : IComparer<object> { {CCTOR} public int Compare(object? x, object? y) { {BODY} return 0; } }";
+    private const string DefaultTarget = "public interface Target : IFace { {CCTOR} void IFace.Run() { {BODY} } } public sealed class Child : Target { }";
+    private const string CallFace = "public static class Helpers { public static void Call<T>(T t) where T : IFace => t.Run(); }";
 
     // Which transfer can reach which kind of method in C#; null: it can't (a plain call reaches an override only as a base
     // call, an explicit implementation or a slot only through dispatch, a static abstract member only constrained; newobj
@@ -187,6 +234,62 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         (Transfer.Constrained, Target.FrameworkStaticAbstract) => new("", ParsableTarget, "public static class Helpers { public static T Call<T>() where T : IParsable<T> => T.Parse(\"\", null); }", "Helpers.Call<Target>();", "constrained."),
         (Transfer.Pointer, Target.FrameworkStaticAbstract) => new("", ParsableTarget, "public static class Helpers { public static void Point<T>() where T : IParsable<T> { Func<string, IFormatProvider?, T> g = T.Parse; g(\"\", null); } }", "Helpers.Point<Target>();", "ldftn IParsable`1::Parse"),
         (Transfer.Invoke, Target.FrameworkStaticAbstract) => new("", ParsableTarget, "public static class Helpers { public static Func<string, IFormatProvider?, T> Group<T>() where T : IParsable<T> => T.Parse; }", null, "ldftn IParsable`1::Parse", "Func<string, IFormatProvider?, Target>", "Helpers.Group<Target>()", "(\"\", null)"),
+
+        // Round 19 (4a-r19-1): an interface slot filled by a method a base class has without declaring the interface (C#
+        // marks the base's method virtual in the same assembly; across assemblies it writes a stub in the derived type).
+        (Transfer.Callvirt, Target.Inherited) => new(Face, InheritedTarget, "", "IFace f = new Child(); f.Run();", "callvirt IFace::Run"),
+        (Transfer.Constrained, Target.Inherited) => new(Face, InheritedTarget, CallFace, "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.Inherited) => new(Face, InheritedTarget, "", "IFace f = new Child(); Action g = f.Run; g();", "ldvirtftn IFace::Run"),
+        (Transfer.Invoke, Target.Inherited) => new(Face, InheritedTarget, "", null, "ldvirtftn IFace::Run", Group: "new Action(((IFace)new Child()).Run)"),
+
+        (Transfer.Callvirt, Target.InheritedAcrossAssemblies) => new(AcrossBase, AcrossChild, "", "IFace f = new Child(); f.Run();", "callvirt IFace::Run"),
+        (Transfer.Constrained, Target.InheritedAcrossAssemblies) => new(AcrossBase, AcrossChild, CallFace, "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.InheritedAcrossAssemblies) => new(AcrossBase, AcrossChild, "", "IFace f = new Child(); Action g = f.Run; g();", "ldvirtftn IFace::Run"),
+        (Transfer.Invoke, Target.InheritedAcrossAssemblies) => new(AcrossBase, AcrossChild, "", null, "ldvirtftn IFace::Run", Group: "new Action(((IFace)new Child()).Run)"),
+
+        (Transfer.Callvirt, Target.FrameworkInherited) => new("", FormatTarget, "", "IFormatProvider p = new Child(); p.GetFormat(null);", "callvirt IFormatProvider::GetFormat"),
+        (Transfer.Constrained, Target.FrameworkInherited) => new("", FormatTarget, "public static class Helpers { public static void Call<T>(T t) where T : IFormatProvider { t.GetFormat(null); } }", "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.FrameworkInherited) => new("", FormatTarget, "", "IFormatProvider p = new Child(); Func<Type?, object?> g = p.GetFormat; g(null);", "ldvirtftn IFormatProvider::GetFormat"),
+        (Transfer.Invoke, Target.FrameworkInherited) => new("", FormatTarget, "", null, "ldvirtftn IFormatProvider::GetFormat", "Func<Type?, object?>", "new Func<Type?, object?>(((IFormatProvider)new Child()).GetFormat)", "(null)"),
+
+        // Round 19 (4a-r19-2): a slot .NET declares (Stream.Write) overridden behind a framework intermediate base
+        // (MemoryStream). Constrained: C# calls a class-constrained type parameter's override as box + callvirt.
+        (Transfer.Callvirt, Target.FrameworkIntermediate) => new("", StreamTarget, "", "System.IO.Stream s = new Target(); s.Write(new byte[1], 0, 1);", "callvirt Stream::Write"),
+        (Transfer.Pointer, Target.FrameworkIntermediate) => new("", StreamTarget, "", "System.IO.Stream s = new Target(); Action<byte[], int, int> g = s.Write; g(new byte[1], 0, 1);", "ldvirtftn Stream::Write"),
+        (Transfer.Invoke, Target.FrameworkIntermediate) => new("", StreamTarget, "", null, "ldvirtftn Stream::Write", "Action<byte[], int, int>", "new Action<byte[], int, int>(((System.IO.Stream)new Target()).Write)", "(new byte[1], 0, 1)"),
+
+        // An abstract chain through a framework type: TextWriter.Write(char) re-declared abstract in the code read.
+        (Transfer.Callvirt, Target.FrameworkAbstractChain) => new("", WriterTarget, "", "System.IO.TextWriter w = new Target(); w.Write('x');", "callvirt TextWriter::Write"),
+        (Transfer.Pointer, Target.FrameworkAbstractChain) => new("", WriterTarget, "", "System.IO.TextWriter w = new Target(); Action<char> g = w.Write; g('x');", "ldvirtftn TextWriter::Write"),
+        (Transfer.Invoke, Target.FrameworkAbstractChain) => new("", WriterTarget, "", null, "ldvirtftn TextWriter::Write", "Action<char>", "new Action<char>(((System.IO.TextWriter)new Target()).Write)", "('x')"),
+
+        // An interface re-implemented by a derived type (its base implements it too).
+        (Transfer.Callvirt, Target.Reimplementation) => new(Face, ReimplementedTarget, "", "IFace f = new Target(); f.Run();", "callvirt IFace::Run"),
+        (Transfer.Constrained, Target.Reimplementation) => new(Face, ReimplementedTarget, CallFace, "Helpers.Call(new Target());", "constrained."),
+        (Transfer.Pointer, Target.Reimplementation) => new(Face, ReimplementedTarget, "", "IFace f = new Target(); Action g = f.Run; g();", "ldvirtftn IFace::Run"),
+        (Transfer.Invoke, Target.Reimplementation) => new(Face, ReimplementedTarget, "", null, "ldvirtftn IFace::Run", Group: "new Action(((IFace)new Target()).Run)"),
+
+        (Transfer.Callvirt, Target.FrameworkReimplementation) => new("", ComparableTarget, "", "IComparable<int> c = new Target(); c.CompareTo(0);", "callvirt IComparable`1::CompareTo"),
+        (Transfer.Constrained, Target.FrameworkReimplementation) => new("", ComparableTarget, "public static class Helpers { public static void Call<T>(T t) where T : IComparable<int> { t.CompareTo(0); } }", "Helpers.Call(new Target());", "constrained."),
+        (Transfer.Pointer, Target.FrameworkReimplementation) => new("", ComparableTarget, "", "IComparable<int> c = new Target(); Func<int, int> g = c.CompareTo; g(0);", "ldvirtftn IComparable`1::CompareTo"),
+        (Transfer.Invoke, Target.FrameworkReimplementation) => new("", ComparableTarget, "", null, "ldvirtftn IComparable`1::CompareTo", "Func<int, int>", "new Func<int, int>(((IComparable<int>)new Target()).CompareTo)", "(0)"),
+
+        // Generic variance: an implementation for object called through the interface for string (contravariance).
+        (Transfer.Callvirt, Target.Variance) => new(InFace, VariantTarget, "", "IIn<string> f = new Target(); f.Run(\"\");", "callvirt IIn`1::Run"),
+        (Transfer.Constrained, Target.Variance) => new(InFace, VariantTarget, "public static class Helpers { public static void Call<T>(T t) where T : IIn<string> => t.Run(\"\"); }", "Helpers.Call(new Target());", "constrained."),
+        (Transfer.Pointer, Target.Variance) => new(InFace, VariantTarget, "", "IIn<string> f = new Target(); Action<string> g = f.Run; g(\"\");", "ldvirtftn IIn`1::Run"),
+        (Transfer.Invoke, Target.Variance) => new(InFace, VariantTarget, "", null, "ldvirtftn IIn`1::Run", "Action<string>", "new Action<string>(((IIn<string>)new Target()).Run)", "(\"\")"),
+
+        (Transfer.Callvirt, Target.FrameworkVariance) => new("", ComparerTarget, "", "IComparer<string> c = new Target(); c.Compare(\"\", \"\");", "callvirt IComparer`1::Compare"),
+        (Transfer.Constrained, Target.FrameworkVariance) => new("", ComparerTarget, "public static class Helpers { public static void Call<T>(T t) where T : IComparer<string> { t.Compare(\"\", \"\"); } }", "Helpers.Call(new Target());", "constrained."),
+        (Transfer.Pointer, Target.FrameworkVariance) => new("", ComparerTarget, "", "IComparer<string> c = new Target(); Func<string?, string?, int> g = c.Compare; g(\"\", \"\");", "ldvirtftn IComparer`1::Compare"),
+        (Transfer.Invoke, Target.FrameworkVariance) => new("", ComparerTarget, "", null, "ldvirtftn IComparer`1::Compare", "Func<string?, string?, int>", "new Func<string?, string?, int>(((IComparer<string>)new Target()).Compare)", "(\"\", \"\")"),
+
+        // A default interface method (the most specific implementation, in another interface).
+        (Transfer.Callvirt, Target.DefaultImplementation) => new(Face, DefaultTarget, "", "IFace f = new Child(); f.Run();", "callvirt IFace::Run"),
+        (Transfer.Constrained, Target.DefaultImplementation) => new(Face, DefaultTarget, CallFace, "Helpers.Call(new Child());", "constrained."),
+        (Transfer.Pointer, Target.DefaultImplementation) => new(Face, DefaultTarget, "", "IFace f = new Child(); Action g = f.Run; g();", "ldvirtftn IFace::Run"),
+        (Transfer.Invoke, Target.DefaultImplementation) => new(Face, DefaultTarget, "", null, "ldvirtftn IFace::Run", Group: "new Action(((IFace)new Child()).Run)"),
         _ => null,
     };
 
@@ -211,6 +314,13 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
         var pass = $"private static {d} Pass({d} d) {{ {d} x = d; return x; }}";
         var fill = $"private static void Fill({d}[] all, {d} d) {{ all[0] = d; }}";
         var holder = $"public sealed class Holder {{ private readonly {d} _d; public Holder({d} d) {{ _d = d; }} public void Run() {{ _d{call}; }} }}";
+        // Round 19: the recursion shapes (null decoys: the rotation must carry the delegate round to come out).
+        var pick = $"private static {d} Pick({d} d, int n) => n == 0 ? d : Pick(d, n - 1);";
+        var mutual = $"private static {d} A({d} d, int n) => n == 0 ? d : B(d, n - 1); private static {d} B({d} d, int n) => A(d, n);";
+        var rotate = $"private static {d} Rotate({d} a, {d} b, {d} c, int n) => n == 0 ? a : Rotate(b, c, a, n - 1);";
+        var spin = $"private void Spin({d} a, {d} b, {d} c, int n) {{ if (n == 0) _d = a; else Spin(b, c, a, n - 1); }}";
+        var deepReturned = $"private static {d} D0({d} d) => D1(d); private static {d} D1({d} d) => D2(d); private static {d} D2({d} d) => D3(d); private static {d} D3({d} d) => d;";
+        var deepStored = $"private void S0({d} d) => S1(d); private void S1({d} d) => S2(d); private void S2({d} d) => S3(d); private void S3({d} d) {{ _d = d; }}";
         if (cell.Source == Source.Direct) return form!.Helpers + $" public sealed class {c} : ControllerBase {{ {action} {{ {form.Run} }} }}";
         string members, body, outside = string.Empty;
         if (cell.Entry == Entry.Action)
@@ -228,6 +338,12 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                 Source.ArrayByHelper => (fill, $"var all = new {d}[1]; Fill(all, cb); all[0]{call};"),
                 Source.ObjectCast => (string.Empty, $"object held = cb; (({d})held){call};"),
                 Source.Collection => (string.Empty, $"new System.Collections.Generic.List<{d}> {{ cb }}[0]{call};"),
+                Source.Recursive => (pick, $"Pick(cb, 2){call};"),
+                Source.Mutual => (mutual, $"A(cb, 2){call};"),
+                Source.Rotation => (rotate, $"Rotate(null!, null!, cb, 2){call};"),
+                Source.RotationStored => (field + spin, $"Spin(null!, null!, cb, 2); _d{call};"),
+                Source.DeepReturned => (deepReturned, $"D0(cb){call};"),
+                Source.DeepStored => (field + deepStored, $"S0(cb); _d{call};"),
                 _ => throw new ArgumentOutOfRangeException(nameof(cell)),
             };
             if (cell.Source == Source.FieldThroughConstructor) outside = holder;
@@ -248,6 +364,12 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
             Source.ArrayByHelper => (field + fill, $"var all = new {d}[1]; Fill(all, {make}); _d = all[0];"),
             Source.ObjectCast => (field, $"object held = {make}; _d = ({d})held;"),
             Source.Collection => (field, $"var list = new System.Collections.Generic.List<{d}> {{ {make} }}; _d = list[0];"),
+            Source.Recursive => (field + pick, $"_d = Pick({make}, 2);"),
+            Source.Mutual => (field + mutual, $"_d = A({make}, 2);"),
+            Source.Rotation => (field + rotate, $"_d = Rotate(null!, null!, {make}, 2);"),
+            Source.RotationStored => (field + spin, $"Spin(null!, null!, {make}, 2);"),
+            Source.DeepReturned => (field + deepReturned, $"_d = D0({make});"),
+            Source.DeepStored => (field + deepStored, $"S0({make});"),
             _ => throw new ArgumentOutOfRangeException(nameof(cell)),
         };
         if (cell.Source == Source.FieldThroughConstructor) outside = holder;
@@ -262,6 +384,7 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
     {
         private const string Usings = """
             using System;
+            using System.Collections.Generic;
             using System.Threading.Tasks;
             using MediaBrowser.Controller.Library;
             using MediaBrowser.Model.Users;
@@ -379,7 +502,7 @@ public class IntegrationJellyfinUserMatrixTests : IClassFixture<IntegrationJelly
                         public static void Disable() => Users?.UpdatePolicyAsync(Person, new UserPolicy { IsDisabled = true }).GetAwaiter().GetResult();
                       }
                     }
-                    """ + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {forms[c]?.Base} }}"));
+                    """ + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Place(forms[c]?.Base ?? string.Empty)} }}"));
                 var targets = Usings + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {Place(forms[c]?.Targets ?? string.Empty)} }}"))
                     + (effect == Effect.ModuleInitializer ? "\nnamespace Matrix { internal static class ModuleStart { [System.Runtime.CompilerServices.ModuleInitializer] internal static void Run() => Bootstrap.Disable(); } }" : string.Empty);
                 var controllers = Usings + string.Concat(cells.Select(c => $"\nnamespace {c.Name} {{ {ControllerOf(c, forms[c])} }}"));
