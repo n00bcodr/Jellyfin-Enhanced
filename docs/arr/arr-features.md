@@ -431,11 +431,15 @@ A title hidden after its alert was made isn't sent, and the bell keeps the entry
 no title, picture, scope, names or decline reason. When several alerts go out one by one, each is checked again right
 before its own send. The answer to your own request ("approved", "declined") follows the same rule from the title's
 current visibility: a title in the library is told only while you can open one of its copies (library access, parental
-limits) and haven't hidden it; a title not in the library only while the request rules let you see it (the libraries it
-would land in, parental limits on its rating) and you haven't hidden it. With "hide titles" on, a decline's phone and
-e-mail text leave out the reason too. When the title's copies or your Hidden Content can't be read at that moment, the
-answer waits in its own queue: it is looked at again every few minutes whatever else happens (one person's waiting
-answers never hold back anyone else's), and it is dropped unsent three days after the answer was given. An OK that is
+limits) and haven't hidden it; a title not in the library only while the request rules let you see it, judged for the
+request as it was made and routed (its edition: a 4K request by the 4K libraries it would land in; the instance and
+folder an administrator sent it to; parental limits on its rating), and you haven't hidden it. With "hide titles" on, a
+decline's phone and e-mail text leave out the reason too. When the title's copies, the request, your Hidden Content or
+the title's rating for your parental limits can't be read or checked at that moment (a rating lookup that failed, or
+one not done yet), the answer is never dropped for it: it waits in its own queue and is looked at again every few
+minutes whatever else happens (one person's waiting answers never hold back anyone else's), and it is dropped unsent
+three days after the answer was given; a phone alert or e-mail waits the same way (up to a day), and a bell entry
+shows without its title until the rating is checked, which happens in the background right after. An OK that is
 no longer one when its held phone or e-mail would go out (the request went back to waiting, was declined, cancelled or
 removed) isn't sent, and the delivery log says which.
 
@@ -1635,6 +1639,10 @@ Enhanced then keeps one playlist of theirs, private and shared with nobody, that
   over the new one; it has no conditional save).
 - **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
   playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist, carrying its code).
+- **Nothing is written before it is proven to be theirs.** Before any change (an update, the name, a removal), the
+  playlist Jellyfin stored and the very copy Jellyfin is about to save must both carry the code and the original
+  creation time; a playlist put in its place at that moment is left exactly as it is (nothing of Jellyfin Enhanced's is
+  copied into it), and the panel says the Ready playlist was replaced.
 - **Right before each change** Jellyfin Enhanced checks again that every version it puts in is still one the person can
   open and hasn't hidden, reading the person's Hidden Content and every copy of the title again (a copy that arrived
   meanwhile with the title hidden on it counts); if one changed, it chooses again instead of adding it. When a title's

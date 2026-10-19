@@ -83,6 +83,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>The event key prefix of "your request was OK'd" (followed by the request id).</summary>
         internal const string ApprovedEventPrefix = "req-ok|";
 
+        /// <summary>The event key prefix of "your request was declined" in Jellyfin Enhanced mode (followed by the request id).</summary>
+        internal const string DeclinedEventPrefix = "req-no|";
+
+        /// <summary>
+        /// The request-policy input an outcome alert (declined, OK'd) is judged by (4f round 7: every dimension the policy needs,
+        /// end to end): for a Jellyfin Enhanced request (its event key names it), the request as the ledger holds it now (edition,
+        /// part of the series, and the instance and folder an administrator routed it to), as the requester's Requests page
+        /// judges its card; otherwise (a Seerr request, or a request since removed) the title, the edition (<c>variant</c>) and the
+        /// seasons the alert itself carries. Null when the ledger can't be read now (wait, never "visible" or "hidden").
+        /// </summary>
+        internal Requests.MutationInput? OutcomeInput(TitleKey key, string? eventKey, IReadOnlyDictionary<string, string> payload)
+        {
+            var prefix = eventKey == null ? null : eventKey.StartsWith(ApprovedEventPrefix, StringComparison.Ordinal) ? ApprovedEventPrefix
+                : eventKey.StartsWith(DeclinedEventPrefix, StringComparison.Ordinal) ? DeclinedEventPrefix : null;
+            if (_ledger != null && prefix != null)
+            {
+                if (!_ledger.Database.Available) return null;
+                if (_ledger.Find(eventKey![prefix.Length..]) is { } want) return want.Input;
+            }
+            var seasons = payload.TryGetValue("seasons", out var list)
+                ? list.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1).Where(n => n >= 0).ToArray()
+                : Array.Empty<int>();
+            return NotificationService.AskInput(key.Title, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k");
+        }
+
+        // Before a send of an outcome alert: the rating facts its policy input needs are loaded (bounded by the policy; a failed
+        // lookup leaves them unverified, and the decision then waits). Each delivery is prepared right before its own decision.
+        private async Task PrepareOutcomeAsync(DueDelivery delivery, CancellationToken cancellationToken)
+        {
+            if (_policy == null || delivery.Kind is not (NotifyKind.Declined or NotifyKind.Approved) || TitleKey.Parse(delivery.TitleKey) is not { } key) return;
+            if (QuietHours.EndsAt(_store.Prefs(delivery.UserId), _now()) != null) return;
+            if (OutcomeInput(key, delivery.EventKey, Payload(delivery.Payload)) is { } input)
+                await _policy.PrepareVisibilityAsync(delivery.UserId, input, cancellationToken).ConfigureAwait(false);
+        }
+
         private long _sent;
         private long _failed;
 
@@ -400,6 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         private async Task DeliverAsync(PluginConfiguration config, DueDelivery delivery, CancellationToken cancellationToken)
         {
+            await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
             var (prefs, message, link) = Prepare(config, delivery);
             if (message == null) return;
             var (ok, error) = await SendAsync(config, delivery.Channel, prefs, message, link, delivery.Kind, cancellationToken).ConfigureAwait(false);
@@ -416,6 +452,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var ready = new List<(DueDelivery Delivery, NotifyPrefs Prefs, NotifyMessage Message, string? Link)>();
             foreach (var delivery in deliveries)
             {
+                await PrepareOutcomeAsync(delivery, cancellationToken).ConfigureAwait(false);
                 var (prefs, message, link) = Prepare(config, delivery);
                 if (message != null) ready.Add((delivery, prefs, message, link));
             }
@@ -477,7 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved)) return default;
             if (_view.Viewer(delivery.UserId) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
-            return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId);
+            return Check(delivery.UserId, viewer).Decide(delivery.Kind, delivery.TitleKey, payload, ref itemId, delivery.EventKey);
         }
 
         /// <summary>
@@ -556,9 +593,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             /// it for them). A title not in the library: the request policy's visibility (the libraries it would land in, parental
             /// limits on its rating; <see cref="Requests.IRequestPolicy.Evaluate"/>, the rule the Requests page's cards follow).
             /// Either way their Hidden Content hides neither the title (any key, any copy) nor anything of it. Copies or rules that
-            /// can't be read now: wait (never "visible"). Used at production, at every send and on every bell read.
+            /// can't be read now: wait (never "visible"). The request policy is asked with the alert's whole input
+            /// (<see cref="OutcomeInput"/>: edition, part, routing), and a rating not verified yet for a parental limit is evidence
+            /// to prepare (wait), never a refusal (4f round 7). Used at production, at every send and on every bell read.
             /// </summary>
-            public AlertVerdict Outcome(string? titleKey, IReadOnlyDictionary<string, string> payload)
+            public AlertVerdict Outcome(string? titleKey, IReadOnlyDictionary<string, string> payload, string? eventKey)
             {
                 const string Unreadable = "The recipient's Hidden Content or the title's copies can't be read now.";
                 if (TitleKey.Parse(titleKey) is { } key && _owner._view is { } view)
@@ -572,10 +611,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     }
                     else if (_owner._policy is { } policy)
                     {
-                        // Not in the library: what the request policy lets them see of a title nobody has yet.
-                        var input = new Requests.MutationInput { Key = key.Title.ToString() };
-                        if (payload.TryGetValue("variant", out var variant) && variant == "4k") input = input with { Variant = "4k" };
-                        if (!policy.Evaluate(_user, input).Visible) return new AlertVerdict("The recipient may not see this title (library access or parental limits).");
+                        // Not in the library: what the request policy lets them see of a title nobody has yet, for the request as
+                        // it is (its edition decides the instance, and so the libraries, it would land in).
+                        if (_owner.OutcomeInput(key, eventKey, payload) is not { } input) return new AlertVerdict("The request can't be read now.", true);
+                        var facts = policy.Evaluate(_user, input);
+                        if (!facts.Visible)
+                        {
+                            return facts.VisibilityUnknown
+                                ? new AlertVerdict("The title's rating isn't verified yet for the recipient's parental limits.", true)
+                                : new AlertVerdict("The recipient may not see this title (library access or parental limits).");
+                        }
                     }
                 }
 
@@ -591,9 +636,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             /// batch is never "the whole season". A request's outcome told to the requester (declined, approved): <see cref="Outcome"/>.
             /// Synchronous.
             /// </summary>
-            public AlertVerdict Decide(string kind, string? titleKey, Dictionary<string, string> payload, ref string? itemId)
+            public AlertVerdict Decide(string kind, string? titleKey, Dictionary<string, string> payload, ref string? itemId, string? eventKey = null)
             {
-                if (kind is NotifyKind.Declined or NotifyKind.Approved) return Outcome(titleKey, payload);
+                if (kind is NotifyKind.Declined or NotifyKind.Approved) return Outcome(titleKey, payload, eventKey);
                 if (kind is not (NotifyKind.Ready or NotifyKind.Episodes) || _owner._view is not { } view) return default;
                 List<NotifyEpisode>? episodes = null;
                 List<NotifyEpisode>? open = null;

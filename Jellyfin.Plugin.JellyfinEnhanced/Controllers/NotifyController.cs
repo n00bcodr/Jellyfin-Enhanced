@@ -184,7 +184,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var take = Math.Clamp(limit ?? 20, 1, MaxPage);
             // Administrators' alerts (paths, instance names, queue titles) only while the caller is one.
             var admin = IsAdmin();
-            var rows = Store.Inbox(user, before, take + 1, adminKinds: admin);
+            var rows = Store.InboxRows(user, before, take + 1, adminKinds: admin);
             var viewer = _service.Status.View.Viewer(user);
             // The caller's Hidden Content is read once for the whole page.
             var check = viewer == null ? null : _dispatcher.Check(user, viewer);
@@ -201,8 +201,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // they haven't hidden.
                     var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(r.Payload), StringComparer.Ordinal);
                     var itemId = r.ItemId;
-                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved
-                        && (check == null || check.Decide(r.Kind, r.Key, payload, ref itemId).Why != null);
+                    var verdict = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved && check != null
+                        ? check.Decide(r.Kind, r.Key, payload, ref itemId, r.EventKey)
+                        : default;
+                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved && (check == null || verdict.Why != null);
+                    // An outcome whose evidence isn't prepared yet (an absent title's rating not verified for the caller's
+                    // parental limits): withheld on this read, and prepared for the next one (never decided on missing evidence).
+                    if (verdict.Wait && r.Kind is NotifyKind.Declined or NotifyKind.Approved && TitleKey.Parse(r.Key) is { } outcomeKey
+                        && _dispatcher.OutcomeInput(outcomeKey, r.EventKey, payload) is { } input)
+                        _service.PrepareLater(user, input);
                     // Episode file ids are retained only for server-side delivery checks.
                     var parameters = payload.Where(p => p.Key != "episodeItems").ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
                     // Such a row (or one whose Hidden Content can't be read now), or an ask waiting for an OK (or a reminder)

@@ -353,14 +353,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     // Only a list that was actually compared counts as seen: one announced before it
                     // finished loading (or while Seerr can't be read) is compared once it has.
                     var revision = _requests.Revision;
-                    await PrepareAskVisibilityAsync(cancellationToken).ConfigureAwait(false);
-                    if (ScanRequests(now)) Interlocked.Exchange(ref _seenRequests, revision);
+                    var prepared = await PrepareAskVisibilityAsync(cancellationToken).ConfigureAwait(false);
+                    if (ScanRequests(now, prepared)) Interlocked.Exchange(ref _seenRequests, revision);
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 // Phase 3: the ledger's notices (OK'd, declined) and, in JE mode, its requests as interests.
                 if (NoticesOn) await DeliverRequestNoticesAsync(now, cancellationToken).ConfigureAwait(false);
                 // Outcome alerts waiting for evidence: on their own schedule, whatever else changed (or didn't).
                 await RetryAlertWaitsAsync(now, cancellationToken).ConfigureAwait(false);
+                // Evidence a bell read found unprepared (its rows were shown without their titles meanwhile).
+                await PrepareLaterAsync(cancellationToken).ConfigureAwait(false);
                 if (LedgerInterest) ScanLedger();
                 else _ledgerCursor = null;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -717,9 +719,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // NotifyDispatcher.AlertCheck.Outcome): a title they can't see now or hid is handled with no notification;
                 // evidence that can't be read now moves the notice to the wait queue, in the same transaction (its own retries,
                 // fair between people, expiring from the notice's own time), so it never holds the ledger's page.
-                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : "req-no|") + want.Id;
-                if (_policy != null) await _policy.PrepareVisibilityAsync(want.UserId, new MutationInput { Key = key.Title.ToString() }, cancellationToken).ConfigureAwait(false);
-                var verdict = ActiveViewer(want.UserId) is { } requester ? Outcome(want.UserId, requester, kind!, key.Title.ToString(), p) : new NotifyDispatcher.AlertVerdict("unknown", true);
+                var eventKey = (kind == NotifyKind.Approved ? NotifyDispatcher.ApprovedEventPrefix : NotifyDispatcher.DeclinedEventPrefix) + want.Id;
+                // The policy's input is the request itself (edition, part, routing), prepared and judged as one (4f round 7).
+                if (_policy != null) await _policy.PrepareVisibilityAsync(want.UserId, _dispatcher.OutcomeInput(key, eventKey, p) ?? want.Input, cancellationToken).ConfigureAwait(false);
+                var verdict = ActiveViewer(want.UserId) is { } requester ? Outcome(want.UserId, requester, kind!, key.Title.ToString(), p, eventKey) : new NotifyDispatcher.AlertVerdict("unknown", true);
                 if (verdict.Wait)
                 {
                     var wait = new AlertWait("notice", n.Id, want.UserId, kind!, key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), want.Id, n.At, now + NotifyDispatcher.WaitFor, 0);
@@ -735,6 +738,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 else _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id), false);
             }
             return told;
+        }
+
+        /// <summary>The most visibility preparations a bell read can leave for the rounds (more are asked for again on a later read).</summary>
+        internal const int PrepareLaterMax = 200;
+
+        /// <summary>How many of them one round prepares.</summary>
+        internal const int PrepareLaterPerRound = 50;
+
+        private readonly ConcurrentDictionary<(Guid User, string Input), MutationInput> _prepareLater = new();
+
+        /// <summary>
+        /// A bell read found an outcome row whose evidence isn't prepared (an absent title's rating not verified yet for the
+        /// person's parental limits): the row is shown without its title for now (never consumed), and its preparation is left
+        /// to the next rounds (4f round 7: missing evidence waits and is prepared independently; the next read decides again).
+        /// Bounded: beyond <see cref="PrepareLaterMax"/> pending ones, a later read asks again.
+        /// </summary>
+        internal void PrepareLater(Guid user, MutationInput input)
+        {
+            if (_policy == null || _prepareLater.Count >= PrepareLaterMax) return;
+            _prepareLater.TryAdd((user, JsonSerializer.Serialize(input)), input);
+        }
+
+        /// <summary>How many visibility preparations a bell read left that no round has done yet (tests).</summary>
+        internal int PreparingLater => _prepareLater.Count;
+
+        private async Task PrepareLaterAsync(CancellationToken cancellationToken)
+        {
+            if (_policy == null) return;
+            foreach (var (key, input) in _prepareLater.Take(PrepareLaterPerRound).ToList())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await _policy.PrepareVisibilityAsync(key.User, input, cancellationToken).ConfigureAwait(false);
+                _prepareLater.TryRemove(key, out _);
+            }
         }
 
         /// <summary>How many waiting outcome alerts one round tries (fairly between people: <see cref="NotifyStore.DueAlertWaits"/>).</summary>
@@ -763,9 +800,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     continue;
                 }
                 var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(wait.Payload), StringComparer.Ordinal);
-                if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key)
-                    await _policy.PrepareVisibilityAsync(wait.User, new MutationInput { Key = key.Title.ToString() }, cancellationToken).ConfigureAwait(false);
-                var verdict = still == null || ActiveViewer(wait.User) is not { } viewer ? new NotifyDispatcher.AlertVerdict("unknown", true) : Outcome(wait.User, viewer, wait.Kind, wait.TitleKey, payload);
+                if (_policy != null && TitleKey.Parse(wait.TitleKey) is { } key && _dispatcher.OutcomeInput(key, wait.EventKey, payload) is { } input)
+                    await _policy.PrepareVisibilityAsync(wait.User, input, cancellationToken).ConfigureAwait(false);
+                var verdict = still == null || ActiveViewer(wait.User) is not { } viewer ? new NotifyDispatcher.AlertVerdict("unknown", true) : Outcome(wait.User, viewer, wait.Kind, wait.TitleKey, payload, wait.EventKey);
                 if (verdict.Wait)
                 {
                     _store.RetryAlertWait(wait, now + NotifyDispatcher.WaitFor, generation);
@@ -801,11 +838,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return floor is int below && id < below ? null : false;
         }
 
-        // The one outcome policy (NotifyDispatcher.AlertCheck.Outcome) for a requester now.
-        private NotifyDispatcher.AlertVerdict Outcome(Guid user, StatusViewer viewer, string kind, string titleKey, Dictionary<string, string> payload)
+        // The one outcome policy (NotifyDispatcher.AlertCheck.Outcome) for a requester now, for the alert's event (its request).
+        private NotifyDispatcher.AlertVerdict Outcome(Guid user, StatusViewer viewer, string kind, string titleKey, Dictionary<string, string> payload, string eventKey)
         {
             string? none = null;
-            return _dispatcher.Check(user, viewer).Decide(kind, titleKey, payload, ref none);
+            return _dispatcher.Check(user, viewer).Decide(kind, titleKey, payload, ref none, eventKey);
         }
 
         /// <summary>
@@ -823,8 +860,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return policy.Evaluate(user, AskInput(key, seasons, payload.TryGetValue("variant", out var variant) && variant == "4k")).Visible;
         }
 
-        // The part of a title an ask waiting for an OK names, as the visibility check reads it.
-        private static MutationInput AskInput(TitleKey key, IEnumerable<int> seasons, bool fourK)
+        // The part of a title an ask waiting for an OK (or a Seerr request's outcome) names, as the visibility check reads it.
+        internal static MutationInput AskInput(TitleKey key, IEnumerable<int> seasons, bool fourK)
         {
             var input = key.IsMovie
                 ? new MutationInput { Key = key.Title.ToString() }
@@ -834,23 +871,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// Before Seerr's requests are compared: loads the rating facts each administrator's view of a new request
-        /// waiting for an OK needs (when a parental limit decides it), so an administrator who may see its title is
-        /// told, not left out because its rating wasn't known yet. Only requests not seen before, at most a round's worth.
+        /// waiting for an OK needs (when a parental limit decides it), and the requester's view of a decline (for the outcome
+        /// policy), so whoever may see its title is told, not left out because its rating wasn't known yet. Only requests not
+        /// seen before, at most a round's worth of each. Returns the ids prepared (null without a policy: nothing to prepare):
+        /// <see cref="ScanRequests"/> decides only those this round and leaves the rest unseen for the next (4f round 7: one
+        /// bound for preparation and consumption).
         /// </summary>
-        private async Task PrepareAskVisibilityAsync(CancellationToken cancellationToken)
+        private async Task<IReadOnlySet<int>?> PrepareAskVisibilityAsync(CancellationToken cancellationToken)
         {
-            if (_policy == null || !_requests.Active || !_requests.Loaded) return;
+            if (_policy == null) return null;
+            var prepared = new HashSet<int>();
+            if (!_requests.Active || !_requests.Loaded) return prepared;
             var (source, all, _) = _requests.Current;
-            if (source == null) return;
+            if (source == null) return prepared;
             var seen = _store.SeerrSeen();
-            // A decline not seen yet: the requester's own view of the title, for the outcome policy (an absent title's rating).
+            // A decline not seen yet: the requester's own view of the title, for the outcome policy (an absent title's rating),
+            // with the request's edition and seasons (the input the outcome policy judges it by).
             foreach (var declined in all.Where(r => r.Status == SeerrRequestStatus.Declined && r.Key != null && r.RequestedBy.HasValue
                          && !(seen.TryGetValue(r.Id, out var was) && was == r.Status)).Take(MaxPerRound))
             {
-                await _policy.PrepareVisibilityAsync(declined.RequestedBy!.Value, new MutationInput { Key = declined.Key!.Title.ToString() }, cancellationToken).ConfigureAwait(false);
+                await _policy.PrepareVisibilityAsync(declined.RequestedBy!.Value, AskInput(declined.Key!.Title, declined.IsMovie ? Array.Empty<int>() : declined.Seasons, declined.Is4k), cancellationToken).ConfigureAwait(false);
+                prepared.Add(declined.Id);
             }
             var asks = all.Where(r => r.Status == SeerrRequestStatus.Pending && r.Key != null && !seen.ContainsKey(r.Id)).Take(MaxPerRound).ToList();
-            if (asks.Count == 0) return;
+            if (asks.Count == 0) return prepared;
             var admins = _users.Admins();
             foreach (var r in asks)
             {
@@ -859,7 +903,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     await _policy.PrepareVisibilityAsync(admin, input, cancellationToken).ConfigureAwait(false);
                 }
+                prepared.Add(r.Id);
             }
+            return prepared;
         }
 
         /// <summary>The request policy the administrators' ask notifications are checked against (null in tests without one).</summary>
@@ -1484,8 +1530,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// when Jellyfin Enhanced is pointed at another one (whose request ids are other requests),
         /// the next scan of its list records it afresh like a first scan, telling nobody anything.
         /// </summary>
-        /// <returns>False when there was no list to compare (Seerr off, not read yet).</returns>
-        internal bool ScanRequests(DateTimeOffset now)
+        /// <param name="now">The time.</param>
+        /// <param name="prepared">
+        /// The requests whose visibility evidence was prepared this round (<see cref="PrepareAskVisibilityAsync"/>; null: all,
+        /// no policy). A decline or an ask that would be told and isn't among them is left unseen (not decided, not consumed)
+        /// and the list is compared again next round, when it is prepared.
+        /// </param>
+        /// <returns>False when there was no list to compare (Seerr off, not read yet), or some of it waits for its evidence.</returns>
+        internal bool ScanRequests(DateTimeOffset now, IReadOnlySet<int>? prepared = null)
         {
             if (!_requests.Active || !_requests.Loaded) return false;
             var (source, all, floor) = _requests.Current;
@@ -1513,14 +1565,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var server = source.Length > 8 ? source[..8] : source;
             var baseline = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(baselineText, CultureInfo.InvariantCulture)).UtcDateTime;
             var admins = (IReadOnlyList<Guid>?)null;
+            var deferred = false;
             foreach (var r in all)
             {
                 var known = seen.TryGetValue(r.Id, out var previous);
                 if (known && previous == r.Status) continue;
-                changed.Add((r.Id, r.Status));
-                if (r.Key != null) titles.Add(r.Key.Title.ToString());
                 var old = !known && r.Id < forgotten;
                 var fresh = !known && !old && r.CreatedAt is DateTime created && created >= baseline;
+                // Evidence not prepared this round (beyond the round's bound, or listed after it was prepared): this change
+                // waits, unseen, for the next round's preparation; never decided (or refused) on missing rating facts.
+                var tells = (r.Status == SeerrRequestStatus.Declined && r.RequestedBy.HasValue && r.Key != null && (known || fresh))
+                            || (r.Status == SeerrRequestStatus.Pending && fresh && r.Key != null);
+                if (tells && prepared != null && !prepared.Contains(r.Id))
+                {
+                    deferred = true;
+                    continue;
+                }
+                changed.Add((r.Id, r.Status));
+                if (r.Key != null) titles.Add(r.Key.Title.ToString());
                 if (!known && !old && r.Active && r.RequestedBy is Guid asker && r.Key != null
                     && !all.Any(o => o.Id != r.Id && o.Active && o.RequestedBy == asker && o.Key != null && seen.ContainsKey(o.Id) && Canonical(o.Key.Title).Equals(Canonical(r.Key.Title))))
                 {
@@ -1536,11 +1598,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     {
                         var p = TitleParams(r.Key.Title, null, r);
                         p["contact"] = Contact();
+                        // Every dimension the outcome policy reads travels with the alert (4f round 7): the edition (a 4K request
+                        // lands in the 4K instance's libraries) and the seasons, through the wait queue to every send and bell read.
+                        OutcomeParams(p, r);
                         // The one outcome policy (as for JE's own notices); evidence that can't be read now: the decline goes to
                         // the wait queue (tried again on its own schedule, not on Seerr's next change), and the change is seen.
                         var id = r.Id.ToString(CultureInfo.InvariantCulture);
                         var eventKey = "declined|" + server + "|" + id;
-                        var verdict = ActiveViewer(requester) is { } viewer ? Outcome(requester, viewer, NotifyKind.Declined, r.Key.Title.ToString(), p) : new NotifyDispatcher.AlertVerdict("unknown", true);
+                        var verdict = ActiveViewer(requester) is { } viewer ? Outcome(requester, viewer, NotifyKind.Declined, r.Key.Title.ToString(), p, eventKey) : new NotifyDispatcher.AlertVerdict("unknown", true);
                         if (verdict.Wait)
                         {
                             var wait = new AlertWait("seerr", server + "|" + id, requester, NotifyKind.Declined, r.Key.Title.ToString(), eventKey, JsonSerializer.Serialize(p), id,
@@ -1558,8 +1623,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         if (admin == r.RequestedBy) continue;
                         var p = r.Key != null ? TitleParams(r.Key.Title, null, r) : new Dictionary<string, string>();
                         p["user"] = r.RequestedByName ?? (r.RequestedBy is Guid u ? _users.Name(u) : null) ?? string.Empty;
-                        if (!r.IsMovie && r.Seasons.Count > 0) p["seasons"] = string.Join(", ", r.Seasons.OrderBy(s => s));
-                        if (r.Is4k) p["variant"] = "4k";
+                        OutcomeParams(p, r);
                         // Not an administrator who can't see the title (a parental limit, no access to its library).
                         if (!MaySeeAsk(_policy, admin, r.Key?.Title.ToString(), p)) continue;
                         Notify(admin, NotifyKind.Approval, "approval|" + server + "|" + r.Id.ToString(CultureInfo.InvariantCulture), r.Key?.Title.ToString(), null, p, now, null);
@@ -1580,7 +1644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 ForgetEndedInterests();
             }
             MarkDirty(titles);
-            return true;
+            return !deferred;
         }
 
         // A requester with no active request left for a title they don't follow starts afresh next time.
@@ -2107,6 +2171,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (year is > 1800) p["year"] = year.Value.ToString(CultureInfo.InvariantCulture);
             if (itemId is Guid image) p["image"] = image.ToString("N", CultureInfo.InvariantCulture);
             return p;
+        }
+
+        // The edition and seasons of a Seerr request, as an alert about it carries them (the visibility check reads them back).
+        private static void OutcomeParams(Dictionary<string, string> p, SeerrRequestRecord r)
+        {
+            if (!r.IsMovie && r.Seasons.Count > 0) p["seasons"] = string.Join(", ", r.Seasons.OrderBy(s => s));
+            if (r.Is4k) p["variant"] = "4k";
         }
 
         private string Contact()

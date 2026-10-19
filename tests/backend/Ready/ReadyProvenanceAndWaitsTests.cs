@@ -169,7 +169,7 @@ public class ReadyProvenanceAndWaitsTests
 
     // ================================================================== the outcome alerts' world
 
-    private sealed class World : IDisposable
+    internal sealed class World : IDisposable
     {
         public IntegrationNotificationsTests.Rig Rig { get; }
         public FakeReadyPrivacy Privacy { get; } = new();
@@ -234,7 +234,7 @@ public class ReadyProvenanceAndWaitsTests
 
         public JsonElement Bell(Guid user)
         {
-            var controller = new NotifyController(Rig.Service, Dispatcher, new NtfySender(Rig.Ntfy), new EmailSender(Rig.Mail), Rig.Users)
+            var controller = new NotifyController(Service, Dispatcher, new NtfySender(Rig.Ntfy), new EmailSender(Rig.Mail), Rig.Users)
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
                 Config = () => Rig.Config,
@@ -269,7 +269,7 @@ public class ReadyProvenanceAndWaitsTests
         }
     }
 
-    private static async Task<World> JeWorld() => new(await IntegrationNotificationsTests.Started(), jeMode: true);
+    internal static async Task<World> JeWorld() => new(await IntegrationNotificationsTests.Started(), jeMode: true);
 
     // ================================================================== deferred work: its own fair queue
 

@@ -485,7 +485,7 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   playlist id, create marker, epoch), the membership journal, the entries per interest and the native-message attempts;
   `ReadyInterests.cs` a person's own requests (from the request authority) and follows; `ReadyCopySelector.cs` the
   selection through `EditionAvailability` and the final exact-version checks; `ReadyPlaylistHost.cs` the Jellyfin
-  playlist seam (the create takes its own playlist from Jellyfin's synchronous `ItemAdded` and writes JE's code into it); `ReadyPlaylistService.cs` the per-person reconciliation (create by marker, journalled and read-back
+  playlist seam (the create takes its own playlist from Jellyfin's synchronous `ItemAdded` and writes JE's code into it; every later write, the heal included, runs only after the stored playlist and the cached instance itself prove they are JE's); `ReadyPlaylistService.cs` the per-person reconciliation (create by marker, journalled and read-back
   changes, deletion tombstones, privacy stops) and its bounded event queue; `ReadyJellyfin.cs` the library, watched,
   Hidden Content adapters and the event listeners; `ReadySessionMessages.cs` the session snapshots, the idle classifier
   and the DisplayMessage send; `ReadyNativeChannel.cs` the DisplayMessage channel the notification dispatcher calls.
