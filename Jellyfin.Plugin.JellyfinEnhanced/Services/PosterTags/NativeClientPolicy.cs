@@ -32,6 +32,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             "Jellyfin Desktop",
             "Jellyfin for WebOS",
             "Jellyfin for Android",
+            "Jellyfin iOS",
+            "Jellyfin iPadOS",
         };
 
         private const string ClientClaim = "Jellyfin-Client";
