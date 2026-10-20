@@ -339,7 +339,7 @@ Choose a starting language for JE's interface. Users can save a personal choice 
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Default UI Language** | **System Default** (empty) | Supplies the initial JE display language for users without a saved personal choice. Choose a listed language; this is a dropdown, not a free-text language-code input. |
+| **Default UI Language** | **System Default** (empty) | Supplies the initial JE display language for users without a saved personal choice. Choose a listed language; this is a dropdown, not a free-text language-code input. The saved language stays selected while the list loads, or if it can't load, so saving the page keeps it. |
 
 **Per-user location:** Enhanced panel → **Language Settings**.
 
@@ -347,7 +347,7 @@ Choose a starting language for JE's interface. Users can save a personal choice 
 |---|---|---|
 | **Display Language** | **Auto** (empty before the admin default supplies a starting value) | Overrides the admin default with a saved personal selection. |
 
-JE only saves, and only writes into the browser's shared Jellyfin language setting, a language it supports: one it ships (or its base language, so `en-AU` uses English) or one the browser knows. Anything else, such as a stray `undefined` or `null`, a malformed code (the whole code is checked, so `en-12` or `en-US-US` is malformed even though English is shipped) or an unknown language, is saved as **Auto**, and a malformed value already in the browser's language setting is removed so Jellyfin falls back to its own choice.
+JE only saves, and only writes into the browser's shared Jellyfin language setting, a language it supports: one it ships (or its base language, so `en-AU` uses English). Anything else, such as a stray `undefined` or `null`, a malformed code (the whole code is checked, so `en-12` or `en-US-US` is malformed even though English is shipped) or an unknown language, is saved as **Auto**, and a malformed value already in the browser's language setting is removed so Jellyfin falls back to its own choice. The list of supported languages comes with JE's translations script: if that script didn't load, JE writes no language at all, and the panel shows the saved language without letting it be changed until the page is reloaded.
 
 ??? info "How it works"
 

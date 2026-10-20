@@ -7664,7 +7664,9 @@
          * @param {HTMLSelectElement|null} select
          * @param {string} value
          */
-        function applyQualityAudioLanguage(select, value) {
+        // A saved code the select's asynchronously loaded list doesn't hold yet (or never will) is parked as a bare option, so the
+        // select shows it and a save keeps it; the list removes the placeholder and applies the saved value again.
+        function applySavedOption(select, value) {
             if (!select) return;
             const saved = value || '';
             if (saved && !Array.from(select.options).some(o => o.value === saved)) {
@@ -8429,7 +8431,7 @@
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
                 // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                applySavedOption(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
                 document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 if (arChk) arChk.checked = ageRatingEnabled;
@@ -8601,7 +8603,11 @@
                 document.querySelector('#DefaultSubtitleFont').value = config.DefaultSubtitleFont;
                 document.querySelector('#DefaultSubtitleTextEffect').value = config.DefaultSubtitleTextEffect ?? 0;
                 document.querySelector('#disableCustomSubtitleStyles').checked = config.DisableCustomSubtitleStyles;
-                document.querySelector('#DefaultLanguage').value = config.DefaultLanguage || '';
+                // The language list loads asynchronously (the server's locales, Jellyfin's cultures, GitHub): keep the value so a
+                // save made before or without the list never resets the default to "System Default".
+                const defaultLanguageSelect = document.querySelector('#DefaultLanguage');
+                defaultLanguageSelect.dataset.savedValue = config.DefaultLanguage || '';
+                applySavedOption(defaultLanguageSelect, defaultLanguageSelect.dataset.savedValue);
                 document.querySelector('#letterboxdEnabled').checked = config.LetterboxdEnabled;
                 document.querySelector('#showLetterboxdLinkAsText').checked = config.ShowLetterboxdLinkAsText;
                 const metadataIconsChk = document.querySelector('#metadataIconsEnabled');
@@ -10115,13 +10121,17 @@
                 });
 
                 options.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                // loadConfig may have run first and parked the saved code as a bare option; the named list replaces it.
+                defaultLanguageSelect.querySelectorAll('option[data-je-placeholder]').forEach(o => o.remove());
                 options.forEach(({ code, displayName }) => {
                     const option = document.createElement('option');
                     option.value = code;
                     option.textContent = displayName;
                     defaultLanguageSelect.appendChild(option);
                 });
+                applySavedOption(defaultLanguageSelect, defaultLanguageSelect.dataset.savedValue);
             } catch (err) {
+                // loadConfig parks the saved code as a bare option, so a save still keeps it.
                 console.warn('Jellyfin Enhanced: Failed to load language options:', err);
             }
         })();
@@ -10146,7 +10156,7 @@
                         option.textContent = name;
                         qualityAudioLangSelect.appendChild(option);
                     });
-                applyQualityAudioLanguage(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
+                applySavedOption(qualityAudioLangSelect, qualityAudioLangSelect.dataset.savedValue);
             } catch (err) {
                 // loadConfig parks the saved code as a bare option, so a save still keeps it.
                 console.warn('Jellyfin Enhanced: Failed to load audio language options:', err);
