@@ -200,7 +200,7 @@ test('bulk save and atomic rule share acknowledgement ordering',async t=>{
  const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:put.promise;}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  h.api.debouncedSave();const saving=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
- const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);await new Promise(r=>setImmediate(r));
+ const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
  assert.equal(requests.filter(o=>o.type==='PUT').length,0,'rule must wait for pending bulk persistence');
  bulk.resolve({success:true});await saving;await new Promise(r=>setImmediate(r));
  assert.equal(requests.filter(o=>o.type==='PUT').length,1);put.resolve({success:true});assert.equal(await hiding,true);
@@ -210,7 +210,7 @@ test('bulk save and atomic rule share acknowledgement ordering',async t=>{
 test('atomic acknowledgement refreshes its full rule base without losing newer local edits',async t=>{
  const put=deferred(),requests=[];const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='PUT'?put.promise:Promise.resolve({success:true,revision:'bulk'});}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);await new Promise(r=>setImmediate(r));
+ const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
  h.api.getHiddenData().items.local={itemId:'local',type:'Movie'};
  put.resolve({success:true,revision:'rules',items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'},'tv:tmdb:51':{type:'Series',tmdbId:'51'}}});await hiding;
  assert.equal(h.api.isHiddenByTmdbId(51,'tv'),true,'another tab rule accompanies the new base revision');
@@ -231,7 +231,7 @@ test('atomic write flushes edits made before its debounce starts, including remo
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  await h.api.unhideItem('native');
  h.api.getHiddenData().items.added={itemId:'added'};h.api.debouncedSave();
- await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);
+ await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);
  assert.deepEqual(requests.map(o=>o.type),['POST','PUT']);
  assert.equal(h.api.getHiddenData().items.native,undefined);
  assert.ok(h.api.getHiddenData().items.added);assert.ok(server.added);assert.equal(server.native,undefined);
@@ -244,8 +244,8 @@ test('same-title atomic writes cannot overtake a pending flush and deadlock the 
  const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:Promise.resolve({success:true});}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  h.api.debouncedSave();
- const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE);
- const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false, h.JE.NATIVE);
+ const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
+ const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false, h.NATIVE);
  await new Promise(r=>setImmediate(r));bulk.resolve({success:true});
  await Promise.race([Promise.all([first,second]),new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence queue deadlocked')),500))]);
  assert.deepEqual(requests.map(o=>o.type),['POST','PUT','DELETE']);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
@@ -260,7 +260,7 @@ test('edits made while a pending bulk flush awaits are saved before the atomic b
   return {revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
  }});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE);
+ h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
  await new Promise(r=>setImmediate(r));h.api.getHiddenData().items.late={itemId:'late'};h.api.debouncedSave();first.resolve();
  await pending;assert.ok(h.api.getHiddenData().items.late);assert.ok(server.late);
  assert.deepEqual(requests.map(o=>o.type),['POST','POST','PUT']);
@@ -279,7 +279,7 @@ for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing
  const gates=[deferred(),deferred(),deferred()],requests=[];
  const h=setup(t,{ajax:async o=>{requests.push(o);if(o.type==='POST')await gates[requests.filter(x=>x.type==='POST').length-1].promise;return {success:true};}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE).then(value=>({value}),error=>({error}));
+ h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE).then(value=>({value}),error=>({error}));
  for(let i=0;i<3;i++){
   await new Promise(r=>setImmediate(r));
   if(i<2||churn){h.api.getHiddenData().items['late'+i]={itemId:'late'+i};h.api.debouncedSave();}

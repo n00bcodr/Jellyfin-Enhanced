@@ -299,7 +299,7 @@ test('controls: a card\'s Report on the same route posts once; after away and ba
 
 test('controls: the native Report form (no operation) still posts after away and back', async t => {
   const h = setup(t);
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.JE.NATIVE); await settle();
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.NATIVE); await settle();
   await awayAndBack(h);
   await submitReport(h);
   assert.equal(h.sent('POST', '/jellyseerr/issue').length, 1, 'exactly as before');
@@ -334,7 +334,7 @@ test('controls: a current drawer\'s arr link and a native drawer\'s link keep th
   link.addEventListener('click', e => e.preventDefault(), { once: true }); // jsdom: no real navigation
   assert.equal(fire(h, link, 'click').escaped, true, 'a current drawer passes the click on');
   h.JE.arrManage.close(); await settle();
-  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE }); await settle();
+  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await settle();
   h.navigate(); await settle();
   link = drawer(h).querySelector('a.je-manage-btn[target="_blank"]');
   const result = fire(h, link, 'auxclick', { button: 1 });
@@ -367,7 +367,7 @@ for (const [what, target, type] of [['link', '.je-test-link', 'click'], ['link m
 test('controls: a native Seerr modal (no operation) keeps every default', async t => {
   const h = setup(t);
   const body = '<input type="checkbox" class="je-test-check"><a class="je-test-link" href="#/x">x</a>';
-  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => {} , operation: h.JE.NATIVE });
+  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => {} , operation: h.NATIVE });
   modal.show(); await settle();
   await awayAndBack(h);
   const check = modal.modalElement.querySelector('.je-test-check');
@@ -427,7 +427,7 @@ test('More Info window opened for an operation that ended: a link → default ca
 
 test('controls: a native More Info window (no operation) keeps its links', async t => {
   const h = setup(t, { asks: false, seerrMoreInfo: true });
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await settle();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await settle();
   await awayAndBack(h);
   const link = moreInfo(h).querySelector('.je-test-link');
   link.addEventListener('click', e => e.preventDefault(), { once: true });

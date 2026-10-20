@@ -149,7 +149,7 @@
         // Themes / forks can monkey-patch Dashboard with broken stubs; fall back to toast.
         if (typeof window.Dashboard?.alert === 'function') {
             try {
-                JE.openHostDialog(() => window.Dashboard.alert({ title, message }), submitted.owner);
+                JE.openHostDialog(() => window.Dashboard.alert({ title, message }), submitted.owner, title);
                 return;
             } catch (err) {
                 console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);

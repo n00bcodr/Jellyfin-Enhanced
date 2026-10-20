@@ -12,87 +12,89 @@ function setup(t,{details=async id=>({id}),ratings=async()=>({}),withSession=fal
   return {...h,state,actions,errors,internal,P:h.JE.jellyseerrMoreInfo,runClosing:()=>{for(const timer of timers.splice(0))timer.fn();}};
 }
 test('more-info replacing a modal cannot let old close timeout remove its successor',async t=>{
-  const h=setup(t);await h.P.open(1,'movie',undefined,h.JE.NATIVE);await h.P.open(2,'movie',undefined,h.JE.NATIVE);h.runClosing();
+  const h=setup(t);await h.P.open(1,'movie',undefined,h.NATIVE);await h.P.open(2,'movie',undefined,h.NATIVE);h.runClosing();
   assert.equal(h.document.querySelectorAll('.je-more-info-modal').length,1);assert.equal(h.state.currentModal?.dataset.tmdbId,'2');
 });
 test('more-info late ratings do not replace ratings of a newer item',async t=>{
   const old=deferred();const h=setup(t,{ratings:id=>id===1?old.promise:Promise.resolve({label:'new'})});
-  await h.P.open(1,'movie',undefined,h.JE.NATIVE);await h.P.open(2,'movie',undefined,h.JE.NATIVE);old.resolve({label:'old'});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);await h.P.open(2,'movie',undefined,h.NATIVE);old.resolve({label:'old'});await nextTurn();
   assert.equal(h.state.currentModal.querySelector('[data-mount="ratings"]').textContent,'new');
 });
 // A series request published into the window (D46S2-R8-2): the window's own publication of it.
-const requested=(h,modal=h.state.currentModal)=>h.JE.publication({owner:h.JE.NATIVE,surface:modal,identity:{tmdbId:1,mediaType:'tv'}}).emit('jellyseerr-media-requested');
+const requested=(h,modal=h.state.currentModal)=>h.JE.publication({owner:h.NATIVE,surface:modal,identity:{tmdbId:1,mediaType:'tv'}}).publish();
 test('more-info close removes TV request listeners and navigation dismisses modal',async t=>{
-  let detailCalls=0;const h=setup(t,{details:async id=>{detailCalls++;return {id};}});await h.P.open(1,'tv',undefined,h.JE.NATIVE);
-  // A completion that would reach any node: only a listener still registered could act on it.
-  const request=()=>h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-media-requested',{detail:{tmdbId:'1',mediaType:'tv',publication:{reaches:()=>true}}}));
-  // Control: while open, a request event refreshes the details.
-  request();await nextTurn();assert.equal(detailCalls,2);
+  let detailCalls=0;const h=setup(t,{details:async id=>{detailCalls++;return {id};}});await h.P.open(1,'tv',undefined,h.NATIVE);
+  // A completion published into the window (D46S2-R9-5: core delivers it to the window's follower while it is shown).
+  const modal=h.state.currentModal;
+  // Control: while open, a request refreshes the details.
+  requested(h,modal);await nextTurn();assert.equal(detailCalls,2);
   const count=h.actions.length;
   h.document.dispatchEvent(new h.window.Event('viewshow'));h.runClosing();
-  request();await nextTurn();
+  // A raw completion event (no publication) is not listened to at all; the closed window's own publication reaches nothing.
+  h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-media-requested',{detail:{tmdbId:'1',mediaType:'tv',publication:{reaches:()=>true}}}));
+  requested(h,modal);await nextTurn();
   assert.equal(h.state.currentModal,null);assert.equal(h.actions.length,count);assert.equal(detailCalls,2);
 });
 test('more-info failed data returns a visible error without mounting modal',async t=>{
-  const h=setup(t,{details:async()=>null});await h.P.open(1,'movie',undefined,h.JE.NATIVE);assert.equal(h.errors.length,1);assert.equal(h.state.currentModal,null);
+  const h=setup(t,{details:async()=>null});await h.P.open(1,'movie',undefined,h.NATIVE);assert.equal(h.errors.length,1);assert.equal(h.state.currentModal,null);
 });
 test('more-info late initial details cannot replace a newer user selection',async t=>{
   const old=deferred();const h=setup(t,{details:id=>id===1?old.promise:Promise.resolve({id})});
-  const first=h.P.open(1,'movie',undefined,h.JE.NATIVE);await h.P.open(2,'movie',undefined,h.JE.NATIVE);old.resolve({id:1});await first;
+  const first=h.P.open(1,'movie',undefined,h.NATIVE);await h.P.open(2,'movie',undefined,h.NATIVE);old.resolve({id:1});await first;
   assert.equal(h.state.currentModal.dataset.tmdbId,'2');
 });
 test('more-info closing while details are pending cancels the pending open',async t=>{
-  const pending=deferred();const h=setup(t,{details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.JE.NATIVE);h.P.close();pending.resolve({id:1});await opening;
+  const pending=deferred();const h=setup(t,{details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.NATIVE);h.P.close();pending.resolve({id:1});await opening;
   assert.equal(h.state.currentModal,null);
 });
 test('more-info stale refresh cannot update replacement modal actions',async t=>{
   const pending=deferred();let oldCalls=0;const h=setup(t,{details:id=>id===1&&oldCalls++>0?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'movie',undefined,h.JE.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(2,'movie',undefined,h.JE.NATIVE);pending.resolve({id:1});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(2,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,2]);
 });
 for(const outcome of ['completion','failure'])test(`more-info stale TV request ${outcome} cannot render into replacement`,async t=>{
   const pending=deferred();let firstCalls=0;const h=setup(t,{details:id=>id===1&&firstCalls++>0?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'tv',undefined,h.JE.NATIVE);requested(h);await h.P.open(2,'movie',undefined,h.JE.NATIVE);
+  await h.P.open(1,'tv',undefined,h.NATIVE);requested(h);await h.P.open(2,'movie',undefined,h.NATIVE);
   if(outcome==='completion')pending.resolve({id:1,mediaInfo:{status:2}});else pending.reject(Error('offline'));
   await nextTurn();assert.deepEqual(h.actions,[1,2]);
 });
 test('more-info failed TV request refresh still marks the open modal requested',async t=>{
   let calls=0;const rendered=[];const h=setup(t,{details:async id=>{if(++calls>1)throw Error('offline');return {id};}});
   h.internal.renderActions=data=>rendered.push(data.mediaInfo?.status);
-  await h.P.open(1,'tv',undefined,h.JE.NATIVE);requested(h);await nextTurn();
+  await h.P.open(1,'tv',undefined,h.NATIVE);requested(h);await nextTurn();
   assert.deepEqual(rendered,[undefined,2]);
 });
 test('more-info Request owners retain exact scope through refresh without contaminating cached metadata',async t=>{
   const cached={id:1}; const h=setup(t,{details:async()=>cached}); const scopes=[];
   h.internal.renderActions=data=>scopes.push(data.jeActionScope);
-  await h.P.open(1,'tv',{season:2,episode:4},h.JE.NATIVE);
+  await h.P.open(1,'tv',{season:2,episode:4},h.NATIVE);
   h.state.currentModal.querySelector('.modal-refresh').click(); await nextTurn();
   assert.deepEqual(JSON.parse(JSON.stringify(scopes)),[{season:2,episode:4},{season:2,episode:4}]);
   assert.equal(cached.jeActionScope,undefined);
-  await h.P.open(1,'tv',undefined,h.JE.NATIVE); assert.equal(scopes.at(-1),undefined);
+  await h.P.open(1,'tv',undefined,h.NATIVE); assert.equal(scopes.at(-1),undefined);
 });
 test('more-info ratings from an earlier opening of the same item cannot overwrite fresh ratings',async t=>{
   const pending=deferred();let calls=0;const h=setup(t,{ratings:()=>++calls===1?pending.promise:Promise.resolve({label:'fresh'})});
-  await h.P.open(1,'movie',undefined,h.JE.NATIVE);await h.P.open(1,'movie',undefined,h.JE.NATIVE);pending.resolve({label:'stale'});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);await h.P.open(1,'movie',undefined,h.NATIVE);pending.resolve({label:'stale'});await nextTurn();
   assert.equal(h.state.currentModal.querySelector('[data-mount="ratings"]').textContent,'fresh');
 });
 test('more-info navigation cancels pending open and suppresses stale fetch errors',async t=>{
-  const pending=deferred();const h=setup(t,{details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.JE.NATIVE);h.document.dispatchEvent(new h.window.Event('viewshow'));pending.reject(Error('offline'));await opening;
+  const pending=deferred();const h=setup(t,{details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.NATIVE);h.document.dispatchEvent(new h.window.Event('viewshow'));pending.reject(Error('offline'));await opening;
   assert.equal(h.state.currentModal,null);assert.deepEqual(h.errors,[]);
 });
 test('more-info actual session transition cancels prior-user pending open without navigation',async t=>{
-  const pending=deferred();const h=setup(t,{withSession:true,details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.JE.NATIVE);
+  const pending=deferred();const h=setup(t,{withSession:true,details:()=>pending.promise});const opening=h.P.open(1,'movie',undefined,h.NATIVE);
   h.window.ApiClient.getCurrentUserId=()=> 'user-b';h.JE.session.checkNow('regression-user-switch');pending.resolve({id:1});await opening;
   assert.equal(h.state.currentModal,null);assert.equal(h.document.querySelector('.je-more-info-modal'),null);
 });
 test('more-info actual session transition closes existing modal and invalidates pending ratings',async t=>{
-  const pending=deferred();const h=setup(t,{withSession:true,ratings:()=>pending.promise});await h.P.open(1,'movie',undefined,h.JE.NATIVE);const previous=h.state.currentModal;
+  const pending=deferred();const h=setup(t,{withSession:true,ratings:()=>pending.promise});await h.P.open(1,'movie',undefined,h.NATIVE);const previous=h.state.currentModal;
   h.window.ApiClient.getCurrentUserId=()=> 'user-b';h.JE.session.checkNow('regression-user-switch');pending.resolve({label:'old user'});await nextTurn();
   assert.equal(previous._isClosing,true);assert.equal(previous.querySelector('[data-mount="ratings"]').textContent,'');h.runClosing();assert.equal(h.state.currentModal,null);
 });
 test('more-info same-ID replacement rejects stale refresh by modal identity',async t=>{
   const pending=deferred();let calls=0;const h=setup(t,{details:id=>++calls===2?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'movie',undefined,h.JE.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(1,'movie',undefined,h.JE.NATIVE);pending.resolve({id:1});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(1,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,1]);
 });
 test('more-info download bars keep separate downloads apart for everyone (projected group tokens, Seerr ids for admins)',t=>{
@@ -119,7 +121,7 @@ test('a title the modal can\'t load says so in a toast, never a blocking browser
 });
 test('guard toggle clears old modal content synchronously and reopens from fresh metadata',async t=>{
  let calls=0;const fresh=deferred();const h=setup(t,{details:id=>++calls===1?Promise.resolve({id}):fresh.promise});
- await h.P.open(42,'movie',undefined,h.JE.NATIVE);const old=h.state.currentModal;old.append('secret');
+ await h.P.open(42,'movie',undefined,h.NATIVE);const old=h.state.currentModal;old.append('secret');
  h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'movie',tmdbId:42,enabled:true}}));
  assert.equal(old.textContent,'');assert.equal(old._isClosing,true);assert.equal(calls,2);
  fresh.resolve({id:42,jeSpoiler:{guarded:true}});await nextTurn();h.runClosing();
@@ -127,13 +129,13 @@ test('guard toggle clears old modal content synchronously and reopens from fresh
 });
 test('guard-driven modal reprojection retains the opening child Request scope',async t=>{
   const h=setup(t);const scopes=[];h.internal.renderActions=data=>scopes.push(data.jeActionScope);
-  await h.P.open(42,'tv',{season:1,episode:2},h.JE.NATIVE);
+  await h.P.open(42,'tv',{season:1,episode:2},h.NATIVE);
   h.window.dispatchEvent(new h.window.CustomEvent('je-spoiler-policy-changed',{detail:{type:'tv',tmdbId:42,enabled:true}}));
   await nextTurn();h.runClosing();
   assert.deepEqual(JSON.parse(JSON.stringify(scopes)),[{season:1,episode:2},{season:1,episode:2}]);
 });
 test('more-info modal closing after a session transition is inert during its exit animation',async t=>{
-  const h=setup(t,{withSession:true});await h.P.open(1,'movie',undefined,h.JE.NATIVE);const previous=h.state.currentModal;
+  const h=setup(t,{withSession:true});await h.P.open(1,'movie',undefined,h.NATIVE);const previous=h.state.currentModal;
   assert.equal(previous.hasAttribute('inert'),false);
   h.window.ApiClient.getCurrentUserId=()=> 'user-b';h.JE.session.checkNow('regression-user-switch');
   assert.equal(previous.hasAttribute('inert'),true,'outgoing viewer\'s controls cannot be used while it fades');

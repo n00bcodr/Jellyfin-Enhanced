@@ -20,7 +20,7 @@ const posts = h => h.sent('POST', '/jellyseerr/request');
 async function nativeWindow(h, id = 603, type = 'movie') {
   Object.defineProperty(h.window, 'innerWidth', { value: 100, writable: true, configurable: true });
   h.a.initialize(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(id, type, undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(id, type, undefined, h.NATIVE); await delivered();
   h.a.scan(); await delivered();
   assert.ok(moreInfo(h), 'the window opened');
   return moreInfo(h);
@@ -146,7 +146,7 @@ test('R7-3: Request in 4K answers after the window was replaced by another title
   await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
   (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   const tv = moreInfo(h);
   assert.equal(tv.dataset.tmdbId, '1399');
   const chips = tv.querySelector('[data-mount="je-status-chip"]').innerHTML;
@@ -161,7 +161,7 @@ test('R7-3: the window\'s own Request answers after the window was replaced → 
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
   modal.querySelector('.jellyseerr-request-button').click(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   const tv = moreInfo(h);
   held.resolve(); await delivered();
   assert.equal(tv.querySelector('[data-tmdb-id="603"]'), null);
@@ -345,7 +345,7 @@ for (const [name, open] of DIALOGS) {
 test('control: a host dialog opened natively stays open when an operation ends', async t => {
   const h = setup(t, { asks: false });
   h.a.initialize(); mount(h); await settle();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'x', message: 'y' }), h.JE.NATIVE);
+  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'x', message: 'y' }), h.NATIVE);
   remount(h); h.a.scan(); await delivered();
   assert.ok(h.document.querySelector('.dialogContainer'), 'a native dialog is the viewer\'s');
 });

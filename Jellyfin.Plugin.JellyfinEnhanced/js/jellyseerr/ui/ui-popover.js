@@ -240,7 +240,9 @@
         popup.appendChild(request4KBtn);
         document.body.appendChild(popup);
         state.active4KPopup = popup;
-        popupSources.set(popup, { buttonGroup, item });
+        // Its origin, recorded while the split button is on the page (D46S2-R9-2): a phone's tap on the popup closes the
+        // card's overview (the split button goes with it) before the popup's own click handler runs.
+        popupSources.set(popup, { buttonGroup, item, card: buttonGroup.closest('.jellyseerr-card') });
 
         // Position the popup relative to the button group
         const rect = buttonGroup.getBoundingClientRect();
@@ -319,9 +321,9 @@
     internal.hide4KPopup = hide4KPopup;
     internal.show4KPopup = show4KPopup;
     /**
-     * The split button and item a 4K popup was opened for (the popup is appended to <body>).
+     * The split button, item and card a 4K popup was opened for (the popup is appended to <body>), recorded as it opened.
      * @param {Element|null} popup The .jellyseerr-4k-popup element.
-     * @returns {{buttonGroup: HTMLElement, item: Object}|null} Its source, or null.
+     * @returns {{buttonGroup: HTMLElement, item: Object, card: HTMLElement|null}|null} Its source, or null.
      */
     internal.fourKPopupSource = (popup) => (popup && popupSources.get(popup)) || null;
     internal.addDownloadProgressHover = addDownloadProgressHover;

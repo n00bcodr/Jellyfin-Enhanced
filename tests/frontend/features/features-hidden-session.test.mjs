@@ -105,7 +105,7 @@ for(const kind of ['movie','series','collection']) test(`native ${kind} guard co
 test('guard dialog is dismissed and cannot snooze or confirm across a session change',async t=>{
   const h=setup(t);h.load('enhanced/spoilerguard/dialog.js');
   Object.assign(h.JE.internals.spoilerGuard,{whenLoaded:async()=>{},getUserPrefs:()=>({}),isDisableSnoozed:()=>false,setDisableSnooze:()=>h.writes.push({snooze:true})});
-  const result=h.JE.internals.spoilerGuard.confirmDisableSpoiler(h.JE.NATIVE);await tick();
+  const result=h.JE.internals.spoilerGuard.confirmDisableSpoiler(h.NATIVE);await tick();
   const dialog=h.document.querySelector('.je-spoiler-confirm-dialog');assert.ok(dialog);
   dialog.querySelector('input').checked=true;const confirm=dialog.querySelector('.je-spoiler-confirm-accept');
   h.switchUser();confirm.click();assert.equal(await result,false);assert.equal(dialog.isConnected,false);assert.equal(h.writes.length,0);
@@ -114,7 +114,7 @@ test('guard dialog is dismissed and cannot snooze or confirm across a session ch
 test('guard preference loading cannot resume a previous viewer gesture',async t=>{
   const h=setup(t);const pending=deferred();h.load('enhanced/spoilerguard/dialog.js');
   Object.assign(h.JE.internals.spoilerGuard,{whenLoaded:()=>pending.promise,getUserPrefs:()=>({SkipDisableConfirm:true})});
-  const result=h.JE.internals.spoilerGuard.confirmDisableSpoiler(h.JE.NATIVE);h.switchUser();pending.resolve();
+  const result=h.JE.internals.spoilerGuard.confirmDisableSpoiler(h.NATIVE);h.switchUser();pending.resolve();
   assert.equal(await result,false);assert.equal(h.document.querySelector('dialog'),null);
 });
 

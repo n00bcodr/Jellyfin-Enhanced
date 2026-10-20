@@ -166,7 +166,7 @@ export const NATIVE_ROOTS = {
     queueAction: 'the Requests hub Activity tab\'s queue Remove (its own page)',
     confirmDataDialog: 'the Requests hub Activity tab\'s Remove-with-data confirmation (its own page)',
   },
-  'arr/calendar/calendar-page-actions.js': { openAbsent: 'the Calendar page opening a title that is not in the library (its own page; no title action presses it)' },
+  'arr/calendar/calendar-page-actions.js': { navigateToJellyfinItem: 'the Calendar page opening a title that is not in the library (its own page; no title action presses it), named at the click before its provider lookup' },
   'arr/hub/hub-discover.js': { open: 'the Requests hub\'s Discover card opening Seerr\'s window (its own page)' },
   'arr/hub/hub-page.js': { openEntry: 'a Requests hub entry opening Seerr\'s window (its own page)', manageEntry: 'a Requests hub entry opening the Manage drawer (its own page)' },
   'arr/requests/requests-page-render.js': { renderPage: 'the Requests page\'s Report (its own page)' },
@@ -201,7 +201,7 @@ export const HOST_DIALOG_MODULES = {
 export const OWNER_SITES = {
   'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2,
   'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 2,
-  'arr/calendar/calendar-page-actions.js': 1, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 3, 'arr/hub/hub-page.js': 3,
+  'arr/calendar/calendar-page-actions.js': 3, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 3, 'arr/hub/hub-page.js': 3,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
   'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 8,
@@ -213,7 +213,7 @@ export const OWNER_SITES = {
   'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 11,
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
   'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
-  'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
+  'jellyseerr/nativedetails/native-details.js': 10, 'jellyseerr/seerr-detail-link.js': 1,
   'jellyseerr/ui/ui-buttons.js': 8, 'jellyseerr/ui/ui-cards.js': 22, 'jellyseerr/ui/ui-request-modals.js': 9,
   'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,
 };
@@ -231,8 +231,11 @@ export const EVENT_LISTENERS = {
   'jellyseerr-manual-refresh': 'the viewer asked the search results to refresh: a read that redraws them',
 };
 
-/** Completion events: dispatched only by the publication (core/session-action.js), acted on only through JE.published. */
-export const PUBLICATIONS = { completion: /-requested$/, publisher: 'core/session-action.js', listeners: EVENT_LISTENERS };
+/**
+ * Completion events: none any more (D46S2-R9-5). A completion changes UI only through its publication's handle
+ * (JE.publication run/apply/publish, followed through JE.followPublications), so dispatching or listening to one fails.
+ */
+export const PUBLICATIONS = { completion: /-requested$/, publisher: null, listeners: EVENT_LISTENERS };
 
 const CONFIG = { excludedModules: EXCLUDED_MODULES, excludedSites: EXCLUDED_SITES, forwarders: FORWARDERS };
 

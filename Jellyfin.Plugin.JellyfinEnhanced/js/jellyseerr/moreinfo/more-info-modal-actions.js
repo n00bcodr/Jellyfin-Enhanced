@@ -20,7 +20,7 @@ const windowOf = node => node?.closest?.('.je-more-info-modal') || null;
  * Sends the window's movie request (standard or 4K) for `owner`, the press's (JE.ownerOf(event), D46S2-R7-1): a title
  * action pressing a control for its operation, else the window's own. Everything its answer changes goes through the
  * publication of `origin` (the window it was pressed in, D46S2-R8-2) taken before the await: the window's chips and
- * re-render and the cards that follow the title (the completion event), the quota dialog (the publication is its owner,
+ * re-render and the cards that follow the title (its followers), the quota dialog (the publication is its owner,
  * R8-6) and an error label, only while that window is shown, `owner` is current and this is the window's newest intent;
  * `ui.idle` (the control's busy state) runs in `finally` unless the answer labelled the control (R7-6).
  * @param {Object} data Seerr details.
@@ -38,21 +38,19 @@ async function sendMovieRequest(data, is4k, owner, origin, ui = {}) {
     ui.busy?.();
     try {
         const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', is4k ? { is4k: true } : {}, false, data, null, { bound: submitted.bound() });
-        if (!publication.current()) return;
-        settled = true;
-        ui.done?.();
-        publication.emit('jellyseerr-media-requested', { response });
+        // The answer changes the UI only through its publication, checked as it does (D46S2-R9-5).
+        settled = publication.run(() => { ui.done?.(); publication.publish({ response }); });
     } catch (error) {
-        // Its owner ended before the send (nothing was sent), or the answer has nowhere to go: nothing to say.
-        if (error?.name === 'AbortError' || !publication.current()) return;
-        // Quota errors get a themed dialog, a publication of this window like any other answer (D46S2-R8-6).
+        // Its owner ended before the send (nothing was sent): nothing to say.
+        if (error?.name === 'AbortError') return;
+        // Quota errors get a themed dialog, a publication of this window like any other answer (D46S2-R8-6): it opens
+        // only while the publication is current.
         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
             return;
         }
         if (!ui.failed) return;
-        settled = true;
-        ui.failed(error?.responseJSON?.message || JE.t('jellyseerr_btn_error'));
+        settled = publication.run(() => ui.failed(error?.responseJSON?.message || JE.t('jellyseerr_btn_error')));
     } finally {
         if (!settled) ui.idle?.();
     }

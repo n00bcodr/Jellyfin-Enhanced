@@ -302,7 +302,7 @@ test('Guard: accepted, then navigation while the write waits in the Spoiler Guar
     Object.assign(h.guard, { isTmdbKnown: () => true, isTmdbEnabled: () => true, whenLoaded: async () => {}, bindStateView() {},
       confirmDisableSpoiler: () => { const d = deferred(); h.confirms.push(d); return d.promise; } });
     (await openSheet(h, 'guard')).click(); await settle();
-    const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.JE.NATIVE); await settle();
+    const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.NATIVE); await settle();
     h.confirms.at(-1).resolve(true); await settle();
     if (stale) h.navigate();
     busy.resolve({}); await settle();
@@ -533,7 +533,7 @@ test('Guard: accepted, then away and back while the write waits in the Spoiler G
   Object.assign(h.guard, { isTmdbKnown: () => true, isTmdbEnabled: () => true, whenLoaded: async () => {}, bindStateView() {},
     confirmDisableSpoiler: () => { const d = deferred(); h.confirms.push(d); return d.promise; } });
   (await openSheet(h, 'guard')).click(); await settle();
-  const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.JE.NATIVE); await settle();
+  const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.NATIVE); await settle();
   h.confirms.at(-1).resolve(true); await settle();
   await awayAndBack(h);
   busy.resolve({}); await settle();

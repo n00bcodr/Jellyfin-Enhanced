@@ -19,7 +19,7 @@ const QUOTA = [403, { message: 'Quota exceeded' }];
 async function nativeWindow(h, id = 603, type = 'movie') {
   Object.defineProperty(h.window, 'innerWidth', { value: 100, writable: true, configurable: true });
   h.a.initialize(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(id, type, undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(id, type, undefined, h.NATIVE); await delivered();
   h.a.scan(); await delivered();
   assert.ok(moreInfo(h), 'the window opened');
   return moreInfo(h);
@@ -74,7 +74,7 @@ test('R8-1: the shared link\'s fallback window belongs to the link\'s operation 
   h.load('jellyseerr/nativedetails/native-details.js');
   await h.a.receive('movie:tmdb:603'); await delivered();
   assert.ok(moreInfo(h));
-  assert.notEqual(h.JE.ownerOf(moreInfo(h)), h.JE.NATIVE, 'owned by the link\'s operation');
+  assert.notEqual(h.JE.ownerOf(moreInfo(h)), h.NATIVE, 'owned by the link\'s operation');
   await h.leave(); await new Promise(resolve => setTimeout(resolve, 350));
   assert.equal(moreInfo(h), null, 'closed with it');
 });
@@ -173,7 +173,7 @@ test('R8-2: the window\'s request answers after the window was replaced → the 
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
   modal.querySelector('.jellyseerr-split-main').click(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   held.resolve(); await delivered();
   assert.equal(posts(h).length, 1);
   assert.match(main.textContent, /jellyseerr_btn_request$/);
@@ -201,7 +201,7 @@ test('R8-6: a quota refusal answering after the window was replaced by another t
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
   modal.querySelector('.jellyseerr-request-button').click(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   assert.equal(moreInfo(h).dataset.tmdbId, '1399');
   held.resolve(); await delivered();
   assert.equal(h.alerts.length, 0, 'no dialog of the movie over the series\' window');
@@ -213,7 +213,7 @@ test('R8-6: the window is replaced while the quota dialog reads the quota → no
   const modal = await nativeWindow(h);
   const quota = h.hold('GET', '/jellyseerr/quota');
   modal.querySelector('.jellyseerr-request-button').click(); await settle(); await delivered();
-  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   quota.resolve(); await delivered();
   assert.equal(h.alerts.length, 0);
 });
@@ -247,7 +247,7 @@ test('control: a host dialog that attaches while its owner lives stays; a native
   h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'a', message: 'a' }), owner);
   await delivered();
   assert.equal(h.document.querySelectorAll('.dialogContainer').length, 1);
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'b', message: 'b' }), h.JE.NATIVE);
+  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'b', message: 'b' }), h.NATIVE);
   h.pagehide(); await delivered();
   assert.equal(h.document.querySelectorAll('.dialogContainer').length, 1, 'the owned one closed with its owner, the native one stays');
 });

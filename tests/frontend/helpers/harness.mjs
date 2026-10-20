@@ -60,9 +60,15 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   window.structuredClone = structuredClone;
   Object.assign(window, globals);
   /** Evaluates and instruments a module as it runs in the production bundle. */
-  function load(path) {
+  function load(path, transform) {
     const file = resolve(jsRoot, path);
     let source = readFileSync(file, 'utf8');
+    if (transform) {
+      // A planted construct (a test runs it to show what the runtime does with it): the transform must apply.
+      const planted = transform(source);
+      if (planted === source) throw new Error(`The plant does not apply to ${path}`);
+      source = planted;
+    }
     if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;
@@ -73,6 +79,8 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   window.addEventListener('unhandledrejection', event => errors.push(event.reason));
   return {
     window, document: window.document, JE, errors,
+    /** The native owner as test code names it: a test runs outside every gesture, as a native root (JE.nativeRoot). */
+    get NATIVE() { return typeof JE.nativeRoot === 'function' ? JE.nativeRoot('a test') : JE.NATIVE; },
     /** Declares a console.error the test must produce; close() fails if none matched. */
     expectConsoleError(pattern) { allowedErrors.push({ pattern, required: true, matched: false }); },
     /** Tolerates a console.error that may or may not happen (timing-dependent diagnostics). */

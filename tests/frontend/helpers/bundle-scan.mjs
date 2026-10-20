@@ -322,6 +322,8 @@ function namespaceEscapes(node, parents, visits) {
   while (parent?.type === 'LogicalExpression') { child = parent; parent = parents.get(parent); }
   // Defining it, or publishing it under its own name (window.JE = JE): the scan resolves both names.
   if (parent?.type === 'AssignmentExpression' && (parent.left === child || NAMESPACE_NAMES.has(normal(pathOf(parent.left))))) return false;
+  // Defining one of its members by a constant name (Object.defineProperty(JE, 'NATIVE', …), D46S2-R9-4): a member, as JE.x = ….
+  if (CALL.has(parent?.type) && normal(pathOf(parent.callee)) === 'Object.defineProperty' && parent.arguments[0] === child && parent.arguments[1]?.type === 'StringLiteral') return false;
   if (CALL.has(parent?.type) && FUNCTION.has(parent.callee?.type) && parent.arguments.includes(child)) return false;
   if (parent?.type === 'VariableDeclarator' && parent.init === child && NAMESPACE_NAMES.has(parent.id?.name)) return false;
   const functions = name => visits.filter(([n]) => (n.type === 'FunctionDeclaration' && n.id?.name === name) ||
@@ -679,6 +681,8 @@ function ownerParam(value, frame, depth = 0) {
 function nativeValue(value, frame, depth = 0) {
   if (!value || depth > 4) return false;
   if (normal(pathOf(value)) === 'JE.NATIVE') return true;
+  // A native root without a gesture (D46S2-R9-4) is a pin like JE.NATIVE.
+  if (CALL.has(value.type) && normal(pathOf(value.callee)) === 'JE.nativeRoot') return true;
   if (publicationOwner(value)) return nativeValue(publicationOwner(value), frame, depth + 1);
   if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' && nativeValue(b.init, b.frame, depth + 1); }
   return false;
@@ -1060,21 +1064,31 @@ export function scanPublications(sources, config) {
         if (completion) completionListeners.push(fn);
         if (change == null) continue;
         if (completion) {
+          // D46S2-R9-5: the publication is a capability; completions are not events any more. A listener of one is a
+          // second channel (whatever it tests), so it fails.
           const guard = firstGuard(fn);
-          if (guard == null || guard > change) failures.push(`${file}:${line(node)} a ${type} listener acts before its publication is tested (no JE.published test first)`);
-          else site.guarded = true;
+          failures.push(`${file}:${line(node)} a ${type} listener acts on a completion outside its publication (${guard == null || guard > change ? 'no JE.published test first' : 'completions are followed through JE.followPublications only'})`);
         } else if (!config.listeners?.[type]) failures.push(`${file}:${line(node)} a ${type} listener changes the DOM: a completion goes through JE.publication; any other custom event is listed with its reason`);
       }
     }
+    // The publication's followers (D46S2-R9-5): functions handed to JE.followPublications, which core calls only for the
+    // nodes a publication reaches. The capability's old guard is gone: JE.published anywhere fails.
+    const followerFns = [];
+    for (const [node] of visits) {
+      if (!CALL.has(node.type)) continue;
+      const callee = normal(pathOf(node.callee));
+      if (callee === 'JE.followPublications') followerFns.push(...node.arguments.filter(a => FUNCTION.has(a?.type)));
+      if (callee === 'JE.published') failures.push(`${file}:${line(node)} tests a completion with JE.published (a guard; completions change UI only through their publication's handle)`);
+    }
     // Controls selected by title id across the document (the r7 cards' sync, the advanced form's "original button"):
-    // only inside a completion listener, where each one is tested with JE.published.
+    // only inside a follower's candidates (core applies what a publication reaches).
     for (const [node] of visits) {
       if (!CALL.has(node.type) || !['querySelector', 'querySelectorAll'].includes(node.callee?.property?.name)) continue;
       if (!GLOBAL_TARGETS.has(normal(pathOf(node.callee.object)))) continue;
       const selector = node.arguments[0];
       const text = selector?.type === 'StringLiteral' ? selector.value : selector?.type === 'TemplateLiteral' ? selector.quasis.map(q => q.value.cooked).join('') : '';
-      if (!/data-tmdb-id/.test(text) || completionListeners.some(fn => inside(node, fn))) continue;
-      failures.push(`${file}:${line(node)} selects controls by title id across the document outside a completion's listener (one publication path)`);
+      if (!/data-tmdb-id/.test(text) || followerFns.some(fn => inside(node, fn))) continue;
+      failures.push(`${file}:${line(node)} selects controls by title id across the document outside a publication's follower (one publication path)`);
     }
   }
   return { sites, failures };

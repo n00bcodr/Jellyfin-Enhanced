@@ -263,7 +263,7 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
     const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
     h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
-  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.JE.NATIVE);
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.NATIVE);
   const requestBtn = h.document.createElement('button');
   return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}, { type: 'click', target: modal.el }) };
 }
@@ -334,7 +334,7 @@ function requestModals(t, options) {
 
 test('movie request modal needs every advanced option before it submits them', async t => {
   const h = requestModals(t); h.api.fetchAdvancedRequestData = async () => ({});
-  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null, false, h.JE.NATIVE);
+  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null, false, h.NATIVE);
   const ids = ['movie-server', 'movie-quality', 'movie-folder'];
   await h.save(); assert.equal(h.calls.length, 0); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_options_missing');
   // Any one option left empty blocks the request on its own.
@@ -357,7 +357,7 @@ test('collection request modal escapes titles, skips owned movies and stops at t
   // The quote would end the poster's alt attribute and start an onerror one if it were not escaped.
   const hostile = '<img src=x onerror=evil()>" onerror="evil()';
   h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: hostile, mediaInfo: { status: 5 } }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
-  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga', null, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga', null, { operation: h.NATIVE });
   assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-details .title img'), null);
   assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-poster').getAttribute('alt'), hostile);
   assert.equal(h.modal().querySelector('[onerror]'), null);

@@ -253,7 +253,7 @@ test('the Manage drawer explains, offers Search now and Open in, lists versions,
   h.JE.initializeArrStatus();
   const opener = h.document.body.appendChild(h.document.createElement('button'));
   opener.focus();
-  await h.JE.arrManage.open({ itemId: 'abc' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ itemId: 'abc' }, { operation: h.NATIVE });
   assert.equal(h.calls[0].path, '/arr/admin/manage?itemId=abc');
   const drawer = h.document.querySelector('.je-manage');
   assert.equal(drawer.getAttribute('role'), 'dialog');
@@ -445,7 +445,7 @@ test('Search now stays busy across re-renders (no second search), and focus neve
     }
   });
   h.JE.initializeArrStatus();
-  await h.JE.arrManage.open({ key: 'tv:tvdb:78874:s1:e4' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ key: 'tv:tvdb:78874:s1:e4' }, { operation: h.NATIVE });
   const drawer = h.document.querySelector('.je-manage');
   const search = () => drawer.querySelector('.je-manage-btn-primary');
   // Shift+Tab from the drawer itself (where focus is on open) wraps to its last control.
@@ -726,7 +726,7 @@ test('the Manage drawer says when a queue it can\'t read was last read, and how 
       : null
   });
   h.JE.initializeArrStatus();
-  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.NATIVE });
   const drawer = h.document.querySelector('.je-manage');
   const note = drawer.querySelector('.je-manage-event-queue-asof');
   assert.ok(note, 'the expired queue is said');
@@ -734,7 +734,7 @@ test('the Manage drawer says when a queue it can\'t read was last read, and how 
   assert.match(note.querySelector('.je-manage-event-label').textContent, /^queue can't be read; last read /);
   drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   expired = false;
-  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.NATIVE });
   assert.match(h.document.querySelector('.je-manage .je-manage-event-queue-asof .je-manage-event-label').textContent, /^queue as of /);
 });
 
@@ -750,7 +750,7 @@ test('the Manage drawer keeps what it shows when a re-read fails, says so, and r
   });
   const timers = holdLongTimers(h);
   h.JE.initializeArrStatus();
-  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.NATIVE });
   const drawer = h.document.querySelector('.je-manage');
   assert.match(drawer.textContent, /and 2 more/);
   fail = true;
@@ -812,7 +812,7 @@ test('a Manage drawer retry is never sent or shown after another account signs i
   });
   const timers = holdLongTimers(h);
   h.JE.initializeArrStatus();
-  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.JE.NATIVE });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.NATIVE });
   const drawer = h.document.querySelector('.je-manage');
   fail = true;
   h.live().find(s => s.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);

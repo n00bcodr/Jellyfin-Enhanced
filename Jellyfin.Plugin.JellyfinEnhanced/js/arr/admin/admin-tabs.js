@@ -933,6 +933,9 @@
      * @returns {Promise<void>}
      */
     async function confirmDataDialog(target, busyId, opener, choices) {
+        // The Activity tab's own control (native), named at the press: the dialog opens after the read below (D46S2-R9-4).
+        const native = JE.NATIVE;
+        if (!native) return;
         // The answer may come after the admin left the tab or someone else signed in: then nothing
         // opens. The row is busy meanwhile.
         const generation = state.generation;
@@ -954,7 +957,7 @@
         draw();
         const dl = confirmation?.download || {};
         const word = tr('arr_ops_confirm_word');
-        const { box, buttons } = openDialog(tr('arr_ops_delete_title'), opener, 'tabs', JE.NATIVE);
+        const { box, buttons } = openDialog(tr('arr_ops_delete_title'), opener, 'tabs', native);
         const warn = el('div', 'je-ops-warnbox');
         warn.appendChild(el('p', '', tr('arr_ops_delete_body', { title: [dl.title, dl.scope].filter(Boolean).join(' '), instance: dl.instance || '' })));
         if (dl.episodes > 1) warn.appendChild(el('p', '', tr('arr_ops_remove_pack', { scope: dl.scope || '', n: dl.episodes })));

@@ -25,6 +25,8 @@
         // STATE MANAGEMENT VARIABLES
         // ================================
         let lastProcessedQuery = null;
+        // Searches started (or dropped) so far: a delayed refresh runs only if none started since (D46S2-R9-1).
+        let searchRuns = 0;
         // Query whose page-1 fetch is in flight (null once its response is in,
         // or it was dropped): the navigation-settle rebuild must not start a second
         // search for a query the input handler is already fetching.
@@ -495,6 +497,23 @@
         }
 
         /**
+         * Refreshes the search a request was made from, 1 s later (Seerr's status settles first), through the checked
+         * runner (D46S2-R9-1): only if the request's publication is still current then and the same search still stands
+         * (no newer search, navigation or cleared box since), so an older query's results never come back.
+         * @param {Object} publication The request's publication (JE.publication).
+         */
+        function refreshAfterRequest(publication) {
+            const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
+            if (!query || query !== lastProcessedQuery) return;
+            const run = searchRuns;
+            JE.later(publication, () => {
+                const input = document.querySelector('#searchPage:not(.hide) #searchTextInput');
+                if (run !== searchRuns || lastProcessedQuery !== query || (input && input.value !== query)) return;
+                fetchAndRenderResults(query, { skipCache: true });
+            }, 1000);
+        }
+
+        /**
          * Fetches search results (page 1) and renders them once the viewer has
          * stopped typing (renderWhenQuiet).
          * @param {string} query The search query.
@@ -508,6 +527,7 @@
             }
             const { skipCache = false } = options;
             lastProcessedQuery = query;
+            searchRuns++;
             fetchingQuery = query;
             dropPendingRender();
             forgetCollections();
@@ -884,6 +904,7 @@
                     dropPendingRender();
                     forgetCollections();
                     lastProcessedQuery = null;
+                    searchRuns++;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
                     clearInjectedSearchResults();
@@ -934,6 +955,7 @@
                     dropPendingRender();
                     forgetCollections();
                     lastProcessedQuery = null;
+                    searchRuns++;
                     isJellyseerrOnlyMode = false;
                     resetSearchPagination();
                     clearInjectedSearchResults();
@@ -1086,13 +1108,19 @@
 
                 if (action === 'request4k' && tmdbId) {
                     const popup = item.closest('.jellyseerr-4k-popup');
+                    // The popup is portaled to <body>: its origin is the card it was opened from, recorded as the popup
+                    // opened (fourKPopupSource; a phone's tap closes the card's overview first), resolved before the
+                    // popup goes (D46S2-R9-2). With no known origin nothing opens or is sent.
+                    const source = JE.internals?.jellyseerrUi?.fourKPopupSource?.(popup) || null;
+                    const card = source?.card || source?.buttonGroup?.closest?.('.jellyseerr-card') || item.closest('.jellyseerr-card');
+                    const origin = JE.requireOrigin(card || source?.buttonGroup || null, 'the 4K popup');
+                    if (!origin) { if (popup) popup.remove(); return; }
                     item.disabled = true;
                     item.innerHTML = `<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>`;
 
                     // Find the original item data from the card
-                    const card = event.target.closest('.jellyseerr-card');
-                    const button = card?.querySelector('.jellyseerr-request-button');
-                    const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : null;
+                    const button = origin.querySelector('.jellyseerr-request-button') || source?.buttonGroup?.querySelector('.jellyseerr-request-button');
+                    const searchResultItem = button?.dataset.searchResultItem ? JSON.parse(button.dataset.searchResultItem) : (source?.item || null);
                     const titleText = card?.querySelector('.cardText-first bdi')?.textContent
                         || searchResultItem?.name
                         || searchResultItem?.title
@@ -1100,44 +1128,39 @@
                         || searchResultItem?.originalTitle
                         || (mediaType === 'tv' ? 'this show' : 'this movie');
 
+                    if (mediaType === 'tv') {
+                        if (popup) popup.remove();
+                        showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner, origin);
+                        return;
+                    }
+                    if (JE.jellyseerrAPI.shouldShowAdvanced()) {
+                        // Close popup and show advanced modal: the form publishes into the card it came from.
+                        if (popup) popup.remove();
+                        showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner, origin);
+                        return;
+                    }
                     // The answer publishes into this card only (and the cards that follow the title), as its 4K edition
                     // (D46S2-R8-2); a refusal's dialog is that publication's too (R8-6).
-                    const publication = JE.publication({ owner, surface: card || item, identity: { tmdbId, mediaType: 'movie', is4k: true } });
+                    const publication = JE.publication({ owner, surface: origin, identity: { tmdbId, mediaType: 'movie', is4k: true } });
                     try {
-                        if (mediaType === 'tv') {
-                            if (popup) popup.remove();
-                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner, card);
-                            return;
-                        }
-
-                        if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                            // Close popup and show advanced modal
-                            if (popup) popup.remove();
-                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner, card);
-                        } else {
-                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // true for 4K, pass searchResultItem for override rules
-                            console.debug(`${logPrefix} Seerr 4K request response:`, response);
-                            if (!publication.current()) return;
-                            publication.emit('jellyseerr-media-requested', { response });
+                        const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // true for 4K, pass searchResultItem for override rules
+                        console.debug(`${logPrefix} Seerr 4K request response:`, response);
+                        publication.run(() => {
+                            publication.publish({ response });
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
                                 searchResultItem.mediaInfo.status4k = 3;
                             }
                             JE.toast('4K request submitted successfully!', 3000);
                             if (popup) popup.remove();
-
-                            // Refresh the results to update the UI
-                            const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
-                            if (query) {
-                                setTimeout(() => fetchAndRenderResults(query, { skipCache: true }), 1000);
-                            }
-                        }
+                            // Refresh the results to update the UI: later, only while this answer and its search still stand.
+                            refreshAfterRequest(publication);
+                        });
                     } catch (error) {
-                        // Quota errors get a themed dialog with usage + reset info.
+                        // Quota errors get a themed dialog with usage + reset info (it opens only while the publication holds).
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
                             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
                         } else {
-                            if (!publication.current()) return;
                             let errorMessage = 'Failed to request 4K version';
                             if (error.status === 404) {
                                 errorMessage = 'User not found';
@@ -1145,7 +1168,7 @@
                                 errorMessage = error.responseJSON.message;
                             }
                             // Escape API error before display to prevent reflected XSS
-                            JE.toast(escapeHtml(errorMessage), 4000);
+                            publication.run(() => JE.toast(escapeHtml(errorMessage), 4000));
                         }
                         item.disabled = false;
                         item.innerHTML = `<span>Request in 4K</span>`;
@@ -1191,15 +1214,13 @@
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
                         const response = await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // Pass searchResultItem for override rules
-                        if (!publication.current()) return;
-                        publication.emit('jellyseerr-media-requested', { response });
+                        publication.publish({ response });
                     } catch (error) {
-                        if (!publication.current()) return;
-                        button.disabled = false;
-                        // Quota errors get a themed dialog; restore button to idle.
+                        // Quota errors get a themed dialog (only while the publication holds); restore button to idle.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+                            publication.apply(button, node => { node.disabled = false; });
                             await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
-                            button.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                            publication.apply(button, node => { node.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`; });
                             return;
                         }
                         let errorMessage;
@@ -1211,8 +1232,11 @@
                             errorMessage = JE.t('jellyseerr_btn_error');
                         }
                         // Escape API error before innerHTML to prevent reflected XSS
-                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
-                        button.classList.add('jellyseerr-button-error');
+                        publication.apply(button, node => {
+                            node.disabled = false;
+                            node.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${JE.jellyseerrUI.icons.error}`;
+                            node.classList.add('jellyseerr-button-error');
+                        });
                     }
                 }
             }

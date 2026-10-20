@@ -347,6 +347,18 @@
     // Card element -> its state: the item, the links derived from it, and the
     // hover overview while one is open. WeakMap, so removed cards are freed.
     const cardStates = new WeakMap();
+    // A request for a card's title made anywhere (its own Request, its 4K popup, a form opened from it, the window)
+    // reaches the card through its publication (D46S2-R9-2): the card's own data follows, so the Request its overview
+    // redraws (rebuilt on every tap; gone while a form is open) shows the request instead of offering it again.
+    JE.followPublications(() => document.querySelectorAll('.jellyseerr-card .jellyseerr-more-info-link[data-tmdb-id]'), (link, answer) => {
+        const item = cardStates.get(link.closest('.jellyseerr-card'))?.item;
+        if (!item) return;
+        const info = item.mediaInfo || (item.mediaInfo = {});
+        const media = answer.response?.media;
+        const PENDING = JE.seerrStatus.MEDIA.PENDING;
+        if (answer.is4k) info.status4k = media?.status4k > PENDING ? media.status4k : Math.max(Number(info.status4k) || 0, PENDING);
+        else info.status = media?.status > PENDING ? media.status : Math.max(Number(info.status) || 0, PENDING);
+    });
     // Containers that already have the delegated card listeners.
     const boundContainers = new WeakSet();
 

@@ -174,17 +174,17 @@
    * open first. Returns false when native details aren't offered.
    * @param {Object} event Calendar event.
    * @param {boolean} preferSeries Open the series rather than the episode.
+   * @param {Object} owner The click's owner (native), taken at the click: this may run after a lookup.
    * @returns {Promise<boolean>} Opened.
    */
-  async function openAbsent(event, preferSeries) {
+  async function openAbsent(event, preferSeries, owner) {
     if (JE.titleDetails?.available?.() !== true) return false;
     const key = titleKeyOf(event);
     if (!key) return false;
     const isMovie = event.type === "Movie";
     const scoped = !isMovie && !preferSeries && Number.isInteger(event.seasonNumber) && Number.isInteger(event.episodeNumber);
     return JE.titleDetails.openKey(key, {
-      // The Calendar page is a page of its own: no title action presses it.
-      owner: JE.NATIVE,
+      owner,
       mediaType: isMovie ? "movie" : "tv",
       tmdbId: Number(event.tmdbId) > 0 ? Number(event.tmdbId) : undefined,
       season: scoped ? event.seasonNumber : undefined,
@@ -197,11 +197,14 @@
    * it isn't in the library).
    */
   async function navigateToJellyfinItem(event, options = {}) {
+    // The Calendar page is a page of its own: no title action presses it. Named at the click (D46S2-R9-4), before the
+    // provider lookup below.
+    const owner = JE.NATIVE;
     const preferSeries = !!options.preferSeries;
     const isMovie = event.type === "Movie";
 
     if (!event.hasFile && (!preferSeries || isMovie)) {
-      await openAbsent(event, preferSeries);
+      await openAbsent(event, preferSeries, owner);
       return;
     }
 
@@ -226,7 +229,7 @@
         window.location.hash = `#/details?id=${providerItemId}`;
         return;
       }
-      await openAbsent(event, preferSeries);
+      await openAbsent(event, preferSeries, owner);
     } catch (error) {
       console.error(`${logPrefix} Navigation failed:`, error);
     }

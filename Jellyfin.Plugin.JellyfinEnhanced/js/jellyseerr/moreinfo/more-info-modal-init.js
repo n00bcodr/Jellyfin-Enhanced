@@ -34,7 +34,8 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
             return;
         }
 
-        // Render modal immediately
+        // Render modal immediately: the window opens only as its owner's effect, checked now (D46S2-R9-1).
+        if (!JE.effectOwner(submitted.owner, 'the More Info window')) return;
         showModal(data, mediaType, scope, submitted);
         const openedModal = state.currentModal;
 
@@ -201,18 +202,18 @@ function showModal(data, mediaType, scope, submitted) {
         internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
     }
 
-    // Completions published into this window (D46S2-R8-2): its own requests and the forms opened from it publish here,
-    // only while the window, their owner and their intent are current. A movie's answer is drawn as it is (only the
-    // edition it was for); a series re-reads its seasons' state from Seerr.
-    const handleRequested = async (e) => {
-        if (!JE.published(e, modal)) return;
-        const { is4k, response } = e.detail;
+    // Completions published into this window (D46S2-R8-2, R9-5): its own requests and the forms opened from it publish
+    // here; core calls this only for a publication that reaches the window now (its owner, the window and its intent
+    // current), so there is nothing to test here. A movie's answer is drawn as it is (only the edition it was for); a
+    // series re-reads its seasons' state from Seerr, as a newest intent of that publication's identity.
+    const handleRequested = async (_node, answer, publication) => {
+        const { is4k, response } = answer;
         if (mediaType === 'movie') {
             internal.applyRequested(data, is4k, response);
             internal.renderActions(data, mediaType);
             return;
         }
-        const newest = JE.surfaceIntent(modal, JE.ownerOf(modal));
+        const newest = JE.surfaceIntent(modal, publication.owner, publication.key);
         const shown = () => state.currentModal === modal && !modal._isClosing && newest();
         try {
             // Refresh details to pull latest status/progress
@@ -233,8 +234,7 @@ function showModal(data, mediaType, scope, submitted) {
         internal.renderActions(data, mediaType);
         internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
     };
-    document.addEventListener('jellyseerr-media-requested', handleRequested);
-    modal._cleanupRequestListener = () => document.removeEventListener('jellyseerr-media-requested', handleRequested);
+    modal._cleanupRequestListener = JE.followPublications(() => [modal], handleRequested);
 
     // Let other surfaces add to the modal (Requests & downloads: the status pill).
     document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType, scope } }));

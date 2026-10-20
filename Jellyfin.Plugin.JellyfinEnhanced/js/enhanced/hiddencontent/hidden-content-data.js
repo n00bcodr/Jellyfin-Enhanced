@@ -449,7 +449,7 @@
      * @param {Object} [owner] The owner of a provider-rule write (confirmAndHide passes its confirmation's); the
      *     library's own hide controls and panels are native.
      */
-    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = JE.NATIVE) {
+    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = JE.nativeRoot('the library\'s own hide controls')) {
         const provider = titleData({ itemId, name, type, tmdbId, posterPath });
         if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true, owner).catch(() => false);
         if (JE.titleDetails?.isSynthetic?.(itemId) || JE.titleDetails?.isSynthetic?.(seriesId)) return;
@@ -488,7 +488,7 @@
      * @param {Object} [metadata] Existing library DTO or card metadata for provider-rule removal.
      * @param {Object} [owner] The owner of a provider-rule write; the library's own unhide controls and panels are native.
      */
-    function unhideItem(itemId, metadata, owner = JE.NATIVE) {
+    function unhideItem(itemId, metadata, owner = JE.nativeRoot('the library\'s own unhide controls')) {
         if (/^(movie|tv):tmdb:[1-9][0-9]*$/.test(itemId)) {
             const [type, , tmdbId] = itemId.split(':');
             return saveTitleRule({ type, tmdbId }, false, owner).catch(() => false);

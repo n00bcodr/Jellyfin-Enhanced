@@ -48,14 +48,11 @@
     }
 
     // Cards follow a request made anywhere (a card, a form, the More Info window) through the one publication path
-    // (D46S2-R8-2): only the controls its publication reaches (its title, media type and edition, while it is current
-    // where it was made). A window draws its own controls from its own publications.
-    document.addEventListener('jellyseerr-media-requested', (e) => {
-        for (const node of document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]')) {
-            if (node.closest('.je-more-info-modal') || !JE.published(e, node)) continue;
-            markCardRequested(node);
-        }
-    });
+    // (D46S2-R8-2, R9-5): core marks only the controls a publication reaches now (its title, media type and edition,
+    // while it is current where it was made). A window draws its own controls from its own publications.
+    JE.followPublications(
+        () => [...document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]')].filter(node => !node.closest('.je-more-info-modal')),
+        markCardRequested);
 
     // ================================
     // UI MANAGEMENT FUNCTIONS

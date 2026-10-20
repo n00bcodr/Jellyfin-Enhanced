@@ -168,9 +168,9 @@ test('a successful Report clears the existing owner issue-list cache only for it
   const h = setup(t, { requestManager: { clearCacheMatching: key => cleared.push(key) },
     core: { api: { fetch: async () => ({ mediaInfo: { id: 99 } }), plugin: async () => delayed ? gate.promise : { id: 1 } } } });
   h.load('jellyseerr/api.js');
-  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
+  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.NATIVE);
   assert.deepEqual(cleared, ['jellyseerr:/issue']);
-  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
+  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.NATIVE);
   await new Promise(resolve => setImmediate(resolve)); h.switchUser(); gate.resolve({ id: 2 });
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(cleared.length, 1);
@@ -252,7 +252,7 @@ test('follow settlement cannot start a reread under a replacement identity', asy
   const gate = deferred(); const paths = [];
   const { JE, load, switchUser } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
   load('arr/notify/notify-core.js');
-  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, JE.NATIVE);
+  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, JE.nativeRoot ? JE.nativeRoot('a test') : JE.NATIVE);
   switchUser(); gate.resolve({});
   assert.equal((await pending).ok, false);
   assert.equal(paths.length, 1);
@@ -271,11 +271,11 @@ test('native synthetic and provider Report owners exclude nonexistent file issue
   });
   h.load('jellyseerr/issue-reporter.js');
   for (const item of [{ Id: 'synthetic' }, { jeAbsent: true }]) {
-    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item, h.JE.NATIVE);
+    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item, h.NATIVE);
     assert.deepEqual([...modal.querySelectorAll('[name="issue-type"]')].map(n => n.value), ['4']);
     modal.remove();
   }
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' }, h.JE.NATIVE);
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' }, h.NATIVE);
   assert.equal(modal.querySelectorAll('[name="issue-type"]').length, 4);
 });
 
@@ -290,7 +290,7 @@ test('report modal rejects delayed submit after a live user switch', async t => 
     } },
   });
   h.load('jellyseerr/issue-reporter.js');
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.JE.NATIVE);
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
   await options.onSave(modal, h.document.createElement('button'), () => {}, { type: 'click', target: modal });
@@ -314,7 +314,7 @@ test('Manage retains its opening identity across the feed-position await', async
     core: { api: { plugin: async path => { sends.push(path); return {}; } } },
   });
   h.load('arr/manage/manage-drawer.js');
-  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE });
+  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE });
   h.switchUser(); gate.resolve({ epoch: 'e', cursor: 1 }); await pending;
   assert.equal(sends.length, 0); h.JE.arrManage.close();
 });
@@ -359,7 +359,7 @@ test('observer reconciliation preserves restored focus on the compact More contr
   row.getBoundingClientRect = () => ({ width: 288 }); h.document.body.append(row);
   h.JE.titleActions.mountRow(row, row, null); h.JE.titleActions.initialize();
   const more = row.querySelector('.je-actions-more');
-  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more, h.JE.NATIVE);
+  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more, h.NATIVE);
   h.JE.titleActions.close();
   await new Promise(resolve => h.window.requestAnimationFrame(() => h.window.requestAnimationFrame(resolve)));
   assert.equal(h.document.activeElement, more);

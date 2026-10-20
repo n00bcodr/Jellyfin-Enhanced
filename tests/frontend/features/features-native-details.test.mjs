@@ -2,6 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
+/** Runs `fn` as a viewer's click does (D46S2-R9-4: a native opener names JE.NATIVE at the gesture) and returns its result. */
+function gesture(h, fn) {
+  let result;
+  const button = h.document.createElement('button');
+  button.addEventListener('click', () => { result = fn(); });
+  h.document.body.append(button); button.click(); button.remove();
+  return result;
+}
+
 const SERVER = '0202511b0eac4284ab045b3ba556d72e';
 const MOVIE = '4a45ad11000a938e00000000f9c67720'; // the server's own vector (ApiNativeDetailsTests)
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -895,24 +904,24 @@ for (const ask of [false, true]) {
 
 test('the navigator: native page, scoped pages, the modal as fallback, provider keys through the server', async t => {
   const h = setup(t, { resolve: path => (path.includes('movie%3Atmdb%3A45745') ? { itemId: '0123456789abcdef0123456789abcdef' } : path.includes('tv%3Atvdb%3A393189') ? { id: '4a45ad130001479b0001000092805890' } : null) });
-  assert.equal(h.td.show(83867, 'tv', { season: 1, episode: 3 }), true);
+  assert.equal(gesture(h, () => h.td.show(83867, 'tv', { season: 1, episode: 3 })), true);
   assert.equal(h.shown[0], `/details?id=${h.td.syntheticId('episode', 83867, 1, 3)}&serverId=${SERVER}`);
   assert.equal(h.td.open(83867, 'tv', { season: 2 }), true);
   assert.equal(h.shown[1], `/details?id=${h.td.syntheticId('season', 83867, 2)}&serverId=${SERVER}`);
-  assert.equal(await h.td.openKey('movie:tmdb:45745', { owner: h.JE.NATIVE }), true);
+  assert.equal(await h.td.openKey('movie:tmdb:45745', { owner: h.NATIVE }), true);
   assert.equal(h.shown[2], `/details?id=0123456789abcdef0123456789abcdef&serverId=${SERVER}`);
-  assert.equal(await h.td.openKey('tv:tvdb:393189', { season: 1, owner: h.JE.NATIVE }), true);
+  assert.equal(await h.td.openKey('tv:tvdb:393189', { season: 1, owner: h.NATIVE }), true);
   assert.ok(h.resolved.at(-1).includes('season=1'));
   // A forged answer is never followed; the modal opens once instead when the TMDB id is known.
-  assert.equal(await h.td.openKey('movie:tmdb:438631', { owner: h.JE.NATIVE }), true);
+  assert.equal(await h.td.openKey('movie:tmdb:438631', { owner: h.NATIVE }), true);
   assert.deepEqual(h.modal, [[438631, 'movie']]);
   assert.equal(await h.td.openKey('tv:tvdb:5', { modal: false }), false);
   assert.equal(h.shown.length, 4);
   // Capability off: show() is the modal, open() leaves the caller its way.
   const off = setup(t, { cap: null });
-  assert.equal(off.td.show(693134, 'movie'), true);
+  assert.equal(gesture(off, () => off.td.show(693134, 'movie')), true);
   assert.deepEqual(off.modal, [[693134, 'movie']]);
-  assert.equal(await off.td.openKey('tv:tvdb:393189', { owner: off.JE.NATIVE }), false);
+  assert.equal(await off.td.openKey('tv:tvdb:393189', { owner: off.NATIVE }), false);
   assert.deepEqual(off.resolved, []);
 });
 
@@ -1332,7 +1341,7 @@ test('Seerr mode: a viewer Seerr won\'t answer for goes to the window\'s message
   h.JE.jellyseerrAPI = { knownAccountRefusal: () => refusal };
   h.JE.internals.arrAskSeerr = { jeMode: () => jeMode };
   assert.equal(h.td.open(693134, 'movie'), false);
-  assert.equal(h.td.show(693134, 'movie'), true);
+  assert.equal(gesture(h, () => h.td.show(693134, 'movie')), true);
   assert.deepEqual([h.shown, h.modal], [[], [[693134, 'movie']]]);
   // JE mode: native pages open without a Seerr account.
   jeMode = true;

@@ -280,9 +280,13 @@
      * @returns {boolean} True when something opened.
      */
     function show(tmdbId, mediaType, scope) {
+        // A page the person opened, not part of any title action (native, D46S2-R6): named here, at the gesture, so a
+        // caller holding an operation (its press, its runner) or a raw continuation is refused before anything opens
+        // or navigates (D46S2-R9-4).
+        const owner = JE.NATIVE;
+        if (!owner) return false;
         if (open(tmdbId, mediaType, scope)) return true;
-        // The fallback of a title page: a page the person opened, not part of any title action (native, D46S2-R6).
-        return openModal(tmdbId, mediaType, scope, JE.NATIVE);
+        return openModal(tmdbId, mediaType, scope, owner);
     }
 
     /**
@@ -331,7 +335,8 @@
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
         if (available() && key) {
             const answer = await resolve({ key, season: options.season, episode: options.episode });
-            if (!action.current()) return false;
+            // Navigating is the owner's effect, checked as it happens (D46S2-R9-1).
+            if (!action.current() || !JE.effectOwner(action.owner, 'openKey')) return false;
             if (answer?.itemId && /^[0-9a-f-]{32,36}$/i.test(answer.itemId)) {
                 go(answer.itemId);
                 return true;
@@ -907,7 +912,7 @@
      */
     function cancelPendingModal() {
         if (!pendingModal) return;
-        clearTimeout(pendingModal.timer);
+        pendingModal.cancel();
         pendingModal = null;
     }
 
@@ -917,18 +922,19 @@
      * meanwhile or is someone else by then.
      * @param {number} tmdbId TMDB id.
      * @param {string} mediaType movie | tv.
+     * @param {Object} owner The page's own (native) owner, taken at its root; the modal opens through the checked timer.
      * @returns {void}
      */
-    function backThenModal(tmdbId, mediaType) {
+    function backThenModal(tmdbId, mediaType, owner) {
         cancelPendingModal();
         const user = window.ApiClient?.getCurrentUserId?.() || null;
-        const pending = { timer: 0, user, from: window.location.hash, landing: null };
-        pending.timer = setTimeout(() => {
+        const pending = { cancel: () => {}, user, from: window.location.hash, landing: null };
+        pending.cancel = JE.later(owner, () => {
             if (pendingModal !== pending) return;
             pendingModal = null;
             if (pending.landing !== null && window.location.hash !== pending.landing) return;
             if ((window.ApiClient?.getCurrentUserId?.() || null) !== user) return;
-            openModal(tmdbId, mediaType, undefined, JE.NATIVE);
+            openModal(tmdbId, mediaType, undefined, owner);
         }, 300);
         pendingModal = pending;
         history.back();
@@ -1362,13 +1368,16 @@
             }
             fellBackFrom = id;
             setTimeout(() => { if (fellBackFrom === id) fellBackFrom = null; }, FALLBACK_WINDOW_MS);
+            // The page is a native root of its own (the viewer opened it; no title action owns it): its fallback window
+            // is native, unless an operation is acting now (refused at run time, D46S2-R9-4).
+            const native = JE.nativeRoot('an absent title page falls back to its window');
             if (cameFromApp()) {
-                backThenModal(parts.tmdbId, state.mediaType);
+                backThenModal(parts.tmdbId, state.mediaType, native);
             } else {
                 // Opened from outside Jellyfin: Back would leave it (or do nothing). The page says it
                 // couldn't load, and the modal opens over it once.
                 refuse(page, 'native_details_failed');
-                openModal(parts.tmdbId, state.mediaType, undefined, JE.NATIVE);
+                openModal(parts.tmdbId, state.mediaType, undefined, native);
             }
             return;
         }

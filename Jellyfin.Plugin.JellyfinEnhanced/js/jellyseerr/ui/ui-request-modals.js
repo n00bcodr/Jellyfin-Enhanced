@@ -59,7 +59,7 @@
                 try {
                     const response = await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: submitted.bound() });
                     if (!submitted.current()) return;
-                    publication.emit('jellyseerr-media-requested', { response });
+                    publication.publish({ response });
                     closeFn();
                 } catch (error) {
                     await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'), submitted);
@@ -238,7 +238,7 @@
                         try {
                             const response = await requestMedia(tmdbId, 'movie', settings, false, searchResultItem, null, { bound });
                             successCount++;
-                            publication.emit('jellyseerr-media-requested', { response });
+                            publication.publish({ response });
                         } catch (error) {
                             // The modal's operation ended (it closed with it): nothing more is sent or said.
                             if (error?.name === 'AbortError') return;
@@ -265,17 +265,6 @@
                         await ui.showQuotaErrorDialog(quotaHitError, 'movie', submitted);
                     }
                     closeFn();
-
-                    // Refresh search results
-                    setTimeout(() => {
-                        const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
-                        if (query) {
-                            const mainController = JE.jellyseerr;
-                            if (mainController) {
-                                mainController.fetchAndRenderResults(query);
-                            }
-                        }
-                    }, 1000);
                 } catch (error) {
                     if (submitted.current()) JE.toast(JE.t('jellyseerr_modal_toast_request_fail') || 'Request failed', 4000);
                     requestBtn.disabled = false;

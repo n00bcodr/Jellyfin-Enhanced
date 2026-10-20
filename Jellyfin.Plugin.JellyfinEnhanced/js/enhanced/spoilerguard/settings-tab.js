@@ -100,6 +100,8 @@
         internal.bindStateView?.(ctx.help, sync);
 
         async function save(changed, previousChecked) {
+            // The settings tab's own control (native), named at the change: the write follows awaits (D46S2-R9-4).
+            const native = JE.NATIVE;
             if (!action.current()) {
                 changed.checked = previousChecked;
                 setDisabled(true);
@@ -114,7 +116,7 @@
                 const prefs = internal.getUserPrefs();
                 const key = changed.dataset.pref;
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
-                await internal.setUserPrefs(prefs, JE.NATIVE);
+                await internal.setUserPrefs(prefs, native);
             } catch (e) {
                 if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);

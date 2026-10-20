@@ -946,6 +946,9 @@
             bound
         } = options;
 
+        // A write without its binding while an operation is acting (its press or runner) dropped that operation's owner:
+        // refused at the send, before any byte goes out (D46S2-R9-4).
+        if (!bound && !/^(GET|HEAD)$/i.test(method) && JE.refuseUnboundWrite?.(`${method} ${url}`)) throw createAbortError();
         // A bound request is checked against its own session before anything else (it may have been made after
         // another account signed in); the live identity is then recorded as for any request.
         const boundSession = bound ? bindRequest(bound) : null;

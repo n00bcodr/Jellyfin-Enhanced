@@ -140,7 +140,7 @@ for (const suppressed of [false, true]) test(`guarded jf10 public TV ratings fol
     '/native-details/title/tv/83867': { id: 83867, name: 'Andor', jeSpoiler: { guarded: true, ratings: suppressed } },
     '/native-details/title/tv/83867/ratings': suppressed ? null : { criticsScore: 96 }
   } });
-  await h.JE.jellyseerrMoreInfo.open(83867, 'tv', undefined, h.JE.NATIVE);
+  await h.JE.jellyseerrMoreInfo.open(83867, 'tv', undefined, h.NATIVE);
   await nextTurn(); await nextTurn();
   const text = h.internal.state.currentModal.querySelector('[data-mount="ratings"]').textContent;
   assert.equal(text, suppressed ? '' : JSON.stringify({ rt: { criticsScore: 96 } }));
@@ -175,7 +175,7 @@ test('JE mode: the window opens with the public details and their ratings for a 
   } });
   const opened = [];
   h.document.addEventListener('jellyseerr-more-info-opened', e => opened.push(e.detail.data.jePublicDetails));
-  await h.JE.jellyseerrMoreInfo.open(693134, 'movie', undefined, h.JE.NATIVE);
+  await h.JE.jellyseerrMoreInfo.open(693134, 'movie', undefined, h.NATIVE);
   for (let i = 0; i < 5; i++) await nextTurn();
   const modal = h.document.querySelector('.je-more-info-modal');
   assert.ok(modal, 'the window is open');
@@ -191,7 +191,7 @@ test('JE mode: the window opens with the public details and their ratings for a 
 
 test('Seerr mode: the window says in one message that the Seerr account isn\'t linked, and opens nothing', async t => {
   const h = setup(t, { window: true, jeMode: false, routes: { '/jellyseerr/user-status': UNLINKED } });
-  await h.JE.jellyseerrMoreInfo.open(693134, 'movie', undefined, h.JE.NATIVE);
+  await h.JE.jellyseerrMoreInfo.open(693134, 'movie', undefined, h.NATIVE);
   assert.equal(h.document.querySelector('.je-more-info-modal'), null);
   assert.deepEqual(h.toasts.filter(text => String(text).startsWith('jellyseerr_modal_')), ['jellyseerr_modal_seerr_unlinked']);
   assert.deepEqual(h.reads, ['/jellyseerr/user-status']);

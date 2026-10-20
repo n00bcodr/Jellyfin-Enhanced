@@ -73,7 +73,7 @@ test('a successful write invalidates old reads while its authoritative refresh i
  const original=h.window.fetch;let hold=false;
  h.window.fetch=(u,o)=>hold&&u.endsWith('/spoiler-blur/series')&&o.method==='GET'?refresh.promise:original(u,o);
  const pending=h.JE.core.api.plugin('/native-details/movie/42');const result=pending.then(v=>({v}),e=>({e}));
- hold=true;const save=h.api.enableForMovie('aabb', undefined, h.JE.NATIVE);await tick();old.resolve(jsonResponse({overview:'stale'}));
+ hold=true;const save=h.api.enableForMovie('aabb', undefined, h.NATIVE);await tick();old.resolve(jsonResponse({overview:'stale'}));
  assert.equal((await result).e?.name,'AbortError');refresh.resolve(jsonResponse({Movies:{aabb:{}}}));await save;
 });
 for(const host of ['native','provider'])test(`${host} silently discards a rejected write after switching viewers`,async t=>{

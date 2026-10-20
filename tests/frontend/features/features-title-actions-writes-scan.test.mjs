@@ -144,7 +144,7 @@ const PLANTED = {
     /list-pages\.js:\d+ open\(JE\.NATIVE\) outside a pinned native root/],
   // r7 (D46S2-R7-4): host dialogs are openers.
   'R7-4: the quota dialog opened with Dashboard.alert directly': ['jellyseerr/ui/ui-quota.js',
-    s => s.replace('JE.openHostDialog(() => window.Dashboard.alert({ title, message }), submitted.owner);', 'window.Dashboard.alert({ title, message });'), /ui-quota\.js:\d+ Dashboard\.alert\(…\) opens a host dialog outside JE\.openHostDialog/],
+    s => s.replace('JE.openHostDialog(() => window.Dashboard.alert({ title, message }), submitted.owner, title);', 'window.Dashboard.alert({ title, message });'), /ui-quota\.js:\d+ Dashboard\.alert\(…\) opens a host dialog outside JE\.openHostDialog/],
   'R7-4: the quota dialog without its owner': ['jellyseerr/moreinfo/more-info-modal-actions.js',
     s => s.replace("showQuotaErrorDialog(error, 'movie', publication);", "showQuotaErrorDialog(error, 'movie');"), /more-info-modal-actions\.js:\d+ showQuotaErrorDialog\(…\) without an owner/],
   'R7-4: a confirm() in a new module (in scope by default)': ['arr/actions/new-dialog.js',
@@ -192,10 +192,8 @@ test('pinned roots and listed listeners: each custom event whose listeners chang
   for (const [type, reason] of Object.entries(EVENT_LISTENERS)) { assert.ok(!/-requested$/.test(type), type + ' is a completion'); assert.ok(reason.length > 20, type); }
   const { publications, failures } = scan(SOURCES);
   assert.deepEqual(failures, []);
-  // Both listeners of the completion (the cards' and the window's) test their publication first.
-  const completions = publications.sites.filter(site => site.type === 'jellyseerr-media-requested');
-  assert.deepEqual(completions.map(site => site.file).sort(), ['jellyseerr/moreinfo/more-info-modal-init.js', 'jellyseerr/ui/ui-results.js']);
-  assert.ok(completions.every(site => site.guarded));
+  // D46S2-R9-5: no listener of a completion is left (the cards and the window follow publications through core).
+  assert.deepEqual(publications.sites.filter(site => site.type === 'jellyseerr-media-requested'), []);
 });
 
 // D46S2-R8-1: owners flow through every hand-over. A pinned JE.NATIVE is valid only where no caller-owned operation exists.
@@ -225,21 +223,25 @@ const R8_PLANTED = {
     s => s.replace("            invalidateRequestCaches(tmdbId, mediaType);\n", "            invalidateRequestCaches(tmdbId, mediaType);\n            document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType, is4k } }));\n"),
     /api\.js:\d+ dispatches the completion event jellyseerr-media-requested outside the publication/],
   'R8-2: the season form dispatching its completion directly': ['jellyseerr/ui/ui-season-modal.js',
-    s => s.replace("publication.emit('jellyseerr-media-requested');", "document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));"),
+    s => s.replace("publication?.publish();", "document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));"),
     /ui-season-modal\.js:\d+ dispatches the completion event jellyseerr-media-requested outside the publication/],
   'R8-2: the cards\' listener marking by title id without the publication': ['jellyseerr/ui/ui-results.js',
-    s => s.replace("if (node.closest('.je-more-info-modal') || !JE.published(e, node)) continue;", "if (node.closest('.je-more-info-modal')) continue;"),
-    /ui-results\.js:\d+ a jellyseerr-media-requested listener acts before its publication is tested/],
+    s => s.replace("    JE.followPublications(\n", "    document.addEventListener('jellyseerr-media-requested', () => { for (const node of document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id]')) markCardRequested(node); });\n    JE.followPublications(\n"),
+    /ui-results\.js:\d+ a jellyseerr-media-requested listener acts on a completion outside its publication/],
   'R8-2: the window\'s listener acting without its publication test': ['jellyseerr/moreinfo/more-info-modal-init.js',
-    s => s.replace("        if (!JE.published(e, modal)) return;\n", ''),
-    /more-info-modal-init\.js:\d+ a jellyseerr-media-requested listener acts before its publication is tested/],
+    s => s.replace("modal._cleanupRequestListener = JE.followPublications(() => [modal], handleRequested);", "const raw = e => handleRequested(modal, e.detail, e.detail.publication); document.addEventListener('jellyseerr-media-requested', raw); modal._cleanupRequestListener = () => document.removeEventListener('jellyseerr-media-requested', raw);"),
+    /more-info-modal-init\.js:\d+ a jellyseerr-media-requested listener acts on a completion outside its publication/],
+  // D46S2-R9-5: the r9 reviewer's inverted guard, in a listener restored for the plant; the guard is gone with the event.
+  'R9-5: the window\'s listener with its publication test inverted': ['jellyseerr/moreinfo/more-info-modal-init.js',
+    s => s.replace("modal._cleanupRequestListener = JE.followPublications(() => [modal], handleRequested);", "const raw = e => { if (JE.published(e, modal)) return; handleRequested(modal, e.detail, e.detail.publication); }; document.addEventListener('jellyseerr-media-requested', raw);"),
+    /more-info-modal-init\.js:\d+ (tests a completion with JE\.published|a jellyseerr-media-requested listener acts on a completion outside its publication)/],
   'R8-2: the advanced form labelling "the original button" by title id again': ['jellyseerr/ui/ui-request-modals.js',
-    s => s.replace("                    publication.emit('jellyseerr-media-requested', { response });\n                    closeFn();",
+    s => s.replace("                    publication.publish({ response });\n                    closeFn();",
       "                    const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id=\"${tmdbId}\"]`);\n                    if (originalButton) originalButton.disabled = true;\n                    closeFn();"),
-    /ui-request-modals\.js:\d+ selects controls by title id across the document outside a completion's listener/],
+    /ui-request-modals\.js:\d+ selects controls by title id across the document outside a publication's follower/],
   'R8-2: a new module acting on a completion without its publication': ['arr/actions/new-follower.js',
     () => "(function (JE) { document.addEventListener('jellyseerr-media-requested', e => { document.querySelector('.x').disabled = true; }); })(window.JellyfinEnhanced);",
-    /new-follower\.js:\d+ a jellyseerr-media-requested listener acts before its publication is tested/],
+    /new-follower\.js:\d+ a jellyseerr-media-requested listener acts on a completion outside its publication/],
   'R8-2: a new custom event whose listener changes the DOM (not listed)': ['arr/actions/new-event.js',
     () => "(function (JE) { document.addEventListener('je-title-updated', () => { document.body.className = 'x'; }); })(window.JellyfinEnhanced);",
     /new-event\.js:\d+ a je-title-updated listener changes the DOM/],

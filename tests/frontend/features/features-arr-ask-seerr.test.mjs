@@ -152,16 +152,16 @@ test("JE mode: Seerr's modal entry points open the JE sheet; the one-tap paths a
   const h = setup(t);
   assert.equal(h.JE.jellyseerrAPI.shouldShowAdvanced(), true, 'one-tap Seerr paths go to the (wrapped) modal');
   assert.equal(h.seerr.advanced, 0);
-  await h.JE.jellyseerrUI.showMovieRequestModal(605, 'The Matrix Revolutions', { id: 605, title: 'The Matrix Revolutions' }, false, h.JE.NATIVE);
+  await h.JE.jellyseerrUI.showMovieRequestModal(605, 'The Matrix Revolutions', { id: 605, title: 'The Matrix Revolutions' }, false, h.NATIVE);
   await settle();
   assert.equal(h.seerr.movie.length, 0, "Seerr's movie modal never opens");
   assert.equal(h.posts.at(-1).body.input.key, 'movie:tmdb:605');
-  h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', { id: 1437, name: 'Firefly' }, false, h.JE.NATIVE);
+  h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', { id: 1437, name: 'Firefly' }, false, h.NATIVE);
   await settle();
   assert.equal(h.seerr.seasons.length, 0, "Seerr's season picker never opens");
   assert.ok(h.document.querySelector('.je-sheet'));
   h.JE.arrAskSheet.close();
-  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', {}, { operation: h.NATIVE });
   await settle();
   assert.equal(h.seerr.collection.length, 0, "Seerr's collection window never opens");
   assert.equal(h.seerr.modals.length, 1, 'the collection movies are listed to ask for');
@@ -170,7 +170,7 @@ test("JE mode: Seerr's modal entry points open the JE sheet; the one-tap paths a
 test('native more-info season Request forwards its validated episode hint to the same JE sheet owner', async t => {
   const h = setup(t); const opened = [];
   h.JE.arrAskSheet = { open: async input => { opened.push(input); } };
-  await h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', { id: 1437, name: 'Firefly', jeActionScope: { season: 1, episode: 2 } }, false, h.JE.NATIVE);
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', { id: 1437, name: 'Firefly', jeActionScope: { season: 1, episode: 2 } }, false, h.NATIVE);
   assert.equal(opened[0].initialSeason, 1);
   assert.equal(opened[0].initialEpisode, 2);
   assert.equal(opened[0].key, 'tv:tmdb:1437');
@@ -218,7 +218,7 @@ test('JE mode: a collection with more than 20 movies to ask for ticks 20, says s
     h.document.body.appendChild(modalElement);
     return { modalElement, show() {}, close() {} };
   };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(645, 'James Bond Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(645, 'James Bond Collection', {}, { operation: h.NATIVE });
   await settle();
   const boxes = [...modalElement.querySelectorAll('.jellyseerr-collection-checkbox')].slice(1);
   const change = box => box.dispatchEvent(new h.window.Event('change', { bubbles: true }));
@@ -259,7 +259,7 @@ test('JE mode: the collection picker leaves out movies that are not out yet (no 
   ] });
   let options = null;
   h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'Avatar Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'Avatar Collection', {}, { operation: h.NATIVE });
   await settle();
   const body = h.document.createElement('div');
   body.innerHTML = options.bodyHtml;
@@ -281,7 +281,7 @@ test('JE mode: the collection picker says Paused for movies whose drive is full,
   const h = setup(t, { check: (key, variant) => (key === 'movie:tmdb:604' ? { key, variant, canRequest: false, blocked: { reason: 'low_disk' } } : { key, variant, canRequest: true }) });
   let options = null;
   h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.NATIVE });
   await settle();
   assert.deepEqual(h.checks, [{ key: 'movie:tmdb:604', variant: 'standard' }, { key: 'movie:tmdb:605', variant: 'standard' }],
     'every movie that could be asked for is checked first (not the one in the library)');
@@ -304,7 +304,7 @@ test('JE mode: the collection picker says Paused for movies whose drive is full,
   const admin = setup(t, { me: { ...MEMBER, role: 'admin' }, check: (key, variant) => ({ key, variant, canRequest: false, blocked: block }) });
   let adminOptions = null;
   admin.JE.jellyseerrModal.create = (o) => { adminOptions = o; return { show() {}, close() {} }; };
-  await admin.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: admin.JE.NATIVE });
+  await admin.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: admin.NATIVE });
   await settle();
   const adminBody = admin.document.createElement('div');
   adminBody.innerHTML = adminOptions.bodyHtml;
@@ -328,7 +328,7 @@ test('JE mode: the collection picker shows a movie already asked for (on its way
   };
   let options = null;
   h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.NATIVE });
   await settle();
   const body = h.document.createElement('div');
   body.innerHTML = options.bodyHtml;
@@ -356,7 +356,7 @@ test('JE mode: the collection picker still offers a movie whose status is unknow
   };
   let options = null;
   h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', {}, { operation: h.NATIVE });
   await settle();
   const body = h.document.createElement('div');
   body.innerHTML = options.bodyHtml;
@@ -375,7 +375,7 @@ test('JE mode: a collection with 20 or fewer movies to ask for ticks them all an
   const h = setup(t);
   let options = null;
   h.JE.jellyseerrModal.create = (o) => { options = o; return { show() {}, close() {} }; };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', {}, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(10, 'The Matrix Collection', {}, { operation: h.NATIVE });
   await settle();
   const body = h.document.createElement('div');
   body.innerHTML = options.bodyHtml;
@@ -458,9 +458,9 @@ test('Seerr mode: every Seerr control keeps its own behaviour', async t => {
   assert.equal(h.posts.length, 0);
   assert.equal(h.JE.jellyseerrAPI.shouldShowAdvanced(), false);
   assert.equal(h.seerr.advanced, 1);
-  h.JE.jellyseerrUI.showMovieRequestModal(603, 'The Matrix', {}, false, h.JE.NATIVE);
-  h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', {}, false, h.JE.NATIVE);
-  h.JE.jellyseerrUI.showCollectionRequestModal(1, 'x', {}, { operation: h.JE.NATIVE });
+  h.JE.jellyseerrUI.showMovieRequestModal(603, 'The Matrix', {}, false, h.NATIVE);
+  h.JE.jellyseerrUI.showSeasonSelectionModal(1437, 'tv', 'Firefly', {}, false, h.NATIVE);
+  h.JE.jellyseerrUI.showCollectionRequestModal(1, 'x', {}, { operation: h.NATIVE });
   assert.deepEqual([h.seerr.movie.length, h.seerr.seasons.length, h.seerr.collection.length], [1, 1, 1]);
   assert.equal(h.document.querySelector('.je-sheet'), null);
 });
@@ -644,7 +644,7 @@ test('JE mode: a viewer without a Seerr account gets the collection picker from 
       { id: 604, mediaType: 'movie', title: 'The Matrix Reloaded', releaseDate: '2003-05-15' }
     ] };
   };
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
   await settle();
   assert.deepEqual(publicReads, ['/collection/2344']);
   assert.deepEqual(h.seerr.details, [], 'nothing read through the viewer\'s Seerr account');
@@ -655,7 +655,7 @@ test('JE mode: a viewer without a Seerr account gets the collection picker from 
 
   // With a Seerr account: Seerr's own collection, as before.
   h.JE.jellyseerrAPI.accountRefusal = async () => null;
-  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'The Matrix Collection', null, { operation: h.NATIVE });
   await settle();
   assert.deepEqual([publicReads.length, h.seerr.details], [1, [2344]]);
 });

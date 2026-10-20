@@ -139,8 +139,9 @@
                 // answers publish (toasts, events, the card) appears only while it is current.
                 const submitted = JE.captureSubmitted(press);
                 // What the answer changes outside the form goes through the publication of where it was opened, for this
-                // series and edition only (D46S2-R8-2).
-                const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'tv', is4k } });
+                // series, edition and season set only (D46S2-R8-2, R9-3), taken right before its request is sent.
+                let publication = null;
+                const publicationFor = seasons => (publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'tv', is4k, variant: seasons.join(',') } }));
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -184,6 +185,7 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
+                        publicationFor(selectedSeasons);
                         await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
                         if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
@@ -193,6 +195,7 @@
                             .map(season => season.seasonNumber)
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
+                        publicationFor(allSeasons.length > 0 ? allSeasons : ['all']);
                         if (allSeasons.length > 0) {
                             await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
                         } else {
@@ -203,18 +206,9 @@
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
                     // Where it was opened (the window re-reads its seasons) and the cards that follow the series.
-                    publication.emit('jellyseerr-media-requested');
+                    publication?.publish();
 
                     closeFn();
-                    setTimeout(() => {
-                        const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
-                        if (query) {
-                            const mainController = JE.jellyseerr;
-                            if (mainController) {
-                                mainController.fetchAndRenderResults(query, { skipCache: true });
-                            }
-                        }
-                    }, 1000);
                 } catch (error) {
                     const resetLabel = is4k
                         ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')

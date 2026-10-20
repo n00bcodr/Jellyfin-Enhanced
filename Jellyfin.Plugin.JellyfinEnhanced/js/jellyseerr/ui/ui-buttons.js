@@ -230,18 +230,19 @@
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
                             const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
-                            if (requestHandlers.get(mainButton) !== requestHandler || !publication.current()) return;
-                            if (!item.mediaInfo) item.mediaInfo = {};
-                            item.mediaInfo.status = 3;
-                            publication.emit('jellyseerr-media-requested', { response });
+                            if (requestHandlers.get(mainButton) !== requestHandler) return;
+                            // The answer changes the UI only through its publication, checked as it does (D46S2-R9-5).
+                            publication.run(() => {
+                                if (!item.mediaInfo) item.mediaInfo = {};
+                                item.mediaInfo.status = 3;
+                                publication.publish({ response });
+                            });
                         } catch (error) {
-                            if (requestHandlers.get(mainButton) !== requestHandler || !publication.current()) return;
-                            mainButton.disabled = false;
-                            // Quota errors get a themed dialog; restore button to idle.
+                            if (requestHandlers.get(mainButton) !== requestHandler) return;
+                            // Quota errors get a themed dialog (only while the publication holds); restore button to idle.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
+                                publication.apply(mainButton, node => { node.disabled = false; node.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`; });
                                 await ui.showQuotaErrorDialog(error, 'movie', publication);
-                                if (requestHandlers.get(mainButton) !== requestHandler) return;
-                                mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                                 return;
                             }
                             let errorMessage = JE.t('jellyseerr_btn_error');
@@ -255,8 +256,11 @@
                                 errorMessage = error.responseJSON.message;
                             }
                             // Escape API-sourced error message before inserting into HTML
-                            mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
-                            mainButton.classList.add('jellyseerr-button-error');
+                            publication.apply(mainButton, node => {
+                                node.disabled = false;
+                                node.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
+                                node.classList.add('jellyseerr-button-error');
+                            });
                         }
                     }
                 };
@@ -306,18 +310,19 @@
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
                         const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
-                        if (requestHandlers.get(button) !== requestHandler || !publication.current()) return;
-                        if (!item.mediaInfo) item.mediaInfo = {};
-                        item.mediaInfo.status = 3;
-                        publication.emit('jellyseerr-media-requested', { response });
+                        if (requestHandlers.get(button) !== requestHandler) return;
+                        // The answer changes the UI only through its publication, checked as it does (D46S2-R9-5).
+                        publication.run(() => {
+                            if (!item.mediaInfo) item.mediaInfo = {};
+                            item.mediaInfo.status = 3;
+                            publication.publish({ response });
+                        });
                     } catch (error) {
-                        if (requestHandlers.get(button) !== requestHandler || !publication.current()) return;
-                        button.disabled = false;
-                        // Quota errors get a themed dialog; restore button to idle.
+                        if (requestHandlers.get(button) !== requestHandler) return;
+                        // Quota errors get a themed dialog (only while the publication holds); restore button to idle.
                         if (ui.isQuotaError && ui.isQuotaError(error)) {
+                            publication.apply(button, node => { node.disabled = false; node.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`; });
                             await ui.showQuotaErrorDialog(error, 'movie', publication);
-                            if (requestHandlers.get(button) !== requestHandler) return;
-                            button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                             return;
                         }
                         let errorMessage = JE.t('jellyseerr_btn_error');
@@ -330,8 +335,11 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
-                        button.classList.add('jellyseerr-button-error');
+                        publication.apply(button, node => {
+                            node.disabled = false;
+                            node.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
+                            node.classList.add('jellyseerr-button-error');
+                        });
                     }
                 }
             };
