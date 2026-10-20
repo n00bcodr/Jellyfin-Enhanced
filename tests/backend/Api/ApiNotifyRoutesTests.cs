@@ -379,7 +379,9 @@ public class ApiNotifyRoutesTests
         var reply = Of(Controller(rig, rig.Emma).GetInbox(null, null));
         var parameters = Assert.Single(reply.Json.GetProperty("items").EnumerateArray()).GetProperty("params");
         Assert.Equal("2", parameters.GetProperty("count").GetString());
-        Assert.Equal("many", parameters.GetProperty("mode").GetString());
+        // A withheld row is the allowlisted generic shape (4f round 6): its count only, the generic wording.
+        if (hidden) Assert.False(parameters.TryGetProperty("mode", out _));
+        else Assert.Equal("many", parameters.GetProperty("mode").GetString());
         Assert.False(parameters.TryGetProperty("episodeItems", out _));
         foreach (var file in files) Assert.DoesNotContain(file.ToString(), reply.Body, StringComparison.Ordinal);
     }

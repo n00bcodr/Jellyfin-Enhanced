@@ -239,7 +239,8 @@ public class IntegrationAcquisitionStampStoreTests
     public void AFreshDatabaseIsAtSchemaSevenWithHomeAndAcquisitionTables()
     {
         using var w = new StampWorld();
-        Assert.Equal(7, AcquireDatabase.Migrations.Count);
+        // Step 7 is this track's; later steps (8: the Ready playlist, D47) may follow it.
+        Assert.True(AcquireDatabase.Migrations.Count >= 7);
         Assert.Equal(AcquireDatabase.Migrations.Count, w.Db.Version);
         Assert.Contains("home_arrivals", AcquireDatabase.Migrations[5]);
         Assert.Contains("acquisition_stamps", AcquireDatabase.Migrations[6], StringComparison.Ordinal);
@@ -257,7 +258,7 @@ public class IntegrationAcquisitionStampStoreTests
         using (var w = new StampWorld(path))
         {
             Assert.True(w.Db.Available, w.Db.UnavailableReason);
-            Assert.Equal(7, w.Db.Version);
+            Assert.Equal(AcquireDatabase.Migrations.Count, w.Db.Version);
             var movie = w.AddMovie(StampWorld.Movie(603), T0);
             Assert.True(w.Store.AddNew(Guid.NewGuid(), movie, T0, "request"));   // the new tables work after the upgrade
             Assert.Single(w.Store.FactsFor(movie.Id));
@@ -266,7 +267,7 @@ public class IntegrationAcquisitionStampStoreTests
         // (StampWorld disposed its own core; the path lives under this one.)
         Assert.Equal(StampTables, Tables(path));
         using var again = new AcquireDatabase(path);
-        Assert.Equal(7, again.Version);
+        Assert.Equal(AcquireDatabase.Migrations.Count, again.Version);
     }
 
     // ── 17. user deleted ─────────────────────────────────────────────────

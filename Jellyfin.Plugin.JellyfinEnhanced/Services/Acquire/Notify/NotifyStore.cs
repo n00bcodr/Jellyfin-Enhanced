@@ -100,8 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         public NotifyPrefs Prefs(Guid userId)
         {
             var json = _db.Read(c => Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId))) as string);
+            PrefsRead?.Invoke(userId);
             return Parse(json);
         }
+
+        /// <summary>Tests: runs right after a user's preferences were read (another writer's change lands in between).</summary>
+        internal Action<Guid>? PrefsRead { get; set; }
 
         /// <summary>Every user who stored preferences.</summary>
         public IReadOnlyDictionary<Guid, NotifyPrefs> AllPrefs() => _db.Read(c =>
@@ -116,11 +120,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return result;
         });
 
-        /// <summary>Stores a user's preferences.</summary>
-        public void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
+        /// <summary>
+        /// Stores a user's whole preferences document (tests and seeding only). Production code never calls it: a document
+        /// read earlier would undo a change made in between (a revoked consent, a confirmed address). Every production writer
+        /// uses <see cref="UpdatePrefs"/> or <see cref="TryUpdatePrefs"/> (a source walk checks it).
+        /// </summary>
+        internal void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
             c, t,
             "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
             ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now))));
+
+        /// <summary>
+        /// Changes a user's preferences in one transaction (read, change, write): a change made at the same time by another
+        /// writer (the person in another tab, an administrator, a phase-4f consent) is never lost. Returns the stored result.
+        /// </summary>
+        public NotifyPrefs UpdatePrefs(Guid userId, Action<NotifyPrefs> change, DateTimeOffset now)
+            => TryUpdatePrefs(userId, p =>
+            {
+                change(p);
+                return null;
+            }, now).Prefs;
+
+        /// <summary>
+        /// Like <see cref="UpdatePrefs"/>, with the change's own checks made on the settings as they are inside the
+        /// transaction: <paramref name="change"/> returns null to store its change, or an error code to store nothing.
+        /// Returns the settings stored (or unchanged) and the error.
+        /// </summary>
+        public (NotifyPrefs Prefs, string? Error) TryUpdatePrefs(Guid userId, Func<NotifyPrefs, string?> change, DateTimeOffset now) => Write((c, t) =>
+        {
+            var prefs = Parse(Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId)), t) as string);
+            if (change(prefs) is { } error) return (Parse(Scalar(c, "SELECT json FROM notify_prefs WHERE user_id=$u", ("$u", Id(userId)), t) as string), error);
+            Exec(c, t, "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
+                ("$u", Id(userId)), ("$j", JsonSerializer.Serialize(prefs, Json)), ("$n", Ms(now)));
+            return (prefs, (string?)null);
+        });
 
         private static NotifyPrefs Parse(string? json)
         {
@@ -285,17 +318,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// A user's inbox, newest first (<paramref name="beforeId"/> pages back); without
         /// <paramref name="adminKinds"/>, administrators' kinds are left out (a user who is no longer one).
         /// </summary>
-        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string EventKey)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true) => _db.Read(c =>
+        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string EventKey)> Inbox(Guid userId, long? beforeId, int limit, bool adminKinds = true)
+            => InboxRows(userId, beforeId, limit, adminKinds).Select(r => (r.Id, r.Kind, r.Key, r.ItemId, r.Payload, r.At, r.Read, r.EventKey ?? string.Empty)).ToList();
+
+        /// <summary><see cref="Inbox"/> with each notification's event key (what an outcome alert's policy input is read back from).</summary>
+        public IReadOnlyList<(long Id, string Kind, string? Key, string? ItemId, string Payload, DateTimeOffset At, bool Read, string? EventKey)> InboxRows(Guid userId, long? beforeId, int limit, bool adminKinds = true) => _db.Read(c =>
         {
-            var result = new List<(long, string, string?, string?, string, DateTimeOffset, bool, string)>();
+            var result = new List<(long, string, string?, string?, string, DateTimeOffset, bool, string?)>();
             using var cmd = Command(c, null, "SELECT id,kind,title_key,item_id,payload,created_at,read_at,event_key FROM notifications WHERE user_id=$u AND id<$b" + (adminKinds ? string.Empty : " AND kind NOT IN (" + AdminKinds + ")") + " ORDER BY id DESC LIMIT $l",
                 ("$u", Id(userId)), ("$b", beforeId ?? long.MaxValue), ("$l", limit));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                result.Add((r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), At(r.GetInt64(5)), !r.IsDBNull(6), r.GetString(7)));
+                result.Add((r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), At(r.GetInt64(5)), !r.IsDBNull(6), r.IsDBNull(7) ? null : r.GetString(7)));
             }
-            return (IReadOnlyList<(long, string, string?, string?, string, DateTimeOffset, bool, string)>)result;
+            return (IReadOnlyList<(long, string, string?, string?, string, DateTimeOffset, bool, string?)>)result;
         });
 
         /// <summary>Unread notifications of a user (administrators' kinds only with <paramref name="adminKinds"/>).</summary>
@@ -329,6 +366,35 @@ WHERE d.status='pending' AND d.next_at <= $n ORDER BY d.next_at LIMIT $l", ("$n"
             }
             return (IReadOnlyList<DueDelivery>)result;
         });
+
+        /// <summary>
+        /// Outcome alerts waiting for evidence that is due for another try now (4f round 6), fairly: each person's earliest
+        /// first, then each person's next, and so on (round-robin by person, then by due time), at most <paramref name="limit"/>.
+        /// One person's many waits never hold another person's back.
+        /// </summary>
+        internal IReadOnlyList<AlertWait> DueAlertWaits(DateTimeOffset now, int limit) => _db.Read(c =>
+        {
+            var list = new List<AlertWait>();
+            using var cmd = Command(c, null, @"SELECT source, source_id, user_id, kind, title_key, event_key, payload, request_id, original_at, next_at, tries FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY next_at, source, source_id) AS turn FROM alert_waits WHERE next_at <= $n)
+ORDER BY turn, next_at, source, source_id LIMIT $l", ("$n", Ms(now)), ("$l", limit));
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                if (!Guid.TryParse(r.GetString(2), out var user)) continue;
+                list.Add(new AlertWait(r.GetString(0), r.GetString(1), user, r.GetString(3), r.GetString(4), r.GetString(5), r.GetString(6),
+                    r.IsDBNull(7) ? null : r.GetString(7), At(r.GetInt64(8)), At(r.GetInt64(9)), r.GetInt32(10)));
+            }
+            return (IReadOnlyList<AlertWait>)list;
+        });
+
+        /// <summary>The next try of a waiting outcome alert (not after a restore).</summary>
+        internal bool RetryAlertWait(AlertWait wait, DateTimeOffset at, long generation) => WriteIf(generation, (c, t) => Exec(c, t,
+            "UPDATE alert_waits SET next_at=$a, tries=tries+1 WHERE source=$s AND source_id=$i", ("$a", Ms(at)), ("$s", wait.Source), ("$i", wait.SourceId)) == 1, false).Result;
+
+        /// <summary>A waiting outcome alert is never told (too old, moved on, hidden): forgotten (not after a restore).</summary>
+        internal bool DropAlertWait(AlertWait wait, long generation) => WriteIf(generation, (c, t) => Exec(c, t,
+            "DELETE FROM alert_waits WHERE source=$s AND source_id=$i", ("$s", wait.Source), ("$i", wait.SourceId)) == 1, false).Result;
 
         /// <summary>When the next pending delivery is due, or null.</summary>
         public DateTimeOffset? NextDue()
@@ -396,17 +462,17 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// <summary>Stores a batch.</summary>
         public void SetBatch(Guid userId, string key, string episodes, DateTimeOffset firstAt, DateTimeOffset dueAt) => InTransaction(tx => tx.SetBatch(userId, key, episodes, firstAt, dueAt));
 
-        /// <summary>Batches whose window has closed.</summary>
-        public IReadOnlyList<(Guid User, string Key, string Episodes)> DueBatches(DateTimeOffset now) => _db.Read(c =>
+        /// <summary>Batches whose window has closed, each with its start as read with it.</summary>
+        public IReadOnlyList<(Guid User, string Key, string Episodes, DateTimeOffset FirstAt)> DueBatches(DateTimeOffset now) => _db.Read(c =>
         {
-            var result = new List<(Guid, string, string)>();
-            using var cmd = Command(c, null, "SELECT user_id, key, episodes FROM batches WHERE due_at <= $n", ("$n", Ms(now)));
+            var result = new List<(Guid, string, string, DateTimeOffset)>();
+            using var cmd = Command(c, null, "SELECT user_id, key, episodes, first_at FROM batches WHERE due_at <= $n", ("$n", Ms(now)));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                if (Guid.TryParse(r.GetString(0), out var user)) result.Add((user, r.GetString(1), r.GetString(2)));
+                if (Guid.TryParse(r.GetString(0), out var user)) result.Add((user, r.GetString(1), r.GetString(2), At(r.GetInt64(3))));
             }
-            return (IReadOnlyList<(Guid, string, string)>)result;
+            return (IReadOnlyList<(Guid, string, string, DateTimeOffset)>)result;
         });
 
         /// <summary>Forgets a batch.</summary>
@@ -611,7 +677,9 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// </summary>
         public void NoteDeleted(Guid userId) => _deleted[Id(userId)] = Environment.TickCount64 + DeletedForMs;
 
-        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes" };
+        // Phase 4f: the Ready playlist's bindings, entries and native-message attempts are a person's rows too (schema 8 and its
+        // start-up ensure always create them).
+        private static readonly string[] UserTables = { "follows", "notify_prefs", "watch", "notifications", "batches", "marks", "email_codes", "ready_playlists", "ready_entries", "ready_message_attempts", "alert_waits" };
 
         // ------------------------------------------------------------------ SQL helpers
 
@@ -812,6 +880,19 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// </summary>
         public bool TakeRequestNotice(string id)
             => NotifyStore.Exec(Connection, Transaction, "DELETE FROM request_notices WHERE id=$id", ("$id", id)) == 1;
+
+        /// <summary>
+        /// Puts an outcome alert in the wait queue in this transaction (its producer's own record, a ledger notice or a Seerr
+        /// change, is taken in the same one): one row per source and id, the first one kept with its original time.
+        /// </summary>
+        public bool AddAlertWait(AlertWait wait)
+            => NotifyStore.Exec(Connection, Transaction, @"INSERT OR IGNORE INTO alert_waits(source,source_id,user_id,kind,title_key,event_key,payload,request_id,original_at,next_at,tries)
+VALUES($s,$i,$u,$k,$t,$e,$p,$r,$o,$n,$tr)", ("$s", wait.Source), ("$i", wait.SourceId), ("$u", Id(wait.User)), ("$k", wait.Kind), ("$t", wait.TitleKey), ("$e", wait.EventKey),
+                ("$p", wait.Payload), ("$r", wait.RequestId), ("$o", Ms(wait.OriginalAt)), ("$n", Ms(wait.NextAt)), ("$tr", wait.Tries)) >= 0;
+
+        /// <summary>Takes a waiting outcome alert in this transaction (the notification it becomes commits with its removal).</summary>
+        public bool TakeAlertWait(string source, string sourceId)
+            => NotifyStore.Exec(Connection, Transaction, "DELETE FROM alert_waits WHERE source=$s AND source_id=$i", ("$s", source), ("$i", sourceId)) == 1;
 
         /// <summary>Adds a notification and its deliveries; null when the user already has one for <paramref name="eventKey"/>.</summary>
         public long? Add(Guid userId, string eventKey, string kind, string? titleKey, string? itemId, IReadOnlyDictionary<string, string> payload, IReadOnlyList<(string Channel, DateTimeOffset At)> deliveries, DateTimeOffset now)

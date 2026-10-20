@@ -184,9 +184,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var take = Math.Clamp(limit ?? 20, 1, MaxPage);
             // Administrators' alerts (paths, instance names, queue titles) only while the caller is one.
             var admin = IsAdmin();
-            var rows = Store.Inbox(user, before, take + 1, adminKinds: admin);
-            var view = _service.Status.View;
-            var viewer = view.Viewer(user);
+            var rows = Store.InboxRows(user, before, take + 1, adminKinds: admin);
+            var viewer = _service.Status.View.Viewer(user);
+            // The caller's Hidden Content is read once for the whole page.
+            var check = viewer == null ? null : _dispatcher.Check(user, viewer);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new
             {
@@ -194,32 +195,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 more = rows.Count > take,
                 items = rows.Take(take).Select(r =>
                 {
+                    // A Ready or new-episodes row, or a request's outcome, as the caller may be told about it now, decided as
+                    // every channel sends it (NotifyDispatcher.AlertCheck): a title they can open and haven't hidden, a batch
+                    // narrowed to the episodes they can open and haven't hidden, counted and worded again; an outcome of a title
+                    // they haven't hidden.
+                    var payload = new Dictionary<string, string>(NotifyDispatcher.Payload(r.Payload), StringComparer.Ordinal);
+                    var itemId = r.ItemId;
+                    var verdict = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved && check != null
+                        ? check.Decide(r.Kind, r.Key, payload, ref itemId, r.EventKey)
+                        : default;
+                    var untold = r.Kind is NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved && (check == null || verdict.Why != null);
+                    // An outcome whose evidence isn't prepared yet (an absent title's rating not verified for the caller's
+                    // parental limits): withheld on this read, and prepared for the next one (never decided on missing evidence).
+                    if (verdict.Wait && r.Kind is NotifyKind.Declined or NotifyKind.Approved && TitleKey.Parse(r.Key) is { } outcomeKey
+                        && _dispatcher.OutcomeInput(outcomeKey, r.EventKey, payload) is { } input)
+                        _service.PrepareLater(user, input);
                     // Episode file ids are retained only for server-side delivery checks.
-                    var parameters = NotifyDispatcher.Payload(r.Payload).Where(p => p.Key != "episodeItems")
-                        .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-                    // A Ready / new-episodes row for an item the caller can no longer open, or an ask waiting for
-                    // an OK (or a reminder) whose title they can no longer see (library access or parental limits
-                    // changed since): kept, but without what names the title.
-                    var hidden = (r.Kind is NotifyKind.Ready or NotifyKind.Episodes && Guid.TryParse(r.ItemId, out var item) && (viewer == null || view.Resolve(item, viewer) == null))
+                    var parameters = payload.Where(p => p.Key != "episodeItems").ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+                    // Such a row (or one whose Hidden Content can't be read now), or an ask waiting for an OK (or a reminder)
+                    // whose title they can no longer see (library access or parental limits changed since): kept, but without
+                    // what names the title.
+                    var hidden = untold
                         || (r.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_service.Policy, user, r.Key, parameters, _service.Ledger, r.EventKey));
                     return new InboxItem
                     {
                         Id = r.Id,
                         Kind = r.Kind,
                         Key = hidden ? null : r.Key,
-                        ItemId = hidden ? null : r.ItemId,
+                        ItemId = hidden ? null : itemId,
                         CreatedAt = r.At,
                         Read = r.Read,
-                        Params = hidden ? WithoutTitle(parameters) : parameters,
-                        Link = NotifyDispatcher.InAppLink(hidden ? null : r.ItemId, r.Kind),
+                        Params = hidden ? Withheld(r.Kind, parameters) : parameters,
+                        Link = NotifyDispatcher.InAppLink(hidden ? null : itemId, r.Kind),
                     };
                 }).ToList(),
             });
         }
 
-        // A notification's parameters without the ones that name or picture the title.
-        private static Dictionary<string, string> WithoutTitle(IReadOnlyDictionary<string, string> p)
-            => p.Where(x => x.Key is not ("title" or "year" or "poster" or "image")).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        /// <summary>
+        /// A withheld row's parameters (4f round 6): an allowlisted generic shape, never the stored payload minus a few keys. Only
+        /// what picks the generic wording is kept, each value checked against its fixed form: <c>variant</c> "4k",
+        /// <c>shared</c> "1", and for new episodes a plain <c>count</c>. No title, key, artwork, scope, people or free text (a
+        /// decline reason) ever leaves the server for a row the recipient may not be told about.
+        /// </summary>
+        internal static Dictionary<string, string> Withheld(string kind, IReadOnlyDictionary<string, string> p)
+        {
+            var kept = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (p.TryGetValue("variant", out var variant) && variant == "4k") kept["variant"] = "4k";
+            if (p.TryGetValue("shared", out var shared) && shared == "1") kept["shared"] = "1";
+            if (kind == NotifyKind.Episodes && p.TryGetValue("count", out var count) && count.Length is > 0 and <= 4 && count.All(char.IsAsciiDigit)) kept["count"] = count;
+            return kept;
+        }
 
         /// <summary>Marks some (or all) of the caller's notifications read.</summary>
         [HttpPost("acquire/notify/read")]
@@ -256,28 +282,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
             if (request.QuietFrom != null && !QuietHours.TryTime(request.QuietFrom, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.QuietTo != null && !QuietHours.TryTime(request.QuietTo, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.TimeZone != null && (request.TimeZone.Length > 64 || request.TimeZone.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '/' or '_' or '-' or '+')))) return BadRequest(new { code = "invalid_time_zone" });
-            if (request.Email == true && string.IsNullOrEmpty(prefs.EmailAddress)) return BadRequest(new { code = "email_not_verified" });
-            if (request.Ntfy == true && !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) return BadRequest(new { code = "ntfy_topic_missing" });
-            prefs.Toasts = request.Toasts ?? prefs.Toasts;
-            prefs.Ready = request.Ready ?? prefs.Ready;
-            prefs.Episodes = request.Episodes ?? prefs.Episodes;
-            prefs.Declined = request.Declined ?? prefs.Declined;
-            prefs.Approved = request.Approved ?? prefs.Approved;
-            prefs.AdminAlerts = request.AdminAlerts ?? prefs.AdminAlerts;
-            prefs.AutoFollowRequests = request.AutoFollowRequests ?? prefs.AutoFollowRequests;
-            prefs.Ntfy = request.Ntfy ?? prefs.Ntfy;
-            prefs.Email = request.Email ?? prefs.Email;
-            prefs.HideTitles = request.HideTitles ?? prefs.HideTitles;
-            prefs.QuietHours = request.QuietHours ?? prefs.QuietHours;
-            prefs.QuietFrom = request.QuietFrom ?? prefs.QuietFrom;
-            prefs.QuietTo = request.QuietTo ?? prefs.QuietTo;
-            if (request.TimeZone != null) prefs.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
-            if (request.UtcOffsetMinutes.HasValue) prefs.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
-            Store.SavePrefs(user, prefs, Now());
+            // Only the fields sent change, in one transaction, checked against the settings as they are in it: a change made
+            // meanwhile elsewhere (another tab, an administrator's topic, the Ready settings' native-message consent, an
+            // address removed) is kept, and e-mail or phone alerts never go on without a confirmed address or a topic.
+            var (_, error) = Store.TryUpdatePrefs(user, p =>
+            {
+                if (request.Email == true && string.IsNullOrEmpty(p.EmailAddress)) return "email_not_verified";
+                if (request.Ntfy == true && !NotifyEndpoints.IsTopic(p.NtfyTopic)) return "ntfy_topic_missing";
+                p.Toasts = request.Toasts ?? p.Toasts;
+                p.Ready = request.Ready ?? p.Ready;
+                p.Episodes = request.Episodes ?? p.Episodes;
+                p.Declined = request.Declined ?? p.Declined;
+                p.Approved = request.Approved ?? p.Approved;
+                p.AdminAlerts = request.AdminAlerts ?? p.AdminAlerts;
+                p.AutoFollowRequests = request.AutoFollowRequests ?? p.AutoFollowRequests;
+                p.Ntfy = request.Ntfy ?? p.Ntfy;
+                p.Email = request.Email ?? p.Email;
+                p.HideTitles = request.HideTitles ?? p.HideTitles;
+                p.QuietHours = request.QuietHours ?? p.QuietHours;
+                p.QuietFrom = request.QuietFrom ?? p.QuietFrom;
+                p.QuietTo = request.QuietTo ?? p.QuietTo;
+                if (request.TimeZone != null) p.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
+                if (request.UtcOffsetMinutes.HasValue) p.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
+                return null;
+            }, Now());
+            if (error != null) return BadRequest(new { code = error });
             return Ok(PrefsBody(user));
         }
 
@@ -290,24 +322,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            if (request.Generate)
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            var topic = request.Generate ? NotifyEndpoints.NewTopic() : string.IsNullOrEmpty(request.Topic) ? null : request.Topic;
+            // The topic fields only, in one transaction (a consent or address changed meanwhile stays).
+            Store.UpdatePrefs(user, p =>
             {
-                prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            }
-            else if (string.IsNullOrEmpty(request.Topic))
-            {
-                prefs.NtfyTopic = null;
-                prefs.Ntfy = false;
-            }
-            else
-            {
-                if (!NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
-                prefs.NtfyTopic = request.Topic;
-            }
-            prefs.NtfyTopicByAdmin = false;
-            if (prefs.NtfyTopic != null && request.Generate) prefs.Ntfy = true;
-            Store.SavePrefs(user, prefs, Now());
+                p.NtfyTopic = topic;
+                p.NtfyTopicByAdmin = false;
+                if (topic == null) p.Ntfy = false;
+                else if (request.Generate) p.Ntfy = true;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -359,10 +383,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "wrong_code" });
             }
             Store.ClearEmailCode(user);
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = address;
-            prefs.Email = true;
-            Store.SavePrefs(user, prefs, now);
+            // The address fields only, in one transaction.
+            Store.UpdatePrefs(user, p =>
+            {
+                p.EmailAddress = address;
+                p.Email = true;
+            }, now);
             return Ok(PrefsBody(user));
         }
 
@@ -373,10 +399,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (Gate() is { } denied) return denied;
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = null;
-            prefs.Email = false;
-            Store.SavePrefs(user, prefs, Now());
+            Store.UpdatePrefs(user, p =>
+            {
+                p.EmailAddress = null;
+                p.Email = false;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -520,14 +547,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!Store.Available) return StatusCode(503, new { code = "database_unavailable" });
             if (!Guid.TryParse(userId, out var target) || !_users.Exists(target)) return NotFound(new { code = "user_not_found" });
             if (request == null) return BadRequest(new { code = "invalid_request" });
-            var prefs = Store.Prefs(target);
-            if (request.Generate) prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            else if (string.IsNullOrEmpty(request.Topic)) prefs.NtfyTopic = null;
-            else if (NotifyEndpoints.IsTopic(request.Topic)) prefs.NtfyTopic = request.Topic;
-            else return BadRequest(new { code = "invalid_topic" });
-            prefs.NtfyTopicByAdmin = prefs.NtfyTopic != null;
-            prefs.Ntfy = prefs.NtfyTopic != null;
-            Store.SavePrefs(target, prefs, Now());
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            var topic = request.Generate ? NotifyEndpoints.NewTopic() : string.IsNullOrEmpty(request.Topic) ? null : request.Topic;
+            // The topic fields only, in one transaction: the person's consents, address and quiet hours stay as they are now.
+            var prefs = Store.UpdatePrefs(target, p =>
+            {
+                p.NtfyTopic = topic;
+                p.NtfyTopicByAdmin = topic != null;
+                p.Ntfy = topic != null;
+            }, Now());
             return Ok(new { id = NotifyValues.Id(target), topic = prefs.NtfyTopic, ntfy = prefs.Ntfy });
         }
 

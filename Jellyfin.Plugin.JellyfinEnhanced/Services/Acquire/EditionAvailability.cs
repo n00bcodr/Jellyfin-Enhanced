@@ -121,6 +121,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _copies = copies;
         }
 
+        /// <summary>
+        /// Every physical copy of a title (any library, whoever may open it), complete (<see cref="IArrJellyfinView.TitleCopyIds"/>):
+        /// what a privacy decision reads. Null when that can't be established now.
+        /// </summary>
+        /// <param name="title">The title (a season or episode key counts as its title).</param>
+        /// <param name="aliases">The title's other keys.</param>
+        /// <returns>The copies' item ids, or null.</returns>
+        public IReadOnlyList<Guid>? TitleCopyIds(TitleKey title, IReadOnlyCollection<TitleKey>? aliases) => _view.TitleCopyIds(title.Title, aliases);
+
         /// <summary>True for 4K video dimensions (the same rule as the browser's Get 4K check).</summary>
         /// <param name="width">Width, or null when unknown.</param>
         /// <param name="height">Height, or null when unknown.</param>

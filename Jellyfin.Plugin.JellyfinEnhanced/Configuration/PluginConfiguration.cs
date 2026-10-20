@@ -1083,6 +1083,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public bool ArrPhase4CollectionGapsEnabled { get; set; }
 
+        // ---- Phase 4f: the private Ready playlist and native Ready messages ----
+
+        /// <summary>
+        /// Ready playlist: each person who turns it on gets a private playlist of what they asked for or follow that is now
+        /// ready to watch, in the exact version they asked for; watched, expired, hidden and no-longer-openable entries
+        /// leave it. Needs <see cref="ArrPhase4Enabled"/> and <see cref="ArrPhase3Enabled"/> (not notifications). Off by
+        /// default, and off for each person until they turn it on.
+        /// </summary>
+        public bool ArrPhase4ReadyPlaylistEnabled { get; set; }
+
+        /// <summary>
+        /// Native Ready messages: a short on-screen message on a TV or app signed in as the person and not playing anything,
+        /// when something they asked for is ready. Needs <see cref="ArrPhase4Enabled"/> and notifications. Off by default,
+        /// and off for each person until they turn it on.
+        /// </summary>
+        public bool ArrPhase4ReadyMessagesEnabled { get; set; }
+
+        /// <summary>Ready playlist: days an entry stays unless watched first (1–90, default 30).</summary>
+        public int ArrReadyRetentionDays { get; set; } = 30;
+
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
         /// <summary>

@@ -87,7 +87,7 @@
         function preference(value) { return value === false ? t('hide') : value === true ? t('show') : t('inherit'); }
         /** Render a safe, compact read-only value. */
         function line(parent, label, value) {
-            const primary = ['backend', 'effectiveRole', 'quota', 'effectivePool', 'sharedUsage', 'emailVerified', 'autoMovieRequests', 'autoSeasonRequests', 'listSwapIn', 'linkState'];
+            const primary = ['backend', 'effectiveRole', 'quota', 'effectivePool', 'sharedUsage', 'emailVerified', 'autoMovieRequests', 'autoSeasonRequests', 'listSwapIn', 'linkState', 'readyPlaylistStored', 'readyState', 'readyMessagesStored'];
             if (parent.tagName !== 'DETAILS' && !primary.includes(label)) {
                 let details = parent.querySelector(':scope > details');
                 if (!details) { details = el('details', undefined, parent); el('summary', t('showDetails'), details); }
@@ -258,6 +258,18 @@
             for (const recipe of d.consents.recipes || []) line(consents, 'recipe_' + recipe.recipe, t(recipe.control.legacy ? 'legacy' : 'mode_' + (recipe.control.effective || 'off')) + (recipe.control.reason ? ' · ' + t('reason_' + recipe.control.reason) : ''));
             if (d.consents.grant) line(consents, 'grant', `${d.consents.grant.source} · ${d.consents.grant.grantedAt}`);
             if (d.consents.lists?.available) line(consents, 'listAttribution', d.consents.lists.items.length);
+            // Phase 4f: the person's Ready playlist and TV messages, read-only (only the person turns them on or off).
+            const ready = group(groups, 'ready', 'ready', state);
+            if (d.ready?.available) {
+                el('p', t('readyHelp'), ready);
+                // The person's choices and the playlist's state first (shown); the switches and what is in effect in the details.
+                line(ready, 'readyPlaylistStored', d.ready.playlistStored);
+                line(ready, 'readyState', t('readyState_' + (['active', 'off', 'deleted', 'removed', 'renew', 'privacy', 'lost'].includes(d.ready.state) ? d.ready.state : 'off')));
+                line(ready, 'readyMessagesStored', d.ready.messagesStored);
+                line(ready, 'readyPlaylistGate', d.ready.playlistGate); line(ready, 'readyPlaylistEffective', d.ready.playlistEffective);
+                if (d.ready.playlistEffective) line(ready, 'readyEntries', d.ready.entries);
+                line(ready, 'readyMessagesGate', d.ready.messagesGate); line(ready, 'readyMessagesEffective', d.ready.messagesEffective);
+            } else el('p', t('unavailable'), ready);
             const display = group(groups, 'display', 'display', state);
             if (d.display.available) for (const field of Object.keys(d.display.stored || {})) {
                 const input = select(display, state, 'display', field, field, d.display.stored[field] === false ? 'false' : d.display.stored[field] === true ? 'true' : null, [[null, t('inherit')], ['true', t('show')], ['false', t('hide')]], false);
