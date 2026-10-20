@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 namespace JE.Tests;
 
 /// <summary>
-/// acquire.db schema step 8 and the Ready ensure (D47): a fresh database, the 4e schema 7 with its empty step 6, a database
+/// acquire.db schema step 8 and the Ready ensure (D47): a fresh database, schema 7 (with step 6, or its older empty step 6), a database
 /// that reached 8 without the tables, a partial earlier ensure, two starts, a restore (the renewal policy, including a stop
 /// before the restore's listeners run), repeated restores, an unknown newer schema, and a deleted person's rows.
 /// </summary>
@@ -65,13 +65,16 @@ public class ReadySchemaTests
         Assert.Equal("1", Scalar(path, "SELECT value FROM meta WHERE key='ready_schema'"));
     }
 
-    [Fact]
-    public void ASchemaSevenDatabaseWithItsEmptyStepSixUpgradesToEight()
+    // Schema 7 as installations have it: step 6 the content-arrival history, or the older empty step 6 (repaired at start-up).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASchemaSevenDatabaseUpgradesToEight(bool emptyStepSix)
     {
         using var core = new CoreFixture();
         var path = Path.Combine(core.Root, "seven.db");
-        Exec(path, string.Join("\n", AcquireDatabase.Migrations.Take(7)) + "\nPRAGMA user_version=7;");
-        Assert.True(string.IsNullOrWhiteSpace(AcquireDatabase.Migrations[5]));
+        Exec(path, string.Join("\n", AcquireDatabase.Migrations.Take(7).Select((sql, i) => i == 5 && emptyStepSix ? string.Empty : sql)) + "\nPRAGMA user_version=7;");
+        Assert.Equal(emptyStepSix ? 0L : 1L, Scalar(path, "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"));
         Assert.Empty(Objects(path));
         using (var db = new AcquireDatabase(path))
         {
@@ -80,6 +83,7 @@ public class ReadySchemaTests
         }
 
         Assert.Equal(All, Objects(path));
+        Assert.Equal(1L, Scalar(path, "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"));
         // The pre-migration copy was taken (an existing database is copied before any migration).
         Assert.NotEmpty(Directory.EnumerateFiles(core.Root, "seven.db.pre-v7.*"));
     }

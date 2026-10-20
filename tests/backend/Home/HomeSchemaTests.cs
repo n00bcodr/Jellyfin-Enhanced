@@ -33,7 +33,7 @@ public class HomeSchemaTests
             {
                 c.Open();
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = string.Join("\n", AcquireDatabase.Migrations.Where((_, i) => i != 5)) + "PRAGMA user_version=7;";
+                cmd.CommandText = string.Join("\n", AcquireDatabase.Migrations.Take(7).Where((_, i) => i != 5)) + "PRAGMA user_version=7;";
                 cmd.ExecuteNonQuery();
                 cmd.CommandText = "INSERT INTO acquisition_arrivals VALUES('m|movie:tmdb:603|std',42,'old')";
                 cmd.ExecuteNonQuery();
@@ -42,7 +42,7 @@ public class HomeSchemaTests
             var arrivals = new HomeArrivals(db, null, null, () => true);
             Assert.Null(arrivals.FirstAt("movie:tmdb:603|4k"));
             db.ReplaceWith(File.ReadAllBytes(path));
-            Assert.Equal(7, db.Version);
+            Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
             Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(42).UtcDateTime, arrivals.FirstAt("movie:tmdb:603|4k"));
             using (var c = new SqliteConnection("Data Source=" + path + ";Pooling=False"))
             {
@@ -97,7 +97,7 @@ public class HomeSchemaTests
             {
                 using var db = new AcquireDatabase(path);
                 Assert.True(db.Available, db.UnavailableReason);
-                Assert.Equal(7, db.Version);
+                Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
                 Assert.Equal(1L, db.Read(c => { using var cmd = c.CreateCommand(); cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"; return (long)cmd.ExecuteScalar()!; }));
                 var arrivals = new HomeArrivals(db, null, null, () => true);
                 if (table) Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(42).UtcDateTime, arrivals.FirstAt("movie:tmdb:603|std"));

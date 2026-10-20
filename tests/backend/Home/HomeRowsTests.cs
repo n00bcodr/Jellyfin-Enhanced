@@ -646,7 +646,7 @@ public class HomeRowsTests
             var first = new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc);
             using (var db = new AcquireDatabase(path))
             {
-                Assert.Equal(7, db.Version);
+                Assert.Equal(AcquireDatabase.Migrations.Count, db.Version);
                 var arrivals = new HomeArrivals(db, null, null, () => true);
                 arrivals.Record(new[] { ("movie:tmdb:603|std", first) });
                 arrivals.Record(new[] { ("movie:tmdb:603|std", first.AddDays(5)) });      // a replacement copy
