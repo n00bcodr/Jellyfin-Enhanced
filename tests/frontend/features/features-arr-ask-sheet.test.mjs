@@ -1870,7 +1870,7 @@ test('phase 4b: the sheet names the shared allowance after its note, and a wait 
       : null),
     answer: () => ({ status: 201, body: { outcome: 'accepted', reason: 'rule_review', certainty: 'Succeeded', requestId: 'c'.repeat(32), rules: { verdict: 'review', hits: [] } } })
   });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   const note = h.document.querySelector('.je-sheet-note');
   assert.equal(note.hidden, false);
