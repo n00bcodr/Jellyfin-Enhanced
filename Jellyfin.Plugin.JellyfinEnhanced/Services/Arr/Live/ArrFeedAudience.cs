@@ -182,8 +182,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
             if (_seasons.Count > MaxCacheEntries) _seasons.Clear();
 
             var now = _now();
-            // What every answer depends on besides the key: a change to any of it decides afresh.
-            var stamp = (_view.Viewer(userId)?.PolicyRevision ?? string.Empty)
+            // What every answer depends on besides the key: a change to any of it decides afresh. The policy revision
+            // is the one of the user the answers are decided with (not another read, which a change could land
+            // between: answers decided with the old user would be kept under the new revision).
+            var stamp = Acquire.ArrJellyfinView.PolicyRevisionOf(user)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
                 + "|" + RegistryStamp()
                 + "|" + _libraries.Revision

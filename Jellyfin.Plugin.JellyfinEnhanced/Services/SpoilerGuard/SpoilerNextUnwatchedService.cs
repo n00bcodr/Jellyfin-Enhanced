@@ -46,12 +46,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// parental access decide which episodes the query sees), so a change made
     /// with no event and no bracket still recomputes before the next reveal;</description></item>
     /// <item><description>the viewer's own Jellyfin user version;</description></item>
-    /// <item><description>the series' library version, moved by Jellyfin's item
-    /// added / removed / updated events for the series, its seasons and
-    /// episodes (an episode added, deleted, renumbered or re-rated);</description></item>
-    /// <item><description>the watched state: IUserDataManager.UserDataSaved
-    /// evicts the key.</description></item>
+    /// <item><description>the series, which Jellyfin's item added / removed /
+    /// updated events for the series, its seasons and episodes (an episode
+    /// added, deleted, renumbered or re-rated) invalidate for everyone, and
+    /// the viewer's watched-state saves (IUserDataManager.UserDataSaved) for
+    /// them.</description></item>
     /// </list>
+    /// All of it through <see cref="Helpers.UserAccessCache{TKey, TValue}"/>:
+    /// a computation running when any of those changes never leaves a slot
+    /// that is served.
     /// The TTL bounds only what none of those see (a change written straight
     /// into Jellyfin's database).
     /// </summary>
@@ -60,24 +63,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The next-unwatched episode's identity and position.</summary>
         public readonly record struct NextUnwatchedBoundary(Guid EpisodeId, int SeasonNumber, int EpisodeNumber);
 
-        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, string Authority, Helpers.UserAuthority.Stamp UserStamp, long SeriesVersion);
-
-        // Boundary cache keyed (userId, seriesId). Worst case is
-        // f(users × guarded series) but hard-capped at MaxCacheEntries slots of
-        // ~100 bytes plus the viewer's fingerprint string (shared by the
-        // viewer's slots of one request) — bounded independent of library
-        // size. Overflow clears the whole map
-        // (recompute is one bounded query per active key); TTL keeps entries
-        // from outliving library changes.
-        private readonly ConcurrentDictionary<(Guid UserId, Guid SeriesId), CacheSlot> _cache = new();
-
-        // Per-series library version (item added / removed / updated events of
-        // the series, its seasons and episodes). Bounded by the number of series
-        // touched; past MaxSeriesVersions it starts over under a new epoch, so
-        // every slot misses once.
-        private readonly ConcurrentDictionary<Guid, long> _seriesVersions = new();
-        private long _seriesEpoch;
-        internal const int MaxSeriesVersions = 100_000;
+        // Boundary cache keyed (userId, seriesId), on UserAccessCache: each slot
+        // holds the viewer's fingerprint and version as this request read them,
+        // and depends on the series (scope), which Jellyfin's library events and
+        // the viewer's watched-state saves invalidate; a computation running
+        // when one lands never leaves a slot that is served. Hard-capped at
+        // MaxCacheEntries slots (overflow drops the dead ones, then everything:
+        // recompute is one bounded query per active key).
+        private readonly Helpers.UserAccessCache<(Guid UserId, Guid SeriesId), NextUnwatchedBoundary?> _cache;
 
         internal const int MaxCacheEntries = 2048;
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
@@ -104,6 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userManager = userManager;
             _userDataManager = userDataManager;
             _logger = logger;
+            _cache = new Helpers.UserAccessCache<(Guid UserId, Guid SeriesId), NextUnwatchedBoundary?>(CacheTtl, MaxCacheEntries, ticks: () => ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks);
             _userDataManager.UserDataSaved += OnUserDataSaved;
             _libraryManager.ItemAdded += OnLibraryChanged;
             _libraryManager.ItemRemoved += OnLibraryChanged;
@@ -151,41 +145,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // the viewer's fingerprint (one read of the viewer per request); the
             // bounded query below runs once per (user, series) while nothing that
             // decides the boundary changes, amortizing to O(1) per item.
-            var user = viewer ?? Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById).User;
-            var authority = user == null ? string.Empty : Helpers.UserAuthority.Fingerprint(user);
-            var now = ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks;
+            var user = viewer;
+            var stamp = default(Helpers.UserAuthority.Stamp);
+            if (user == null) (user, stamp) = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
             var key = (userId, seriesId);
-            if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now
-                && string.Equals(slot.Authority, authority, StringComparison.Ordinal)
-                && Helpers.UserAuthority.OwnUnchanged(userId, slot.UserStamp)
-                && slot.SeriesVersion == SeriesVersion(seriesId))
+            // Taken before the query, so a change landing during it is never
+            // served later. No such user: the slot stands for that (version only).
+            var ticket = user != null
+                ? _cache.Begin(user, seriesId)
+                : _cache.BeginHeld(userId, stamp, seriesId);
+            if (_cache.TryGet(key, ticket.Authority, out var hit))
             {
-                return slot.Boundary;
+                return hit;
             }
-
-            // Taken before the query, so a change landing during it is never served later.
-            var userStamp = Helpers.UserAuthority.Take(userId);
-            var seriesVersion = SeriesVersion(seriesId);
 
             var boundary = BoundaryComputerForTest != null
                 ? BoundaryComputerForTest(userId, seriesId)
                 : ComputeBoundary(user, seriesId);
 
-            if (_cache.Count >= MaxCacheEntries)
-            {
-                // Hard bound. Clearing everything is deliberate — a partial
-                // eviction policy is extra state for a map that refills at one
-                // bounded query per active key.
-                _cache.Clear();
-            }
-
-            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, authority, userStamp, seriesVersion);
+            _cache.Set(key, ticket, boundary);
             return boundary;
         }
-
-        // The series' library version: its epoch and its own count.
-        private long SeriesVersion(Guid seriesId)
-            => (Interlocked.Read(ref _seriesEpoch) << 40) + _seriesVersions.GetValueOrDefault(seriesId);
 
         /// <summary>
         /// Pure categorization of an episode DTO against a boundary. Validation
@@ -276,13 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _ => Guid.Empty,
             };
             if (seriesId == Guid.Empty) return;
-            if (_seriesVersions.Count >= MaxSeriesVersions)
-            {
-                _seriesVersions.Clear();
-                Interlocked.Increment(ref _seriesEpoch);
-            }
-
-            _seriesVersions.AddOrUpdate(seriesId, 1, (_, v) => v + 1);
+            _cache.Invalidate(Guid.Empty, seriesId);
         }
 
         // Fires on every user-data save (playback ticks included). O(1)
@@ -294,11 +268,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (e == null || e.UserId == Guid.Empty) return;
             if (e.Item is Episode episode && episode.SeriesId != Guid.Empty)
             {
-                _cache.TryRemove((e.UserId, episode.SeriesId), out _);
+                _cache.Invalidate(e.UserId, episode.SeriesId);
             }
             else if (e.Item is Series series)
             {
-                _cache.TryRemove((e.UserId, series.Id), out _);
+                _cache.Invalidate(e.UserId, series.Id);
             }
         }
     }

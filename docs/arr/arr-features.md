@@ -1602,15 +1602,19 @@ Jellyfin Enhanced's own caches of what a user may see don't wait for an announce
 property of the user, its permissions and its preferences that decides access (libraries, channels, Live TV, parental
 limits, tags, schedules, the role, disabled and hidden), worked out from a classification of Jellyfin's own user types
 that the tests check against the 12.2 and 10.11.11 servers, so a property a newer Jellyfin adds counts until it is
-classified. The tag cache's per-user filter, native details' artwork grants and Spoiler Guard's next episode follow the
-user as each request reads them and the person's version, so any access change applies to the next request however it
-was made, a save by other code and a change written straight into the database included. Review authors (hidden or
-disabled) and poster tags hold the user itself and follow the person's version: the next request after a bracketed or
-announced change. Someone else signing in doesn't count as a change to them: once a sign-in by name (or a new user)
+classified, and is written so that no tag or other value can pass for another (two different users never compare
+equal). The tag cache's per-user filter, native details' artwork grants, Spoiler Guard's next episode and its season
+artwork (whether an episode you may see was watched) follow the user as each request reads them and the person's
+version, so any access change applies to the next request however it was made, a save by other code and a change
+written straight into the database included. Review authors (hidden or disabled), poster tags and acquisition badges'
+4K check hold the user (or what was read through it) and follow the person's version: the next request after a
+bracketed or announced change. An answer worked out while a change lands is never reused afterwards. Every cache Jellyfin
+Enhanced keeps is listed in its tests with what it depends on, so a new one that depends on a user's access can't be
+missed. Someone else signing in doesn't count as a change to them: once a sign-in by name (or a new user)
 has run, only the person it was about is read again; only when that can't be told is every cached review author or
-poster user read again once. A save by other code that moves nothing reaches review authors and
-poster tags when their entry expires (15 seconds and 30 seconds); until then a review by an author who was just hidden
-or disabled can still be counted.
+poster user read again once. A save by other code that moves nothing reaches review authors, poster tags and the 4K
+badge when their entry expires (15, 30 and 30 seconds); until then a review by an author who was just hidden or disabled
+can still be counted, and a 4K badge can stay on a poster.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

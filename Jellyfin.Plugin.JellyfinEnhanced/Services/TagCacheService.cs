@@ -297,9 +297,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             EnableUserData = false
         };
 
-        // User access cache: avoids expensive GetItemIds query on every request
-        private readonly ConcurrentDictionary<string, UserAccess> _userAccessCache = new();
+        // User access cache: avoids expensive GetItemIds query on every request.
+        // Each set is computed from the user as the request read them and is
+        // only served to a request whose user has the same fingerprint, while
+        // the person's own Jellyfin user version hasn't moved (a bracketed
+        // change to them, JE's own, an event, their own sign-in) and nothing
+        // invalidated it since its query began (InvalidateUserAccess): see
+        // UserAccessCache. Someone else's sign-in doesn't touch it.
         private static readonly TimeSpan UserAccessCacheTtl = TimeSpan.FromSeconds(60);
+        private readonly Helpers.UserAccessCache<Guid, UserAccess> _userAccessCache = new(UserAccessCacheTtl, 4096);
 
         /// <summary>
         /// One user's cached access set (see <see cref="_userAccessCache"/>) and,
@@ -308,36 +314,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private sealed class UserAccess
         {
-            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation, string authority, Helpers.UserAuthority.Stamp stamp)
+            public UserAccess(HashSet<string> ids)
             {
                 Ids = ids;
-                CachedAt = cachedAt;
-                Generation = generation;
-                Authority = authority;
-                Stamp = stamp;
             }
 
             public HashSet<string> Ids { get; }
-            public DateTime CachedAt { get; }
-            public long Generation { get; }
-
-            /// <summary>
-            /// The user's authority the set was computed for
-            /// (<see cref="Helpers.UserAuthority.Fingerprint"/>): the set is only
-            /// used for a request whose user, as it just read them, has the same.
-            /// </summary>
-            public string Authority { get; }
-
-            /// <summary>
-            /// The user's Jellyfin user version when the set was computed
-            /// (<see cref="Helpers.UserAuthority.Take"/>): the set is only used
-            /// while the person's own part hasn't moved (a bracketed change to
-            /// them, JE's own, an event, their own sign-in). Someone else's
-            /// sign-in doesn't touch it, and a change whose person couldn't be
-            /// told shows in the fingerprint of the user as this request read
-            /// them if it was about them.
-            /// </summary>
-            public Helpers.UserAuthority.Stamp Stamp { get; }
 
             /// <summary>
             /// Memo of the <c>accessRevision</c> this set yields for one cache
@@ -425,13 +407,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly object _serializedItemsLock = new();
         private const int SerializedItemsMaxEntries = 4;
         private const long SerializedItemsMaxBytes = 64L * 1024 * 1024;
-        // Bumped by InvalidateUserAccess. Each cached access set records the
-        // generation it was computed under and is only used while that is still
-        // current, so a set computed before a bump (user policy or library
-        // changed meanwhile) can serve its own request but never a later one —
-        // even if it lands in the dictionary after the clear.
-        private long _userAccessGeneration;
-
         /// <summary>
         /// Drop every cached per-user access set, so the next request filters
         /// with the user's current access. Called when a user's policy changes
@@ -443,8 +418,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void InvalidateUserAccess()
         {
-            Interlocked.Increment(ref _userAccessGeneration);
-            _userAccessCache.Clear();
+            // Also ends a set whose query is running now: it may have read the
+            // state before the change (UserAccessCache).
+            _userAccessCache.InvalidateAll();
         }
 
         public static readonly HashSet<BaseItemKind> TaggableTypes = new()
@@ -1663,62 +1639,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// The user's accessible-id set, from <see cref="_userAccessCache"/> while
-        /// its entry is current (same access generation, within the TTL, computed
-        /// for the authority <paramref name="user"/> has now, and the person's
-        /// own Jellyfin user version unchanged since), else computed with one
-        /// GetItemIds query and cached.
+        /// its entry is current (computed for the fingerprint
+        /// <paramref name="user"/> has now, the person's own Jellyfin user
+        /// version unchanged since, nothing invalidated since its query began,
+        /// within the TTL), else computed with one GetItemIds query and cached.
         /// </summary>
         /// <param name="user">The user, as the request just read them (Jellyfin's lookup reads its database on both versions).</param>
         private UserAccess ResolveUserAccess(JUser user)
         {
-            var userKey = user.Id.ToString("N");
             // Keyed by the user's policy as read for this request, not only by
             // the user events: 10.11 saves a policy with no event, and both
             // versions save UpdateUserAsync with none, so an event-only key kept
             // the old set for the TTL after a parental, tag, channel or library
             // change. The fingerprint is derived from the classification of every
             // user property (Helpers.UserAuthorityFields); the person's version is
-            // checked as well.
-            var authority = Helpers.UserAuthority.Fingerprint(user);
-
-            if (_userAccessCache.TryGetValue(userKey, out var cached)
-                && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
-                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl
-                && string.Equals(cached.Authority, authority, StringComparison.Ordinal)
-                && Helpers.UserAuthority.OwnUnchanged(user.Id, cached.Stamp))
+            // checked as well. The ticket is taken before the query.
+            var ticket = _userAccessCache.Begin(user);
+            if (_userAccessCache.TryGet(user.Id, ticket.Authority, out var cached))
             {
                 return cached;
             }
 
-            // Taken before the query; the set is computed from this user object,
-            // whose fingerprint is stored with it, so a change landing after the
-            // request read the user shows as a different fingerprint next time.
-            var stamp = Helpers.UserAuthority.Take(user.Id);
-            var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
             var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = TaggableTypes.ToArray(),
                 Recursive = true
             });
-            var access = new UserAccess(
-                new HashSet<string>(accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())),
-                DateTime.UtcNow,
-                accessGeneration,
-                authority,
-                stamp);
+            var access = new UserAccess(new HashSet<string>(accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())));
 
             // Store under _publishLock with the released flag re-checked:
             // the live check in CaptureGeneration is check-then-act, and a
             // disable can complete while the GetItemIds query runs. The disable
-            // clears _userAccessCache inside the same lock as it sets the flag,
-            // so this store either lands before the clear (and is cleared) or
-            // sees the flag and skips — it can never repopulate the access
+            // invalidates _userAccessCache inside the same lock as it sets the
+            // flag, so this store either lands before it (and is invalidated)
+            // or sees the flag and skips — it can never repopulate the access
             // cache for the off window.
             lock (_publishLock)
             {
-                if (ServerModeEnabled && !_cacheReleased && Interlocked.Read(ref _userAccessGeneration) == accessGeneration)
+                if (ServerModeEnabled && !_cacheReleased)
                 {
-                    _userAccessCache[userKey] = access;
+                    _userAccessCache.Set(user.Id, ticket, access);
                 }
             }
 

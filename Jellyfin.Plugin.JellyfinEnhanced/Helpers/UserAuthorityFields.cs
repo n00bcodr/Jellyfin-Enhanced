@@ -235,20 +235,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 .OrderBy(p => p.Name, StringComparer.Ordinal)
                 .ToArray();
 
-        /// <summary>The fingerprint (see <see cref="UserAuthority.Fingerprint"/>).</summary>
+        /// <summary>
+        /// The fingerprint (see <see cref="UserAuthority.Fingerprint"/>), in a canonical encoding where no value can pass
+        /// for structure: every value is written with its kind and its length (<c>s5:hello</c>), a row as its property
+        /// count and each property's name and value (<c>r2{…}</c>), and a collection as its item count and its items in a
+        /// stable order (<c>c3[…]</c>). Each part says where it ends, so two different users never share a fingerprint,
+        /// whatever their tag or other values hold (a separator inside a value is just a character of it).
+        /// </summary>
         /// <param name="user">The user, as just read.</param>
         /// <returns>Every access-deciding fact, as one string.</returns>
         internal static string Fingerprint(JUser user)
         {
             var text = new StringBuilder(256);
+            text.Append('r').Append(UserReads.Length.ToString(CultureInfo.InvariantCulture)).Append('{');
             foreach (var property in UserReads)
             {
-                text.Append(property.Name).Append('=');
+                Atom(text, 's', property.Name);
                 var value = property.GetValue(user);
                 switch (property.Name)
                 {
                     case nameof(JUser.Permissions):
-                        // One entry per permission row whose kind isn't NotAccess, in kind order.
+                        // One row per permission whose kind isn't NotAccess.
                         AppendRows(text, (value as IEnumerable)?.OfType<Permission>().Where(p => RoleOf("PermissionKind", p.Kind.ToString()) != Role.NotAccess), PermissionReads);
                         break;
                     case nameof(JUser.Preferences):
@@ -258,41 +265,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                         AppendValue(text, value);
                         break;
                 }
-
-                text.Append('\u001e');
             }
 
-            return text.ToString();
+            return text.Append('}').ToString();
+        }
+
+        // A value: its kind and length, then its text.
+        private static void Atom(StringBuilder text, char kind, string value)
+            => text.Append(kind).Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value);
+
+        // A collection: its count, then each item's encoding, in ordinal order of the encodings (the order it was saved in
+        // doesn't decide access).
+        private static void Collection(StringBuilder text, IEnumerable<string> items)
+        {
+            var sorted = items.OrderBy(i => i, StringComparer.Ordinal).ToList();
+            text.Append('c').Append(sorted.Count.ToString(CultureInfo.InvariantCulture)).Append('[');
+            foreach (var item in sorted) text.Append(item);
+            text.Append(']');
         }
 
         private static void AppendRows<T>(StringBuilder text, IEnumerable<T>? rows, PropertyInfo[] reads)
         {
-            if (rows == null) return;
-            var each = rows.Select(row => Row(row!, reads)).OrderBy(r => r, StringComparer.Ordinal);
-            foreach (var row in each) text.Append(row).Append('\u001f');
+            if (rows == null)
+            {
+                text.Append('n');
+                return;
+            }
+
+            Collection(text, rows.Select(row => Row(row!, reads)));
         }
 
         private static string Row(object row, PropertyInfo[] reads)
         {
             var text = new StringBuilder();
+            text.Append('r').Append(reads.Length.ToString(CultureInfo.InvariantCulture)).Append('{');
             foreach (var property in reads)
             {
-                text.Append(property.Name).Append(':');
+                Atom(text, 's', property.Name);
                 var value = property.GetValue(row);
                 // A preference holds a set ("a,b,c" as Jellyfin joins it, in whatever order it was saved): compared
-                // without its order.
+                // without its order, each member as a value of its own.
                 if (row is Preference && property.Name == nameof(Preference.Value) && value is string set)
                 {
-                    text.Append(string.Join(',', set.Split(',').OrderBy(v => v, StringComparer.Ordinal)));
+                    Collection(text, set.Split(',').Select(member => Encoded(member)));
                 }
                 else
                 {
                     AppendValue(text, value);
                 }
-
-                text.Append(';');
             }
 
+            return text.Append('}').ToString();
+        }
+
+        private static string Encoded(object? value)
+        {
+            var text = new StringBuilder();
+            AppendValue(text, value);
             return text.ToString();
         }
 
@@ -301,50 +330,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             switch (value)
             {
                 case null:
-                    text.Append('␀');
+                    text.Append('n');
                     return;
                 case string s:
-                    text.Append(s);
+                    Atom(text, 's', s);
                     return;
                 case bool b:
-                    text.Append(b ? '1' : '0');
+                    Atom(text, 'b', b ? "1" : "0");
                     return;
                 case IFormattable f when value.GetType().IsPrimitive || value is Enum or Guid or DateTime or DateTimeOffset or decimal:
-                    text.Append(f.ToString(null, CultureInfo.InvariantCulture));
+                    Atom(text, 'v', f.ToString(null, CultureInfo.InvariantCulture));
                     return;
                 case IEnumerable rows when value is not string:
                     // A collection of rows (access schedules, or one a newer Jellyfin adds): each by its type's classified
-                    // properties, in a stable order.
-                    var items = rows.Cast<object?>().Select(r => r == null ? "␀" : Simple(r) ?? Row(r, RowReadsOf(r.GetType())));
-                    foreach (var item in items.OrderBy(i => i, StringComparer.Ordinal)) text.Append(item).Append('\u001f');
+                    // properties (a simple value as itself), in a stable order.
+                    Collection(text, rows.Cast<object?>().Select(r => r == null || IsSimple(r) ? Encoded(r) : Row(r, RowReadsOf(r.GetType()))));
                     return;
                 default:
                     // A property nobody classified, of a type this doesn't know: its whole value.
                     try
                     {
-                        text.Append(JsonSerializer.Serialize(value, value.GetType(), UnknownJson));
+                        Atom(text, 'j', JsonSerializer.Serialize(value, value.GetType(), UnknownJson));
                     }
                     catch (Exception)
                     {
                         // Can't be compared: never equal, so nothing keyed by it is reused.
-                        text.Append(Guid.NewGuid().ToString("N"));
+                        Atom(text, 'u', Guid.NewGuid().ToString("N"));
                     }
 
                     return;
             }
         }
 
-        private static string? Simple(object value)
-        {
-            if (value is string or bool || value.GetType().IsPrimitive || value is Enum or Guid or DateTime or DateTimeOffset or decimal)
-            {
-                var text = new StringBuilder();
-                AppendValue(text, value);
-                return text.ToString();
-            }
-
-            return null;
-        }
+        private static bool IsSimple(object value)
+            => value is string or bool || value.GetType().IsPrimitive || value is Enum or Guid or DateTime or DateTimeOffset or decimal;
 
         private static PropertyInfo[] RowReadsOf(Type type)
         {

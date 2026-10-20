@@ -34,7 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly Logger? _logger;
-        private readonly ConcurrentDictionary<(Guid User, Guid Item), (bool Open, DateTime At)> _access = new();
+        // Whether the viewer can open an item: decided by their access, so kept by the viewer's version
+        // (UserAccessCache, through the user cache CanOpen reads them from): a policy change applies on the next poster.
+        private readonly Helpers.UserAccessCache<(Guid User, Guid Item), bool> _access = new(AccessTtl, MaxMemo);
         private readonly object _fourKGate = new();
         private volatile FourKIndex? _fourK;
         private readonly HashSet<string> _fourKChanges = new(StringComparer.Ordinal);
@@ -142,7 +144,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         /// <summary>Drops cached access answers and the 4K index (tests, and after big library changes).</summary>
         public void Invalidate()
         {
-            _access.Clear();
+            _access.InvalidateAll();
             RefreshFourK(force: true);
         }
 
@@ -155,14 +157,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         }
 
         private bool CanOpen(Guid user, Guid item)
-        {
-            var now = DateTime.UtcNow;
-            if (_access.TryGetValue((user, item), out var hit) && now - hit.At < AccessTtl) return hit.Open;
-            var open = _library.CanOpen(user, item);
-            if (_access.Count >= MaxMemo) _access.Clear();
-            _access[(user, item)] = (open, now);
-            return open;
-        }
+            => _access.GetHeld((user, item), user, () =>
+            {
+                // Taken before the user is read (IStampLibrary.CanOpen reads them through the version-stamped user cache).
+                var stamp = Helpers.UserAuthority.Take(user);
+                return (_library.CanOpen(user, item), stamp);
+            });
 
         // New: a played mark or any playback since it arrived ends it. Upgraded: only playback after the upgrade (a played
         // mark carried over from the old file doesn't).

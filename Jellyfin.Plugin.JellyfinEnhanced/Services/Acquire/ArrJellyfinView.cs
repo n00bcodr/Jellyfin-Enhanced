@@ -53,20 +53,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
             var parental = HasParentalLimit(user);
 
-            // Role, library access (all, enabled and blocked folders), parental settings and "show missing episodes":
-            // the same fields the user caches key by (Helpers.UserAuthority).
-            var fingerprint = new StringBuilder();
-            Helpers.UserAuthority.AppendPolicy(fingerprint, user);
-
             return new StatusViewer
             {
                 UserId = user.Id,
                 IsAdmin = isAdmin,
                 DisplayMissingEpisodes = user.DisplayMissingEpisodes,
                 HasParentalLimit = parental,
-                PolicyRevision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint.ToString())), 0, 12),
+                PolicyRevision = PolicyRevisionOf(user),
                 Handle = user,
             };
+        }
+
+        /// <summary>
+        /// The policy revision of <paramref name="user"/> as read (<see cref="StatusViewer.PolicyRevision"/>): role,
+        /// library access (all, enabled and blocked folders), parental settings and "show missing episodes"
+        /// (<see cref="Helpers.UserAuthority.AppendPolicy"/>). A cache that decides with a user object keys by the
+        /// revision of that same object, never by another read of the user, which a change can land between.
+        /// </summary>
+        /// <param name="user">The user.</param>
+        /// <returns>The revision.</returns>
+        public static string PolicyRevisionOf(JUser user)
+        {
+            var fingerprint = new StringBuilder();
+            Helpers.UserAuthority.AppendPolicy(fingerprint, user);
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint.ToString())), 0, 12);
         }
 
         /// <summary>

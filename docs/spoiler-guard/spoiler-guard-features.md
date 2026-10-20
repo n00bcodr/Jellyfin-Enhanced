@@ -147,7 +147,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | Surface | Treatment |
 |---|---|
 | Episode images | Unplayed episodes use parent artwork or blur. Played episodes keep their images. |
-| Season images | Season 0 (specials) and Season 1 stay visible. Later seasons use replacement until any episode in that season is played. |
+| Season images | Season 0 (specials) and Season 1 stay visible. Later seasons use replacement until any episode in that season you may see is played; an episode hidden from you (a blocked tag, a rating or library change) doesn't count from the next request. |
 | Movie images | Unplayed, guarded movies follow image policy. Posters and thumbnails stay visible by default. |
 | Descriptions | Nonempty descriptions become your configured placeholder, initially `Spoiler Guard activated`. Series descriptions have a separate control. |
 | Episode and season titles | Numbered protected episodes become `Season X, Episode Y`; eligible numbered seasons become `Season N`. |

@@ -45,7 +45,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// Appends what the arr status viewer's policy revision hashes (<c>ArrJellyfinView.Viewer</c>): role, library
         /// access (all, enabled and blocked folders), parental rating, blocked and allowed tags, blocked unrated items,
         /// and "show missing episodes". That revision is stored with each request's authorization, so its input stays
-        /// fixed; the caches keyed by access use <see cref="Fingerprint"/>, which covers every access-deciding fact.
+        /// fixed (a tag holding a separator is escaped, so no two policies share it; every other revision is unchanged);
+        /// the caches keyed by access use <see cref="Fingerprint"/>, which covers every access-deciding fact.
         /// </summary>
         /// <param name="fingerprint">Where to append.</param>
         /// <param name="user">The user.</param>
@@ -64,14 +65,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             foreach (var f in folders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
             fingerprint.Append('|').Append(user.MaxParentalRatingScore?.ToString(CultureInfo.InvariantCulture) ?? "-")
                 .Append('.').Append(user.MaxParentalRatingSubScore?.ToString(CultureInfo.InvariantCulture) ?? "-").Append('|');
-            foreach (var t in blockedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
+            foreach (var t in blockedTags.OrderBy(t => t, StringComparer.Ordinal)) Escaped(fingerprint, t).Append(',');
             fingerprint.Append('|');
-            foreach (var t in allowedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
+            foreach (var t in allowedTags.OrderBy(t => t, StringComparer.Ordinal)) Escaped(fingerprint, t).Append(',');
             fingerprint.Append('|');
             foreach (var u in blockedUnrated.OrderBy(u => u)) fingerprint.Append((int)u).Append(',');
             fingerprint.Append('|');
             foreach (var f in blockedFolders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
             fingerprint.Append('|').Append(user.DisplayMissingEpisodes ? 'M' : '-');
+        }
+
+        // A tag as part of the revision: '\', ',' and '|' (its separators) escaped, so a tag holding them can't pass for
+        // the structure (two different policies never share a revision). A tag without them is written as it is, so the
+        // revisions stored with existing requests stay what they were.
+        private static StringBuilder Escaped(StringBuilder text, string tag)
+        {
+            if (tag.IndexOfAny(['\\', ',', '|']) < 0) return text.Append(tag);
+            foreach (var c in tag)
+            {
+                if (c is '\\' or ',' or '|') text.Append('\\');
+                text.Append(c);
+            }
+
+            return text;
         }
 
         /// <summary>

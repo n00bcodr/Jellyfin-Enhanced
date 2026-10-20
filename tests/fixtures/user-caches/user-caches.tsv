@@ -1,0 +1,306 @@
+# Every cache the plugin keeps (tests/backend/Users/UserCacheScan.cs finds them in the source) and why it can't serve a
+# stale answer after a change to a user's access. Columns: member, build (both | jf12), class, key, reason (for keyed: the
+# key builder Type.Method~text it must contain). Classes: stamped = declared as Helpers/UserAccessCache.cs (fingerprint +
+# version, race-safe); keyed = its key holds the viewer's access as the asking request read it; independent = doesn't
+# depend on a user's access, for the reason given. See tests/backend/README.md.
+AcquisitionStampFeeder._pending	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampFeeder._removed	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampFeeder._upgradesDone	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampResolver.FourKIndex.ByKey	both	independent	title key	library structure (4K copies by title); each viewer's access to a copy is checked at read
+AcquisitionStampResolver._access	both	stamped	(user, item)	can the viewer open the item: held-user mode (the user is read through the version-stamped user cache); invalidated by library changes
+AcquisitionStampResolver._fourKChanges	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampStore._deleted	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampStore._expired	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampStore._pendingNotifications	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+ArrActionRunner._recent	both	independent	action idempotency key	in-flight arr action de-duplication (an admin action), not a cached answer
+ArrAdminHubController.DeniedSeen	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+ArrChangeFeed._revisions	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrChangeTracker._items	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrClientFactory._clients	both	independent	instance	HTTP clients per arr instance
+ArrConfirmationTokens._pending	both	independent	token hash	an admin confirmation token bound to the user who asked; checked against that user and binding at use, not an access answer
+ArrEpisodesSnapshot._byNumber	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrFeedAudience.EpisodeNumberSet._ranges	both	independent	per value	part of a computed value (episode numbers), not a cache
+ArrFeedAudience._cache	both	keyed	(user, title, instance) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
+ArrFeedAudience._seasons	both	keyed	(user, tvdb, season) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
+ArrFeedAudience._series	both	keyed	(user, tvdb) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
+ArrFeedLimits._perUser	both	independent	user	how many long-polls each user holds open now (a concurrency limit), not an answer about access
+ArrInstanceLibraries.State.Cache	both	independent	(instance, path)	arr root folder → Jellyfin library mapping: not per user
+ArrLibrarySnapshot._moviesById	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._moviesByImdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._moviesByTmdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._seriesById	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._seriesByImdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._seriesByTmdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLibrarySnapshot._seriesByTvdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrLiveRouter.Pending.Titles	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveRouter._counters	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveRouter._pending	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveService._connections	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveService._libraryResyncAt	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveService._libraryResyncDeferred	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveService._searches	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrSnapshotSlot._patchesDuringRefresh	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.CalendarRangeCache._entries	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.InstanceState.ConfirmedDepartures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.InstanceState.Departures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.InstanceState.Seen	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.InstanceState.TitleStamps	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.InstanceState._episodes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore._backgroundTasks	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore._routes	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore._states	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStatusCache._lru	both	keyed	same entries as _map (LRU order)	ArrStatusService.CacheKey~PolicyRevision
+ArrStatusCache._map	both	keyed	user | policy revision | route | what	ArrStatusService.CacheKey~PolicyRevision
+ArrStatusService.Gathered.Copies	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+ArrStatusService.Gathered.Facts	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+ArrStatusService.HistoryIndex	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStatusService.QueueIndex	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrTagsSyncTask.TagIndex.ByImdb	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrTagsSyncTask.TagIndex.ByTmdb	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrTagsSyncTask.TagIndex.ByTvdb	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrTagsSyncTask.TagIndex.EntryImdb	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrTagsSyncTask.TagIndex.EntryTmdb	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrTagsSyncTask.TagIndex.MovieImdbOwners	both	independent	title ids	one tag-sync run's index of arr tags: not per user
+ArrWebhookProvisioner._gates	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrWebhookReceiver._failuresPerSource	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+ArrWebhookReceiver._perInstance	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+ArrWebhookReceiver._stats	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+AutoMovieRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
+AutoMovieRequestService._requestedMovies	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer
+AutoSeasonRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
+AutoSeasonRequestService._requestedSeasons	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer
+AutoSeasonRequestService._seriesDetailsCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+AutoSeasonRequestService._seriesDetailsInFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+AutomationSendGuard.JobAdmission._active	both	independent	job	automation job admission (the frozen 4a check decides per send)
+AutomationSendGuard.JobAdmission._reserved	both	independent	job	automation job admission (the frozen 4a check decides per send)
+BuildAttestation.DllHash	both	independent	none / asset	build, asset and rendering state: the same for everyone
+CdnAssetService._hot	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+CdnAssetService._negativeCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ClientScriptBundle._manifest	both	independent	none / asset	build, asset and rendering state: the same for everyone
+CompositeImageCache._inFlight	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+CompositeImageCache._lruEntries	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+CompositeImageCache._lruOrder	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+DiscoverService._cache	both	keyed	user | policy revision | parental | revisions | hidden stamp | what	DiscoverService.CacheKey~PolicyRevision
+DiscoverService._hiddenCache	both	independent	user	the person's own Hidden Content rules (JE data, dropped when the file is saved), not Jellyfin access
+DoesTheDogDieService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+DoesTheDogDieService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+EpisodeCoverage._seasons	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+FactVersions._versions	both	independent	fact / person	the version counters the stamps are made of
+FeedScheduler.Viewer.Waiting	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+FeedScheduler._turns	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer
+FeedScheduler._viewers	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer
+HiddenContentResponseFilter.HideContext.ItemIdScopes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+HiddenContentResponseFilter.HideContext.SeriesIdScopes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+HiddenContentResponseFilter._hcCache	both	independent	user	the person's own Hidden Content rules (JE data, invalidated on every write), not Jellyfin access
+HiddenContentResponseFilter._warnedReadFailure	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+HiddenContentResponseFilter._warnedShapeMismatchAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+HomeArrivals._known	both	independent	content / item	when library content arrived: not per user
+HouseholdRuleFacts._cache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+ImageBlurService._cache	both	independent	item image + intensity	blurred bytes of an image: whether a viewer gets them is decided per request
+JellyfinBridge.QueuedRefresh.Paths	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+JellyfinBridge._followUps	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._historyLoads	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._missing	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._pending	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._recent	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._rereadAt	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._running	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._twinFiles	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._waiting	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinBridge._work	both	independent	path / item	library refresh bookkeeping: not per user
+JellyfinEnhancedController.ReviewVisibilityContext.Authors	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+JellyfinEnhancedController._avatarCache	both	independent	Seerr avatar URL	public avatar bytes
+JellyfinEnhancedController._loggedCorruptArrConfig	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+JellyfinEnhancedController._pollLogDedup	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+JellyfinEnhancedController._responseCache	both	independent	Seerr path (or user | path)	Seerr's raw answer; the viewer's parental filter is applied to it on every serve (ApplyParentalFilterAsync)
+JellyfinEnhancedController._tmdbEnrichmentCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+JellyfinEnhancedController._tmdbEnrichmentInFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+JellyfinEnhancedController._userCache	both	independent	Jellyfin user id	the person's Seerr account (Seerr's own permissions), not Jellyfin access
+JellyfinEnhancedController._userCacheGeneration	both	independent	none	the generation counter of _userCache
+JellyfinEnhancedController._userIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
+JellyfinUserActions.Assemblies	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.Contained	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.Node.Calls	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.Reached	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.TypeInfo.Events	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.TypeInfo.Interfaces	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet.TypeInfo.Methods	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._actions	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._callSites	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._contained	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._derived	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._explicit	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._fieldNodes	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._fieldTypes	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._implementers	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._loads	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._made	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._moduleInitializers	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._modules	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._nodeOf	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._nodes	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._stores	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._terminals	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._types	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._typesByName	both	independent	assembly / type	code and reflection metadata read once
+JellyfinUserActions.CodeSet._unresolved	both	independent	assembly / type	code and reflection metadata read once
+LanguageFlagRules.FlagInfo.AllLanguages	both	independent	none / asset	build, asset and rendering state: the same for everyone
+LanguageFlagRules.Memo	both	independent	none / asset	build, asset and rendering state: the same for everyone
+LanguageTags.Loaded	both	independent	none / asset	build, asset and rendering state: the same for everyone
+LanguageTags.Served	both	independent	none / asset	build, asset and rendering state: the same for everyone
+LanguageTags.Shipped	both	independent	none / asset	build, asset and rendering state: the same for everyone
+ListMetadataService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ListMetadataService._inflight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ListMetadataService._tmdbPosters	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ListMetadataService._unreachableUntil	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ListService._createLocks	both	independent	lock key	locks (and their holder counts)
+ListService._destinationLocks	both	independent	lock key	locks (and their holder counts)
+ListStore._absent	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._backedUp	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._cache	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._generations	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._index	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._indexKeysByList	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._indexPending	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListStore._locks	both	independent	lock key	locks (and their holder counts)
+ListStore._removed	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request
+ListSwapService._appliedMetadataAt	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+ListSwapService._changedItems	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+ListSwapService._lastForced	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+ListSwapService._lastViewPass	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+ListSwapService._ownerlessLogged	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+ListSwapService._pendingMatches	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+ListSwapService._queued	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+MaintenancePlaybackReminderConsumer._lastSentBySession	both	independent	session	when a maintenance reminder was last sent (rate limit)
+MdblistService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+MdblistService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+NativeDetailsArtwork._bytes	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
+NativeDetailsArtwork._inFlight	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
+NativeDetailsFacadeFilter.BodyProperties	jf12	independent	assembly / type	code and reflection metadata read once
+NativeDetailsLibrary._cache	jf12	keyed	viewer | native-details revision | title | part	NativeDetailsLibrary.Cached~viewerRevision
+NativeDetailsLinks.ViewerLinks._viewer	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+NativeDetailsLinks._names	jf12	independent	name / TMDB person	library genre, studio and person records (any viewer)
+NativeDetailsLinks._people	jf12	independent	name / TMDB person	library genre, studio and person records (any viewer)
+NativeDetailsLinks._visible	jf12	keyed	viewer | native-details revision | kind | name (or open | item)	NativeDetailsLinks.Finds~viewerRevision,NativeDetailsLinks.Opens~viewerRevision
+NativeDetailsPolicy._epochs	jf12	independent	user	sign-out epochs: the revocation state itself, not a cached answer
+NativeDetailsPolicy._revisions	jf12	stamped	viewer	artwork-grant revision: fingerprint + own version; Revoke (sign-out) invalidates the viewer
+NativeDetailsPolicy._roots	jf12	independent	none	the library roots (not per user)
+NativePosterTagStampSession.Owners	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+NativePosterTagStampSession.User	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+NotificationService._dirty	both	independent	title / notification	which titles notifications follow (JE data), delivery bookkeeping
+NotificationService._interest	both	independent	title / notification	which titles notifications follow (JE data), delivery bookkeeping
+NotifyStore._deleted	both	independent	title / notification	which titles notifications follow (JE data), delivery bookkeeping
+PlaceholderVisibility._allowed	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+PlaybackTriggerChannel._pending	both	independent	trigger key	playback auto-request triggers and their cool-down
+PlaybackTriggerGate._entries	both	independent	trigger key	playback auto-request triggers and their cool-down
+PosterTagAssets._flags	both	independent	none / asset	build, asset and rendering state: the same for everyone
+PosterTagComposer._renderer	both	independent	none / asset	build, asset and rendering state: the same for everyone
+PosterTagDataProvider.ContentHashes	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
+PosterTagDataProvider._building	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
+PosterTagDataProvider._memo	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
+PosterTagImageFilter.WarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+PosterTagRenderer._engine	both	independent	none / asset	build, asset and rendering state: the same for everyone
+PosterTagSettingsProvider._cache	both	independent	user	the person's poster-tag display settings and audio-language preference, compared on each read (display, not access)
+PosterTagText._fallbackFaces	both	independent	font / text	text shaping caches
+PosterTagText._fallbacks	both	independent	font / text	text shaping caches
+PosterTagText._layouts	both	independent	font / text	text shaping caches
+PosterTagText._shapers	both	independent	font / text	text shaping caches
+PosterTagText._shapes	both	independent	font / text	text shaping caches
+PosterTagTileCache._lru	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+PosterTagTileCache._map	both	independent	content hash	content-addressed: the key is a hash of exactly what is drawn, computed per request from the viewer's current tag data
+PosterTagUserCache._cache	both	stamped	user	the user itself (held mode; no such user is final)
+PosterTagVariantToken._secret	both	independent	none / asset	build, asset and rendering state: the same for everyone
+RecentArrivals._added	both	independent	content / item	when library content arrived: not per user
+RequestFulfilment._watched	both	independent	title id	open requests' titles (JE data)
+RequestIdentityService._cookieMissCache	both	independent	IP / cookie / none	who is asking (sessions on an IP, the only user): identity, not what they may see
+RequestIdentityService._ipScanCache	both	independent	IP / cookie / none	who is asking (sessions on an IP, the only user): identity, not what they may see
+RequestIdentityService._singleUser	both	independent	IP / cookie / none	who is asking (sessions on an IP, the only user): identity, not what they may see
+RequestIdentityService._warnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+RequestPolicy.Typical	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+RequestSearchService._last	both	independent	search slot	search rate limit
+RequestTitleLocks.Entry.Users	both	independent	lock key	locks (and their holder counts)
+RequestTitleLocks._entries	both	independent	lock key	locks (and their holder counts)
+ResolveMemo.Episodes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+ResolveMemo.Movies	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+ResolveMemo.Series	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+ReviewAuthorCache._entries	both	stamped	author	the author itself (held mode; no such user is final); user events and maintenance invalidate all
+SecretsMigration.Report.Missing	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Report.Moved	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Report.NeedsReentry	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Report.Notes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Work.Extra	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Work.Prune	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsMigration.Work._slots	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SecretsStore._pending	both	independent	secret name	secrets
+SecretsStore._values	both	independent	secret name	secrets
+SeerrAskedProofCache._entries	both	independent	user | Seerr address	the titles the person asked for in Seerr (Seerr data)
+SeerrBackend._ids	both	independent	user / Seerr address	the person's Seerr account and Seerr's own settings and permissions, not Jellyfin access
+SeerrBackend._prepared	both	independent	user / Seerr address	the person's Seerr account and Seerr's own settings and permissions, not Jellyfin access
+SeerrBackend._serverDetails	both	independent	user / Seerr address	the person's Seerr account and Seerr's own settings and permissions, not Jellyfin access
+SeerrBackend._serverLists	both	independent	user / Seerr address	the person's Seerr account and Seerr's own settings and permissions, not Jellyfin access
+SeerrLibraryAccessProjector.State.Done	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SeerrNativeDetailsSource._cache	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
+SeerrNativeDetailsSource._inFlight	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
+SeerrNativeDetailsSource._linked	jf12	independent	Seerr path	Seerr's public title details; each viewer is checked (NativeDetailsPolicy) before anything is shown
+SeerrParentalFilter._certCache	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrParentalFilter._inFlight	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrParentalFilter._tagFetchFailedAt	both	independent	title	facts about a title (ratings, certifications); each viewer's limit is applied at read
+SeerrRequestReadModel.FullRead.Records	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SeerrRequestReadModel.Snapshot.ById	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel.Snapshot.ByKey	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel.Snapshot.ByUser	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel._goneOwners	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel._goneTitles	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel._meta	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrScanTriggerService._owners	both	independent	(source, job)	scan trigger ownership
+SpoilerAutoEnableArmer.Candidate.LibraryIds	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
+SpoilerAutoEnableFilter._cachedIds	both	independent	config text	the parsed admin allow-list
+SpoilerBlurImageFilter._warnedShapeAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+SpoilerBlurImageFilter._watchedCache	both	stamped	(user, season)	any episode of the season watched among those the viewer may see: fingerprint + own version; watched-state saves invalidate (user, season / series)
+SpoilerIdentityService._markerMap	both	independent	marker / user	spoiler identity markers (who a request is from), not access
+SpoilerIdentityService._mintCache	both	independent	marker / user	spoiler identity markers (who a request is from), not access
+SpoilerLibraryAddAutoEnabler._queue	both	independent	item	queued library additions
+SpoilerNextUnwatchedService._cache	both	stamped	(user, series)	next-episode boundary over the episodes the viewer may see: fingerprint + own version; library events invalidate the series for everyone, watched-state saves for the user
+SpoilerSeerrPendingPromoter._activeSweeps	both	independent	title key / user	pending Spoiler Guard promotions (JE data per person)
+SpoilerSeerrPendingPromoter._pendingUsersByKey	both	independent	title key / user	pending Spoiler Guard promotions (JE data per person)
+SpoilerSeerrPendingPromoter._sweepRerun	both	independent	title key / user	pending Spoiler Guard promotions (JE data per person)
+SpoilerSeerrPendingPromoter._sweepRunning	both	independent	title key / user	pending Spoiler Guard promotions (JE data per person)
+SpoilerUserResolver._collectionScopeCache	both	independent	movie + opted collections	library structure keyed by the opted-in set (the same for any viewer with that set)
+SpoilerUserResolver._corruptionLog	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+SpoilerUserResolver._userStateCache	both	independent	user	the person's Spoiler Guard state file (JE data, invalidated on every write), not Jellyfin access
+SpoilerUserResolver._warnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+TagCachePendingChanges._pending	both	independent	item	pending library changes for the tag cache
+TagCacheService.UserAccess.Ids	both	independent	per value	part of the value _userAccessCache (stamped) holds
+TagCacheService._cache	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache)
+TagCacheService._languageIdentities	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache)
+TagCacheService._serializedItems	both	keyed	cache version, timestamp, epoch, access digest	TagCacheService.TryGetSerializedItems~accessRevision
+TagCacheService._userAccessCache	both	stamped	user	accessible-id set: fingerprint + own version; user events, library changes and disable invalidate all
+TagStyleCatalog.AgeList	both	independent	none / asset	build, asset and rendering state: the same for everyone
+TagStyleCatalog.QualityList	both	independent	none / asset	build, asset and rendering state: the same for everyone
+TitleFacts.Checked	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+TitleFacts.Copies	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+TitleFacts.Stale	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+TitleFacts.Unreadable	both	independent	per call	one status computation's working set (made per request for its viewer), not kept across requests
+TmdbResponseCache._entries	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+TmdbResponseCache._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+TmdbResponseCache._lru	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+UsageEventCounterService._counters	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+UserAccessCache._entries	both	independent	key / (user, scope)	the access-stamp helper's own storage
+UserAccessCache._invalidated	both	independent	key / (user, scope)	the access-stamp helper's own storage
+UserAuthority.Attributed	both	independent	fact / person	the version counters the stamps are made of
+UserAuthorityFields.RowReads	both	independent	assembly / type	code and reflection metadata read once
+UserConfigurationManager._presenceWarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
+UserConfigurationManager._userFileLocks	both	independent	lock key	locks (and their holder counts)
+UserManagerExtensions._getUsersMethod	both	independent	assembly / type	code and reflection metadata read once
+UserManagerExtensions._hasGetUsers	both	independent	assembly / type	code and reflection metadata read once
+UserManagerExtensions._usersProperty	both	independent	assembly / type	code and reflection metadata read once
+UserSpoilerBlur._collections	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
+UserSpoilerBlur._movies	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
+UserSpoilerBlur._pendingTmdb	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
+UserSpoilerBlur._series	both	independent	per value	fields of the person's Spoiler Guard state (a stored document)
+ViewerBudget._budgets	jf12	independent	viewer	a rate limit per viewer
+WatchlistMonitor._deferred	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
+WatchlistMonitor._requestsCache	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
+WatchlistMonitor._requestsInFlight	both	independent	Seerr address / user	Seerr's requests (Seerr data) and watchlist sync bookkeeping
+WikidataAwardsService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+WikidataAwardsService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)

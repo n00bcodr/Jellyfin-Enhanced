@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Library;
 
@@ -38,7 +37,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
 
         private readonly IUserManager _userManager;
-        private readonly ConcurrentDictionary<Guid, (JUser? User, DateTime At, UserAuthority.Stamp Stamp)> _cache = new();
+        private readonly UserAccessCache<Guid, JUser?> _cache = new(Ttl, MaxEntries, final: user => user == null);
 
         public PosterTagUserCache(IUserManager userManager)
         {
@@ -49,18 +48,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public JUser? Get(Guid userId)
         {
             if (userId == Guid.Empty) return null;
-            var now = DateTime.UtcNow;
-            if (_cache.TryGetValue(userId, out var hit) && now - hit.At < Ttl
-                && (hit.User == null || UserAuthority.Unchanged(userId, hit.Stamp)))
-            {
-                return hit.User;
-            }
-
             // Stamped before the read, so a change landing during it is never served later.
-            var (user, stamp) = UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
-            if (_cache.Count >= MaxEntries) _cache.Clear();
-            _cache[userId] = (user, now, stamp);
-            return user;
+            return _cache.GetHeld(userId, userId, () => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById));
         }
     }
 }
