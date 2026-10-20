@@ -334,7 +334,8 @@ public class ListsSourceReviewR10FixTests(ITestOutputHelper output)
         new object[] { "list", "data null", "{\"data\":null}", "upstream_error" },
         new object[] { "list", "SERVICE_UNAVAILABLE_ERROR, list null", "{\"errors\":[{\"message\":\"x\",\"path\":[\"list\"],\"extensions\":{\"code\":\"SERVICE_UNAVAILABLE_ERROR\"}}],\"data\":{\"list\":null}}", "upstream_error" },
         new object[] { "list", "not found on another path, list null", "{\"errors\":[{\"message\":\"x\",\"path\":[\"title\"],\"extensions\":{\"code\":\"RESOURCE_NOT_FOUND\"}}],\"data\":{\"list\":null}}", "upstream_error" },
-        new object[] { "list", "INTERNAL_SERVER_ERROR first, then not found", "{\"errors\":[{\"message\":\"x\",\"path\":[\"list\",\"items\"],\"extensions\":{\"code\":\"INTERNAL_SERVER_ERROR\"}},{\"message\":\"y\",\"path\":[\"list\"],\"extensions\":{\"code\":\"RESOURCE_NOT_FOUND\"}}],\"data\":{\"list\":null}}", "not_found" },
+        // Review round 11 (4c2-R11-1): every error must be the affirmative absence on the root; an internal error beside it is an error answer.
+        new object[] { "list", "INTERNAL_SERVER_ERROR first, then not found", "{\"errors\":[{\"message\":\"x\",\"path\":[\"list\",\"items\"],\"extensions\":{\"code\":\"INTERNAL_SERVER_ERROR\"}},{\"message\":\"y\",\"path\":[\"list\"],\"extensions\":{\"code\":\"RESOURCE_NOT_FOUND\"}}],\"data\":{\"list\":null}}", "upstream_error" },
         new object[] { "list", "control: the list doesn't exist (IMDb's real answer)", ListMissing, "not_found" },
         new object[] { "list", "control: forbidden", "{\"errors\":[{\"message\":\"x\",\"path\":[\"list\"],\"extensions\":{\"code\":\"FORBIDDEN\"}}],\"data\":{\"list\":null}}", "not_found" },
         new object[] { "watchlist", "control: a private watchlist (IMDb's real answer)", "{\"errors\":[{\"message\":\"FORBIDDEN\",\"path\":[\"predefinedList\"],\"extensions\":{\"code\":\"FORBIDDEN\"}}],\"data\":{\"predefinedList\":null}}", "not_found" },

@@ -565,15 +565,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             client.Timeout = RequestTimeout;
 
             var url = $"{ApiBase}/user?apikey={Uri.EscapeDataString(apiKey)}";
-            using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            // Review round 11 (4c2-R11-3): headers first, then the body through the lists' one bounded reader, the whole read
+            // within the request's time (the client's timeout ends with the headers).
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(RequestTimeout);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var response = await Contracts.BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.Warning($"[MDBList] Account status query failed ({(int)response.StatusCode})");
                 return null;
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(await Contracts.BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false));
             var status = StatusOf(doc.RootElement);
             if (status == null)
             {
@@ -629,7 +633,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 client.Timeout = RequestTimeout;
 
                 var url = $"{ApiBase}/tmdb/{mdblistType}/{tmdbId}?apikey={Uri.EscapeDataString(apiKey)}";
-                using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(RequestTimeout);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var response = await Contracts.BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -637,8 +644,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
                 }
 
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+                // Review round 11 (4c2-R11-3): the lists' one bounded reader (an answer over its cap is a failed lookup).
+                using var doc = JsonDocument.Parse(await Contracts.BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false));
 
                 return ParseResponse(doc, now, mediaType, tmdbId);
             }
@@ -703,10 +710,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var url = $"{ApiBase}/tmdb/{mdblistType}/?apikey={Uri.EscapeDataString(apiKey)}";
                 var idsAsLongs = tmdbIds.Select(id => long.Parse(id)).ToArray();
                 var payloadJson = JsonSerializer.Serialize(new { ids = idsAsLongs });
-                using var payload = new StringContent(payloadJson, Encoding.UTF8, "application/json");
-                using var response = await client.PostAsync(url, payload, cancellationToken).ConfigureAwait(false);
-
-                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(BatchRequestTimeout);
+                using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payloadJson, Encoding.UTF8, "application/json") };
+                using var response = await Contracts.BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -714,6 +721,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _logger.Warning($"[MDBList] Media batch query failed ({(int)response.StatusCode}) for {mediaType} ({tmdbIds.Count} ids)");
                     return null;
                 }
+
+                // Review round 11 (4c2-R11-3): the lists' one bounded reader (an answer over its cap fails the batch).
+                var responseBody = await Contracts.BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false);
 
                 using var doc = JsonDocument.Parse(responseBody);
                 var root = doc.RootElement;

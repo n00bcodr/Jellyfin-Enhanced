@@ -522,9 +522,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     using var timeout = new CancellationTokenSource(CallTimeout);
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                    using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                    using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                     var status = (int)response.StatusCode;
-                    var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
+                    // Review round 11 (4c2-R11-3): only a JSON success's body is read, by the one bounded reader; any other answer
+                    // is that server's failure, its body never read.
+                    var json = response.IsSuccessStatusCode && SeerrHttpHelper.IsJsonContentType(response)
+                        ? await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false)
+                        : null;
                     if (json != null)
                     {
                         LookupAnswer answer;
@@ -561,7 +565,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                         return new ServerAnswer<LookupAnswer>(ServerState.NotFound);
                     }
 
-                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
+                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {status.ToString(CultureInfo.InvariantCulture)}");
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {

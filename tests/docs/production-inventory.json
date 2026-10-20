@@ -527,6 +527,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/BoundedBody.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs",
       "category": "Services"
     },
@@ -10374,7 +10378,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 598,
+    "files": 599,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,

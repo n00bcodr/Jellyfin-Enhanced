@@ -69,7 +69,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>List entries kept in the result cache over all results (oldest go first).</summary>
         internal const int MaxCachedItems = 20_000;
 
-        private const int MaxBodyBytes = 8 * 1024 * 1024;
         private const int MaxListPages = 100;
         private const int TraktPageSize = 100;
         private const int MaxTraktPages = 20;
@@ -1186,6 +1185,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             string query;
             var variables = new Dictionary<string, object?>(StringComparer.Ordinal) { ["first"] = 250, ["after"] = null };
             string[] connectionPath;
+            // One read for every query of it (review round 11, 4c2-R11-2: composite reads carry one verdict): the `p.` profile's
+            // lookup and every page report their envelope into it, so a partial step anywhere keeps the read from being complete,
+            // and from the cache.
+            var read = new SourceRead();
             switch (source.Shape)
             {
                 case "chart":
@@ -1201,7 +1204,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var user = source.Part("user");
                     if (user.StartsWith("p.", StringComparison.Ordinal))
                     {
-                        var (profile, _) = await ImdbQueryAsync("query($p:ID!){userProfile(input:{profileId:$p}){userId}}", new Dictionary<string, object?> { ["p"] = user }, "userProfile", options, cancellationToken).ConfigureAwait(false);
+                        var (profile, _) = await ImdbQueryAsync("query($p:ID!){userProfile(input:{profileId:$p}){userId}}", new Dictionary<string, object?> { ["p"] = user }, "userProfile", read, options, cancellationToken).ConfigureAwait(false);
                         user = profile.TryGetProperty("userProfile", out var up) && up.ValueKind == JsonValueKind.Object ? Str(up, "userId") ?? string.Empty : string.Empty;
                         if (!Regex.IsMatch(user, "^ur[0-9]{5,12}$"))
                         {
@@ -1226,13 +1229,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 "chart" => (ResponseContract.ImdbChartPage, AnswerRequest.None),
                 _ => (ResponseContract.ImdbWatchlistPage, AnswerRequest.None),
             };
-            var read = new SourceRead();
             var items = new List<SourceItem>();
             string? title = null;
             var total = 0;
             for (var page = 0; ; page++)
             {
-                var (data, errors) = await ImdbQueryAsync(query, variables, connectionPath[0], options, cancellationToken).ConfigureAwait(false);
+                var (data, errors) = await ImdbQueryAsync(query, variables, connectionPath[0], read, options, cancellationToken).ConfigureAwait(false);
                 Bind(contract, asked, data, read); // review round 10 (4c2-R10-1): the list asked for
                 if (source.Shape == "list" && data.TryGetProperty("list", out var list) && list.ValueKind == JsonValueKind.Object
                     && list.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.Object)
@@ -1328,10 +1330,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
-        // Returns the data and whether GraphQL reported errors next to it (a partial answer: nulled items are missing). Review
-        // round 10 (4c2-R10-7, ProviderAbsence.Imdb): "not found" only when the queried root is null AND IMDb's error on that
-        // root says RESOURCE_NOT_FOUND, NOT_FOUND or FORBIDDEN; any other error code (INTERNAL_SERVER_ERROR, …) is a failure.
-        private async Task<(JsonElement Data, bool Partial)> ImdbQueryAsync(string query, Dictionary<string, object?> variables, string root, SourceFetchOptions options, CancellationToken cancellationToken)
+        // One IMDb query of a read: its data and whether GraphQL reported errors next to it (a partial answer: nulled items are
+        // missing), its envelope reported into the read (every step of a read, the `p.` profile's lookup included: review round
+        // 11, 4c2-R11-2). The envelope is read by ProviderAbsence.ImdbEnvelope, its one reader: "not found" only from IMDb's
+        // affirmative absence on the queried root (4c2-R11-1); a root that is null otherwise, or an envelope JE can't read (errors
+        // that aren't a list of error objects, data without the root), is a failure.
+        private async Task<(JsonElement Data, bool Partial)> ImdbQueryAsync(string query, Dictionary<string, object?> variables, string root, SourceRead read, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["query"] = query, ["variables"] = variables });
             var headers = new Dictionary<string, string>(StringComparer.Ordinal) { ["x-imdb-client-name"] = "jellyfin-enhanced" };
@@ -1343,23 +1347,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             using var doc = JsonDocument.Parse(response.Body);
             var answer = doc.RootElement;
-            if (ProviderAbsence.Imdb(answer, root))
+            switch (ProviderAbsence.ImdbEnvelope(answer, root))
             {
-                throw new SourceHttpException("not_found", "IMDb didn't return this list (private or missing).");
+                case GraphQlVerdict.Absent:
+                    throw new SourceHttpException("not_found", "IMDb didn't return this list (private or missing).");
+                case GraphQlVerdict.Failed:
+                    throw new SourceHttpException("upstream_error", "IMDb's unofficial API didn't return this list (it answered with an error; it may have changed). Try again later, or the MDBList mirror.");
+                case GraphQlVerdict.Malformed:
+                    throw new SourceHttpException("upstream_error", "IMDb's unofficial API returned an answer JE can't read; it may have changed. Try the MDBList mirror instead.");
+                case GraphQlVerdict.Partial:
+                    _logger.Warning("[Lists] IMDb answered with errors next to data; the fetch is treated as partial (nothing will be removed).");
+                    read.Step(clean: false);
+                    return (answer.GetProperty("data").Clone(), true);
+                default:
+                    read.Step(clean: true);
+                    return (answer.GetProperty("data").Clone(), false);
             }
-
-            var partial = answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0;
-            if (answer.ValueKind != JsonValueKind.Object || !answer.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
-            {
-                throw new SourceHttpException("upstream_error", "IMDb's unofficial API returned an error; it may have changed. Try the MDBList mirror instead.");
-            }
-
-            if (partial)
-            {
-                _logger.Warning("[Lists] IMDb answered with errors next to data; the fetch is treated as partial (nothing will be removed).");
-            }
-
-            return (data.Clone(), partial);
         }
 
         // IMDb title types JE never imports (counted exclusions): games, music videos, podcasts, pilots.
@@ -1522,8 +1525,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // for the MDBList API one request of the daily quota (whose status read is itself a transmission through this
         // gate), the Seerr fallback's place in the shared metadata limiter. Then the transport, whose LAST step before the
         // bytes leave is the final check (GateOpen: the switch, IMDb's opt-in and the credential and address the request
-        // carries, as they are NOW), with no await in between; and every answer it returns is read by ReadBoundedAsync
-        // (streamed, at most MaxBodyBytes: too_large, never a silent cut). A short Retry-After (≤ 5 s) is honoured once;
+        // carries, as they are NOW), with no await in between; and every answer it returns is read by BoundedBody.ReadAsync
+        // (streamed, at most its cap: too_large, never a silent cut). A short Retry-After (≤ 5 s) is honoured once;
         // the retry goes through every step again.
         private async Task<HttpResult> SendAsync(Transmission transmission, SourceFetchOptions options, CancellationToken cancellationToken)
         {
@@ -1633,19 +1636,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
 
                 GateOpen(transmission); // the final check: nothing awaited between it and the send
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)
                 {
                     throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
                 }
 
-                var text = status == 200 || status is >= 400 and < 500 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
+                var text = status == 200 || status is >= 400 and < 500 ? await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
                 return new HttpResult(status, text, RetryAfterOf(response), HeadersOf(response));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 throw new SourceHttpException("timeout", "The list site took too long to answer.");
+            }
+            catch (ResponseTooLargeException)
+            {
+                throw TooLarge();
             }
             catch (HttpRequestException ex) when (Blocked(ex) is { } blocked)
             {
@@ -1677,19 +1684,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var client = _httpClientFactory.CreateClient(SeerrHttpHelper.NamedClient);
                 using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, transmission.Url, transmission.Credential ?? string.Empty);
                 GateOpen(transmission); // the final check: nothing awaited between it and the send
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                using var response = await BoundedBody.SendAsync(client, request, timeout.Token).ConfigureAwait(false);
                 var status = (int)response.StatusCode;
                 if (status is >= 300 and < 400 && status != 304)
                 {
                     throw new SourceHttpException(SourceFailures.Redirected, "Seerr answered with a redirect, which Jellyfin Enhanced doesn't follow.");
                 }
 
-                var json = status == 200 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null;
+                var json = status == 200 ? await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false) : null;
                 return new HttpResult(status, json, RetryAfterOf(response), HeadersOf(response));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 throw new SourceHttpException("timeout", "Seerr took too long to answer.");
+            }
+            catch (ResponseTooLargeException)
+            {
+                throw TooLarge();
             }
             catch (Exception ex) when (ex is not (SourceHttpException or OperationCanceledException or OutOfMemoryException))
             {
@@ -1698,31 +1709,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
         }
 
-        // Every answer the gate returns is read here, and only here: streamed from the headers on, at most MaxBodyBytes
-        // (an announced or actual body over the cap is too_large: nothing past the cap is read, nothing is cut silently).
-        private static async Task<string> ReadBoundedAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        {
-            if (response.Content.Headers.ContentLength > MaxBodyBytes)
-            {
-                throw new SourceHttpException("too_large", "The list is too large to import.");
-            }
-
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var buffer = new MemoryStream();
-            var chunk = new byte[81920];
-            int read;
-            while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
-            {
-                if (buffer.Length + read > MaxBodyBytes)
-                {
-                    throw new SourceHttpException("too_large", "The list is too large to import.");
-                }
-
-                buffer.Write(chunk, 0, read);
-            }
-
-            return Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-        }
+        // Every answer the gate returns is read by the one bounded reader (BoundedBody: streamed from the headers on, at most
+        // its cap); an announced or actual body over the cap is too_large: nothing past the cap is read, nothing is cut silently.
+        private static SourceHttpException TooLarge() => new("too_large", "The list is too large to import.");
 
         private static int? RetryAfterOf(HttpResponseMessage response) => response.Headers.RetryAfter is { } ra
             ? ra.Delta.HasValue ? (int)Math.Ceiling(ra.Delta.Value.TotalSeconds)

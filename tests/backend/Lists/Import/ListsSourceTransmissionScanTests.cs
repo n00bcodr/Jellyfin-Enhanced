@@ -232,17 +232,19 @@ public class ListsSourceTransmissionScanTests
         foreach (var transport in new[] { "SendOnceAsync", "SeerrOnceAsync" })
         {
             var body = Body(code, transport);
-            foreach (Match send in Regex.Matches(body, @"\.SendAsync\s*\(([^;]*)\)\s*\.ConfigureAwait"))
+            foreach (Match send in Regex.Matches(body, @"(\w+)\.SendAsync\s*\(([^;]*)\)\s*\.ConfigureAwait"))
             {
-                Assert.Contains("HttpCompletionOption.ResponseHeadersRead", send.Groups[1].Value, StringComparison.Ordinal);
+                // Headers first: the bounded reader's own send (review round 11), or ResponseHeadersRead spelled out.
+                Assert.True(send.Groups[1].Value == "BoundedBody" || send.Groups[2].Value.Contains("HttpCompletionOption.ResponseHeadersRead", StringComparison.Ordinal), transport + ": a send that buffers the answer");
             }
 
-            Assert.Contains("ReadBoundedAsync(response", body, StringComparison.Ordinal);
+            // Review round 11 (4c2-R11-3): the one bounded reader of the list and metadata code (BoundedBody; its own scan is
+            // ListsSourceReviewR11FixTests.NoHttpBodyIsReadOutsideTheBoundedReader).
+            Assert.Contains("BoundedBody.ReadAsync(response", body, StringComparison.Ordinal);
         }
 
         // The content of an answer is read nowhere else in the fetcher (no buffering reader, no helper that reads it whole).
-        var outside = code.Replace(Body(code, "ReadBoundedAsync"), string.Empty, StringComparison.Ordinal);
-        Assert.DoesNotMatch(@"ReadAsStringAsync|ReadAsByteArrayAsync|ReadAsStreamAsync|LoadIntoBufferAsync|ReadResponseAsync|ReadFromJsonAsync", outside);
+        Assert.DoesNotMatch(@"ReadAsStringAsync|ReadAsByteArrayAsync|ReadAsStreamAsync|LoadIntoBufferAsync|ReadResponseAsync|ReadFromJsonAsync", code);
     }
 
     [Fact]

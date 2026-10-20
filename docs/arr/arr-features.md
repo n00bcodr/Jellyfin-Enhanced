@@ -1448,7 +1448,10 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
   Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
   Only a complete read is kept for the next few minutes (so preview, apply and link read the list once); a partial or
-  cut-off one is read again, so a list fixed at the source shows up at once. A page's counts must make sense too: a
+  cut-off one is read again, so a list fixed at the source shows up at once. A read made of several requests (an IMDb
+  watchlist found through a `p.` profile, then its pages; a list's pages) is complete only when every one of them
+  answered cleanly: an error IMDb reports next to the profile it found makes the whole read partial, and an answer
+  whose error list isn't one JE can read is a failed read. A page's counts must make sense too: a
   negative page count or total, a different page than the one asked for, or a total below the rows read makes the read
   partial. Through Seerr, each configured Seerr address is tried in turn: a whole answer is used; a partial one is kept
   only until another address answers in full; an error, a timeout or an answer for something else moves on to the next
@@ -1463,9 +1466,10 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   one Seerr address, the next one is asked instead.
 - **"Not found" only when the site says so.** A list is "not found" (or a title "doesn't exist") only from the site's own
   answer for that: TMDB's not-found reply, IMDb's not-found or private error for that list, MDBList's or Trakt's own
-  status. A proxy's error page, an IMDb internal error, an empty answer or any Seerr error is shown as "couldn't read",
-  so nothing is treated as missing because a site had a bad moment. An empty search result counts as "no titles" only
-  when the site says its total is 0.
+  status. IMDb's error has to be about the list itself: a not-found error about a title inside the list (IMDb leaves the
+  whole list out then) is "couldn't read", not "private or missing". A proxy's error page, an IMDb internal error, an
+  empty answer or any Seerr error is shown as "couldn't read", so nothing is treated as missing because a site had a bad
+  moment. An empty search result counts as "no titles" only when the site says its total is 0.
 - **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
   number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
   it and the answer isn't remembered. An MDBList ratings answer counts only when it is the title's whole record: the
@@ -1480,7 +1484,8 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   key is changed, the new key's balance is read from MDBList before its first request. Every
   request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
   its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
-  redirects and only at public addresses.
+  redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
+  details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
 - **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
   get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
 

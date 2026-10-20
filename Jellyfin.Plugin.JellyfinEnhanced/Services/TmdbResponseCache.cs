@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -72,8 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // entries go first when it fills.
         private const long MaxCacheBytes = 24L * 1024 * 1024;
         private const long EntryOverheadBytes = 200;
-        // Upstream bodies larger than this fail the request (exception path).
-        private const long MaxResponseBytes = 8L * 1024 * 1024;
+        // Upstream bodies larger than BoundedBody.MaxBytes (8 MiB) fail the request (exception path).
         /// <summary>How long one upstream call may take (its own timeout: no caller's token ever stops it).</summary>
         internal static readonly TimeSpan UpstreamTimeout = TimeSpan.FromSeconds(30);
         // TMDB's soft limit is about 50 requests/s; a lookup takes ~0.3 s once
@@ -707,7 +707,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.MaxResponseContentBufferSize = MaxResponseBytes;
                 using var request = new HttpRequestMessage(HttpMethod.Get, requestUri)
                 {
                     // TMDB speaks HTTP/2; parallel lookups then share one
@@ -715,8 +714,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Version = HttpVersion.Version20,
                     VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
                 };
-                using var response = await httpClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+                // Phase 4c2 (review round 11, 4c2-R11-3): the lists' one bounded reader (headers first, then at most its cap of
+                // the body, a success's or an error's; over it: ResponseTooLargeException, an HttpRequestException as before).
+                using var response = await BoundedBody.SendAsync(httpClient, request, timeout.Token).ConfigureAwait(false);
+                var content = await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false);
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
                 var isJson = mediaType != null
                     && (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)

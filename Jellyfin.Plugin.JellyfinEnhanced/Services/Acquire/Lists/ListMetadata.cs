@@ -676,7 +676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var url = baseUrl + apiPath;
                     var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
                     using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                    using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
+                    using var response = await BoundedBody.SendAsync(client, request, cts.Token).ConfigureAwait(false);
                     answered = true;
                     _unreachableUntil.TryRemove(scope, out _);
                     switch ((int)response.StatusCode)
@@ -693,13 +693,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     }
 
-                    var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, cts.Token).ConfigureAwait(false);
-                    if (error != null || json == null)
+                    // Review round 11 (4c2-R11-3): the body only through the one bounded reader, and only a JSON success's (a proxy's
+                    // page, a redirect or another error is that server's failure, its body never read).
+                    if (!response.IsSuccessStatusCode || !SeerrHttpHelper.IsJsonContentType(response))
                     {
                         only500 = false;
-                        _logger.Debug($"[Lists] Seerr details {apiPath} failed: {error?.Code}");
+                        _logger.Debug($"[Lists] Seerr details {apiPath} failed: {((int)response.StatusCode).ToString(CultureInfo.InvariantCulture)}");
                         return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     }
+
+                    var json = await BoundedBody.ReadAsync(response, cts.Token).ConfigureAwait(false);
 
                     using var document = JsonDocument.Parse(json);
                     var answer = schema.Validate(asked, document.RootElement);
@@ -835,18 +838,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // The source transport (no redirects, public addresses only), like every TMDB read of the lists subsystem.
                 var client = _httpClientFactory.CreateClient(SourceHttp.ClientName);
                 var url = "https://api.themoviedb.org/3/" + apiPath + "?api_key=" + Uri.EscapeDataString(apiKey);
-                using var response = await ListContinuation.Await(() => client.GetAsync(url, cts.Token)).ConfigureAwait(false);
+                // Review round 11 (4c2-R11-3): sent with its body unread, which only the one bounded reader reads (a success's
+                // and a 404's alike): an answer over the cap is a failed read, never a poster.
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var response = await ListContinuation.Await(() => BoundedBody.SendAsync(client, request, cts.Token)).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     // Review round 10 (ProviderAbsence.Tmdb): "no such title or season" only from TMDB's own 404 (its error
                     // object); a proxy's 404 is a failed read (a season's would let the show's poster stand in).
                     var error = response.StatusCode == System.Net.HttpStatusCode.NotFound
-                        ? await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false)
+                        ? await ListContinuation.Await(() => BoundedBody.ReadAsync(response, cts.Token)).ConfigureAwait(false)
                         : null;
                     return (null, false, ProviderAbsence.Tmdb((int)response.StatusCode, error));
                 }
 
-                var body = await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false);
+                var body = await ListContinuation.Await(() => BoundedBody.ReadAsync(response, cts.Token)).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(body);
                 // Review rounds 6 and 7 (ResponseContract.TmdbPoster): "no poster" needs TMDB's answer to say so (poster_path
                 // there, a path or null); an answer that isn't Valid is a failed read, never remembered (a season's would let

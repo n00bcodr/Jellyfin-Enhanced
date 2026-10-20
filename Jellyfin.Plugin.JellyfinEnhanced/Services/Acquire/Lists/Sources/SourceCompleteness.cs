@@ -187,8 +187,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// </summary>
         public int Violations { get; private set; }
 
-        /// <summary>The rows are sound and every page's paging facts are within their domain and the request.</summary>
-        public bool Sound => RowsSound && Violations == 0;
+        /// <summary>
+        /// Steps of the read whose envelope wasn't clean (review round 11, 4c2-R11-2: composite reads carry one verdict): a query
+        /// of the read (an IMDb profile lookup, any of its pages) answered with errors next to its data. One such step anywhere
+        /// keeps the whole read from being complete, so from the fetcher's cache too.
+        /// </summary>
+        public int PartialSteps { get; private set; }
+
+        /// <summary>The rows are sound, every page's paging facts are within their domain and the request, and every step's envelope is clean.</summary>
+        public bool Sound => RowsSound && Violations == 0 && PartialSteps == 0;
 
         /// <summary>Reports a row as its parser read it.</summary>
         /// <param name="row">The row.</param>
@@ -241,6 +248,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         /// <summary>Reports an answer of the read that wasn't bound to its request (review round 10: ResponseContract.Bind).</summary>
         public void Violation() => Violations++;
+
+        /// <summary>Reports one step of the read (a query, a page) by its envelope's verdict (review round 11).</summary>
+        /// <param name="clean">The step's envelope was clean (no errors next to its data).</param>
+        public void Step(bool clean)
+        {
+            if (!clean)
+            {
+                PartialSteps++;
+            }
+        }
 
         /// <summary>Reports why the loop stopped.</summary>
         /// <param name="end">The reason.</param>
