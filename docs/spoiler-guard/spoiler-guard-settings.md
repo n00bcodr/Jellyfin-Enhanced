@@ -200,6 +200,8 @@ For movies, this is a **progressive strip**: only chapters whose start position 
 
 An episode the library has no numbers for is still protected: it becomes `Season X, Episode` (no episode number), `Episode Y` (no season) or just `Episode`. Its original title, sort title and season name go with it.
 
+A protected item keeps only values Jellyfin itself vouches for. Its other text is rebuilt from validated values or left out: a track's language must be one Jellyfin knows (a file tagged with anything else shows the track without a language), codec and channel names must be ones ffmpeg reports, and a rating must be one in Jellyfin's rating tables. Provider ids are kept only for known providers and in their id format. Genre, studio and cast names are kept only when they belong to the library's own genre, studio and person entries. A movie version's label is built from its video stream (`1080p HEVC SDR`, or `Version 2`) instead of the file name, and the names of the movie and the series come from the library. The same applies on every surface, including search results for seasons and extras, the activity log, and Jellyfin Enhanced's own tags.
+
 Some clients use the title in navigation tooltips and breadcrumbs where the synthesized title can look jarring. Turn off if that's a deal-breaker for your users.
 
 ### Hide cast on unwatched episodes

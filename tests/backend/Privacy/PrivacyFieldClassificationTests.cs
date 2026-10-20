@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Text.Json;
+using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -105,10 +106,10 @@ public class PrivacyFieldClassificationTests
     [Fact]
     public void AStubKeepsEveryHostRequiredFieldAndNothingElse()
     {
-        var dto = Filled(new BaseItemDto { Id = Guid.NewGuid(), ServerId = "srv", Type = Jellyfin.Data.Enums.BaseItemKind.Movie, MediaType = Jellyfin.Data.Enums.MediaType.Video,
+        var dto = Filled(new BaseItemDto { Id = Guid.NewGuid(), ServerId = "0202511b0eac4284ab045b3ba556d72e", Type = Jellyfin.Data.Enums.BaseItemKind.Movie, MediaType = Jellyfin.Data.Enums.MediaType.Video,
             IsFolder = false, RunTimeTicks = 6_000_000_000, LocationType = LocationType.FileSystem, ProductionYear = 1991, CommunityRating = 9 });
         dto.PlaylistItemId = "p0";
-        var stub = NativePrivacyProjection.Stub(dto);
+        var stub = NativePrivacyProjection.Stub(dto, new PrivacyValueHost(null, PrivacyTestHost.Localization()));
         Assert.Equal(PrivacyFieldClassification.HiddenName, stub.Name);
         Assert.Empty(TitleLeaks(stub, new HashSet<string>()));
         Assert.DoesNotContain(Secret, JsonSerializer.Serialize(stub, Jellyfin.Extensions.Json.JsonDefaults.Options));
@@ -167,4 +168,102 @@ public class PrivacyFieldClassificationTests
         Assert.Equal(expected, NeutralNames.Episode(season, episode));
         Assert.Equal(season is { } s ? "Season " + s : "Season", NeutralNames.Season(season));
     }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Values, not fields (review round 19): one value rule per member.
+
+    [Theory]
+    [MemberData(nameof(Hosts))]
+    public void EveryStringOrObjectMemberTheHostListsHasItsOwnValueRule(string host)
+    {
+        // A value-typed member (number, flag, date, enum) is closed by its type; every other member a protected item can
+        // carry names its rule explicitly (a deliberate drop included), so nothing is kept or dropped by accident.
+        var types = PrivacyValues.Types.ToDictionary(t => t.Name);
+        var missing = HostFields(host).Where(f => types.ContainsKey(f.Type) && f.Writable)
+            .Select(f => (f.Type, f.Property, Clr: types[f.Type].GetProperty(f.Property)?.PropertyType))
+            .Where(f => f.Clr != null && !IsClosedValue(f.Clr) && !PrivacyValues.RulesOf(types[f.Type]).ContainsKey(f.Property))
+            .Select(f => f.Type + "." + f.Property).ToArray();
+        Assert.True(missing.Length == 0, host + ": members without a value rule: " + string.Join(", ", missing.Take(30)));
+    }
+
+    private static bool IsClosedValue(Type type)
+    {
+        var element = type.IsArray ? type.GetElementType()! : type;
+        element = Nullable.GetUnderlyingType(element) ?? element;
+        return element.IsPrimitive || element.IsEnum || element == typeof(DateTime) || element == typeof(Guid) || element == typeof(decimal);
+    }
+
+    /// <summary>Members whose values the hosts produce from their own closed sets: every captured value must pass its validator.</summary>
+    private static readonly (string Name, Func<BaseItemDto, IEnumerable<string?>> Values)[] HostValues =
+    [
+        ("ServerId", d => [d.ServerId]), ("Etag", d => [d.Etag]), ("Container", d => [d.Container]), ("PlaylistItemId", d => [d.PlaylistItemId]),
+        ("ImageTags", d => d.ImageTags?.Values.ToArray() ?? []), ("BackdropImageTags", d => d.BackdropImageTags ?? []),
+        ("ProviderIds", d => (d.ProviderIds ?? []).Where(p => p.Key is "Tmdb" or "Imdb" or "Tvdb").Select(p => p.Key + "=" + p.Value)),
+        ("MediaStreams.Codec", d => (d.MediaStreams ?? []).Select(m => m.Codec)), ("MediaStreams.Profile", d => (d.MediaStreams ?? []).Select(m => m.Profile)),
+        ("MediaStreams.ChannelLayout", d => (d.MediaStreams ?? []).Select(m => m.ChannelLayout)), ("MediaStreams.PixelFormat", d => (d.MediaStreams ?? []).Select(m => m.PixelFormat)),
+        ("MediaStreams.TimeBase", d => (d.MediaStreams ?? []).Select(m => m.TimeBase)), ("MediaStreams.AspectRatio", d => (d.MediaStreams ?? []).Select(m => m.AspectRatio)),
+        ("MediaStreams.CodecTag", d => (d.MediaStreams ?? []).Select(m => m.CodecTag)), ("MediaStreams.Language", d => (d.MediaStreams ?? []).Select(m => m.Language)),
+        ("MediaSources.Id", d => (d.MediaSources ?? []).Select(m => m.Id)), ("MediaSources.ETag", d => (d.MediaSources ?? []).Select(m => m.ETag)),
+        ("MediaSources.Container", d => (d.MediaSources ?? []).Select(m => m.Container)),
+    ];
+
+    [Fact]
+    public void EveryValueTheHostsProducedForAKeptMemberPassesItsValidator()
+    {
+        // The captured answers of this build's host (12.2 for jf12, 10.11.11 for jf10), every item rebuilt as Spoiler Guard
+        // delivers it with every strip on: what the host itself wrote for these members comes through unchanged. (A user-data
+        // key the host derives from a name, an extra's "Theme Song" or a studio's "Studio-…", is free text and rightly
+        // leaves a protected item; folders and views are never protected, and their captured tags were anonymized.)
+        var host = new PrivacyValueHost(null, PrivacyTestHost.Localization());
+        var dropped = new List<string>();
+        var compared = 0;
+        foreach (var shot in PrivacyHostShapeModelTests.Data.Shots.Where(s => !s.Endpoint.StartsWith("User.Authenticate", StringComparison.Ordinal)))
+            foreach (var dto in AllDtos(PrivacyHostShapeModelTests.Value(shot)).Where(d => d.IsFolder != true || d.Type is BaseItemKind.Series or BaseItemKind.Season))
+            {
+                var rebuilt = PrivacyValues.Guarded(dto, PrivacyReveal.None, host);
+                // A track without a title of its own is labelled exactly as the host labels it (the label is rebuilt from the
+                // validated values: language, codec, profile, layout, flags).
+                foreach (var stream in (dto.MediaStreams ?? []).Where(m => m.Title == null))
+                {
+                    compared++;
+                    var label = rebuilt.MediaStreams?.FirstOrDefault(m => m.Index == stream.Index && m.Type == stream.Type)?.DisplayTitle;
+                    if (label != stream.DisplayTitle) dropped.Add(shot.File + ": DisplayTitle " + stream.DisplayTitle + " -> " + label);
+                }
+                foreach (var (name, values) in HostValues)
+                {
+                    var before = values(dto).Where(v => v != null).ToArray();
+                    var after = values(rebuilt).Where(v => v != null).ToArray();
+                    compared += before.Length;
+                    if (!before.SequenceEqual(after)) dropped.Add(shot.File + ": " + name + " " + string.Join("|", before.Except(after)));
+                }
+            }
+        Assert.True(compared > 200, "captured values compared: " + compared);
+        Assert.True(dropped.Count == 0, dropped.Count + " captured host values dropped, e.g. " + string.Join("; ", dropped.Distinct().Take(15)));
+    }
+
+    private static IEnumerable<BaseItemDto> AllDtos(object? node, int depth = 0)
+    {
+        if (node == null || depth > 6 || node is string || node.GetType().IsValueType) yield break;
+        if (node is BaseItemDto dto) yield return dto;
+        if (node is IEnumerable sequence) { foreach (var e in sequence) foreach (var d in AllDtos(e, depth + 1)) yield return d; yield break; }
+        foreach (var p in node.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0 && !p.PropertyType.IsValueType && p.PropertyType != typeof(string)))
+            foreach (var d in AllDtos(p.GetValue(node), depth + 1)) yield return d;
+    }
+
+    /// <summary>The hosts' own URL shapes (live, 12.2 and 10.11.11; api keys masked as hex) pass; a URL carrying text does not.</summary>
+    [Theory]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=d46r20-live-18554&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&VideoBitrate=808000&AudioBitrate=192000&AudioSampleRate=44100&MaxFramerate=24&SegmentContainer=ts&BreakOnNonKeyFrames=False&PlaySessionId=bea7025a61ca464884ea2a18f785d2a4&ApiKey=0123456789abcdef0123456789abcdef&RequireAvc=false&EnableAudioVbrEncoding=true&Tag=5304726cd85a2d70bf6431e65e91b5ca&h264-level=12&h264-profile=high&TranscodeReasons=DirectPlayError,ContainerNotSupported&allowVideoStreamCopy=false", true)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?&DeviceId=d46r20-probe&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&ApiKey=0123456789abcdef0123456789abcdef&h264-videobitdepth=8&aac-profile=lc&TranscodeReasons=DirectPlayError&allowAudioStreamCopy=false", true)]
+    [InlineData("/audio/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/stream.mp3?Static=true&DeviceId=TW96aWxsYS81LjA%3D", true)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=x&Title=Secret%20ending", false)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?Name=Secret ending", false)]
+    [InlineData("https://provider.invalid/Secret.m3u8", false)]
+    public void TheTranscodingUrlValidatorKnowsTheHostsShapes(string url, bool valid) => Assert.Equal(valid, PrivacyTokens.TranscodingUrl(url));
+
+    [Theory]
+    [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Subtitles/0/0/Stream.srt?ApiKey=0123456789abcdef0123456789abcdef", true)]
+    [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Attachments/3", true)]
+    [InlineData("/config/media/D46 R20 Show - S01E01.en.srt", false)]
+    [InlineData("https://provider.invalid/Secret.srt", false)]
+    public void TheDeliveryUrlValidatorKnowsTheHostsShapes(string url, bool valid) => Assert.Equal(valid, PrivacyTokens.DeliveryUrl(url));
 }

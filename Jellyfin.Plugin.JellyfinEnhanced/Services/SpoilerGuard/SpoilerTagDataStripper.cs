@@ -62,6 +62,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>A season after S1 of a guarded series with no watched episode.</summary>
         Season,
+
+        /// <summary>An extra (trailer, featurette, theme song or video) of a guarded title, by its owner's rules.</summary>
+        Extra,
     }
 
     // Spoiler Guard's stripping of JE tag data, shared by GET /tag-cache, POST
@@ -79,13 +82,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly ILibraryManager _libraryManager;
         private readonly IUserDataManager _userDataManager;
         private readonly SpoilerUserResolver _spoilerResolver;
+        private readonly MediaBrowser.Model.Globalization.ILocalizationManager? _localization;
 
-        public SpoilerTagDataStripper(ILibraryManager libraryManager, IUserDataManager userDataManager, SpoilerUserResolver spoilerResolver)
+        public SpoilerTagDataStripper(ILibraryManager libraryManager, IUserDataManager userDataManager, SpoilerUserResolver spoilerResolver,
+            MediaBrowser.Model.Globalization.ILocalizationManager? localization = null)
         {
             _libraryManager = libraryManager;
             _userDataManager = userDataManager;
             _spoilerResolver = spoilerResolver;
+            // The host's closed lists (languages, ratings) a guarded entry's values are checked against.
+            _localization = localization;
         }
+
+        /// <summary>What the host vouches for in one strip (its closed lists, the library's entities).</summary>
+        public PrivacyValueHost Host() => new(_libraryManager, _localization);
 
         /// <summary>
         /// True when Spoiler Guard is on with at least one tag-relevant strip toggle, i.e. when the endpoints
@@ -127,25 +137,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public string? GetGuardedKind(UserSpoilerBlur state, string key, TagCacheEntry? e)
         {
-            if (e == null) return null;
-            if (SpoilerUserResolver.ProviderGuarded(state, e.Type == "Movie" ? "movie" : "tv", e.Type is "Episode" or "Season" ? e.SeriesTmdbId : e.TmdbId)) return e.Type;
-            switch (e.Type)
-            {
-                case "Movie":
-                    // In scope if directly in Movies dict OR a child of an opted-in collection.
-                    return Guid.TryParse(key, out var mGuid) && _spoilerResolver.IsMovieInSpoilerScope(state, mGuid) ? "Movie" : null;
-                case "Series":
-                    // Series-level entry: strip only when Spoiler Guard is on for
-                    // THIS series (key == series ID). Covers home-rail cards bound
-                    // to seriesId when "Use episode images in Next Up/Continue Watching"
-                    // is OFF, so cards use series posters and ask for series-level tag data.
-                    return state.Series.ContainsKey(key) ? "Series" : null;
-                case "Episode":
-                case "Season":
-                    return !string.IsNullOrEmpty(e.SeriesId) && state.Series.ContainsKey(e.SeriesId) ? e.Type : null;
-                default:
-                    return null;
-            }
+            if (e == null || !Guid.TryParse(key, out var id)) return null;
+            if (!Enum.TryParse<BaseItemKind>(e.Type, out var kind) || kind is not (BaseItemKind.Movie or BaseItemKind.Series or BaseItemKind.Season or BaseItemKind.Episode)) return null;
+            // The entry's own owner facts (no per-entry library lookup over a whole cache), asked through the one scope
+            // rule every Spoiler Guard site uses: a movie by its id, a guarded collection or its TMDB key; a series, season
+            // or episode by the owning series' id or key.
+            var owned = kind is BaseItemKind.Season or BaseItemKind.Episode;
+            var owner = owned ? (Guid.TryParse(e.SeriesId, out var series) ? series : Guid.Empty) : id;
+            if (owner == Guid.Empty) return null;
+            var identity = new PrivacyIdentity(id, kind, owner, HiddenContentPolicy.TitleIdentity(kind == BaseItemKind.Movie ? "movie" : "tv", owned ? e.SeriesTmdbId : e.TmdbId),
+                Array.Empty<Guid>(), null, owned ? BaseItemKind.Series : kind);
+            return _spoilerResolver.InSpoilerScope(state, identity) ? e.Type : null;
         }
 
         /// <summary>
@@ -274,10 +276,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 && seasonEpisodeIds.Exists(playedIds.Contains));
                         if (seasonExempt)
                         {
-                            if (StripExemptSeasonRating(entry, stripRatingsEnabled) is { } seasonStripped)
-                            {
-                                items[kvp.Key] = seasonStripped;
-                            }
+                            // The season itself is the viewer's entry point, but its entry carries values of its
+                            // episodes (their audio languages, the first one's streams and name): those are validated.
+                            items[kvp.Key] = Validated(StripExemptSeasonRating(entry, stripRatingsEnabled) ?? entry.Clone(), policy.SanitizeTitleStreams);
                             continue;
                         }
                     }
@@ -332,10 +333,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var sNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
                 if (sNum <= 1 || HasWatchedAnyEpisode(season, user, "postertags-season-probe:"))
                 {
-                    var seasonStripped = StripExemptSeasonRating(entry, policy.StripRatings);
-                    if (seasonStripped == null) return entry;
+                    // Exempt itself, but the values it carries of its episodes are validated (as in the tag cache).
                     stripped = true;
-                    return seasonStripped;
+                    return Validated(StripExemptSeasonRating(entry, policy.StripRatings) ?? entry.Clone(), policy.SanitizeTitleStreams);
                 }
             }
 
@@ -348,54 +348,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public SpoilerTagDataStub GetTagDataStub(SpoilerTagStripPolicy policy, JUser user, BaseItem item)
         {
-            var spoilerState = policy.State;
-
-            // Unwatched Episode of a guarded series.
-            if (item is Episode spEp
-                && spEp.SeriesId != Guid.Empty
-                && (spoilerState.Series.ContainsKey(spEp.SeriesId.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spEp.SeriesId)))
+            // The item's identity (its owning title, that title's key, the viewer's watched state) and the one scope
+            // rule; the kind decides which stub. Collections, folders, people and programmes are not guarded titles.
+            var identity = PrivacyIdentities.Of(_libraryManager, item, user, _userDataManager);
+            if (!_spoilerResolver.InSpoilerScope(policy.State, identity)) return SpoilerTagDataStub.None;
+            switch (identity.Kind)
             {
-                var spUd = _userDataManager.GetUserData(user, spEp);
-                return spUd?.Played != true ? SpoilerTagDataStub.Episode : SpoilerTagDataStub.None;
+                case BaseItemKind.Episode:
+                    return identity.Played == true ? SpoilerTagDataStub.None : SpoilerTagDataStub.Episode;
+                case BaseItemKind.Series:
+                    // Covers home-rail cards bound to seriesId — e.g. NextUp / Continue Watching with "Use episode
+                    // images" OFF, where cards show the series poster.
+                    return SpoilerTagDataStub.Series;
+                case BaseItemKind.Movie:
+                    return identity.Played == true ? SpoilerTagDataStub.None : SpoilerTagDataStub.Movie;
+                case BaseItemKind.Season:
+                    // Mirrors the field-strip filter's Season strip + the image filter's HasWatchedAnyEpisodeInSeason gate.
+                    return item is Season season && season.IndexNumber.GetValueOrDefault(int.MaxValue) > 1 && !HasWatchedAnyEpisode(season, user, "tagdata-season-probe:")
+                        ? SpoilerTagDataStub.Season : SpoilerTagDataStub.None;
+                default:
+                    // An extra follows its owner: a movie's by the movie's watched state, a series' always.
+                    return identity.IsExtra && !(identity.OwnerKind == BaseItemKind.Movie && identity.Played == true) ? SpoilerTagDataStub.Extra : SpoilerTagDataStub.None;
             }
-
-            // A Series the user has Spoiler Guard on. Covers home-rail cards bound
-            // to seriesId — e.g. NextUp / Continue Watching with "Use episode
-            // images" OFF, where cards show the series poster.
-            if (item is Series spSeries
-                && (spoilerState.Series.ContainsKey(spSeries.Id.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spSeries.Id, spSeries.ProviderIds)))
-            {
-                return SpoilerTagDataStub.Series;
-            }
-
-            // Unwatched Movie in the user's spoiler scope.
-            if (item is Movie spMovie
-                && _spoilerResolver.IsMovieInSpoilerScope(spoilerState, spMovie.Id))
-            {
-                var spMovieUd = _userDataManager.GetUserData(user, spMovie);
-                return spMovieUd?.Played != true ? SpoilerTagDataStub.Movie : SpoilerTagDataStub.None;
-            }
-
-            // BoxSet (Collection) DTOs pass through unstripped: the collection's own
-            // art is the entry point the user just clicked (like Series), so blurring
-            // it would spoil their own navigation. Movies inside opted-in collections
-            // are already handled by the Movie stub via IsMovieInSpoilerScope.
-
-            // Season of a guarded series with no watched episode and not S0/S1.
-            // Mirrors the field-strip filter's Season strip + the image filter's
-            // HasWatchedAnyEpisodeInSeason gate.
-            if (item is Season spSeason
-                && spSeason.SeriesId != Guid.Empty
-                && (spoilerState.Series.ContainsKey(spSeason.SeriesId.ToString("N")) || _spoilerResolver.IsSeriesInSpoilerScope(spoilerState, spSeason.SeriesId)))
-            {
-                var sNum = spSeason.IndexNumber.GetValueOrDefault(int.MaxValue);
-                if (sNum > 1 && !HasWatchedAnyEpisode(spSeason, user, "tagdata-season-probe:"))
-                {
-                    return SpoilerTagDataStub.Season;
-                }
-            }
-
-            return SpoilerTagDataStub.None;
         }
 
         // Exempt seasons keep their poster + non-rating tags, but a season
@@ -482,8 +456,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 };
                 stripped.StreamData = clonedSd;
             }
-            return stripped;
+            return Validated(stripped, policy.SanitizeTitleStreams);
         }
+
+        /// <summary>
+        /// A guarded entry with only values the host vouches for (PrivacyValues' rules for the tag cache's own shape):
+        /// provider ids as digits, a rating the host's tables know, languages the host knows, ffprobe's codec, profile and
+        /// layout tokens; item names, paths and stream titles only where Spoiler Guard reveals its title family. Genres
+        /// are what the tag strip already decided (kept only when the administrator or the viewer turned it off).
+        /// </summary>
+        private TagCacheEntry Validated(TagCacheEntry entry, bool sanitizeTitles)
+        {
+            var host = Host();
+            static string? Digits(string? v) => v is { Length: > 0 and <= 20 } && v.All(char.IsAsciiDigit) ? v : null;
+            entry.TmdbId = Digits(entry.TmdbId);
+            entry.SeriesTmdbId = Digits(entry.SeriesTmdbId);
+            entry.SeriesId = PrivacyTokens.Id(entry.SeriesId) ? entry.SeriesId : null;
+            entry.OfficialRating = host.Rating(entry.OfficialRating) ? entry.OfficialRating : null;
+            entry.AudioLanguages = entry.AudioLanguages?.Where(host.Language).ToArray();
+            entry.PartialAudioLanguages = entry.PartialAudioLanguages?.Where(host.Language).ToArray();
+            if (entry.StreamData is { } data)
+            {
+                entry.StreamData = new TagStreamData
+                {
+                    ItemName = sanitizeTitles ? null : data.ItemName,
+                    ItemPath = sanitizeTitles ? null : data.ItemPath,
+                    Streams = data.Streams?.Where(st => st != null).Select(st => ValidatedStream(st, host, sanitizeTitles)).ToList(),
+                    Sources = data.Sources?.Select(source => new TagMediaSource { Path = sanitizeTitles ? null : source?.Path, Name = sanitizeTitles ? null : source?.Name }).ToList(),
+                };
+            }
+            return entry;
+        }
+
+        /// <summary>A tag stream with only validated values (and its display title only where titles are revealed).</summary>
+        internal static TagMediaStream ValidatedStream(TagMediaStream stream, PrivacyValueHost host, bool sanitizeTitles) => new()
+        {
+            Type = Enum.TryParse<MediaBrowser.Model.Entities.MediaStreamType>(stream.Type, out _) ? stream.Type : null,
+            Language = host.Language(stream.Language) ? stream.Language : null,
+            Codec = PrivacyTokens.Codec(stream.Codec) ? stream.Codec : null,
+            CodecTag = PrivacyTokens.FourCc(stream.CodecTag) ? stream.CodecTag : null,
+            Profile = PrivacyTokens.Profile(stream.Profile) ? stream.Profile : null,
+            Height = stream.Height,
+            Channels = stream.Channels,
+            ChannelLayout = PrivacyTokens.Layout(stream.ChannelLayout) ? stream.ChannelLayout : null,
+            VideoRangeType = Enum.TryParse<Jellyfin.Data.Enums.VideoRangeType>(stream.VideoRangeType, out _) ? stream.VideoRangeType : null,
+            DisplayTitle = sanitizeTitles ? null : stream.DisplayTitle,
+        };
 
         // Fail-CLOSED: a failed probe counts as "nothing watched", so the
         // season stays stripped.

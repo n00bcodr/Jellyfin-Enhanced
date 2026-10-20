@@ -58,7 +58,8 @@ public class PrivacyReviewRound18Tests
         {
             if (node is JsonArray array) { foreach (var child in array) Walk(child); return; }
             if (node is not JsonObject o) return;
-            if (Id(o) is { } id && expected.ContainsKey(id) && o["Name"] != null) names[id] = o["Name"]!.ToString();
+            // An item (a media source shares the item's id and carries a version label of its own).
+            if (Id(o) is { } id && expected.ContainsKey(id) && o["Name"] != null && o["Protocol"] == null) names[id] = o["Name"]!.ToString();
             foreach (var (_, child) in o) Walk(child);
         }
         Walk(JsonNode.Parse(body));

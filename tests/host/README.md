@@ -46,7 +46,7 @@ The privacy model's fixtures are the hosts' real answers: `tests/fixtures/host-s
 
 ## Host web client fixtures
 
-`tests/host/web-bundle/extract.mjs` copies, from an official image's jellyfin-web, the remote-control (now playing) page and its template, the remote session player and the now-playing names helper into `tests/fixtures/host-web/<version>/` (with each source file's name and SHA-256 in `manifest.json`). `tests/frontend/regressions/host-web-now-playing.test.mjs` runs those real functions on the sessions JE's privacy projection delivers (`tests/fixtures/host-web/projected/<version>.json`, which `PrivacyReviewRound18Tests` keeps current; set `JE_HOST_WEB_PROJECTED` to a directory to rewrite them). Regenerate for a new Jellyfin release:
+`tests/host/web-bundle/extract.mjs` copies, from an official image's jellyfin-web, the remote-control (now playing) page and its template, the remote session player and the now-playing names helper into `tests/fixtures/host-web/<version>/` (with each source file's name and SHA-256 in `manifest.json`), together with every licence sidecar (`*.LICENSE.txt`) a copied file refers to; a referenced sidecar that is missing fails the extraction. `tests/fixtures/host-web/README.md` names the upstream project, its licence and the corresponding source. `tests/frontend/regressions/host-web-now-playing.test.mjs` runs those real functions on the sessions JE's privacy projection delivers (`tests/fixtures/host-web/projected/<version>.json`, which `PrivacyReviewRound18Tests` keeps current; set `JE_HOST_WEB_PROJECTED` to a directory to rewrite them). Regenerate for a new Jellyfin release:
 
 ```sh
 id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin/jellyfin-web ./web-12.2 && docker rm "$id"
