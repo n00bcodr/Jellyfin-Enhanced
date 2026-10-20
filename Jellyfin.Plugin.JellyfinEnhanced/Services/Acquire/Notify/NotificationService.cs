@@ -936,7 +936,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 seriesItem ??= copy.ItemId;
                 if (copy.ItemId != Guid.Empty) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
-                files.AddRange(_view.Episodes(copy.ItemId, null, viewer, includeVirtual: false)
+                // Exactly this copy's own folder (never the folders automatic series grouping shows with it: a 4K
+                // watch must not read the standard folder's episodes as 4K arrivals).
+                files.AddRange(_view.SeriesFolder(copy.ItemId, viewer).EpisodesOf(null, includeVirtual: false)
                     .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).Select(e => (copy.ItemId, e)));
             }
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
@@ -1043,9 +1045,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>
-        /// The Jellyfin copies of a series that belong to its 4K Sonarr copies (matched like the status
-        /// does: linked libraries, path mappings, folder names); null when no 4K Sonarr is set up.
-        /// From memory only.
+        /// The Jellyfin copies of a series that belong to its 4K Sonarr copies, owned as the status binds them (their exact
+        /// folders, else the pages' rules; never every copy of a linked library they share with the standard Sonarr:
+        /// <see cref="StatusComposer.FourKOwnedCopies"/>); null when no 4K Sonarr is set up. From memory only.
         /// </summary>
         private IReadOnlyList<JfCopy>? FourKSeriesCopies(TitleKey key, IReadOnlyList<JfCopy> copies)
         {
@@ -1057,7 +1059,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 if (SonarrSeries(instance, key) is { } series) arr.Add(new ArrCopyFacts(instance) { Series = series });
             }
             // Positive matches only: "the only copy there is" may be the standard one.
-            return arr.Where(x => x.Instance.Role == "4k").SelectMany(x => StatusComposer.MatchCopies(x, copies, arr, soleFallback: false)).Distinct().ToList();
+            var facts = new TitleFacts(key);
+            facts.Copies.AddRange(arr);
+            return StatusComposer.FourKOwnedCopies(facts, copies);
         }
 
         private ArrSeriesEntry? SonarrSeries(ArrConnection instance, TitleKey key)
@@ -1258,7 +1262,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (bound.Reached) return false;
             copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
-            var files = copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
+            // Each copy's own folder (see EvaluateSeries), read once for the whole flush.
+            var folders = copies.ToDictionary(copy => copy.ItemId, copy => _view.SeriesFolder(copy.ItemId, viewer));
+            var files = folders.Values.SelectMany(folder => folder.EpisodesOf(null, includeVirtual: false))
                 .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).ToList();
             var coverage = new EpisodeCoverage(files);
             // A pending batch already supplies every number we need. Check full membership rather
@@ -1303,7 +1309,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // A whole season arriving together (a season pack) collapses to one line.
                 p["mode"] = "season";
                 p["season"] = seasons[0].ToString(CultureInfo.InvariantCulture);
-                itemId = _view.Seasons(series, viewer).FirstOrDefault(x => !x.Hidden && x.Season == seasons[0] && x.ItemId != Guid.Empty)?.ItemId.ToString("N", CultureInfo.InvariantCulture) ?? itemId;
+                itemId = (folders.GetValueOrDefault(series) ?? _view.SeriesFolder(series, viewer)).Seasons.FirstOrDefault(x => !x.Hidden && x.Season == seasons[0] && x.ItemId != Guid.Empty)?.ItemId.ToString("N", CultureInfo.InvariantCulture) ?? itemId;
             }
             else
             {

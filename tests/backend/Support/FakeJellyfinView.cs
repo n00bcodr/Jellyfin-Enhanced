@@ -8,7 +8,7 @@ namespace JE.Tests;
 /// display), items with the users who may see them, copies per title key, and episodes/seasons
 /// per series. Counts every call so tests can prove which surfaces touch Jellyfin.
 /// </summary>
-internal sealed class FakeJellyfinView : IArrJellyfinView
+internal sealed partial class FakeJellyfinView : IArrJellyfinView
 {
     public sealed record Item(JfItemRef Ref, HashSet<Guid>? VisibleTo);
 
@@ -19,6 +19,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public Dictionary<Guid, List<(JfSeason Season, HashSet<Guid>? VisibleTo)>> SeasonsBySeries { get; } = new();
     public long Rev { get; set; }
     public int EpisodeCalls { get; private set; }
+
+    /// <summary>
+    /// Jellyfin reads of each series item's seasons or episodes (Episodes, Seasons and the physical folder read alike), so
+    /// tests can prove a copy is read once per answer.
+    /// </summary>
+    public Dictionary<Guid, int> ReadsOf { get; } = new();
+
+    private void Read(Guid seriesItemId) => ReadsOf[seriesItemId] = ReadsOf.GetValueOrDefault(seriesItemId) + 1;
 
     /// <summary>
     /// Jellyfin's automatic series grouping: series items of one group share a presentation key, and
@@ -187,6 +195,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual)
     {
         EpisodeCalls++;
+        Read(seriesItemId);
         OnEpisodes?.Invoke();
         if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
         var list = Presented(seriesItemId).SelectMany(id => EpisodesBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
@@ -204,6 +213,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
 
     public IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer)
     {
+        Read(seriesItemId);
         var list = Presented(seriesItemId).SelectMany(id => SeasonsBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
         if (list.Count == 0) return new List<JfSeason>();
         if (Withdrawn(seriesItemId, viewer)) return new List<JfSeason>();

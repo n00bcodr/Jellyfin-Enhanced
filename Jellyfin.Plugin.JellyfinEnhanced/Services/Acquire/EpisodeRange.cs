@@ -79,6 +79,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Total coverage, without enumerating numbers.</summary>
         public long Count => _seasons.Keys.Sum(CountInSeason);
 
+        /// <summary>The retained ranges as numbers-only episodes (one per range), to combine coverages.</summary>
+        public IEnumerable<JfEpisode> Ranges()
+            => _seasons.SelectMany(s => s.Value.Select(r => new JfEpisode { Season = s.Key, Episode = r.First, EpisodeEnd = r.Last }));
+
         private static List<EpisodeRange> Union(IEnumerable<EpisodeRange> source)
         {
             var result = new List<EpisodeRange>();

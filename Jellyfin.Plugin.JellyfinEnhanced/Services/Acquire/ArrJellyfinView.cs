@@ -417,6 +417,81 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Two native queries, both by the series item's own ancestry (never its presentation key, which automatic series
+        /// grouping shares between folders): the viewer's (Jellyfin's parental filter) and, for a viewer with parental limits,
+        /// the unfiltered one, whose rows the viewer's leaves out are the hidden numbers. Every row must belong to this
+        /// series item and to a current location of a current library, like every other read of the view.
+        /// </remarks>
+        public JfSeriesFolder SeriesFolder(Guid seriesItemId, StatusViewer viewer)
+        {
+            if (viewer.Handle is not User user) return JfSeriesFolder.Empty;
+            var libraries = LiveLibraries(viewer);
+            if (Openable(seriesItemId, viewer, libraries) is not Series series) return JfSeriesFolder.Empty;
+            var shown = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Season, BaseItemKind.Episode },
+                AncestorIds = new[] { series.Id },
+                Recursive = true,
+                DtoOptions = new DtoOptions(false),
+            });
+            var seasonNumbers = SeasonNumbersOf(shown);
+            var episodes = new List<JfEpisode>();
+            var seasons = new List<JfSeason>();
+            var seen = new HashSet<Guid>();
+            foreach (var item in shown)
+            {
+                if (seen.Contains(item.Id) || LibraryOf(item, viewer, libraries) == null) continue;
+                seen.Add(item.Id);
+                if (item is Season season && season.SeriesId.Equals(series.Id) && season.IndexNumber is int number)
+                {
+                    // Like Jellyfin's season list: a missing season only for a viewer who shows missing episodes.
+                    if (!season.IsVirtualItem || viewer.DisplayMissingEpisodes) seasons.Add(new JfSeason { ItemId = season.Id, Season = number });
+                }
+                else if (item is Episode e && FolderEpisode(e, series.Id) && (e.ParentIndexNumber ?? seasonNumbers.GetValueOrDefault(e.SeasonId)) is int s)
+                {
+                    episodes.Add(new JfEpisode { ItemId = e.Id, Season = s, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Virtual = e.IsMissingEpisode, DateCreated = Utc(e.DateCreated) });
+                }
+                else
+                {
+                    seen.Remove(item.Id);
+                }
+            }
+            if (!viewer.IsAdmin && viewer.HasParentalLimit)
+            {
+                // No user on the query: every season and episode of the folder, whoever may see it.
+                var all = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Season, BaseItemKind.Episode },
+                    AncestorIds = new[] { series.Id },
+                    Recursive = true,
+                    DtoOptions = new DtoOptions(false),
+                }).Where(i => LibraryOf(i, viewer, libraries, includeHidden: true, requireLibraryAccess: true) != null).ToList();
+                var allNumbers = SeasonNumbersOf(all);
+                var candidates = all.OfType<Episode>().Where(e => FolderEpisode(e, series.Id))
+                    .Select(e => new EpisodeFacts(e.Id, e.ParentIndexNumber ?? allNumbers.GetValueOrDefault(e.SeasonId), e.IndexNumber, e.IndexNumberEnd, e.IsMissingEpisode || e.IsVirtualItem));
+                // The viewer's list holds the missing episodes they may see, so a missing one it leaves out is hidden.
+                episodes.AddRange(HiddenEpisodes(candidates, null, seen, seenIncludesVirtual: true, () => seen));
+                var folderSeasons = all.OfType<Season>().Where(s => s.SeriesId.Equals(series.Id)).Select(s => (s.Id, s.IndexNumber));
+                foreach (var number in HiddenSeasonNumbers(folderSeasons, seasons.Select(s => s.Season), id => seen.Contains(id) || Openable(id, viewer, libraries) != null))
+                    seasons.Add(new JfSeason { Season = number, Hidden = true });
+            }
+            return new JfSeriesFolder { Episodes = episodes, Seasons = seasons };
+        }
+
+        /// <summary>The season number of each season item among <paramref name="items"/> (for an episode without its own).</summary>
+        private static Dictionary<Guid, int?> SeasonNumbersOf(IEnumerable<BaseItem> items)
+        {
+            var numbers = new Dictionary<Guid, int?>();
+            foreach (var season in items.OfType<Season>()) numbers.TryAdd(season.Id, season.IndexNumber);
+            return numbers;
+        }
+
+        /// <summary>A numbered episode of exactly this series item, never another item's version (its primary stands for it).</summary>
+        private static bool FolderEpisode(Episode e, Guid seriesId)
+            => e.SeriesId.Equals(seriesId) && e.IndexNumber.HasValue && !IsAnotherItemsVersion(e);
+
+        /// <inheritdoc />
         public IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer)
         {
             if (viewer.Handle is not User user) return Array.Empty<JfSeason>();

@@ -313,6 +313,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Hidden { get; init; }
     }
 
+    /// <summary>One physical Jellyfin series folder as one viewer reads it (<see cref="IArrJellyfinView.SeriesFolder"/>).</summary>
+    public sealed class JfSeriesFolder
+    {
+        /// <summary>Nothing (a series the viewer can't open).</summary>
+        public static JfSeriesFolder Empty { get; } = new();
+
+        /// <summary>The folder's episodes the viewer can see, missing (virtual) ones included, and the hidden ones' numbers.</summary>
+        public IReadOnlyList<JfEpisode> Episodes { get; init; } = Array.Empty<JfEpisode>();
+
+        /// <summary>The folder's seasons the viewer can see (missing ones only when they show missing episodes), and the hidden ones' numbers.</summary>
+        public IReadOnlyList<JfSeason> Seasons { get; init; } = Array.Empty<JfSeason>();
+
+        /// <summary>
+        /// The episodes of one season (or all), the visible missing ones only when asked: what a page of the folder lists. Hidden
+        /// numbers stay, missing or not (a hidden missing episode is still not the viewer's to be told about).
+        /// </summary>
+        /// <param name="season">The season, or null for all.</param>
+        /// <param name="includeVirtual">Include visible missing episodes.</param>
+        /// <returns>The episodes.</returns>
+        public IReadOnlyList<JfEpisode> EpisodesOf(int? season, bool includeVirtual)
+            => Episodes.Where(e => (season == null || e.Season == season) && (includeVirtual || e.Hidden || !e.Virtual)).ToList();
+    }
+
     /// <summary>One Jellyfin season of a series, as the viewer sees it.</summary>
     public sealed class JfSeason
     {
@@ -359,15 +382,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The series' episodes the viewer can see (one season, or all when null), virtual ones included
         /// when asked; for a viewer with parental limits also the episodes (real or virtual) Jellyfin
-        /// hides from them, marked <see cref="JfEpisode.Hidden"/> (numbers only).
+        /// hides from them, marked <see cref="JfEpisode.Hidden"/> (numbers only). Jellyfin's own list, as its pages
+        /// present it: with automatic series grouping it also holds the grouped folders' episodes, so it is never read
+        /// for a Sonarr copy (<see cref="SeriesFolder"/> is).
         /// </summary>
         IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual);
 
         /// <summary>
         /// The series' seasons the viewer can see; for a viewer with parental limits also the seasons
-        /// Jellyfin hides from them, marked <see cref="JfSeason.Hidden"/> (numbers only).
+        /// Jellyfin hides from them, marked <see cref="JfSeason.Hidden"/> (numbers only). Jellyfin's own (grouped) list,
+        /// like <see cref="Episodes"/>.
         /// </summary>
         IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer);
+
+        /// <summary>
+        /// Exactly one physical series folder as the viewer reads it, in one read: the episodes (missing ones included,
+        /// marked <see cref="JfEpisode.Virtual"/>) and seasons whose own series item is this one (its folder's ancestry),
+        /// never another series item Jellyfin's automatic series grouping presents with it (which <see cref="Episodes"/>
+        /// and <see cref="Seasons"/> follow, as the native pages list them), and never a second version of an episode as
+        /// an item of its own. For a viewer with parental limits also what Jellyfin hides from them in that folder, as
+        /// numbers only (<see cref="JfEpisode.Hidden"/>, <see cref="JfSeason.Hidden"/>). Every read of a Sonarr copy's
+        /// Jellyfin copy goes through this (D53, edition round 13). Empty when the viewer can't open the series.
+        /// </summary>
+        JfSeriesFolder SeriesFolder(Guid seriesItemId, StatusViewer viewer);
 
         /// <summary>
         /// The ids of exactly this series item's season <paramref name="season"/> (<paramref name="episode"/> null),
