@@ -245,7 +245,8 @@ for (const scenario of ['pending save', 'save completed', 'session switch', 'fre
     if (scenario === 'save completed') { save.resolve(); await new Promise(done => setImmediate(done)); }
     if (scenario === 'session switch') {
       epoch++;
-      h.JE.userConfig.settings = { acquisitionBadges: false };
+      // The incoming session's boot read hands out a new userConfig object (plugin.js).
+      h.JE.userConfig = { ...h.JE.userConfig, settings: { acquisitionBadges: false } };
       h.JE.currentSettings = h.JE.loadSettings();
     }
     get.resolve({ acquisitionBadges: scenario === 'fresh read' ? false : null });
@@ -385,7 +386,7 @@ for (const touch of [false, true]) for (const boundary of ['user switch', 'same-
     else {
       epoch++;
       if (boundary === 'user switch') user = 'user-b';
-      h.JE.userConfig.settings = { subtitleHorizontalPosition: 70, subtitleVerticalPosition: 80 };
+      h.JE.userConfig = { ...h.JE.userConfig, settings: { subtitleHorizontalPosition: 70, subtitleVerticalPosition: 80 } };
       h.JE.currentSettings = h.JE.loadSettings();
     }
     h.document.dispatchEvent(event(touch ? 'touchmove' : 'mousemove'));
@@ -968,7 +969,7 @@ for (const trigger of ['language', 'cache', 'both']) {
       if (switchSession) {
         h.transition('same-user new epoch');
         // Establish the incoming session's store while the outgoing transport is still outstanding.
-        h.JE.userConfig.settings = { displayLanguage: 'en-US' }; h.JE.loadSettings();
+        h.JE.userConfig = { ...h.JE.userConfig, settings: { displayLanguage: 'en-US' } }; h.JE.loadSettings();
       }
       h.held[first].resolve(); await tick(); h.clock.advance(0);
       if (switchSession) {

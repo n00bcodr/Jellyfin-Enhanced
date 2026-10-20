@@ -40,7 +40,7 @@ const PAGE_MANIFEST = [
   ["url: ApiClient.getUrl('/Plugins'),", 'installed plugins: enables or disables dependent controls, never sets a value'],
   ['function checkCustomTabsConfigCompat() {\n            ApiClient.ajax({', "the Custom Tabs plugin's configuration: shape check for a banner"],
   ["            return ApiClient.ajax({\n                type: 'GET',\n                url: ApiClient.getUrl('/Plugins/' + CUSTOM_TABS_PLUGIN_ID", "the Custom Tabs plugin's configuration: read right before JE's own narrow write to it"],
-  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            jeSecretInit', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration'],
+  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            if (!fresh) return;', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration (each only if unedited when drawn)'],
   ["/JellyfinEnhanced/arr/admin/instances'), dataType: 'json' });", 'Check button: lists the saved instances'],
   ["/JellyfinEnhanced/arr/admin/notify'), dataType: 'json' });", 'notification status display'],
   ["type: what === 'provision' ? 'POST' : 'DELETE',", 'not a read: provisions or removes a webhook (method chosen at run time)'],

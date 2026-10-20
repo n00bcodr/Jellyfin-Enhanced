@@ -227,6 +227,66 @@ public class CoreConfigurationPatchTests
         Assert.Equal("[{broken", fixture.Plugin.Configuration.RadarrInstances);
     }
 
+    // RBS1-R8-5: "Reset instances" on an unreadable stored list is an explicit operation, applied under the lock only while
+    // the stored list is still unreadable; an unreadable list nobody reset keeps its bytes.
+    [Fact]
+    public void AConfirmedResetReplacesAnUnreadableListAndLeavesTheOtherUnreadableListAlone()
+    {
+        using var fixture = new ApiPluginFixture();
+        var plugin = fixture.Plugin;
+        plugin.Configuration.RadarrInstances = "[{broken";
+        plugin.Configuration.RadarrUrl = "http://old.test";
+        plugin.Configuration.SonarrInstances = "{also broken";
+        var result = plugin.PatchConfiguration(new ConfigurationPatch
+        {
+            Instances = new()
+            {
+                ["RadarrInstances"] = new InstanceListPatch
+                {
+                    ResetUnreadable = true,
+                    Add = new() { Json($$"""{"Id":"{{R1}}","Name":"New","Url":"http://new.test","ApiKey":"k"}""") },
+                },
+            },
+        });
+        Assert.Contains("RadarrInstances reset", result.Applied);
+        var list = Stored(plugin.Configuration.RadarrInstances);
+        Assert.Single(list);
+        Assert.Equal("New", (string)list[0]!["Name"]!);
+        Assert.Equal("http://new.test", plugin.Configuration.RadarrUrl);
+        Assert.Equal("{also broken", plugin.Configuration.SonarrInstances);
+    }
+
+    [Fact]
+    public void AResetAloneStoresAnEmptyListAndClearsTheMirroredFields()
+    {
+        using var fixture = new ApiPluginFixture();
+        var plugin = fixture.Plugin;
+        plugin.Configuration.RadarrInstances = "not json";
+        plugin.Configuration.RadarrUrl = "http://old.test";
+        plugin.PatchConfiguration(new ConfigurationPatch { Instances = new() { ["RadarrInstances"] = new InstanceListPatch { ResetUnreadable = true } } });
+        Assert.Equal("[]", plugin.Configuration.RadarrInstances);
+        Assert.Equal(string.Empty, plugin.Configuration.RadarrUrl);
+    }
+
+    [Fact]
+    public void AResetOfAListAnotherWriterRepairedIsSkippedAndReportedAndTheirListStays()
+    {
+        using var fixture = new ApiPluginFixture();
+        var plugin = fixture.Plugin;
+        var repaired = Instances(new { Id = R2, Name = "Repaired", Url = "http://r.test", ApiKey = "k" });
+        plugin.Configuration.RadarrInstances = repaired;
+        var result = plugin.PatchConfiguration(new ConfigurationPatch
+        {
+            Set = new() { ["ToastDuration"] = Json("2500") },
+            Instances = new() { ["RadarrInstances"] = new InstanceListPatch { ResetUnreadable = true, Add = new() { Json($$"""{"Id":"{{R1}}","Name":"New"}""") } } },
+        });
+        Assert.Contains(result.Skipped, s => s.StartsWith("RadarrInstances reset", StringComparison.Ordinal));
+        var list = Stored(plugin.Configuration.RadarrInstances);
+        Assert.Single(list);
+        Assert.Equal("Repaired", (string)list[0]!["Name"]!);
+        Assert.Equal(2500, plugin.Configuration.ToastDuration);
+    }
+
     [Fact]
     public void ATypedCredentialIsStoredAsASecretAndUntouchedPlaceholdersStay()
     {

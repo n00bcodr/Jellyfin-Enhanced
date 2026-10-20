@@ -6073,6 +6073,93 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Applies the person's Hidden Content changes to the hidden-content.json the server holds now, under its file lock:
+        /// <c>Upsert</c> (item key → item) adds or replaces items, <c>Remove</c> (item keys) removes them (with the same item
+        /// stored under another spelling of its id), <c>Set</c> (setting → value) changes settings. Every item and setting the
+        /// patch doesn't name stays, so what another tab or device hid or changed meanwhile is kept. Answers the document as
+        /// stored afterwards.
+        /// </summary>
+        [HttpPatch("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserHiddenContent(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (patch == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+            try
+            {
+                UserHiddenContent? stored = null;
+                var changed = _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json", doc =>
+                {
+                    stored = doc;
+                    return ApplyHiddenContentPatch(doc, patch);
+                });
+                if (changed > 0) Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
+                return Ok(new { success = true, file = "hidden-content.json", document = stored });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {ex.Message}");
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (IOException ioEx)
+            {
+                _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // An item id as compared: the server stores ids dashed, cards carry them undashed.
+        private static string CanonicalHiddenId(string? id) => (id ?? string.Empty).Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+
+        /// <summary>Applies a Hidden Content patch to the stored document; returns how many items and settings it changed.</summary>
+        internal static int ApplyHiddenContentPatch(UserHiddenContent doc, UserDocumentPatch patch)
+        {
+            doc.Items ??= new Dictionary<string, HiddenContentItem>();
+            var n = 0;
+            foreach (var key in (patch.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+            {
+                if (string.IsNullOrEmpty(key)) continue;
+                var wanted = CanonicalHiddenId(key);
+                foreach (var stored in doc.Items.Keys.ToList())
+                {
+                    if (stored == key || (wanted.Length > 0 && (CanonicalHiddenId(stored) == wanted || CanonicalHiddenId(doc.Items[stored]?.ItemId) == wanted)))
+                    {
+                        doc.Items.Remove(stored);
+                        n++;
+                    }
+                }
+            }
+
+            foreach (var (key, value) in patch.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+            {
+                // Keys are dictionary lookups (never paths); the length cap is light defence against pathological payloads.
+                if (string.IsNullOrWhiteSpace(key) || key.Length > 256) throw new UserDocumentPatchException("A hidden item needs a key of at most 256 characters.");
+                doc.Items[key] = value.Deserialize<HiddenContentItem>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Hidden item {key} is empty.");
+                n++;
+            }
+
+            if (patch.Set is { Count: > 0 } set)
+            {
+                doc.Settings = UserConfigurationManager.ApplyFieldChanges(doc.Settings ?? new HiddenContentSettings(), set);
+                n++;
+            }
+
+            return n;
+        }
+
         // Self-or-admin accessor pair for spoilerblur.json, mirroring the other
         // per-user files — otherwise it would be the only per-user JE file an
         // administrator cannot inspect or repair remotely.
@@ -6745,6 +6832,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+        }
+
+        /// <summary>
+        /// Changes the person's Spoiler Guard overrides named in <c>Set</c> (preference → value) in the spoilerblur.json the
+        /// server holds now, under its file lock; every other preference stays (another tab or device may have changed it).
+        /// Answers the preferences as stored afterwards.
+        /// </summary>
+        [HttpPatch("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        [Consumes("application/json")]
+        [RequestSizeLimit(8 * 1024)]
+        public IActionResult PatchSpoilerBlurUserPrefs([FromBody] UserDocumentPatch? patch)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (patch?.Set == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+            try
+            {
+                SpoilerBlurUserPrefs? prefs = null;
+                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(userKey, fileName, state =>
+                {
+                    state.Prefs = UserConfigurationManager.ApplyFieldChanges(state.Prefs ?? new SpoilerBlurUserPrefs(), patch.Set);
+                    prefs = state.Prefs;
+                    return 1;
+                });
+                return Ok(new { success = true, prefs });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save Spoiler Guard preferences for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save Spoiler Guard preferences." });
             }
         }
 

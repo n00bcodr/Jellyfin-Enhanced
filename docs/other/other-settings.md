@@ -8,7 +8,7 @@ Use these controls to personalize Jellyfin and manage your server. Unless marked
 
     After changing configuration fields, click **Save Settings** and reload the web client. Branding uploads and cache actions apply separately.
 
-    **Save Settings** saves only the settings you changed on the page. A setting another administrator (or another browser tab) saved after you opened the page keeps their value unless you changed that same setting; Sonarr/Radarr instances are saved per instance. If another administrator removed an instance you edited, the page says so and asks you to reload.
+    **Save Settings** saves only the settings you changed on the page. A setting another administrator (or another browser tab) saved after you opened the page keeps their value unless you changed that same setting; Sonarr/Radarr instances are saved per instance. If another administrator removed an instance you edited, the page says so and asks you to reload. The unsaved-changes marker on the save bar shows whether **Save Settings** would save anything: typing, removing or adding an instance and resetting an unreadable instance list all count, and changing a value back does not. **Reset … instances** on an unreadable list takes effect with the next save, and only while the stored list is still unreadable (if another administrator repaired it meanwhile, the page says so).
 
     | Admin tab | Settings covered here |
     |---|---|

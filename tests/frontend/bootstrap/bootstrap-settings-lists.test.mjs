@@ -189,7 +189,7 @@ test('session change cancels a consent queued behind an in-flight display save',
     h.writes.push(request);return new Promise(resolve => { release = resolve; });
   };
   h.wire();await h.choose('listStatusSelect', 'off');await h.choose('listSwapInSelect', 'on');
-  epoch++;h.JE.userConfig.settings = { listSwapIn: false };h.JE.currentSettings = h.JE.loadSettings();
+  epoch++;h.JE.userConfig = { ...h.JE.userConfig, settings: { listSwapIn: false } };h.JE.currentSettings = h.JE.loadSettings();
   release({ consents: { ListSwapIn: false } });await new Promise(done => setImmediate(done));
   assert.equal(h.writes.length, 1);
   assert.equal(h.JE.currentSettings.listSwapIn, false);

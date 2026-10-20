@@ -4322,6 +4322,17 @@
       ]
     },
     {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content.json",
+      "method": "PatchUserHiddenContent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
       "verb": "GET",
       "path": "/JellyfinEnhanced/user-settings/{userId}/spoilerblur.json",
       "method": "GetUserSpoilerBlur",
@@ -4454,6 +4465,18 @@
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/spoiler-blur/user-prefs",
+      "method": "PatchSpoilerBlurUserPrefs",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "Consumes(\"application/json\")",
+        "RequestSizeLimit(8 * 1024)"
       ]
     },
     {
@@ -5307,6 +5330,14 @@
       "class": "ConfigurationPatch",
       "name": "Instances",
       "type": "Dictionary<string, InstanceListPatch>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceListPatch",
+      "name": "ResetUnreadable",
+      "type": "bool",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
@@ -10790,12 +10821,24 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
     },
     {
       "literal": "shortcuts.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-data.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-save.js"
     },
     {
       "literal": "settings.json",
@@ -11023,9 +11066,9 @@
   "counts": {
     "build_targets": 2,
     "files": 630,
-    "routes": 298,
-    "configuration_properties": 645,
-    "storage_references": 96,
+    "routes": 300,
+    "configuration_properties": 646,
+    "storage_references": 99,
     "scheduled_tasks": 15,
     "locales": 33
   }

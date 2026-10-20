@@ -381,6 +381,7 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 | POST | `user-settings/{userId}/ddd-triggers.json` | Replace picked trigger IDs |
 | GET | `user-settings/{userId}/hidden-content.json` | Hidden Content state |
 | POST | `user-settings/{userId}/hidden-content.json` | Replace Hidden Content state |
+| PATCH | `user-settings/{userId}/hidden-content.json` | Change Hidden Content item by item and setting by setting: `{"Upsert":{"<key>":<item>},"Remove":["<key>"],"Set":{"filterSearch":true}}`. Applied under the file lock to the stored document (an item or setting the patch doesn't name stays; a removal also takes the same item stored under another spelling of its id) → `{success,file,document}` (the stored document). The web client uses only this route. |
 | GET | `user-settings/{userId}/spoilerblur.json` | Raw Spoiler Guard state |
 | POST | `user-settings/{userId}/spoilerblur.json` | Replace raw Spoiler Guard state |
 
@@ -913,6 +914,7 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
 | POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
+| PATCH | `spoiler-blur/user-prefs` | Caller | `{"Set":{"HideTags":false}}`: only the named preferences change, under the file lock (another tab's or device's choice stays) → `{success:true,prefs:<stored preferences>}`. The web client uses only this route. |
 
 The four dictionaries default to `{}` and use case-insensitive keys. Library keys are N-format GUIDs. Pending keys are `movie:<tmdbId>` or `tv:<tmdbId>`.
 

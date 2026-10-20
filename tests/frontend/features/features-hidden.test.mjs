@@ -1,11 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
+// Hidden Content keeps its document in the settings store (config.js): every change is an operation the server answers.
+const patching=ajax=>async request=>request.type==='PATCH'?{success:true}:ajax(request);
 function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
  let epoch=0; const handlers=new Map();const frames=[];
- const h=createHarness({html,apiClient:{ajax},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
+ const h=createHarness({html,apiClient:{ajax:patching(ajax)},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
  t.after(()=>h.close());
- h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
+ h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
  return {...h,api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
 }
@@ -64,14 +66,15 @@ test('parent-series response after disabling filtering cannot hide cards',async 
  h.api.filterNativeCards();h.api.getHiddenData().settings.enabled=false;response.resolve({Items:[{Id:'episode',SeriesId:'series'}]});await response.promise;await new Promise(resolve=>setImmediate(resolve));h.flush();
  assert.equal(h.document.querySelector('.card').classList.contains('je-hidden'),false);
 });
-test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',t=>{
+test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',async t=>{
  const SYN='4a45ad11000a938e00000000f9c67720',REAL='0123456789abcdef0123456789abcdef';
  const html=`<div class="card" data-id="${SYN}" data-type="Movie"><div class="cardBox"></div></div><div class="card" data-id="${REAL}" data-type="Movie"><div class="cardBox"></div></div>`;
- const h=createHarness({html,apiClient:{ajax:async()=>({Items:[]})},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
+ let saves=0;
+ const h=createHarness({html,apiClient:{ajax:async request=>{if(request.type==='PATCH')saves++;return {Items:[]};}},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
  t.after(()=>h.close());
- h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
- let saves=0;Object.assign(api,{debouncedSave:()=>{saves++;},showUndoToast:()=>{}});
+ Object.assign(api,{showUndoToast:()=>{}});
  api.addLibraryHideButtons();
  assert.equal(h.document.querySelector(`[data-id="${SYN}"] .je-hide-btn`),null);
  assert.ok(h.document.querySelector(`[data-id="${REAL}"] .je-hide-btn`));
@@ -81,6 +84,7 @@ test('titles that are not in the library (native details synthetic ids) never be
  assert.equal(saves,0);
  api.hideItem({itemId:REAL,name:'Real',type:'Movie'});
  assert.deepEqual(Object.keys(api.getHiddenData().items),[REAL]);
+ await new Promise(r=>setTimeout(r,0));assert.equal(saves,1,'one item operation for the real title');
 });
 test('the hidden content page takes over when Jellyfin answers its own #/hidden-content route with another page',t=>{
  const h=createHarness({html:'<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>',JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},hiddenContent:{},helpers:{onSidebarRebuilt:()=>()=>{}}}});

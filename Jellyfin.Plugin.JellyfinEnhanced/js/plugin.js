@@ -976,18 +976,21 @@
     };
 
     /**
-     * Records on a userConfig object which per-user documents it does NOT hold from a read (non-enumerable, so it never
-     * travels in a document). The settings store (enhanced/config.js) refuses whole-document saves of those until a read
-     * of them succeeds: a default document saved back would replace the person's own settings.
+     * Records on a userConfig object which per-user documents it does NOT hold from a read, and a copy of each one it does
+     * as the read handed it out (both non-enumerable, so they never travel in a document). The settings store
+     * (enhanced/config.js) compares every save with that copy, never with the object as modules change it later, and
+     * writes nothing to an unread document until a read of it succeeds.
      * @param {object} userConfig - The userConfig object
      * @param {string[]} [unread] - Server file names not read (default: all five)
+     * @param {object} [read] - Server file name → the document as read
      * @returns {object} The same object
      */
-    function markUnreadDocuments(userConfig, unread) {
+    function markUnreadDocuments(userConfig, unread, read) {
         Object.defineProperty(userConfig, 'unreadDocuments', {
             value: unread || ['settings.json', 'shortcuts.json', 'bookmark.json', 'elsewhere.json', 'hidden-content.json'],
             enumerable: false, configurable: true, writable: true
         });
+        Object.defineProperty(userConfig, 'readDocuments', { value: read || {}, enumerable: false, configurable: true, writable: true });
         return userConfig;
     }
 
@@ -1003,8 +1006,8 @@
      */
     function buildUserConfig(documents) {
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
-        const unread = [];
-        markUnreadDocuments(userConfig, unread);
+        const unread = [], read = {};
+        markUnreadDocuments(userConfig, unread, read);
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
             if (!value || typeof value !== 'object') { unread.push(USER_CONFIG_DOCUMENTS[name]); continue; } // keep the default
@@ -1014,6 +1017,7 @@
             } else {
                 userConfig[name] = value;
             }
+            read[USER_CONFIG_DOCUMENTS[name]] = JSON.parse(JSON.stringify(userConfig[name]));
         }
         return userConfig;
     }

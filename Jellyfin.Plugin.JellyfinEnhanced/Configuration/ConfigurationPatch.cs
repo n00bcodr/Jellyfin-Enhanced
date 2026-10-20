@@ -23,9 +23,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public Dictionary<string, InstanceListPatch>? Instances { get; set; }
     }
 
-    /// <summary>Operations on one instance list, applied in this order: remove, change, add.</summary>
+    /// <summary>Operations on one instance list, applied in this order: reset, remove, change, add.</summary>
     public sealed class InstanceListPatch
     {
+        /// <summary>
+        /// The administrator confirmed replacing a stored list the server can't read (its instances can't be recovered): the
+        /// list starts empty, then the additions apply. Skipped (and reported) when the stored list is readable by then, for
+        /// example because another administrator repaired it; nothing of this list's operations is applied then.
+        /// </summary>
+        public bool ResetUnreadable { get; set; }
+
         /// <summary>Instances to append (each with its Id).</summary>
         public List<JsonElement>? Add { get; set; }
 
@@ -159,18 +166,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             var sonarr = list == nameof(PluginConfiguration.SonarrInstances);
             var stored = sonarr ? target.SonarrInstances : target.RadarrInstances;
-            JsonArray instances;
+            JsonArray? readable;
             try
             {
-                instances = JsonNode.Parse(string.IsNullOrWhiteSpace(stored) ? "[]" : stored) as JsonArray
-                    ?? throw new ConfigurationPatchException(list, $"The stored {list} is not a list.");
+                readable = JsonNode.Parse(string.IsNullOrWhiteSpace(stored) ? "[]" : stored) as JsonArray;
             }
             catch (JsonException)
             {
-                throw new ConfigurationPatchException(list, $"The stored {list} can't be read; fix or clear it before changing instances.");
+                readable = null;
             }
 
             var changed = false;
+            JsonArray instances;
+            if (operations.ResetUnreadable)
+            {
+                if (readable != null)
+                {
+                    result.Skipped.Add($"{list} reset (the stored list is readable)");
+                    return;
+                }
+
+                instances = new JsonArray();
+                result.Applied.Add($"{list} reset");
+                changed = true;
+            }
+            else
+            {
+                instances = readable ?? throw new ConfigurationPatchException(list, $"The stored {list} can't be read; fix or clear it before changing instances.");
+            }
+
             foreach (var id in operations.Remove ?? new List<string>())
             {
                 var index = IndexOf(instances, id);

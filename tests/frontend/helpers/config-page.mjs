@@ -58,9 +58,16 @@ export function applyConfigPatch(config, patch) {
   }
   for (const [list, ops] of Object.entries(patch?.Instances || {})) {
     if (list !== 'SonarrInstances' && list !== 'RadarrInstances') { ignored.push(list); continue; }
-    const items = JSON.parse(next[list] || '[]');
-    const indexOf = id => id ? items.findIndex(x => x && String(x.Id || '').toLowerCase() === String(id).toLowerCase()) : -1;
+    let readable;
+    try { readable = JSON.parse(next[list] || '[]'); } catch { readable = null; }
+    if (!Array.isArray(readable)) readable = null;
     let changed = false;
+    // A confirmed reset replaces only a list that is still unreadable (the server's rule); otherwise nothing of it applies.
+    if (ops.ResetUnreadable && readable) { skipped.push(`${list} reset (the stored list is readable)`); continue; }
+    if (!ops.ResetUnreadable && !readable) throw Object.assign(new Error(`The stored ${list} can't be read`), { status: 400 });
+    const items = ops.ResetUnreadable ? [] : readable;
+    if (ops.ResetUnreadable) { applied.push(`${list} reset`); changed = true; }
+    const indexOf = id => id ? items.findIndex(x => x && String(x.Id || '').toLowerCase() === String(id).toLowerCase()) : -1;
     for (const id of ops.Remove || []) {
       const i = indexOf(id);
       if (i < 0) { skipped.push(`${list}[${id}] remove`); continue; }

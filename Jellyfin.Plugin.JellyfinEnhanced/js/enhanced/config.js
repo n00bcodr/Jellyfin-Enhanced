@@ -27,10 +27,13 @@
     };
 
     // The store belongs to the identity session, never to a panel or its settings objects.
-    // Every file has exactly one persisted document (the server's, as last read or as a save answered it), ordered pending
-    // operations and a derived view. Writes are operations, never whole documents: the server applies each to the document
-    // it holds then and answers it, so whatever another tab or device changed meanwhile stays unless this one changed it too.
+    // Every file has exactly one persisted document (the server's, as last read or as a save answered it: never the page's
+    // own copy), ordered pending operations and a derived view. Writes are operations, never whole documents: the server
+    // applies each to the document it holds then and answers it, so whatever another tab or device changed meanwhile stays
+    // unless this one changed it too.
     const documents = new Map();
+    // Module-lifetime views of a document (observeUserDocument): they follow it across sessions, unlike panel observers.
+    const documentObservers = new Map();
     const panelScopes = new Set();
     // Every personal consent (UserConfigurationManager.PersonalConsents): only the consent operation changes one.
     const consentKeys = ['autoSeasonRequests', 'autoMovieRequests', 'listSwapIn'];
@@ -51,29 +54,69 @@
     //   records - records by key are added, replaced or removed (bookmark.json: bookmarks by id)
     //   keyed   - list entries by a key field are added, replaced or removed (shortcuts.json: Shortcuts by Name)
     //   items   - ids are added or removed (ddd-triggers.json: Triggers)
-    // `view` names the JE.userConfig view the store keeps equal to its document. Other files are saved whole, as before.
+    //   hidden  - items by key are added, replaced or removed, and settings fields are set (hidden-content.json)
+    // `view` names the JE.userConfig view the store keeps equal to its document. No other per-user file is written.
     const DOCUMENT_KINDS = {
         'settings.json': { kind: 'fields', camel: true, view: 'settings' },
         'elsewhere.json': { kind: 'fields', camel: false, view: 'elsewhere' },
         'bookmark.json': { kind: 'records', camel: true, view: 'bookmark', records: 'bookmarks' },
         'shortcuts.json': { kind: 'keyed', camel: false, view: 'shortcuts', list: 'Shortcuts', key: 'Name' },
-        'ddd-triggers.json': { kind: 'items', camel: false, list: 'Triggers' }
+        'ddd-triggers.json': { kind: 'items', camel: false, list: 'Triggers' },
+        // Read camelCase (as the boot read leaves it) and sent as held: the server reads item and setting names in any case,
+        // and item keys are ids, never re-cased.
+        'hidden-content.json': { kind: 'hidden', camel: true, wireAsHeld: true, view: 'hiddenContent' }
     };
     const kindOf = fileName => DOCUMENT_KINDS[fileName];
     /** A document as this store holds it, from the server's spelling (the boot read's rule). */
     const holdDocument = (fileName, raw) => copyDocument(kindOf(fileName)?.camel === false || typeof JE.toCamelCase !== 'function' ? raw : JE.toCamelCase(raw));
+    /** An item id as compared (the server stores ids dashed, cards carry them undashed). */
+    const canonicalId = id => typeof id === 'string' || typeof id === 'number' ? String(id).replace(/-/g, '').toLowerCase() : '';
+
+    // What each userConfig object held as the server handed it out. plugin.js records it with the read itself
+    // (`readDocuments`, non-enumerable); for an object assigned by another host the record is taken as it is assigned, so a
+    // change a module makes to the object later is an edit, never the document a save compares against.
+    const readRecords = new WeakMap();
+    const recordRead = userConfig => {
+        if (!userConfig || typeof userConfig !== 'object' || readRecords.has(userConfig)) return;
+        let record = userConfig.readDocuments;
+        if (!record || typeof record !== 'object') {
+            record = {};
+            const unread = userConfig.unreadDocuments || [];
+            for (const [fileName, kind] of Object.entries(DOCUMENT_KINDS)) {
+                if (kind.view && userConfig[kind.view] !== undefined && !unread.includes(fileName)) record[fileName] = copyDocument(userConfig[kind.view]);
+            }
+        }
+        readRecords.set(userConfig, record);
+    };
+    {
+        let userConfig = JE.userConfig;
+        recordRead(userConfig);
+        Object.defineProperty(JE, 'userConfig', { configurable: true, enumerable: true,
+            get: () => userConfig, set: value => { recordRead(value); userConfig = value; } });
+    }
 
     /**
      * A document after one operation (pure). An operation is { set } (fields), { upsert, remove } (records, keyed),
-     * { add, remove } (items), { consentKey, value } (a personal consent) or { document } (a whole document of another file).
+     * { add, remove } (items), { upsert, remove, set } (hidden: items by key, settings by field) or { consentKey, value }
+     * (a personal consent).
      */
     const applyOperation = (fileName, document, op) => {
         const doc = copyDocument(document);
         if (op.consentKey) { doc[op.consentKey] = op.value; return doc; }
         const kind = kindOf(fileName);
-        if (!kind) return copyDocument(op.document);
         const removed = op.remove || [];
-        if (kind.kind === 'fields') {
+        if (kind.kind === 'hidden') {
+            // The server's rule: a removal also takes the same item stored under another spelling of its id.
+            const items = doc.items = { ...(doc.items || {}) };
+            for (const key of removed) {
+                const wanted = canonicalId(key);
+                for (const stored of Object.keys(items)) {
+                    if (stored === key || (wanted && (canonicalId(stored) === wanted || canonicalId(items[stored]?.itemId) === wanted))) delete items[stored];
+                }
+            }
+            for (const [key, item] of Object.entries(op.upsert || {})) items[key] = copyValue(item);
+            doc.settings = { ...(doc.settings || {}), ...copyDocument(op.set) };
+        } else if (kind.kind === 'fields') {
             for (const [key, value] of Object.entries(op.set || {})) doc[key] = copyValue(value);
         } else if (kind.kind === 'records') {
             const records = doc[kind.records] = { ...(doc[kind.records] || {}) };
@@ -98,6 +141,13 @@
     /** The operation that turns `before` into `after` (for callers that still hand over a whole document). */
     const operationBetween = (fileName, before, after) => {
         const kind = kindOf(fileName);
+        if (kind.kind === 'hidden') {
+            const was = before?.items || {}, now = after?.items || {};
+            const upsert = {}, set = {};
+            for (const [key, item] of Object.entries(now)) if (!sameValue(item, was[key])) upsert[key] = item;
+            for (const [key, value] of Object.entries(after?.settings || {})) if (!sameValue(value, before?.settings?.[key])) set[key] = value;
+            return { upsert, remove: Object.keys(was).filter(key => !Object.hasOwn(now, key)), set };
+        }
         if (kind.kind === 'fields') {
             const set = {};
             for (const key of Object.keys(after || {})) {
@@ -130,6 +180,7 @@
     /** An operation as the server reads it (PATCH user-settings/{id}/{file}). */
     const wireOf = (fileName, op) => {
         const kind = kindOf(fileName);
+        if (kind.kind === 'hidden') return { Upsert: copyDocument(op.upsert), Remove: op.remove || [], Set: copyDocument(op.set) };
         // The same spelling rule as the read's (holdDocument): camelCase here only where JE converts both ways.
         const camel = kind.camel && typeof JE.toPascalCase === 'function';
         const wireKey = key => camel ? pascal(key) : key;
@@ -201,12 +252,14 @@
     };
 
     /**
-     * The document as the userConfig object holds it (boot read), and whether that object holds it from a read: plugin.js
-     * marks the documents it could not read.
+     * The document as the boot read handed it out (the userConfig object's read record, never the object as modules have
+     * changed it since), and whether it was read: plugin.js leaves the documents it could not read out of the record.
      */
     const bootDocument = fileName => {
-        const own = JE.userConfig?.[kindOf(fileName)?.view || fileName.replace(/\.json$/, '')];
-        return { persisted: copyDocument(own), readOk: own !== undefined && !(JE.userConfig?.unreadDocuments || []).includes(fileName) };
+        recordRead(JE.userConfig);
+        const record = JE.userConfig ? readRecords.get(JE.userConfig) : undefined;
+        const read = !!record && Object.hasOwn(record, fileName);
+        return { persisted: copyDocument(read ? record[fileName] : undefined), readOk: read };
     };
 
     /** Get the active session's sole state for a file. Object replacement is just a new view. */
@@ -422,7 +475,7 @@
                 runEffect(state, kind, () => effect(context));
             }
         }
-        for (const [name, observer] of [...state.observers]) {
+        for (const [name, observer] of [...state.observers, ...(documentObservers.get(state.fileName) || [])]) {
             if (!isActiveDocument(state)) break;
             runEffect(state, `observer-${name}`, () => observer(copyDocument(state.shown), reason));
         }
@@ -457,15 +510,17 @@
     };
 
     /**
-     * Subscribe a named view of any per-user document (called now and after every publication of it).
+     * Subscribe a named view of any per-user document (called now and after every publication of it, in this session and
+     * the next person's).
      * @param {string} fileName Per-user document.
      * @param {string} name Observer name; a later registration under the same name replaces it.
-     * @param {Function} observer Receives a copy of the document as shown.
+     * @param {Function} observer Receives a copy of the document as shown, and why it was published.
      */
     JE.internals.observeUserDocument = (fileName, name, observer) => {
         const state = settingsDocument(fileName);
-        state.observers.set(name, observer);
-        runEffect(state, `observer-${name}`, () => observer(copyDocument(state.shown)));
+        if (!documentObservers.has(fileName)) documentObservers.set(fileName, new Map());
+        documentObservers.get(fileName).set(name, observer);
+        runEffect(state, `observer-${name}`, () => observer(copyDocument(state.shown), 'observed'));
     };
 
     /**
@@ -514,6 +569,27 @@
         state.readOk = true;
         publishDocument(state, state.persisted, 'read');
     };
+
+    /**
+     * A change another route of the server applied and answered (Hidden Content's home-row removal) is part of the
+     * persisted document from then on: its answer is the acknowledgement. Ignored for a document this session hasn't read.
+     * @param {string} fileName Per-user document.
+     * @param {object} operation The change, as an operation of the file's kind (see applyOperation).
+     */
+    JE.internals.acknowledgeUserDocumentChange = (fileName, operation) => {
+        const state = settingsDocument(fileName);
+        if (!state.readOk || !kindOf(fileName)) return;
+        const previousPersisted = state.persisted;
+        state.persisted = applyOperation(fileName, previousPersisted, copyDocument(operation));
+        publishDocument(state, previousPersisted, 'saved');
+    };
+
+    /**
+     * Settles once every operation queued on a document so far has been answered (whatever the outcome).
+     * @param {string} fileName Per-user document.
+     * @returns {Promise<void>}
+     */
+    JE.internals.userDocumentSettled = fileName => settingsDocument(fileName).chain.then(() => {});
 
     /**
      * Refuse a write to a document this session could not read (the read started for the write failed too): what it would
@@ -577,12 +653,10 @@
                 if (!state.readOk) throw refuseUnreadSave(state);
             }
             const entry = { ...operation, consentKey: options.consentKey };
-            const whole = !entry.consentKey && !kindOf(fileName);
-            if (!entry.consentKey && !whole && isEmptyOperation(entry)) return;
+            if (!entry.consentKey && isEmptyOperation(entry)) return;
             const client = ApiClient;
             const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${entry.consentKey ? 'consent' : fileName}`);
-            const data = entry.consentKey ? { Field: pascal(entry.consentKey), Value: entry.value }
-                : whole ? entry.document : wireOf(fileName, entry);
+            const data = entry.consentKey ? { Field: pascal(entry.consentKey), Value: entry.value } : wireOf(fileName, entry);
             let succeeded = false;
             try {
                 state.revision++;
@@ -590,7 +664,7 @@
                 const save = state.chain.then(async () => {
                     // A queued old-session write must never run under incoming credentials.
                     if (!isActiveDocument(state)) throw new Error('Settings session changed');
-                    entry.response = await client.ajax({ type: whole ? 'POST' : 'PATCH', url, dataType: 'json',
+                    entry.response = await client.ajax({ type: 'PATCH', url, dataType: 'json',
                         data: JSON.stringify(data), contentType: 'application/json' });
                 });
                 state.chain = save.catch(() => {});
@@ -620,7 +694,8 @@
 
     /**
      * Change records or items of a per-user document: { set } (settings.json, elsewhere.json), { upsert, remove }
-     * (bookmark.json by id, shortcuts.json by Name), { add, remove } (ddd-triggers.json). Nothing else in it is sent.
+     * (bookmark.json by id, shortcuts.json by Name), { add, remove } (ddd-triggers.json), { upsert, remove, set }
+     * (hidden-content.json: items by key, settings by field). Nothing else in it is sent.
      * @param {string} fileName Per-user document.
      * @param {object} operation The changes.
      * @param {{throwOnError?: boolean}} [options] Reject failures for callers that request it.
@@ -640,7 +715,7 @@
 
     /**
      * Save a per-user document a caller changed as a whole: only what differs from the document as the store shows it is
-     * sent (as operations); a document of another file is saved whole, as before.
+     * sent (as operations). No per-user document is written whole.
      * @param {string} fileName Per-user settings file.
      * @param {object} settings The changed document (for settings.json: resolved settings such as JE.currentSettings).
      * @param {{throwOnError?: boolean}} [options] Reject failures for callers that request it.
@@ -648,7 +723,7 @@
      */
     JE.saveUserSettings = (fileName, settings, options = {}) => {
         if (options.consentKey) return JE.setPersonalConsent(options.consentKey, settings?.[options.consentKey], options);
-        if (!kindOf(fileName)) return queueOperation(fileName, { document: copyDocument(settings) }, options);
+        if (!kindOf(fileName)) return Promise.reject(new Error(`${fileName} has no operations`));
         // What the caller changed, against what it was shown (taken now: a read that comes first must not turn the rest of
         // what it saw into changes).
         const state = settingsDocument(fileName);

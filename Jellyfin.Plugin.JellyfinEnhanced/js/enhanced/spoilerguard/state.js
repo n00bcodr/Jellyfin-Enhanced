@@ -39,7 +39,7 @@
         // endpoint); it is handed out once, so later loads ask the server.
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
         statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
-            .then(function(data) {
+            .then(function stateRead(data) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 const value = data || {};
                 enabledSeries.clear();
@@ -233,15 +233,22 @@
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
+    // userPrefs is the preferences as the server last handed them out (the state read, or a save's answer). A save sends
+    // only the preferences that differ from it, and the server applies them to what it holds then, so a preference another
+    // tab or device changed meanwhile stays.
     internal.setUserPrefs = function(next) {
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
-        const payload = next || {};
-        return request('/spoiler-blur/user-prefs', { method: 'POST', body: payload, skipRetry: true })
-            .then(function(response) {
+        const set = {};
+        for (const [key, value] of Object.entries(next || {})) {
+            if (JSON.stringify(value) !== JSON.stringify(userPrefs[key])) set[key] = value;
+        }
+        if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
+        return request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true })
+            .then(function acknowledged(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
-                userPrefs = Object.assign({}, payload);
+                userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
                 notifyPolicyChanged();
-                return response?.prefs || userPrefs;
+                return Object.assign({}, userPrefs);
             })
             .catch(function(err) {
                 console.error(`${logPrefix} setUserPrefs failed:`, err);

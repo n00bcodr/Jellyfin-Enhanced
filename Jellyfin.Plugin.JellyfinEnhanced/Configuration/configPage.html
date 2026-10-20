@@ -4519,74 +4519,38 @@
                 searchClear.style.display = 'block';
             }
 
-            // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
+            // Unsaved-changes indicator: shows whether a save would send anything, i.e. whether the form now says something
+            // other than what the server last handed out (jeConfigPatch over _jeSent, the same comparison the save makes).
+            // Typing, a card added or removed, a confirmed list reset or a programmatic change all count; a value changed
+            // back does not, and a list that arrives later changes nothing the administrator didn't change.
             const saveDock = document.querySelector('.je-save-dock');
-            let _jeSavedSnapshot = null;
-            // Edits on the form (input and change events), so a delayed "saved" mark never swallows one.
-            let _jeFormEdits = 0;
+            let _jeDirtyQueued = false;
 
-            /** How many edits the form has seen. */
-            function jeFormEditCount() {
-                return _jeFormEdits;
-            }
-
-            function jeSnapshotFormState() {
-                const parts = [];
-                let i = 0;
-                form.querySelectorAll('input, select, textarea').forEach((el) => {
-                    if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
-                    if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
-                    if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
-                    if (el.closest('.je-arr-migration')) return; // the Seerr move panel's own confirmation, not a setting
-                    // An instance's add defaults load when its card opens: loading them isn't a change, editing them is.
-                    if (el.closest('.arr-instance-add') && el.dataset.jeInitial !== undefined
-                        && String(el.type === 'checkbox' ? el.checked : el.value) === el.dataset.jeInitial) return;
-                    const key = el.id || el.name || ('#' + i++);
-                    parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
-                });
-                // shortcutOverrides is JS state, not bound to persistent <input> elements.
-                parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
-                return parts.join('');
-            }
-
-            /** Call once the form reflects a known-saved state. */
-            function jeMarkSaved() {
-                jeMarkSavedAs(jeSnapshotFormState());
-            }
-
-            /**
-             * Marks the form saved as it was when `snapshot` was taken (a save's own snapshot): an edit made while the
-             * save ran still shows as unsaved.
-             * @param {string} snapshot - From jeSnapshotFormState
-             */
-            function jeMarkSavedAs(snapshot) {
-                _jeSavedSnapshot = snapshot;
-                jeUpdateDirtyIndicator();
-            }
-
-            /**
-             * Takes a control's new value as saved when the server changed that setting itself (request
-             * handling after a Seerr move or rollback), so the page doesn't report it as unsaved.
-             * @param {HTMLElement} el - the control (with an id)
-             * @param {string} previous - its value before the change
-             */
-            function jeAcceptServerValue(el, previous) {
-                if (_jeSavedSnapshot === null || !el || !el.id) return;
-                _jeSavedSnapshot = _jeSavedSnapshot.replace(el.id + '=' + previous, el.id + '=' + el.value);
-                jeUpdateDirtyIndicator();
+            /** Whether the form holds changes the server doesn't have yet. */
+            function jeHasUnsavedChanges() {
+                if (!_jeSent) return false;
+                const patch = jeConfigPatch(_jeSent, jeFormConfig(_jeBase, true));
+                return Object.keys(patch.Set).length > 0 || Object.keys(patch.Instances).length > 0;
             }
 
             function jeUpdateDirtyIndicator() {
-                const dirty = _jeSavedSnapshot !== null && jeSnapshotFormState() !== _jeSavedSnapshot;
-                if (saveDock) saveDock.classList.toggle('je-dirty', dirty);
+                _jeDirtyQueued = false;
+                if (saveDock) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
             }
 
-            form.addEventListener('input', () => { _jeFormEdits++; });
-            form.addEventListener('change', () => { _jeFormEdits++; });
-            form.addEventListener('input', jeUpdateDirtyIndicator);
-            form.addEventListener('change', jeUpdateDirtyIndicator);
-            // Fallback poll for structural changes that don't fire input/change (adding/removing a row).
-            setInterval(jeUpdateDirtyIndicator, 1000);
+            /** One update per burst of edits (each keystroke and each node of a redrawn list would otherwise recompute). */
+            function jeQueueDirtyIndicator() {
+                if (_jeDirtyQueued) return;
+                _jeDirtyQueued = true;
+                setTimeout(jeUpdateDirtyIndicator, 0);
+            }
+
+            form.addEventListener('input', jeQueueDirtyIndicator);
+            form.addEventListener('change', jeQueueDirtyIndicator);
+            // Structural edits (a card or row added or removed) fire neither. The indicator only toggles a class on the dock,
+            // which this observer doesn't watch, so it never triggers itself.
+            new MutationObserver(jeQueueDirtyIndicator).observe(form, { childList: true, subtree: true });
+            setInterval(jeQueueDirtyIndicator, 1000);
 
             window.addEventListener('beforeunload', (e) => {
                 if (!saveDock || !saveDock.classList.contains('je-dirty')) return;
@@ -5769,34 +5733,37 @@
         }
 
         /**
-         * Re-reads the saved configuration after a save so credential fields show their new
-         * placeholders (a just-typed key is never left on screen) and new instances get their ids.
-         * @returns {Promise<Object>} The configuration it read
+         * What a save draws again from the configuration read after it: each credential shows its new placeholder (a
+         * just-typed key is never left on screen) and the *arr cards are drawn from the stored lists (new instances get
+         * their ids). Each entry is drawn as a unit, from `fields` of the configuration read.
          */
-        async function jeRefreshSecretFields() {
-            var fresh = await ApiClient.getPluginConfiguration(pluginId);
-            jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
-            jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
-            jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
-            jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
-            jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || '');
-            jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
-            jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
-            jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
-            jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || '');
-            jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
-            loadArrInstances(fresh);
-            updateAllDependencies();
-            var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
-            _jeSentImportHandles = {};
-            if (lost.length) {
-                Dashboard.alert({
-                    title: 'API key not saved',
-                    message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
-                });
-            }
-            return fresh;
-        }
+        var JE_REDRAWN_GROUPS = [
+            { fields: ['TMDB_API_KEY'], draw: function(fresh) { jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]); } },
+            { fields: ['JellyseerrApiKey'], draw: function(fresh) {
+                jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
+                jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
+            } },
+            { fields: ['MdblistApiKey'], draw: function(fresh) { jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || ''); } },
+            { fields: ['DoesTheDogDieApiKey'], draw: function(fresh) { jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || ''); } },
+            { fields: ['ShokoApiKey'], draw: function(fresh) {
+                jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
+                jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
+            } },
+            { fields: ['BackupPassphrase'], draw: function(fresh) { jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || ''); } },
+            { fields: ['ArrNtfyToken'], draw: function(fresh) { jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || ''); } },
+            { fields: ['ArrSmtpPassword'], draw: function(fresh) { jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || ''); } },
+            { fields: ['SonarrInstances', 'RadarrInstances', 'SonarrUrl', 'SonarrApiKey', 'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings'], draw: function(fresh) {
+                loadArrInstances(fresh);
+                var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
+                _jeSentImportHandles = {};
+                if (lost.length) {
+                    Dashboard.alert({
+                        title: 'API key not saved',
+                        message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
+                    });
+                }
+            } }
+        ];
 
         // Instance id -> name of rows the last save sent with an import handle (see jeImportedKeysLost).
         var _jeSentImportHandles = {};
@@ -6240,6 +6207,9 @@
         // When false, saveArrInstances refuses to overwrite the stored value and legacy fields
         // to avoid turning a read-side corruption into permanent data loss.
         var _arrParseOK = { sonarr: true, radarr: true };
+        // Lists the administrator confirmed resetting (their stored JSON was unreadable): the next save sends that reset as
+        // its own operation, which the server applies only while the stored list is still unreadable (see jeConfigPatch).
+        var _jeArrResetConfirmed = { sonarr: false, radarr: false };
 
         function tryParseInstanceList(raw, type, container) {
             if (!raw) { _arrParseOK[type] = true; return []; }
@@ -6285,8 +6255,10 @@
                     function(confirmed) {
                         if (!confirmed) return;
                         _arrParseOK[type] = true;
+                        _jeArrResetConfirmed[type] = true;
                         banner.remove();
-                        // On next Save, the empty array will be written and legacy fields cleared normally.
+                        // On next Save, the reset is sent (with any instances added since) and legacy fields cleared normally.
+                        if (typeof jeUpdateDirtyIndicator === 'function') jeUpdateDirtyIndicator();
                     }
                 );
             });
@@ -6301,6 +6273,7 @@
             sonarrList.textContent = '';
             radarrList.textContent = '';
             _arrParseOK = { sonarr: true, radarr: true };
+            _jeArrResetConfirmed = { sonarr: false, radarr: false };
 
             var sonarrInstances = tryParseInstanceList(config.SonarrInstances, 'sonarr', sonarrList);
             var radarrInstances = tryParseInstanceList(config.RadarrInstances, 'radarr', radarrList);
@@ -7223,11 +7196,10 @@
         function jeArrMigrationSyncBackend(backend) {
             var select = document.getElementById('arrRequestBackend');
             if (!select || !backend || select.value === backend) return;
-            var previous = select.value;
             select.value = backend;
-            // The server holds it now: not a change of this page's (the next save doesn't send it).
+            // The server holds it now (the move's answer): not a change of this page's (the next save doesn't send it).
             if (typeof jeAcceptStored === 'function') jeAcceptStored('ArrRequestBackend', backend);
-            if (typeof jeAcceptServerValue === 'function') jeAcceptServerValue(select, previous);
+            if (typeof jeUpdateDirtyIndicator === 'function') jeUpdateDirtyIndicator();
         }
 
         /**
@@ -9112,11 +9084,7 @@
                 jeConfigRead(config);
                 _jeConfigReadOk = true;
                 jeConfigReadNotice(false);
-                // The form as read is saved; once late-finishing sub-populations (maintenance users, branding previews) settle,
-                // it is marked again, unless the administrator edited meanwhile (that edit stays marked unsaved).
-                jeMarkSaved();
-                const editsAtRead = jeFormEditCount();
-                setTimeout(function() { if (jeFormEditCount() === editsAtRead) jeMarkSaved(); }, 500);
+                jeUpdateDirtyIndicator();
             }).catch((err) => {
                 Dashboard.hideLoadingMsg();
                 console.warn('[JE] Could not read the plugin configuration:', err);
@@ -9770,9 +9738,6 @@
         var JE_ARR_INSTANCE_LISTS = ['SonarrInstances', 'RadarrInstances'];
         // Kept from each list's first instance by the server; never sent.
         var JE_ARR_MIRROR_FIELDS = ['SonarrUrl', 'SonarrApiKey', 'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings'];
-        // What jeRefreshSecretFields draws again from the server after a save.
-        var JE_REDRAWN_FIELDS = ['TMDB_API_KEY', 'JellyseerrApiKey', 'MdblistApiKey', 'DoesTheDogDieApiKey', 'ShokoApiKey', 'BackupPassphrase',
-            'ArrNtfyToken', 'ArrSmtpPassword'].concat(JE_ARR_INSTANCE_LISTS, JE_ARR_MIRROR_FIELDS);
 
         /**
          * Records the configuration a read filled the form from (call once the form shows it).
@@ -9853,7 +9818,11 @@
             Object.keys(now).forEach(function(field) {
                 if (JE_ARR_MIRROR_FIELDS.indexOf(field) !== -1) return;
                 if (JE_ARR_INSTANCE_LISTS.indexOf(field) !== -1) {
-                    var ops = jeInstanceOps(sent[field], now[field], (_jeBase || {})[field]);
+                    // A confirmed reset of an unreadable list is its own operation (the form's instances are added to the
+                    // empty list); an unreadable list nobody reset is never written (saveArrInstances leaves it as stored).
+                    var ops = _jeArrResetConfirmed[field === 'SonarrInstances' ? 'sonarr' : 'radarr']
+                        ? { ResetUnreadable: true, Add: jeParseInstances(now[field]) || [], Remove: [], Change: [] }
+                        : jeInstanceOps(sent[field], now[field], (_jeBase || {})[field]);
                     if (ops) patch.Instances[field] = ops;
                     return;
                 }
@@ -9914,21 +9883,39 @@
         }
 
         /**
-         * After a save, the credentials are shown as placeholders again and the *arr cards drawn from the stored lists
-         * (jeRefreshSecretFields), unless the administrator edited one of them while the save ran: then they stay as typed
-         * and go with the next save. What is drawn again counts as read.
+         * The redrawn entries (JE_REDRAWN_GROUPS) the administrator hasn't edited since the save took its snapshot.
+         * @param {Object} sentNow - The configuration the save was built from
+         * @returns {Object[]}
+         */
+        function jeUneditedRedrawGroups(sentNow) {
+            var current = jeFormConfig(_jeBase, true);
+            return JE_REDRAWN_GROUPS.filter(function(group) {
+                return group.fields.every(function(field) { return JSON.stringify(current[field]) === JSON.stringify(sentNow[field]); });
+            });
+        }
+
+        /**
+         * After a save, the credentials are shown as placeholders again and the *arr cards drawn from the stored lists,
+         * from a read of the configuration. An entry the administrator edited since the save's snapshot stays as typed and
+         * goes with the next save; that is checked again right before drawing (an edit may come while the read runs). What
+         * is drawn again counts as read.
          * @param {Object} sentNow - The configuration the save was built from
          */
         async function jeRedrawSavedFields(sentNow) {
-            var current = jeFormConfig(_jeBase, true);
-            var editedMeanwhile = JE_REDRAWN_FIELDS.some(function(field) { return JSON.stringify(current[field]) !== JSON.stringify(sentNow[field]); });
-            if (editedMeanwhile) return;
-            var fresh = await jeRefreshSecretFields();
+            if (!jeUneditedRedrawGroups(sentNow).length) return;
+            var fresh = await ApiClient.getPluginConfiguration(pluginId);
             if (!fresh) return;
+            // Check at apply time: only what is still unedited now is drawn.
+            var groups = jeUneditedRedrawGroups(sentNow);
+            groups.forEach(function(group) { group.draw(fresh); });
+            if (!groups.length) return;
+            updateAllDependencies();
             var drawn = jeFormConfig(_jeBase, true);
-            JE_REDRAWN_FIELDS.forEach(function(field) {
-                _jeBase[field] = fresh[field];
-                _jeSent[field] = drawn[field];
+            groups.forEach(function(group) {
+                group.fields.forEach(function(field) {
+                    _jeBase[field] = fresh[field];
+                    _jeSent[field] = drawn[field];
+                });
             });
         }
 
@@ -9948,12 +9935,14 @@
             try {
                 // This save's snapshot: an edit from here on belongs to the next save.
                 const revisions = jeAsyncFields().map(function(field) { return field.revision; });
-                const dockSnapshot = jeSnapshotFormState();
+                const resets = Object.keys(_jeArrResetConfirmed).filter(function(type) { return _jeArrResetConfirmed[type]; });
                 const now = jeFormConfig(_jeBase);
                 const result = await jePatchConfiguration(jeConfigPatch(_jeSent, now));
+                // The answer: what this save sent is what the server holds (an edit made since still differs from it).
                 _jeBase = now;
                 _jeSent = JSON.parse(JSON.stringify(now));
                 jeAsyncFieldsSaved(now, revisions);
+                resets.forEach(function(type) { _jeArrResetConfirmed[type] = false; });
                 const stored = (result && (result.configuration || result.Configuration)) || now;
                 const skipped = (result && (result.skipped || result.Skipped)) || [];
                 // After JE config is persisted, sync any managed Custom Tabs entries.
@@ -10016,12 +10005,12 @@
                 // Show the saved credentials as placeholders again (never leave a typed key on screen).
                 try { await jeRedrawSavedFields(now); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
                 // What this save sent is saved; an edit made since still shows as unsaved.
-                jeMarkSavedAs(dockSnapshot);
+                jeUpdateDirtyIndicator();
                 if (skipped.length) {
                     try {
                         Dashboard.alert({
                             title: 'Some changes were not saved',
-                            message: 'While this page was open, another administrator removed or re-added Sonarr/Radarr instances you changed, so these changes were not saved: ' + skipped.join(', ') + '. Reload the page to see the instances as they are now.'
+                            message: 'While this page was open, another administrator removed or re-added Sonarr/Radarr instances you changed (or repaired a list you reset), so these changes were not saved: ' + skipped.join(', ') + '. Reload the page to see the instances as they are now.'
                         });
                     } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
                 }

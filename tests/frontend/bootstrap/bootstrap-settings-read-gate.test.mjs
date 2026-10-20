@@ -143,8 +143,10 @@ test('control: after a successful boot read a change goes at once, alone', async
 test('other documents follow the same rule: a bookmark added after a failed bookmark read reads first, then adds only itself', async t => {
   const h = boot(t, { mode: 'ok' });
   await h.ready();
-  // As if the boot read of bookmark.json had failed (the store reads the marker when it first opens the document).
+  // As if the boot read of bookmark.json had failed (plugin.js marks it unread and records no copy of it; the store reads
+  // the record when it first opens the document).
   h.JE.userConfig.unreadDocuments?.push('bookmark.json');
+  delete h.JE.userConfig.readDocuments?.['bookmark.json'];
   h.setReads('ok');
   await h.JE.patchUserSettings('bookmark.json', { upsert: { two: { itemId: 'y' } } }, { throwOnError: true });
   assert.ok(h.gets.includes('bookmark.json'), 'the stored bookmarks were read first');
@@ -173,5 +175,6 @@ test('before the boot read every document is unread, and the marker never travel
   assert.deepEqual([...(early.unreadDocuments || [])], ['settings.json', 'shortcuts.json', 'bookmark.json', 'elsewhere.json', 'hidden-content.json']);
   assert.equal(Object.keys(early).includes('unreadDocuments'), false);
   assert.equal(JSON.stringify(early).includes('unreadDocuments'), false);
+  assert.equal(JSON.stringify(early).includes('readDocuments'), false, 'the read record never travels in a document either');
   await h.ready();
 });

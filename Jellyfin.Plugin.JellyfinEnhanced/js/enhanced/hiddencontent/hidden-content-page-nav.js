@@ -165,6 +165,9 @@
     );
 
     renderPage();
+    // The list as the server holds it now (another tab or device may have hidden or unhidden since this page's read): the
+    // read's answer repaints through the change event. Once per opening, never per repaint.
+    JE.hiddenContent?.refresh?.();
   }
 
   /**
@@ -274,6 +277,7 @@
     state._customTabMode = true;
     injectStyles();
     renderPage(targetContainer);
+    JE.hiddenContent?.refresh?.();
   }
 
   /**
