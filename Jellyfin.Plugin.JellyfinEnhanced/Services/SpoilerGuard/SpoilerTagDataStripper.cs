@@ -43,6 +43,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Title-bearing stream fields must be sanitized.</summary>
         public bool SanitizeTitleStreams => ReplaceTitle || StripOverview;
+
+        /// <summary>
+        /// A one-way fingerprint of the policy (the viewer's state and the effective strip flags): a request re-reads it
+        /// before it emits, and answers again when it changed while the request was waiting.
+        /// </summary>
+        public string Revision => _revision ??= Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            Newtonsoft.Json.JsonConvert.SerializeObject(State) + "|" + StripGenres + StripRatings + ReplaceTitle + StripOverview)));
+
+        private string? _revision;
+
+        /// <summary>The revision of a possibly absent policy ("-": nothing is stripped).</summary>
+        public static string RevisionOf(SpoilerTagStripPolicy? policy) => policy?.Revision ?? "-";
     }
 
     /// <summary>Which Spoiler Guard stub POST /tag-data returns for an item.</summary>
@@ -176,13 +188,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Dictionary<string, PrivacyIdentity> OwnedIdentities(IReadOnlyDictionary<string, TagCacheEntry> items, JUser? viewer)
         {
             var ids = new List<Guid>();
+            var asked = new List<(string Key, long Stamp)>();
             foreach (var (key, entry) in items)
-                if (entry != null && !IsTitleKind(entry.Type) && Guid.TryParse(key, out var id)) ids.Add(id);
+            {
+                if (entry == null || IsTitleKind(entry.Type) || !Guid.TryParse(key, out var id)) continue;
+                // An entry already known not to be an extra (at this build of it) needs no lookup; an extra is resolved
+                // again every time (its owner's verdict and watched state are the viewer's, and current).
+                if (_extras.TryGetValue(key, out var known) && known.Stamp == entry.LastUpdated && !known.Extra) continue;
+                ids.Add(id);
+                asked.Add((key, entry.LastUpdated));
+            }
             if (ids.Count == 0) return new Dictionary<string, PrivacyIdentity>(StringComparer.Ordinal);
-            return PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager)
+            var owned = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager)
                 .Where(p => p.Value.IsExtra)
                 .ToDictionary(p => p.Key.ToString("N"), p => p.Value, StringComparer.Ordinal);
+            if (_extras.Count > MaxKnownExtras) _extras.Clear();
+            foreach (var (key, stamp) in asked) _extras[key] = (stamp, owned.ContainsKey(key));
+            return owned;
         }
+
+        /// <summary>Whether each non-title tag-cache entry is an extra, by the entry's build stamp (ownership is the item's own).</summary>
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Stamp, bool Extra)> _extras = new(StringComparer.Ordinal);
+
+        private const int MaxKnownExtras = 500_000;
+
+        /// <summary>
+        /// THE guarded set of a tag-cache answer, the one derivation full loads and deltas share (the strip, the strip
+        /// fingerprint and a delta's riders all read it): every entry whose title is in the viewer's spoiler scope, by kind
+        /// (<see cref="GetGuardedKind"/>), and every extra whose owner is (<paramref name="owned"/>, the batched owner lookup),
+        /// "Extra". Membership is scope only: watched state decides what a member is stripped of, never whether it is a
+        /// member, so a title watched or unwatched since the client's copy is corrected by the next delta, not a full load.
+        /// </summary>
+        public Dictionary<string, string> GuardedSet(UserSpoilerBlur state, IReadOnlyDictionary<string, TagCacheEntry> items, IReadOnlyDictionary<string, PrivacyIdentity> owned)
+        {
+            var set = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (key, entry) in items)
+            {
+                if (owned.TryGetValue(key, out var identity))
+                {
+                    if (_spoilerResolver.InSpoilerScope(state, identity)) set[key] = "Extra";
+                    continue;
+                }
+                if (GetGuardedKind(state, key, entry) is { } kind) set[key] = kind;
+            }
+            return set;
+        }
+
+        /// <summary>
+        /// Whether an unchanged entry rides with a delta: it may be in <see cref="GuardedSet"/> (a guarded title's entry, or
+        /// an entry that may be an extra, whose owner only the batched lookup knows). Riders outside the set leave again
+        /// (<see cref="StripTagCache"/> with the delta's cursor).
+        /// </summary>
+        public bool MayBeGuarded(UserSpoilerBlur state, string key, TagCacheEntry? entry)
+            => entry != null && (GetGuardedKind(state, key, entry) != null
+                || !IsTitleKind(entry.Type) && !(_extras.TryGetValue(key, out var known) && known.Stamp == entry.LastUpdated && !known.Extra));
 
         /// <summary>Whether an extra is stripped for this viewer: its owner is guarded, and a movie's extra until the movie is watched.</summary>
         private bool ExtraGuarded(UserSpoilerBlur state, PrivacyIdentity identity)
@@ -191,15 +250,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// GET /tag-cache strip: replaces every guarded, not-exempt entry of <paramref name="items"/> with a
         /// stripped clone. Played state is looked up in ONE bounded query instead of a UserData read per entry.
-        /// Returns a fingerprint of the effective strip flags and the set of guarded entries (the client replaces
-        /// its stored copy, rather than applying a delta, when it changes).
+        /// Returns a fingerprint of the effective strip flags and the guarded set (<see cref="GuardedSet"/>; the client
+        /// replaces its stored copy, rather than applying a delta, when it changes). With a delta's <paramref name="since"/>,
+        /// the unchanged entries that rode along without being in the set leave.
         /// </summary>
-        public string StripTagCache(SpoilerTagStripPolicy policy, JUser user, Dictionary<string, TagCacheEntry> items, IReadOnlyDictionary<string, PrivacyIdentity>? owned = null)
+        public string StripTagCache(SpoilerTagStripPolicy policy, JUser user, Dictionary<string, TagCacheEntry> items, IReadOnlyDictionary<string, PrivacyIdentity>? owned = null, long? since = null)
         {
             var spState = policy.State;
             var stripRatingsEnabled = policy.StripRatings;
-            // Series age rating per guarded series, looked up once per request.
-            var ageSeriesRatingMemo = new Dictionary<Guid, string?>();
+            // What the host vouches for, memoized for the whole strip (series ratings and genres, tables).
+            var host = Host();
+            var extras = owned ?? OwnedIdentities(items, user);
+            // Kind per guarded key: the one derivation, reused by every pass below.
+            var guardedKinds = GuardedSet(spState, items, extras);
+            if (since is { } cursor)
+                foreach (var (key, entry) in items.ToList())
+                    if (entry != null && entry.LastUpdated <= cursor && !guardedKinds.ContainsKey(key)) items.Remove(key);
 
             // Played state is looked up in ONE bounded query instead of a
             // UserData read per entry (with whole libraries guarded that
@@ -210,15 +276,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // them this user has played.
             var playedCandidates = new List<Guid>();
             var laterSeasons = new List<Season>();
-            // Kind per guarded key, reused by the strip pass so both
-            // passes see the same answer.
-            var guardedKinds = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var kvp in items)
+            foreach (var (key, kind) in guardedKinds)
             {
-                var kind = GetGuardedKind(spState, kvp.Key, kvp.Value);
-                if (kind == null) continue;
-                guardedKinds[kvp.Key] = kind;
-                if (!Guid.TryParse(kvp.Key, out var cGuid)) continue;
+                if (!Guid.TryParse(key, out var cGuid)) continue;
                 if (kind is "Episode" or "Movie")
                 {
                     playedCandidates.Add(cGuid);
@@ -269,11 +329,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             var playedIds = LoadPlayedIdsForTagStrip(user, playedCandidates);
 
-            // Extras get their owner's verdict (the same as tag data), before the entry is serialized.
-            var extras = owned ?? OwnedIdentities(items, user);
-            foreach (var (key, identity) in extras)
-                if (items.ContainsKey(key) && ExtraGuarded(spState, identity)) guardedKinds[key] = "Extra";
-
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
             var fingerprint = $"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
@@ -284,7 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!guardedKinds.TryGetValue(kvp.Key, out var kind)) continue;
                 if (kind == "Extra")
                 {
-                    items[kvp.Key] = StripEntryFields(entry, kind, policy, ageSeriesRatingMemo, extras[kvp.Key].OwnerId);
+                    // An extra gets its owner's verdict (the same as tag data): a movie's until the movie is watched.
+                    if (ExtraGuarded(spState, extras[kvp.Key])) items[kvp.Key] = StripEntryFields(entry, kind, policy, host, extras[kvp.Key].OwnerId);
                     continue;
                 }
                 var isEpisode = kind == "Episode";
@@ -314,7 +370,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             // The season itself is the viewer's entry point, but its entry carries values of its
                             // episodes (their audio languages, the first one's streams and name): those are validated.
-                            items[kvp.Key] = Validated(StripExemptSeasonRating(entry, stripRatingsEnabled) ?? entry.Clone(), policy.SanitizeTitleStreams, SeriesOf(entry));
+                            items[kvp.Key] = PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, stripRatingsEnabled, policy.SanitizeTitleStreams), SeriesOf(entry), host);
                             continue;
                         }
                     }
@@ -328,7 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         $"Spoiler Guard tag-cache strip: TagCacheService key '{kvp.Key}' did not parse as Guid; played-state check skipped. Possible cache-key format change.");
                 }
 
-                items[kvp.Key] = StripEntryFields(entry, kind, policy, ageSeriesRatingMemo);
+                items[kvp.Key] = StripEntryFields(entry, kind, policy, host);
             }
 
             return fingerprint;
@@ -348,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 // An extra of a guarded title (native poster tags): its owner's verdict, as in the tag cache and tag data.
                 stripped = true;
-                return StripEntryFields(entry, "Extra", policy, new Dictionary<Guid, string?>(), identity.OwnerId);
+                return StripEntryFields(entry, "Extra", policy, Host(), identity.OwnerId);
             }
             if (kind == null) return entry;
 
@@ -377,12 +433,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // Exempt itself, but the values it carries of its episodes are validated (as in the tag cache).
                     stripped = true;
-                    return Validated(StripExemptSeasonRating(entry, policy.StripRatings) ?? entry.Clone(), policy.SanitizeTitleStreams, SeriesOf(entry));
+                    return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(false, policy.StripRatings, policy.SanitizeTitleStreams), SeriesOf(entry), Host());
                 }
             }
 
             stripped = true;
-            return StripEntryFields(entry, kind, policy, new Dictionary<Guid, string?>());
+            return StripEntryFields(entry, kind, policy, Host());
         }
 
         /// <summary>
@@ -414,153 +470,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        // Exempt seasons keep their poster + non-rating tags, but a season
-        // carries only the series-FALLBACK rating (hidden on the guarded series
-        // everywhere else). Strip just the rating so it can't surface via the
-        // server tag cache. Null when there is nothing to strip.
-        private static TagCacheEntry? StripExemptSeasonRating(TagCacheEntry entry, bool stripRatingsEnabled)
+        // TagCacheService stores ONE shared TagCacheEntry per item across ALL users: the construction table clones,
+        // never mutates. An episode's or season's age rating is its series' when ratings are stripped (its own can
+        // differ and Jellyfin never shows it); its vocabulary is its series', an extra's its owner's.
+        private static TagCacheEntry StripEntryFields(TagCacheEntry entry, string kind, SpoilerTagStripPolicy policy, PrivacyValueHost host, Guid? owner = null)
         {
-            if (!stripRatingsEnabled || (entry.CommunityRating == null && entry.CriticRating == null)) return null;
-            var seasonStripped = entry.Clone();
-            seasonStripped.CommunityRating = null;
-            seasonStripped.CriticRating = null;
-            return seasonStripped;
-        }
-
-        // TagCacheService stores ONE shared TagCacheEntry per item across
-        // ALL users. Mutating in place would leak this user's strip into
-        // every other user's cache response (and their own later watched
-        // response, until rebuild). Clone before mutating.
-        private TagCacheEntry StripEntryFields(TagCacheEntry entry, string kind, SpoilerTagStripPolicy policy, Dictionary<Guid, string?> ageSeriesRatingMemo, Guid? owner = null)
-        {
-            var isEpisode = kind == "Episode";
-            var isSeason = kind == "Season";
-            var stripGenresEnabled = policy.StripGenres;
-            var stripRatingsEnabled = policy.StripRatings;
-            var sanitizeTitleStreams = policy.SanitizeTitleStreams;
-
-            var stripped = entry.Clone();
-            if (stripGenresEnabled)
-            {
-                stripped.Genres = System.Array.Empty<string>();
-                stripped.AudioLanguages = null;
-                stripped.PartialAudioLanguages = null;
-                stripped.StreamData = null;
-            }
-            if (stripRatingsEnabled)
-            {
-                stripped.CommunityRating = null;
-                stripped.CriticRating = null;
-                // Age rating: keep the series-level one (not a spoiler) but
-                // drop an Episode/Season's own, which can differ from the
-                // series and Jellyfin never shows. Mirrors GetTagData's stubs.
-                if ((isEpisode || isSeason) && Guid.TryParse(entry.SeriesId, out var ageSeriesGuid))
-                {
-                    if (!ageSeriesRatingMemo.TryGetValue(ageSeriesGuid, out var ageSeriesRating))
-                    {
-                        ageSeriesRating = _libraryManager.GetItemById<BaseItem>(ageSeriesGuid)?.OfficialRating;
-                        ageSeriesRating = string.IsNullOrWhiteSpace(ageSeriesRating) ? null : ageSeriesRating;
-                        ageSeriesRatingMemo[ageSeriesGuid] = ageSeriesRating;
-                    }
-                    stripped.OfficialRating = ageSeriesRating;
-                }
-            }
-            // When StreamData wasn't already wiped by tag-strip but title
-            // replacement / overview strip is on, sanitize its title-bearing
-            // fields. Clone StreamData (same cross-user-mutation hazard).
-            // qualitytags.js recomputes overlay text from Codec/Height/
-            // VideoRangeType, so dropping DisplayTitle/ItemName/paths is acceptable.
-            if (sanitizeTitleStreams && stripped.StreamData != null && !stripGenresEnabled)
-            {
-                var sd = stripped.StreamData;
-                var clonedSd = new TagStreamData
-                {
-                    ItemName = null,
-                    ItemPath = null,
-                    Streams = sd.Streams?.Select(st => new TagMediaStream
-                    {
-                        Type = st.Type,
-                        Language = st.Language,
-                        Codec = st.Codec,
-                        CodecTag = st.CodecTag,
-                        Profile = st.Profile,
-                        Height = st.Height,
-                        Channels = st.Channels,
-                        ChannelLayout = st.ChannelLayout,
-                        VideoRangeType = st.VideoRangeType,
-                        DisplayTitle = null,
-                    }).ToList(),
-                    Sources = sd.Sources?.Select(_ => new TagMediaSource
-                    {
-                        Path = null,
-                        Name = null,
-                    }).ToList(),
-                };
-                stripped.StreamData = clonedSd;
-            }
-            return Validated(stripped, policy.SanitizeTitleStreams, kind is "Episode" or "Season" ? SeriesOf(entry) : owner);
+            var episodic = kind is "Episode" or "Season";
+            return PrivacyValues.TagEntry(entry, new PrivacyTagStrip(policy.StripGenres, policy.StripRatings, policy.SanitizeTitleStreams, policy.StripRatings && episodic ? SeriesOf(entry) : null),
+                episodic ? SeriesOf(entry) : owner, host);
         }
 
         /// <summary>The series an episode's or season's entry belongs to (its vocabulary's source).</summary>
         private static Guid? SeriesOf(TagCacheEntry entry) => Guid.TryParse(entry.SeriesId, out var series) && series != Guid.Empty ? series : null;
-
-        /// <summary>
-        /// A guarded entry with only values the host vouches for (PrivacyValues' rules for the tag cache's own shape):
-        /// provider ids as digits, a rating the host's tables know, languages the host knows, ffprobe's codec, profile and
-        /// layout tokens; item names, paths and stream titles only where Spoiler Guard reveals its title family. Genres
-        /// are what the tag strip already decided (kept only when the administrator or the viewer turned it off).
-        /// </summary>
-        private TagCacheEntry Validated(TagCacheEntry entry, bool sanitizeTitles, Guid? title = null)
-        {
-            var host = Host();
-            // An episode's, season's or extra's genres are its title's own (the series', the owner's): a season entry
-            // aggregates its episodes' genres, and Jellyfin's genre names come from the protected items themselves.
-            if (title is { } source && entry.Genres != null)
-            {
-                var genres = host.Item(source)?.Genres;
-                entry.Genres = entry.Genres.Select(g => PrivacyValueHost.EntryIn(genres, g)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-            }
-            static string? Digits(string? v) => v is { Length: > 0 and <= 20 } && v.All(char.IsAsciiDigit) ? v : null;
-            entry.TmdbId = Digits(entry.TmdbId);
-            entry.SeriesTmdbId = Digits(entry.SeriesTmdbId);
-            entry.SeriesId = PrivacyTokens.IdOf(entry.SeriesId);
-            entry.OfficialRating = host.Rating(entry.OfficialRating);
-            entry.AudioLanguages = entry.AudioLanguages?.Select(host.Language).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-            entry.PartialAudioLanguages = entry.PartialAudioLanguages?.Select(host.Language).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-            if (entry.StreamData is { } data)
-            {
-                entry.StreamData = new TagStreamData
-                {
-                    ItemName = sanitizeTitles ? null : data.ItemName,
-                    ItemPath = sanitizeTitles ? null : data.ItemPath,
-                    Streams = data.Streams?.Where(st => st != null).Select(st => ValidatedStream(st, host, sanitizeTitles)).ToList(),
-                    Sources = data.Sources?.Select(source => new TagMediaSource { Path = sanitizeTitles ? null : source?.Path, Name = sanitizeTitles ? null : source?.Name }).ToList(),
-                };
-            }
-            return entry;
-        }
-
-        /// <summary>
-        /// A tag stream rebuilt from canonical values: the host's table entries (language, codec, profile, layout), enum names
-        /// (stream type, range type), numbers; its display title only where titles are revealed.
-        /// </summary>
-        internal static TagMediaStream ValidatedStream(TagMediaStream stream, PrivacyValueHost host, bool sanitizeTitles) => new()
-        {
-            Type = EnumName<MediaBrowser.Model.Entities.MediaStreamType>(stream.Type),
-            Language = host.Language(stream.Language),
-            Codec = PrivacyTokens.Codec(stream.Codec),
-            CodecTag = PrivacyTokens.FourCc(stream.CodecTag) ? stream.CodecTag : null,
-            Profile = PrivacyTokens.Profile(stream.Profile),
-            Height = stream.Height,
-            Channels = stream.Channels,
-            ChannelLayout = PrivacyTokens.Layout(stream.ChannelLayout),
-            VideoRangeType = EnumName<Jellyfin.Data.Enums.VideoRangeType>(stream.VideoRangeType),
-            DisplayTitle = sanitizeTitles ? null : stream.DisplayTitle,
-        };
-
-        /// <summary>The enum's own name for a value (ordinal), or null.</summary>
-        private static string? EnumName<T>(string? value) where T : struct, Enum
-            => value == null ? null : Enum.GetNames<T>().FirstOrDefault(n => string.Equals(n, value, StringComparison.Ordinal));
 
         // Fail-CLOSED: a failed probe counts as "nothing watched", so the
         // season stays stripped.

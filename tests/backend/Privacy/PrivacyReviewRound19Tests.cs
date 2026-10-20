@@ -527,8 +527,12 @@ public class PrivacyReviewRound19Tests
         /// <summary>Theme videos (extras) of the guarded series and of the hidden movie (with <c>extras</c>).</summary>
         public readonly Guid SeriesExtra = Guid.NewGuid(), MovieExtra = Guid.NewGuid();
         public Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerTagDataStripper Stripper { get; private set; } = null!;
+        public Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver Resolver { get; private set; } = null!;
+        public readonly Mock<MediaBrowser.Controller.Library.IUserManager> Users = new();
         public Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur State { get; } = new();
         public readonly Dictionary<Guid, MediaBrowser.Controller.Entities.BaseItem> Items = new();
+        /// <summary>The items Alice has watched (user data and the bounded played-state query read it).</summary>
+        public readonly HashSet<Guid> Played = new();
         private readonly Microsoft.Extensions.DependencyInjection.ServiceProvider _provider;
         private readonly MediaBrowser.Controller.Library.ILibraryManager? _previousLibrary = MediaBrowser.Controller.Entities.BaseItem.LibraryManager;
         private readonly MediaBrowser.Controller.Library.IMediaSourceManager? _previousMedia = MediaBrowser.Controller.Entities.BaseItem.MediaSourceManager;
@@ -536,17 +540,18 @@ public class PrivacyReviewRound19Tests
         private static readonly PropertyInfo? _segments = typeof(MediaBrowser.Controller.Entities.BaseItem).GetProperty("MediaSegmentManager", BindingFlags.Public | BindingFlags.Static);
         private readonly object? _previousSegments = _segments?.GetValue(null);
 
-        public TagSite(bool rules, bool stripTags, bool extras = false, Action<Dictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry>>? edit = null)
+        /// <param name="guardMovie">The movie is guarded by Spoiler Guard instead of hidden (with <paramref name="rules"/>).</param>
+        public TagSite(bool rules, bool stripTags, bool extras = false, Action<Dictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry>>? edit = null, bool guardMovie = false)
         {
             var config = Fixture.Plugin.Configuration;
             config.TagCacheServerMode = true;
             config.HiddenContentEnabled = true;
             config.SpoilerBlurEnabled = true; config.SpoilerReplaceTitle = true; config.SpoilerStripOverview = true; config.SpoilerStripRatings = true;
             config.SpoilerStripTags = stripTags;
-            var users = new Mock<MediaBrowser.Controller.Library.IUserManager>();
+            var users = Users;
             users.Setup(x => x.GetUserById(Alice.Id)).Returns(Alice);
             Library.Setup(x => x.GetItemIds(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
-                .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.IsPlayed == true ? [] : extras ? [Movie, Episode, Season, SeriesExtra, MovieExtra] : [Movie, Episode, Season]);
+                .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.IsPlayed == true ? (q.ItemIds ?? []).Where(Played.Contains).ToArray() : extras ? [Movie, Episode, Season, SeriesExtra, MovieExtra] : [Movie, Episode, Season]);
             // Season 1 of the guarded series: exempt itself (the viewer's entry point), but its entry aggregates its episodes'
             // audio languages and carries its first episode's stream data and name.
             var season = new MediaBrowser.Controller.Entities.TV.Season { Id = Season, SeriesId = Series, IndexNumber = 1, Name = "Season 1" };
@@ -642,19 +647,42 @@ public class PrivacyReviewRound19Tests
                 options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
             });
             _provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
-            var resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver(Fixture.Core.Manager, Library.Object, Fixture.Core.Logger, null!);
-            var userData = Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>();
+            var resolver = Resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver(Fixture.Core.Manager, Library.Object, Fixture.Core.Logger, null!);
+            var data = new Mock<MediaBrowser.Controller.Library.IUserDataManager>();
+            data.Setup(d => d.GetUserData(It.IsAny<Jellyfin.Database.Implementations.Entities.User>(), It.IsAny<MediaBrowser.Controller.Entities.BaseItem>()))
+                .Returns((Jellyfin.Database.Implementations.Entities.User _, MediaBrowser.Controller.Entities.BaseItem item) => new MediaBrowser.Controller.Entities.UserItemData { Key = "k", Played = Played.Contains(item.Id) });
+            var userData = data.Object;
             Stripper = PrivacyTestHost.Create<Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerTagDataStripper>(Library.Object, userData, resolver, localization);
             Controller = ApiAssetTests.Controller(Fixture.Core, users.Object, Cache, Library.Object, userData, Fixture.Core.Manager, resolver, Stripper, localization);
             if (!rules) return;
             var id = Alice.Id.ToString("N");
-            Fixture.Core.Manager.SaveUserConfiguration(id, "hidden-content.json", new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent
+            if (!guardMovie)
             {
-                Settings = new() { FilterLibrary = true, FilterSearch = true },
-                Items = new() { [Movie.ToString("N")] = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = Movie.ToString("D"), Type = "Movie", HideScope = "global" } },
-            });
-            Jellyfin.Plugin.JellyfinEnhanced.Services.HiddenContentResponseFilter.InvalidateUser(id);
-            State.Series[Series.ToString("N")] = new();
+                Fixture.Core.Manager.SaveUserConfiguration(id, "hidden-content.json", new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent
+                {
+                    Settings = new() { FilterLibrary = true, FilterSearch = true },
+                    Items = new() { [Movie.ToString("N")] = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = Movie.ToString("D"), Type = "Movie", HideScope = "global" } },
+                });
+                Jellyfin.Plugin.JellyfinEnhanced.Services.HiddenContentResponseFilter.InvalidateUser(id);
+            }
+            else State.Movies[Movie.ToString("N")] = new();
+            Guard(Series);
+        }
+
+        /// <summary>Puts a series under Alice's Spoiler Guard (saved as her state file is, read on the next request).</summary>
+        public void Guard(Guid series)
+        {
+            var id = Alice.Id.ToString("N");
+            State.Series[series.ToString("N")] = new();
+            Fixture.Core.Manager.SaveUserConfiguration(id, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, State);
+            Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(id);
+        }
+
+        /// <summary>Takes a series out of Alice's Spoiler Guard.</summary>
+        public void Unguard(Guid series)
+        {
+            var id = Alice.Id.ToString("N");
+            State.Series.Remove(series.ToString("N"));
             Fixture.Core.Manager.SaveUserConfiguration(id, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, State);
             Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(id);
         }
@@ -664,16 +692,20 @@ public class PrivacyReviewRound19Tests
             HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = _provider, User = TestCallers.Principal(Alice.Id, false) }
         };
 
-        public async Task<string> TagCache()
+        public async Task<string> TagCache() => (await TagCacheResponse()).Body;
+
+        /// <summary>One GET tag-cache as a client sends it (a delta with <paramref name="since"/>, a revalidation with <paramref name="ifNoneMatch"/>).</summary>
+        public async Task<(int Status, string Body, string? ETag)> TagCacheResponse(long? since = null, string? ifNoneMatch = null)
         {
             SignIn();
             var http = Controller.HttpContext;
             http.Request.Method = "GET";
+            if (ifNoneMatch != null) http.Request.Headers.IfNoneMatch = ifNoneMatch;
             using var stream = new MemoryStream();
             http.Response.Body = stream;
-            var result = Controller.GetTagCache(Alice.Id);
+            var result = Controller.GetTagCache(Alice.Id, since);
             await result.ExecuteResultAsync(new ActionContext(http, new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor()));
-            return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+            return (http.Response.StatusCode, System.Text.Encoding.UTF8.GetString(stream.ToArray()), http.Response.Headers.ETag.ToString());
         }
 
         public string TagData(params Guid[] ids)

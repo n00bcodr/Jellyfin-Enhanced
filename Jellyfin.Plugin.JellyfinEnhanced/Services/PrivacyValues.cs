@@ -160,7 +160,7 @@ public sealed class PrivacyValueHost
         if (id is not { } key || key == Guid.Empty || Library == null) return null;
         if (_items.TryGetValue(key, out var known)) return known;
         BaseItem? item;
-        try { item = Library.GetItemById(key); }
+        try { item = Library.GetItemById(key) ?? Library.GetItemById<BaseItem>(key); }
         catch (Exception) { item = null; }
         return _items[key] = item;
     }
@@ -311,7 +311,7 @@ public sealed record PrivacyReveal
 /// member the table does not name are never copied (one unknown default, on the hidden and the guarded path alike); a
 /// nested value (an element of a derived array included) is rebuilt by the type it is assignable to, or dropped.
 /// </summary>
-public static class PrivacyValues
+public static partial class PrivacyValues
 {
     /// <summary>How the walk treats an item.</summary>
     internal enum Mode
@@ -377,9 +377,88 @@ public static class PrivacyValues
     public static ImageInfo Image(ImageInfo image, PrivacyReveal reveal, PrivacyValueHost host)
         => (ImageInfo)Rebuild(image, typeof(ImageInfo), new Scope { Host = host, Mode = Mode.Guarded, Reveal = reveal }, 0)!;
 
-    /// <summary>A search hint of a guarded item: the constructed name and series, every other value through its rule.</summary>
-    public static SearchHint Hint(SearchHint hint, string? name, string? series, PrivacyReveal reveal, PrivacyValueHost host)
-        => (SearchHint)Rebuild(hint, typeof(SearchHint), new Scope { Host = host, Mode = Mode.Row, Reveal = reveal, Name = name, Series = series }, 0)!;
+    /// <summary>A search hint of a guarded item: its name and series constructed (<see cref="NameOf"/>), every other value through its rule.</summary>
+    public static SearchHint Hint(SearchHint hint, PrivacyIdentity identity, PrivacyReveal reveal, PrivacyValueHost host)
+    {
+        var name = NameOf(identity.Kind, identity.ItemId, hint.ParentIndexNumber, hint.IndexNumber, hint.Name, reveal, host);
+        return (SearchHint)Rebuild(hint, typeof(SearchHint), new Scope { Host = host, Mode = Mode.Row, Reveal = reveal, Name = name, Series = SeriesNameOf(identity, host) }, 0)!;
+    }
+
+    /// <summary>
+    /// A protected item's activity entry: a new row whose text is constructed from structured data only (the account, what
+    /// happened by the entry's type, the item as <see cref="NameOf"/> names it), never patched from the text the host
+    /// stored when it recorded the entry; the stored text only where Spoiler Guard reveals the item's own name. An item
+    /// the library can no longer resolve (<paramref name="identity"/> null) is named by nothing but its kind of event.
+    /// </summary>
+    /// <param name="entry">The host's entry.</param>
+    /// <param name="identity">The entry's item, or null when the library cannot resolve it.</param>
+    /// <param name="reveal">What Spoiler Guard reveals to this viewer; null when its policy cannot be read.</param>
+    /// <param name="user">The entry's account name (by its user id), when known.</param>
+    /// <param name="host">The host's vouching.</param>
+    public static ActivityLogEntry Activity(ActivityLogEntry entry, PrivacyIdentity? identity, PrivacyReveal? reveal, string? user, PrivacyValueHost host)
+    {
+        var text = identity != null && reveal != null && (identity.IsExtra ? reveal.TitleFamily : reveal.Title) ? entry.Name : ActivityText(entry.Type, identity, user, host);
+        return Row(entry, text, host);
+    }
+
+    private static string ActivityText(string? type, PrivacyIdentity? identity, string? user, PrivacyValueHost host)
+    {
+        static string Join(string? series, string numbers) => string.IsNullOrEmpty(series) ? numbers : series + " - " + numbers;
+        var label = "an item";
+        if (identity != null)
+        {
+            var item = host.Item(identity.ItemId);
+            label = identity.Kind switch
+            {
+                BaseItemKind.Episode => item is MediaBrowser.Controller.Entities.TV.Episode episode
+                    ? Join(SeriesNameOf(identity, host) ?? episode.SeriesName, NameOf(BaseItemKind.Episode, episode.Id, episode.ParentIndexNumber, episode.IndexNumber, null, PrivacyReveal.None, host)!)
+                    : "an episode",
+                BaseItemKind.Season => item is MediaBrowser.Controller.Entities.TV.Season season
+                    ? Join(SeriesNameOf(identity, host), NameOf(BaseItemKind.Season, season.Id, null, season.IndexNumber, null, PrivacyReveal.None, host)!)
+                    : "a season",
+                _ => item != null ? NameOf(identity.Kind, identity.ItemId, null, null, null, PrivacyReveal.None, host) ?? "an item" : "an item",
+            };
+        }
+        var playing = type is "VideoPlayback" or "AudioPlayback";
+        var finished = type is "VideoPlaybackStopped" or "AudioPlaybackStopped";
+        if (user == null) return playing ? "Playing " + label : finished ? "Finished playing " + label : label;
+        return playing ? user + " is playing " + label : finished ? user + " has finished playing " + label : user + ": " + label;
+    }
+
+    /// <summary>
+    /// The one construction of a protected item's name, for every site that names one (its DTO, a search hint, an activity
+    /// entry): an episode's or season's neutral name, an extra's kind ("Theme video"), a movie's or series' own title from
+    /// the library (the guard's subject), and the original (<paramref name="original"/>, or an extra's own name) only where
+    /// a switch reveals it.
+    /// </summary>
+    /// <param name="kind">The item's kind.</param>
+    /// <param name="id">The item's id.</param>
+    /// <param name="parentIndex">An episode's season number.</param>
+    /// <param name="index">An episode's or season's own number.</param>
+    /// <param name="original">The site's own name for the item (revealed only by the title switch).</param>
+    /// <param name="reveal">What Spoiler Guard reveals.</param>
+    /// <param name="host">The library's titles.</param>
+    /// <param name="synthetic">An absent title: the facade's own construction is its name.</param>
+    /// <param name="known">The library item, when the caller already holds it (else the library is asked by id).</param>
+    internal static string? NameOf(BaseItemKind kind, Guid id, int? parentIndex, int? index, string? original, PrivacyReveal reveal, PrivacyValueHost host, bool synthetic = false, BaseItem? known = null)
+    {
+        if (Protects(kind)) return reveal.Title ? original : kind == BaseItemKind.Episode ? NeutralNames.Episode(parentIndex, index) : NeutralNames.Season(index);
+        var item = synthetic ? null : known ?? host.Item(id);
+        // An extra's own name is its file's or provider's text (a featurette's "…ending explained"): constructed from its
+        // extra type unless Spoiler Guard reveals the title family.
+        if (item is { OwnerId: var owner } extra && owner != Guid.Empty)
+            return reveal.TitleFamily ? extra.Name : ExtraLabel(extra, kind);
+        if (item is { } entity)
+        {
+            try { return entity.Name ?? kind.ToString(); }
+            catch (Exception) { return kind.ToString(); }
+        }
+        return (synthetic ? original : null) ?? kind.ToString();
+    }
+
+    /// <summary>The series a protected episode or season belongs to, by the library's own name; null for any other kind.</summary>
+    internal static string? SeriesNameOf(PrivacyIdentity identity, PrivacyValueHost host)
+        => identity.Kind is BaseItemKind.Episode or BaseItemKind.Season ? host.Item(identity.OwnerId)?.Name : null;
 
     /// <summary>
     /// A row naming a protected item (a hidden programme's timer or series timer, a protected item's activity entry): a new
@@ -651,16 +730,10 @@ public static class PrivacyValues
     {
         [typeof(BaseItemDto)] = new(StringComparer.Ordinal)
         {
-            ["Name"] = Construct("constructed: the stub's neutral name, an episode's or season's neutral name, an extra's kind (\"Trailer\"); a movie's or series' own title from the library (the guard's subject); the original only where a switch reveals it", (v, s, c) =>
+            ["Name"] = Construct("constructed: the stub's neutral name, else NameOf (an episode's or season's neutral name, an extra's kind (\"Trailer\"), a movie's or series' own title from the library, the original only where a switch reveals it)", (v, s, c) =>
             {
                 var item = (BaseItemDto)c.Source;
-                if (s.Mode == Mode.Stub) return PrivacyFieldClassification.HiddenName;
-                if (Protects(item.Type)) return s.Reveal.Title ? v : item.Type == BaseItemKind.Episode ? NeutralNames.Episode(item.ParentIndexNumber, item.IndexNumber) : NeutralNames.Season(item.IndexNumber);
-                // An extra's own name is its file's or provider's text (a featurette's "…ending explained"): constructed from
-                // its extra type unless Spoiler Guard reveals the title family.
-                if (!s.Synthetic && s.Host.Item(item.Id) is { OwnerId: var owner } extra && owner != Guid.Empty)
-                    return s.Reveal.TitleFamily ? extra.Name : ExtraLabel(extra, item.Type);
-                return Entity(s, item.Id, e => e.Name, v) ?? item.Type.ToString();
+                return s.Mode == Mode.Stub ? PrivacyFieldClassification.HiddenName : NameOf(item.Type, item.Id, item.ParentIndexNumber, item.IndexNumber, v as string, s.Reveal, s.Host, s.Synthetic);
             }),
             ["SortName"] = Construct("episode/season: dropped unless revealed; an extra: dropped unless its title family is revealed; else the title's own sort name", (v, s, c) =>
                 Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, ((BaseItemDto)c.Source).Id, e => e.SortName, v)),

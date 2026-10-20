@@ -624,17 +624,17 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// The administrator's activity log, by each entry's own item and the viewer's rules: an entry about a title the viewer
     /// hid is left out (the page's total follows). An entry's text is free text the host wrote when it recorded the entry
     /// (from the names of that moment, in the server's language of that moment), so it is never patched: whenever Spoiler
-    /// Guard protects the entry's title (a guarded episode the viewer hasn't watched, or an item the library can no longer
-    /// resolve while a policy applies) its text is rebuilt from structured data only (the entry's type and account, the
-    /// episode's series and numbers) and its overviews are dropped. Entries without an item are unchanged.
+    /// Guard protects the entry's item (a guarded episode the viewer hasn't watched, a guarded title's extra, or an item the
+    /// library can no longer resolve while a policy applies) the construction table rebuilds the entry
+    /// (<see cref="PrivacyValues.Activity"/>). Entries without an item are unchanged.
     /// </summary>
     private void ProjectActivityLog(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer)
     {
         if (result.Value is not QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page) return;
         var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
         var config = JellyfinEnhanced.Instance?.Configuration;
-        // The title strip off (the administrator's or the viewer's switch) reveals the stored text of an entry Spoiler Guard protects.
-        var titleRevealed = spoiler is { Unavailable: false } && config != null && !SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title;
+        // What the administrator's and the viewer's switches reveal; nothing when the policy cannot be read.
+        var reveal = spoiler is { Unavailable: false } && config != null ? SpoilerFieldStripFilter.Reveal(spoiler.State, config) : null;
         var values = Values();
         var kept = new List<MediaBrowser.Model.Activity.ActivityLogEntry>(page.Items.Count);
         var changed = false;
@@ -649,40 +649,12 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             var protect = identity == null ? PolicyApplies(final)
                 : spoiler != null && config != null && strip != null && (spoiler.Unavailable || strip.Protects(identity, spoiler.State, viewer));
             if (!protect) { kept.Add(entry); continue; }
-            // A new entry: its text constructed from structured data (never patched), every other value validated.
-            kept.Add(PrivacyValues.Row(entry, titleRevealed && identity != null ? entry.Name : ActivityText(entry, identity, values), values));
+            var user = entry.UserId != Guid.Empty ? users?.GetUserById(entry.UserId)?.Username : null;
+            kept.Add(PrivacyValues.Activity(entry, identity, identity != null ? reveal : null, user, values));
             changed = true;
         }
         if (changed)
             result.Value = new QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>(page.StartIndex, Math.Max(0, page.TotalRecordCount - page.Items.Count + kept.Count), kept);
-    }
-
-    /// <summary>
-    /// An activity entry's text built from structured data only: the account (by the entry's user id), what happened (by
-    /// the entry's type) and the item as Spoiler Guard names it ("Series - Season 1, Episode 2", "Series - Season 2", or
-    /// the library's own title of a kind whose title Spoiler Guard shows); never the stored text.
-    /// </summary>
-    private string ActivityText(MediaBrowser.Model.Activity.ActivityLogEntry entry, PrivacyIdentity? identity, PrivacyValueHost values)
-    {
-        static string Join(string? series, string numbers) => string.IsNullOrEmpty(series) ? numbers : series + " - " + numbers;
-        var label = "an item";
-        if (identity != null)
-        {
-            var item = values.Item(identity.ItemId);
-            label = identity.Kind switch
-            {
-                BaseItemKind.Episode => item is MediaBrowser.Controller.Entities.TV.Episode episode
-                    ? Join(values.Item(identity.OwnerId)?.Name ?? episode.SeriesName, NeutralNames.Episode(episode.ParentIndexNumber, episode.IndexNumber)) : "an episode",
-                BaseItemKind.Season => item is MediaBrowser.Controller.Entities.TV.Season season
-                    ? Join(values.Item(identity.OwnerId)?.Name, NeutralNames.Season(season.IndexNumber)) : "a season",
-                _ => item?.Name ?? "an item",
-            };
-        }
-        var user = entry.UserId != Guid.Empty ? users?.GetUserById(entry.UserId)?.Username : null;
-        var playing = entry.Type is "VideoPlayback" or "AudioPlayback";
-        var finished = entry.Type is "VideoPlaybackStopped" or "AudioPlaybackStopped";
-        if (user == null) return playing ? "Playing " + label : finished ? "Finished playing " + label : label;
-        return playing ? user + " is playing " + label : finished ? user + " has finished playing " + label : user + ": " + label;
     }
 
     /// <summary>

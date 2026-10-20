@@ -935,6 +935,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PolicyFreshness.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -1068,6 +1072,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySurfaceRegistry.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyTagValues.cs",
       "category": "Services"
     },
     {
@@ -9706,7 +9714,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 545,
+    "files": 547,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,

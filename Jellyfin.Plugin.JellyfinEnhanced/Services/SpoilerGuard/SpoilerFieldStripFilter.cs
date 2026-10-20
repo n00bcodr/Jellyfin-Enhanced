@@ -786,16 +786,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     hints.Add(hint!);
                     continue;
                 }
-                var name = identity.Kind switch
-                {
-                    Jellyfin.Data.Enums.BaseItemKind.Episode => reveal.Title ? hint.Name : NeutralNames.Episode(hint.ParentIndexNumber, hint.IndexNumber),
-                    Jellyfin.Data.Enums.BaseItemKind.Season => reveal.Title ? hint.Name : NeutralNames.Season(hint.IndexNumber),
-                    // An extra's own name is its file's or provider's text: constructed from its extra type (as on its DTO).
-                    _ when identity.IsExtra && host.Item(identity.ItemId) is { } extra => reveal.TitleFamily ? extra.Name : PrivacyValues.ExtraLabel(extra, identity.Kind),
-                    _ => host.Item(identity.ItemId)?.Name ?? identity.Kind.ToString(),
-                };
-                var series = identity.Kind is Jellyfin.Data.Enums.BaseItemKind.Episode or Jellyfin.Data.Enums.BaseItemKind.Season ? host.Item(identity.OwnerId)?.Name : null;
-                hints.Add(PrivacyValues.Hint(hint, name, series, reveal, host));
+                // Its name and series are the construction table's (an episode's or season's neutral name, an extra's kind).
+                hints.Add(PrivacyValues.Hint(hint, identity, reveal, host));
             }
             return new SearchHintResult(hints.ToArray(), result.TotalRecordCount);
         }

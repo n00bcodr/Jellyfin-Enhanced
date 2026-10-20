@@ -257,6 +257,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // several shared-IP candidates in one request without the first one's
         // state masking the others; a request that triggers BOTH filters for
         // the SAME user still reads the file once (shared key).
+        /// <summary>
+        /// The user's state as of now (a re-read before a request emits): the request's memo is dropped first; the
+        /// cross-request copy is invalidated by every write path.
+        /// </summary>
+        public UserSpoilerBlur LoadUserStateFresh(Microsoft.AspNetCore.Http.HttpContext httpContext, Guid userId)
+        {
+            httpContext.Items.Remove(ContextKeyUserState + ":" + userId.ToString("N"));
+            return LoadUserState(httpContext, userId);
+        }
+
         public UserSpoilerBlur LoadUserState(Microsoft.AspNetCore.Http.HttpContext httpContext, Guid userId)
         {
             var userIdN = userId.ToString("N");

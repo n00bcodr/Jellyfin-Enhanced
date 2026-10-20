@@ -101,20 +101,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             CancellationToken cancellationToken,
             PosterTagDataSnapshot? snapshot = null)
         {
-            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken).ConfigureAwait(false);
-            if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
+            // Policy fresh at emit: the tags are drawn from data stripped under one read of the viewer's Spoiler Guard
+            // tag strip, and the drawing leaves only when a re-read after the awaited render finds it unchanged; else it
+            // is drawn again under the new one (bounded). A policy that keeps changing gets the original image, untagged.
+            for (var attempt = 0; attempt < PolicyFreshness.Attempts; attempt++)
+            {
+                var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken).ConfigureAwait(false);
+                if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
-            var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
-            var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
-            Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality);
+                var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
+                var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
+                Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality);
 
-            var bytes = useCache
-                ? await _cache.GetOrCreateAsync(key, Extension(image.ContentType), Render, cancellationToken).ConfigureAwait(false)
-                : await Render().ConfigureAwait(false);
+                var bytes = useCache
+                    ? await _cache.GetOrCreateAsync(key, Extension(image.ContentType), Render, cancellationToken).ConfigureAwait(false)
+                    : await Render().ConfigureAwait(false);
 
-            return bytes.Length == 0
-                ? new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, key, data.SpoilerStripped)
-                : new PosterTagComposeResult(PosterTagComposeStatus.Rendered, bytes, key, data.SpoilerStripped);
+                if (!string.Equals(_data.SpoilerRevision(httpContext, user), data.PolicyRevision, StringComparison.Ordinal)) continue;
+                return bytes.Length == 0
+                    ? new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, key, data.SpoilerStripped)
+                    : new PosterTagComposeResult(PosterTagComposeStatus.Rendered, bytes, key, data.SpoilerStripped);
+            }
+
+            return new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, string.Empty, true);
         }
 
         /// <summary>

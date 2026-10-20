@@ -21,7 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <param name="DataKey">Hash of everything here that can change the drawing (entry content and review data).</param>
     /// <param name="SpoilerStripped">True when Spoiler Guard removed something for this viewer.</param>
     /// <param name="Reviews">The viewer's user-review chip data.</param>
-    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews);
+    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews, string PolicyRevision = "-");
 
     /// <summary>
     /// The live tag data a variant token's data hash is checked against, kept so the composite is drawn from
@@ -143,6 +143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             var stripped = false;
+            // Read as of now (not the request's memo): the composer checks it again after drawing (policy fresh at emit).
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)
             {
@@ -152,7 +153,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Reviews key on TmdbId and Type, which the strip never touches, so
             // the snapshot's chip (computed on the unstripped entry) is the same.
             var reviews = snapshot?.Reviews ?? _reviews.Get(entry, user);
-            return new PosterTagRenderData(entry, DataKey(entry, reviews), stripped, reviews);
+            return new PosterTagRenderData(entry, DataKey(entry, reviews), stripped, reviews, SpoilerTagStripPolicy.RevisionOf(policy));
         }
 
         public void Dispose()
@@ -187,8 +188,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (!SpoilerTagDataStripper.IsConfigured(cfg)) return null;
-            return SpoilerTagDataStripper.CreatePolicy(cfg, _spoilerResolver.LoadUserState(httpContext, user.Id));
+            return SpoilerTagDataStripper.CreatePolicy(cfg, _spoilerResolver.LoadUserStateFresh(httpContext, user.Id));
         }
+
+        /// <summary>The revision of the viewer's tag strip as of now (what <see cref="PosterTagRenderData.PolicyRevision"/> is compared with).</summary>
+        public string SpoilerRevision(HttpContext httpContext, JUser user) => SpoilerTagStripPolicy.RevisionOf(CreateSpoilerPolicy(httpContext, user));
 
         private async Task<TagCacheEntry?> GetOrBuildAsync(BaseItem item, CancellationToken cancellationToken)
         {

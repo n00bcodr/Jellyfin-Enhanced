@@ -8598,48 +8598,101 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            // Version/timestamp come from the same generation capture as the
-            // cache contents (see GetCacheForUser): a cursor newer than the
-            // returned items would let clients skip updates permanently, and a
-            // mixed pre-publish stamp (timestamp 0) would disable their delta
-            // refresh entirely.
+            // The body is serialized here, once, into the bytes that are sent AND
+            // hashed for the ETag (see RespondTagCache) — with the options MVC's
+            // formatter would have applied to Ok(payload), so it is the same body.
+            var jsonOptions = TagCacheJsonOptions();
+
+            // Policy fresh at emit: the answer is composed under one read of the
+            // user's Hidden Content and Spoiler Guard policies and leaves (bytes
+            // or a 304) only when a re-read after composing — after the shared
+            // serialization's wait and the cache's locks — finds them unchanged.
+            // A policy changed meanwhile composes again under the new one
+            // (bounded); one that keeps changing gets 503, never stale bytes.
+            var answer = Services.PolicyFreshness.Fresh(
+                () => ComposeTagCache(user, since, jsonOptions),
+                () => TagCachePolicyRevision(user));
+            if (answer == null)
+            {
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return StatusCode(503);
+            }
+
+            return RespondTagCache(answer, jsonOptions);
+        }
+
+        /// <summary>One composed tag-cache answer, before the review ratings, ETag and conditional check.</summary>
+        private sealed record TagCacheAnswer(long Version, long Timestamp, long ServedAt, string Access, string StripFingerprint, byte[] Items, int Count);
+
+        /// <summary>
+        /// The user's tag-cache policies, read fresh (never a request's memo): the effective Spoiler Guard tag strip (null
+        /// when nothing is stripped) and Hidden Content. Returns their joint revision.
+        /// </summary>
+        private string TagCachePolicies(JUser user, out Services.SpoilerTagStripPolicy? spoiler, out Services.HiddenContentPolicy hidden)
+        {
+            // Strict-read so corruption is observable (rate-limited warn) rather
+            // than silently passing through. Loaded for the resolved user, not the
+            // route value: an empty route id resolves to the caller, whose own
+            // guard must still apply.
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            spoiler = Services.SpoilerTagDataStripper.IsConfigured(cfg)
+                ? Services.SpoilerTagDataStripper.CreatePolicy(cfg, LoadSpoilerStateForTagStrip(user.Id))
+                : null;
+            hidden = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, null, _libraryManager);
+            return hidden.Revision + "|" + Services.SpoilerTagStripPolicy.RevisionOf(spoiler);
+        }
+
+        /// <summary>
+        /// The same revision as <see cref="TagCachePolicies"/>, for the re-read before an answer leaves: the revision is the
+        /// rules' own, so Hidden Content's library binding (which only resolves the rules' item ids) is skipped.
+        /// </summary>
+        private string TagCachePolicyRevision(JUser user)
+        {
+            var cfg = JellyfinEnhanced.Instance?.Configuration;
+            var spoiler = Services.SpoilerTagDataStripper.IsConfigured(cfg)
+                ? Services.SpoilerTagDataStripper.CreatePolicy(cfg, LoadSpoilerStateForTagStrip(user.Id))
+                : null;
+            return Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id).Revision + "|" + Services.SpoilerTagStripPolicy.RevisionOf(spoiler);
+        }
+
+        private (TagCacheAnswer Answer, string Revision) ComposeTagCache(JUser user, long? since, JsonSerializerOptions jsonOptions)
+        {
             // Spoiler Guard tag-strip: when SpoilerBlur is on with any tag-relevant
             // strip toggle, walk the cache and zero out matching fields for unwatched
             // episodes whose parent series is in the spoiler list. Needed because the
             // JE tag-pipeline reads serverCache BEFORE GetTagData, so card overlays
             // would still leak despite the toggle. Mirrors the per-batch strip in GetTagData;
             // the logic lives in SpoilerTagDataStripper (shared with native poster tags).
-            var spCfg = JellyfinEnhanced.Instance?.Configuration;
-            // The user's effective Spoiler Guard strip policy, or null when nothing needs
-            // stripping for them. Strict-read so corruption is observable (rate-limited
-            // warn) rather than silently passing through. Resolved BEFORE the cache
-            // read so a delta request can include the guarded entries (below).
-            // Loaded for the resolved user, not the route value: an empty route id
-            // resolves to the caller, whose own guard must still apply.
-            var spPolicy = Services.SpoilerTagDataStripper.IsConfigured(spCfg)
-                ? Services.SpoilerTagDataStripper.CreatePolicy(spCfg, LoadSpoilerStateForTagStrip(user.Id))
-                : null;
+            // Resolved BEFORE the cache read so a delta request can include the guarded
+            // entries (below).
+            // Hidden Content: a hidden item's entry is not answered (the same verdict as every list it would sit in), so
+            // a viewer with hiding rules never shares another viewer's serialized cache.
+            var revision = TagCachePolicies(user, out var spPolicy, out var hiddenPolicy);
 
             // A delta (?since=) only carries entries the library changed, but a
             // guarded entry is also rewritten by this user's PLAYED state: an
             // episode watched since their last load is no longer stripped, one
             // just added to their guard list now is. Clients keep the cache
-            // across page loads (tag-cache-store.js), so every guarded entry
-            // rides along with each delta: a guard list's worth of entries,
-            // stripped below exactly like a full load, instead of the whole cache.
+            // across page loads (tag-cache-store.js), so every entry that may be
+            // in the guarded set rides along with each delta (a guarded title's
+            // entries, and the entries that may be extras, whose owners only the
+            // batched lookup below knows); riders outside the set leave again in
+            // the strip. Full loads and deltas derive the set with the one
+            // function (SpoilerTagDataStripper.GuardedSet), so their filter
+            // revisions agree for an unchanged state.
             Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool>? guardedRider =
                 since.HasValue && spPolicy != null
-                    ? (key, e) => _spoilerTagDataStripper.GetGuardedKind(spPolicy.State, key, e) != null
+                    ? (key, e) => _spoilerTagDataStripper.MayBeGuarded(spPolicy.State, key, e)
                     : null;
             // Fingerprint of how this user's entries are filtered and stripped:
             // which cache entries their access excludes (from the same access
             // set that filtered `items`, see GetCacheForUser) and, under Spoiler
-            // Guard, the effective strip flags and the set of guarded entries. A
-            // full load and a delta compute the same value (every guarded entry
-            // rides on a delta), and it changes exactly when a delta could not
-            // correct a stored copy: an entry no longer visible to the user, an
-            // item leaving the guard set, or the strip policy changing, so the
-            // client replaces its copy instead (tags/tag-pipeline.js).
+            // Guard, the effective strip flags and the guarded set. A full load
+            // and a delta compute the same value, and it changes exactly when a
+            // delta could not correct a stored copy: an entry no longer visible
+            // to the user, an item leaving the guard set, or the strip policy
+            // changing, so the client replaces its copy instead
+            // (tags/tag-pipeline.js).
             var stripFingerprint = "none";
 
             // Server clock at capture (taken before reading the cache, so it never
@@ -8648,11 +8701,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // restores an older on-disk cache.
             var servedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-            // The body is serialized here, once, into the bytes that are sent AND
-            // hashed for the ETag (see Respond below) — with the options MVC's
-            // formatter would have applied to Ok(payload), so it is the same body.
-            var jsonOptions = TagCacheJsonOptions();
-
+            // Version/timestamp come from the same generation capture as the
+            // cache contents (see GetCacheForUser): a cursor newer than the
+            // returned items would let clients skip updates permanently, and a
+            // mixed pre-publish stamp (timestamp 0) would disable their delta
+            // refresh entirely.
             // A full load for a user without a Spoiler Guard strip is exactly the
             // generation's entries their access set admits, so its serialized
             // `items` is shared across requests and users with the same access
@@ -8664,15 +8717,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // mutated nothing is shared (TryGetSerializedItems reports it not
             // shareable) and the request is serialized on its own below, like
             // the delta and strip paths.
-            // Hidden Content: a hidden item's entry is not answered (the same verdict as every list it would sit in), so
-            // a viewer with hiding rules never shares another viewer's serialized cache.
-            var hiddenPolicy = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, HttpContext, _libraryManager);
-
             if (!since.HasValue && spPolicy == null && hiddenPolicy.IsEmpty)
             {
                 if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount, out var shareable))
                 {
-                    return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                    return (new TagCacheAnswer(sharedVersion, sharedTimestamp, servedAt, sharedAccessRevision, stripFingerprint, sharedItemsJson, sharedCount), revision);
                 }
 
                 if (shareable)
@@ -8696,7 +8745,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         _tagCacheSerializationGate.Release();
                     }
 
-                    return Respond(sharedVersion, sharedTimestamp, sharedAccessRevision, sharedItemsJson, sharedCount);
+                    return (new TagCacheAnswer(sharedVersion, sharedTimestamp, servedAt, sharedAccessRevision, stripFingerprint, sharedItemsJson, sharedCount), revision);
                 }
             }
 
@@ -8726,71 +8775,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (spPolicy != null)
             {
-                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items, owned);
+                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items, owned, since);
             }
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
             var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
-            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count);
+            return (new TagCacheAnswer(cacheVersion, cacheTimestamp, servedAt, accessRevision, stripFingerprint, itemsJson, items.Count), revision);
+        }
 
-            // The rest of the response — review ratings, filterRevision, body,
-            // ETag/304 — for either source of `items`.
-            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount)
+        // The rest of the response — review ratings, filterRevision, body,
+        // ETag/304 — for either source of the items, once the answer is fresh.
+        private IActionResult RespondTagCache(TagCacheAnswer answer, JsonSerializerOptions jsonOptions)
+        {
+            // The poster review chips resolve from this map instead of asking
+            // /reviews/ratings for every page of cards: it holds the average for
+            // every item that has a rated review visible to THIS viewer (same
+            // reviews, same visibility rule and same rating filter as that
+            // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
+            // visible rated review. Sent with full loads and deltas alike, since
+            // reviews change independently of the tag cache; null (omitted) when
+            // the chips are switched off, which tells the client to skip them.
+            Dictionary<string, object>? reviewRatings = null;
+            if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
             {
-                // The poster review chips resolve from this map instead of asking
-                // /reviews/ratings for every page of cards: it holds the average for
-                // every item that has a rated review visible to THIS viewer (same
-                // reviews, same visibility rule and same rating filter as that
-                // endpoint), keyed "mediaType:tmdbKey". A key that is absent has no
-                // visible rated review. Sent with full loads and deltas alike, since
-                // reviews change independently of the tag cache; null (omitted) when
-                // the chips are switched off, which tells the client to skip them.
-                Dictionary<string, object>? reviewRatings = null;
-                if (JellyfinEnhanced.Instance?.Configuration is { ShowUserReviews: true, ShowUserRatingOnPosters: true })
+                reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
+                var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
+                foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
                 {
-                    reviewRatings = new Dictionary<string, object>(StringComparer.Ordinal);
-                    var ctx = CreateReviewVisibilityContext(nameof(GetTagCache), "review ratings");
-                    foreach (var (key, sum, count) in AggregateVisibleReviewRatings(ctx, _ => true))
-                    {
-                        reviewRatings[key] = new { average = sum / count, count };
-                    }
+                    reviewRatings[key] = new { average = sum / count, count };
                 }
-
-                var filterRevision = Convert.ToHexString(
-                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint)), 0, 12);
-
-                // Body { version, timestamp, servedAt, filterRevision, count, items,
-                // reviewRatings }, assembled around the serialized items without
-                // another serialization. The ETag is a hash of the FINAL response
-                // body minus servedAt (see TagCacheResponseBody.ETag), not of
-                // cacheVersion: two users at the same version can legitimately
-                // receive different stripped bodies, and an ETag keyed on version
-                // alone would let one user's stripped body satisfy another user's
-                // conditional request.
-                var body = Services.TagCacheResponseBody.Compose(
-                    jsonOptions,
-                    version,
-                    timestamp,
-                    servedAt,
-                    filterRevision,
-                    itemCount,
-                    itemsBytes,
-                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
-
-                // no-cache (not no-store): the client may keep a copy to revalidate against,
-                // but must always revalidate. Freshness is unchanged, this only avoids
-                // re-sending an unchanged multi-MB body.
-                Response.Headers["Cache-Control"] = "private, no-cache";
-                Response.Headers["ETag"] = body.ETag;
-
-                if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
-                    && ifNoneMatch.ToString().Contains(body.ETag, StringComparison.Ordinal))
-                {
-                    return StatusCode(304);
-                }
-
-                return body.ToActionResult();
             }
+
+            var filterRevision = Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(answer.Access + "#" + answer.StripFingerprint)), 0, 12);
+
+            // Body { version, timestamp, servedAt, filterRevision, count, items,
+            // reviewRatings }, assembled around the serialized items without
+            // another serialization. The ETag is a hash of the FINAL response
+            // body minus servedAt (see TagCacheResponseBody.ETag), not of
+            // cacheVersion: two users at the same version can legitimately
+            // receive different stripped bodies, and an ETag keyed on version
+            // alone would let one user's stripped body satisfy another user's
+            // conditional request.
+            var body = Services.TagCacheResponseBody.Compose(
+                jsonOptions,
+                answer.Version,
+                answer.Timestamp,
+                answer.ServedAt,
+                filterRevision,
+                answer.Count,
+                answer.Items,
+                reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
+
+            // no-cache (not no-store): the client may keep a copy to revalidate against,
+            // but must always revalidate. Freshness is unchanged, this only avoids
+            // re-sending an unchanged multi-MB body.
+            Response.Headers["Cache-Control"] = "private, no-cache";
+            Response.Headers["ETag"] = body.ETag;
+
+            if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
+                && ifNoneMatch.ToString().Contains(body.ETag, StringComparison.Ordinal))
+            {
+                return StatusCode(304);
+            }
+
+            return body.ToActionResult();
         }
 
         // The JsonSerializerOptions of the formatter MVC runs for an
@@ -8911,96 +8960,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { error = "Maximum 200 items per request" });
             }
 
-            // A selected version must go through the same projection as the normal
-            // tag-data path. Filtering here prevents details-page callers from
-            // bypassing MediaStreamLanguageResolver and losing Matroska BCP-47
-            // regions (for example en-US -> eng).
+            // A selected version goes through the same projection as the normal
+            // tag-data path (PrivacyValues.TagData), so details-page callers keep
+            // MediaStreamLanguageResolver's Matroska BCP-47 regions (en-US -> eng)
+            // and no caller needs a second language-resolution implementation.
             //
-            // Keeping this selection inside tag-data also means future callers do
-            // not need a second language-resolution implementation.
-            List<MediaSourceInfo> SelectTagDataMediaSources(
-                IEnumerable<MediaSourceInfo> sources)
+            // Policy fresh at emit: the batch is projected under one read of the
+            // user's Spoiler Guard tag strip and Hidden Content, and leaves only
+            // when a re-read afterwards finds them unchanged (else it is projected
+            // again, bounded; a policy that keeps changing gets 503).
+            var results = Services.PolicyFreshness.Fresh(() => ProjectTagData(user, ids, mediaSourceId), () => TagCachePolicyRevision(user));
+            if (results == null)
             {
-                if (string.IsNullOrWhiteSpace(mediaSourceId))
-                {
-                    return sources.ToList();
-                }
-
-                return sources
-                    .Where(source => string.Equals(
-                        source.Id,
-                        mediaSourceId,
-                        StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                Response.Headers["Cache-Control"] = "private, no-store";
+                return StatusCode(503);
             }
 
-            // Age rating for the Age Rating Tags overlay. Seasons/Episodes rarely
-            // carry their own, so fall back to the Series — resolved here (not on
-            // the client) so batch mode matches the server tag cache, which does
-            // the same in TagCacheService.BuildEntryForItem. The series-level age
-            // rating is never spoiler-stripped (it reveals nothing about the plot
-            // and Jellyfin shows it in the series header), but an Episode/Season's
-            // OWN rating can differ from the series (a TV-MA episode of a TV-14
-            // show) and Jellyfin never displays it — so the Spoiler Guard stubs
-            // below pass seriesOnly when ratings are stripped.
-            // A batch is typically one series' worth of episodes, so the parent
-            // lookup is memoized per request rather than repeated per item.
-            var seriesRatingMemo = new Dictionary<Guid, string?>();
-            string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
-            {
-                if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
-                {
-                    return tagItem.OfficialRating;
-                }
+            return Ok(new { Items = results });
+        }
 
-                var parentSeriesId = tagItem switch
-                {
-                    MediaBrowser.Controller.Entities.TV.Episode e => e.SeriesId,
-                    MediaBrowser.Controller.Entities.TV.Season s => s.SeriesId,
-                    _ => Guid.Empty,
-                };
-                if (parentSeriesId == Guid.Empty)
-                {
-                    return null;
-                }
-
-                if (!seriesRatingMemo.TryGetValue(parentSeriesId, out var parentRating))
-                {
-                    parentRating = _libraryManager.GetItemById<BaseItem>(parentSeriesId)?.OfficialRating;
-                    parentRating = string.IsNullOrWhiteSpace(parentRating) ? null : parentRating;
-                    seriesRatingMemo[parentSeriesId] = parentRating;
-                }
-
-                return parentRating;
-            }
-
+        private (List<object> Results, string Revision) ProjectTagData(JUser user, string[] ids, string? mediaSourceId)
+        {
             // Spoiler Guard short-circuit: when the master switch + any tag-relevant
-            // strip toggle are on and the user has entries in their spoiler list, skip
-            // tag data for unwatched episodes. Loaded once per request (not per item).
-            // Title replacement / overview strip MUST also enter the stub path, else
-            // the non-stub projection leaks raw item.Path / DisplayTitle / MediaSource
-            // path+name despite SpoilerReplaceTitle — closing this per-batch endpoint too.
-            // Per-category overrides apply on top of admin policy (same "opt-out wins"
-            // contract as ShouldStrip); see SpoilerTagDataStripper.CreatePolicy.
-            var spoilerCfg = JellyfinEnhanced.Instance?.Configuration;
-            Services.SpoilerTagStripPolicy? spoilerPolicy = null;
-            if (Services.SpoilerTagDataStripper.IsConfigured(spoilerCfg))
-            {
-                // The resolved user's state (see GetTagCache): an empty route id is the caller.
-                spoilerPolicy = Services.SpoilerTagDataStripper.CreatePolicy(spoilerCfg, LoadSpoilerStateForTagStrip(user.Id));
-            }
-            var stripTagsEnabled = spoilerPolicy != null;
-            var spStripGenres = spoilerPolicy?.StripGenres == true;
-            var spStripRatings = spoilerPolicy?.StripRatings == true;
-            var spReplaceTitle = spoilerPolicy?.ReplaceTitle == true;
-            // A protected item's stub carries only values the host vouches for (its language and rating lists,
-            // ffprobe's codec tokens): never free text from a file's tags.
-            var values = _spoilerTagDataStripper.Host();
-
-            // Hidden Content: a hidden item's card data is not answered, by the same verdict as every list it would sit in
-            // (the item, its owning title, that title's provider key).
+            // strip toggle are on and the user has entries in their spoiler list, a
+            // protected item gets its stub (title replacement / overview strip
+            // also enter the stub path, else the regular projection would carry
+            // the raw path, display titles and source names). Per-category
+            // overrides apply on top of admin policy (same "opt-out wins" contract
+            // as ShouldStrip); see SpoilerTagDataStripper.CreatePolicy. Hidden
+            // Content: a hidden item's card data is not answered, by the same
+            // verdict as every list it would sit in (the item, its owning title,
+            // that title's provider key). Loaded once per batch (not per item),
+            // for the resolved user: an empty route id is the caller.
+            var revision = TagCachePolicies(user, out var spoilerPolicy, out var hiddenPolicy);
             var hiddenIds = new HashSet<Guid>();
-            var hiddenPolicy = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, HttpContext, _libraryManager);
             if (!hiddenPolicy.IsEmpty)
             {
                 var guids = ids.Select(i => Guid.TryParse(i?.Trim(), out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).Distinct().ToArray();
@@ -9010,37 +9003,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     if (identities.TryGetValue(g, out var identity) ? hiddenPolicy.IsHidden(identity, "library") : hiddenPolicy.IsHidden(null, g.ToString("N"), null, "library")) hiddenIds.Add(g);
             }
 
-            // The stream fields the tag renderers read, from validated values only (a stub's streams).
-            List<object> StubStreams(BaseItem stubItem) => SelectTagDataMediaSources(stubItem.GetMediaSources(false))
-                .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, stubItem.Path))
-                .Where(resolved => resolved.Stream.Type == MediaStreamType.Video || resolved.Stream.Type == MediaStreamType.Audio)
-                .Select(resolved =>
-                {
-                    var s = resolved.Stream;
-                    return (object)new
-                    {
-                        Type = s.Type.ToString(),
-                        Language = values.Language(resolved.Language),
-                        Codec = Services.PrivacyTokens.Codec(s.Codec),
-                        CodecTag = Services.PrivacyTokens.FourCc(s.CodecTag) ? s.CodecTag : null,
-                        Profile = Services.PrivacyTokens.Profile(s.Profile),
-                        Height = s.Height,
-                        Channels = s.Channels,
-                        ChannelLayout = Services.PrivacyTokens.Layout(s.ChannelLayout),
-                        VideoRangeType = s.VideoRangeType,
-                        // DisplayTitle's GETTER prepends the raw Title field, which on user-muxed files commonly carries
-                        // the title; qualitytags.js recomputes overlay text from Codec / Height / VideoRangeType / Profile.
-                        DisplayTitle = default(string?),
-                    };
-                })
-                .ToList();
-            string? StubRating(string? rating) => values.Rating(rating);
-
-            var itemIds = ids;
-            var results = new List<object>(itemIds.Length);
+            // Every value the answer carries is read by the construction table (PrivacyValues.TagData): a protected
+            // item's stub from validated values and constructed names, any other item's own projection.
+            var values = _spoilerTagDataStripper.Host();
+            var request = new Services.PrivacyTagDataRequest(spoilerPolicy, mediaSourceId, JellyfinEnhanced.Instance?.Configuration?.SpoilerOverviewPlaceholder,
+                container => TagEpisodeSelector.GetFirstEpisode(_libraryManager, container, user),
+                episode => _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, episode) != Services.SpoilerTagDataStub.None);
+            var results = new List<object>(ids.Length);
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
-            foreach (var idStr in itemIds)
+            foreach (var idStr in ids)
             {
                 if (!Guid.TryParse(idStr.Trim(), out var itemId))
                     continue;
@@ -9052,250 +9024,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (item == null)
                     continue;
 
-                var kind = item.GetBaseItemKind();
-                var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
-                var spoilerStub = stripTagsEnabled
-                    ? _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, item)
+                var spoilerStub = spoilerPolicy != null
+                    ? _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy, user, item)
                     : Services.SpoilerTagDataStub.None;
-
-                // Spoiler Guard tag-strip: for an unwatched Episode of a guarded
-                // series, return an Id+Type-only stub so the frontend tag renderers
-                // draw nothing. The pipeline still treats the item as processed
-                // (no retry loop) — it just produces zero overlays.
-                if (spoilerStub == Services.SpoilerTagDataStub.Episode
-                    && item is MediaBrowser.Controller.Entities.TV.Episode spEp)
-                {
-                    // When SpoilerReplaceTitle is on, the field-strip filter rewrites
-                    // Name to its neutral form whatever the numbering ("Season X,
-                    // Episode Y", "Episode", …); the stub must agree — leaking the
-                    // raw Name here would defeat the title toggle.
-                    string? stubName = spReplaceTitle ? Services.NeutralNames.Episode(spEp.ParentIndexNumber, spEp.IndexNumber) : item.Name;
-
-                    // Compute MediaStreams when SpoilerStripTags is off so quality /
-                    // language overlays still render under rating-only strip.
-                    // MediaSources is intentionally LEFT NULL even then: it exposes
-                    // filename + display name that commonly leak the raw episode title
-                    // (e.g. "S05E14 - The Death of Optimus Prime.mkv"), defeating
-                    // SpoilerReplaceTitle. Losing the IMAX/3D media-stub overlays on
-                    // stripped episodes only is the correct trade-off.
-                    // Streams only when SpoilerStripTags is off (quality / language overlays still render under a
-                    // rating-only strip), from validated values. MediaSources stays null: file and version names
-                    // commonly carry the episode title.
-                    List<object>? stubStreams = spStripGenres ? null : StubStreams(spEp);
-                    List<object>? stubSources = null;
-
-                    // Per-field strip: a field is preserved when its toggle is OFF,
-                    // nulled when ON. SeriesId is nulled only when ratings are
-                    // stripped (it controls the rating-fallback to the parent series).
-                    results.Add(new
-                    {
-                        Id = item.Id,
-                        Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
-                        CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
-                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings)),
-                        // Suppress the parent-series rating fallback only when the
-                        // rating strip is requested; leaving SeriesId set under tag-only
-                        // strip lets the rating overlay keep rendering.
-                        SeriesId = spStripRatings ? (Guid?)null : spEp.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
-                        Name = stubName,
-                        Path = (string?)null,
-                        MediaStreams = stubStreams,
-                        MediaSources = stubSources,
-                        FirstEpisode = (object?)null,
-                        // Align with the field-strip filter (which empties Tags).
-                        Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
-                    });
-                    continue;
-                }
-
-                // Series-stub: for a Series the user has Spoiler Guard on, return the
-                // strip stub. Covers home-rail cards bound to seriesId — e.g. NextUp /
-                // Continue Watching with "Use episode images" OFF, where cards show the
-                // series poster and the JE tag pipeline fetches series-level tag data.
-                if (spoilerStub == Services.SpoilerTagDataStub.Series
-                    && item is MediaBrowser.Controller.Entities.TV.Series spSeries)
-                {
-                    string? stubName = item.Name;
-                    if (spReplaceTitle)
-                    {
-                        // Series titles are rarely spoilery; replace only under the
-                        // explicit title-strip toggle, matching the field-strip filter.
-                        stubName = string.IsNullOrWhiteSpace(spoilerCfg!.SpoilerOverviewPlaceholder)
-                            ? "Spoiler Guard activated"
-                            : spoilerCfg.SpoilerOverviewPlaceholder;
-                    }
-                    results.Add(new
-                    {
-                        Id = item.Id,
-                        Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
-                        CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
-                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spSeries)),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
-                        Name = stubName,
-                        Path = (string?)null,
-                        MediaStreams = (List<object>?)null,
-                        MediaSources = (List<object>?)null,
-                        FirstEpisode = (object?)null,
-                        Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
-                    });
-                    continue;
-                }
-
-                // Movie-stub: for an unwatched Movie in the user's spoiler scope (and an extra of a guarded title, by
-                // its owner's rules), the same stub so JE tag overlays don't render on the blurred poster. Mirrors the
-                // Episode stub. The title is the library's own (Spoiler Guard does not hide movie titles or an extra's
-                // own name).
-                if (spoilerStub is Services.SpoilerTagDataStub.Movie or Services.SpoilerTagDataStub.Extra)
-                {
-                    results.Add(new
-                    {
-                        Id = item.Id,
-                        Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (item.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripRatings ? (float?)null : item.CommunityRating,
-                        CriticRating = spStripRatings ? (float?)null : item.CriticRating,
-                        OfficialRating = StubRating(ResolveTagDataOfficialRating(item)),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
-                        // An extra's own name is its file's or provider's text: constructed from its extra type (as on its DTO).
-                        Name = spoilerStub == Services.SpoilerTagDataStub.Extra && spoilerPolicy!.SanitizeTitleStreams ? Services.PrivacyValues.ExtraLabel(item, kind) : item.Name,
-                        Path = (string?)null,
-                        MediaStreams = spStripGenres ? null : StubStreams(item),
-                        MediaSources = (List<object>?)null,
-                        FirstEpisode = (object?)null,
-                        Tags = spStripGenres ? Array.Empty<string>() : (item.Tags ?? Array.Empty<string>()),
-                    });
-                    continue;
-                }
-
-                // BoxSet (Collection) DTOs pass through unstripped: the collection's own
-                // art is the entry point the user just clicked (like Series), so blurring
-                // it would spoil their own navigation. Movies inside opted-in collections
-                // are already handled by the Movie-stub via IsMovieInSpoilerScope.
-
-                // Season stub: for a Season of a guarded series with no watched episode
-                // and not S0/S1, return an Id+Type stub so JE tag overlays don't render
-                // on the blurred season poster. Mirrors the field-strip filter's Season
-                // strip + the image filter's HasWatchedAnyEpisodeInSeason gate.
-                if (spoilerStub == Services.SpoilerTagDataStub.Season
-                    && item is MediaBrowser.Controller.Entities.TV.Season spSeason)
-                {
-                    string? stubName = spReplaceTitle ? Services.NeutralNames.Season(spSeason.IndexNumber) : item.Name;
-                    results.Add(new
-                    {
-                        Id = item.Id,
-                        Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
-                        CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
-                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings)),
-                        SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
-                        Name = stubName,
-                        Path = (string?)null,
-                        MediaStreams = (List<object>?)null,
-                        MediaSources = (List<object>?)null,
-                        FirstEpisode = (object?)null,
-                        Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
-                    });
-                    continue;
-                }
-
-                // OPT-3: Only get media sources/streams for playable items (Movies, Episodes)
-                // Series and Season are containers with no media files — skip the expensive call
-                List<object>? trimmedStreams = null;
-                List<object>? trimmedSources = null;
-                if (!isContainer)
-                {
-                    var mediaSources =
-                        SelectTagDataMediaSources(item.GetMediaSources(false));
-                    // OPT-5: Only include fields tag renderers need from MediaStreams
-                    trimmedStreams = mediaSources
-                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path))
-                        .Where(resolved =>
-                            resolved.Stream.Type == MediaStreamType.Video
-                            || resolved.Stream.Type == MediaStreamType.Audio)
-                        .Select(resolved =>
-                        {
-                            var s = resolved.Stream;
-                            return (object)new
-                            {
-                                Type = s.Type.ToString(),
-                                Language = resolved.Language,
-                                Codec = s.Codec,
-                                CodecTag = s.CodecTag,
-                                Profile = s.Profile,
-                                Height = s.Height,
-                                Channels = s.Channels,
-                                ChannelLayout = s.ChannelLayout,
-                                VideoRangeType = s.VideoRangeType,
-                                DisplayTitle = s.DisplayTitle,
-                            };
-                        })
-                        .ToList();
-                    // Include filenames only (not full paths) for IMAX/3D/media-stub detection.
-                    // Full server paths are not exposed to avoid disclosing filesystem layout.
-                    trimmedSources = mediaSources
-                        .Select(s => (object)new
-                        {
-                            Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
-                            Name = s.Name,
-                        })
-                        .ToList();
-                }
-
-                // First episode lookup for Series/Season
-                object? firstEpisodeData = null;
-                if (isContainer)
-                {
-                    // Use the same stream-bearing episode as the server cache,
-                    // retaining user access filters for this request-time lookup.
-                    var epRef = TagEpisodeSelector.GetFirstEpisode(_libraryManager, item, user);
-                    if (epRef != null)
-                    {
-                        // The frontend fetches this episode's region-aware stream
-                        // projection from tag-data and shares it across renderers.
-                        // The episode is judged on its own: a protected one's genres follow the tag strip, as on its stub.
-                        var firstProtected = stripTagsEnabled && _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, epRef) != Services.SpoilerTagDataStub.None;
-                        firstEpisodeData = new
-                        {
-                            Id = epRef.Id,
-                            Type = epRef.GetBaseItemKind().ToString(),
-                            Genres = firstProtected && spStripGenres ? Array.Empty<string>() : epRef.Genres,
-                            NeedsStreamFetch = true
-                        };
-                    }
-                }
-
-                var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
-                             : (item is MediaBrowser.Controller.Entities.TV.Season sItem) ? sItem.SeriesId
-                             : (Guid?)null;
-
-                results.Add(new
-                {
-                    Id = item.Id,
-                    Type = kind.ToString(),
-                    Genres = item.Genres,
-                    CommunityRating = item.CommunityRating,
-                    CriticRating = item.CriticRating,
-                    OfficialRating = ResolveTagDataOfficialRating(item),
-                    SeriesId = seriesId,
-                    ProviderIds = item.ProviderIds,
-                    Name = item.Name,
-                    Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
-                    MediaStreams = trimmedStreams,
-                    MediaSources = trimmedSources,
-                    FirstEpisode = firstEpisodeData
-                });
+                results.Add(Services.PrivacyValues.TagData(item, spoilerStub, request, values));
             }
 
-            return Ok(new { Items = results });
+            return (results, revision);
         }
 
 
