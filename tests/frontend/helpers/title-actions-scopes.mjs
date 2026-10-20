@@ -13,21 +13,26 @@ export const delivered = async () => { await wait(0); await settle(); };
 export const MEMBER = { role: 'member', canRequest: true, canRequestMovies: true, canRequestSeries: true, canApprove: false, asksFirst: false,
   can4kMovies: false, can4kSeries: false, backend: 'je', contact: 'Dad', freeEpisodes: 5 };
 const MOVIE = { id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 1, status4k: 1 }, collection: { id: 2344, name: 'The Matrix Collection' } };
+export const SHOW = { id: 1399, name: 'Game of Thrones', mediaInfo: { id: 78, status: 1, status4k: 1 }, externalIds: { tvdbId: 121361 },
+  seasons: [{ seasonNumber: 1, episodeCount: 10, airDate: '2011-04-17', posterPath: '/p.jpg' }] };
 
 export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false } = {}) {
   let user = 'user-a';
-  const requests = []; const gates = []; const toasts = [];
-  async function answer(method, path) {
-    requests.push([user, method, path]);
+  const requests = []; const gates = []; const toasts = []; const feeds = [];
+  async function answer(method, path, body) {
+    requests.push([user, method, path, body]);
     const index = gates.findIndex(g => g.method === method && path.startsWith(g.prefix));
-    if (index >= 0) { const [gate] = gates.splice(index, 1); await gate.d.promise; }
+    // A held request answers with the value it is released with (when given), else as below.
+    if (index >= 0) { const [gate] = gates.splice(index, 1); const value = await gate.d.promise; if (value !== undefined) return [200, value]; }
     if (path.startsWith('/title-actions/')) return [200, { allowed: true, itemId: null }];
     if (path.startsWith('/acquire/status')) return [200, { items: [{ key: 'movie:tmdb:603', stage: 'notHere', admin: { instances: [] } }] }];
     if (path.startsWith('/jellyseerr/user-status')) return [200, { active: true, userFound: true, canReportIssues: true, canRequestAdvanced: advanced }];
     if (path === '/jellyseerr/radarr') return [200, [{ id: 1, name: 'Radarr', isDefault: true, is4k: false }]];
     if (path === '/jellyseerr/radarr/1') return [200, { profiles: [{ id: 4, name: 'HD' }], rootFolders: [{ id: 1, path: '/movies' }] }];
     if (path.startsWith('/jellyseerr/movie/603')) return [200, MOVIE];
+    if (/^\/jellyseerr\/tv\/\d+/.test(path)) return [200, { ...SHOW, id: Number(/^\/jellyseerr\/tv\/(\d+)/.exec(path)[1]) }];
     if (path.startsWith('/jellyseerr/collection/2344')) return [200, { id: 2344, name: 'The Matrix Collection', parts: [{ id: 604, title: 'The Matrix Reloaded', mediaInfo: { status: 1 } }] }];
+    if (path.startsWith('/jellyseerr/collection/')) return [200, { id: 9, name: 'Another Collection', parts: [{ id: 605, title: 'Another Part', mediaInfo: { status: 1 } }] }];
     if (path.startsWith('/jellyseerr/issue') && method === 'GET') return [200, { results: [] }];
     if (path === '/jellyseerr/issue' && method === 'POST') return [200, { id: 1 }];
     if (path === '/jellyseerr/request' && method === 'POST') return [200, { id: 2, media: { status: 2, status4k: 2 } }];
@@ -50,14 +55,16 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
       pluginConfig: { NativeAbsentDetailsEnabled: true, ArrManageDrawerEnabled: true, ArrStatusEnabled: true, ArrRequestsEnabled: asks,
         JellyseerrEnabled: true, JellyseerrShowReportButton: true, JellyseerrEnable4KRequests: seerr4k, JellyseerrShowAdvanced: advanced },
       helpers: { debounce: fn => fn, trackUsage() {}, addCSS() {}, getItemCached: async () => null, onBodyMutation: () => ({ unsubscribe() {} }) },
-      arr: { live: { position: () => null, prime: () => Promise.resolve({ epoch: 'e1', cursor: 1 }) }, onStatusChange: () => () => {} },
+      arr: { live: { position: () => null, prime: () => Promise.resolve({ epoch: 'e1', cursor: 1 }) }, onStatusChange: (_keys, callback) => { feeds.push(callback); return () => feeds.splice(feeds.indexOf(callback) >>> 0, 1); } },
       internals: { arrNotify: { attachModal() {} } },
       cdn: { url: () => 'data:,' },
       titleDetails: { openKey: async () => true, openItem() {} },
     },
     fetch: async (url, options = {}) => {
       const path = String(url).replace('http://jellyfin.test', '').replace('/JellyfinEnhanced', '');
-      const [status, body] = await answer(options.method || 'GET', path);
+      let sentBody = options.body;
+      try { sentBody = typeof sentBody === 'string' ? JSON.parse(sentBody) : sentBody; } catch (_) { /* as sent */ }
+      const [status, body] = await answer(options.method || 'GET', path, sentBody);
       return jsonResponse(body, status);
     },
   });
@@ -68,8 +75,8 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
   const manager = h.JE.core.api.manager;
   manager.CONFIG.retry.baseDelayMs = 1; manager.CONFIG.retry.maxDelayMs = 2;
   for (const m of ['jellyseerr/seerr-status.js', 'jellyseerr/api.js', 'jellyseerr/modal.js', 'jellyseerr/ui/ui-icons.js', 'jellyseerr/ui/ui-quota.js',
-    'jellyseerr/ui/ui-request-modals.js', 'jellyseerr/issue-reporter.js',
-    'jellyseerr/moreinfo/more-info-modal-data.js', 'jellyseerr/moreinfo/more-info-modal-badges.js', 'jellyseerr/moreinfo/more-info-modal-render.js',
+    'jellyseerr/ui/ui-request-modals.js', 'jellyseerr/ui/ui-season-modal.js', 'jellyseerr/issue-reporter.js',
+    'jellyseerr/moreinfo/more-info-modal-data.js', 'jellyseerr/moreinfo/more-info-modal-seasons.js', 'jellyseerr/moreinfo/more-info-modal-badges.js', 'jellyseerr/moreinfo/more-info-modal-render.js',
     'jellyseerr/moreinfo/more-info-modal-actions-tv.js', 'jellyseerr/moreinfo/more-info-modal-actions.js', 'jellyseerr/moreinfo/more-info-modal-init.js',
     'arr/status/status-core.js', 'arr/manage/manage-styles.js', 'arr/manage/manage-drawer.js']) h.load(m);
   for (const m of ['arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js']) h.load(m);
@@ -80,6 +87,8 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
   const row = () => h.document.querySelector('.mainDetailButtons');
   return {
     ...h, a, page, row, requests, toasts, manager,
+    /** The change feed reports a change for every followed key (the drawer's and status pill's subscriptions). */
+    feed() { for (const callback of [...feeds]) callback(); },
     hold(method, prefix) { const d = deferred(); gates.push({ method, prefix, d }); return d; },
     sent: (method, prefix) => requests.filter(r => r[1] === method && r[2].startsWith(prefix)),
     /** Another user signs in (the session module notices at once, as its auth hook does). */

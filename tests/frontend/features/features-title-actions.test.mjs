@@ -92,7 +92,7 @@ test('absent capability menu never offers file mutations or fake favourite', asy
 test('sheet keyboard and TV directions trap focus and Back restores opener', t => {
   const { actions: a, document: d, window: w } = setup(t);
   const opener = d.querySelector('#opener'); opener.focus();
-  a.show({ name: 'Title' }, [{ id: 'one', group: 'view', label: 'One', run() {} }, { id: 'two', group: 'view', label: 'Two', run() {} }], opener);
+  a.show({ name: 'Title' }, [{ id: 'one', group: 'view', label: 'One', run() {} }, { id: 'two', group: 'view', label: 'Two', run() {} }], opener, a.generation());
   const dialog = d.querySelector('[role="dialog"]');
   assert.ok(dialog);
   const one = dialog.querySelector('[data-action="one"]');
@@ -108,11 +108,11 @@ test('sheet source proxies use the original handler and reflect disabled/pressed
   const source = d.createElement('button'); let writes = 0;
   source.textContent = 'Played'; source.setAttribute('aria-pressed', 'true');
   source.onclick = () => { writes++; }; d.body.append(source);
-  a.show({ name: 'Title' }, [{ id: 'played', group: 'watch', source, label: 'Played' }], d.querySelector('#opener'));
+  a.show({ name: 'Title' }, [{ id: 'played', group: 'watch', source, label: 'Played' }], d.querySelector('#opener'), a.generation());
   d.querySelector('[data-action="played"]').click();
   assert.equal(writes, 1);
   source.disabled = true;
-  a.show({}, [{ id: 'played', group: 'watch', source, label: 'Played' }]);
+  a.show({}, [{ id: 'played', group: 'watch', source, label: 'Played' }], undefined, a.generation());
   assert.equal(d.querySelector('[data-action="played"]').disabled, true);
 });
 
@@ -133,11 +133,11 @@ test('Report presents its owner issue count once alongside a stable action label
   const { actions: a, document: d } = setup(t);
   const source = d.createElement('button'); source.title = '1 Open Issues - Report issue';
   source.innerHTML = '<span class="jellyseerr-issue-count-badge">1</span>'; d.body.append(source);
-  a.show({}, [{ id: 'report', group: 'requests', source, label: source.title }]);
+  a.show({}, [{ id: 'report', group: 'requests', source, label: source.title }], undefined, a.generation());
   assert.equal(d.querySelector('.je-actions-entry-label').textContent, 'jellyseerr_report_issue_button');
   assert.equal(d.querySelector('.je-actions-state').textContent, 'title_actions_open_issues');
   source.setAttribute('aria-disabled', 'true'); source.title = 'Not enough permissions to report';
-  a.show({}, [{ id: 'report', group: 'requests', source, label: 'Report' }]);
+  a.show({}, [{ id: 'report', group: 'requests', source, label: 'Report' }], undefined, a.generation());
   assert.equal(d.querySelector('.je-actions-reason')?.textContent, source.title);
 });
 
@@ -168,9 +168,9 @@ test('a successful Report clears the existing owner issue-list cache only for it
   const h = setup(t, { requestManager: { clearCacheMatching: key => cleared.push(key) },
     core: { api: { fetch: async () => ({ mediaInfo: { id: 99 } }), plugin: async () => delayed ? gate.promise : { id: 1 } } } });
   h.load('jellyseerr/api.js');
-  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue');
+  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
   assert.deepEqual(cleared, ['jellyseerr:/issue']);
-  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue');
+  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
   await new Promise(resolve => setImmediate(resolve)); h.switchUser(); gate.resolve({ id: 2 });
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(cleared.length, 1);
@@ -179,7 +179,7 @@ test('a successful Report clears the existing owner issue-list cache only for it
 test('a sheet opened by A cannot invoke a source control as B', t => {
   const { actions: a, document: d, switchUser } = setup(t);
   const source = d.createElement('button'); let writes = 0; source.onclick = () => writes++; d.body.append(source);
-  a.show({}, [{ id: 'native', group: 'other', source, label: 'Native' }]);
+  a.show({}, [{ id: 'native', group: 'other', source, label: 'Native' }], undefined, a.generation());
   switchUser(); d.querySelector('[data-action="native"]').click();
   assert.equal(writes, 0);
 });
@@ -187,7 +187,7 @@ test('a sheet opened by A cannot invoke a source control as B', t => {
 test('owned controls execute before sheet teardown removes their source', t => {
   const { actions: a, document: d } = setup(t);
   const control = d.createElement('button'); let writes = 0; control.onclick = () => writes++;
-  a.show({}, [{ id: 'guard', group: 'view', control, label: 'Guard' }]);
+  a.show({}, [{ id: 'guard', group: 'view', control, label: 'Guard' }], undefined, a.generation());
   d.querySelector('[data-action="guard"]').click();
   assert.equal(writes, 1);
 });
@@ -252,7 +252,7 @@ test('follow settlement cannot start a reread under a replacement identity', asy
   const gate = deferred(); const paths = [];
   const { JE, load, switchUser } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
   load('arr/notify/notify-core.js');
-  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true);
+  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, JE.NATIVE);
   switchUser(); gate.resolve({});
   assert.equal((await pending).ok, false);
   assert.equal(paths.length, 1);
@@ -271,11 +271,11 @@ test('native synthetic and provider Report owners exclude nonexistent file issue
   });
   h.load('jellyseerr/issue-reporter.js');
   for (const item of [{ Id: 'synthetic' }, { jeAbsent: true }]) {
-    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item);
+    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item, h.JE.NATIVE);
     assert.deepEqual([...modal.querySelectorAll('[name="issue-type"]')].map(n => n.value), ['4']);
     modal.remove();
   }
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' });
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' }, h.JE.NATIVE);
   assert.equal(modal.querySelectorAll('[name="issue-type"]').length, 4);
 });
 
@@ -290,7 +290,7 @@ test('report modal rejects delayed submit after a live user switch', async t => 
     } },
   });
   h.load('jellyseerr/issue-reporter.js');
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie');
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.JE.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
   await options.onSave(modal, h.document.createElement('button'), () => {});
@@ -314,7 +314,7 @@ test('Manage retains its opening identity across the feed-position await', async
     core: { api: { plugin: async path => { sends.push(path); return {}; } } },
   });
   h.load('arr/manage/manage-drawer.js');
-  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' });
+  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE });
   h.switchUser(); gate.resolve({ epoch: 'e', cursor: 1 }); await pending;
   assert.equal(sends.length, 0); h.JE.arrManage.close();
 });
@@ -343,11 +343,11 @@ test('a library detail page already mounted when the bundle finishes receives th
 test('a sheet closed before the press runs nothing; a press followed by closing the sheet still completes', async t => {
   const gate = deferred(); let opened = 0;
   const { actions: a, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
-  a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }]);
+  a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
   const entry = d.querySelector('[data-action="manage"]');
   a.close(); entry.click(); gate.resolve({ allowed: true });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 0, 'dismissed offer');
-  a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }]);
+  a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
   d.querySelector('[data-action="manage"]').click(); a.close();
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 1, 'submitted operation');
 });
@@ -359,7 +359,7 @@ test('observer reconciliation preserves restored focus on the compact More contr
   row.getBoundingClientRect = () => ({ width: 288 }); h.document.body.append(row);
   h.JE.titleActions.mountRow(row, row, null); h.JE.titleActions.initialize();
   const more = row.querySelector('.je-actions-more');
-  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more);
+  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more, h.JE.NATIVE);
   h.JE.titleActions.close();
   await new Promise(resolve => h.window.requestAnimationFrame(() => h.window.requestAnimationFrame(resolve)));
   assert.equal(h.document.activeElement, more);
@@ -374,7 +374,7 @@ test('a More Info background made inert by its own sheet retains one live row an
   const c = h.actions.context({ mediaType: 'movie', id: 603 });
   h.actions.mountRow(row, root, c); h.actions.initialize();
   const more = row.querySelector('.je-actions-more');
-  h.actions.show(c, [{ id: 'share', label: 'Share', run() {} }], more);
+  h.actions.show(c, [{ id: 'share', label: 'Share', run() {} }], more, h.actions.generation());
   await new Promise(resolve => h.window.setTimeout(resolve, 50));
   h.actions.scan();
   assert.equal(row.querySelector('.je-actions-more'), more, 'inert is temporary background state, not expired ownership');

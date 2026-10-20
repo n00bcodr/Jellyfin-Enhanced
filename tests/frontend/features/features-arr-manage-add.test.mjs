@@ -78,7 +78,7 @@ const button = (h, focus) => h.document.querySelector(`[data-je-focus="${focus}"
 
 test('without the direct add the version row keeps the link to the arr', async t => {
   const h = setup(t, path => (path.startsWith('/arr/admin/manage?') ? overview(false) : null));
-  await h.JE.arrManage.open({ key: 'movie:tmdb:961' });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.JE.NATIVE });
   await until(() => button(h, 'add-r4'));
   const link = button(h, 'add-r4');
   assert.equal(link.tagName, 'A');
@@ -99,7 +99,7 @@ test('the add sheet preselects only the saved defaults, sends one idempotency ke
     }
     return null;
   });
-  await h.JE.arrManage.open({ key: 'movie:tmdb:961' });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.JE.NATIVE });
   await until(() => button(h, 'add-r4'));
   assert.equal(button(h, 'add-r4').tagName, 'BUTTON');
   assert.equal(button(h, 'add-r4').textContent, 'add_circle_outlineAdd to Radarr 4K');
@@ -137,7 +137,7 @@ test('a series sheet lists the seasons (specials off by default) and nothing is 
     if (path === '/arr/admin/manage/add') { posts.push(opts.body); return Object.assign(new Error('HTTP 400'), { status: 400, responseJSON: { outcome: 'denied', reason: 'invalid_defaults', message: 'x' } }); }
     return null;
   });
-  await h.JE.arrManage.open({ key: 'tv:tvdb:75565:s2' });
+  await h.JE.arrManage.open({ key: 'tv:tvdb:75565:s2' }, { operation: h.JE.NATIVE });
   await until(() => button(h, 'add-r4'));
   button(h, 'add-r4').click();
   await until(() => button(h, 'add-profile-r4'));
@@ -173,7 +173,7 @@ test('when the server says a direct add is not offered, the sheet explains and l
     if (path.startsWith('/arr/admin/manage/add-options')) return { direct: false, reason: 'snapshot_unavailable', message: "Radarr 4K's profiles and root folders couldn't be read just now." };
     return null;
   });
-  await h.JE.arrManage.open({ key: 'movie:tmdb:961' });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.JE.NATIVE });
   await until(() => button(h, 'add-r4'));
   button(h, 'add-r4').click();
   await until(() => h.document.querySelector('.je-manage-add-warn'));
@@ -191,7 +191,7 @@ test('a held add says why (the request is parked for the administrator)', async 
     if (path === '/acquire/requests?view=mine') return { items: [{ id: 'req9', status: 'pending', reason: 'not_aired', jobs: [{ id: 'j', state: 'parked', reason: 'title_not_found' }] }] };
     return null;
   });
-  await h.JE.arrManage.open({ key: 'movie:tmdb:961' });
+  await h.JE.arrManage.open({ key: 'movie:tmdb:961' }, { operation: h.JE.NATIVE });
   await until(() => button(h, 'add-r4'));
   button(h, 'add-r4').click();
   await until(() => button(h, 'add-submit-r4'));

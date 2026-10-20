@@ -76,17 +76,19 @@
             event.stopPropagation();
             if (button.disabled || !viewAction.current()) return;
             button.disabled = true;
-            const action = JE.createSessionAction({ submitted: true });
+            // The press's owner: the operation a title action pressed it for, else where it was pressed (D46S2-R6).
+            const owner = JE.ownerOf(event);
+            const action = JE.createSessionAction({ owner });
             const wasEnabled = current();
             void (async function() {
                 try {
                     if (wasEnabled) {
-                        if (!await internal.confirmDisableSpoiler()) return;
+                        if (!await internal.confirmDisableSpoiler(owner)) return;
                         if (!action.current()) return;
-                        await JE.runSubmitted(action, () => internal.disableForTmdb(mediaType, tmdbId));
+                        await internal.disableForTmdb(mediaType, tmdbId, owner);
                         if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_disabled_toast'));
                     } else {
-                        await JE.runSubmitted(action, () => internal.enableForTmdb(mediaType, tmdbId, displayName));
+                        await internal.enableForTmdb(mediaType, tmdbId, displayName, owner);
                         if (action.current()) JE.toast?.(JE.t('spoiler_blur_pending_enabled_toast'));
                     }
                 } catch (e) {

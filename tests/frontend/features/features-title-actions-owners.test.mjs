@@ -43,7 +43,7 @@ test('controls: Report submitted on the same session, route and mount posts once
 
 test('controls: the native Report form (no operation) still posts after navigating while reportContext is out', async t => {
   const h = setup(t);
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie'); await settle();
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.JE.NATIVE); await settle();
   const context = h.hold('GET', '/jellyseerr/movie/603');
   await submitReport(h);
   h.navigate();
@@ -100,7 +100,7 @@ test('controls: Request on the same session, route and mount opens the sheet, an
 test('controls: the native request sheet (no operation) still opens after navigating while me() is out', async t => {
   const h = setup(t);
   const me = h.hold('GET', '/acquire/requests/me');
-  const opened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }); await settle();
+  const opened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.JE.NATIVE }); await settle();
   h.navigate();
   me.resolve(); await settle();
   assert.ok(sheet(h), 'exactly as before');
@@ -184,7 +184,7 @@ test('controls: Manage on the same session, route and mount reads the overview o
 test('controls: the native Manage drawer (no operation) still reads after navigating while feedPosition is out', async t => {
   const h = setup(t);
   const feed = h.holdFeed();
-  const opened = h.JE.arrManage.open({ key: 'movie:tmdb:603' }); await settle();
+  const opened = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE }); await settle();
   h.navigate();
   feed.resolve({ epoch: 'e1', cursor: 1 }); await settle(); await opened;
   assert.equal(h.sent('GET', '/arr/admin/manage?').length, 1, 'exactly as before');
@@ -213,7 +213,7 @@ test('controls: Seerr request (More Info window) on the same route opens the win
 test('controls: the native More Info window (no operation) still opens after navigating while its details are out', async t => {
   const h = setup(t, { asks: false, seerrMoreInfo: true });
   const details = h.hold('GET', '/jellyseerr/movie/603');
-  const opened = h.JE.jellyseerrMoreInfo.open(603, 'movie'); await settle();
+  const opened = h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await settle();
   h.navigate();
   details.resolve(); await settle(); await opened;
   assert.ok(moreInfo(h), 'exactly as before');
@@ -224,7 +224,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
     const h = setup(t);
     const o = operationOf(h);
     const rules = h.hold('GET', '/jellyseerr/overrideRule');
-    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
+    const sent = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted(o.op).bound() });
     await settle();
     assert.equal(h.sent('GET', '/jellyseerr/overrideRule').length, 1, 'the rules are read first');
     end(h, o);
@@ -236,7 +236,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
     const h = setup(t);
     const o = operationOf(h);
     const rules = h.hold('GET', '/jellyseerr/overrideRule');
-    const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], {}, { id: 1399, originalLanguage: 'en' }, false, null, { bound: h.JE.captureSubmitted().bound() }));
+    const sent = h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], {}, { id: 1399, originalLanguage: 'en' }, false, null, { bound: h.JE.captureSubmitted(o.op).bound() });
     await settle();
     end(h, o);
     rules.resolve(); await assert.rejects(sent, e => e?.name === 'AbortError'); await settle();
@@ -247,7 +247,7 @@ for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/featur
 test('controls: Seerr requestMedia for a current operation, and natively after navigating, posts once each', async t => {
   const h = setup(t);
   const o = operationOf(h);
-  await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
+  await h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted(o.op).bound() });
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
   const rules = h.hold('GET', '/jellyseerr/overrideRule');
   const native = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }); await settle();
@@ -259,12 +259,12 @@ test('controls: Seerr requestMedia for a current operation, and natively after n
 test('the shared Seerr modal opened for an operation: navigation, then its primary button → onSave never runs', async t => {
   const h = setup(t);
   const o = operationOf(h); let saved = 0;
-  const modal = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; } }));
+  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: o.op });
   modal.show(); await settle();
   h.navigate();
   modal.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
   assert.equal(saved, 0);
-  const native = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; } });
+  const native = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: h.JE.NATIVE });
   native.show(); await settle();
   native.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
   assert.equal(saved, 1, 'a native modal saves as before');
@@ -292,14 +292,14 @@ for (const [name, end] of [['navigation', h => h.navigate()], ['remount/feature-
   test(`Seerr season modal for an operation: ${name} while the show's details are out → no modal`, async t => {
     const h = seasonSetup(t); const o = operationOf(h);
     const details = h.holdDetails();
-    const opened = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show'));
+    const opened = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, o.op);
     await settle(); end(h, o); details.resolve(); await opened; await settle();
     assert.equal(h.modal(), null);
   });
 
   test(`Seerr season modal for an operation: ${name} while it is open, then Request → no POST`, async t => {
     const h = seasonSetup(t); const o = operationOf(h);
-    await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show')); await settle();
+    await h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, o.op); await settle();
     assert.ok(h.modal(), 'the modal is open');
     end(h, o);
     if (h.modal()?.querySelector('.jellyseerr-season-checkbox[data-season-number="1"]')) await h.request();
@@ -309,12 +309,12 @@ for (const [name, end] of [['navigation', h => h.navigate()], ['remount/feature-
 
 test('controls: the season modal for a current operation, and natively after navigating, requests once each', async t => {
   const h = seasonSetup(t); const o = operationOf(h);
-  await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show')); await settle();
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, o.op); await settle();
   await h.request();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
   h.modal()?.remove();
   const details = h.holdDetails();
-  const opened = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show'); await settle();
+  const opened = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, h.JE.NATIVE); await settle();
   h.navigate(); details.resolve(); await opened; await settle();
   assert.ok(h.modal(), 'natively the modal still opens');
   await h.request();

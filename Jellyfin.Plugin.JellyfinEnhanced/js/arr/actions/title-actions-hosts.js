@@ -22,6 +22,9 @@
     const CARD = '.card[data-id], .jellyseerr-card, .je-discover-card, [data-je-hide-title]';
     const rowSelector = '.mainDetailButtons, .detailButtons';
     const WATCH = ['replay', 'shuffle', 'instant-mix', 'trailer', 'played'];
+    // The More sheet opens for the newest opening only (D46S2-R6): a row or card whose reads answer after a later
+    // press never replaces the sheet that press opened.
+    const sheetOpening = JE.latestIntent();
 
     /** Existing administrator switches own the corresponding action surfaces; all-off is inert. */
     function enabled() {
@@ -59,10 +62,11 @@
         mountCard(card);
         const mounted = cards.get(card);
         const owner = A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === mounted && cardContext(card)?.key === c.key);
+        const newest = sheetOpening(owner);
         try {
             if (!await A.admit(c, owner)) return;
             const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (owner.current()) A.show(c, entries, opener || card.querySelector('.je-card-more'), owner);
+            if (newest()) A.show(c, entries, opener || card.querySelector('.je-card-more'), owner);
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
     }
 
@@ -153,6 +157,7 @@
     async function openRow(state, opener) {
         const action = state.action;
         if (!action.current()) return;
+        const newest = sheetOpening(action);
         try {
             if (state.root.matches('.je-more-info-modal')) {
                 try { await JE.internals?.moreInfoModal?.reconcilePaused?.(state.row); } catch (_) { /* the request sheet rechecks on submission */ }
@@ -170,7 +175,7 @@
             const present = new Set(entries.map(e => e.id));
             for (const entry of adapted) if (!present.has(entry.id)) { present.add(entry.id); entries.push(entry); }
             const title = state.c?.name || state.root.querySelector('.nameContainer .itemName:not(.originalTitle)')?.textContent || '';
-            A.show({ ...state.c, name: title }, entries, opener, action);
+            if (newest()) A.show({ ...state.c, name: title }, entries, opener, action);
         } catch (_) { if (action.current()) JE.toast?.(JE.t('title_actions_failed')); }
     }
 

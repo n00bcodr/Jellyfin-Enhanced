@@ -84,8 +84,11 @@
      */
     async function update(state) {
         if (current !== state) return;
+        // Feed changes start reads that can overlap: only the newest renders, and only while the window's owner is
+        // current (D46S2-R6).
+        const newest = state.reads(JE.ownerOf(state.modal));
         const data = await JE.arrStatus.fetchKey(state.key, state.controller.signal);
-        if (current !== state || !document.contains(state.modal)) return;
+        if (current !== state || !document.contains(state.modal) || !newest()) return;
         const status = data?.items?.[0];
         const mount = mountOf(state.modal);
         if (!mount) return;
@@ -105,7 +108,7 @@
                 manage.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    JE.arrManage.open({ key: status.key });
+                    JE.arrManage.open({ key: status.key }, { operation: JE.ownerOf(e) });
                 });
                 mount.appendChild(manage);
             }
@@ -128,7 +131,7 @@
         const { modal, data, mediaType } = e.detail || {};
         const key = keyOf(data, mediaType);
         if (!modal || !key) return;
-        current = { modal, key, controller: new AbortController(), unsubscribe: null };
+        current = { modal, key, controller: new AbortController(), unsubscribe: null, reads: JE.latestIntent() };
         update(current);
     }
 

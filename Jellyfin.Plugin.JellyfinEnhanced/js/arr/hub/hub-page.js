@@ -648,7 +648,7 @@
             else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType });
             return;
         }
-        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType);
+        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType, undefined, JE.NATIVE);
     }
 
     /**
@@ -666,7 +666,7 @@
      * @returns {void}
      */
     function manageEntry(entry) {
-        JE.arrManage?.open(entry.itemId ? { itemId: entry.itemId } : { key: entry.key });
+        JE.arrManage?.open(entry.itemId ? { itemId: entry.itemId } : { key: entry.key }, { operation: JE.NATIVE });
     }
 
     /**

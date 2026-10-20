@@ -129,13 +129,15 @@
             btn.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // A library card's own control: native unless a title action pressed it (D46S2-R6).
+                const owner = JE.ownerOf(e);
                 const action = JE.createSessionAction();
 
                 const cardName = card.querySelector('.cardText')?.textContent || '';
                 const surface = getCardSurface(card);
 
                 if (surface === 'nextup' || surface === 'continuewatching') {
-                    await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState);
+                    await handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner);
                 } else {
                     const itemData = { itemId, name: cardName, type: card.dataset.type || '', tmdbId: card.dataset.tmdbId || '' };
                     if (isPerson) itemData.type = 'Person';
@@ -166,7 +168,7 @@
                             if (!action.current()) return;
                             btn.disabled = true;
                             try {
-                                const saved = await internal.saveTitleRule(title, true).catch(() => false);
+                                const saved = await internal.saveTitleRule(title, true, owner).catch(() => false);
                                 if (saved && action.current()) {
                                     internal.requestNativeDecision();
                                     setHiddenState();
@@ -175,12 +177,12 @@
                             } finally { btn.disabled = false; }
                         }
                         if (!internal.isConfirmationSuppressed()) {
-                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle);
+                            internal.showHideConfirmation(title.name || 'Item', saveConfirmedTitle, { owner });
                             return;
                         }
                         return saveConfirmedTitle();
                     }
-                    confirmAndHide(itemData, () => internal.requestNativeDecision());
+                    confirmAndHide(itemData, () => internal.requestNativeDecision(), { owner });
                 }
             };
         }
@@ -207,11 +209,11 @@
      * @param {string} surface The detected surface ('nextup' or 'continuewatching').
      * @param {Function} setHiddenState Callback to switch the button to "hidden" state.
      */
-    async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState) {
+    async function handleScopedCardHide(card, itemId, cardName, surface, setHiddenState, owner) {
         const action = JE.createSessionAction();
         const itemData = { itemId, name: cardName };
         // Pass surface through so the hideScope stays bound to the row the user clicked.
-        const dialogOpts = { surface };
+        const dialogOpts = { surface, owner };
 
         try {
             const userId = ApiClient.getCurrentUserId();

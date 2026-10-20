@@ -134,7 +134,7 @@ const MOVIE = { key: 'movie:tmdb:1084242', kind: 'movie', name: 'Toy Story 5', y
 
 test('a movie is asked for with one tap and a toast when nothing needs the sheet', async t => {
   const h = setup(t);
-  const result = await h.Sheet.openOrAsk(MOVIE);
+  const result = await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
   assert.equal(result.state, 'asked');
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].body.input.key, MOVIE.key);
@@ -147,8 +147,8 @@ test('a movie is asked for with one tap and a toast when nothing needs the sheet
 test('a second tap on a movie while the first is out is the same single request', async t => {
   const gate = deferred();
   const h = setup(t, { answer: async () => { await gate.promise; return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; } });
-  const first = h.Sheet.openOrAsk(MOVIE);
-  const second = h.Sheet.openOrAsk(MOVIE);
+  const first = h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
+  const second = h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
   await settle();
   gate.resolve();
   const [a, b] = await Promise.all([first, second]);
@@ -164,7 +164,7 @@ for (const [name, me, quota, expectToggle] of [
 ]) {
   test(`a movie opens the sheet when ${name}`, async t => {
     const h = setup(t, { me, quota });
-    const pending = h.Sheet.openOrAsk(MOVIE);
+    const pending = h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
     await settle();
     assert.ok(sheetEl(h), 'sheet shown');
     assert.equal(h.posts.length, 0, 'nothing asked before the sheet is confirmed');
@@ -176,15 +176,15 @@ for (const [name, me, quota, expectToggle] of [
 
 test('an unknown allowance (Seerr placeholder) does not force the sheet', async t => {
   const h = setup(t, { quota: { used: 0, limit: null, remaining: null, available: false } });
-  const result = await h.Sheet.openOrAsk(MOVIE);
+  const result = await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
   assert.equal(result.state, 'asked');
   assert.equal(sheetEl(h), null);
 });
 
 test('a Watcher is told plainly and nothing is asked', async t => {
   const h = setup(t, { me: WATCHER });
-  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
-  assert.equal(await h.Sheet.open(SERIES), null);
+  assert.equal(await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE }), null);
+  assert.equal(await h.Sheet.open(SERIES, { operation: h.JE.NATIVE }), null);
   assert.equal(h.posts.length, 0);
   assert.deepEqual(h.toasts, ["You can't ask for this one.", "You can't ask for this one."]);
 });
@@ -193,7 +193,7 @@ test('a Watcher is told plainly and nothing is asked', async t => {
 
 test('series cards show what each costs from the quota projection', async t => {
   const h = setup(t, { quota: { used: 3, limit: 7, remaining: 4, available: true } });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   assert.equal(h.document.querySelector('.je-sheet-title').textContent, 'Get Andor');
   assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '3 seasons · 30 episodes');
@@ -220,15 +220,15 @@ test('series cards show what each costs from the quota projection', async t => {
 
 test('one episode reads "1 episode", in the header and the season picker', async t => {
   const h = setup(t);
-  h.Sheet.open({ key: 'tv:tvdb:1', kind: 'series', name: 'A Short', seasons: [{ season: 1, episodes: 1, have: 0 }], latestSeason: 1 });
+  h.Sheet.open({ key: 'tv:tvdb:1', kind: 'series', name: 'A Short', seasons: [{ season: 1, episodes: 1, have: 0 }], latestSeason: 1 }, { operation: h.JE.NATIVE });
   await settle();
   assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '1 season · 1 episode');
   h.Sheet.close();
-  h.Sheet.open({ key: 'tv:tvdb:2', kind: 'series', name: 'Two Shorts', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 0, have: 0 }], latestSeason: 2 });
+  h.Sheet.open({ key: 'tv:tvdb:2', kind: 'series', name: 'Two Shorts', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 0, have: 0 }], latestSeason: 2 }, { operation: h.JE.NATIVE });
   await settle();
   assert.equal(h.document.querySelector('.je-sheet-facts').textContent, '2 seasons · 1 episode');
   h.Sheet.close();
-  h.Sheet.open({ key: 'tv:tvdb:3', kind: 'series', name: 'Pilot', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 3, have: 0 }], latestSeason: 2 });
+  h.Sheet.open({ key: 'tv:tvdb:3', kind: 'series', name: 'Pilot', seasons: [{ season: 1, episodes: 1, have: 0 }, { season: 2, episodes: 3, have: 0 }], latestSeason: 2 }, { operation: h.JE.NATIVE });
   await settle();
   click(h, card(h, 'pick'));
   assert.deepEqual([...h.document.querySelectorAll('.je-sheet-pick .je-sheet-check-facts')].map(x => x.textContent), ['1 episode', '3 episodes']);
@@ -240,7 +240,7 @@ test('next season, future and the pickers send the scope the card names', async 
   const asks = [];
   h.state.answer = (input) => { asks.push(input); return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } }; };
   for (const [choice, expected] of [['next', { scope: 'next_season', seasons: [4] }], ['future', { scope: 'future', seasons: [3] }], ['latest', { scope: 'seasons', seasons: [3] }]]) {
-    const pending = h.Sheet.open(SERIES);
+    const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
     await settle();
     assert.equal(costText(h, choice), '', 'no cost line for an unlimited allowance');
     click(h, card(h, choice));
@@ -251,7 +251,7 @@ test('next season, future and the pickers send the scope the card names', async 
   }
 
   // Pick seasons: nothing picked → a hint, no request; complete seasons can't be picked.
-  let pending = h.Sheet.open(SERIES);
+  let pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, card(h, 'pick'));
   const panel = h.document.querySelector('.je-sheet-pick');
@@ -271,7 +271,7 @@ test('next season, future and the pickers send the scope the card names', async 
   assert.deepEqual([...asks[asks.length - 1].seasons], [3]);
 
   // Pick episodes: six episodes of season 2 → episodes scope.
-  pending = h.Sheet.open(SERIES);
+  pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, card(h, 'episodes'));
   click(h, h.document.querySelector('.je-sheet-episode-season[data-season="2"]'));
@@ -291,7 +291,7 @@ test('episode costs: the free ones cost nothing, then one per five', async t => 
   assert.equal(I.episodeCost(6, 5), 1);
   assert.equal(I.episodeCost(10, 5), 1);
   assert.equal(I.episodeCost(11, 5), 2);
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, card(h, 'episodes'));
   click(h, h.document.querySelector('.je-sheet-episode[data-episode="1"]'));
@@ -309,7 +309,7 @@ test('over quota in JE mode: the amber note and "Send to Dad for an OK", recorde
     quota: { used: 7, limit: 7, remaining: 0, nextSlotAt: inDays(3), available: true },
     answer: () => ({ status: 201, body: { outcome: 'accepted', reason: 'over_quota', certainty: 'Succeeded', requestId: 'b'.repeat(32) } })
   });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   const note = h.document.querySelector('.je-sheet-note');
   assert.equal(note.hidden, false);
@@ -325,7 +325,7 @@ test('over quota in JE mode: the amber note and "Send to Dad for an OK", recorde
 
 test('over quota in Seerr mode: the honest quota words and no Send', async t => {
   const h = setup(t, { me: { ...MEMBER, backend: 'seerr' }, quota: { used: 7, limit: 7, remaining: 0, nextSlotAt: inDays(2), available: true } });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   assert.equal(primary(h).hidden, true);
   assert.match(h.document.querySelector('.je-sheet-note').textContent, /You've used this week's requests · next one frees up /);
@@ -340,7 +340,7 @@ test('a 429 from the server keeps the sheet open with the quota words', async t 
     quota: { used: 0, limit: null, remaining: null, available: false },
     answer: () => ({ status: 429, body: { outcome: 'quota_exceeded', reason: 'quota_exceeded', certainty: 'Rejected' } })
   });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, primary(h));
   await settle(20);
@@ -352,7 +352,7 @@ test('a 429 from the server keeps the sheet open with the quota words', async t 
 
 test('the Standard / 4K toggle appears only for people who may ask for 4K of that kind', async t => {
   const h = setup(t);
-  let pending = h.Sheet.open(SERIES);
+  let pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   assert.equal(h.document.querySelector('.je-sheet-variant'), null);
   h.Sheet.close();
@@ -361,7 +361,7 @@ test('the Standard / 4K toggle appears only for people who may ask for 4K of tha
   h.state.me = { ...MEMBER, can4kSeries: true };
   h.JE.arrAsk.me(true);
   await settle();
-  pending = h.Sheet.open(SERIES);
+  pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   const options = [...h.document.querySelectorAll('.je-sheet-variant-option')];
   assert.deepEqual(options.map(o => o.textContent), ['Standard', '4K']);
@@ -385,7 +385,7 @@ test('a double tap on the sheet sends one request; a retry after a failure reuse
       return { status: 201, body: { outcome: 'accepted', reason: 'looking', certainty: 'Succeeded' } };
     }
   });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, primary(h));
   click(h, primary(h));
@@ -406,7 +406,7 @@ test('Tab stays inside the sheet, Escape closes it and focus returns to the open
   const h = setup(t, { html: '<button id="opener">More…</button>' });
   const opener = h.document.getElementById('opener');
   opener.focus();
-  const pending = h.Sheet.open(SERIES, { opener });
+  const pending = h.Sheet.open(SERIES, { opener , operation: h.JE.NATIVE });
   await settle();
   const sheet = sheetEl(h);
   assert.equal(sheet.getAttribute('role'), 'dialog');
@@ -428,7 +428,7 @@ test('Tab stays inside the sheet, Escape closes it and focus returns to the open
 test('on TV the sheet is a full-screen panel and Back closes it', async t => {
   const h = setup(t);
   h.document.documentElement.classList.add('layout-tv');
-  const pending = h.Sheet.open(MOVIE);
+  const pending = h.Sheet.open(MOVIE, { operation: h.JE.NATIVE });
   await settle();
   assert.ok(h.document.querySelector('.je-sheet-backdrop').classList.contains('je-sheet-tv'));
   // jellyfin-web's D-pad navigation stays inside a focus container: the arrows never reach the page behind.
@@ -459,7 +459,7 @@ test('every request outcome reads as honest family words, in the toast or in the
   for (const [status, body, words, closes] of OUTCOMES) {
     h.state.answer = () => ({ status, body });
     h.toasts.length = 0;
-    const pending = h.Sheet.open(SERIES);
+    const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
     await settle();
     click(h, primary(h));
     await settle(20);
@@ -1167,7 +1167,7 @@ test('episode costs follow the episodes already charged this window, as the serv
   assert.equal(I.costOf({ scope: 'episodes', episodes: [{}, {}] }, MEMBER, { episodes: 3 }), 0);
   assert.equal(I.costOf({ scope: 'episodes', episodes: [{}, {}, {}] }, MEMBER, { episodes: 3 }), 1);
   assert.equal(I.costOf({ scope: 'episodes', episodes: [{}] }, MEMBER, null), 0, 'nothing charged yet: free');
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, card(h, 'episodes'));
   click(h, h.document.querySelector('.je-sheet-episode[data-episode="1"]'));
@@ -1184,7 +1184,7 @@ test('a series named without its seasons (search and Discover cards) has them re
     { season_number: 3, episode_count: 9, air_date: '2999-01-01' }
   ] };
   const h = setup(t, { routes: (method, path) => (path === '/tmdb/tv/1399' ? { body: tmdb } : null) });
-  const pending = h.Sheet.open({ key: 'tv:tmdb:1399', kind: 'series', name: 'A show', year: 2011, poster: '/p.jpg' });
+  const pending = h.Sheet.open({ key: 'tv:tmdb:1399', kind: 'series', name: 'A show', year: 2011, poster: '/p.jpg' }, { operation: h.JE.NATIVE });
   await settle();
   assert.ok(h.gets.includes('/tmdb/tv/1399'));
   same([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['everything', 'latest', 'next', 'pick', 'episodes', 'future']);
@@ -1196,7 +1196,7 @@ test('a series named without its seasons (search and Discover cards) has them re
 
   // TMDB can't be read (or a parental refusal): say so instead of an empty sheet.
   const none = setup(t, { routes: (method, path) => (path.startsWith('/tmdb/') ? { status: 403, body: {} } : null) });
-  assert.equal(await none.Sheet.open({ key: 'tv:tmdb:7', kind: 'series', name: 'Hidden' }), null);
+  assert.equal(await none.Sheet.open({ key: 'tv:tmdb:7', kind: 'series', name: 'Hidden' }, { operation: none.JE.NATIVE }), null);
   assert.equal(sheetEl(none), null);
   same(none.toasts, ["Couldn't load this series' seasons. Try again in a moment."]);
 });
@@ -1308,7 +1308,7 @@ test('a whole-series Search of episodes requests already sent searches them agai
 
 test('an ask prepared before a sign-out is not sent as the next person (one tap and the series page)', async t => {
   const h = setup(t, { routes: (method, path) => { if (path.startsWith('/acquire/requests/quota')) h.JE.session.epoch++; return null; } });
-  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
+  assert.equal(await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE }), null);
   await settle();
   assert.equal(h.posts.length, 0, 'the one-tap ask was dropped');
   assert.equal(sheetEl(h), null);
@@ -1333,7 +1333,7 @@ test('an ask prepared before a sign-out is not sent as the next person (one tap 
 test('4K: seasons here in the library (any quality) stay offered, and the cards follow the copy chosen', async t => {
   const h = setup(t, { me: { ...MEMBER, can4kSeries: true } });
   const HERE = { ...SERIES, seasons: [{ season: 1, episodes: 10, have: 10 }, { season: 2, episodes: 10, have: 10 }], latestSeason: 2, nextSeason: null };
-  const pending = h.Sheet.open(HERE);
+  const pending = h.Sheet.open(HERE, { operation: h.JE.NATIVE });
   await settle();
   const choices = () => [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
   const boxes = () => [...h.document.querySelectorAll('.je-sheet-pick input')].map(b => b.disabled);
@@ -1354,7 +1354,7 @@ test('4K: seasons here in the library (any quality) stay offered, and the cards 
   same(h.posts[0].body.input, { key: SERIES.key, scope: 'seasons', variant: '4k', seasons: [1, 2], episodes: [] });
   assert.equal(result.input.variant, '4k', 'the result says what was asked for');
   // Back to Standard: what is here is not offered again.
-  const again = h.Sheet.open(HERE, { variant: '4k' });
+  const again = h.Sheet.open(HERE, { variant: '4k' , operation: h.JE.NATIVE });
   await settle();
   click(h, variant('standard'));
   same(choices(), ['pick', 'episodes', 'future']);
@@ -1364,7 +1364,7 @@ test('4K: seasons here in the library (any quality) stay offered, and the cards 
 
 test('seasons the caller already asked for are not offered again for the standard copy', async t => {
   const h = setup(t, { me: { ...MEMBER, can4kSeries: true } });
-  const pending = h.Sheet.open({ ...SERIES, askedSeasons: [2] });
+  const pending = h.Sheet.open({ ...SERIES, askedSeasons: [2] }, { operation: h.JE.NATIVE });
   await settle();
   const facts = () => [...h.document.querySelectorAll('.je-sheet-pick .je-sheet-check')].map(c => [c.querySelector('input').disabled, c.querySelector('.je-sheet-check-facts')?.textContent]);
   same(facts(), [[true, 'All here'], [true, 'Already asked for'], [false, '6 episodes']]);
@@ -1379,7 +1379,7 @@ test('seasons the caller already asked for are not offered again for the standar
 
 test('Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); "Just new episodes from now on" asks to keep getting them', async t => {
   const h = setup(t, { me: { ...MEMBER, backend: 'seerr' } });
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   const cards = [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
   assert.deepEqual(cards, ['everything', 'latest', 'next', 'pick', 'future']);
@@ -1392,10 +1392,10 @@ test('Seerr mode: no "Pick episodes…" (Seerr takes whole seasons); "Just new e
 
 test('per-kind capabilities: a TV-only Seerr account gets the series sheet and controls but no movie asks', async t => {
   const h = setup(t, { me: { ...MEMBER, backend: 'seerr', canRequestMovies: false, canRequestSeries: true }, html: '<div id="m"></div><div id="s"></div>' });
-  assert.equal(await h.Sheet.openOrAsk(MOVIE), null);
+  assert.equal(await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE }), null);
   assert.equal(h.posts.length, 0);
   assert.deepEqual(h.toasts, ["You can't ask for this one."]);
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   assert.ok(sheetEl(h), 'the series sheet opens');
   key(h, 'Escape');
@@ -1411,8 +1411,8 @@ test('per-kind capabilities: a TV-only Seerr account gets the series sheet and c
   h.state.me = { ...MEMBER, backend: 'seerr', canRequestMovies: true, canRequestSeries: false };
   h.JE.arrAsk.me(true);
   await settle();
-  assert.equal(await h.Sheet.open(SERIES), null);
-  assert.equal((await h.Sheet.openOrAsk(MOVIE)).state, 'asked');
+  assert.equal(await h.Sheet.open(SERIES, { operation: h.JE.NATIVE }), null);
+  assert.equal((await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE })).state, 'asked');
 });
 
 test('after an ask redraws the control that opened the sheet, focus goes to its replacement, else to its card', async t => {
@@ -1432,7 +1432,7 @@ test('after an ask redraws the control that opened the sheet, focus goes to its 
   };
   let opener = h.document.getElementById('opener');
   opener.focus();
-  let pending = h.Sheet.open(SERIES, { opener });
+  let pending = h.Sheet.open(SERIES, { opener , operation: h.JE.NATIVE });
   await settle();
   click(h, primary(h));
   await pending;
@@ -1442,7 +1442,7 @@ test('after an ask redraws the control that opened the sheet, focus goes to its 
   replace = false;
   opener = h.document.getElementById('again');
   opener.focus();
-  pending = h.Sheet.open(SERIES, { opener });
+  pending = h.Sheet.open(SERIES, { opener , operation: h.JE.NATIVE });
   await settle();
   click(h, primary(h));
   await pending;
@@ -1451,8 +1451,8 @@ test('after an ask redraws the control that opened the sheet, focus goes to its 
 
 test('request outcomes are read out through one persistent live region that outlives the sheet', async t => {
   const h = setup(t);
-  await h.Sheet.openOrAsk(MOVIE);
-  const pending = h.Sheet.open(SERIES);
+  await h.Sheet.openOrAsk(MOVIE, { operation: h.JE.NATIVE });
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   click(h, primary(h));
   await pending;
@@ -1587,7 +1587,7 @@ test('storage full in the sheet: said before anything is picked, no Request, no 
     me: { ...MEMBER, can4kSeries: true },
     routes: (method, path) => (path.includes('variant=4k') ? checkRoute(blocked4k, seen)(method, path) : checkRoute(FULL, seen)(method, path))
   });
-  const opening = h.Sheet.open(SERIES);
+  const opening = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle(20);
   const note = h.document.querySelector('.je-sheet-note');
   assert.ok(note.classList.contains('je-sheet-note-paused'));
@@ -1814,7 +1814,7 @@ test('Seerr with partial requests off: one "Get the whole series" on the series 
   click(h, box.querySelector('.je-ask-action'));
   await settle(20);
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:371980', scope: 'seasons', variant: 'standard', seasons: [1, 2, 3], episodes: [] }]);
-  const pending = h.Sheet.open(SERIES);
+  const pending = h.Sheet.open(SERIES, { operation: h.JE.NATIVE });
   await settle();
   assert.deepEqual([...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice), ['everything']);
   assert.match(card(h, 'everything').textContent, /The whole series \(3 seasons\)/);
@@ -1826,14 +1826,14 @@ test('Seerr with partial requests off: one "Get the whole series" on the series 
 });
 
 test('provider season entry starts with exactly that season selected', async t => {
-  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2 }); await settle();
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2 }, { operation: h.JE.NATIVE }); await settle();
   assert.equal(card(h, 'pick').getAttribute('aria-pressed'), 'true');
   click(h, primary(h)); await settle();
   assert.deepEqual([...h.posts[0].body.input.seasons], [2]);
 });
 
 test('provider episode entry starts with exactly that episode selected', async t => {
-  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2, initialEpisode: 4 }); await settle();
+  const h = setup(t); h.Sheet.open({ ...SERIES, initialSeason: 2, initialEpisode: 4 }, { operation: h.JE.NATIVE }); await settle();
   assert.equal(card(h, 'episodes').getAttribute('aria-pressed'), 'true');
   click(h, primary(h)); await settle();
   assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0].body.input.episodes)), [{ season: 2, episode: 4 }]);

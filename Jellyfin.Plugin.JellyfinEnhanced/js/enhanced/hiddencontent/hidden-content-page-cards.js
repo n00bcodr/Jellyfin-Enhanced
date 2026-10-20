@@ -380,7 +380,7 @@
         if (e) e.preventDefault();
         // The title's native details page when offered, else the more-info modal.
         if (JE.titleDetails?.show) JE.titleDetails.show(parseInt(id, 10), mediaType);
-        else JE.jellyseerrMoreInfo.open(parseInt(id, 10), mediaType);
+        else JE.jellyseerrMoreInfo.open(parseInt(id, 10), mediaType, undefined, JE.NATIVE);
       };
       if (posterLink) {
         if (hasTmdbId && !hasJellyfinId) {

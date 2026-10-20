@@ -446,7 +446,7 @@
         const mediaType = viewIssueBtn.getAttribute('data-issue-media-type');
         const title = viewIssueBtn.getAttribute('data-issue-title') || '';
         if (tmdbId && mediaType && JE.jellyseerrIssueReporter?.showReportModal) {
-          JE.jellyseerrIssueReporter.showReportModal(tmdbId, title, mediaType, null, null);
+          JE.jellyseerrIssueReporter.showReportModal(tmdbId, title, mediaType, null, null, JE.NATIVE);
         }
         return;
       }

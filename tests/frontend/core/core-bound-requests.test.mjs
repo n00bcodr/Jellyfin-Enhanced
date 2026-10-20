@@ -174,7 +174,7 @@ test('the Manage drawer: a retry is never sent as another account that signs in 
  for(const m of ARR)s.h.load(m);
  const timers=holdLongTimers(s.h);
  s.h.JE.initializeArrStatus();
- await s.h.JE.arrManage.open({key:'movie:tmdb:1'});await settle();
+ await s.h.JE.arrManage.open({key:'movie:tmdb:1'}, { operation: s.h.JE.NATIVE });await settle();
  fail=true;f.live().find(x=>x.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);await until(()=>s.h.document.querySelector('.je-manage-stale'));
  assert.ok(s.h.document.querySelector('.je-manage-stale'));
  const held=f.hold();assert.equal(timers.run(),1);await settle();

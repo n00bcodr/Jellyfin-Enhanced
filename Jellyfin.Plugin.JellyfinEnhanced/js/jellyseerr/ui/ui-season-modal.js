@@ -11,6 +11,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
     const escapeHtml = JE.escapeHtml;
     let refreshModalInterval = null;
+    // The season modal opens for the newest opening only: an older, slower details read is dropped (D46S2-R6).
+    const seasonOpening = JE.latestIntent();
 
     /**
      * Shows the enhanced season selection modal for TV shows.
@@ -18,11 +20,15 @@
      * @param {string} mediaType - Should be 'tv'.
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
+     * @param {boolean} [is4k] - The 4K request.
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
+     *   node or press it is opened from.
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, owner) {
         if (mediaType !== 'tv') return;
-        // Opened for a title action (if any): the modal opens, and its request goes out, only while that operation is current.
-        const submitted = JE.captureSubmitted();
+        // The modal opens, and its request goes out, only while its owner is current, and only for the newest opening.
+        const submitted = JE.captureSubmitted(owner);
+        const newest = seasonOpening(submitted);
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);
             refreshModalInterval = null;
@@ -45,7 +51,7 @@
         }
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
-        if (!submitted.current()) return;
+        if (!newest()) return;
         if (!tvDetails?.seasons) {
             JE.toast(JE.t('jellyseerr_toast_no_season_info'), 4000);
             return;
@@ -80,7 +86,7 @@
                 }
             } catch (_) {}
         }
-        if (!submitted.current()) return;
+        if (!newest()) return;
 
         const normalizedTitle = String(showTitle || '').trim();
         const isGenericFallbackTitle = ['this show', 'this movie', 'this collection'].includes(normalizedTitle.toLowerCase());
@@ -119,7 +125,7 @@
             bodyHtml,
             backdropPath: tvDetails.backdropPath,
             buttonText: is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : undefined,
-            operation: submitted.operation,
+            operation: submitted.owner,
             onClose: () => {
                 if (refreshModalInterval) {
                     clearInterval(refreshModalInterval);
@@ -330,8 +336,12 @@
 
 
         // Start polling for updates when the modal is shown
+        // Each refresh renders only while it is the newest one and the modal and its owner are still there (D46S2-R6).
+        const refreshing = JE.latestIntent();
         refreshModalInterval = setInterval(async () => {
+            const fresh = refreshing(submitted);
             const freshTvDetails = await fetchTvShowDetails(tmdbId);
+            if (!fresh() || !modalInstance.modalElement.isConnected) return;
             if (freshTvDetails) {
                 applyAirDateBackfill(freshTvDetails);
                 updateSeasonList(seasonList, freshTvDetails, partialRequestsEnabled, enableSpecialEpisodes, is4k, jellyfinSeasonMap);

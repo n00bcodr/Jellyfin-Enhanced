@@ -67,7 +67,7 @@ for(const recovery of ['timer','demand','mutation'])test(`mounted preferences re
  assert.equal(box.disabled,true);assert.equal(box.checked,true);
  h.setGets('up');
  if(recovery==='timer')timers.fire();
- else if(recovery==='mutation')await h.api.enableForMovie('aabb','Title');
+ else if(recovery==='mutation')await h.api.enableForMovie('aabb','Title', h.JE.NATIVE);
  else {const now=h.window.Date.now;h.window.Date.now=()=>now()+6000;await h.api.whenLoaded();}
  await until(()=>h.api.isLoadOk(),'recovered');await tick();
  assert.equal(box.checked,false,'server value replaces guessed checkbox');assert.equal(box.disabled,false,'mounted section is usable');

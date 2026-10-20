@@ -1187,7 +1187,9 @@
                     tvDetails.id,
                     'tv',
                     tvDetails.name || tvDetails.title,
-                    tvDetails
+                    tvDetails,
+                    false,
+                    e
                 );
             }
         });

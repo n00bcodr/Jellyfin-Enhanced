@@ -716,7 +716,7 @@
             latestSeason: latest,
             nextSeason: upcoming,
             askedSeasons: plan.askedSeasons
-        }, { opener: button });
+        }, { opener: button, operation: button });
         if (result) quotas.clear();
     }
 

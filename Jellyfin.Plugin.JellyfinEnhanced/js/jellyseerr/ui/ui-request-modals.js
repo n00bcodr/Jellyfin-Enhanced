@@ -12,14 +12,19 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
     const escapeHtml = JE.escapeHtml;
     const icons = internal.icons; // requires ui-icons.js to be loaded first
+    // The Collection modal opens for the newest opening only: an older, slower details read is dropped (D46S2-R6).
+    const collectionOpening = JE.latestIntent();
 
     /**
      * Shows the advanced request modal for movies.
      * @param {number} tmdbId - TMDB ID of the movie.
      * @param {string} title - Display title of the movie.
      * @param {Object|null} searchResultItem - Original search result data.
+     * @param {boolean} [is4k] - The 4K request.
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
+     *   node or press it is opened from. The modal is in its scope.
      */
-    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false) {
+    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, owner) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
@@ -29,6 +34,7 @@
             subtitle: title,
             bodyHtml,
             backdropPath: searchResultItem?.backdropPath,
+            operation: owner,
             onSave: async (modalEl, requestBtn, closeFn) => {
                 const serverSelect = modalEl.querySelector('#movie-server');
                 const qualitySelect = modalEl.querySelector('#movie-quality');
@@ -88,25 +94,26 @@
      * @param {number} collectionId - The TMDB collection IDisplayStatus.
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
-     * @param {{operation?: Object|Node}} [options] - The operation the modal is opened for (or a node inside UI it
-     *   opened; else the press or event in progress): taken here, before the details are read, and the modal opens in
-     *   its scope only while it is current (D46S2-R5-4). Natively none: as before.
+     * @param {{operation: Object|Node|Event}} options - The owner (required, D46S2-R6): the operation the modal is opened
+     *   for, JE.NATIVE, or the node or press it is opened from. Taken here, before the details are read, and the modal
+     *   opens in its scope only while it is current (D46S2-R5-4), and only for the newest opening (D46S2-R6).
      */
     ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null, options = {}) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { fetchCollectionDetails, requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
         const submitted = JE.captureSubmitted(options?.operation);
+        const newest = collectionOpening(submitted);
 
         // Fetch collection details
         let collectionDetails;
         try {
             collectionDetails = await fetchCollectionDetails(collectionId);
         } catch (error) {
-            if (!submitted.current()) return;
+            if (!newest()) return;
             JE.toast(JE.t('jellyseerr_toast_collection_fetch_failed'), 4000);
             return;
         }
-        if (!submitted.current()) return;
+        if (!newest()) return;
 
         if (!collectionDetails?.parts || collectionDetails.parts.length === 0) {
             JE.toast(JE.t('jellyseerr_toast_no_movies_in_collection'), 4000);
@@ -187,7 +194,7 @@
             bodyHtml,
             backdropPath: collectionDetails.backdrop_path || collectionDetails.backdropPath,
             buttonText: JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies',
-            operation: submitted.operation,
+            operation: submitted.owner,
             onSave: async (modalEl, requestBtn, closeFn) => {
                 // Every request of the loop is the modal's operation's (if any), checked by the transport before each send.
                 const bound = JE.captureSubmitted(modalEl).bound();

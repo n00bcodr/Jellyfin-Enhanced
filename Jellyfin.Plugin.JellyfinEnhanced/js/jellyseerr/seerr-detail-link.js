@@ -77,7 +77,7 @@
                     e.preventDefault();
                     e.stopPropagation();
                     if (typeof JE.jellyseerrMoreInfo?.open === 'function') {
-                        JE.jellyseerrMoreInfo.open(tmdbId, mediaType);
+                        JE.jellyseerrMoreInfo.open(tmdbId, mediaType, undefined, e);
                     } else {
                         console.warn(`${logPrefix} more-info modal not available`);
                     }

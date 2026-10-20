@@ -777,11 +777,13 @@
      * otherwise the More Info modal.
      * @param {number} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
+     * @param {Event} press The press: the window opens for its owner (a card inside a window opened for an operation
+     *     opens the next window for that operation too).
      * @returns {void}
      */
-    function openAbsentTitle(tmdbId, mediaType) {
+    function openAbsentTitle(tmdbId, mediaType, press) {
         if (JE.titleDetails?.open?.(tmdbId, mediaType)) return;
-        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType);
+        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType, undefined, JE.ownerOf(press));
     }
 
     /**
@@ -814,7 +816,7 @@
         if (item.mediaType === 'collection') {
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item);
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
             return;
         }
 
@@ -825,7 +827,7 @@
             const tmdbId = parseInt(moreInfoLink.dataset.tmdbId);
             const mediaType = moreInfoLink.dataset.mediaType;
             if (tmdbId && mediaType) {
-                openAbsentTitle(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType, e);
             }
             return;
         }
@@ -861,7 +863,7 @@
             posterPath: item.posterPath || ''
         }, () => {
             card.style.display = 'none';
-        });
+        }, { owner: e });
     }
 
     /**
@@ -885,12 +887,12 @@
         if (state.linksAvailableToJellyfin) {
             goToJellyfinItem(state);
         } else if (item.mediaType === 'collection') {
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item);
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
         } else if (nativeDetailsOn() || (state.useMoreInfoModal && JE.jellyseerrMoreInfo)) {
             const tmdbId = parseInt(item.id);
             const mediaType = item.mediaType;
             if (tmdbId && mediaType) {
-                openAbsentTitle(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType, e);
             }
         }
     }
@@ -944,7 +946,7 @@
             const tmdbId = parseInt(state.item.id);
             const mediaType = state.item.mediaType;
             if (tmdbId && mediaType) {
-                openAbsentTitle(tmdbId, mediaType);
+                openAbsentTitle(tmdbId, mediaType, e);
             }
         }
     }
@@ -967,7 +969,7 @@
             const item = state.item;
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item);
+            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item, { operation: e });
             return;
         }
         if (inCard(card, target, '.jellyseerr-overview')) {
@@ -996,7 +998,7 @@
             goToJellyfinItem(state);
         } else if (e.key === 'Enter' && nativeDetailsOn() && state.item.mediaType !== 'collection' && parseInt(state.item.id, 10) > 0) {
             // Enter opens the title like a poster click; Space still shows the overview (Request).
-            openAbsentTitle(parseInt(state.item.id, 10), state.item.mediaType);
+            openAbsentTitle(parseInt(state.item.id, 10), state.item.mediaType, e);
         } else if (!state.overview) {
             createOverview(state);
         } else {

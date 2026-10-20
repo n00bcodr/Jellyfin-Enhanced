@@ -60,7 +60,7 @@ function rig(t,{rules,node,settings={}}){
  return {h,api,card,writes,violations,check,oracle,
   async settle(){for(let n=0;n<8;n++){await tick();await new Promise(r=>raf(r));}},
   later(){const now=h.window.Date.now;h.window.Date.now=()=>now()+31000;},
-  async click(){await card.querySelector('.je-hide-btn').onclick({preventDefault(){},stopPropagation(){}});},
+  async click(){await card.querySelector('.je-hide-btn').onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});},
   switchUser(nextRules){h.window.ApiClient.setAuthenticationInfo('b','b');
    h.JE.userConfig={hiddenContent:{items:structuredClone(nextRules),settings:{showHideConfirmation:false,showButtonLibrary:true}}};
    h.JE.session?.checkNow?.('test');h.document.dispatchEvent(new h.window.Event('je:user-data-loaded'));}};

@@ -80,14 +80,17 @@
         return next;
     }
     const ruleWrites = new Map();
-    /** Saves a single provider rule. No optimistic success, stale-user writes or full-document replacement. */
-    function saveTitleRule(data, hidden) {
+    /**
+     * Saves a single provider rule. No optimistic success, stale-user writes or full-document replacement. `owner`
+     * (required, D46S2-R6): the operation a title action pressed the control for (it must still be current right before
+     * the write), JE.NATIVE, or the node or press it comes from.
+     */
+    function saveTitleRule(data, hidden, owner) {
         const title = titleData(data);
         if (!title) return Promise.resolve(false);
         const user = ApiClient.getCurrentUserId();
         const action = JE.createSessionAction();
-        // A submitted operation (a title action press) must still be current right before the write.
-        const submitted = JE.createSessionAction({ submitted: true });
+        const submitted = JE.createSessionAction({ owner });
         const previous = ruleWrites.get(title.key) || Promise.resolve();
         // Queue the pending debounce before the atomic write; its acknowledgement is our rule base.
         const flushed = internal.flushPendingSave?.() || Promise.resolve();
@@ -170,20 +173,20 @@
         paint();
         button.onclick = async e => {
             e.preventDefault(); e.stopPropagation();
-            // A press dispatched for a title action stays bound to that operation up to the write.
-            const action = JE.createSessionAction({ submitted: true });
+            // The press's owner (D46S2-R6): a press dispatched for a title action stays bound to that operation up to the write.
+            const owner = JE.ownerOf(e);
             if (!hiddenTmdbIdSet.has(title.key) && internal.showHideConfirmation && !internal.isConfirmationSuppressed()) {
-                internal.showHideConfirmation(title.name || title.title || '', () => run(action));
+                internal.showHideConfirmation(title.name || title.title || '', () => run(owner), { owner });
                 return;
             }
-            return run(action);
+            return run(owner);
         };
         /** Persists before acknowledging the action and leaves a retryable failure on the control. */
-        async function run(action) {
+        async function run(owner) {
             button.disabled = true;
             try {
                 const hidden = !hiddenTmdbIdSet.has(title.key);
-                if (await JE.runSubmitted(action, () => saveTitleRule(title, hidden))) options.onChanged?.(hidden);
+                if (await saveTitleRule(title, hidden, owner)) options.onChanged?.(hidden);
                 paint();
             } catch (_) {
                 delete button.dataset.jeHideIcon;
@@ -443,10 +446,12 @@
      * @param {number|null} [params.seasonNumber] Season number.
      * @param {number|null} [params.episodeNumber] Episode number.
      * @param {string} [params.hideScope] Scope: 'global', 'nextup', 'continuewatching', or 'homesections'.
+     * @param {Object} [owner] The owner of a provider-rule write (confirmAndHide passes its confirmation's); the
+     *     library's own hide controls and panels are native.
      */
-    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }) {
+    function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = JE.NATIVE) {
         const provider = titleData({ itemId, name, type, tmdbId, posterPath });
-        if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true).catch(() => false);
+        if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true, owner).catch(() => false);
         if (JE.titleDetails?.isSynthetic?.(itemId) || JE.titleDetails?.isSynthetic?.(seriesId)) return;
         const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
@@ -481,11 +486,12 @@
      * Restores visibility for the item's native cards.
      * @param {string} itemId The storage key or Jellyfin item ID to unhide.
      * @param {Object} [metadata] Existing library DTO or card metadata for provider-rule removal.
+     * @param {Object} [owner] The owner of a provider-rule write; the library's own unhide controls and panels are native.
      */
-    function unhideItem(itemId, metadata) {
+    function unhideItem(itemId, metadata, owner = JE.NATIVE) {
         if (/^(movie|tv):tmdb:[1-9][0-9]*$/.test(itemId)) {
             const [type, , tmdbId] = itemId.split(':');
-            return saveTitleRule({ type, tmdbId }, false).catch(() => false);
+            return saveTitleRule({ type, tmdbId }, false, owner).catch(() => false);
         }
         const data = getHiddenData();
         const entry = data.items?.[itemId] || Object.values(data.items || {}).find(item =>
@@ -509,7 +515,7 @@
                 rebuildSets();
                 debouncedSave();
             }
-            return saveTitleRule(title, false).catch(() => false);
+            return saveTitleRule(title, false, owner).catch(() => false);
         }
         const newItems = { ...data.items };
 

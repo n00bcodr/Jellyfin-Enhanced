@@ -258,7 +258,7 @@ test('Seerr requestMedia for an operation: override rules held, away and back â†
   const h = setup(t);
   const o = operationOf(h);
   const rules = h.hold('GET', '/jellyseerr/overrideRule');
-  const sent = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted().bound() }));
+  const sent = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted(o.op).bound() });
   await settle();
   await awayAndBack(h);
   rules.resolve(); await assert.rejects(sent, e => e?.name === 'AbortError'); await settle();
@@ -268,7 +268,7 @@ test('Seerr requestMedia for an operation: override rules held, away and back â†
 test('the shared Seerr modal opened for an operation: away and back, then its primary â†’ onSave never runs', async t => {
   const h = setup(t);
   const o = operationOf(h); let saved = 0;
-  const modal = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; } }));
+  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: o.op });
   modal.show(); await settle();
   await awayAndBack(h);
   modal.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
@@ -299,7 +299,7 @@ test('controls: a card\'s Report on the same route posts once; after away and ba
 
 test('controls: the native Report form (no operation) still posts after away and back', async t => {
   const h = setup(t);
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie'); await settle();
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.JE.NATIVE); await settle();
   await awayAndBack(h);
   await submitReport(h);
   assert.equal(h.sent('POST', '/jellyseerr/issue').length, 1, 'exactly as before');
@@ -334,7 +334,7 @@ test('controls: a current drawer\'s arr link and a native drawer\'s link keep th
   link.addEventListener('click', e => e.preventDefault(), { once: true }); // jsdom: no real navigation
   assert.equal(fire(h, link, 'click').escaped, true, 'a current drawer passes the click on');
   h.JE.arrManage.close(); await settle();
-  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }); await settle();
+  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE }); await settle();
   h.navigate(); await settle();
   link = drawer(h).querySelector('a.je-manage-btn[target="_blank"]');
   const result = fire(h, link, 'auxclick', { button: 1 });
@@ -345,7 +345,7 @@ test('controls: a current drawer\'s arr link and a native drawer\'s link keep th
 function staleModal(h) {
   const o = operationOf(h); let saved = 0;
   const body = '<a class="je-test-link" href="https://example.test/">x</a><form class="je-test-form"><input type="checkbox" class="je-test-check"><button class="je-test-submit">go</button></form>';
-  const modal = h.JE.runSubmitted(o.op, () => h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => { saved++; } }));
+  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => { saved++; }, operation: o.op });
   modal.show();
   return { o, modal, saved: () => saved };
 }
@@ -367,7 +367,7 @@ for (const [what, target, type] of [['link', '.je-test-link', 'click'], ['link m
 test('controls: a native Seerr modal (no operation) keeps every default', async t => {
   const h = setup(t);
   const body = '<input type="checkbox" class="je-test-check"><a class="je-test-link" href="#/x">x</a>';
-  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => {} });
+  const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => {} , operation: h.JE.NATIVE });
   modal.show(); await settle();
   await awayAndBack(h);
   const check = modal.modalElement.querySelector('.je-test-check');
@@ -393,7 +393,7 @@ test('season modal for an ended operation: ticking a season â†’ cancelled, nothi
     fetchTvShowDetails: async () => ({ name: 'Show', seasons: [{ seasonNumber: 1, episodeCount: 3, airDate: '2020-01-01' }], externalIds: { tvdbId: 1 } }),
     fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}) });
   const o = operationOf(h);
-  await h.JE.runSubmitted(o.op, () => h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show')); await settle();
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, o.op); await settle();
   const box = h.document.querySelector('.jellyseerr-season-modal .jellyseerr-season-checkbox[data-season-number="1"]');
   assert.ok(box);
   o.end();
@@ -427,7 +427,7 @@ test('More Info window opened for an operation that ended: a link â†’ default ca
 
 test('controls: a native More Info window (no operation) keeps its links', async t => {
   const h = setup(t, { asks: false, seerrMoreInfo: true });
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie'); await settle();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await settle();
   await awayAndBack(h);
   const link = moreInfo(h).querySelector('.je-test-link');
   link.addEventListener('click', e => e.preventDefault(), { once: true });
