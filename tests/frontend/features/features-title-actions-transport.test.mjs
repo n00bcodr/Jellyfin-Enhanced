@@ -230,3 +230,35 @@ test('source scan: every operation-owned write passes its operation to the trans
   const drawer = readFileSync(resolve(jsRoot, 'arr/manage/manage-drawer.js'), 'utf8');
   assert.equal((drawer.match(/JE\.core\.api\.(plugin|ajax|fetch|pluginResponse)\(/g) || []).length, 1, 'the drawer reaches the transport only through boundApi');
 });
+
+// ---- D46-R17-3 for slice 2 (D46 r18 merged): a bound read never shares an in-flight request across bindings. ----
+
+test('Manage drawer: an ended operation\'s queued overview read is not adopted by a fresh drawer for the same title (one read sent, the fresh drawer renders)', async t => {
+  const h = setup(t);
+  h.load('arr/status/status-core.js'); h.load('arr/manage/manage-styles.js'); h.load('arr/manage/manage-drawer.js'); h.JE.initializeArrStatus?.();
+  const reads = () => h.sent.filter(([m, p]) => m === 'GET' && p.startsWith('/arr/admin/manage?')).length;
+  const release = h.holdPool();
+  // The first operation's owning row goes (its mount ends) while its read is queued, on the same page: no navigation
+  // clears the transport's in-flight table, so only the request identity keeps the two drawers apart.
+  let mounted = true;
+  const first = h.JE.titleActions.generation(() => mounted);
+  h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: first }); await settle();
+  mounted = false;
+  assert.equal(first.current(), false, 'the first operation ended while its read was queued');
+  const fresh = h.operation();
+  h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: fresh }); await settle();
+  assert.equal(reads(), 0, 'both reads wait in the queue');
+  await release(); await settle(); await wait(20);
+  assert.equal(reads(), 1, 'only the fresh drawer\'s read is sent');
+  assert.ok(h.document.querySelector('.je-manage [data-je-focus="search-r1"]'), 'the fresh drawer shows its overview');
+});
+
+test('control: the same drawer\'s binding is honoured once released (one read, rendered)', async t => {
+  const h = setup(t);
+  h.load('arr/status/status-core.js'); h.load('arr/manage/manage-styles.js'); h.load('arr/manage/manage-drawer.js'); h.JE.initializeArrStatus?.();
+  const release = h.holdPool();
+  h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.operation() }); await settle();
+  await release(); await settle(); await wait(20);
+  assert.equal(h.sent.filter(([m, p]) => m === 'GET' && p.startsWith('/arr/admin/manage?')).length, 1);
+  assert.ok(h.document.querySelector('.je-manage [data-je-focus="search-r1"]'));
+});
