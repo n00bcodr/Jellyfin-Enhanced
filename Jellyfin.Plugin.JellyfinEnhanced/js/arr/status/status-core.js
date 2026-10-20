@@ -136,7 +136,7 @@
     async function send(path, options) {
         const api = JE.core?.api;
         if (api?.plugin) {
-            return await api.plugin(path, { priority: options?.priority, signal: options?.signal, skipRetry: true });
+            return await api.plugin(path, { priority: options?.priority, signal: options?.signal, skipRetry: true, bound: options?.bound });
         }
         const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
             headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
@@ -190,8 +190,8 @@
      * @param {AbortSignal} [signal] Abort signal.
      * @returns {Promise<Object|null>} The response.
      */
-    function fetchItem(itemId, signal) {
-        return get(`/acquire/status/item/${encodeURIComponent(itemId)}`, { signal });
+    function fetchItem(itemId, signal, bound) {
+        return get(`/acquire/status/item/${encodeURIComponent(itemId)}`, { signal, bound });
     }
 
     /**

@@ -1,0 +1,96 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "ce06903d834d2c3417e0889dd4049f3b",
+   "ImageBlurHashes": {
+    "Primary": {
+     "cf6b7c9f7e2583fcf0498947fb92eb94-jeu082365608004": "eeFG8^4mofjvRkEK%LWCRjRP-pRjR+n$R*ohxaaeM|oLxaWARkogjF"
+    }
+   },
+   "ImageTags": {
+    "Primary": "cf6b7c9f7e2583fcf0498947fb92eb94-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "51cec9645b896084d12b259acd05ccb1",
+   "ImageBlurHashes": {
+    "Primary": {
+     "3ef10e3b5baa21ce1e66ee4d007397b8-jeu082365608004": "eLJj;%%|I@EMD%j6MIaLxZeSL3xnNKRkWU~XEkNaxVwwIURzniwKt5"
+    }
+   },
+   "ImageTags": {
+    "Primary": "3ef10e3b5baa21ce1e66ee4d007397b8-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "074229225b7254292f131f9f49f8dcd6",
+   "ImageBlurHashes": {
+    "Primary": {
+     "48549f422a9d18ae2557e0b84474d1fd-jeu082365608004": "eNK_Bo0fxas.XN6H%}odr?aupCs%e-RqRjElIVxtNMM}~obVaLohjE"
+    }
+   },
+   "ImageTags": {
+    "Primary": "48549f422a9d18ae2557e0b84474d1fd-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "f89b4d4d7733020ed2721d8fec37f26c",
+   "ImageBlurHashes": {
+    "Primary": {
+     "1ceaa31f220965b4aa0d3dc185d50c87-jeu082365608004": "eiHx:2IVWVWr%g00%NofWBM{s,M_fktRRPtlo}ayV@tRM{Rjayt7WB"
+    }
+   },
+   "ImageTags": {
+    "Primary": "1ceaa31f220965b4aa0d3dc185d50c87-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "1d035a1e7ff0dd20103d98b370fa351b",
+   "ImageBlurHashes": {
+    "Primary": {
+     "8a5d458e2d4e2f617272cd172da9e7f4-jeu082365608004": "egIq+AaefQV@.7.SkCfQbbT0tmbHfQWXjv~paefQaK%1tlayfQWVsT"
+    }
+   },
+   "ImageTags": {
+    "Primary": "8a5d458e2d4e2f617272cd172da9e7f4-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Genre"
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 5
+}

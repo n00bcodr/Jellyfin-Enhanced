@@ -265,7 +265,7 @@
          *   false: throw so the scroll engine retries the page.
          * @returns {Promise<{results: Array<any>, totalPages: number}>}
          */
-        async function fetchFeedPage(kind, feedId, page = 1, signal, tolerant = false) {
+        async function fetchFeedPage(kind, feedId, page = 1, signal, tolerant = false, bound) {
             try {
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
@@ -275,7 +275,7 @@
                     : (JE.discoveryFilter?.getSortMode(key) || '');
                 let path = `${spec.buildDiscoverPath(kind, feedId, /** @type {NonNullable<typeof currentFeeds>} */ (currentFeeds))}?page=${page}`;
                 if (sortBy) path += `&sortBy=${encodeURIComponent(sortBy)}`;
-                const response = await fetchWithManagedRequest(path, { signal });
+                const response = await fetchWithManagedRequest(path, { signal, bound });
                 if (signal?.aborted) {
                     throw new DOMException('Aborted', 'AbortError');
                 }
@@ -553,7 +553,7 @@
          * the next local chunk.
          * @param {{deficitPx?: number, horizontal?: boolean}} [hint] - From the scroll engine.
          */
-        async function loadMoreItems(hint) {
+        async function loadMoreItems(hint, bound) {
             if (isClientPaged) {
                 if (isLoading || !hasMorePages || !clientListActive) return;
 
@@ -637,8 +637,8 @@
                 const pagesFetched = tvPages.length + moviePages.length;
 
                 const [tvSettled, movieSettled] = await Promise.all([
-                    Promise.allSettled(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal))),
-                    Promise.allSettled(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal)))
+                    Promise.allSettled(tvPages.map(p => fetchFeedPage('tv', /** @type {number} */ (currentFeeds.tvId), p, signal, false, bound))),
+                    Promise.allSettled(moviePages.map(p => fetchFeedPage('movie', /** @type {number} */ (currentFeeds.movieId), p, signal, false, bound)))
                 ]);
 
                 if (signal?.aborted) return;

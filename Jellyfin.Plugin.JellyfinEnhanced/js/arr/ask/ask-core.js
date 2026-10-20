@@ -326,8 +326,10 @@
      * lost answer reuses the same clientRequestId; a definitive answer (any HTTP status but 5xx) ends it.
      * On success the surfaces showing the title refresh.
      * @param {Object} input Mutation input (see movieInput / seasonsInput / episodesInput).
-     * @param {{clientRequestId?: string, signal?: AbortSignal}} [options] Options.
-     * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came.
+     * @param {{clientRequestId?: string, signal?: AbortSignal, bound?: Object}} [options] Options; bound: the core
+     *     transport binding of the operation that asks (JE.captureSubmitted().bound()), checked right before the POST.
+     * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came, plus `stale`
+     *     when a bound ask was never sent (its operation or session ended).
      */
     async function ask(input, options) {
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
@@ -337,8 +339,10 @@
         const started = epoch();
         let answer;
         try {
-            answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal });
+            answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal, bound: options?.bound });
         } catch (err) {
+            // Bound to an operation or session that ended before the send: nothing was sent, nothing to say.
+            if (err?.name === 'AbortError' && options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
             if (err?.name === 'AbortError') throw err;
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId: null, clientRequestId };
@@ -358,13 +362,14 @@
     /**
      * Cancels the caller's own request that hasn't been sent yet.
      * @param {string} requestId Request id.
+     * @param {{bound?: Object}} [options] bound: the operation's transport binding (as {@link ask}).
      * @returns {Promise<Object>} Result (state 'cancelled' on success).
      */
-    async function cancel(requestId) {
+    async function cancel(requestId, options) {
         if (!enabled() || !/^[0-9a-f]{32}$/i.test(String(requestId || ''))) return { ok: false, status: 0, state: 'invalid', outcome: '', reason: 'invalid_id', certainty: '', requestId: null };
         let answer;
         try {
-            answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {} });
+            answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {}, bound: options?.bound });
         } catch (err) {
             console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
             return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
@@ -682,12 +687,14 @@
      * then read their status again.
      * @param {string} key Title key in scope.
      * @param {string} instanceId Instance ({@link searchInstance}).
+     * @param {{bound?: Object}} [options] bound: the core transport binding of the operation that searches (if any),
+     *     checked right before the POST (an AbortError when it ended first: nothing was sent).
      * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}>} Result.
      */
-    async function adminSearch(key, instanceId) {
+    async function adminSearch(key, instanceId, options) {
         let answer;
         try {
-            answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() } });
+            answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
             if (err?.name === 'AbortError') throw err;
             const text = tr('arr_manage_search_failed', { message: err?.message || String(err) });
@@ -717,14 +724,15 @@
      * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
      * may not): the caller then asks for it instead, as before.
      * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
+     * @param {{bound?: Object}} [options] bound: the operation's transport binding (as {@link adminSearch}).
      * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}|null>} Result, or null to ask instead.
      */
-    async function familySearch(key) {
+    async function familySearch(key, options) {
         const k = String(key || '');
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
         try {
-            answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() } });
+            answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
             if (err?.name === 'AbortError') throw err;
             return null;

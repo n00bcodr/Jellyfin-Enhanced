@@ -1,0 +1,64 @@
+{
+ "SearchHints": [
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "d62b34b608b68954cf34042239720060",
+   "ItemId": "d62b34b608b68954cf34042239720060",
+   "MediaType": "Video",
+   "Name": "D46 R17 Channel",
+   "Type": "TvChannel"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "f54a9a67c8bff46ec62af9ca063c8eaf",
+   "ItemId": "f54a9a67c8bff46ec62af9ca063c8eaf",
+   "MediaType": "Video",
+   "Name": "D46 R17 Guarded (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "25f7c65ab5f829729dd3374cae09091b-jeu082365608004",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "99e9b37dd2d610f20696f697f6af6edf",
+   "ItemId": "99e9b37dd2d610f20696f697f6af6edf",
+   "MediaType": "Video",
+   "Name": "D46 R17 Hidden (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "0e5539767ac713f1280e32e5ce8173a1-jeu082365608004",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "be7f1a11579d285bc676f6484b2dd389",
+   "ItemId": "be7f1a11579d285bc676f6484b2dd389",
+   "MediaType": "Video",
+   "Name": "D46 R17 Plain (1991)",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "b12caf48a13d3b2c163f251888168113-jeu082365608004",
+   "ProductionYear": 1991,
+   "RunTimeTicks": 20000000,
+   "Type": "Movie"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "b970e608063e6608f89a0b31a5dae2a8",
+   "IsFolder": true,
+   "ItemId": "b970e608063e6608f89a0b31a5dae2a8",
+   "MediaType": "Unknown",
+   "Name": "D46 R17 Show",
+   "ProductionYear": 1991,
+   "Type": "Series"
+  }
+ ],
+ "TotalRecordCount": 5
+}

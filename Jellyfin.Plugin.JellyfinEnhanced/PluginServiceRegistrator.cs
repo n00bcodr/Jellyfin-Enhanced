@@ -405,6 +405,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             serviceCollection.AddSingleton<SpoilerPresentation>();
             serviceCollection.AddSingleton<TitlePresentationResultFilter>();
+            // The dashboard's live session updates carry every account's now-playing titles: Jellyfin's own session
+            // listener is replaced by one that sends the same updates projected for each receiving viewer (unchanged
+            // for a viewer with no privacy policy). Only when the host registered it, so it is never doubled.
+            var nativeSessions = serviceCollection.FirstOrDefault(d => d.ServiceType == typeof(MediaBrowser.Controller.Net.IWebSocketListener)
+                && d.ImplementationType?.FullName == PrivacySessionsWebSocketListener.NativeTypeName);
+            if (nativeSessions != null && PrivacySessionsWebSocketListener.Supported)
+            {
+                serviceCollection.Remove(nativeSessions);
+                serviceCollection.AddSingleton<MediaBrowser.Controller.Net.IWebSocketListener, PrivacySessionsWebSocketListener>();
+            }
             // Native details for titles not in the library (experimental, NativeAbsentDetailsEnabled):
             // answers jellyfin-web's details requests for synthetic ids, no library rows. Inert while off
             // (synthetic ids are then refused; every other request passes straight through).

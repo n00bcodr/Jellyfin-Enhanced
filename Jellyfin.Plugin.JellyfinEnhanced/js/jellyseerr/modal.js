@@ -45,8 +45,9 @@
      * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
-     * @param {object} [options.operation] - The operation a title action submitted (else the dispatched press, if any):
-     *   the modal lasts only while it is current, and onSave runs for it. Without one the modal behaves as before.
+     * @param {object} [options.operation] - The operation a title action submitted (or a node inside UI it opened; else the
+     *   dispatched press or the surface the handled event is in): the modal is in its scope, so it closes when the
+     *   operation ends, and onSave runs for it. Without one the modal behaves as before.
      * @returns {object} - An object with methods to show and close the modal.
      */
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
@@ -162,6 +163,8 @@
             window.addEventListener('popstate', close);
             document.addEventListener('keydown', handleKeydown);
             setTimeout(() => {
+                // Closed before it finished opening (its operation ended at once): it stays closed.
+                if (isClosing || !modalElement.isConnected) return;
                 modalElement.classList.add('show');
                 // Focus the first interactive element in the modal
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
@@ -174,10 +177,12 @@
         };
 
         let isClosing = false;
+        let releaseScope = () => {};
 
         const close = () => {
             if (isClosing) return;
             isClosing = true;
+            releaseScope();
 
             if (typeof onClose === 'function') {
                 try {
@@ -199,8 +204,9 @@
             }, 300);
         };
 
-        // A modal opened for an operation that is no longer current (another page, mount or user) only closes.
-        modalElement.addEventListener('click', (e) => { if (!submitted.current()) { e.stopImmediatePropagation(); close(); } }, true);
+        // Opened for an operation: the modal is in its scope, so once the operation ends (another page, mount, user or
+        // the document leaving) it takes no more input and closes.
+        releaseScope = JE.openSurface(modalElement, close, submitted.operation);
 
         // Event listeners for closing the modal
         cancelBtn.addEventListener('click', () => history.back());

@@ -1,0 +1,51 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "ChannelType": "TV",
+   "CurrentProgram": {
+    "BackdropImageTags": [],
+    "ChannelId": "d62b34b608b68954cf34042239720060",
+    "EndDate": "2026-10-19T18:00:00.0000000Z",
+    "Id": "eeaa430c6b878c210066b9b74aaad046",
+    "ImageBlurHashes": {},
+    "ImageTags": {},
+    "MediaType": "Unknown",
+    "Name": "D46 R17 Program Now",
+    "Overview": "Secret plot r17 program now",
+    "RunTimeTicks": 288000000000,
+    "ServerId": "328f6bf95a114a819a373a5f04361690",
+    "StartDate": "2026-10-19T10:00:00.0000000Z",
+    "Type": "Program",
+    "UserData": {
+     "IsFavorite": false,
+     "ItemId": "eeaa430c6b878c210066b9b74aaad046",
+     "Key": "eeaa430c-6b87-8c21-0066-b9b74aaad046",
+     "PlayCount": 0,
+     "PlaybackPositionTicks": 0,
+     "Played": false
+    }
+   },
+   "Id": "d62b34b608b68954cf34042239720060",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "IsFolder": false,
+   "LocationType": "Remote",
+   "MediaType": "Video",
+   "Name": "D46 R17 Channel",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "TvChannel",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "d62b34b608b68954cf34042239720060",
+    "Key": "d62b34b6-08b6-8954-cf34-042239720060",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 1
+}

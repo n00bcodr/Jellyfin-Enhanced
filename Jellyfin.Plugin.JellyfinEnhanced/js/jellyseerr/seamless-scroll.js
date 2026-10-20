@@ -389,7 +389,8 @@
             console.debug(`${logPrefix} Loading more items (attempt ${retryCount + 1}, deficit ${Math.round(hint.deficitPx)}px)`);
 
             try {
-                const result = await loadMoreFn(hint);
+                // The loader sends with the row's binding: nothing goes out as another account that signed in meanwhile.
+                const result = await loadMoreFn(hint, action?.bound?.(() => !destroyed && sentinel.isConnected));
                 retryCount = 0;
                 return result && typeof result === 'object' ? result : true;
             } catch (error) {

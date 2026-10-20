@@ -11,9 +11,12 @@
     let observer;
     let frame;
     let disposed = false;
+    let active = false;
     let touch = null;
     let consumed = null;
     let receiving = null;
+    // Hosts shown when the document left (pagehide, freeze), reconciled fresh when it comes back.
+    let parked = null;
     // Every node this adapter created. Anything else carrying our classes is a host copy (no handler).
     const ours = new WeakSet();
     const CARD = '.card[data-id], .jellyseerr-card, .je-discover-card, [data-je-hide-title]';
@@ -47,10 +50,15 @@
     /** True when the layout is jellyfin-web's desktop one (phones use layout-mobile, TVs layout-tv). */
     const desktopLayout = () => document.documentElement.classList.contains('layout-desktop');
 
-    /** Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale. */
+    /**
+     * Opens a current card's capability menu; recycled nodes, other routes and outgoing sessions are stale.
+     * The card's mount is the one it has now: recycled for another title (even back to this one) is another.
+     */
     async function openCard(card, opener) {
         const c = cardContext(card); if (!c || !enabled()) return;
-        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cardContext(card)?.key === c.key);
+        mountCard(card);
+        const mounted = cards.get(card);
+        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === mounted && cardContext(card)?.key === c.key);
         try {
             if (!await A.admit(c, owner)) return;
             const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
@@ -415,7 +423,9 @@
     function scan() {
         queued = false;
         if (disposed) return;
-        if (!enabled()) { A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); return; }
+        // The action bar going off ends every operation it started, for good.
+        if (!enabled()) { if (active) { active = false; A.end(); } A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards(); JE.endScopes?.(); return; }
+        active = true;
         document.querySelectorAll(CARD).forEach(mountCard);
         for (const [root, host] of hosts) {
             if (!host.action.current() || !hostShows(root, host.c)) { hosts.delete(root); continue; }
@@ -429,6 +439,21 @@
             if (state.root.matches('.je-more-info-modal')) JE.internals?.moreInfoModal?.reconcilePaused?.(state.row)?.catch(() => {});
             paintRow(state);
         });
+        // A mount that went (a row re-rendered, a card recycled) ended its operations: their UI closes now.
+        JE.endScopes?.();
+    }
+
+    /** The document is leaving (pagehide, freeze): its operations have ended; the hosts it shows are kept for a restore. */
+    function departed() {
+        parked = new Map([...(parked || []), ...[...hosts].map(([root, host]) => [root, host.c])]);
+        A.close(false);
+    }
+
+    /** The document came back (pageshow from the cache, resume): every host still shown gets fresh controls at once. */
+    function restored() {
+        for (const [root, c] of parked || []) if (hostShows(root, c)) hosts.set(root, { c, action: A.generation() });
+        parked = null;
+        if (started && !disposed) scan();
     }
 
     /** A host copy of an adapter node (our classes, not one of ours) needs reconciling. */
@@ -518,9 +543,9 @@
     }
     /** Releases the global observer and queued paint when the owning document is disposed. */
     function dispose() {
-        disposed = true; observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
+        disposed = true; A.end(); observer?.disconnect(); cancelAnimationFrame(frame); queued = false;
         cancelTouch(); A.close(false); rows.forEach(disposeRow); hosts.clear(); removeCards();
     }
-    Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose });
+    Object.assign(A, { enabled, scan, mountRow, cardContext, initialize, dispose, departed, restored });
     JE.initializeTitleActions = initialize;
 })(window.JellyfinEnhanced);

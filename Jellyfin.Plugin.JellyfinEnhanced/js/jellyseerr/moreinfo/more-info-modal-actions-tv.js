@@ -58,6 +58,7 @@ function buildTvActions(data, show4kOption = false) {
         let open4k = null;
         const close4k = () => {
             if (open4k) {
+                open4k._jeReleaseScope?.();
                 open4k.remove();
                 open4k = null;
                 document.removeEventListener('click', handleDocClick, true);
@@ -111,6 +112,9 @@ function buildTvActions(data, show4kOption = false) {
 
             menu.appendChild(option);
             document.body.appendChild(menu);
+            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
+            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
+            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
             const rect = arrowButton.getBoundingClientRect();
             menu.style.position = 'fixed';
             menu.style.left = `${rect.left}px`;
@@ -190,6 +194,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
         let open4k = null;
         const close4k = () => {
             if (open4k) {
+                open4k._jeReleaseScope?.();
                 open4k.remove();
                 open4k = null;
                 document.removeEventListener('click', handleDocClick, true);
@@ -234,6 +239,9 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 
             menu.appendChild(option);
             document.body.appendChild(menu);
+            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
+            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
+            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
             const rect = arrowButton.getBoundingClientRect();
             menu.style.position = 'fixed';
             menu.style.left = `${rect.left}px`;

@@ -592,7 +592,7 @@
          * @param {string} query The current search query.
          * @param {{deficitPx?: number, horizontal?: boolean}} [hint] From the scroll engine.
          */
-        async function loadMoreSearchResults(query, hint) {
+        async function loadMoreSearchResults(query, hint, bound) {
             if (searchIsLoading || !searchHasMore || lastProcessedQuery !== query) return;
 
             // The global navigation abort cancels the query's signal. If the
@@ -622,7 +622,7 @@
                 const pages = [];
                 for (let p = firstPage; p < firstPage + count; p++) pages.push(p);
 
-                const settled = await Promise.allSettled(pages.map(p => search(apiQuery, p, { signal, throwOnError: true })));
+                const settled = await Promise.allSettled(pages.map(p => search(apiQuery, p, { signal, throwOnError: true, bound })));
                 if (lastProcessedQuery !== query) return; // query changed during fetch
 
                 // Commit pages in order up to the first failure; a flaky page must
@@ -717,7 +717,7 @@
             JE.seamlessScroll.setupInfiniteScroll(
                 searchScrollState,
                 '.jellyseerr-section',
-                (hint) => loadMoreSearchResults(query, hint),
+                (hint, bound) => loadMoreSearchResults(query, hint, bound),
                 () => searchHasMore && !searchSuspended,
                 () => searchIsLoading,
                 { horizontal: true, trackSelector: '.itemsContainer', scrollerSelector: '.emby-scroller' }
@@ -1109,7 +1109,7 @@
                             if (popup) popup.remove();
                             showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
                         } else {
-                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem); // true for 4K, pass searchResultItem for override rules
+                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(item).bound() }); // true for 4K, pass searchResultItem for override rules
                             console.debug(`${logPrefix} Seerr 4K request response:`, response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
@@ -1177,7 +1177,7 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem); // Pass searchResultItem for override rules
+                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(button).bound() }); // Pass searchResultItem for override rules
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');

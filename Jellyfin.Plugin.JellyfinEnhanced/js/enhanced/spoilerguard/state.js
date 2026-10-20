@@ -114,7 +114,10 @@
         const submitted = JE.createSessionAction({ submitted: true });
         const task = mutationQueue.catch(() => {}).then(async () => {
             if (!action.current() || !submitted.current()) return;
-            const response = await request(path, options);
+            // The transport checks the operation (if any) again right before the bytes go out (after the core queue).
+            let response;
+            try { response = await request(path, { ...options, bound: submitted.operationBound() }); }
+            catch (err) { if (err?.name === 'AbortError' && !submitted.current()) return; throw err; }
             if (!action.current()) return response;
             generation++;
             JE.core.api.manager?.invalidatePresentation?.();

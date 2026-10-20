@@ -14,7 +14,21 @@
 //   JE.core.api.fetch(url, options)  — full-URL fetch with auth + retry/dedup/cache
 //   JE.core.api.jf(path, options)    — same, path resolved via ApiClient.getUrl
 //   JE.core.api.plugin(path, options)— same, targeting /JellyfinEnhanced/ endpoints
+//   JE.core.api.session()            — the signed-in session, for a request sent later (see below)
 //   JE.core.api.manager              — the request manager (aliased as JE.requestManager)
+//
+// Bound requests (deferred work: retries, re-reads, queued writes, action-bar operations). A request made after
+// an await, a timer or a queue wait carries the session that asked for it, and optionally its owner's predicate:
+//   const session = JE.core.api.session();                // or JE.createSessionAction().session
+//   JE.core.api.plugin(path, { bound: { session, current: () => owner.isLive } });
+//   // shorthand: JE.core.api.plugin(path, { bound: action.bound(() => owner.isLive) })
+// The transport checks both immediately before the bytes go out (after the queue releases it, after whatever the
+// caller awaited first, and before every retry attempt) and sends with that session's own credentials; when the
+// session is no longer the signed-in one, or current() is not true, it rejects with an AbortError and sends nothing.
+// The answer is published only while both still hold. A call without `bound` behaves exactly as before.
+// The binding is part of the request's identity: de-duplication and the response cache key on it (its session and its
+// owner's predicate, by object identity), so a bound request never shares an in-flight request or a cached answer with
+// another binding or with an unbound caller, and one binding ending (or its caller aborting) cancels only its own request.
 (function(JE) {
     'use strict';
 
@@ -786,6 +800,69 @@
 
     // ── Generalized authenticated fetch ──────────────────────────────────────
 
+    /**
+     * @typedef {Object} RequestSession
+     * @property {string} userId
+     * @property {string} serverId
+     * @property {string} token
+     * @property {*} epoch
+     * @property {() => boolean} current - Whether this is still the signed-in session (identity and epoch).
+     */
+
+    /**
+     * The signed-in session, captured now, for a request sent later.
+     * @returns {RequestSession}
+     */
+    function session() {
+        const userId = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
+        const server = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const serverId = server();
+        const token = ApiClient.accessToken();
+        return Object.freeze({
+            userId, serverId, token, epoch,
+            current: () => ApiClient.getCurrentUserId() === userId && server() === serverId
+                && ApiClient.accessToken() === token && JE.session?.isCurrent?.(epoch) !== false
+        });
+    }
+
+    /**
+     * The one bound-request check: the request's own session must still be the signed-in one and its owner's
+     * current() (when given) must be true. Used as the request's session assertion, so the transport runs it
+     * immediately before every send and again before the answer is published.
+     * @param {{session: RequestSession, current?: () => boolean}} bound
+     * @returns {(() => void) & {userId: string, token: string}}
+     */
+    function bindRequest(bound) {
+        const owner = bound?.session;
+        if (!owner || typeof owner.current !== 'function') throw new TypeError('A bound request needs the session that asked for it');
+        return Object.assign(() => {
+            if (!owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
+        }, { userId: owner.userId, token: owner.token });
+    }
+
+    /** @type {WeakMap<object, number>} */
+    const bindingIds = new WeakMap();
+    let nextBindingId = 1;
+    /** @param {object} value */
+    function idOf(value) {
+        let id = bindingIds.get(value);
+        if (!id) {
+            id = nextBindingId++;
+            bindingIds.set(value, id);
+        }
+        return id;
+    }
+
+    /**
+     * The request-identity scope of a binding: its session and its owner's predicate (each by object identity), or ''
+     * for an unbound call. Dedup and cache keys are prefixed with it, so they never match across bindings.
+     * @param {{session: RequestSession, current?: () => boolean}|undefined} bound
+     */
+    function bindingScope(bound) {
+        return bound ? `\u0000bound:${idOf(bound.session)}:${bound.current ? idOf(bound.current) : 0}\u0000` : '';
+    }
+
     /** Captures the submitting identity, including switches before the session hook observes them. */
     function captureSession() {
         const userId = ApiClient.getCurrentUserId();
@@ -840,6 +917,9 @@
      * @property {'low'} [priority] - Decorative lookup (badges, icons, per-card tags): runs in
      *   a capped lane that yields to every waiting normal request, and is sent with
      *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
+     * @property {{session: RequestSession, current?: () => boolean}} [bound] - Deferred work: the session that
+     *   asked (and its owner's predicate). Checked immediately before every send; otherwise AbortError, nothing sent.
+     *   Part of the request's identity: de-duplication and caching never cross bindings or unbound callers.
      */
 
     /**
@@ -862,10 +942,18 @@
             skipRetry = false,
             auth = true,
             timeoutMs,
-            priority
+            priority,
+            bound
         } = options;
 
-        const assertSession = captureSession();
+        // A bound request is checked against its own session before anything else (it may have been made after
+        // another account signed in); the live identity is then recorded as for any request.
+        const boundSession = bound ? bindRequest(bound) : null;
+        if (boundSession) boundSession();
+        const live = captureSession();
+        const assertSession = boundSession || live;
+        // Dedup and cache keys of a bound request are its binding's own.
+        const scope = bindingScope(bound);
         const withStatus = responseMode === 'status';
         const isGet = method.toUpperCase() === 'GET';
         const presentation = presentationGeneration;
@@ -882,7 +970,7 @@
 
         // Check cache first (GET only)
         if (isGet && !withStatus && !skipCache && cacheKey) {
-            const cached = getCached(cacheKey);
+            const cached = getCached(scope + cacheKey);
             if (cached) return cached;
         }
 
@@ -960,7 +1048,7 @@
                 assertPresentation();
                 if (withStatus) return { status: response.status, body: data };
 
-                if (isGet && cacheKey) setCache(cacheKey, data);
+                if (isGet && cacheKey) setCache(scope + cacheKey, data);
                 return data;
             } catch (error) {
                 assertSession();
@@ -978,24 +1066,25 @@
         // completed while this call queued must not be fetched a second time.
         // The caller's signal goes to the limiter too, so a request aborted while
         // queued leaves the queue at once; dedup only shares entries between
-        // callers on the same signal, so that abort already applies to every sharer.
+        // callers on the same signal, so that abort already applies to every sharer, and only within one binding (or
+        // between unbound callers): a binding that ends never takes another caller's request with it.
         const limitedFetch = () => withConcurrencyLimit(() => {
             assertSession();
             if (isGet && !withStatus && !skipCache && cacheKey) {
-                const cached = getCached(cacheKey);
+                const cached = getCached(scope + cacheKey);
                 if (cached) return Promise.resolve(cached);
             }
             return fetchFn();
         }, limit);
         let pending;
-        if (isGet && !withStatus && cacheKey) pending = deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
+        if (isGet && !withStatus && cacheKey) pending = deduplicatedFetch(scope + cacheKey, limitedFetch, signal, limit);
 
         // Plain GETs share concurrent identical requests too, even without a cacheKey
         // (nothing is cached). Skipped when a caller customises the headers, since the
         // response could then differ for the same URL. Each caller gets its own copy so
         // one mutating its result cannot affect the others.
         else if (isGet && !withStatus && auth && Object.keys(headers).length === 0) {
-            pending = deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
+            pending = deduplicatedFetch(`${scope}GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
         } else pending = limitedFetch();
         const data = await pending;
         // Each deduplicated caller owns its own publication boundary too.
@@ -1032,7 +1121,7 @@
         return coreFetch(options.url, {
             method: options.type || 'GET', body: options.data,
             headers: { ...(options.contentType ? { 'Content-Type': options.contentType } : {}), ...options.headers },
-            signal: options.signal, skipRetry: true
+            signal: options.signal, skipRetry: true, bound: options.bound
         });
     }
 
@@ -1042,6 +1131,7 @@
         jf,
         plugin: pluginFetch,
         pluginResponse,
+        session,
         authHeaders,
         isPresentationAbort,
         manager

@@ -1,14 +1,15 @@
 using System.Reflection;
 // Every controller action of a Jellyfin host (Jellyfin.Api.dll, loaded by metadata only) with its declared
 // response type and whether that type can carry a title (BaseItemDto, SearchHint, ImageInfo, MediaSourceInfo,
-// RecommendationDto), found by walking properties and generic arguments.
+// RecommendationDto, an ActivityLogEntry, whose text names the item it records by ItemId, or a SeriesTimerInfoDto, whose
+// Name and Overview are the programme it records), found by walking properties and generic arguments.
 // Usage: dotnet run --project tests/host/endpoint-registry -- <dir with host assemblies>
 // → TSV: Controller, Action, routes, declared type, title path (empty = none)
 var dir = args[0];
 var paths = Directory.GetFiles(dir, "*.dll");
 using var ctx = new MetadataLoadContext(new PathAssemblyResolver(paths));
 var api = ctx.LoadFromAssemblyPath(Path.Combine(dir, "Jellyfin.Api.dll"));
-var atoms = new HashSet<string> { "BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto" };
+var atoms = new HashSet<string> { "BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto", "ActivityLogEntry", "SeriesTimerInfoDto" };
 var memo = new Dictionary<Type, string?>();
 string Name(Type t) => t.IsGenericType ? t.Name.Split('`')[0] + "<" + string.Join(",", t.GetGenericArguments().Select(Name)) + ">" : t.IsArray ? Name(t.GetElementType()!) + "[]" : t.Name;
 string? TitlePath(Type t, int depth)

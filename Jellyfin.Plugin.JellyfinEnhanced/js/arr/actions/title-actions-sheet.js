@@ -54,7 +54,7 @@
         if (!current || (owner && current.owner !== owner)) return;
         const state = current; current = null;
         const live = state.action.current();
-        state.lease.open = false; state.release?.(); state.observer.disconnect(); state.backdrop.remove();
+        state.lease.open = false; state.release?.(); state.releaseScope?.(); state.observer.disconnect(); state.backdrop.remove();
         for (const [node, before] of state.inert) node.inert = before;
         if (restore && live) {
             const target = state.opener?.isConnected ? state.opener : state.returnHost?.querySelector('.je-actions-more, .je-card-more');
@@ -142,6 +142,9 @@
         current = { backdrop, opener, action, owner, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
         dismiss.onclick = () => close();
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
+        // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
+        // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
+        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action);
         sheet.addEventListener('keydown', e => {
             if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
             if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;

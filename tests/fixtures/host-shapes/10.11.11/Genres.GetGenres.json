@@ -1,0 +1,84 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "ce06903d834d2c3417e0889dd4049f3b",
+   "ImageBlurHashes": {
+    "Primary": {
+     "43af5e8a53f99230e8189fba7e9ed4ac-jeu50c77bc07990": "e68;oh.8fQ?wXoR.ogfQozbIfQfQfQfQfQE3o#fQtSo#NdIUfQD$D%"
+    }
+   },
+   "ImageTags": {
+    "Primary": "43af5e8a53f99230e8189fba7e9ed4ac-jeu50c77bc07990"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "51cec9645b896084d12b259acd05ccb1",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "074229225b7254292f131f9f49f8dcd6",
+   "ImageBlurHashes": {
+    "Primary": {
+     "6cba92c4bb5c1545ccf8d52fcd686daf-jeu50c77bc07990": "e38|@e.8fQ_40fL4x^fQ%h.9OutRfQx^xaDNRjfQM{IVNxIUfQ9F9F"
+    }
+   },
+   "ImageTags": {
+    "Primary": "6cba92c4bb5c1545ccf8d52fcd686daf-jeu50c77bc07990"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "090eac6e9de4fe1fbc194e5b96691277",
+   "ImageBlurHashes": {},
+   "ImageTags": {},
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "Genre"
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "d3bf560475125eed829c435f3d8329e3",
+   "ImageBlurHashes": {
+    "Primary": {
+     "860b88e11243e5e65da9ae050d06dcba-jeu50c77bc07990": "e79Gw0offQxu0KV?ayfQWBR,fQfQfQfQfQMdWBfQRjS5W=WBfQNGM|"
+    }
+   },
+   "ImageTags": {
+    "Primary": "860b88e11243e5e65da9ae050d06dcba-jeu50c77bc07990"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Genre",
+   "ServerId": "328f6bf95a114a819a373a5f04361690",
+   "Type": "Genre"
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 5
+}

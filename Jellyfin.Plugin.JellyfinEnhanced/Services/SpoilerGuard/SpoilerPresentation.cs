@@ -159,8 +159,9 @@ public sealed class SpoilerPresentationContext
             BaseItemKind.Movie => State.Movies.ContainsKey(N(identity.ItemId)) || provider || _members.Contains(identity.ItemId)
                 || identity.Collections.Any(c => State.Collections.ContainsKey(N(c))),
             BaseItemKind.Series or BaseItemKind.Season or BaseItemKind.Episode => State.Series.ContainsKey(N(identity.OwnerId)) || provider,
-            // Extras follow their owning title.
-            _ => identity.OwnerId != identity.ItemId && (State.Series.ContainsKey(N(identity.OwnerId)) || State.Movies.ContainsKey(N(identity.OwnerId)) || provider)
+            // Extras follow their owning title (a movie's extras also its guarded collections).
+            _ => identity.IsExtra && (State.Series.ContainsKey(N(identity.OwnerId)) || State.Movies.ContainsKey(N(identity.OwnerId)) || provider
+                || _members.Contains(identity.OwnerId) || identity.Collections.Any(c => State.Collections.ContainsKey(N(c))))
         };
     }
 

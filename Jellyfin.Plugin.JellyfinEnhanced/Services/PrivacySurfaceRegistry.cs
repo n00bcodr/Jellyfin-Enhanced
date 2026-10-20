@@ -26,13 +26,22 @@ public sealed record PrivacySurface(string Controller, string Action, string? Hc
 /// Jellyfin.Api) plus Home Screen Sections' row endpoint, each classified for Hidden Content and Spoiler Guard.
 /// Both action filters and the final delivery gate read it. A title-carrying answer from an endpoint that is not listed
 /// here is withheld while any privacy policy applies to the viewer.
+/// An exemption covers the endpoint's own items only, and is justified by what its answer carries on both hosts
+/// (captured in tests/fixtures/host-shapes): the title members NESTED in any answer (a channel's CurrentProgram, a
+/// session's NowPlayingItem / NowViewingItem / queue items, a timer's programme) are projected for every endpoint,
+/// exempt or not, with the requesting viewer's delivery-time policy.
 /// </summary>
 public static class PrivacySurfaceRegistry
 {
-    private const string Opened = "the item the viewer opened (its own page, parts, images, playback)";
+    private const string Opened = "the item the viewer opened (its own page, parts, images, playback); nested titles are projected";
     private const string Folders = "libraries and folders, not titles";
+    private const string Channels = "Live TV channels, not titles; each channel's CurrentProgram is projected as a nested title";
     private const string Names = "people, genres, studios and years, not titles";
-    private const string OwnState = "the viewer's own sessions, login and recording schedule";
+    private const string Sessions = "sessions, not titles: every session and its controls stay; their NowPlayingItem, NowViewingItem and queue items are projected as nested titles";
+    private const string SignIn = "the signing-in device's new session: the host ends that device's earlier session first, so it has no now-playing item (captured on both hosts while the device was playing), and the request has no viewer yet";
+    private const string Timers = "the recording schedule (timers and series timers): a row stays (it can be cancelled); a hidden programme's title, overview and ProgramInfo are removed from it, and programmes are never Spoiler Guard titles (no library series owns them)";
+    private const string LiveStream = "the live stream the viewer opened (its own media source)";
+    private const string ActivityLog = "the administrator's activity log: each entry names the item it records (ItemId); an entry about a hidden title is left out, and an entry whose title Spoiler Guard protects (or whose item the library no longer has) gets text rebuilt from structured data, by the viewer's own rules";
 
     private static readonly PrivacySurface[] _entries =
     [
@@ -95,7 +104,7 @@ public static class PrivacySurfaceRegistry
         new("Library", "GetThemeMedia", null, Opened, true, null),
         new("Library", "GetThemeSongs", null, Opened, true, null),
         new("Library", "GetThemeVideos", null, Opened, true, null),
-        new("MediaInfo", "OpenLiveStream", null, Opened, false, "a live tuner stream the viewer opened"),
+        new("MediaInfo", "OpenLiveStream", null, LiveStream, false, LiveStream),
 
         // Structure and names: never hidden; the native strip leaves them as they are.
         new("Library", "GetMediaFolders", null, Folders, true, null),
@@ -104,7 +113,7 @@ public static class PrivacySurfaceRegistry
         new("UserLibrary", "GetRootFolder", null, Folders, true, null),
         new("UserLibrary", "GetRootFolderLegacy", null, Folders, true, null),
         new("Channels", "GetChannels", null, Folders, true, null),
-        new("LiveTv", "GetLiveTvChannels", null, Folders, true, null),
+        new("LiveTv", "GetLiveTvChannels", null, Channels, true, null),
         new("LiveTv", "GetRecordingFolders", null, Folders, true, null),
         new("LiveTv", "GetRecordingGroups", null, Folders, true, null),
         new("Artists", "GetAlbumArtists", null, Names, true, null),
@@ -121,17 +130,48 @@ public static class PrivacySurfaceRegistry
         new("Years", "GetYear", null, Names, true, null),
         new("Years", "GetYears", null, Names, true, null),
 
-        // The viewer's own state.
-        new("Session", "GetSessions", null, OwnState, false, OwnState),
-        new("User", "AuthenticateUser", null, OwnState, false, OwnState),
-        new("User", "AuthenticateUserByName", null, OwnState, false, OwnState),
-        new("User", "AuthenticateWithQuickConnect", null, OwnState, false, OwnState),
-        new("LiveTv", "GetTimer", null, OwnState, false, OwnState),
-        new("LiveTv", "GetTimers", null, OwnState, false, OwnState),
+        // The administrator's activity log (the dashboard's Activity panel and page).
+        new("ActivityLog", "GetLogEntries", null, ActivityLog, false, ActivityLog),
+        // Sessions (the administrator's dashboard sees every account's), sign-in and the recording schedule.
+        new("Session", "GetSessions", null, Sessions, false, Sessions),
+        new("User", "AuthenticateUser", null, SignIn, false, SignIn),
+        new("User", "AuthenticateUserByName", null, SignIn, false, SignIn),
+        new("User", "AuthenticateWithQuickConnect", null, SignIn, false, SignIn),
+        new("LiveTv", "GetTimer", null, Opened, false, Timers),
+        new("LiveTv", "GetTimers", null, Timers, false, Timers),
+        new("LiveTv", "GetSeriesTimer", null, Opened, false, Timers),
+        new("LiveTv", "GetSeriesTimers", null, Timers, false, Timers),
+        new("LiveTv", "GetDefaultTimer", null, Opened, false, Timers),
+    ];
+
+    /// <summary>Endpoints that list the opened item's own extras: the route's item owns every item they answer.</summary>
+    private static readonly HashSet<(string, string)> _routeOwned =
+    [
+        ("userlibrary", "getlocaltrailers"), ("userlibrary", "getlocaltrailerslegacy"),
+        ("userlibrary", "getspecialfeatures"), ("userlibrary", "getspecialfeatureslegacy"),
     ];
 
     private static readonly Dictionary<(string, string), PrivacySurface> _byAction = _entries.ToDictionary(
         e => (e.Controller.ToLowerInvariant(), e.Action.ToLowerInvariant()));
+
+    /// <summary>The opened item whose extras the matched endpoint lists (its route's itemId), or null.</summary>
+    public static Guid? RouteOwnsAnswer(ActionContext context)
+        => Find(context) is { } entry && _routeOwned.Contains((entry.Controller.ToLowerInvariant(), entry.Action.ToLowerInvariant())) ? RouteId(context, "itemId") : null;
+
+    /// <summary>
+    /// The item an "opened item" endpoint answers about (its route's item, channel or programme; for a timer, the
+    /// programme it records): Hidden Content never hides that item from its own answer. Null for any other endpoint.
+    /// </summary>
+    public static Guid? OpenedItem(ActionContext context, object? value)
+    {
+        if (Find(context) is not { HcExempt: Opened }) return null;
+        if (value is MediaBrowser.Model.LiveTv.BaseTimerInfoDto timer) return NativePrivacyProjection.ProgramOf(timer);
+        return RouteId(context, "itemId") ?? RouteId(context, "channelId") ?? RouteId(context, "programId") ?? RouteId(context, "recordingId");
+    }
+
+    private static Guid? RouteId(ActionContext context, string key)
+        => (context.RouteData?.Values.TryGetValue(key, out var raw) == true ? raw : context.HttpContext?.Request?.RouteValues?.TryGetValue(key, out var value) == true ? value : null)
+            is { } id && Guid.TryParse(id.ToString(), out var guid) && guid != Guid.Empty ? guid : null;
 
     /// <summary>Home Screen Sections section ids that mirror a scoped surface; others are library rows.</summary>
     private static readonly Dictionary<string, string[]> _homeSections = new(StringComparer.OrdinalIgnoreCase)
@@ -200,10 +240,10 @@ public static class PrivacySurfaceRegistry
         => context.HttpContext?.Request?.Query is { } q && q.Any(p => p.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
             && string.Equals(p.Value.ToString().Trim(), "true", StringComparison.OrdinalIgnoreCase));
 
-    private static readonly string[] _atoms = ["BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto"];
+    private static readonly string[] _atoms = ["BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto", "ActivityLogEntry", "SeriesTimerInfoDto"];
     private static readonly ConcurrentDictionary<Type, bool> _carries = new();
 
-    /// <summary>Whether a value of this runtime type can carry a title (the same walk the host registry was extracted with).</summary>
+    /// <summary>Whether a value of this runtime type can carry a title (the same walk the host registry was extracted with; an activity entry's text names its item).</summary>
     public static bool CarriesTitles(Type type) => _carries.GetOrAdd(type, t => Walk(t, 0, new HashSet<Type>()));
 
     private static bool Walk(Type type, int depth, HashSet<Type> seen)

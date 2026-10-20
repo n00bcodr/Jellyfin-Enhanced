@@ -348,6 +348,7 @@
         const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
         return JE.core.api.fetch(ApiClient.getUrl(path), {
             signal: options.signal,
+            bound: options.bound,
             ...(keep ? { cacheKey: `${cachePrefix}:${path}` } : { skipCache: true })
         });
     }

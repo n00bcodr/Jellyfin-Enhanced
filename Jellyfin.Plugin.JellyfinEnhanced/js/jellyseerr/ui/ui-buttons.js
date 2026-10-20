@@ -221,7 +221,7 @@
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(mainButton).bound() });
                             if (requestHandlers.get(mainButton) !== requestHandler) return;
                             if (!item.mediaInfo) item.mediaInfo = {};
                             item.mediaInfo.status = 3;
@@ -293,7 +293,7 @@
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item);
+                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(button).bound() });
                         if (requestHandlers.get(button) !== requestHandler) return;
                         if (!item.mediaInfo) item.mediaInfo = {};
                         item.mediaInfo.status = 3;

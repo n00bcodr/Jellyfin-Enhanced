@@ -685,7 +685,7 @@
                 try {
                     // Single transport attempt: this loop owns the retries, so a
                     // failing chunk costs at most 1 + RETRY_DELAYS_MS.length requests.
-                    response = await JE.core.api.plugin(path, { signal, skipRetry: true });
+                    response = await JE.core.api.plugin(path, { signal, skipRetry: true, bound: action?.bound?.() });
                     break;
                 } catch (error) {
                     if (signal.aborted) {

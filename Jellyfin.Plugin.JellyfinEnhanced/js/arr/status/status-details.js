@@ -162,7 +162,8 @@
         };
         current = state;
         try {
-            const data = await JE.arrStatus.fetchItem(itemId, controller.signal);
+            // Sent only as the session of the read it repeats (checked by the transport after the feed-position wait).
+            const data = await JE.arrStatus.fetchItem(itemId, controller.signal, action?.bound?.(() => current === state));
             if (current !== state || (action && !action.current())) return;
             if (!sameContext(state)) { stop(); return; }
             if (!data && kept) {

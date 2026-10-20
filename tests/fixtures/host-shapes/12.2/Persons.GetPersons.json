@@ -1,0 +1,136 @@
+{
+ "Items": [
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "f8c65c525f2e40594c431ebe4af621ba",
+   "ImageBlurHashes": {
+    "Primary": {
+     "2878c7d97bb7725247ead24f6488f011-jeu082365608004": "dXJZCX%1$%$$0iRks+ax=^ofNLoM-6j=j=n$WFa$WXbH"
+    }
+   },
+   "ImageTags": {
+    "Primary": "2878c7d97bb7725247ead24f6488f011-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Person",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Person",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "f8c65c525f2e40594c431ebe4af621ba",
+    "Key": "Person-A. C. Green",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "99cf189296d435132ac8a5efffc81b2d",
+   "ImageBlurHashes": {
+    "Primary": {
+     "2a5040b955adeb41d6a8c5507c0beffe-jeu082365608004": "dGDl{3ay00?b00M{M{WB?bWBM{xuM{t7%MM{D%t7j[Rj"
+    }
+   },
+   "ImageTags": {
+    "Primary": "2a5040b955adeb41d6a8c5507c0beffe-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Person",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Person",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "99cf189296d435132ac8a5efffc81b2d",
+    "Key": "Person-A.A. Milne",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "b31e70f9618b4345b21e33626a3aa4d6",
+   "ImageBlurHashes": {
+    "Primary": {
+     "1368621ed54766de05c3819c29a8e336-jeu082365608004": "dtK^Z~xYX.bw~qt7%M%2NwtRaeofxus:WBWCx^WVxat7"
+    }
+   },
+   "ImageTags": {
+    "Primary": "1368621ed54766de05c3819c29a8e336-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Person",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Person",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "b31e70f9618b4345b21e33626a3aa4d6",
+    "Key": "Person-A.C. Peterson",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "a72eb6026b4f0cb27c4f980ad836f820",
+   "ImageBlurHashes": {
+    "Primary": {
+     "cc5deb38728f049142d0d83dc30f3dde-jeu082365608004": "dfH^t:%10fR*VXs-xtWVTJbF$zoKNFay%1ofRjjs$%of"
+    }
+   },
+   "ImageTags": {
+    "Primary": "cc5deb38728f049142d0d83dc30f3dde-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Person",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Person",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "a72eb6026b4f0cb27c4f980ad836f820",
+    "Key": "Person-A.J. Buckley",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  },
+  {
+   "BackdropImageTags": [],
+   "ChannelId": null,
+   "Id": "723b721977a452e9104233990f030b48",
+   "ImageBlurHashes": {
+    "Primary": {
+     "f6732669dcd34415ac2246f29849569e-jeu082365608004": "dUKAj8?bT{xv?bWB-;%M*JRjn4In%Nof%2t7%gWVVrs:"
+    }
+   },
+   "ImageTags": {
+    "Primary": "f6732669dcd34415ac2246f29849569e-jeu082365608004"
+   },
+   "LocationType": "FileSystem",
+   "MediaType": "Unknown",
+   "Name": "Captured Person",
+   "ServerId": "0202511b0eac4284ab045b3ba556d72e",
+   "Type": "Person",
+   "UserData": {
+    "IsFavorite": false,
+    "ItemId": "723b721977a452e9104233990f030b48",
+    "Key": "Person-A.J. Dix",
+    "PlayCount": 0,
+    "PlaybackPositionTicks": 0,
+    "Played": false
+   }
+  }
+ ],
+ "StartIndex": 0,
+ "TotalRecordCount": 5
+}

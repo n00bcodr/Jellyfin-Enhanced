@@ -35,7 +35,7 @@ This loads the unmodified Jellyfin web application and JE assets, signs in throu
 
 ## Endpoint registry extraction
 
-`tests/host/endpoint-registry` lists every controller action of a Jellyfin host with its declared answer and whether that answer can carry a title (BaseItemDto, SearchHint, ImageInfo, MediaSourceInfo, RecommendationDto), by reading the host's `Jellyfin.Api.dll` as metadata (nothing runs). Copy `/jellyfin` out of an official image and run it on that folder:
+`tests/host/endpoint-registry` lists every controller action of a Jellyfin host with its declared answer and whether that answer can carry a title (BaseItemDto, SearchHint, ImageInfo, MediaSourceInfo, RecommendationDto, an ActivityLogEntry, whose text names the item it records, or a SeriesTimerInfoDto, whose name and overview are the programme it records), by reading the host's `Jellyfin.Api.dll` as metadata (nothing runs). Copy `/jellyfin` out of an official image and run it on that folder:
 
 ```sh
 id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin ./host-12.2 && docker rm "$id"
@@ -43,4 +43,6 @@ dotnet run --project tests/host/endpoint-registry -- ./host-12.2 > endpoints.tsv
 ```
 
 The checked-in results are `tests/fixtures/host-endpoints/jellyfin-<version>.tsv`. The backend tests read them: every title-carrying endpoint must be classified in `Services/PrivacySurfaceRegistry.cs`, and the generated privacy model (`PrivacySurfaceModelTests`) covers each one. Regenerate them for a new Jellyfin release.
+
+The privacy model's fixtures are the hosts' real answers: `tests/fixtures/host-shapes/<version>/` holds one response per endpoint family captured from owned 12.2 and 10.11.11 labs with no privacy rule set (sessions with another account playing, theme songs and videos as Audio/Video extras with their envelope's `OwnerId`, local trailers and featurettes, a Live TV channel with its `CurrentProgram`, a session playing that channel over REST and the dashboard's WebSocket (`Session.WebSocket.*`), a timer with its programme and a series timer), only the round's own fixture titles kept (folders and names anonymized), plus `manifest.json` (each item's role, extra owners and the request path). `PrivacyHostShapeModelTests` deserializes them into the host's own types (12.2 for the jf12 build, 10.11.11 for jf10); recapture them when a Jellyfin release changes a response shape.
 

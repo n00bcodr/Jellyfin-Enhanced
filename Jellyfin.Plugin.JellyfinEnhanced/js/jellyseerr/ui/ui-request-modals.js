@@ -44,7 +44,8 @@
                 const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
 
                 try {
-                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem);
+                    // The operation the modal was opened for (if any): its scope holds the modal.
+                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: JE.captureSubmitted(modalEl).bound() });
                     // Manually update the original button on the card
                     const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
                     if (originalButton) {
@@ -87,19 +88,25 @@
      * @param {number} collectionId - The TMDB collection IDisplayStatus.
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
+     * @param {{operation?: Object|Node}} [options] - The operation the modal is opened for (or a node inside UI it
+     *   opened; else the press or event in progress): taken here, before the details are read, and the modal opens in
+     *   its scope only while it is current (D46S2-R5-4). Natively none: as before.
      */
-    ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null) {
+    ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null, options = {}) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { fetchCollectionDetails, requestMedia, fetchAdvancedRequestData } = JE.jellyseerrAPI;
+        const submitted = JE.captureSubmitted(options?.operation);
 
         // Fetch collection details
         let collectionDetails;
         try {
             collectionDetails = await fetchCollectionDetails(collectionId);
         } catch (error) {
+            if (!submitted.current()) return;
             JE.toast(JE.t('jellyseerr_toast_collection_fetch_failed'), 4000);
             return;
         }
+        if (!submitted.current()) return;
 
         if (!collectionDetails?.parts || collectionDetails.parts.length === 0) {
             JE.toast(JE.t('jellyseerr_toast_no_movies_in_collection'), 4000);
@@ -180,7 +187,10 @@
             bodyHtml,
             backdropPath: collectionDetails.backdrop_path || collectionDetails.backdropPath,
             buttonText: JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies',
+            operation: submitted.operation,
             onSave: async (modalEl, requestBtn, closeFn) => {
+                // Every request of the loop is the modal's operation's (if any), checked by the transport before each send.
+                const bound = JE.captureSubmitted(modalEl).bound();
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting') || 'Requesting'}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -214,9 +224,11 @@
                     let quotaHitError = null;
                     for (const tmdbId of selectedMovies) {
                         try {
-                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem);
+                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem, null, { bound });
                             successCount++;
                         } catch (error) {
+                            // The modal's operation ended (it closed with it): nothing more is sent or said.
+                            if (error?.name === 'AbortError') return;
                             // Once quota is hit every remaining request will also fail — break.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
                                 quotaHitError = error;
