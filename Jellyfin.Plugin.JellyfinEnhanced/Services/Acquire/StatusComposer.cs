@@ -6,7 +6,14 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
-    /// <summary>What one arr instance knows about a title (user-independent; read from the snapshots).</summary>
+    /// <summary>
+    /// What one arr instance knows about a title (user-independent; read from the snapshots). A Sonarr copy's facts (its
+    /// series and season statistics, episodes, queue and history) can be given but never read back from here (D53, edition
+    /// round 14: masked facts by construction): a reader gets them only through <see cref="Through(HiddenParts)"/>, a read that
+    /// has already applied the mask of what Jellyfin hides from the viewer in the copy it is bound to. A Radarr copy's are read
+    /// through <see cref="Radarr"/> (a movie has no parts Jellyfin hides inside it). What stays readable here names the copy
+    /// (instance, folder, monitored seasons) and says nothing about any episode.
+    /// </summary>
     internal sealed class ArrCopyFacts
     {
         public ArrCopyFacts(ArrConnection instance)
@@ -20,22 +27,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>The movie (Radarr).</summary>
         public ArrMovieEntry? Movie { get; init; }
 
-        /// <summary>The series (Sonarr).</summary>
-        public ArrSeriesEntry? Series { get; init; }
+        /// <summary>The series (Sonarr), with its season statistics: read only through a masked read.</summary>
+        public ArrSeriesEntry? Series { private get; init; }
 
-        /// <summary>Queue rows of this title.</summary>
-        public IReadOnlyList<ArrQueueEntry> Queue { get; init; } = Array.Empty<ArrQueueEntry>();
+        /// <summary>Queue rows of this title: read only through <see cref="Radarr"/> or a masked read.</summary>
+        public IReadOnlyList<ArrQueueEntry> Queue { private get; init; } = Array.Empty<ArrQueueEntry>();
 
-        /// <summary>History of this title, newest first.</summary>
-        public IReadOnlyList<ArrHistoryEntry> History { get; init; } = Array.Empty<ArrHistoryEntry>();
+        /// <summary>History of this title, newest first: read only through <see cref="Radarr"/> or a masked read.</summary>
+        public IReadOnlyList<ArrHistoryEntry> History { private get; init; } = Array.Empty<ArrHistoryEntry>();
 
-        /// <summary>Episodes (Sonarr), when held in memory.</summary>
-        public ArrEpisodesSnapshot? Episodes { get; init; }
+        /// <summary>Episodes (Sonarr), when held in memory: read only through a masked read.</summary>
+        public ArrEpisodesSnapshot? Episodes { private get; init; }
 
         /// <summary>When the library snapshot this copy came from was read (UTC).</summary>
         public DateTime? LibraryLoadedAt { get; init; }
 
-        /// <summary>When <see cref="Episodes"/> was read (UTC).</summary>
+        /// <summary>When the episodes were read (UTC).</summary>
         public DateTime? EpisodesLoadedAt { get; init; }
 
         /// <summary>When a download of a movie (Radarr id) or episode (Sonarr id) recently left the queue (UTC), if it did.</summary>
@@ -44,7 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>JE's first-seen clocks of the queue rows (null: the arr's added time is used).</summary>
         public Func<ArrQueueEntry, ArrQueueSeen?>? Seen { get; init; }
 
-        /// <summary>When the queue <see cref="Queue"/> came from was read (UTC); the arr's "time left" counts from then.</summary>
+        /// <summary>When the queue came from was read (UTC); the arr's "time left" counts from then.</summary>
         public DateTime? QueueLoadedAt { get; init; }
 
         /// <summary>The queue is past its freshness target (a refresh is on its way): no time left is given.</summary>
@@ -52,10 +59,170 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The instance's queue or history is past its longest serve time and can't be read: what it
-        /// is downloading is unknown (<see cref="Queue"/> is then empty). Never "looking" or
+        /// is downloading is unknown (the queue is then empty). Never "looking" or
         /// "downloading": <see cref="StatusReasonCode.ServiceDown"/>, unless the library says the file is there.
         /// </summary>
         public bool QueueUnknown { get; init; }
+
+        /// <summary>A Sonarr copy (it holds a series).</summary>
+        public bool IsSeries => Series != null;
+
+        /// <summary>The title's folder in the arr's view of the file system (which Jellyfin copy it owns).</summary>
+        public string? Path => Movie?.Path ?? Series?.Path;
+
+        /// <summary>Sonarr's episode list of the series is in memory (whether a read can name episodes; it names none).</summary>
+        public bool EpisodesInMemory => Episodes != null;
+
+        /// <summary>The queue has rows (whether the viewer's files are worth reading for it; it names no episode).</summary>
+        public bool HasDownloads => Queue.Count > 0;
+
+        /// <summary>The seasons Sonarr monitors (which seasons a whole-series request follows; every follower reads them masked).</summary>
+        public IReadOnlyList<int> MonitoredSeasons => Series?.Seasons.Where(s => s.Monitored).Select(s => s.SeasonNumber).ToList() ?? (IReadOnlyList<int>)Array.Empty<int>();
+
+        /// <summary>
+        /// The copy may be one in Jellyfin no lookup matched yet: Sonarr has files of it, or imported one in the last 30 days
+        /// (who owns which copy; never shown).
+        /// </summary>
+        public bool MayHoldFiles(DateTime now) => Series?.EpisodeFileCount > 0 || StatusComposer.RecentImportIn(History, now, TimeSpan.FromDays(30)) != null;
+
+        /// <summary>A Radarr copy's facts. A Sonarr copy is only read through a mask (<see cref="Through(HiddenParts)"/>).</summary>
+        public ArrCopyRead Radarr()
+            => Series == null ? new ArrCopyRead(this, null, null, Queue, History, null) : throw new InvalidOperationException("A Sonarr copy is read through the mask of the copy it is bound to.");
+
+        /// <summary>A Sonarr copy's facts as one viewer may hear them: every one passes <paramref name="mask"/> first.</summary>
+        public ArrCopyRead Through(HiddenParts mask) => Through(() => mask);
+
+        /// <summary>
+        /// A Sonarr copy's facts as one viewer may hear them, the mask read only when a fact that names a part is asked for (an
+        /// empty queue needs none).
+        /// </summary>
+        public ArrCopyRead Through(Func<HiddenParts?> mask)
+            => Series != null ? new ArrCopyRead(this, Series, Episodes, Queue, History, mask) : throw new InvalidOperationException("Not a Sonarr copy.");
+    }
+
+    /// <summary>
+    /// One arr copy's facts as one viewer may hear them (D53, edition round 14), from <see cref="ArrCopyFacts.Through(HiddenParts)"/>
+    /// (Sonarr) or <see cref="ArrCopyFacts.Radarr"/>: for a Sonarr copy every fact has already passed the mask of what Jellyfin
+    /// hides from the viewer in the copy it is bound to (<see cref="Mask"/>), so a hidden season has no statistics, a hidden
+    /// episode no entry, queue row, history or file count. Each fact is masked once, when it is first asked for.
+    /// </summary>
+    internal sealed class ArrCopyRead
+    {
+        private readonly ArrSeriesEntry? _series;
+        private readonly ArrEpisodesSnapshot? _episodes;
+        private readonly IReadOnlyList<ArrQueueEntry> _queue;
+        private readonly IReadOnlyList<ArrHistoryEntry> _history;
+        private readonly Func<HiddenParts?>? _maskOf;
+        private HiddenParts? _mask;
+        private ArrSeriesEntry? _maskedSeries;
+        private ArrEpisodesSnapshot? _maskedEpisodes;
+        private IReadOnlyList<ArrQueueEntry>? _maskedQueue;
+        private IReadOnlyList<ArrHistoryEntry>? _maskedHistory;
+
+        internal ArrCopyRead(ArrCopyFacts facts, ArrSeriesEntry? series, ArrEpisodesSnapshot? episodes, IReadOnlyList<ArrQueueEntry> queue, IReadOnlyList<ArrHistoryEntry> history, Func<HiddenParts?>? mask)
+        {
+            Facts = facts;
+            _series = series;
+            _episodes = episodes;
+            _queue = queue;
+            _history = history;
+            _maskOf = mask;
+        }
+
+        /// <summary>The copy read (who it is, which folder it owns).</summary>
+        public ArrCopyFacts Facts { get; }
+
+        /// <summary>The instance.</summary>
+        public ArrConnection Instance => Facts.Instance;
+
+        /// <summary>What Jellyfin hides from the viewer in the copy this read is bound to (nothing for a Radarr copy).</summary>
+        public HiddenParts Mask => _mask ??= _maskOf?.Invoke() ?? HiddenParts.None;
+
+        /// <summary>The movie (Radarr).</summary>
+        public ArrMovieEntry? Movie => Facts.Movie;
+
+        /// <summary>
+        /// The series (Sonarr), its statistics masked: no wholly hidden season, and a season's (and the series') episode and file
+        /// counts without the episodes hidden in it.
+        /// </summary>
+        public ArrSeriesEntry? Series => _series == null ? null : _maskedSeries ??= MaskSeries(_series, Mask);
+
+        /// <summary>Episodes (Sonarr), when held in memory: none the mask hides.</summary>
+        public ArrEpisodesSnapshot? Episodes => _episodes == null ? null : _maskedEpisodes ??= Hidden ? new ArrEpisodesSnapshot(_episodes.SeriesId, _episodes.Episodes.Where(e => !Mask.Hides(e.SeasonNumber, e.EpisodeNumber)).ToList()) : _episodes;
+
+        /// <summary>Queue rows of this title: none of a hidden part.</summary>
+        public IReadOnlyList<ArrQueueEntry> Queue => _queue.Count == 0 ? _queue : _maskedQueue ??= Hidden ? _queue.Where(r => !HidesPart(r.SeasonNumber, r.EpisodeNumber, r.EpisodeId)).ToList() : _queue;
+
+        /// <summary>History of this title, newest first: none of a hidden part.</summary>
+        public IReadOnlyList<ArrHistoryEntry> History => _history.Count == 0 ? _history : _maskedHistory ??= Hidden ? _history.Where(h => !HidesPart(h.SeasonNumber, h.EpisodeNumber, h.EpisodeId)).ToList() : _history;
+
+        /// <summary>When the library snapshot this copy came from was read (UTC).</summary>
+        public DateTime? LibraryLoadedAt => Facts.LibraryLoadedAt;
+
+        /// <summary>When <see cref="Episodes"/> was read (UTC).</summary>
+        public DateTime? EpisodesLoadedAt => Facts.EpisodesLoadedAt;
+
+        /// <summary>When a download of a movie (Radarr id) or episode (Sonarr id) recently left the queue (UTC), if it did.</summary>
+        public Func<int?, int?, DateTime?>? LeftQueue => Facts.LeftQueue;
+
+        /// <summary>JE's first-seen clocks of the queue rows.</summary>
+        public Func<ArrQueueEntry, ArrQueueSeen?>? Seen => Facts.Seen;
+
+        /// <summary>When the queue was read (UTC).</summary>
+        public DateTime? QueueLoadedAt => Facts.QueueLoadedAt;
+
+        /// <summary>The queue is past its freshness target.</summary>
+        public bool QueueStale => Facts.QueueStale;
+
+        /// <summary>The instance's downloads can't be known now.</summary>
+        public bool QueueUnknown => Facts.QueueUnknown;
+
+        private bool Hidden => _series != null && (Mask.Seasons.Count > 0 || Mask.Episodes.Count > 0);
+
+        /// <summary>A row or event of a hidden part: by its numbers, else by its Sonarr episode id (the unmasked list names it).</summary>
+        private bool HidesPart(int? season, int? episode, int? episodeId)
+        {
+            if (season is int s && Mask.Seasons.Contains(s)) return true;
+            if (season is int se && episode is int e) return Mask.Hides(se, e);
+            return episodeId is int id && _episodes?.Episodes.FirstOrDefault(x => x.Id == id) is { } known && Mask.Hides(known.SeasonNumber, known.EpisodeNumber);
+        }
+
+        private static ArrSeriesEntry MaskSeries(ArrSeriesEntry series, HiddenParts mask)
+        {
+            if (mask.Seasons.Count == 0 && mask.Episodes.Count == 0) return series;
+            var seasons = new List<ArrSeasonEntry>();
+            int files = series.EpisodeFileCount, aired = series.EpisodeCount;
+            foreach (var s in series.Seasons)
+            {
+                if (mask.Seasons.Contains(s.SeasonNumber))
+                {
+                    files -= s.EpisodeFileCount;
+                    aired -= s.EpisodeCount;
+                    continue;
+                }
+                var hidden = (int)Math.Min(int.MaxValue, mask.Episodes.CountInSeason(s.SeasonNumber));
+                var hiddenFiles = (int)Math.Min(int.MaxValue, mask.WithFile.CountInSeason(s.SeasonNumber));
+                files -= Math.Min(s.EpisodeFileCount, hiddenFiles);
+                aired -= Math.Min(s.EpisodeCount, hidden);
+                seasons.Add(new ArrSeasonEntry
+                {
+                    SeasonNumber = s.SeasonNumber,
+                    Monitored = s.Monitored,
+                    EpisodeFileCount = Math.Max(0, s.EpisodeFileCount - hiddenFiles),
+                    EpisodeCount = Math.Max(0, s.EpisodeCount - hidden),
+                    TotalEpisodeCount = Math.Max(0, s.TotalEpisodeCount - hidden),
+                    NextAiring = s.NextAiring,
+                });
+            }
+            var next = mask.Seasons.Count == 0 ? series.NextAiring : seasons.Where(s => s.NextAiring.HasValue).Select(s => s.NextAiring).DefaultIfEmpty(null).Min();
+            return new ArrSeriesEntry
+            {
+                Id = series.Id, TvdbId = series.TvdbId, TmdbId = series.TmdbId, ImdbId = series.ImdbId, Title = series.Title, TitleSlug = series.TitleSlug,
+                Monitored = series.Monitored, Path = series.Path, QualityProfileId = series.QualityProfileId, Tags = series.Tags,
+                EpisodeFileCount = Math.Max(0, files), EpisodeCount = Math.Max(0, aired), PercentOfEpisodes = series.PercentOfEpisodes, SizeOnDisk = series.SizeOnDisk,
+                Status = series.Status, NextAiring = next, Added = series.Added, Seasons = seasons,
+            };
+        }
     }
 
     /// <summary>An instance of a title's kind whose library isn't in memory, and the admin label for it ("name (error kind)").</summary>
@@ -224,6 +391,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     {
         /// <summary>The viewer can open the copy it owns now: its files and hidden parts are theirs.</summary>
         public bool Open => Jf?.Visible == true;
+
+        /// <summary>
+        /// The Sonarr copy's facts through this binding's own mask (D53, edition round 14): what Jellyfin hides from the viewer
+        /// in the copy it owns (read only when a fact that names a part is asked for), with <paramref name="also"/> (a page's
+        /// own markers) on top. Every status reader of a bound Sonarr copy reads it through here.
+        /// </summary>
+        public ArrCopyRead Read(ComposeContext c, HiddenParts? also = null)
+            => Copy.Through(() => HiddenParts.Union(also, Open ? c.HiddenOf?.Invoke(Jf!.ItemId) : null));
     }
 
     /// <summary>
@@ -279,12 +454,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // The page's own item as the viewer opens it now, when the copies don't list it (a lookup that couldn't finish):
             // an arr copy whose folder is exactly its title folder owns it all the same (as SeriesCopyFor).
             var unlisted = self != null && jf.All(x => x.ItemId != self.ItemId) && !string.IsNullOrWhiteSpace(self.Path) ? self : null;
-            var variants = new List<(ArrCopyFacts Copy, CopyState State, JfCopy? Jf)>();
+            var variants = new List<(ArrCopyRead Copy, CopyState State, JfCopy? Jf)>();
             var movieCopies = facts.Copies.Where(x => x.Movie != null).ToList();
-            foreach (var copy in movieCopies)
+            foreach (var arrCopy in movieCopies)
             {
-                var matched = MatchCopies(copy, jf, movieCopies);
-                if (unlisted != null && HoldsFolder(copy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
+                var matched = MatchCopies(arrCopy, jf, movieCopies);
+                if (unlisted != null && HoldsFolder(arrCopy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
+                var copy = arrCopy.Radarr();
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
                 var visible = own ?? matched.FirstOrDefault(m => m.Visible);
                 CopyState state;
@@ -308,7 +484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // The headline: the item asked for is ready by definition (the viewer opened it); on the key
             // path, the best copy the viewer could open (4K copies only when their item is visible).
             CopyState headline;
-            ArrCopyFacts? headlineCopy = null;
+            ArrCopyRead? headlineCopy = null;
             if (item != null)
             {
                 var ownVariant = variants.FirstOrDefault(v => v.Jf?.ItemId == item.ItemId);
@@ -351,7 +527,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var recent = headline.Stage == StatusStage.Ready && headlineCopy != null && RecentImport(headlineCopy, c) != null;
             var familyQuiet = headline.Stage == StatusStage.Ready && headline.Reason == StatusReasonCode.Ready && !recent
                 || headline.Stage == StatusStage.None;
-            var admin = c.Viewer.IsAdmin ? WithTitleHandoff(AdminFor(facts, variants.Select(v => (v.Copy, v.State, v.Jf)).ToList(), null), headline, facts, c) : null;
+            var admin = c.Viewer.IsAdmin ? WithTitleHandoff(AdminFor(facts, variants, null), headline, facts, c) : null;
             var adminQuiet = familyQuiet && (admin == null || admin.Variants.All(v => v.Stage == StatusStage.Ready && !v.Attention && v.Reason.Code == StatusReasonCode.Ready));
 
             return new TitleStatus
@@ -375,14 +551,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A movie copy that is, or may be, a Jellyfin copy the viewer can't open: matched to one, or
         /// unmatched while it has a file or a recent import.
         /// </summary>
-        private static bool MayBeHiddenCopy(ArrCopyFacts copy, CopyState state, ComposeContext c)
+        private static bool MayBeHiddenCopy(ArrCopyRead copy, CopyState state, ComposeContext c)
             => state.Reason == StatusReasonCode.NotVisibleToUser || copy.Movie!.HasFile || RecentImport(copy, c, TimeSpan.FromDays(30)) != null;
 
         /// <summary>
         /// A movie copy that is not (visibly) in Jellyfin: where the arr has got to. A request that went
         /// out for it (<paramref name="request"/>) restarts the "still looking" clock.
         /// </summary>
-        internal static CopyState MovieFromArr(ArrCopyFacts copy, ComposeContext c, RequestFacts? request = null)
+        internal static CopyState MovieFromArr(ArrCopyRead copy, ComposeContext c, RequestFacts? request = null)
         {
             var movie = copy.Movie!;
             if (copy.Queue.Count > 0) return FromQueue(BestRow(copy.Queue), c, copy);
@@ -449,7 +625,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Quiet = state.Stage == StatusStage.None,
                 NextDate = next.Season > 0 ? next.AirDate : null,
                 Seasons = seasons,
-                Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null), state) : null,
+                Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null), state) : null,
             };
         }
 
@@ -512,7 +688,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDay = nextAir is DateTime day ? DayOf(day) : null,
                 Summary = new StatusSummary { Aired = aired, NextAir = nextAir, NextAirIsDay = nextAir != null, NextEpisode = nextEpisode },
                 Episodes = list,
-                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null) : null,
             };
         }
 
@@ -548,7 +724,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDate = state.Date,
                 NextDay = state.Day,
                 Journey = EpisodeJourney(state, null, season, number, null, item, c),
-                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+                Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null) : null,
             };
         }
 
@@ -595,8 +771,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var (visibleEpisodes, pageHidden) = SplitHidden(jfEpisodes, jfSeasons);
             jfEpisodes = visibleEpisodes;
-            var (copy, mask) = PageBinding(facts, page, copies, item, c);
-            var hidden = HiddenParts.Union(pageHidden, mask)!;
+            var copy = PageRead(facts, page, copies, item, c, pageHidden);
             if (copy == null)
             {
                 var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
@@ -606,18 +781,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Key = facts.Key.ToString(), ItemId = Id(item.ItemId), Kind = "series",
                     Stage = hasEpisodes ? StatusStage.Ready : none.Stage,
                     Reason = Reason(none), Quiet = !none.Attention || hasEpisodes, Attention = none.Attention && !hasEpisodes,
-                    Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null), none) : null,
+                    Admin = c.Viewer.IsAdmin ? WithHandoff(AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null), none) : null,
                 };
             }
 
-            var seasons = SeasonNumbers(copy, jfEpisodes).Where(s => s > 0 && !hidden.Seasons.Contains(s)).ToList();
+            var seasons = SeasonNumbers(copy, jfEpisodes).Where(s => s > 0 && !copy.Mask.Seasons.Contains(s)).ToList();
             var perSeason = new List<SeasonStatus>();
             var all = new List<(int Season, CopyState State, ArrEpisodeEntry? Arr, int Episode)>();
             foreach (var s in seasons)
             {
-                var episodes = EpisodeStates(copy, s, jfEpisodes, c, hidden, facts.Request);
+                var episodes = EpisodeStates(copy, s, jfEpisodes, c, facts.Request);
                 all.AddRange(episodes.Select(e => (s, e.State, e.Arr, e.Episode)));
-                var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, s, e.Episode)).ToList(), c) : SeasonFromStats(copy, s, jfEpisodes, c, hidden);
+                var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, s, e.Episode)).ToList(), c) : SeasonFromStats(copy, s, jfEpisodes, c);
                 perSeason.Add(new SeasonStatus
                 {
                     Season = s,
@@ -648,9 +823,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var otherProblems = false;
             if (c.Viewer.IsAdmin)
             {
-                var variants = new List<(ArrCopyFacts, CopyState, JfCopy?)> { (copy, Overall(stage, total), null) };
+                var variants = new List<(ArrCopyRead, CopyState, JfCopy?)> { (copy, Overall(stage, total), null) };
                 var problems = all.Where(e => e.State.Attention).Select(e => (copy, e.Season, e.Episode, e.State)).ToList();
-                otherProblems = AddOtherSeriesCopies(facts, copy, BindingsOf(facts, copies, c), null, null, c, variants, problems);
+                otherProblems = AddOtherSeriesCopies(facts, copy.Facts, BindingsOf(facts, copies, c), null, null, c, variants, problems);
                 admin = WithTitleHandoff(AdminFor(facts, variants, problems), Overall(stage, total), facts, c);
             }
             return new TitleStatus
@@ -675,32 +850,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// A season page (or card): summary, and with <paramref name="detail"/> every episode. <paramref name="series"/> is
         /// its series item as the viewer opens it now (null when they can't), see <see cref="SeriesCopyFor"/>.
         /// </summary>
-        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null)
+        public static TitleStatus Season(TitleFacts facts, JfItemRef item, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null, Func<EpisodeCoverage>? elsewhere = null)
         {
             var (visibleEpisodes, pageHidden) = SplitHidden(jfEpisodes, null);
             jfEpisodes = visibleEpisodes;
             var season = item.Season ?? 0;
             var key = facts.Key.WithSeason(season).ToString();
-            var (copy, mask) = PageBinding(facts, page, copies, series, c);
-            var hidden = HiddenParts.Union(pageHidden, mask)!;
+            var copy = PageRead(facts, page, copies, series, c, pageHidden);
             if (copy == null)
             {
                 return new TitleStatus
                 {
                     Key = key, ItemId = Id(item.ItemId), Kind = "season", Stage = StatusStage.None,
                     Reason = Reason(NothingKnown(facts)), Quiet = true,
-                    Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), null) : null,
+                    Admin = c.Viewer.IsAdmin ? AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), null) : null,
                 };
             }
-            var episodes = EpisodeStates(copy, season, jfEpisodes, c, hidden, facts.Request);
-            var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, season, e.Episode)).ToList(), c) : SeasonFromStats(copy, season, jfEpisodes, c, hidden);
+            var episodes = EpisodeStates(copy, season, jfEpisodes, c, facts.Request);
+            var summary = copy.Episodes != null ? Summarize(episodes.Select(e => (e.State, e.Arr, season, e.Episode)).ToList(), c) : SeasonFromStats(copy, season, jfEpisodes, c);
             var stage = SummaryStage(summary);
             var progress = episodes.Where(e => e.State.Stage == StatusStage.Downloading && e.State.Progress != null).Select(e => e.State.Progress!).ToList();
             List<EpisodeStatus>? list = null;
             if (detail)
             {
+                // A gap of this copy's Sonarr that another copy the viewer can open plays is this copy's gap, never the
+                // title's (D53, edition round 14): it names the copy. Those copies are read only when there is a gap.
+                var plays = episodes.Any(e => IsGap(e.State)) ? elsewhere?.Invoke() : null;
                 list = episodes.Select(e => new EpisodeStatus
                 {
+                    CopyGap = plays != null && IsGap(e.State) && plays.Contains((season, e.Episode)) ? copy.Instance.Role : null,
                     Key = facts.Key.WithEpisode(season, e.Episode).ToString(),
                     Season = season,
                     Episode = e.Episode,
@@ -719,9 +897,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var otherProblems = false;
             if (c.Viewer.IsAdmin)
             {
-                var variants = new List<(ArrCopyFacts, CopyState, JfCopy?)> { (copy, Overall(stage, summary), null) };
+                var variants = new List<(ArrCopyRead, CopyState, JfCopy?)> { (copy, Overall(stage, summary), null) };
                 var problems = episodes.Where(e => e.State.Attention).Select(e => (copy, season, e.Episode, e.State)).ToList();
-                otherProblems = AddOtherSeriesCopies(facts, copy, BindingsOf(facts, copies, c), season, null, c, variants, problems);
+                otherProblems = AddOtherSeriesCopies(facts, copy.Facts, BindingsOf(facts, copies, c), season, null, c, variants, problems);
                 admin = AdminFor(facts, variants, problems);
             }
             return new TitleStatus
@@ -750,9 +928,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var season = item.Season ?? 0;
             var number = item.Episode ?? 0;
-            var (copy, mask) = PageBinding(facts, page, copies, series, c);
+            var copy = PageRead(facts, page, copies, series, c, HiddenParts.None);
             // An episode its binding's own copy hides from the viewer: that Sonarr tells them nothing of it.
-            if (mask?.Hides(season, number) == true) copy = null;
+            if (copy?.Mask.Hides(season, number) == true) copy = null;
             CopyState state;
             ArrEpisodeEntry? arr = null;
             if (!item.Virtual)
@@ -776,12 +954,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var otherProblems = false;
             if (c.Viewer.IsAdmin)
             {
-                var variants = new List<(ArrCopyFacts, CopyState, JfCopy?)>();
-                var problems = new List<(ArrCopyFacts, int, int, CopyState)>();
+                var variants = new List<(ArrCopyRead, CopyState, JfCopy?)>();
+                var problems = new List<(ArrCopyRead, int, int, CopyState)>();
                 if (copy != null)
                 {
                     variants.Add((copy, state, null));
-                    otherProblems = AddOtherSeriesCopies(facts, copy, BindingsOf(facts, copies, c), season, number, c, variants, problems);
+                    otherProblems = AddOtherSeriesCopies(facts, copy.Facts, BindingsOf(facts, copies, c), season, number, c, variants, problems);
                 }
                 admin = AdminFor(facts, variants, problems);
             }
@@ -815,9 +993,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         public static TitleStatus SeriesCard(TitleFacts facts, JfItemRef item, ComposeContext c, HiddenParts? hidden = null, IReadOnlyList<JfCopy>? copies = null)
         {
-            var copy = SeriesCopyFor(facts, item.ItemId, copies, item);
-            if (copy?.Queue.Count > 0) hidden ??= c.HiddenOf?.Invoke(item.ItemId);
-            var states = copy == null ? new List<(int Season, int Episode, CopyState State)>() : QueuedEpisodes(copy, copy.Queue.Count > 0 ? c.EpisodesOf?.Invoke(item.ItemId) : null, c, hidden);
+            // The card's own copy, its facts through what Jellyfin hides from the viewer there (read only when its queue has rows).
+            var copy = SeriesCopyFor(facts, item.ItemId, copies, item)?.Through(() => hidden ?? c.HiddenOf?.Invoke(item.ItemId));
+            var states = copy == null ? new List<(int Season, int Episode, CopyState State)>() : QueuedEpisodes(copy, copy.Facts.HasDownloads ? c.EpisodesOf?.Invoke(item.ItemId) : null, c);
             int Count(Func<CopyState, bool> f) => states.Count(x => f(x.State));
             var summary = new StatusSummary
             {
@@ -834,13 +1012,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var problems = states.Where(x => x.State.Attention).Select(x => (copy, x.Season, x.Episode, x.State)).ToList();
                 var bindings = BindingsOf(facts, copies, c);
                 // Other instances (4K, anime): their problems only, as the card reads no Sonarr episodes; each by its own copy's files.
-                foreach (var other in OtherSeriesCopies(facts, copy))
+                foreach (var other in OtherSeriesCopies(facts, copy.Facts))
                 {
-                    var found = QueueProblems(other, FilesOf(BindingOf(bindings, other), c), null, null, c);
+                    var bound = BindingOf(bindings, other);
+                    var found = QueueProblems(bound.Read(c), FilesOf(bound, c), null, null, c);
                     otherProblems |= found.Count > 0;
                     problems.AddRange(found);
                 }
-                admin = AdminFor(facts, new List<(ArrCopyFacts, CopyState, JfCopy?)>(), problems);
+                admin = AdminFor(facts, new List<(ArrCopyRead, CopyState, JfCopy?)>(), problems);
             }
             return new TitleStatus
             {
@@ -871,7 +1050,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var bound = Headline(bindings);
             var state = bound == null
                 ? (visible ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
-                : SeriesCopyState(WithoutHiddenRows(bound.Copy, hidden ?? HiddenOf(bound, c)), visible, c, facts.Request, FilesOf(bound, c));
+                : SeriesCopyState(bound.Read(c, hidden), visible, c, facts.Request, FilesOf(bound, c));
             if (!visible && copies.Count > 0 && c.Viewer.IsAdmin && state.Stage == StatusStage.AlmostReady)
             {
                 // An admin is told why.
@@ -881,12 +1060,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             AdminStatus? admin = null;
             if (c.Viewer.IsAdmin)
             {
-                var variants = new List<(ArrCopyFacts, CopyState, JfCopy?)>();
-                var problems = new List<(ArrCopyFacts, int, int, CopyState)>();
+                var variants = new List<(ArrCopyRead, CopyState, JfCopy?)>();
+                var problems = new List<(ArrCopyRead, int, int, CopyState)>();
                 // An administrator's headline is the primary Sonarr copy (every Sonarr copy is bound for them).
                 if (bound != null)
                 {
-                    variants.Add((bound.Copy, state, bound.Jf));
+                    variants.Add((bound.Read(c), state, bound.Jf));
                     AddOtherSeriesCopies(facts, bound.Copy, bindings, null, null, c, variants, problems);
                 }
                 admin = WithTitleHandoff(AdminFor(facts, variants, problems), state, facts, c);
@@ -949,7 +1128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 if (owned.Count > 0 || !every) continue;
                 if (distinct.Any(x => owners[x.ItemId] == null && !Leaves(copy, x, distinct))) continue;
-                if (hiddenCopies && (copy.Series!.EpisodeFileCount > 0 || RecentImport(copy, c, TimeSpan.FromDays(30)) != null)) continue;
+                if (hiddenCopies && copy.MayHoldFiles(c.Now)) continue;
                 result.Add(new SeriesBinding(copy, null));
             }
             return result;
@@ -975,26 +1154,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => Headline(SeriesBindings(facts, copies, c));
 
         /// <summary>
-        /// The Sonarr copy a series, season or episode status reads: a page's or card's own copy's (<see cref="SeriesCopyFor"/>;
-        /// the caller's episodes are that copy's own folder, hidden parts included), or, read for the whole title with its
-        /// copies known (an absent title's page, a scope key), the viewer's headline binding, with what Jellyfin hides from them
-        /// in that binding's own copy (<see cref="ComposeContext.HiddenOf"/>): every fact of it passes that mask (D53, edition
-        /// round 13), whatever the page's own (title-wide) markers leave in.
+        /// The read of the Sonarr copy a series, season or episode status speaks for: a page's or card's own copy's
+        /// (<see cref="SeriesCopyFor"/>; the caller's episodes are that copy's own folder, so <paramref name="pageHidden"/> is its
+        /// mask), or, read for the whole title with its copies known (an absent title's page, a scope key), the viewer's headline
+        /// binding's (<see cref="SeriesBinding.Read"/>), its own copy's mask and the page's (title-wide) markers together. Every
+        /// fact of it has passed that mask (D53, edition rounds 13 and 14).
         /// </summary>
-        private static (ArrCopyFacts? Copy, HiddenParts? Mask) PageBinding(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies, JfItemRef? own, ComposeContext c)
+        private static ArrCopyRead? PageRead(TitleFacts facts, Guid? page, IReadOnlyList<JfCopy>? copies, JfItemRef? own, ComposeContext c, HiddenParts pageHidden)
         {
-            if (page != null || copies == null) return (SeriesCopyFor(facts, page, copies, own), null);
-            var bound = Headline(SeriesBindings(facts, copies, c));
-            return (bound?.Copy, bound is { Open: true } ? c.HiddenOf?.Invoke(bound.Jf!.ItemId) : null);
+            if (page != null || copies == null) return SeriesCopyFor(facts, page, copies, own)?.Through(pageHidden);
+            return Headline(SeriesBindings(facts, copies, c))?.Read(c, pageHidden);
         }
 
         /// <summary>The viewer's episodes of a binding's copy, for telling its upgrades from its downloads (read only when its queue has rows).</summary>
         private static IReadOnlyList<JfEpisode>? FilesOf(SeriesBinding binding, ComposeContext c)
-            => binding.Open && binding.Copy.Queue.Count > 0 && c.EpisodesOf != null ? c.EpisodesOf(binding.Jf!.ItemId) : null;
-
-        /// <summary>What Jellyfin hides from the viewer in a binding's copy (read only when its queue has rows; null: nothing).</summary>
-        private static HiddenParts? HiddenOf(SeriesBinding binding, ComposeContext c)
-            => binding.Open && binding.Copy.Queue.Count > 0 ? c.HiddenOf?.Invoke(binding.Jf!.ItemId) : null;
+            => binding.Open && binding.Copy.HasDownloads && c.EpisodesOf != null ? c.EpisodesOf(binding.Jf!.ItemId) : null;
 
         /// <summary>
         /// The seasons (and single episodes) a request asked for, by key (the Requests page): where those parts have got
@@ -1029,7 +1203,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .ToList();
             var arrived = real.Select(e => e.DateCreated).Concat(picked.Where(p => p.Have != null).Select(p => p.Have!.DateCreated))
                 .Where(d => d.HasValue).DefaultIfEmpty(null).Max();
-            var copy = bound?.Copy;
+            // The bound copy's facts through its own mask and the hidden markers: a part hidden there has no episode, no
+            // statistics, no file count and no queue row (masked by construction, D53 edition round 14).
+            var copy = bound?.Copy.Through(hidden);
             CopyState state;
             StatusSummary? summary = null;
             if (copy == null)
@@ -1042,18 +1218,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 // Per requested season: its episodes' states (when Sonarr's list is in memory) and their summary.
                 var perStates = wanted.OrderBy(n => n).Select(n => copy.Episodes != null
-                    ? EpisodeStates(copy, n, visibleEpisodes, c, hidden, facts.Request).Select(e => (e.State, e.Arr, Season: n, e.Episode)).ToList()
+                    ? EpisodeStates(copy, n, visibleEpisodes, c, facts.Request).Select(e => (e.State, e.Arr, Season: n, e.Episode)).ToList()
                     : null).ToList();
-                var per = wanted.OrderBy(n => n).Select((n, i) => perStates[i] is { } states ? Summarize(states, c) : SeasonFromStats(copy, n, visibleEpisodes, c, hidden)).ToList();
+                var per = wanted.OrderBy(n => n).Select((n, i) => perStates[i] is { } states ? Summarize(states, c) : SeasonFromStats(copy, n, visibleEpisodes, c)).ToList();
                 var singles = picked.Select(p =>
                 {
-                    // One the bound copy hides from the viewer (and no copy they open plays): its Sonarr says nothing of it,
-                    // so the request says where it is, as for a requested season they can't see.
-                    var masked = p.Have == null && hidden.Hides(p.Part.Season, p.Part.Episode);
-                    var arr = masked ? null : copy.Episodes?.Find(p.Part.Season, p.Part.Episode);
+                    // One the bound copy hides from the viewer (and no copy they open plays): its Sonarr says nothing of it
+                    // (no entry, no queue row), so the request says where it is, as for a requested season they can't see.
+                    var arr = copy.Episodes?.Find(p.Part.Season, p.Part.Episode);
                     var one = p.Have != null
                         ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: p.Have.DateCreated)
-                        : masked ? new CopyState(StatusStage.None, StatusReasonCode.NotInArr)
                         : EpisodeFromArr(copy, p.Part.Season, p.Part.Episode, arr, c, facts.Request);
                     return (State: one, Arr: arr, p.Part.Season, p.Part.Episode);
                 }).ToList();
@@ -1178,35 +1352,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return (status, available ? availableAt : null);
         }
 
-        /// <summary>The copy without the queue rows of episodes or seasons Jellyfin hides from the viewer.</summary>
-        private static ArrCopyFacts WithoutHiddenRows(ArrCopyFacts copy, HiddenParts? hidden)
-        {
-            if (hidden == null || !copy.Queue.Any(r => hidden.Hides(r.SeasonNumber, r.EpisodeNumber))) return copy;
-            return new ArrCopyFacts(copy.Instance)
-            {
-                Movie = copy.Movie,
-                Series = copy.Series,
-                Queue = copy.Queue.Where(r => !hidden.Hides(r.SeasonNumber, r.EpisodeNumber)).ToList(),
-                History = copy.History,
-                Episodes = copy.Episodes,
-                LibraryLoadedAt = copy.LibraryLoadedAt,
-                EpisodesLoadedAt = copy.EpisodesLoadedAt,
-                LeftQueue = copy.LeftQueue,
-                Seen = copy.Seen,
-                QueueLoadedAt = copy.QueueLoadedAt,
-                QueueStale = copy.QueueStale,
-                QueueUnknown = copy.QueueUnknown,
-            };
-        }
-
         /// <summary>
         /// Where a series copy has got to as a whole (keys path, admin line); a request that went out restarts the "still
         /// looking" clock. Downloads of episodes the viewer already plays (<paramref name="files"/>, its Jellyfin copy's
         /// episodes) are upgrades, as on its pages: never this copy's download (only upgrades: Ready).
         /// </summary>
-        internal static CopyState SeriesCopyState(ArrCopyFacts copy, bool inJellyfin, ComposeContext c, RequestFacts? request = null, IReadOnlyList<JfEpisode>? files = null)
+        internal static CopyState SeriesCopyState(ArrCopyRead copy, bool inJellyfin, ComposeContext c, RequestFacts? request = null, IReadOnlyList<JfEpisode>? files = null)
         {
-            var series = copy.Series!;
             var downloads = QueuedEpisodes(copy, inJellyfin ? files : null, c).Where(x => !IsUpgrade(x.State)).Select(x => x.State).ToList();
             if (downloads.Count > 0)
             {
@@ -1215,6 +1367,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return downloads.Count > 1 ? row with { Progress = null, Params = Params(("count", downloads.Count.ToString(CultureInfo.InvariantCulture))) } : row;
             }
             if (inJellyfin) return new CopyState(StatusStage.Ready, StatusReasonCode.Ready);
+            var series = copy.Series!;
             if (series.EpisodeFileCount > 0) return new CopyState(StatusStage.AlmostReady, StatusReasonCode.LibraryPending);
             if (!series.Monitored) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
             if (series.EpisodeCount == 0 && series.NextAiring is DateTime next && next > c.Now)
@@ -1225,10 +1378,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Per-episode states of one season: every number Sonarr or Jellyfin knows, except episodes
-        /// Jellyfin has but hides from this viewer (<paramref name="hidden"/>). Requests that went out
+        /// Jellyfin has but hides from this viewer (the read's mask). Requests that went out
         /// (<paramref name="request"/>) restart the "still looking" clock of the episodes they cover.
         /// </summary>
-        internal static List<(int Episode, CopyState State, ArrEpisodeEntry? Arr, JfEpisode? Row)> EpisodeStates(ArrCopyFacts copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, HiddenParts? hidden = null, RequestFacts? request = null)
+        internal static List<(int Episode, CopyState State, ArrEpisodeEntry? Arr, JfEpisode? Row)> EpisodeStates(ArrCopyRead copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, RequestFacts? request = null)
         {
             var result = new List<(int, CopyState, ArrEpisodeEntry?, JfEpisode?)>();
             var files = (jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => e.Season == season && !e.Hidden).ToList();
@@ -1239,7 +1392,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 numbers.UnionWith(copy.Episodes.Episodes.Where(e => e.SeasonNumber == season).Select(e => e.EpisodeNumber));
             foreach (var n in numbers)
             {
-                if (hidden?.Hides(season, n) == true) continue;
+                if (copy.Mask.Hides(season, n)) continue;
                 var have = Have(files, season, n);
                 var row = files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
                 var arr = copy.Episodes?.Find(season, n);
@@ -1267,7 +1420,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// while" counts from the latest of its air date, the series being added and a request for it
         /// going out (<paramref name="request"/>).
         /// </summary>
-        internal static CopyState EpisodeFromArr(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, RequestFacts? request = null)
+        internal static CopyState EpisodeFromArr(ArrCopyRead copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, RequestFacts? request = null)
         {
             if (QueuedEpisode(copy, RowsFor(copy, season, episode, arr), have: false, null, c) is { } queued) return queued;
             if (arr == null) return new CopyState(StatusStage.None, StatusReasonCode.NotInArr);
@@ -1299,7 +1452,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// when the queue was read (the time left is counted from then, and dropped once the queue
         /// is past its freshness target).
         /// </summary>
-        internal static CopyState FromQueue(ArrQueueEntry row, ComposeContext c, ArrCopyFacts? copy = null)
+        internal static CopyState FromQueue(ArrQueueEntry row, ComposeContext c, ArrCopyRead? copy = null)
         {
             var seen = copy?.Seen;
             var cls = ArrQueueStates.Classify(row);
@@ -1333,7 +1486,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// queue was read (<see cref="ArrCopyFacts.QueueLoadedAt"/>); no time left is given once the
         /// queue is past its freshness target (<see cref="ArrCopyFacts.QueueStale"/>).
         /// </summary>
-        internal static StatusProgress? Progress(ArrQueueEntry row, ComposeContext c, ArrCopyFacts? copy = null)
+        internal static StatusProgress? Progress(ArrQueueEntry row, ComposeContext c, ArrCopyRead? copy = null)
         {
             if (row.Size is not double size || size <= 0) return null;
             var left = Math.Clamp(row.SizeLeft ?? size, 0, size);
@@ -1367,7 +1520,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .First();
         }
 
-        private static IReadOnlyList<ArrQueueEntry> RowsFor(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr)
+        private static IReadOnlyList<ArrQueueEntry> RowsFor(ArrCopyRead copy, int season, int episode, ArrEpisodeEntry? arr)
         {
             var rows = new List<ArrQueueEntry>();
             foreach (var r in copy.Queue)
@@ -1384,7 +1537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// Ready with a better copy coming (never a download or a problem); otherwise its best row by the queue table
         /// (<see cref="FromQueue"/>). Null when it has no rows.
         /// </summary>
-        internal static CopyState? QueuedEpisode(ArrCopyFacts copy, IReadOnlyList<ArrQueueEntry> rows, bool have, DateTime? since, ComposeContext c)
+        internal static CopyState? QueuedEpisode(ArrCopyRead copy, IReadOnlyList<ArrQueueEntry> rows, bool have, DateTime? since, ComposeContext c)
         {
             if (rows.Count == 0) return null;
             return have
@@ -1395,14 +1548,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// A copy's queue episode by episode, read as its pages read it (<see cref="QueuedEpisode"/>): each episode's rows
         /// together, against the viewer's Jellyfin file of it in <paramref name="files"/> (its Jellyfin copy's episodes;
-        /// null: not known, every row reads as a download). Rows of parts Jellyfin hides from the viewer
-        /// (<paramref name="hidden"/>) are left out; <paramref name="season"/> keeps one season's.
+        /// null: not known, every row reads as a download). Rows of parts Jellyfin hides from the viewer are not in the
+        /// read's queue; <paramref name="season"/> keeps one season's.
         /// </summary>
-        internal static List<(int Season, int Episode, CopyState State)> QueuedEpisodes(ArrCopyFacts copy, IReadOnlyList<JfEpisode>? files, ComposeContext c, HiddenParts? hidden = null, int? season = null)
+        internal static List<(int Season, int Episode, CopyState State)> QueuedEpisodes(ArrCopyRead copy, IReadOnlyList<JfEpisode>? files, ComposeContext c, int? season = null)
         {
             var result = new List<(int, int, CopyState)>();
             var groups = copy.Queue
-                .Where(r => (season == null || r.SeasonNumber == season) && hidden?.Hides(r.SeasonNumber, r.EpisodeNumber) != true)
+                .Where(r => season == null || r.SeasonNumber == season)
                 // An episode's rows share its numbers; a row without them stands alone (by its episode id, else its own).
                 .GroupBy(r => r.SeasonNumber is int s && r.EpisodeNumber is int e ? (s, e, 0) : (-1, -1, r.EpisodeId ?? r.Id));
             foreach (var group in groups)
@@ -1414,6 +1567,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return result;
         }
+
+        /// <summary>An episode simply not there (nobody fetching it, or looking for it): a gap, as the season page's banner lists it.</summary>
+        private static bool IsGap(CopyState state)
+            => state.Stage is StatusStage.Looking or StatusStage.NotHere && !state.Attention && state.Reason is not (StatusReasonCode.ServiceDown or StatusReasonCode.Failed);
 
         /// <summary>A queue state that is an upgrade (see <see cref="QueuedEpisode"/>).</summary>
         private static bool IsUpgrade(CopyState state) => state.Reason == StatusReasonCode.Upgrading;
@@ -1472,23 +1629,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return new StatusSummary { Aired = aired, Ready = ready, Downloading = downloading, AlmostReady = almost, Missing = missing, Unknown = unknown, Attention = attention, LongMissing = longMissing, LongMissingSince = longSince, LongMissingSent = longSent, NextAir = next, NextAirIsDay = next.HasValue && nextIsDay, NextSeason = nextSeason, NextEpisode = nextEpisode };
         }
 
-        /// <summary>A season from Sonarr's statistics (when its episodes are not in memory: poster cards).</summary>
-        private static StatusSummary SeasonFromStats(ArrCopyFacts copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c, HiddenParts? hidden = null)
+        /// <summary>
+        /// A season from Sonarr's statistics (when its episodes are not in memory: poster cards, the Requests page). The read's
+        /// statistics are masked: a season Jellyfin hides from the viewer has none, and its counts leave out the episodes hidden
+        /// in it (neither theirs nor pending).
+        /// </summary>
+        private static StatusSummary SeasonFromStats(ArrCopyRead copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c)
         {
             var stats = copy.Series?.Seasons.FirstOrDefault(s => s.SeasonNumber == season);
             // Sonarr counts episodes with a file, not files: a two-part file covers two episodes.
             var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Hidden && !e.Virtual));
             var ready = (int)Math.Min(int.MaxValue, coverage.CountInSeason(season));
-            // Episodes Jellyfin hides from this viewer are neither theirs nor pending.
-            var hiddenHere = hidden?.Episodes.CountInSeason(season) ?? 0;
-            var hiddenFiles = hidden?.WithFile.CountInSeason(season) ?? 0;
             // The queue as the season's page reads it: a download of an episode the viewer plays is an upgrade (ready).
-            var queued = QueuedEpisodes(copy, jfEpisodes, c, hidden, season);
+            var queued = QueuedEpisodes(copy, jfEpisodes, c, season);
             var downloading = queued.Count(x => x.State.Stage == StatusStage.Downloading);
             var almost = queued.Count(x => x.State.Stage == StatusStage.AlmostReady);
             var attention = queued.Count(x => x.State.Attention);
-            var aired = (int)Math.Max(Math.Max(0, (stats?.EpisodeCount ?? 0) - hiddenHere), ready);
-            var files = (int)Math.Max(0, (stats?.EpisodeFileCount ?? 0) - hiddenFiles);
+            var aired = Math.Max(stats?.EpisodeCount ?? 0, ready);
+            var files = stats?.EpisodeFileCount ?? 0;
             var pending = Math.Max(0, files - ready);
             var missing = Math.Max(0, aired - ready - pending - downloading - almost);
             var next = stats?.NextAiring is DateTime n && n > c.Now ? n : (DateTime?)null;
@@ -1546,7 +1704,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return StatusReasonCode.Ready;
         }
 
-        private static IEnumerable<int> SeasonNumbers(ArrCopyFacts copy, IReadOnlyList<JfEpisode>? jfEpisodes)
+        private static IEnumerable<int> SeasonNumbers(ArrCopyRead copy, IReadOnlyList<JfEpisode>? jfEpisodes)
         {
             var numbers = new SortedSet<int>();
             foreach (var s in copy.Series?.Seasons ?? Array.Empty<ArrSeasonEntry>())
@@ -1562,7 +1720,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         // ------------------------------------------------------------------ journey
 
-        private static List<JourneyStop> MovieJourney(CopyState headline, ArrCopyFacts? copy, JfItemRef? item, IReadOnlyList<JfCopy> jf, RequestFacts? request, ComposeContext c)
+        private static List<JourneyStop> MovieJourney(CopyState headline, ArrCopyRead? copy, JfItemRef? item, IReadOnlyList<JfCopy> jf, RequestFacts? request, ComposeContext c)
         {
             var dates = new Dictionary<string, DateTime?>();
             if (request?.AskedAt != null || request?.Pending == true) dates[StatusStage.Asked] = request!.AskedAt;
@@ -1583,7 +1741,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return Journey(headline.Stage, dates, request);
         }
 
-        private static List<JourneyStop> EpisodeJourney(CopyState state, ArrCopyFacts? copy, int season, int episode, ArrEpisodeEntry? arr, JfItemRef item, ComposeContext c)
+        private static List<JourneyStop> EpisodeJourney(CopyState state, ArrCopyRead? copy, int season, int episode, ArrEpisodeEntry? arr, JfItemRef item, ComposeContext c)
         {
             var dates = new Dictionary<string, DateTime?>();
             if (copy != null)
@@ -1631,14 +1789,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         // ------------------------------------------------------------------ admin
 
-        private static AdminStatus AdminFor(TitleFacts facts, List<(ArrCopyFacts Copy, CopyState State, JfCopy? Jf)> variants, List<(ArrCopyFacts Copy, int Season, int Episode, CopyState State)>? problems)
+        private static AdminStatus AdminFor(TitleFacts facts, List<(ArrCopyRead Copy, CopyState State, JfCopy? Jf)> variants, List<(ArrCopyRead Copy, int Season, int Episode, CopyState State)>? problems)
         {
             var list = new List<AdminVariant>();
             foreach (var (copy, state, jf) in variants)
             {
                 list.Add(Variant(copy, state, jf, null));
             }
-            foreach (var (copy, season, episode, state) in (problems ?? new List<(ArrCopyFacts, int, int, CopyState)>()).Take(20))
+            foreach (var (copy, season, episode, state) in (problems ?? new List<(ArrCopyRead, int, int, CopyState)>()).Take(20))
             {
                 list.Add(Variant(copy, state, null, "S" + season.ToString("00", CultureInfo.InvariantCulture) + "E" + episode.ToString("00", CultureInfo.InvariantCulture)));
             }
@@ -1647,10 +1805,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The series copies other than the primary one (a 4K or anime Sonarr holding the same series).</summary>
         private static IEnumerable<ArrCopyFacts> OtherSeriesCopies(TitleFacts facts, ArrCopyFacts primary)
-            => facts.Copies.Where(x => x.Series != null && !ReferenceEquals(x, primary)).OrderBy(x => RoleOrder(x.Instance.Role));
+            => facts.Copies.Where(x => x.IsSeries && !ReferenceEquals(x, primary)).OrderBy(x => RoleOrder(x.Instance.Role));
 
         /// <summary>Every Sonarr copy of the series (the siblings <see cref="MatchCopies"/> tells apart).</summary>
-        internal static List<ArrCopyFacts> SeriesCopies(TitleFacts facts) => facts.Copies.Where(x => x.Series != null).ToList();
+        internal static List<ArrCopyFacts> SeriesCopies(TitleFacts facts) => facts.Copies.Where(x => x.IsSeries).ToList();
 
         /// <summary>
         /// Admin lines for the other Sonarr instances holding the series: one line per instance (where
@@ -1658,13 +1816,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <paramref name="bindings"/> are known) and one per queue problem (only this season's or episode's when given).
         /// Episode pages only list instances with a download of that episode. True when any problem was found.
         /// </summary>
-        private static bool AddOtherSeriesCopies(TitleFacts facts, ArrCopyFacts primary, IReadOnlyList<SeriesBinding>? bindings, int? season, int? episode, ComposeContext c, List<(ArrCopyFacts, CopyState, JfCopy?)> variants, List<(ArrCopyFacts, int, int, CopyState)> problems)
+        private static bool AddOtherSeriesCopies(TitleFacts facts, ArrCopyFacts primary, IReadOnlyList<SeriesBinding>? bindings, int? season, int? episode, ComposeContext c, List<(ArrCopyRead, CopyState, JfCopy?)> variants, List<(ArrCopyRead, int, int, CopyState)> problems)
         {
             var any = false;
-            foreach (var other in OtherSeriesCopies(facts, primary))
+            foreach (var otherCopy in OtherSeriesCopies(facts, primary))
             {
-                // Its own Jellyfin copy's episodes tell its upgrades from its downloads, as that copy's pages do.
-                var bound = BindingOf(bindings, other);
+                // Its own Jellyfin copy's episodes tell its upgrades from its downloads, as that copy's pages do; its facts pass
+                // its own binding's mask.
+                var bound = BindingOf(bindings, otherCopy);
+                var other = bound.Read(c);
                 var files = FilesOf(bound, c);
                 var found = QueueProblems(other, files, season, episode, c);
                 any |= found.Count > 0;
@@ -1686,7 +1846,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// read as its pages read them (<see cref="QueuedEpisodes"/>: an upgrade of an episode in <paramref name="files"/>
         /// is none).
         /// </summary>
-        private static List<(ArrCopyFacts, int, int, CopyState)> QueueProblems(ArrCopyFacts copy, IReadOnlyList<JfEpisode>? files, int? season, int? episode, ComposeContext c)
+        private static List<(ArrCopyRead, int, int, CopyState)> QueueProblems(ArrCopyRead copy, IReadOnlyList<JfEpisode>? files, int? season, int? episode, ComposeContext c)
             => QueuedEpisodes(copy, files, c, season: season)
                 .Where(x => x.State.Attention && (episode == null || x.Episode == episode))
                 .Select(x => (copy, x.Season, x.Episode, x.State))
@@ -1716,7 +1876,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static IEnumerable<int> Covered(JfEpisode e)
             => new EpisodeRange(e.Episode, e.EpisodeEnd).Numbers(EpisodeRange.MaxSyntheticEpisodes);
 
-        private static AdminVariant Variant(ArrCopyFacts copy, CopyState state, JfCopy? jf, string? scope)
+        private static AdminVariant Variant(ArrCopyRead copy, CopyState state, JfCopy? jf, string? scope)
         {
             var row = state.Row;
             var messages = new List<string>();
@@ -1749,7 +1909,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Client = row?.DownloadClient,
                 Quality = row?.Quality,
                 CustomFormatScore = row?.CustomFormatScore,
-                Path = copy.Movie?.Path ?? copy.Series?.Path,
+                Path = copy.Facts.Path,
                 Since = state.Since,
                 Fix = FixFor(state.Reason),
                 Scope = scope,
@@ -1835,7 +1995,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return jf.Where(x => x.Path != null && BridgePaths.IsUnder(x.Path, mapped)).ToList();
         }
 
-        private static string? ArrPathOf(ArrCopyFacts copy) => copy.Movie?.Path ?? copy.Series?.Path;
+        private static string? ArrPathOf(ArrCopyFacts copy) => copy.Path;
 
         private static string NormalizeId(string id) => id.Replace("-", string.Empty, StringComparison.Ordinal);
 
@@ -1856,13 +2016,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return parts.Length < segments ? null : string.Join('/', parts[^segments..]);
         }
 
-        private static bool FamilyMayFollow(ArrCopyFacts copy, CopyState state)
+        private static bool FamilyMayFollow(ArrCopyRead copy, CopyState state)
             => copy.Instance.Role != "4k" || state.Stage == StatusStage.Ready;
 
         private static int RoleOrder(string role) => role switch { "standard" => 0, "anime" => 1, "custom" => 2, _ => 3 };
 
         private static ArrCopyFacts? PrimarySeriesCopy(TitleFacts facts)
-            => facts.Copies.Where(c => c.Series != null).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
+            => facts.Copies.Where(c => c.IsSeries).OrderBy(c => RoleOrder(c.Instance.Role)).FirstOrDefault();
 
         /// <summary>
         /// The Sonarr copy a page or card of one Jellyfin series copy (<paramref name="page"/>, the series item a
@@ -2143,7 +2303,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The moment a download of this movie/episode left the queue, while the snapshot that says
         /// "no file" is older than that moment (the import is most likely happening); else null.
         /// </summary>
-        private static DateTime? Departed(ArrCopyFacts copy, int? movieId, int? episodeId, DateTime? snapshotAt)
+        private static DateTime? Departed(ArrCopyRead copy, int? movieId, int? episodeId, DateTime? snapshotAt)
         {
             if (copy.LeftQueue?.Invoke(movieId, episodeId) is not DateTime left) return null;
             return snapshotAt == null || snapshotAt.Value <= left ? left : null;
@@ -2167,17 +2327,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>The newest import of the title when no later grab or file deletion followed it (within <paramref name="window"/>).</summary>
-        private static DateTime? RecentImport(ArrCopyFacts copy, ComposeContext c, TimeSpan? window = null)
+        private static DateTime? RecentImport(ArrCopyRead copy, ComposeContext c, TimeSpan? window = null)
+            => RecentImportIn(copy.History, c.Now, window ?? RecentArrival);
+
+        /// <summary>The newest import in a history (newest first) when no later grab or file deletion followed it, within <paramref name="window"/> of <paramref name="now"/>.</summary>
+        internal static DateTime? RecentImportIn(IReadOnlyList<ArrHistoryEntry> history, DateTime now, TimeSpan window)
         {
-            foreach (var h in copy.History)
+            foreach (var h in history)
             {
-                if (IsImport(h)) return h.Date is DateTime d && c.Now - d <= (window ?? RecentArrival) ? d : null;
+                if (IsImport(h)) return h.Date is DateTime d && now - d <= window ? d : null;
                 if (IsGrab(h) || IsFileGone(h)) return null;
             }
             return null;
         }
 
-        private static DateTime? RecentEpisodeImport(ArrCopyFacts copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, TimeSpan? window = null)
+        private static DateTime? RecentEpisodeImport(ArrCopyRead copy, int season, int episode, ArrEpisodeEntry? arr, ComposeContext c, TimeSpan? window = null)
         {
             foreach (var h in copy.History)
             {
@@ -2225,7 +2389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static DateTime? Latest(DateTime? a, DateTime? b) => a == null ? b : b == null ? a : (a > b ? a : b);
 
         /// <summary>When a request covering this part of the copy's edition (4K instance or not) last went out, or null.</summary>
-        private static DateTime? SentFor(RequestFacts? request, ArrCopyFacts copy, int? season, int? episode, ComposeContext c)
+        private static DateTime? SentFor(RequestFacts? request, ArrCopyRead copy, int? season, int? episode, ComposeContext c)
             => c.RequestClock ? Valid(request?.SentFor(copy.Instance.Role == "4k", season, episode)) : null;
     }
 }

@@ -207,7 +207,9 @@
         const byState = chipForState(shownState(ep));
         if (byState) return byState;
         if (!offerable(ep)) return null;
-        return offered(ep) || blockedWords() ? { text: tr('arr_chip_missing'), tone: 'notOut' } : null;
+        if (!offered(ep) && !blockedWords()) return null;
+        // Another copy the viewer can open plays it: this copy's gap (the chip names the copy).
+        return { text: ep.copyGap ? tr('arr_chip_missing_in_copy', { copy: JE.arrStatus.copyName(ep.copyGap) }) : tr('arr_chip_missing'), tone: 'notOut' };
     }
 
     /**
@@ -1035,6 +1037,9 @@
         const search = offer.length > 0 && offerEps.every(ep => modeOf(ep) === 'search');
         // Seerr mode: Get them asks for the whole season, and says so.
         const seasonWords = !search && rounded() ? roundedWords() : null;
+        // Some of them another copy the viewer can open plays: the button gets them for this copy, and says which.
+        const gap = offerEps.find(ep => ep.copyGap)?.copyGap || null;
+        const copy = gap ? { name: S.copyName(gap), phrase: S.copyPhrase(gap) } : null;
         if (bannerSearched && (bannerSearched.itemId !== normalize(status.itemId) || Date.now() - bannerSearched.at > SEARCHED_TTL_MS)) bannerSearched = null;
         const outcome = search ? bannerSearched : null;
         // Asking can't be done now: the banner says why (administrators: where and how much is free).
@@ -1044,7 +1049,7 @@
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -1066,13 +1071,17 @@
             btn.type = 'button';
             btn.dataset.jeFocus = 'ask-get-them';
             if (search) {
-                btn.dataset.label = offer.length === 1 ? tr('arr_ask_search_one', { episode: offer[0] }) : tr('arr_ask_search');
+                btn.dataset.label = copy
+                    ? (offer.length === 1 ? tr('arr_ask_search_one_in_copy', { episode: offer[0], copy: copy.name }) : tr('arr_ask_search_in_copy', { copy: copy.name }))
+                    : (offer.length === 1 ? tr('arr_ask_search_one', { episode: offer[0] }) : tr('arr_ask_search'));
                 btn.dataset.busyLabel = tr('arr_ask_searching');
             } else if (seasonWords) {
                 btn.dataset.label = seasonWords.label;
                 btn.dataset.rounded = '1';
             } else {
-                btn.dataset.label = offer.length === 1 ? tr('arr_ask_get_one', { episode: offer[0] }) : tr('arr_ask_get_them');
+                btn.dataset.label = copy
+                    ? (offer.length === 1 ? tr('arr_ask_get_one_in_copy', { episode: offer[0], copy: copy.name }) : tr('arr_ask_get_them_in_copy', { copy: copy.name }))
+                    : (offer.length === 1 ? tr('arr_ask_get_one', { episode: offer[0] }) : tr('arr_ask_get_them'));
             }
             btn.appendChild(S.icon(search ? 'search' : 'download', 'je-ask-get-icon'));
             btn.appendChild(S.el('span', 'je-ask-get-text', btn.dataset.label));
@@ -1080,6 +1089,8 @@
             if (seasonWords) {
                 btn.title = seasonWords.note;
                 btn.setAttribute('aria-label', `${seasonWords.label}. ${seasonWords.note}`);
+            } else if (copy) {
+                btn.setAttribute('aria-label', tr(search ? 'arr_ask_search_them_in_copy_label' : 'arr_ask_get_them_in_copy_label', { copy: copy.phrase, list }));
             } else {
                 btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
             }

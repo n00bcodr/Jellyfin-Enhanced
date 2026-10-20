@@ -291,6 +291,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Air time (UTC).</summary>
         public DateTime? AirDate { get; set; }
+
+        /// <summary>
+        /// The role of this page's copy (standard, 4k, anime, custom) when the episode is a gap of that copy only: another copy
+        /// the viewer can open plays it. Null when it is missing from every copy they can open (or isn't missing).
+        /// </summary>
+        public string? CopyGap { get; init; }
     }
 
     /// <summary>Admin view of one copy (instance) of a title.</summary>

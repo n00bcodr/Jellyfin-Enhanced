@@ -58,8 +58,14 @@
         banner.appendChild(S.icon('playlist_remove', 'je-arr-banner-icon'));
         const body = S.el('div', 'je-arr-banner-body');
         if (missing.length) {
-            const list = missing.map(ep => `E${ep.episode}`).join(', ');
-            body.appendChild(S.el('span', 'je-arr-banner-title', S.tr('arr_banner_missing', { list })));
+            // Episodes another copy the viewer can open plays are this copy's gaps: listed as such, never as the title's.
+            const plain = missing.filter(ep => !ep.copyGap);
+            const gaps = missing.filter(ep => ep.copyGap);
+            if (plain.length) body.appendChild(S.el('span', 'je-arr-banner-title', S.tr('arr_banner_missing', { list: plain.map(ep => `E${ep.episode}`).join(', ') })));
+            if (gaps.length) {
+                const list = gaps.map(ep => `E${ep.episode}`).join(', ');
+                body.appendChild(S.el('span', 'je-arr-banner-title je-arr-banner-copy', S.tr('arr_banner_missing_in_copy', { copy: S.copyPhrase(gaps[0].copyGap), list })));
+            }
         } else {
             body.appendChild(S.el('span', 'je-arr-banner-title', S.tr('arr_banner_not_yet')));
         }

@@ -391,8 +391,8 @@ public class IntegrationEditionOrphanTests
         var seasons = l.View.Seasons(rows.Live.Id, viewer);
         Assert.Empty(episodes); Assert.Empty(seasons);
         var c = new ComposeContext(viewer, DateTime.UtcNow, 24);
-        var copy = new ArrCopyFacts(new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrConnection { Kind = Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrKind.Sonarr });
-        Assert.Empty(StatusComposer.EpisodeStates(copy, 2, episodes, c));
+        var copy = new ArrCopyFacts(new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrConnection { Kind = Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrKind.Sonarr }) { Series = new Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.ArrSeriesEntry() };
+        Assert.Empty(StatusComposer.EpisodeStates(copy.Through(HiddenParts.None), 2, episodes, c));
         var status = StatusComposer.Series(new TitleFacts(Firefly), l.View.Resolve(rows.Live.Id, viewer)!, episodes, seasons, c, true);
         Assert.NotEqual(StatusStage.Ready, status.Stage);
     }

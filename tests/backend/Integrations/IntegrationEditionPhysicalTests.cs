@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire;
 using Rig = JE.Tests.IntegrationEditionAvailabilityTests.Rig;
 using Layout = JE.Tests.IntegrationEditionAvailabilityTests.Layout;
@@ -321,7 +320,7 @@ public class IntegrationEditionPhysicalTests
         await Once("family Search", () => rig.Service.SearchableEpisodesAsync(kid, Firefly, 5, null, default));
     }
 
-    // ------------------------------------------------------------------ rule 1: no grouped episode query under a binding
+    // ------------------------------------------------------------------ rule 1: the folder read is physical
 
     private static string Root([System.Runtime.CompilerServices.CallerFilePath] string file = "")
     {
@@ -346,26 +345,11 @@ public class IntegrationEditionPhysicalTests
     }
 
     [Fact]
-    public void BindingReadsNeverUseJellyfinsGroupedLists()
+    public void TheFolderReadQueriesTheSeriesItemsOwnAncestry()
     {
-        // The status composer and service, edition availability and the arrival watches read a Sonarr copy's Jellyfin copy
-        // only through the physical folder read.
-        var acquire = Path.Combine(Root(), "Services", "Acquire");
-        foreach (var file in new[] { "ArrStatusService.cs", "StatusComposer.cs", "EditionAvailability.cs", Path.Combine("Notify", "NotificationService.cs") })
-        {
-            var source = File.ReadAllText(Path.Combine(acquire, file));
-            Assert.False(Regex.IsMatch(source, @"_view\.(Episodes|Seasons)\("), $"{file} reads Jellyfin's grouped episode or season lists");
-            Assert.DoesNotContain("GetEpisodes(", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("GetSeasons(", source, StringComparison.Ordinal);
-        }
-        // Jellyfin's grouped lists are read only where the native presentation or a request gate wants them: the season page's
-        // rows, the hidden-part request gate and the auto-request episode count (no Sonarr fact passes through them).
-        var readers = Directory.EnumerateFiles(Root(), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && Regex.IsMatch(File.ReadAllText(f), @"_view\.(Episodes|Seasons)\("))
-            .Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray();
-        Assert.Equal(new[] { "AutoRequestRecorder.cs", "RequestPolicy.cs", "SeasonRowsService.cs" }, readers);
-        // The folder read itself queries the series item's own ancestry, never its presentation key.
-        var view = Body(File.ReadAllText(Path.Combine(acquire, "ArrJellyfinView.cs")), "public JfSeriesFolder SeriesFolder(");
+        // Who may read Jellyfin's grouped lists is judged by symbol (IntegrationEditionMaskedTests, edition round 14); the folder
+        // read itself queries the series item's own ancestry, never its presentation key.
+        var view = Body(File.ReadAllText(Path.Combine(Root(), "Services", "Acquire", "ArrJellyfinView.cs")), "public JfSeriesFolder SeriesFolder(");
         Assert.Contains("AncestorIds", view, StringComparison.Ordinal);
         foreach (var banned in new[] { "GetEpisodes(", "GetSeasons(", "PresentationUniqueKey", "VisibleEpisodeIds(" })
             Assert.DoesNotContain(banned, view, StringComparison.Ordinal);

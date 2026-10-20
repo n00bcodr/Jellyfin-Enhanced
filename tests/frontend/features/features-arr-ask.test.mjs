@@ -338,6 +338,44 @@ test('banner mode (missing episodes not shown as rows): states per episode and G
   assert.match(h.document.querySelector('.je-ask-banner-action').textContent, /E4 · Waiting for OK/);
 });
 
+/** A status whose episodes in `gaps` another copy the viewer can open plays (the server's copyGap: this page's copy role). */
+function withGaps(status, gaps, role = 'standard') {
+  return { ...status, episodes: status.episodes.map(e => (gaps.includes(e.episode) ? { ...e, copyGap: role } : e)) };
+}
+
+test('a gap another copy plays is that copy\'s gap: the banner, Get them and the row chip name the copy; others stay plainly Missing', async t => {
+  // E2 plays in the 4K copy right beside this standard copy's rows; nobody has E4.
+  const h = setup(t, { status: withGaps(season(), [2]), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const banner = h.document.querySelector('.je-arr-banner');
+  same([...banner.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing: E4', 'Missing in the standard copy: E2']);
+  const btn = banner.querySelector('.je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in standard');
+  assert.equal(btn.getAttribute('aria-label'), 'Get the episodes missing in the standard copy: E2, E4');
+  btn.click();
+  await settle(20);
+  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
+
+  // Only a copy's gap left: no title-wide "Missing" at all; one episode names it too. A 4K page says 4K; another role "this copy".
+  const only = setup(t, { status: withGaps(season(), [2, 4], '4k'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'waiting' } }) } });
+  await only.open();
+  const b = only.document.querySelector('.je-arr-banner');
+  same([...b.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing in the 4K copy: E2, E4']);
+  assert.equal(b.querySelector('.je-ask-get').textContent, 'downloadGet E4 in 4K');
+  const custom = setup(t, { status: withGaps(season(), [2, 4], 'custom'), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await custom.open();
+  same([...custom.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in this copy: E2, E4']);
+  assert.equal(custom.document.querySelector('.je-arr-banner .je-ask-get').textContent, 'downloadGet them in this copy');
+
+  // Rows mode: the JE row of a copy's gap says so; the others keep "Missing".
+  const rows = setup(t, { status: withGaps(season(), [2]) });
+  await rows.open();
+  assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Missing in standard');
+  assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
+  // Phase 1 alone (no asking): the chips say it the same way.
+  assert.equal(rows.JE.arrStatus.chipText({ stage: 'looking', reason: { code: 'no_release_yet' }, copyGap: 'standard' }), 'Missing in standard');
+});
+
 test('a season that is not in the library at all: the banner lists it and leaves asking to Get Season N', async t => {
   const absent = {
     key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 2 },
