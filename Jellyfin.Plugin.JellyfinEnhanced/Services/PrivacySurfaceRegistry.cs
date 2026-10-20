@@ -39,9 +39,9 @@ public static class PrivacySurfaceRegistry
     private const string Names = "people, genres, studios and years, not titles";
     private const string Sessions = "sessions, not titles: every session and its controls stay; their NowPlayingItem, NowViewingItem and queue items are projected as nested titles";
     private const string SignIn = "the signing-in device's new session: the host ends that device's earlier session first, so it has no now-playing item (captured on both hosts while the device was playing), and the request has no viewer yet";
-    private const string Timers = "the recording schedule: a row stays (it can be cancelled); a hidden programme's title and ProgramInfo are removed from it, and programmes are never Spoiler Guard titles (no library series owns them)";
+    private const string Timers = "the recording schedule (timers and series timers): a row stays (it can be cancelled); a hidden programme's title, overview and ProgramInfo are removed from it, and programmes are never Spoiler Guard titles (no library series owns them)";
     private const string LiveStream = "the live stream the viewer opened (its own media source)";
-    private const string ActivityLog = "the administrator's activity log: each entry names the item it records (ItemId); an entry about a hidden title is left out and a guarded episode's title is replaced in its text, by the viewer's own rules";
+    private const string ActivityLog = "the administrator's activity log: each entry names the item it records (ItemId); an entry about a hidden title is left out, and an entry whose title Spoiler Guard protects (or whose item the library no longer has) gets text rebuilt from structured data, by the viewer's own rules";
 
     private static readonly PrivacySurface[] _entries =
     [
@@ -139,6 +139,9 @@ public static class PrivacySurfaceRegistry
         new("User", "AuthenticateWithQuickConnect", null, SignIn, false, SignIn),
         new("LiveTv", "GetTimer", null, Opened, false, Timers),
         new("LiveTv", "GetTimers", null, Timers, false, Timers),
+        new("LiveTv", "GetSeriesTimer", null, Opened, false, Timers),
+        new("LiveTv", "GetSeriesTimers", null, Timers, false, Timers),
+        new("LiveTv", "GetDefaultTimer", null, Opened, false, Timers),
     ];
 
     /// <summary>Endpoints that list the opened item's own extras: the route's item owns every item they answer.</summary>
@@ -162,7 +165,7 @@ public static class PrivacySurfaceRegistry
     public static Guid? OpenedItem(ActionContext context, object? value)
     {
         if (Find(context) is not { HcExempt: Opened }) return null;
-        if (value is MediaBrowser.Model.LiveTv.TimerInfoDto timer) return NativePrivacyProjection.ProgramOf(timer);
+        if (value is MediaBrowser.Model.LiveTv.BaseTimerInfoDto timer) return NativePrivacyProjection.ProgramOf(timer);
         return RouteId(context, "itemId") ?? RouteId(context, "channelId") ?? RouteId(context, "programId") ?? RouteId(context, "recordingId");
     }
 
@@ -237,7 +240,7 @@ public static class PrivacySurfaceRegistry
         => context.HttpContext?.Request?.Query is { } q && q.Any(p => p.Key.Equals(key, StringComparison.OrdinalIgnoreCase)
             && string.Equals(p.Value.ToString().Trim(), "true", StringComparison.OrdinalIgnoreCase));
 
-    private static readonly string[] _atoms = ["BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto", "ActivityLogEntry"];
+    private static readonly string[] _atoms = ["BaseItemDto", "SearchHint", "ImageInfo", "MediaSourceInfo", "RecommendationDto", "ActivityLogEntry", "SeriesTimerInfoDto"];
     private static readonly ConcurrentDictionary<Type, bool> _carries = new();
 
     /// <summary>Whether a value of this runtime type can carry a title (the same walk the host registry was extracted with; an activity entry's text names its item).</summary>

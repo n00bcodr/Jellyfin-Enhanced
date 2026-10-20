@@ -5,10 +5,10 @@
  "ChannelId": null,
  "Chapters": [],
  "Container": "mov,mp4,m4a,3gp,3g2,mj2",
- "DateCreated": "2026-10-19T09:31:51.8853454Z",
+ "DateCreated": "2026-10-19T12:23:07.3069854Z",
  "DisplayPreferencesId": "26dd4a82b00c839c498471cdba80a99c",
  "EnableMediaSourceDisplay": true,
- "Etag": "04ea0d0e8d0e4c3a7e2b84b8a156a88c",
+ "Etag": "a980818168478789a6f59b69019fa94f",
  "ExternalUrls": [],
  "GenreItems": [],
  "Genres": [],
@@ -16,11 +16,11 @@
  "Id": "6770089c05c9ff11ce37ffc0fba72b0d",
  "ImageBlurHashes": {
   "Primary": {
-   "f3c9a45eec591dbb16db023d3257dc1b-jeufded036f526d": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
+   "252e19ec7659084d9ed20e6e23414dcc-jeu50c77bc07990": "W00000fQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQfQ"
   }
  },
  "ImageTags": {
-  "Primary": "f3c9a45eec591dbb16db023d3257dc1b-jeufded036f526d"
+  "Primary": "252e19ec7659084d9ed20e6e23414dcc-jeu50c77bc07990"
  },
  "IndexNumber": 1,
  "IsFolder": false,
@@ -32,7 +32,7 @@
   {
    "Bitrate": 6496,
    "Container": "mp4",
-   "ETag": "180ba2af38292b8db41003a0c8b5fe03",
+   "ETag": "6c2617a0bab91a5edcc52ef7af5ee8f7",
    "Formats": [],
    "GenPtsInput": false,
    "HasSegments": false,
@@ -150,8 +150,7 @@
  "SeasonName": "Season 1",
  "SeriesId": "b970e608063e6608f89a0b31a5dae2a8",
  "SeriesName": "D46 R17 Show (1991)",
- "SeriesStudio": "",
- "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
+ "ServerId": "328f6bf95a114a819a373a5f04361690",
  "SortName": "001 - 0001 - Secret ending r17 E1",
  "SpecialFeatureCount": 0,
  "Studios": [],
@@ -162,7 +161,7 @@
  "UserData": {
   "IsFavorite": false,
   "ItemId": "6770089c05c9ff11ce37ffc0fba72b0d",
-  "Key": "6770089c-05c9-ff11-ce37-ffc0fba72b0d",
+  "Key": "b970e608-063e-6608-f89a-0b31a5dae2a8001001",
   "PlayCount": 0,
   "PlaybackPositionTicks": 0,
   "Played": false

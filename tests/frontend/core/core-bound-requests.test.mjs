@@ -279,3 +279,100 @@ test('every retry path sends through the bound-request primitive',()=>{
  assert.equal((core.match(/function bindRequest\(/g)||[]).length,1);
  assert.match(core,/assertSession\(\);\s*\n\s*const response = await fetch\(url, options\);/);
 });
+
+// ---- D46 r18 (review round 17, D46-R17-3): the binding is part of request identity. De-duplication, caching and
+// queueing key on the binding (its session + its owner's predicate): a bound request never shares an in-flight promise
+// with another binding or with an unbound caller, and one binding ending cancels only that binding's request. ----
+
+const outcome=p=>p.then(v=>({v}),e=>({e}));
+
+test('the Requests page: leaving and reopening while the pool is held loads the new visit (the old visit\'s queued read is not adopted)',async t=>{
+ const f=feed();
+ const s=setup(t,{hash:'#/requests',html:'<div class="mainDrawer"><div class="jellyfinEnhancedSection"></div></div><div class="mainAnimatedPages"><div class="mainAnimatedPage" id="homePage"></div></div>',
+  JE:{pluginConfig:{ArrStatusEnabled:true,ArrRequestsHubEnabled:true},arr:f.arr,core:{lifecycle:{register:()=>({track:x=>x})}}},
+  route:path=>path.startsWith('/JellyfinEnhanced/acquire/hub')?jsonResponse(hubAnswer):null});
+ for(const m of ARR)s.h.load(m);
+ const release=holdPool(s.h);
+ s.h.JE.initializeArrStatus();await settle();
+ // Leave, then come back, while the first visit's read still waits for a pool slot.
+ s.h.JE.arrHub.hide();s.h.JE.arrHub.show();await settle();
+ await release();await settle();await until(()=>s.h.JE.internals.arrHub.state.data||s.h.JE.internals.arrHub.state.error);
+ const state=s.h.JE.internals.arrHub.state;
+ assert.equal(s.sentAs('token-a','/acquire/hub').length,1,'the new visit\'s read is sent (the old visit\'s is not)');
+ assert.ok(state.data,'the new visit shows its answer');
+ assert.ok(!state.error,'no error is shown');
+});
+
+test('a bound request and an unbound caller of the same URL never share one request: the bound owner ending leaves the unbound caller\'s answer',async t=>{
+ const {h,sent}=setup(t,{route:()=>jsonResponse({ok:true})});
+ const release=holdPool(h);
+ let live=true;
+ const bound=outcome(h.JE.core.api.plugin('/acquire/hub',{bound:{session:h.JE.core.api.session(),current:()=>live}}));
+ const unbound=outcome(h.JE.core.api.plugin('/acquire/hub'));
+ live=false;
+ await release();
+ assert.equal((await bound).e?.name,'AbortError');
+ assert.equal((await unbound).v?.ok,true,'the unbound caller is not cancelled by another caller\'s binding');
+ assert.equal(sent.length,1,'only the unbound caller\'s own request went out');
+});
+
+test('a bound request does not adopt an unbound caller\'s in-flight request (its own binding is checked before its own send)',async t=>{
+ const {h,sent}=setup(t,{route:()=>jsonResponse({ok:true})});
+ const release=holdPool(h);
+ const unbound=outcome(h.JE.core.api.plugin('/acquire/hub'));
+ const bound=outcome(h.JE.core.api.plugin('/acquire/hub',{bound:{session:h.JE.core.api.session(),current:()=>true}}));
+ await release();
+ assert.equal((await unbound).v?.ok,true);
+ assert.equal((await bound).v?.ok,true);
+ assert.equal(sent.length,2,'each sends its own request');
+});
+
+test('two bindings of the same URL: the first one\'s owner ending while queued leaves the second binding\'s request sent and answered',async t=>{
+ const {h,sent}=setup(t,{route:()=>jsonResponse({ok:true})});
+ const release=holdPool(h);
+ let first=true;
+ const one=outcome(h.JE.core.api.plugin('/acquire/hub',{skipRetry:true,bound:{session:h.JE.core.api.session(),current:()=>first}}));
+ const two=outcome(h.JE.core.api.plugin('/acquire/hub',{skipRetry:true,bound:{session:h.JE.core.api.session(),current:()=>true}}));
+ first=false;
+ await release();
+ assert.equal((await one).e?.name,'AbortError');
+ assert.equal((await two).v?.ok,true,'the second binding is answered');
+ assert.equal(sent.length,1,'only the live binding\'s request went out');
+});
+
+test('two bindings of the same cache key: a binding never reads another binding\'s (or the shared) cached answer, nor fills the shared cache',async t=>{
+ let n=0;
+ const {h,sent}=setup(t,{route:()=>jsonResponse({n:++n})});
+ const api=h.JE.core.api;
+ const a={session:api.session(),current:()=>true};
+ assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k'})).n,1,'an unbound read fills the shared cache');
+ assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:a})).n,2,'a binding reads for itself');
+ assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:a})).n,2,'and keeps its own answer');
+ assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:{session:api.session(),current:()=>true}})).n,3,'another binding reads for itself');
+ assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k'})).n,1,'the shared cache still holds the unbound answer');
+ assert.equal(sent.length,3);
+});
+
+test('control: one binding asking twice for the same URL shares its own in-flight request',async t=>{
+ const {h,sent}=setup(t,{route:()=>jsonResponse({ok:true})});
+ const release=holdPool(h);
+ const binding={session:h.JE.core.api.session(),current:()=>true};
+ const one=outcome(h.JE.core.api.plugin('/acquire/hub',{bound:binding}));
+ const two=outcome(h.JE.core.api.plugin('/acquire/hub',{bound:binding}));
+ await release();
+ assert.equal((await one).v?.ok,true);assert.equal((await two).v?.ok,true);
+ assert.equal(sent.length,1);
+});
+
+test('a caller\'s abort cancels only its own binding\'s request',async t=>{
+ const {h,sent}=setup(t,{route:()=>jsonResponse({ok:true})});
+ const release=holdPool(h);
+ const controller=new h.window.AbortController();
+ const one=outcome(h.JE.core.api.plugin('/acquire/hub',{signal:controller.signal,bound:{session:h.JE.core.api.session(),current:()=>true}}));
+ const two=outcome(h.JE.core.api.plugin('/acquire/hub',{bound:{session:h.JE.core.api.session(),current:()=>true}}));
+ controller.abort();
+ await release();
+ assert.equal((await one).e?.name,'AbortError');
+ assert.equal((await two).v?.ok,true);
+ assert.equal(sent.length,1);
+});

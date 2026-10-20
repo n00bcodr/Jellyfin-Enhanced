@@ -9,13 +9,13 @@
    "SupportsMediaControl": false,
    "SupportsPersistentIdentifier": true
   },
-  "Client": "d46r17-capture",
-  "DeviceId": "d46r17-capture-play-a",
+  "Client": "d46r18-capture",
+  "DeviceId": "d46r18-capture-play-a",
   "DeviceName": "cli",
   "HasCustomDeviceName": false,
-  "Id": "3de036b67d78ec1722903e3a447caeaf",
+  "Id": "0ea9a88451eb9122b4d96f1bec135e41",
   "IsActive": true,
-  "LastActivityDate": "2026-10-19T10:33:42.9109576Z",
+  "LastActivityDate": "2026-10-19T12:34:09.1425533Z",
   "LastPlaybackCheckIn": "0001-01-01T00:00:00.0000000Z",
   "NowPlayingQueue": [],
   "PlayState": {
@@ -57,8 +57,8 @@
   "HasConfiguredPassword": true,
   "HasPassword": true,
   "Id": "c799f011678d4423bd7c07d24c672de8",
-  "LastActivityDate": "2026-10-19T10:33:42.9004941Z",
-  "LastLoginDate": "2026-10-19T10:33:42.9004941Z",
+  "LastActivityDate": "2026-10-19T12:34:09.1411806Z",
+  "LastLoginDate": "2026-10-19T12:34:09.1411806Z",
   "Name": "real-viewer",
   "Policy": {
    "AccessSchedules": [],

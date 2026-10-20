@@ -158,7 +158,7 @@ LiveTv	DiscoverTuners	HttpGet(Tuners/Discvover) HttpGet(Tuners/Discover)	TunerHo
 LiveTv	GetChannel	HttpGet(Channels/{channelId})	BaseItemDto	BaseItemDto
 LiveTv	GetChannelMappingOptions	HttpGet(ChannelMappingOptions)	ChannelMappingOptionsDto	
 LiveTv	GetDefaultListingProvider	HttpGet(ListingProviders/Default)	ListingsProviderInfo	
-LiveTv	GetDefaultTimer	HttpGet(Timers/Defaults)	SeriesTimerInfoDto	
+LiveTv	GetDefaultTimer	HttpGet(Timers/Defaults)	SeriesTimerInfoDto	SeriesTimerInfoDto
 LiveTv	GetGuideInfo	HttpGet(GuideInfo)	GuideInfo	
 LiveTv	GetLineups	HttpGet(ListingProviders/Lineups)	IEnumerable<NameIdPair>	
 LiveTv	GetLiveRecordingFile	HttpGet(LiveRecordings/{recordingId}/stream)	ActionResult	
@@ -175,8 +175,8 @@ LiveTv	GetRecordingGroups	HttpGet(Recordings/Groups)	QueryResult<BaseItemDto>	Ba
 LiveTv	GetRecordings	HttpGet(Recordings)	QueryResult<BaseItemDto>	BaseItemDto
 LiveTv	GetRecordingsSeries	HttpGet(Recordings/Series)	QueryResult<BaseItemDto>	BaseItemDto
 LiveTv	GetSchedulesDirectCountries	HttpGet(ListingProviders/SchedulesDirect/Countries)	ActionResult	
-LiveTv	GetSeriesTimer	HttpGet(SeriesTimers/{timerId})	SeriesTimerInfoDto	
-LiveTv	GetSeriesTimers	HttpGet(SeriesTimers)	QueryResult<SeriesTimerInfoDto>	
+LiveTv	GetSeriesTimer	HttpGet(SeriesTimers/{timerId})	SeriesTimerInfoDto	SeriesTimerInfoDto
+LiveTv	GetSeriesTimers	HttpGet(SeriesTimers)	QueryResult<SeriesTimerInfoDto>	SeriesTimerInfoDto
 LiveTv	GetTimer	HttpGet(Timers/{timerId})	TimerInfoDto	TimerInfoDto.ProgramInfo:BaseItemDto
 LiveTv	GetTimers	HttpGet(Timers)	QueryResult<TimerInfoDto>	TimerInfoDto.ProgramInfo:BaseItemDto
 LiveTv	GetTunerHostTypes	HttpGet(TunerHosts/Types)	IEnumerable<NameIdPair>	

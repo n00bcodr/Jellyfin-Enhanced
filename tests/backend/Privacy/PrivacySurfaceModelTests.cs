@@ -86,18 +86,19 @@ public class PrivacySurfaceModelTests
 
     /// <summary>Endpoints neither policy changes (sign-in, the recording schedule, a live tuner stream).</summary>
     private static readonly string[] Untouched = ["User.AuthenticateUser", "User.AuthenticateUserByName",
-        "User.AuthenticateWithQuickConnect", "LiveTv.GetTimer", "LiveTv.GetTimers", "MediaInfo.OpenLiveStream", "ActivityLog.GetLogEntries"];
+        "User.AuthenticateWithQuickConnect", "LiveTv.GetTimer", "LiveTv.GetTimers", "LiveTv.GetSeriesTimer", "LiveTv.GetSeriesTimers",
+        "LiveTv.GetDefaultTimer", "MediaInfo.OpenLiveStream", "ActivityLog.GetLogEntries"];
 
     /// <summary>Endpoints whose own items are not titles but whose answer nests titles (sessions: the now-playing item).</summary>
     private static readonly string[] NestedOnly = ["Session.GetSessions"];
 
     /// <summary>
     /// Endpoints this model's synthetic answers cannot represent: the host never puts a library title in a timer's
-    /// ProgramInfo (it is a Live TV programme) or a now-playing item in a sign-in's new session. Their real shapes run in
-    /// PrivacyHostShapeModelTests (captured from both hosts).
+    /// ProgramInfo or a series timer's name (they are Live TV programmes) or a now-playing item in a sign-in's new session.
+    /// Their real shapes run in PrivacyHostShapeModelTests (captured from both hosts).
     /// </summary>
-    public static readonly string[] HostShapedOnly = ["LiveTv.GetTimer", "LiveTv.GetTimers", "User.AuthenticateUser", "User.AuthenticateUserByName",
-        "User.AuthenticateWithQuickConnect", "ActivityLog.GetLogEntries"];
+    public static readonly string[] HostShapedOnly = ["LiveTv.GetTimer", "LiveTv.GetTimers", "LiveTv.GetSeriesTimer", "LiveTv.GetSeriesTimers",
+        "LiveTv.GetDefaultTimer", "User.AuthenticateUser", "User.AuthenticateUserByName", "User.AuthenticateWithQuickConnect", "ActivityLog.GetLogEntries"];
 
     /// <summary>The oracle's Hidden Content surface (null: never hidden) and whether Spoiler Guard strips the answer.</summary>
     public static (string? Hc, bool Sg) Expected(string endpoint)

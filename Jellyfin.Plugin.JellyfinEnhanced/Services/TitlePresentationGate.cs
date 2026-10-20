@@ -155,73 +155,54 @@ internal static class NativePrivacyProjection
         return owners;
     }
 
-    /// <summary>A title member nested inside an answer's own value, and how to replace it in the delivered value.</summary>
-    public sealed record NestedTitle(BaseItemDto Dto, Action<BaseItemDto?> Replace, bool KeepsControls);
+    /// <summary>A title member nested in an answer (at any depth), and whether a session's controls hang on it.</summary>
+    public sealed record NestedTitle(BaseItemDto Dto, bool KeepsControls);
 
     /// <summary>
-    /// The title members an answer carries besides its own items, as the hosts build them (12.2 and 10.11.11): a channel's
-    /// CurrentProgram on any item, a session's NowPlayingItem (its controls hang on it), NowViewingItem and (10.11) queue
-    /// items, and a timer's ProgramInfo. Replacing one never touches the host's shared session state.
+    /// Every title member an answer carries besides its own listed items, at ANY depth, found by the one recursive walk
+    /// over the answer's graph (<see cref="PrivacyAnswerGraph"/>): a session's NowPlayingItem / NowViewingItem / (10.11)
+    /// queue items and a now-playing channel's CurrentProgram, a listed channel's CurrentProgram, a timer's ProgramInfo, a
+    /// sign-in's session. Read-only.
     /// </summary>
     public static List<NestedTitle> Nested(object? value)
     {
         var found = new List<NestedTitle>();
-        void Item(BaseItemDto? dto)
+        var depth = 0;
+        BaseItemDto? Record(BaseItemDto dto, bool keepsControls)
         {
-            if (dto?.CurrentProgram is { } program) found.Add(new(program, v => dto.CurrentProgram = v, false));
+            found.Add(new(dto, keepsControls));
+            if (++depth <= 16) PrivacyAnswerGraph.Rewrite(dto, null, Record, mutate: false);
+            depth--;
+            return dto;
         }
-        void Session(SessionInfoDto? session)
-        {
-            if (session == null) return;
-            if (session.NowPlayingItem is { } playing) found.Add(new(playing, v => session.NowPlayingItem = v, true));
-            if (session.NowViewingItem is { } viewing) found.Add(new(viewing, v => session.NowViewingItem = v, false));
-#if !JF12
-            if (session.NowPlayingQueueFullItems is { Count: > 0 } queue)
-            {
-                // The session's own list is shared: the delivered value gets its own copy before an element is replaced.
-                var own = queue.ToArray();
-                session.NowPlayingQueueFullItems = own;
-                for (var i = 0; i < own.Length; i++)
-                {
-                    var index = i;
-                    if (own[i] != null) found.Add(new(own[i], v => own[index] = v!, true));
-                }
-            }
-#endif
-        }
-        switch (value)
-        {
-            case IEnumerable<SessionInfoDto> sessions:
-                foreach (var session in sessions) Session(session);
-                break;
-            case MediaBrowser.Model.LiveTv.TimerInfoDto or QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto>:
-                foreach (var timer in Timers(value))
-                    if (timer.ProgramInfo is { } program) found.Add(new(program, v => timer.ProgramInfo = v, false));
-                break;
-            case IEnumerable<RecommendationDto> categories:
-                foreach (var category in categories) foreach (var item in category?.Items ?? []) Item(item);
-                break;
-            case AllThemeMediaResult all:
-                foreach (var item in ThemeItems(all)) Item(item);
-                break;
-            default:
-                foreach (var item in Items(value)) Item(item);
-                break;
-        }
+        PrivacyAnswerGraph.Rewrite(value, Listed(value), Record, mutate: false);
         return found;
     }
 
-    /// <summary>The timer rows of a timer answer.</summary>
-    public static IReadOnlyList<MediaBrowser.Model.LiveTv.TimerInfoDto> Timers(object? value) => value switch
+    /// <summary>The answer's own listed items (by reference): walked in place, never treated as nested members.</summary>
+    public static IReadOnlySet<object> Listed(object? value)
     {
-        MediaBrowser.Model.LiveTv.TimerInfoDto one => [one],
+        IEnumerable<BaseItemDto> items = value switch
+        {
+            AllThemeMediaResult all => ThemeItems(all),
+            IEnumerable<RecommendationDto> categories => categories.Where(c => c?.Items != null).SelectMany(c => c.Items),
+            _ => Items(value)
+        };
+        return items.Where(i => i != null).ToHashSet<object>(ReferenceEqualityComparer.Instance);
+    }
+
+    /// <summary>The rows of a recording-schedule answer (timers and series timers): each names the programme it records.</summary>
+    public static IReadOnlyList<MediaBrowser.Model.LiveTv.BaseTimerInfoDto> Timers(object? value) => value switch
+    {
+        MediaBrowser.Model.LiveTv.BaseTimerInfoDto one => [one],
         QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto> page => page.Items?.Where(t => t != null).ToArray() ?? [],
+        QueryResult<MediaBrowser.Model.LiveTv.SeriesTimerInfoDto> page => page.Items?.Where(t => t != null).ToArray() ?? [],
         _ => []
     };
 
-    /// <summary>The library programme a timer records.</summary>
-    public static Guid? ProgramOf(MediaBrowser.Model.LiveTv.TimerInfoDto timer)
-        => Guid.TryParse(timer.ProgramId, out var id) ? id : timer.ProgramInfo?.Id;
+    /// <summary>The library programme a timer or series timer records.</summary>
+    public static Guid? ProgramOf(MediaBrowser.Model.LiveTv.BaseTimerInfoDto timer)
+        => Guid.TryParse(timer.ProgramId, out var id) ? id : (timer as MediaBrowser.Model.LiveTv.TimerInfoDto)?.ProgramInfo?.Id;
 
     /// <summary>
     /// What a hidden now-playing (or queued) item leaves: enough for the session's controls (id, kind, length), no title.
@@ -338,7 +319,7 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
 /// never from the request path's text; policy is always re-read here, at delivery.
 /// </summary>
 public sealed class TitlePresentationResultFilter(UserConfigurationManager manager, SpoilerPresentation spoilers, ILibraryManager library,
-    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
+    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null, IUserManager? users = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
 {
     /// <inheritdoc />
     public int Order => int.MaxValue;
@@ -474,8 +455,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             string Surface(BaseItemDto? item) => entry.Hc == null ? "none" : PrivacySurfaceRegistry.Surface(context, item);
             var known = value is BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> or SearchHintResult or IReadOnlyList<RecommendationDto>
                 or IEnumerable<ImageInfo> or MediaBrowser.Model.MediaInfo.PlaybackInfoResponse or AllThemeMediaResult or IEnumerable<SessionInfoDto>
-                or MediaBrowser.Model.LiveTv.TimerInfoDto or QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto>
-                or QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>;
+                or MediaBrowser.Model.LiveTv.BaseTimerInfoDto or QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto> or QueryResult<MediaBrowser.Model.LiveTv.SeriesTimerInfoDto>
+                or QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> or MediaBrowser.Controller.Authentication.AuthenticationResult;
             if (!known)
             {
                 // An answer shape this gate cannot project never leaves while a policy applies to the viewer.
@@ -531,9 +512,11 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     }
 
     /// <summary>
-    /// The title members nested in an answer, with the requesting viewer's delivery-time policy: a hidden one leaves (a
-    /// now-playing or queued item keeps a title-less stub so its session's controls stay), a guarded one is stripped on a
-    /// private copy with this viewer's watched state (never the session owner's). The opened item is never hidden from its own answer.
+    /// The title members nested in an answer at any depth (one recursive walk over its graph), with the requesting viewer's
+    /// delivery-time policy: a hidden one leaves (a now-playing or queued item keeps a title-less stub so its session's
+    /// controls stay); any other is replaced by a private copy (the host may share it: a session's now-playing item), stripped
+    /// when guarded with this viewer's watched state (never the session owner's), whose own members are projected the same
+    /// way (a now-playing channel's CurrentProgram). The opened item is never hidden from its own answer.
     /// </summary>
     private void ProjectNested(object? value, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer, Guid? opened)
     {
@@ -546,56 +529,87 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 if (NativePrivacyProjection.ProgramOf(timer) is { } program && program != opened
                     && final.Hidden.IsHidden(identities.TryGetValue(program, out var row) ? row : new PrivacyIdentity(program, BaseItemKind.Program, program, null, Array.Empty<Guid>(), null), "library"))
                 {
-                    // A hidden programme's timer row stays (it can still be cancelled) without the programme's title.
-                    timer.Name = null; timer.Overview = null; timer.ProgramInfo = null;
+                    // A hidden programme's timer or series-timer row stays (it can still be cancelled) without the programme's
+                    // title and overview (free text naming it: never patched, removed).
+                    timer.Name = null; timer.Overview = null;
+                    if (timer is MediaBrowser.Model.LiveTv.TimerInfoDto one) one.ProgramInfo = null;
                 }
-        foreach (var member in NativePrivacyProjection.Nested(value))
+        PrivacyAnswerGraph.Rewrite(value, NativePrivacyProjection.Listed(value), Member);
+
+        BaseItemDto? Member(BaseItemDto dto, bool keepsControls)
         {
-            var identity = identities.GetValueOrDefault(member.Dto.Id);
-            if (hc && member.Dto.Id != opened && final.Hidden.IsHidden(member.Dto, identity, "library"))
+            var identity = identities.GetValueOrDefault(dto.Id);
+            if (hc && dto.Id != opened && final.Hidden.IsHidden(dto, identity, "library"))
+                return keepsControls ? NativePrivacyProjection.Stub(dto) : null;
+            var guard = spoiler != null && config != null;
+            if (!guard && !PrivacyAnswerGraph.HasMembers(dto)) return dto;
+            var copy = NativePrivacyProjection.Copy(dto);
+            if (guard)
             {
-                member.Replace(member.KeepsControls ? NativePrivacyProjection.Stub(member.Dto) : null);
-                continue;
+                // The decision is this viewer's: a session's item carries no (or another account's) watched state.
+                copy.UserData = null;
+                if (spoiler!.Unavailable) strip?.StripAbsent(copy, spoiler.State, config!, viewer);
+                else strip?.StripLibraryItem(copy, identity, spoiler.State, config!, viewer);
             }
-            if (spoiler == null || config == null) continue;
-            var copy = NativePrivacyProjection.Copy(member.Dto);
-            // The decision is this viewer's: a session's item carries no (or another account's) watched state.
-            copy.UserData = null;
-            if (spoiler.Unavailable) strip?.StripAbsent(copy, spoiler.State, config, viewer);
-            else strip?.StripLibraryItem(copy, identity, spoiler.State, config, viewer);
-            member.Replace(copy);
+            // The copy's own members, at any depth (a now-playing channel's CurrentProgram), with the same policy.
+            PrivacyAnswerGraph.Rewrite(copy, null, Member);
+            return copy;
         }
     }
 
     /// <summary>
     /// The administrator's activity log, by each entry's own item and the viewer's rules: an entry about a title the viewer
-    /// hid is left out (the page's total follows); a guarded episode the viewer hasn't watched has its title replaced in the
-    /// entry's text the way Spoiler Guard replaces it ("Season 1, Episode 2"). Entries without an item are unchanged.
+    /// hid is left out (the page's total follows). An entry's text is free text the host wrote when it recorded the entry
+    /// (from the names of that moment, in the server's language of that moment), so it is never patched: whenever Spoiler
+    /// Guard protects the entry's title (a guarded episode the viewer hasn't watched, or an item the library can no longer
+    /// resolve while a policy applies) its text is rebuilt from structured data only (the entry's type and account, the
+    /// episode's series and numbers) and its overviews are dropped. Entries without an item are unchanged.
     /// </summary>
     private void ProjectActivityLog(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities)
     {
         if (result.Value is not QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page) return;
         var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
         var config = JellyfinEnhanced.Instance?.Configuration;
-        var replace = spoiler != null && config != null && SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title;
+        var titles = spoiler != null && config != null && (spoiler.Unavailable || SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title);
         var kept = new List<MediaBrowser.Model.Activity.ActivityLogEntry>(page.Items.Count);
         foreach (var entry in page.Items)
         {
             if (entry == null) continue;
-            var identity = NativePrivacyProjection.ItemOf(entry) is { } id ? identities.GetValueOrDefault(id) : null;
-            if (identity != null && !final.Hidden.IsEmpty && final.Hidden.IsHidden(identity, "library")) continue;
-            if (identity is { Kind: BaseItemKind.Episode } && replace && (spoiler!.Unavailable || spoiler.Guarded(identity))
-                && library.GetItemById(identity.ItemId) is MediaBrowser.Controller.Entities.TV.Episode episode && !string.IsNullOrEmpty(episode.Name))
+            if (NativePrivacyProjection.ItemOf(entry) is not { } id) { kept.Add(entry); continue; }
+            var identity = identities.GetValueOrDefault(id);
+            if (!final.Hidden.IsEmpty && (identity != null ? final.Hidden.IsHidden(identity, "library") : final.Hidden.IsHidden(null, id.ToString("N"), null, "library"))) continue;
+            // An item the library can no longer resolve cannot be judged: its entry is not trusted to name a title.
+            if (identity == null ? PolicyApplies(final) : titles && identity.Kind == BaseItemKind.Episode && (spoiler!.Unavailable || spoiler.Guarded(identity)))
             {
-                var label = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number ? $"Season {season}, Episode {number}" : "Episode";
-                if (entry.Name != null) entry.Name = entry.Name.Replace(episode.Name, label, StringComparison.Ordinal);
-                entry.ShortOverview = entry.ShortOverview?.Replace(episode.Name, label, StringComparison.Ordinal);
-                entry.Overview = entry.Overview?.Replace(episode.Name, label, StringComparison.Ordinal);
+                entry.Name = ActivityText(entry, identity);
+                entry.ShortOverview = null;
+                entry.Overview = null;
             }
             kept.Add(entry);
         }
         if (kept.Count != page.Items.Count)
             result.Value = new QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>(page.StartIndex, Math.Max(0, page.TotalRecordCount - page.Items.Count + kept.Count), kept);
+    }
+
+    /// <summary>
+    /// An activity entry's text built from structured data only: the account (by the entry's user id), what happened (by
+    /// the entry's type) and the item as Spoiler Guard names it ("Series - Season 1, Episode 2"); never the stored text.
+    /// </summary>
+    private string ActivityText(MediaBrowser.Model.Activity.ActivityLogEntry entry, PrivacyIdentity? identity)
+    {
+        var label = "an item";
+        if (identity != null && library.GetItemById(identity.ItemId) is MediaBrowser.Controller.Entities.TV.Episode episode)
+        {
+            var numbers = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Season {season}, Episode {number}") : "Episode";
+            label = string.IsNullOrEmpty(episode.SeriesName) ? numbers : episode.SeriesName + " - " + numbers;
+        }
+        else if (identity != null) label = "an episode";
+        var user = entry.UserId != Guid.Empty ? users?.GetUserById(entry.UserId)?.Username : null;
+        var playing = entry.Type is "VideoPlayback" or "AudioPlayback";
+        var finished = entry.Type is "VideoPlaybackStopped" or "AudioPlaybackStopped";
+        if (user == null) return playing ? "Playing " + label : finished ? "Finished playing " + label : label;
+        return playing ? user + " is playing " + label : finished ? user + " has finished playing " + label : user + ": " + label;
     }
 
     /// <summary>
@@ -620,7 +634,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         catch (Exception ex)
         {
             logger?.Error($"Presentation gate could not project sessions: {ex.GetType().Name}");
-            foreach (var member in NativePrivacyProjection.Nested(list)) member.Replace(member.KeepsControls ? NativePrivacyProjection.Stub(member.Dto) : null);
+            // No title survives a failed projection: every member at the first level becomes a stub (none has members) or leaves.
+            PrivacyAnswerGraph.Rewrite(list, null, (dto, keepsControls) => keepsControls ? NativePrivacyProjection.Stub(dto) : null);
         }
         return list;
     }

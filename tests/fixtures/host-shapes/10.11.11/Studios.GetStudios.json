@@ -1,52 +1,5 @@
 {
- "Items": [
-  {
-   "BackdropImageTags": [],
-   "ChannelId": null,
-   "Id": "66ac02ba6812c3e031d36b31750e19e3",
-   "ImageBlurHashes": {},
-   "ImageTags": {},
-   "LocationType": "FileSystem",
-   "MediaType": "Unknown",
-   "Name": "Captured Studio",
-   "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
-   "Type": "Studio",
-   "UserData": {
-    "IsFavorite": false,
-    "ItemId": "66ac02ba6812c3e031d36b31750e19e3",
-    "Key": "Studio-Blender Foundation",
-    "PlayCount": 0,
-    "PlaybackPositionTicks": 0,
-    "Played": false
-   }
-  },
-  {
-   "BackdropImageTags": [],
-   "ChannelId": null,
-   "Id": "c8c691835c5f665e548dd89b93fb6674",
-   "ImageBlurHashes": {
-    "Thumb": {
-     "abd178737f3f5e5d41ae1cf1e5d37bab-jeufded036f526d": "WB00uYf.e%fmf3f2foflf5fPf5f5ehf3f.f4fmfnf3f5fSfRfmfl"
-    }
-   },
-   "ImageTags": {
-    "Thumb": "abd178737f3f5e5d41ae1cf1e5d37bab-jeufded036f526d"
-   },
-   "LocationType": "FileSystem",
-   "MediaType": "Unknown",
-   "Name": "Captured Studio",
-   "ServerId": "9fa6545aefdc47bcbf137321aff6310d",
-   "Type": "Studio",
-   "UserData": {
-    "IsFavorite": false,
-    "ItemId": "c8c691835c5f665e548dd89b93fb6674",
-    "Key": "Studio-FOX",
-    "PlayCount": 0,
-    "PlaybackPositionTicks": 0,
-    "Played": false
-   }
-  }
- ],
+ "Items": [],
  "StartIndex": 0,
- "TotalRecordCount": 2
+ "TotalRecordCount": 0
 }

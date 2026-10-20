@@ -1,7 +1,7 @@
 {
- "captured": "2026-10-19T18:34:04+0800",
+ "captured": "2026-10-19T20:34:15+0800",
  "host": "10.11.11",
- "note": "Captured by .notes/tools/d46-r17/capture-r17.py from an owned rig-only lab with no privacy rule set.",
+ "note": "Captured by .notes/tools/d46-r18/capture-r18.py from an owned rig-only lab with no privacy rule set.",
  "owners": {
   "guardedFeature": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "guardedSong": "f54a9a67c8bff46ec62af9ca063c8eaf",
@@ -13,7 +13,7 @@
   "showVideo": "b970e608063e6608f89a0b31a5dae2a8"
  },
  "roles": {
-  "channel:r17": "2b1589698d56aa3f7e6af0a3de171c68",
+  "channel:r17": "d62b34b608b68954cf34042239720060",
   "episode:show-e1": "6770089c05c9ff11ce37ffc0fba72b0d",
   "episode:show-e2": "a8be74a03a35ac05db2077507004bc8d",
   "extra:guardedFeature:0": "2ab5420e73034a76aa58a3cc852d975d",
@@ -27,13 +27,14 @@
   "movie:guarded": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "movie:hidden": "99e9b37dd2d610f20696f697f6af6edf",
   "movie:plain": "be7f1a11579d285bc676f6484b2dd389",
-  "program:later": "a900b05ea9806e4ba14305701c18a270",
-  "program:now": "e5e3d6d980668efff7a9beaeaea78d74",
+  "program:later": "295bc478a9e121d11faae8991506642e",
+  "program:now": "eeaa430c6b878c210066b9b74aaad046",
   "season:show-s1": "4b1ac6fd256eed7cba781bc31c409ed2",
   "series:show": "b970e608063e6608f89a0b31a5dae2a8",
-  "timer:later": "090c593b81ea8cdf3d8fe035f1f95252",
-  "user:admin": "35b8018fc40540f3ad7831a0a19c5d2e",
-  "user:viewer": "b83667cc409247dca2138464cdaf5acf"
+  "seriestimer:later": "24cb11426e5b25216ad49ad07a7242f8",
+  "timer:later": "afe30fc225626009fc4dc0a00c2a6926",
+  "user:admin": "d419f4a27ef94d7dbedab82184dc540a",
+  "user:viewer": "ee8ed913b9af4a0a8247d06f3247aed5"
  },
  "shots": [
   {
@@ -53,6 +54,24 @@
    "viewer": "viewer"
   },
   {
+   "endpoint": "Session.WebSocket",
+   "file": "Session.WebSocket.admin.json",
+   "method": "WS",
+   "path": "/socket SessionsStart",
+   "socket": true,
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Session.WebSocket",
+   "file": "Session.WebSocket.viewer.json",
+   "method": "WS",
+   "path": "/socket SessionsStart",
+   "socket": true,
+   "status": 200,
+   "viewer": "viewer"
+  },
+  {
    "endpoint": "Items.GetItems",
    "file": "Items.GetItems.json",
    "method": "GET",
@@ -64,7 +83,7 @@
    "endpoint": "Items.GetItemsByUserIdLegacy",
    "file": "Items.GetItemsByUserIdLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items?ParentId=8d1d244b84dc080333684fdc9395acc2&Recursive=true&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items?ParentId=8d1d244b84dc080333684fdc9395acc2&Recursive=true&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "admin"
   },
@@ -80,7 +99,7 @@
    "endpoint": "Items.GetResumeItemsLegacy",
    "file": "Items.GetResumeItemsLegacy.json",
    "method": "GET",
-   "path": "/Users/b83667cc409247dca2138464cdaf5acf/Items/Resume?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/Users/ee8ed913b9af4a0a8247d06f3247aed5/Items/Resume?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "viewer"
   },
@@ -96,7 +115,7 @@
    "endpoint": "UserLibrary.GetLatestMediaLegacy",
    "file": "UserLibrary.GetLatestMediaLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items/Latest?ParentId=12562028d06899a2a69c2c274534860e&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items/Latest?ParentId=12562028d06899a2a69c2c274534860e&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "admin"
   },
@@ -136,7 +155,7 @@
    "endpoint": "Suggestions.GetSuggestions",
    "file": "Suggestions.GetSuggestions.json",
    "method": "GET",
-   "path": "/Items/Suggestions?userId=35b8018fc40540f3ad7831a0a19c5d2e&type=Movie,Episode&limit=5",
+   "path": "/Items/Suggestions?userId=d419f4a27ef94d7dbedab82184dc540a&type=Movie,Episode&limit=5",
    "status": 200,
    "viewer": "admin"
   },
@@ -144,7 +163,7 @@
    "endpoint": "Suggestions.GetSuggestionsLegacy",
    "file": "Suggestions.GetSuggestionsLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Suggestions?type=Movie,Episode&limit=5",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Suggestions?type=Movie,Episode&limit=5",
    "status": 200,
    "viewer": "admin"
   },
@@ -208,7 +227,7 @@
    "endpoint": "LiveTv.GetLiveTvPrograms",
    "file": "LiveTv.GetLiveTvPrograms.json",
    "method": "GET",
-   "path": "/LiveTv/Programs?channelIds=2b1589698d56aa3f7e6af0a3de171c68&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/LiveTv/Programs?channelIds=d62b34b608b68954cf34042239720060&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "admin"
   },
@@ -240,7 +259,7 @@
    "endpoint": "LiveTv.GetChannel",
    "file": "LiveTv.GetChannel.json",
    "method": "GET",
-   "path": "/LiveTv/Channels/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/LiveTv/Channels/d62b34b608b68954cf34042239720060",
    "status": 200,
    "viewer": "admin"
   },
@@ -248,7 +267,7 @@
    "endpoint": "LiveTv.GetProgram",
    "file": "LiveTv.GetProgram.json",
    "method": "GET",
-   "path": "/LiveTv/Programs/e5e3d6d980668efff7a9beaeaea78d74",
+   "path": "/LiveTv/Programs/eeaa430c6b878c210066b9b74aaad046",
    "status": 200,
    "viewer": "admin"
   },
@@ -264,7 +283,31 @@
    "endpoint": "LiveTv.GetTimer",
    "file": "LiveTv.GetTimer.json",
    "method": "GET",
-   "path": "/LiveTv/Timers/090c593b81ea8cdf3d8fe035f1f95252",
+   "path": "/LiveTv/Timers/afe30fc225626009fc4dc0a00c2a6926",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetSeriesTimers",
+   "file": "LiveTv.GetSeriesTimers.json",
+   "method": "GET",
+   "path": "/LiveTv/SeriesTimers",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetSeriesTimer",
+   "file": "LiveTv.GetSeriesTimer.json",
+   "method": "GET",
+   "path": "/LiveTv/SeriesTimers/24cb11426e5b25216ad49ad07a7242f8",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "LiveTv.GetDefaultTimer",
+   "file": "LiveTv.GetDefaultTimer.json",
+   "method": "GET",
+   "path": "/LiveTv/Timers/Defaults?programId=295bc478a9e121d11faae8991506642e",
    "status": 200,
    "viewer": "admin"
   },
@@ -328,7 +371,7 @@
    "endpoint": "UserLibrary.GetItem",
    "file": "UserLibrary.GetItem.channel.json",
    "method": "GET",
-   "path": "/Items/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/Items/d62b34b608b68954cf34042239720060",
    "status": 200,
    "viewer": "admin"
   },
@@ -344,7 +387,7 @@
    "endpoint": "UserLibrary.GetItemLegacy",
    "file": "UserLibrary.GetItemLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items/f54a9a67c8bff46ec62af9ca063c8eaf?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items/f54a9a67c8bff46ec62af9ca063c8eaf?fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle",
    "status": 200,
    "viewer": "admin"
   },
@@ -456,7 +499,7 @@
    "endpoint": "UserLibrary.GetLocalTrailersLegacy",
    "file": "UserLibrary.GetLocalTrailersLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items/f54a9a67c8bff46ec62af9ca063c8eaf/LocalTrailers",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items/f54a9a67c8bff46ec62af9ca063c8eaf/LocalTrailers",
    "status": 200,
    "viewer": "admin"
   },
@@ -464,7 +507,7 @@
    "endpoint": "UserLibrary.GetSpecialFeaturesLegacy",
    "file": "UserLibrary.GetSpecialFeaturesLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items/f54a9a67c8bff46ec62af9ca063c8eaf/SpecialFeatures",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items/f54a9a67c8bff46ec62af9ca063c8eaf/SpecialFeatures",
    "status": 200,
    "viewer": "admin"
   },
@@ -480,7 +523,7 @@
    "endpoint": "MediaInfo.GetPlaybackInfo",
    "file": "MediaInfo.GetPlaybackInfo.json",
    "method": "GET",
-   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=35b8018fc40540f3ad7831a0a19c5d2e",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=d419f4a27ef94d7dbedab82184dc540a",
    "status": 200,
    "viewer": "admin"
   },
@@ -488,7 +531,7 @@
    "endpoint": "MediaInfo.GetPostedPlaybackInfo",
    "file": "MediaInfo.GetPostedPlaybackInfo.json",
    "method": "POST",
-   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=35b8018fc40540f3ad7831a0a19c5d2e",
+   "path": "/Items/6770089c05c9ff11ce37ffc0fba72b0d/PlaybackInfo?userId=d419f4a27ef94d7dbedab82184dc540a",
    "status": 200,
    "viewer": "admin"
   },
@@ -512,7 +555,7 @@
    "endpoint": "UserViews.GetUserViews",
    "file": "UserViews.GetUserViews.json",
    "method": "GET",
-   "path": "/UserViews?userId=35b8018fc40540f3ad7831a0a19c5d2e",
+   "path": "/UserViews?userId=d419f4a27ef94d7dbedab82184dc540a",
    "status": 200,
    "viewer": "admin"
   },
@@ -520,7 +563,7 @@
    "endpoint": "UserViews.GetUserViewsLegacy",
    "file": "UserViews.GetUserViewsLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Views",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Views",
    "status": 200,
    "viewer": "admin"
   },
@@ -536,7 +579,7 @@
    "endpoint": "UserLibrary.GetRootFolderLegacy",
    "file": "UserLibrary.GetRootFolderLegacy.json",
    "method": "GET",
-   "path": "/Users/35b8018fc40540f3ad7831a0a19c5d2e/Items/Root",
+   "path": "/Users/d419f4a27ef94d7dbedab82184dc540a/Items/Root",
    "status": 200,
    "viewer": "admin"
   },
@@ -616,7 +659,7 @@
    "endpoint": "LiveTv.GetRecordingGroup",
    "file": "LiveTv.GetRecordingGroup.json",
    "method": "GET",
-   "path": "/LiveTv/Recordings/Groups/2b1589698d56aa3f7e6af0a3de171c68",
+   "path": "/LiveTv/Recordings/Groups/d62b34b608b68954cf34042239720060",
    "status": 404,
    "viewer": "admin"
   },
