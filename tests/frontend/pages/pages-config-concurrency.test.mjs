@@ -263,3 +263,22 @@ test('Q-REBUILD1FIX6-3 control: "All non-admin users" still saves "all"', async 
   await p.save();
   assert.equal(p.server.config.MaintenanceModeAffectedUsers, 'all');
 });
+
+// Found by the full suite (slower, instrumented): the page marks the form saved 0.5 s after a read (so late-filled lists
+// don't count as edits); an edit made in that time was swallowed and the page showed no unsaved changes.
+test('an edit made right after the page read its settings stays marked unsaved', async t => {
+  const p = open(t, { ToastDuration: 1500 });
+  await p.pageshow();
+  p.choose('#ToastDuration', '1600');
+  await new Promise(r => p.window.setTimeout(r, 800));
+  assert.ok(p.$('.je-save-dock').classList.contains('je-dirty'), 'the edit shows as unsaved');
+  await p.save();
+  assert.equal(p.server.config.ToastDuration, 1600);
+});
+
+test('control: an untouched page is marked saved once its late lists settle', async t => {
+  const p = open(t, { ToastDuration: 1500, MaintenanceModeAffectedUsers: '["u1"]' });
+  await p.pageshow();
+  await new Promise(r => p.window.setTimeout(r, 800));
+  assert.equal(p.$('.je-save-dock').classList.contains('je-dirty'), false);
+});

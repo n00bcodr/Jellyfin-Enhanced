@@ -4522,6 +4522,13 @@
             // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
             const saveDock = document.querySelector('.je-save-dock');
             let _jeSavedSnapshot = null;
+            // Edits on the form (input and change events), so a delayed "saved" mark never swallows one.
+            let _jeFormEdits = 0;
+
+            /** How many edits the form has seen. */
+            function jeFormEditCount() {
+                return _jeFormEdits;
+            }
 
             function jeSnapshotFormState() {
                 const parts = [];
@@ -4574,6 +4581,8 @@
                 if (saveDock) saveDock.classList.toggle('je-dirty', dirty);
             }
 
+            form.addEventListener('input', () => { _jeFormEdits++; });
+            form.addEventListener('change', () => { _jeFormEdits++; });
             form.addEventListener('input', jeUpdateDirtyIndicator);
             form.addEventListener('change', jeUpdateDirtyIndicator);
             // Fallback poll for structural changes that don't fire input/change (adding/removing a row).
@@ -9103,8 +9112,11 @@
                 jeConfigRead(config);
                 _jeConfigReadOk = true;
                 jeConfigReadNotice(false);
-                // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first.
-                setTimeout(jeMarkSaved, 500);
+                // The form as read is saved; once late-finishing sub-populations (maintenance users, branding previews) settle,
+                // it is marked again, unless the administrator edited meanwhile (that edit stays marked unsaved).
+                jeMarkSaved();
+                const editsAtRead = jeFormEditCount();
+                setTimeout(function() { if (jeFormEditCount() === editsAtRead) jeMarkSaved(); }, 500);
             }).catch((err) => {
                 Dashboard.hideLoadingMsg();
                 console.warn('[JE] Could not read the plugin configuration:', err);
