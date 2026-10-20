@@ -443,7 +443,8 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   writes and the final create projection sharing deletion's lifecycle lock);
   `ListStatusSource.cs` the shared status for entries; `ListMetadata.cs` the metadata source behind
   `IListMetadataSource`; `ResponseContract.cs` the declared contract of every provider answer the lists read (title
-  details, searches, finds, seasons, placeholder metadata: Valid, Partial or Malformed); `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
+  details, searches, finds, seasons, placeholder metadata: Valid, Partial or Malformed, read once into typed values);
+  `SeerrAddresses.cs` the Seerr address list every Seerr read of the lists tries in order; `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in
   **`Controllers/AcquireListsController.cs`**, models in **`Model/ListPlaceholders/`**, the daily task in
   **`ScheduledTasks/ListMaintenanceTask.cs`** and the client transport in **`js/arr/lists/list-api.js`** (`JE.arrLists`).

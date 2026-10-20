@@ -131,8 +131,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static readonly TimeSpan UnavailableTtl = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan UnreachableBackoff = TimeSpan.FromMinutes(1);
         private const int MaxCacheEntries = 4000;
-        private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;
@@ -184,11 +182,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
-                return movie == null ? null : FromMovie(movie.Root, movie.FetchedAtUtc, movie.Verdict);
+                return movie?.Read == null ? null : FromMovie(movie.Read, movie.FetchedAtUtc);
             }
 
             var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
-            if (tv == null)
+            if (tv?.Read == null)
             {
                 return null;
             }
@@ -199,7 +197,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
-            return FromTv(placeholder, tv.Root, season?.Root, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc, tv.Verdict, season?.Verdict ?? ResponseVerdict.Valid);
+            return FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
         }
 
         /// <summary>
@@ -287,98 +285,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return !string.Equals(before, Signature(placeholder), StringComparison.Ordinal);
         }
 
-        /// <summary>Parses Seerr movie details.</summary>
+        /// <summary>
+        /// Movie details as their contract read them (<see cref="ResponseContract.MetadataMovie"/>; Seerr's, or TMDB's in Seerr's
+        /// names). Review round 8 (4c2-R8-1): only the contract's typed values are used, never the JSON again, so a value the
+        /// contract couldn't use is no value AND made the answer partial; anything but a Valid answer is partial metadata.
+        /// </summary>
+        /// <param name="movie">The read answer.</param>
+        /// <param name="fetchedAtUtc">Fetch time.</param>
+        /// <returns>Metadata.</returns>
+        internal static PlaceholderMetadata FromMovie(ContractRead movie, DateTime fetchedAtUtc) => new()
+        {
+            FetchedAtUtc = fetchedAtUtc,
+            ReleaseDate = movie.Date("releaseDate"),
+            PosterPath = movie.Poster("posterPath"),
+            Overview = Clip(movie.Text("overview"), ListRules.MaxOverview),
+            ImdbId = movie.Imdb("imdbId") ?? movie.Member("externalIds")?.Imdb("imdbId"),
+            Partial = movie.Verdict != ResponseVerdict.Valid,
+        };
+
+        /// <summary>Movie details JSON, read by their contract first.</summary>
         /// <param name="movie">JSON.</param>
         /// <param name="fetchedAtUtc">Fetch time.</param>
-        /// <param name="verdict">The answer's verdict (<see cref="ResponseContract.MetadataMovie"/>): anything but Valid is partial.</param>
         /// <returns>Metadata.</returns>
-        internal static PlaceholderMetadata FromMovie(JsonElement movie, DateTime fetchedAtUtc, ResponseVerdict verdict = ResponseVerdict.Valid)
-        {
-            var imdb = Str(movie, "imdbId");
-            if (imdb == null && movie.TryGetProperty("externalIds", out var external) && external.ValueKind == JsonValueKind.Object)
-            {
-                imdb = Str(external, "imdbId");
-            }
+        internal static PlaceholderMetadata FromMovie(JsonElement movie, DateTime fetchedAtUtc) => FromMovie(ResponseContract.MetadataMovie.Read(movie), fetchedAtUtc);
 
-            return new PlaceholderMetadata
-            {
-                FetchedAtUtc = fetchedAtUtc,
-                ReleaseDate = Date(movie, "releaseDate"),
-                PosterPath = Poster(movie),
-                Overview = Overview(movie),
-                ImdbId = imdb != null && ImdbRegex.IsMatch(imdb) ? imdb : null,
-                Partial = verdict != ResponseVerdict.Valid,
-            };
-        }
-
-        /// <summary>
-        /// Parses Seerr TV details (and season details for season/episodes kinds) into the metadata of a TV placeholder:
-        /// release date per kind (C4), expected episodes (C3: season details plus an announced next episode of that
-        /// season; series: every episode of seasons ≥ 1 from the season episode counts, aired up to the last aired
-        /// regular episode, with the last aired episode's date as an "aired by" date), production state (only Ended/Canceled
-        /// count as finished) and aired count.
-        /// </summary>
-        /// <param name="placeholder">Placeholder (kind, season, listed episodes).</param>
+        /// <summary>TV details JSON (and season JSON), read by their contracts first.</summary>
+        /// <param name="placeholder">Placeholder.</param>
         /// <param name="tv">TV details JSON.</param>
-        /// <param name="season">Season details JSON (season/episodes kinds), or null.</param>
+        /// <param name="season">Season details JSON, or null.</param>
         /// <param name="fetchedAtUtc">Oldest fetch time of the inputs.</param>
         /// <param name="todayUtc">Today (UTC).</param>
-        /// <param name="tvVerdict">The show answer's verdict (<see cref="ResponseContract.MetadataShow"/>).</param>
-        /// <param name="seasonVerdict">The season answer's verdict (<see cref="ResponseContract.MetadataSeason"/>): a season
-        /// answer that isn't Valid is used like a failed season read.</param>
         /// <returns>Metadata.</returns>
-        internal static PlaceholderMetadata FromTv(Placeholder placeholder, JsonElement tv, JsonElement? season, DateTime fetchedAtUtc, DateTime todayUtc, ResponseVerdict tvVerdict = ResponseVerdict.Valid, ResponseVerdict seasonVerdict = ResponseVerdict.Valid)
+        internal static PlaceholderMetadata FromTv(Placeholder placeholder, JsonElement tv, JsonElement? season, DateTime fetchedAtUtc, DateTime todayUtc) =>
+            FromTv(placeholder, ResponseContract.MetadataShow.Read(tv), season is JsonElement s ? ResponseContract.MetadataSeason.Read(s) : null, fetchedAtUtc, todayUtc);
+
+        /// <summary>
+        /// TV details (and season details for season/episodes kinds) as their contracts read them
+        /// (<see cref="ResponseContract.MetadataShow"/>, <see cref="ResponseContract.MetadataSeason"/>; typed values only, review
+        /// round 8) into the metadata of a TV placeholder: release date per kind (C4), expected episodes (C3: season details
+        /// plus an announced next episode of that season; series: every episode of seasons ≥ 1 from the season episode counts,
+        /// aired up to the last aired regular episode, with the last aired episode's date as an "aired by" date), production
+        /// state (only Ended/Canceled count as finished) and aired count. A show answer that isn't Valid is partial (review
+        /// round 7: it never sets the expected episodes or clears a value); a season answer that isn't Valid is used like a
+        /// failed season read.
+        /// </summary>
+        /// <param name="placeholder">Placeholder (kind, season, listed episodes).</param>
+        /// <param name="tv">The read TV details.</param>
+        /// <param name="season">The read season details (season/episodes kinds), or null.</param>
+        /// <param name="fetchedAtUtc">Oldest fetch time of the inputs.</param>
+        /// <param name="todayUtc">Today (UTC).</param>
+        /// <returns>Metadata.</returns>
+        internal static PlaceholderMetadata FromTv(Placeholder placeholder, ContractRead tv, ContractRead? season, DateTime fetchedAtUtc, DateTime todayUtc)
         {
-            if (seasonVerdict != ResponseVerdict.Valid)
+            if (season != null && season.Verdict != ResponseVerdict.Valid)
             {
                 season = null; // review round 7: never sets the expected episodes or their air dates
             }
 
-            var status = Str(tv, "status");
+            var status = tv.Text("status");
             var ended = status is "Ended" or "Canceled" or "Cancelled";
 
             // C3: only a terminal status finishes a show. TMDB's inProduction flag is often false between the seasons
             // of a renewed show ("Returning Series"), so it only tells that the show was answered for, never that it ended.
-            bool? inProduction = ended
-                ? false
-                : status != null || (tv.TryGetProperty("inProduction", out var production) && production.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                    ? true
-                    : null;
-            string? imdb = null;
-            int? tvdb = null;
-            if (tv.TryGetProperty("externalIds", out var external) && external.ValueKind == JsonValueKind.Object)
-            {
-                imdb = Str(external, "imdbId");
-                if (external.TryGetProperty("tvdbId", out var tvdbElement) && tvdbElement.ValueKind == JsonValueKind.Number && tvdbElement.TryGetInt32(out var parsed) && parsed > 0)
-                {
-                    tvdb = parsed;
-                }
-            }
-
-            var next = Episode(tv, "nextEpisodeToAir");
-            var last = Episode(tv, "lastEpisodeToAir");
+            bool? inProduction = ended ? false : status != null || tv.Bool("inProduction").HasValue ? true : null;
+            var external = tv.Member("externalIds");
+            var next = Episode(tv.Member("nextEpisodeToAir"));
+            var last = Episode(tv.Member("lastEpisodeToAir"));
             var seasons = Seasons(tv);
             var number = placeholder.SeasonNumber;
             string? releaseDate;
-            string? poster = Poster(tv);
-            string? overview = Overview(tv);
+            var poster = tv.Poster("posterPath");
+            var overview = Clip(tv.Text("overview"), ListRules.MaxOverview);
             List<PlaceholderEpisode>? expected = null;
             List<PlaceholderEpisode>? seasonEpisodes = null;
             var partial = false;
             switch (placeholder.Kind)
             {
                 case PlaceholderKinds.Series:
-                    releaseDate = Date(tv, "firstAirDate");
+                    releaseDate = tv.Date("firstAirDate");
                     expected = SeriesExpected(seasons, last, next, ended, todayUtc);
                     break;
                 case PlaceholderKinds.Season:
                 case PlaceholderKinds.Episodes:
                 {
                     var seasonInfo = seasons.FirstOrDefault(s => s.Number == number);
-                    if (season is JsonElement details && details.ValueKind == JsonValueKind.Object)
+                    if (season != null)
                     {
-                        seasonEpisodes = SeasonEpisodes(details, number ?? 0);
-                        poster = Poster(details) ?? poster;
+                        seasonEpisodes = SeasonEpisodes(season, number ?? 0);
+                        poster = season.Poster("posterPath") ?? poster;
                     }
                     else
                     {
@@ -387,8 +381,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         partial = true;
                     }
 
-                    var seasonAir = season is JsonElement s2 && s2.ValueKind == JsonValueKind.Object ? Date(s2, "airDate") : null;
-                    seasonAir ??= seasonInfo?.AirDate;
+                    var seasonAir = season?.Date("airDate") ?? seasonInfo?.AirDate;
                     if (placeholder.Kind == PlaceholderKinds.Season)
                     {
                         releaseDate = seasonAir;
@@ -426,7 +419,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
 
             var seasonFailed = partial;
-            if (tvVerdict != ResponseVerdict.Valid)
+            if (tv.Verdict != ResponseVerdict.Valid)
             {
                 // Review round 7 (4c2-R7-3): a show answer that isn't Valid (a season list, an episode count, the status or
                 // an id unknown) never derives the expected episodes or their air dates, and never clears a value.
@@ -435,14 +428,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 seasonEpisodes = null;
             }
 
+            var tvdb = external?.Int("tvdbId");
             return new PlaceholderMetadata
             {
                 FetchedAtUtc = fetchedAtUtc,
                 ReleaseDate = releaseDate,
                 PosterPath = poster,
                 Overview = overview,
-                ImdbId = imdb != null && ImdbRegex.IsMatch(imdb) ? imdb : null,
-                TvdbId = tvdb,
+                ImdbId = external?.Imdb("imdbId"),
+                TvdbId = tvdb is > 0 ? tvdb : null,
                 Expected = expected,
                 InProduction = inProduction,
                 EpisodeTotal = expected?.Count(e => PlaceholderProgress.IsAired(e, todayUtc)),
@@ -491,35 +485,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return result;
         }
 
-        private static List<PlaceholderEpisode> SeasonEpisodes(JsonElement details, int seasonNumber)
+        // The season's episodes (the contract read every row: each has its episode number).
+        private static List<PlaceholderEpisode> SeasonEpisodes(ContractRead details, int seasonNumber)
         {
             var result = new List<PlaceholderEpisode>();
-            if (!details.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array)
+            foreach (var episode in details.Rows("episodes"))
             {
-                return result;
-            }
-
-            foreach (var episode in episodes.EnumerateArray())
-            {
-                if (episode.ValueKind != JsonValueKind.Object
-                    || !episode.TryGetProperty("episodeNumber", out var n) || n.ValueKind != JsonValueKind.Number || !n.TryGetInt32(out var number) || number < 0)
+                if (episode.Int("episodeNumber") is not int number)
                 {
                     continue;
                 }
 
-                var s = episode.TryGetProperty("seasonNumber", out var sn) && sn.ValueKind == JsonValueKind.Number && sn.TryGetInt32(out var parsedSeason) ? parsedSeason : seasonNumber;
+                var s = episode.Int("seasonNumber") ?? seasonNumber;
                 if (s != seasonNumber || result.Any(e => e.E == number))
                 {
                     continue;
                 }
 
-                var name = ListRules.CleanText(Str(episode, "name"));
                 result.Add(new PlaceholderEpisode
                 {
                     S = s,
                     E = number,
-                    Title = name.Length == 0 ? null : name.Length > ListRules.MaxTitle ? name[..ListRules.MaxTitle] : name,
-                    AirDate = Date(episode, "airDate"),
+                    Title = Clip(episode.Text("name"), ListRules.MaxTitle),
+                    AirDate = episode.Date("airDate"),
                 });
             }
 
@@ -527,34 +515,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return result;
         }
 
-        private static PlaceholderEpisode? Episode(JsonElement tv, string name)
-        {
-            if (!tv.TryGetProperty(name, out var episode) || episode.ValueKind != JsonValueKind.Object
-                || !episode.TryGetProperty("seasonNumber", out var s) || s.ValueKind != JsonValueKind.Number || !s.TryGetInt32(out var season)
-                || !episode.TryGetProperty("episodeNumber", out var e) || e.ValueKind != JsonValueKind.Number || !e.TryGetInt32(out var number))
-            {
-                return null;
-            }
+        private static PlaceholderEpisode? Episode(ContractRead? episode) =>
+            episode?.Int("seasonNumber") is int season && episode.Int("episodeNumber") is int number
+                ? new PlaceholderEpisode { S = season, E = number, AirDate = episode.Date("airDate") }
+                : null;
 
-            return new PlaceholderEpisode { S = season, E = number, AirDate = Date(episode, "airDate") };
-        }
-
-        private static List<SeasonInfo> Seasons(JsonElement tv)
+        private static List<SeasonInfo> Seasons(ContractRead tv)
         {
             var result = new List<SeasonInfo>();
-            if (!tv.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array)
+            foreach (var season in tv.Rows("seasons"))
             {
-                return result;
-            }
-
-            foreach (var season in seasons.EnumerateArray())
-            {
-                if (season.ValueKind == JsonValueKind.Object
-                    && season.TryGetProperty("seasonNumber", out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out var number)
-                    && result.All(s => s.Number != number))
+                if (season.Int("seasonNumber") is int number && result.All(s => s.Number != number))
                 {
-                    var count = season.TryGetProperty("episodeCount", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var parsed) ? Math.Clamp(parsed, 0, 5000) : 0;
-                    result.Add(new SeasonInfo(number, count, Date(season, "airDate")));
+                    result.Add(new SeasonInfo(number, Math.Clamp(season.Int("episodeCount") ?? 0, 0, 5000), season.Date("airDate")));
                 }
             }
 
@@ -563,26 +536,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static PlaceholderEpisode Copy(PlaceholderEpisode e) => new() { S = e.S, E = e.E, Title = e.Title, AirDate = e.AirDate };
 
-        private static string? Str(JsonElement element, string name) =>
-            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-
-        private static string? Date(JsonElement element, string name)
-        {
-            var value = Str(element, name);
-            return value != null && value.Length >= 10 && ListRules.TryParseDate(value[..10], out _) ? value[..10] : null;
-        }
-
-        private static string? Poster(JsonElement element)
-        {
-            var value = Str(element, "posterPath");
-            return value != null && PosterRegex.IsMatch(value) ? value : null;
-        }
-
-        private static string? Overview(JsonElement element)
-        {
-            var value = ListRules.CleanText(Str(element, "overview"));
-            return value.Length == 0 ? null : value.Length > ListRules.MaxOverview ? value[..ListRules.MaxOverview] : value;
-        }
+        private static string? Clip(string? text, int max) => string.IsNullOrEmpty(text) ? null : text.Length > max ? text[..max] : text;
 
         private static string Signature(Placeholder p) => JsonSerializer.Serialize(new object?[]
         {
@@ -748,7 +702,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         continue;
                     }
 
-                    var entry = new CacheEntry(document.RootElement.Clone(), DateTime.UtcNow, null) { Verdict = read.Verdict };
+                    var entry = new CacheEntry(read, DateTime.UtcNow, null) { Verdict = read.Verdict };
                     if (read.Verdict == ResponseVerdict.Valid)
                     {
                         return entry;
@@ -786,10 +740,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (notFound == urls.Length)
             {
-                return new CacheEntry(default, DateTime.UtcNow, NotFoundTtl);
+                return new CacheEntry(null, DateTime.UtcNow, NotFoundTtl);
             }
 
-            return unavailable && !failed ? new CacheEntry(default, DateTime.UtcNow, UnavailableTtl) : null;
+            return unavailable && !failed ? new CacheEntry(null, DateTime.UtcNow, UnavailableTtl) : null;
         }
 
         /// <summary>True when JE has a TMDB API key (the parental filter then reads ratings from TMDB, Seerr or not).</summary>
@@ -891,8 +845,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return (null, false, false);
                 }
 
-                var poster = Str(document.RootElement, "poster_path");
-                poster = poster != null && PosterRegex.IsMatch(poster) ? poster : null;
+                var poster = read.Poster("poster_path"); // the contract's typed value (review round 8)
                 if (_tmdbPosters.Count >= MaxCacheEntries)
                 {
                     _tmdbPosters.Clear();
@@ -912,32 +865,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        private static bool TryGetSeerrConfig(out string[] urls, out string apiKey)
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            urls = Array.Empty<string>();
-            apiKey = string.Empty;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
-            {
-                return false;
-            }
-
-            urls = config.JellyseerrUrls
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(u => u.Trim().TrimEnd('/'))
-                .Where(u => u.Length > 0)
-                .ToArray();
-            apiKey = config.GetJellyseerrApiKey();
-            return urls.Length > 0;
-        }
+        // The address list every Seerr-backed read of the lists area takes (review round 8, 4c2-R8-4).
+        private static bool TryGetSeerrConfig(out string[] urls, out string apiKey) => SeerrAddresses.TryGet(out urls, out apiKey);
 
         // Cache scope = Seerr URL list + API key hash, so another Seerr's answers are never reused.
-        private static string Fingerprint(string[] urls, string apiKey) =>
-            string.Join('\n', urls) + "|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|";
+        private static string Fingerprint(string[] urls, string apiKey) => SeerrAddresses.Identity(urls, apiKey) + "|";
 
-        // NotFoundFor: a "not found" answer and how long it is remembered (null = details). Verdict: the answer's by its
-        // contract (only a Valid one is cached).
-        private sealed record CacheEntry(JsonElement Root, DateTime FetchedAtUtc, TimeSpan? NotFoundFor)
+        // Read: the answer as its contract read it (its typed values; null for "not found" and "unavailable"). NotFoundFor: a
+        // "not found" answer and how long it is remembered (null = details). Verdict: the answer's by its contract (only a
+        // Valid one is cached).
+        private sealed record CacheEntry(ContractRead? Read, DateTime FetchedAtUtc, TimeSpan? NotFoundFor)
         {
             public bool NotFound => NotFoundFor.HasValue;
 

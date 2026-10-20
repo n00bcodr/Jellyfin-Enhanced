@@ -663,6 +663,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/SeerrAddresses.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Sources/ChronolistsPage.cs",
       "category": "Services"
     },
@@ -10362,7 +10366,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 595,
+    "files": 596,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,

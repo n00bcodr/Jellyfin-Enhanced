@@ -142,21 +142,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
         private static string TraktKey => Config?.GetListTraktApiKey()?.Trim() ?? string.Empty;
 
-        /// <summary>True when Seerr is enabled and configured (the labelled fallback for some TMDB charts).</summary>
-        internal static bool SeerrConfigured(out string baseUrl, out string apiKey)
-        {
-            var config = Config;
-            baseUrl = string.Empty;
-            apiKey = string.Empty;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
-            {
-                return false;
-            }
-
-            baseUrl = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(u => u.Trim().TrimEnd('/')).FirstOrDefault(u => u.Length > 0) ?? string.Empty;
-            apiKey = config.GetJellyseerrApiKey();
-            return baseUrl.Length > 0;
-        }
+        /// <summary>
+        /// True when Seerr is enabled and configured (the labelled fallback for some TMDB charts), with its address list in
+        /// order (review round 8, 4c2-R8-4: every address, as every Seerr-backed read of the lists area takes it).
+        /// </summary>
+        internal static bool SeerrConfigured(out string[] urls, out string apiKey) => SeerrAddresses.TryGet(out urls, out apiKey);
 
         /// <inheritdoc />
         public SourceProvidersDto Providers(Jellyfin.Database.Implementations.Entities.User caller)
@@ -229,12 +219,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     result = SourceFetchResult.Fail(source, "upstream_error", "The list site returned something JE can't read.");
                 }
 
-                if (result.Ok)
+                // Only a positively complete read is kept (review round 8, 4c2-R8-2): a partial or truncated one is answered but
+                // read again next time, so a corrected source is seen at once.
+                if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
                 {
                     PruneCache(result.Items.Count);
                     _cache[cacheKey] = (DateTime.UtcNow + CacheTtl, result);
                 }
-                else
+                else if (!result.Ok)
                 {
                     _logger.Info($"[Lists] Fetching {source.CanonicalUrl} failed: {result.ErrorCode}");
                 }
@@ -280,8 +272,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // The identity (not the length) of every credential a fetch could use: another key never reuses this one's results.
         private static string CredentialStamp()
         {
-            SeerrConfigured(out var seerrUrl, out var seerrKey);
-            var material = string.Join('\n', TmdbKey, MdblistKey, TraktKey, seerrUrl, seerrKey);
+            SeerrConfigured(out var seerrUrls, out var seerrKey);
+            var material = string.Join('\n', TmdbKey, MdblistKey, TraktKey, SeerrAddresses.Identity(seerrUrls, seerrKey)); // every address (4c2-R8-4)
             return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(material)), 0, 8);
         }
 
@@ -705,19 +697,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
+        // The Seerr fallback (review round 8, 4c2-R8-4): every configured address in order, as every Seerr-backed read of the
+        // lists area takes them (docs: "first successful connection used"). Each address's read is whole on its own (a chart's
+        // pages all from one server, never a mix); each of its requests passes the gate (its own admission and turn at the
+        // shared metadata limiter). An address that fails (an error, a timeout, a redirect, an answer without its list) or
+        // doesn't have the collection hands over to the next; "not found" only when EVERY address said so; otherwise the
+        // first failure is the answer. A refusal of JE's own (the read budget, the switch or Seerr's setup changed meanwhile)
+        // stops at once.
         private async Task<SourceFetchResult> TmdbViaSeerrAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
-            if (!SeerrConfigured(out var baseUrl, out var seerrKey))
+            if (!SeerrConfigured(out var urls, out var seerrKey))
             {
                 return SourceFetchResult.Fail(source, "tmdb_key_required", "TMDB lists need the TMDB API key or Seerr in Jellyfin Enhanced's settings.");
             }
 
+            SourceHttpException? failure = null;
+            foreach (var baseUrl in urls)
+            {
+                try
+                {
+                    var result = await TmdbViaSeerrAtAsync(source, baseUrl, seerrKey, options, cancellationToken).ConfigureAwait(false);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+                catch (SourceHttpException ex) when (ex.Code is not (SourceFailures.ReadBudgetExhausted or SourceFailures.ProviderDisabled))
+                {
+                    _logger.Debug($"[Lists] Seerr list read failed on one address: {ex.Code}");
+                    failure ??= ex;
+                }
+                catch (Exception ex) when (ex is JsonException or InvalidDataException or FormatException)
+                {
+                    _logger.Debug($"[Lists] Seerr list read on one address was unreadable: {UpstreamDiagnostics.Code(ex)}");
+                    failure ??= new SourceHttpException("upstream_error", "Seerr returned something JE can't read.");
+                }
+            }
+
+            return failure == null
+                ? SourceFetchResult.Fail(source, "not_found", "Seerr couldn't find this TMDB collection.")
+                : throw failure;
+        }
+
+        // One Seerr address's read of a TMDB collection or chart; null when that Seerr has no such collection.
+        private async Task<SourceFetchResult?> TmdbViaSeerrAtAsync(ParsedSourceUrl source, string baseUrl, string seerrKey, SourceFetchOptions options, CancellationToken cancellationToken)
+        {
             if (source.Shape == "collection")
             {
                 var json = await SeerrGetAsync(baseUrl, seerrKey, "/api/v1/collection/" + source.Part("id"), options, cancellationToken).ConfigureAwait(false);
                 if (json == null)
                 {
-                    return SourceFetchResult.Fail(source, "not_found", "Seerr couldn't find this TMDB collection.");
+                    return null;
                 }
 
                 using var doc = JsonDocument.Parse(json);
@@ -1493,8 +1523,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 case MdblistApiProvider or MdblistStatusProvider when ListImportFlags.MdblistApi(config) && Carries(transmission, MdblistKey):
                 case "tmdb" when ListImportFlags.Provider(config, SourceKinds.Tmdb) && Carries(transmission, TmdbKey):
                     return;
-                case SeerrProvider when ListImportFlags.Provider(config, SourceKinds.Tmdb) && SeerrConfigured(out var seerrUrl, out var seerrKey)
-                    && Carries(transmission, seerrKey) && string.Equals(transmission.SeerrBase, seerrUrl, StringComparison.Ordinal):
+                case SeerrProvider when ListImportFlags.Provider(config, SourceKinds.Tmdb) && SeerrConfigured(out var seerrUrls, out var seerrKey)
+                    && Carries(transmission, seerrKey) && seerrUrls.Contains(transmission.SeerrBase, StringComparer.Ordinal):
                     return;
                 case "trakt" when ListImportFlags.Provider(config, SourceKinds.Trakt):
                     if (TraktKey.Length == 0)

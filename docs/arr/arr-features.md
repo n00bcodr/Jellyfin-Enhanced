@@ -1447,6 +1447,13 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   a person, game or adult title in a list that mixes types is counted and skipped; a type JE doesn't know, a missing
   type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
   Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
+  Only a complete read is kept for the next few minutes (so preview, apply and link read the list once); a partial or
+  cut-off one is read again, so a list fixed at the source shows up at once. Through Seerr, each configured Seerr address
+  is tried in turn: a list only counts as "not found" when every address says so.
+- **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
+  number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
+  it and the answer isn't remembered. An MDBList ratings answer that isn't the title's own (no TMDB id, another title,
+  an id like "broken-id") is a failed lookup that is retried, never "no ratings" for days.
 - **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
   for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
   its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -24,26 +25,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         Malformed,
     }
 
-    /// <summary>The JSON type a declared field must have.</summary>
+    /// <summary>
+    /// The type a declared field must have: its JSON type AND a value its consumers can use (review round 8, D53: one parser
+    /// per type, the one every consumer uses; a value of the right JSON type that the parser refuses is unusable).
+    /// </summary>
     internal enum FieldType
     {
-        /// <summary>A positive integer (a TMDB id). 0 is empty.</summary>
+        /// <summary>A positive 32-bit integer (a TMDB or TVDB id). 0 is empty; a negative, fractional or larger number is unusable.</summary>
         Id,
 
-        /// <summary>A non-negative integer (a season or episode number, a count).</summary>
+        /// <summary>A non-negative 32-bit integer (a season or episode number, a count); a negative or fractional one is unusable.</summary>
         Count,
 
         /// <summary>Any number.</summary>
         Number,
 
-        /// <summary>A string ("" is empty).</summary>
+        /// <summary>A string, read as cleaned text (control characters dropped, trimmed); "" is empty.</summary>
         Text,
 
         /// <summary>A boolean.</summary>
         Bool,
 
-        /// <summary>An IMDb id (<c>tt</c> + 5–10 digits); "" is empty.</summary>
+        /// <summary>An IMDb title id (<c>tt</c> + 5–10 digits); "" is empty; any other string is unusable.</summary>
         Imdb,
+
+        /// <summary>A date (<c>yyyy-MM-dd</c>, or an ISO date-time read as its date); "" is empty (TBA); any other string is unusable.</summary>
+        Date,
+
+        /// <summary>A TMDB image path (<c>/name.jpg</c> or <c>.png</c>); "" is empty; any other string (a URL, a relative path) is unusable.</summary>
+        Poster,
 
         /// <summary>An object with its own declared members.</summary>
         Object,
@@ -138,10 +148,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public ContractRead Read(JsonElement element) => ResponseContract.Read(this, element);
     }
 
-    /// <summary>One answer as validated: its verdict and the state of each identity fact.</summary>
+    /// <summary>
+    /// One answer (or one object or row of it) as the contract read it: its verdict, the state of each identity fact, and
+    /// the TYPED value of every declared field that held a usable one (review round 8, D53 "parse once into typed facts":
+    /// consumers take these values and never read the JSON again). A field that was missing, null, empty or unusable has
+    /// no value. A container's members are read as their own <see cref="ContractRead"/> (<see cref="Member"/>), and so is
+    /// each usable row of a declared list (<see cref="Rows"/>).
+    /// </summary>
     internal sealed class ContractRead
     {
         private readonly Dictionary<string, FactState> _facts = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (FieldType Type, object Value)> _values = new(StringComparer.Ordinal);
 
         /// <summary>The verdict.</summary>
         public ResponseVerdict Verdict { get; private set; } = ResponseVerdict.Valid;
@@ -166,6 +183,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
+        /// <summary>A text field's cleaned value, or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public string? Text(string name) => Value<string>(name, FieldType.Text);
+
+        /// <summary>A date field's value (<c>yyyy-MM-dd</c>), or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public string? Date(string name) => Value<string>(name, FieldType.Date);
+
+        /// <summary>A poster field's value (a TMDB image path), or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public string? Poster(string name) => Value<string>(name, FieldType.Poster);
+
+        /// <summary>An IMDb id field's value, or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public string? Imdb(string name) => Value<string>(name, FieldType.Imdb);
+
+        /// <summary>An id or count field's value, or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public int? Int(string name) => _values.TryGetValue(name, out var v) && v.Type is FieldType.Id or FieldType.Count ? (int)v.Value : null;
+
+        /// <summary>A number field's value, or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public double? Number(string name) => _values.TryGetValue(name, out var v) && v.Type == FieldType.Number ? (double)v.Value : null;
+
+        /// <summary>A boolean field's value, or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public bool? Bool(string name) => _values.TryGetValue(name, out var v) && v.Type == FieldType.Bool ? (bool)v.Value : null;
+
+        /// <summary>A container's members as read, or null (missing, null or of the wrong type).</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The members.</returns>
+        public ContractRead? Member(string name) => Value<ContractRead>(name, FieldType.Object);
+
+        /// <summary>The usable rows of a declared list, in order (none when the list is missing, null or of the wrong type).</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The rows.</returns>
+        public IReadOnlyList<ContractRead> Rows(string name) => Value<IReadOnlyList<ContractRead>>(name, FieldType.List) ?? Array.Empty<ContractRead>();
+
+        /// <summary>Records a field's typed value (the validator only).</summary>
+        /// <param name="name">Field name.</param>
+        /// <param name="type">Its type.</param>
+        /// <param name="value">The parsed value.</param>
+        public void Set(string name, FieldType type, object value) => _values[name] = (type, value);
+
         /// <summary>Adds what a source said about an identity fact (Known wins over Absent, Absent over Unknown).</summary>
         /// <param name="fact">Fact name.</param>
         /// <param name="state">The state.</param>
@@ -176,6 +244,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 _facts[fact] = state;
             }
         }
+
+        private T? Value<T>(string name, FieldType type)
+            where T : class => _values.TryGetValue(name, out var v) && v.Type == type ? v.Value as T : null;
     }
 
     /// <summary>
@@ -185,11 +256,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// List-source rows have their own per-provider row contract in the source fetcher's row readers (review rounds 4–5,
     /// 7): a row's key (its TMDB, IMDb or TVDB id; for Chronolists, an exact source, also its title) and declared type are
     /// required (missing, null, wrong type or empty: the row is malformed and the snapshot isn't complete); titles and
-    /// years are display (unreadable: no value; a snapshot is complete by its keys).
+    /// years are display (unreadable: no value; a snapshot is complete by its keys). Review round 8 (D53, 4c2-R8-1): the
+    /// contract parses once into TYPED facts with the one parser per type its consumers use (<see cref="ParseDate"/>,
+    /// <see cref="ParsePoster"/>, positive ids, IMDb ids, cleaned text); consumers take only those values
+    /// (<see cref="ContractRead"/>), and a value of the right JSON type that the parser refuses is unusable: a fact or display
+    /// field then makes the answer Partial (never kept, never clears a stored value), a required field or an identity id
+    /// Malformed.
     /// </summary>
     internal static class ResponseContract
     {
         private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        /// <summary>How a present, non-null, non-empty value read by its declared type.</summary>
+        private enum Parsed
+        {
+            /// <summary>Usable: its typed value is recorded.</summary>
+            Ok,
+
+            /// <summary>Not of the declared JSON type.</summary>
+            WrongType,
+
+            /// <summary>Of the declared JSON type, but not a value the consumers can use (a date that isn't one, a URL as a poster path, a negative id).</summary>
+            Unusable,
+        }
 
         private static FieldRule Required(string name, FieldType type, ResourceSchema? rows = null, RowFailure failure = RowFailure.Malformed) => new(name, type, FieldRole.Required, false, rows, failure);
 
@@ -207,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public static readonly ResourceSchema TmdbMovieRow = new("tmdb movie row", new[]
         {
             Required("id", FieldType.Id), Required("title", FieldType.Text), Display("original_title", FieldType.Text),
-            Display("release_date", FieldType.Text), Display("poster_path", FieldType.Text), Display("overview", FieldType.Text),
+            Display("release_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
         });
 
@@ -215,24 +305,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public static readonly ResourceSchema TmdbTvRow = new("tmdb tv row", new[]
         {
             Required("id", FieldType.Id), Required("name", FieldType.Text), Display("original_name", FieldType.Text),
-            Display("first_air_date", FieldType.Text), Display("poster_path", FieldType.Text), Display("overview", FieldType.Text),
+            Display("first_air_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
         });
 
         private static readonly ResourceSchema TmdbSeasonRow = new("tmdb season row", new[]
         {
-            Required("season_number", FieldType.Count), Display("episode_count", FieldType.Count), Display("air_date", FieldType.Text), Display("name", FieldType.Text),
+            Required("season_number", FieldType.Count), Display("episode_count", FieldType.Count), Display("air_date", FieldType.Date), Display("name", FieldType.Text),
         });
 
         private static readonly ResourceSchema TmdbEpisodeRow = new("tmdb episode row", new[]
         {
-            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count), Display("name", FieldType.Text), Display("air_date", FieldType.Text),
+            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count), Display("name", FieldType.Text), Display("air_date", FieldType.Date),
         });
 
         private static readonly ResourceSchema TmdbEpisodeFindRow = new("tmdb episode find row", new[]
         {
             Required("show_id", FieldType.Id), Required("season_number", FieldType.Count), Required("episode_number", FieldType.Count),
-            Display("name", FieldType.Text), Display("air_date", FieldType.Text),
+            Display("name", FieldType.Text), Display("air_date", FieldType.Date),
         });
 
         /// <summary>
@@ -291,14 +381,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataMovie = new("metadata movie", new[]
         {
-            Required("id", FieldType.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Text), Fact("posterPath", FieldType.Text),
+            Required("id", FieldType.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Identity("imdbId", FieldType.Imdb, "imdb"),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb")),
         }, new[] { "imdb" });
 
         private static readonly ResourceSchema MetadataEpisodeRef = new("metadata episode", new[]
         {
-            Required("seasonNumber", FieldType.Count), Required("episodeNumber", FieldType.Count), Fact("airDate", FieldType.Text),
+            Required("seasonNumber", FieldType.Count), Required("episodeNumber", FieldType.Count), Fact("airDate", FieldType.Date),
         });
 
         /// <summary>
@@ -308,12 +398,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataShow = new("metadata show", new[]
         {
-            Required("id", FieldType.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Text), Fact("posterPath", FieldType.Text),
+            Required("id", FieldType.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Fact("status", FieldType.Text), Display("inProduction", FieldType.Bool),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb"), Identity("tvdbId", FieldType.Id, "tvdb")),
             Fact("seasons", FieldType.List, nullable: false, rows: new ResourceSchema("metadata season row", new[]
             {
-                Required("seasonNumber", FieldType.Count), Fact("episodeCount", FieldType.Count, nullable: false), Fact("airDate", FieldType.Text),
+                Required("seasonNumber", FieldType.Count), Fact("episodeCount", FieldType.Count, nullable: false), Fact("airDate", FieldType.Date),
             })),
             new FieldRule("lastEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
             new FieldRule("nextEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
@@ -324,13 +414,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             Required("episodes", FieldType.List, new ResourceSchema("metadata episode row", new[]
             {
-                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count), Display("name", FieldType.Text), Fact("airDate", FieldType.Text),
+                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count), Display("name", FieldType.Text), Fact("airDate", FieldType.Date),
             })),
-            Fact("airDate", FieldType.Text), Fact("posterPath", FieldType.Text),
+            Fact("airDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
         });
 
         /// <summary>A TMDB poster read (a title's or a season's details): <c>poster_path</c> is the answer (null: no poster).</summary>
-        public static readonly ResourceSchema TmdbPoster = new("tmdb poster", new[] { Fact("poster_path", FieldType.Text) });
+        public static readonly ResourceSchema TmdbPoster = new("tmdb poster", new[] { Fact("poster_path", FieldType.Poster) });
 
         /// <summary>Validates <paramref name="element"/> against <paramref name="schema"/>.</summary>
         /// <param name="schema">The schema.</param>
@@ -345,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return read;
             }
 
-            ReadFields(schema, element, read, string.Empty);
+            ReadFields(schema, element, read, read, string.Empty);
             foreach (var fact in schema.Facts ?? Array.Empty<string>())
             {
                 if (read.Fact(fact) == FactState.Unknown)
@@ -372,7 +462,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return parts[0] + string.Concat(parts.Skip(1).Select(p => p.Length == 0 ? p : char.ToUpperInvariant(p[0]) + p[1..]));
         }
 
-        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, string prefix)
+        // Each declared field: its verdict and identity facts go to `read` (the whole answer's), its typed value to `into` (the
+        // object it belongs to: the answer, a container's members, a row).
+        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, ContractRead into, string prefix)
         {
             foreach (var field in schema.Fields)
             {
@@ -395,10 +487,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                if (!Typed(field.Type, value))
+                switch (Parse(field.Type, value, out var parsed))
                 {
-                    read.Lower(field.Role == FieldRole.Display ? ResponseVerdict.Partial : ResponseVerdict.Malformed, path);
-                    continue;
+                    case Parsed.WrongType:
+                        read.Lower(field.Role == FieldRole.Display ? ResponseVerdict.Partial : ResponseVerdict.Malformed, path);
+                        continue;
+                    case Parsed.Unusable:
+                        // Review round 8 (4c2-R8-1): a value its consumer can't use is no value. A fact or a display field is then
+                        // unknown (Partial: used for the rest, never kept, never clears what an entry has); the resource's own
+                        // fields and an identity id that isn't one make the answer Malformed.
+                        read.Lower(field.Role is FieldRole.Fact or FieldRole.Display ? ResponseVerdict.Partial : ResponseVerdict.Malformed, path);
+                        continue;
                 }
 
                 if (field.Fact != null)
@@ -406,22 +505,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     read.Note(field.Fact, FactState.Known);
                 }
 
-                if (field.Type == FieldType.Object && field.Members != null)
+                if (field.Type == FieldType.Object)
                 {
-                    ReadFields(field.Members, value, read, path + ".");
+                    var members = new ContractRead();
+                    if (field.Members != null)
+                    {
+                        ReadFields(field.Members, value, read, members, path + ".");
+                    }
+
+                    into.Set(field.Name, FieldType.Object, members);
                 }
-                else if (field.Type == FieldType.List && field.Members != null)
+                else if (field.Type == FieldType.List)
                 {
-                    ReadRows(field, value, read, path);
+                    into.Set(field.Name, FieldType.List, field.Members != null ? ReadRows(field, value, read, path) : Array.Empty<ContractRead>());
+                }
+                else
+                {
+                    into.Set(field.Name, field.Type, parsed!);
                 }
             }
         }
 
         // A list's rows: a row JE can't read (not an object, a required field missing or bad) is what the list declares;
-        // a row's unknown fact or unreadable display field makes the answer Partial.
-        private static void ReadRows(FieldRule field, JsonElement list, ContractRead read, string path)
+        // a row's unknown fact or unreadable display field makes the answer Partial. Returns the usable rows, in order.
+        private static IReadOnlyList<ContractRead> ReadRows(FieldRule field, JsonElement list, ContractRead read, string path)
         {
-            var usable = 0;
+            var usable = new List<ContractRead>();
             var unreadable = 0;
             foreach (var row in list.EnumerateArray())
             {
@@ -432,7 +541,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 else
                 {
-                    ReadFields(field.Members!, row, rowRead, path + "[].");
+                    ReadFields(field.Members!, row, rowRead, rowRead, path + "[].");
                 }
 
                 if (rowRead.Verdict == ResponseVerdict.Malformed)
@@ -450,14 +559,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                usable++;
+                usable.Add(rowRead);
                 read.Lower(rowRead.Verdict, rowRead.Reason ?? path);
             }
 
-            if (usable == 0 && unreadable > 0)
+            if (usable.Count == 0 && unreadable > 0)
             {
                 read.Lower(ResponseVerdict.Malformed, path);
             }
+
+            return usable;
         }
 
         private static void Missing(FieldRule field, ContractRead read, string path)
@@ -505,25 +616,97 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        // "" for text and ids, 0 for a TMDB id; an empty list or object is a value (read normally).
+        /// <summary>The date parser of every consumer: <c>yyyy-MM-dd</c>, or an ISO date-time read as its date; else null.</summary>
+        /// <param name="value">Text.</param>
+        /// <returns>The date as <c>yyyy-MM-dd</c>, or null.</returns>
+        public static string? ParseDate(string? value)
+        {
+            var text = value?.Trim();
+            if (text == null || text.Length < 10 || !ListRules.TryParseDate(text[..10], out _))
+            {
+                return null;
+            }
+
+            return text.Length == 10
+                || (text[10] == 'T' && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _))
+                ? text[..10]
+                : null;
+        }
+
+        /// <summary>The poster parser of every consumer: a TMDB image path (<c>/name.jpg</c> or <c>.png</c>); else null.</summary>
+        /// <param name="value">Text.</param>
+        /// <returns>The path, or null.</returns>
+        public static string? ParsePoster(string? value)
+        {
+            var text = value?.Trim();
+            return text != null && PosterRegex.IsMatch(text) ? text : null;
+        }
+
+        // "" for text, IMDb ids, dates and posters, 0 for an id: no value; an empty list or object is a value (read normally).
         private static bool Empty(FieldType type, JsonElement value) => type switch
         {
-            FieldType.Text or FieldType.Imdb => value.ValueKind == JsonValueKind.String && value.GetString()!.Trim().Length == 0,
+            FieldType.Text => value.ValueKind == JsonValueKind.String && ListRules.CleanText(value.GetString()).Trim().Length == 0,
+            FieldType.Imdb or FieldType.Date or FieldType.Poster => value.ValueKind == JsonValueKind.String && value.GetString()!.Trim().Length == 0,
             FieldType.Id => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var id) && id == 0,
             _ => false,
         };
 
-        private static bool Typed(FieldType type, JsonElement value) => type switch
+        // The one parser per type (review round 8): the JSON type first (WrongType), then the value (Unusable).
+        private static Parsed Parse(FieldType type, JsonElement value, out object? parsed)
         {
-            FieldType.Id => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var id) && id > 0,
-            FieldType.Count => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count) && count >= 0,
-            FieldType.Number => value.ValueKind == JsonValueKind.Number,
-            FieldType.Text => value.ValueKind == JsonValueKind.String,
-            FieldType.Bool => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
-            FieldType.Imdb => value.ValueKind == JsonValueKind.String && ImdbRegex.IsMatch(value.GetString()!.Trim()),
-            FieldType.Object => value.ValueKind == JsonValueKind.Object,
-            FieldType.List => value.ValueKind == JsonValueKind.Array,
-            _ => false,
-        };
+            parsed = null;
+            switch (type)
+            {
+                case FieldType.Id or FieldType.Count:
+                    if (value.ValueKind != JsonValueKind.Number)
+                    {
+                        return Parsed.WrongType;
+                    }
+
+                    if (!value.TryGetInt32(out var number) || (type == FieldType.Id ? number <= 0 : number < 0))
+                    {
+                        return Parsed.Unusable;
+                    }
+
+                    parsed = number;
+                    return Parsed.Ok;
+                case FieldType.Number:
+                    if (value.ValueKind != JsonValueKind.Number)
+                    {
+                        return Parsed.WrongType;
+                    }
+
+                    parsed = value.GetDouble();
+                    return Parsed.Ok;
+                case FieldType.Bool:
+                    if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    {
+                        return Parsed.WrongType;
+                    }
+
+                    parsed = value.GetBoolean();
+                    return Parsed.Ok;
+                case FieldType.Object:
+                    return value.ValueKind == JsonValueKind.Object ? Parsed.Ok : Parsed.WrongType;
+                case FieldType.List:
+                    return value.ValueKind == JsonValueKind.Array ? Parsed.Ok : Parsed.WrongType;
+            }
+
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                return Parsed.WrongType;
+            }
+
+            var text = value.GetString()!;
+            parsed = type switch
+            {
+                FieldType.Text => ListRules.CleanText(text).Trim(),
+                FieldType.Imdb => ImdbRegex.IsMatch(text.Trim()) ? text.Trim() : null,
+                FieldType.Date => ParseDate(text),
+                FieldType.Poster => ParsePoster(text),
+                _ => null,
+            };
+            return parsed == null ? Parsed.Unusable : Parsed.Ok;
+        }
     }
 }

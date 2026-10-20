@@ -76,12 +76,22 @@ public class ListsMetadataTests
         Assert.Equal(("Clayface", "2026-10-23", 2026, "/theirs.jpg", "Mud.", "tt31227572"), (movie.Title, movie.ReleaseDate, movie.Year!.Value, movie.PosterPath!, movie.Overview!, movie.ImdbId!));
         Assert.False(ListMetadataService.Apply(movie, meta)); // nothing new
 
-        // TBA in Seerr wins over a stale client date; junk values are dropped.
-        var tba = ListMetadataService.FromMovie(Json("{\"releaseDate\":\"\",\"posterPath\":\"../x.svg\",\"imdbId\":\"nope\"}"), Today);
+        // TBA in Seerr ("" in a whole answer) wins over a stale client date.
+        var tba = ListMetadataService.FromMovie(Json("{\"id\":1239193,\"releaseDate\":\"\",\"posterPath\":null,\"imdbId\":null,\"externalIds\":{\"imdbId\":null}}"), Today);
         Assert.True(ListMetadataService.Apply(movie, tba));
         Assert.Null(movie.ReleaseDate);
         Assert.Equal("tt31227572", movie.ImdbId);
         Assert.Null(tba.PosterPath);
+
+        // Junk values are no values and (review round 8) make the answer partial: nothing it can't vouch for is cleared.
+        movie.ReleaseDate = "2026-10-23";
+        movie.PosterPath = "/theirs.jpg";
+        var junk = ListMetadataService.FromMovie(Json("{\"id\":1239193,\"releaseDate\":\"soon\",\"posterPath\":\"../x.svg\",\"imdbId\":\"tt31227572\",\"externalIds\":{\"imdbId\":\"tt31227572\"}}"), Today);
+        Assert.True(junk.Partial);
+        Assert.Null(junk.ReleaseDate);
+        Assert.Null(junk.PosterPath);
+        Assert.False(ListMetadataService.Apply(movie, junk));
+        Assert.Equal(("2026-10-23", "/theirs.jpg"), (movie.ReleaseDate, movie.PosterPath));
     }
 
     [Fact]
@@ -153,7 +163,7 @@ public class ListsMetadataTests
     public void ListedEpisodeAirDatesFollowTmdbWhenItMovesOrUndatesThem()
     {
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":110492,\"seasonNumber\":2,\"title\":\"Peacemaker\",\"episodes\":[{\"s\":2,\"e\":1,\"airDate\":\"2025-08-01\",\"title\":\"Mine\"},{\"s\":2,\"e\":2,\"airDate\":\"2026-10-10\"}]}");
-        var season = "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"episodes\":[" +
+        var season = "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"posterPath\":null,\"episodes\":[" +
             "{\"episodeNumber\":1,\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}," +
             "{\"episodeNumber\":2,\"seasonNumber\":2,\"airDate\":null,\"name\":\"Ep 2\"}]}";
         var meta = ListMetadataService.FromTv(episodes, Json(Peacemaker), Json(season), Today, Today);

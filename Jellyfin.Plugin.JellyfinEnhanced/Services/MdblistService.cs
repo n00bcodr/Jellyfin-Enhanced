@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -441,7 +442,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 using var doc = JsonDocument.Parse(json);
-                return doc.RootElement.ValueKind == JsonValueKind.Object ? StatusOf(doc.RootElement) : null;
+                return StatusOf(doc.RootElement);
             }
             catch (JsonException)
             {
@@ -449,15 +450,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private static MdblistAccountStatus StatusOf(JsonElement root) => new()
+        // The balance contract (review round 8, D53 "only complete reads are kept"): an object whose rate_limit and
+        // rate_limit_remaining are non-negative integers (MDBList's /user always carries both); anything else is no status
+        // (unknown: never held for the status lifetime, read again next time), never a balance of 0.
+        private static MdblistAccountStatus? StatusOf(JsonElement root)
         {
-            Plan = root.TryGetProperty("plan", out var planEl) && planEl.ValueKind == JsonValueKind.String ? (planEl.GetString() ?? string.Empty) : string.Empty,
-            IsSupporter = root.TryGetProperty("is_supporter", out var supEl) && supEl.ValueKind == JsonValueKind.True,
-            RateLimit = GetNullableInt(root, "rate_limit") ?? 0,
-            RateLimitRemaining = GetNullableInt(root, "rate_limit_remaining") ?? 0,
-            RateLimitResetUnixSeconds = GetNullableLong(root, "rate_limit_reset") ?? 0,
-            FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        };
+            if (root.ValueKind != JsonValueKind.Object || GetNullableInt(root, "rate_limit") is not >= 0 || GetNullableInt(root, "rate_limit_remaining") is not >= 0)
+            {
+                return null;
+            }
+
+            return new MdblistAccountStatus
+            {
+                Plan = root.TryGetProperty("plan", out var planEl) && planEl.ValueKind == JsonValueKind.String ? (planEl.GetString() ?? string.Empty) : string.Empty,
+                IsSupporter = root.TryGetProperty("is_supporter", out var supEl) && supEl.ValueKind == JsonValueKind.True,
+                RateLimit = GetNullableInt(root, "rate_limit")!.Value,
+                RateLimitRemaining = GetNullableInt(root, "rate_limit_remaining")!.Value,
+                RateLimitResetUnixSeconds = GetNullableLong(root, "rate_limit_reset") ?? 0,
+                FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+        }
 
         /// <summary>
         /// Fetches (or returns the cached, still-fresh) account status from
@@ -547,7 +559,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return StatusOf(doc.RootElement);
+            var status = StatusOf(doc.RootElement);
+            if (status == null)
+            {
+                _logger.Warning("[MDBList] Account status answer had no usable request counts");
+            }
+
+            return status;
         }
 
         // The ratings path's reservation: its status read is this service's own (failures are an unknown status, which
@@ -607,7 +625,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
                 using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                return ParseResponse(doc, now);
+                return ParseResponse(doc, now, mediaType, tmdbId);
             }
             catch (Exception ex)
             {
@@ -697,19 +715,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var result = new Dictionary<string, MdblistCacheEntry>();
                 foreach (var itemEl in root.EnumerateArray())
                 {
-                    var entry = itemEl.ValueKind == JsonValueKind.Object ? ParseMediaItem(itemEl, now) : null;
                     // The array item's own top-level "id" is an internal
                     // MDBList id, not the tmdb id we requested by. Match
-                    // results back to our request via Ids["tmdb"] instead.
-                    if (entry == null || !entry.Ids.TryGetValue("tmdb", out var tmdbIdStr) || string.IsNullOrEmpty(tmdbIdStr))
+                    // results back to our request via ids.tmdb instead, read
+                    // by the batch row contract (review round 8, 4c2-R8-3).
+                    var tmdbIdStr = BatchRowTmdbId(itemEl);
+                    if (tmdbIdStr == null)
                     {
                         // A row JE can't read may be any of the ids asked about: an id missing from this answer proves
                         // nothing, so the batch is a failure (retried next run), not a list of confirmed misses.
-                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row without a TMDB id; the batch is retried");
+                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row without a usable TMDB id; the batch is retried");
                         return null;
                     }
 
-                    result[tmdbIdStr] = entry;
+                    result[tmdbIdStr] = ParseMediaItem(itemEl, now);
                 }
 
                 return result;
@@ -747,14 +766,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ScheduleDebouncedSave();
         }
 
-        private static MdblistCacheEntry ParseResponse(JsonDocument doc, long fetchedAtUnixMs)
+        /// <summary>
+        /// The row contract of a media batch answer (review round 8, 4c2-R8-3: every provider row through a contract): a row
+        /// is an object whose <c>ids.tmdb</c> is a positive TMDB id (a number, or the same digits as text); its canonical text is
+        /// the key the requested ids are matched by. Anything else ("broken-id", 0, a negative or fractional number, a missing
+        /// or null id, a row that isn't an object) is a row JE can't read: null.
+        /// </summary>
+        /// <param name="row">One row of the answer.</param>
+        /// <returns>The TMDB id as text, or null.</returns>
+        internal static string? BatchRowTmdbId(JsonElement row)
+        {
+            if (row.ValueKind != JsonValueKind.Object || !row.TryGetProperty("ids", out var ids) || ids.ValueKind != JsonValueKind.Object
+                || !ids.TryGetProperty("tmdb", out var tmdb))
+            {
+                return null;
+            }
+
+            int id;
+            switch (tmdb.ValueKind)
+            {
+                case JsonValueKind.Number when tmdb.TryGetInt32(out id):
+                    break;
+                case JsonValueKind.String when int.TryParse(tmdb.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out id)
+                    && string.Equals(id.ToString(CultureInfo.InvariantCulture), tmdb.GetString(), StringComparison.Ordinal):
+                    break;
+                default:
+                    return null;
+            }
+
+            return id > 0 ? id.ToString(CultureInfo.InvariantCulture) : null;
+        }
+
+        private MdblistCacheEntry ParseResponse(JsonDocument doc, long fetchedAtUnixMs, string mediaType, string tmdbId)
         {
             var root = doc.RootElement;
 
             // MDBList returns {"response": false, "error": "..."} when there's no match for this id.
-            if (root.TryGetProperty("response", out var respEl) && respEl.ValueKind == JsonValueKind.False)
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("response", out var respEl) && respEl.ValueKind == JsonValueKind.False)
             {
                 return new MdblistCacheEntry { Found = false, Confirmed = true, FetchedAtUnixMs = fetchedAtUnixMs };
+            }
+
+            // Review round 8 (D53: only a complete answer is kept): the answer is the title's when it passes the batch row
+            // contract AND is the title asked about; anything else (`{}`, no ids, another title) is a failed lookup, retried
+            // after the short RetryTtl, never 7 days of "found, no ratings".
+            if (BatchRowTmdbId(root) is not { } answered || !string.Equals(answered, tmdbId.Trim(), StringComparison.Ordinal))
+            {
+                _logger.Warning($"[MDBList] Ratings answer for {mediaType}:{tmdbId} wasn't that title's; retried later");
+                return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = fetchedAtUnixMs };
             }
 
             return ParseMediaItem(root, fetchedAtUnixMs);

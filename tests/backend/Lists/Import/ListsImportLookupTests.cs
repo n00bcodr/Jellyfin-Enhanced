@@ -42,6 +42,9 @@ public class ListsImportLookupTests
         }
     }
 
+    // A whole answer (every field usable): the "Bad poster" row's poster made a path JE can't use (review round 8).
+    private static readonly string ManOfSteelWhole = ManOfSteel.Replace("\"posterPath\":\"https://evil.test/x.jpg\"", "\"posterPath\":null", StringComparison.Ordinal);
+
     private const string ManOfSteel = "{\"page\":1,\"results\":[{\"id\":49521,\"mediaType\":\"movie\",\"title\":\"Man of Steel\",\"originalTitle\":\"Man of Steel\",\"releaseDate\":\"2013-06-12\",\"posterPath\":\"/pgqgaUx1cJb5oYQQ5v0tNARCeBp.jpg\",\"overview\":\"A child is sent to Earth.\",\"popularity\":36.3,\"voteCount\":16680},"
         + "{\"id\":73968,\"mediaType\":\"person\",\"name\":\"Henry Cavill\"},"
         + "{\"id\":1,\"mediaType\":\"movie\",\"title\":\"Adult\",\"adult\":true},"
@@ -61,14 +64,20 @@ public class ListsImportLookupTests
         Assert.Null(hits.Value[1].PosterPath); // not a TMDB path
         Assert.Null(hits.Value[1].ReleaseDate); // "" = undated
 
+        // Review round 8: the bad poster is a field JE can't use, so that answer is partial (used, never kept): asked again.
         await f.Lookup.SearchAsync("man of steel", f.Context, CancellationToken.None);
-        Assert.Single(f.Calls); // normalized query, cached
-        Assert.Equal("seerr.test/api/v1/search?query=man%20of%20steel&page=1", f.Calls[0]);
+        Assert.Equal(2, f.Calls.Count);
+
+        f.Reply = request => Task.FromResult(IntegrationTransport.Response(request.RequestUri!.Query.Contains("steel", StringComparison.Ordinal) ? ManOfSteelWhole : "{\"results\":[]}"));
+        await f.Lookup.SearchAsync("Man  of Steel", f.Context, CancellationToken.None);
+        await f.Lookup.SearchAsync("man of steel", f.Context, CancellationToken.None);
+        Assert.Equal(3, f.Calls.Count); // a whole answer: normalized query, cached
+        Assert.All(f.Calls, c => Assert.Equal("seerr.test/api/v1/search?query=man%20of%20steel&page=1", c));
 
         await f.Lookup.SearchAsync("tmdb:1924", f.Context, CancellationToken.None);
         await f.Lookup.SearchAsync("tmdb:1924", f.Context, CancellationToken.None);
-        Assert.Equal(new[] { "seerr.test/api/v1/search?query=tmdb%3A1924&page=1", "seerr.test/api/v1/search?query=tmdb%3A1924&page=1" }, f.Calls.Skip(1));
-        Assert.Equal(3, f.Context.Calls); // empty results are never cached (Seerr hides TMDB errors as empty)
+        Assert.Equal(new[] { "seerr.test/api/v1/search?query=tmdb%3A1924&page=1", "seerr.test/api/v1/search?query=tmdb%3A1924&page=1" }, f.Calls.Skip(3));
+        Assert.Equal(5, f.Context.Calls); // empty results are never cached (Seerr hides TMDB errors as empty)
     }
 
     [Fact]
@@ -169,7 +178,7 @@ public class ListsImportLookupTests
                 await release.Task;
             }
 
-            return IntegrationTransport.Response(ManOfSteel);
+            return IntegrationTransport.Response(ManOfSteelWhole);
         };
         var lookup = new SeerrImportLookup(f.Transport, new MetadataCallLimiter(1, TimeSpan.Zero, TimeProvider.System), f.Plugin.Core.Logger);
 

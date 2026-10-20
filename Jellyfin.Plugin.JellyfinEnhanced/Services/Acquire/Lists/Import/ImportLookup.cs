@@ -248,9 +248,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(15);
 
         private const int MaxCacheEntries = 5000;
-        private const int MaxOverview = 300;
-        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex DateRegex = new("^\\d{4}-\\d{2}-\\d{2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly MetadataCallLimiter _limiter;
@@ -670,48 +667,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         }
 
         // Seerr's movie or TV details by their contract (ResponseContract.SeerrMovieDetails / SeerrTvDetails): Malformed is
-        // transient; Partial details (an id or the season list unknown) are used, never kept, and never prove an id absent
-        // or a season missing (review round 7, 4c2-R7-1/2).
+        // transient; Partial details (an id or the season list unknown, or a field JE can't use: review round 8) are used,
+        // never kept, and never prove an id absent or a season missing (review round 7, 4c2-R7-1/2). Typed values only.
         private static LookupAnswer ParseDetails(string json, string mediaType)
         {
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var read = (mediaType == "movie" ? ResponseContract.SeerrMovieDetails : ResponseContract.SeerrTvDetails).Read(root);
-            var hit = read.Verdict == ResponseVerdict.Malformed ? null : ReadHit(root, mediaType);
-            if (hit == null)
-            {
-                return LookupAnswer.Transient;
-            }
-
-            string? imdb = ReadString(root, "imdbId", 12);
-            int? tvdb = null;
-            if (root.TryGetProperty("externalIds", out var external) && external.ValueKind == JsonValueKind.Object)
-            {
-                imdb ??= ReadString(external, "imdbId", 12);
-                tvdb = ReadInt(external, "tvdbId");
-            }
-
-            if (imdb != null && !Regex.IsMatch(imdb, "^tt[0-9]{5,10}$"))
-            {
-                imdb = null;
-            }
-
-            var seasons = new List<SeasonFacts>();
-            if (mediaType == "tv" && root.TryGetProperty("seasons", out var list) && list.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var season in list.EnumerateArray())
-                {
-                    var number = ReadInt(season, "seasonNumber")!.Value; // the contract read every row
-                    if (number <= 500)
-                    {
-                        seasons.Add(new SeasonFacts(number, ReadInt(season, "episodeCount"), ReadDate(season, "airDate"), ReadString(season, "name", 100)));
-                    }
-                }
-            }
-
-            bool? inProduction = root.TryGetProperty("inProduction", out var prod) && prod.ValueKind is JsonValueKind.True or JsonValueKind.False ? prod.GetBoolean() : null;
-            var details = new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, ReadString(root, "status", 40), inProduction, seasons) { Verdict = read.Verdict };
-            return LookupAnswer.Ok(details, read.Verdict);
+            var read = (mediaType == "movie" ? ResponseContract.SeerrMovieDetails : ResponseContract.SeerrTvDetails).Read(doc.RootElement);
+            return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : TypedTitles.Details(read, mediaType, camel: true);
         }
 
         // A season by its contract (ResponseContract.SeerrSeason): an episode row JE can't read makes it Malformed (an
@@ -720,18 +682,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         {
             using var doc = JsonDocument.Parse(json);
             var read = ResponseContract.SeerrSeason.Read(doc.RootElement);
-            if (read.Verdict == ResponseVerdict.Malformed)
-            {
-                return LookupAnswer.Transient;
-            }
-
-            var list = new List<EpisodeFacts>();
-            foreach (var episode in doc.RootElement.GetProperty("episodes").EnumerateArray())
-            {
-                list.Add(new EpisodeFacts(ReadInt(episode, "seasonNumber") ?? season, ReadInt(episode, "episodeNumber")!.Value, ReadString(episode, "name", 200), ReadDate(episode, "airDate")));
-            }
-
-            return LookupAnswer.Ok(list, read.Verdict);
+            return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : LookupAnswer.Ok(TypedTitles.Episodes(read, season, camel: true), read.Verdict);
         }
 
         // One row of a search answer: a title, a deliberate drop (an adult title, a person or another kind that isn't a
@@ -753,93 +704,100 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return RowRead.Dropped;
             }
 
-            verdict = (type == "movie" ? ResponseContract.SeerrMovieRow : ResponseContract.SeerrTvRow).Read(element).Verdict;
-            hit = verdict == ResponseVerdict.Malformed ? null : ReadHit(element, type);
+            var read = (type == "movie" ? ResponseContract.SeerrMovieRow : ResponseContract.SeerrTvRow).Read(element);
+            verdict = read.Verdict;
+            hit = verdict == ResponseVerdict.Malformed ? null : TypedTitles.Hit(read, type, camel: true);
             return hit == null ? RowRead.Unusable : RowRead.Hit;
         }
 
-        private static TitleHit? ReadHit(JsonElement element, string? mediaType)
-        {
-            if (mediaType is not ("movie" or "tv") || element.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
-            {
-                return null;
-            }
-
-            var id = ReadInt(element, "id");
-            var title = mediaType == "movie" ? ReadString(element, "title", 200) : ReadString(element, "name", 200);
-            if (id is not > 0 || string.IsNullOrWhiteSpace(title))
-            {
-                return null;
-            }
-
-            var original = mediaType == "movie" ? ReadString(element, "originalTitle", 200) : ReadString(element, "originalName", 200);
-            var date = mediaType == "movie" ? ReadDate(element, "releaseDate") : ReadDate(element, "firstAirDate");
-            var poster = ReadString(element, "posterPath", 100);
-            if (poster != null && !PosterRegex.IsMatch(poster))
-            {
-                poster = null;
-            }
-
-            var overview = ReadString(element, "overview", MaxOverview);
-            var popularity = element.TryGetProperty("popularity", out var pop) && pop.ValueKind == JsonValueKind.Number && pop.TryGetDouble(out var p) ? p : 0;
-            var votes = ReadInt(element, "voteCount") ?? 0;
-            return new TitleHit(mediaType, id.Value, title.Trim(), original, date, poster, overview, popularity, votes);
-        }
-
-        private static int? ReadInt(JsonElement element, string name) =>
-            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var result) ? result : null;
-
-        private static string? ReadString(JsonElement element, string name, int max)
-        {
-            if (!element.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
-            {
-                return null;
-            }
-
-            var text = ListRules.CleanText(value.GetString());
-            if (text.Length == 0)
-            {
-                return null;
-            }
-
-            return text.Length > max ? text[..max] : text;
-        }
-
-        private static string? ReadDate(JsonElement element, string name)
-        {
-            var value = ReadString(element, name, 10);
-            return value != null && DateRegex.IsMatch(value) && ListRules.TryParseDate(value, out _) ? value : null;
-        }
-
-        private static bool TryGetSeerrConfig(out string[] urls, out string apiKey)
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            urls = Array.Empty<string>();
-            apiKey = string.Empty;
-            if (config == null || !config.JellyseerrEnabled || string.IsNullOrWhiteSpace(config.JellyseerrUrls) || string.IsNullOrWhiteSpace(config.GetJellyseerrApiKey()))
-            {
-                return false;
-            }
-
-            urls = config.JellyseerrUrls
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(u => u.Trim().TrimEnd('/'))
-                .Where(u => u.Length > 0)
-                .ToArray();
-            apiKey = config.GetJellyseerrApiKey();
-            return urls.Length > 0;
-        }
+        // The address list every Seerr-backed read of the lists area takes (review round 8, 4c2-R8-4).
+        private static bool TryGetSeerrConfig(out string[] urls, out string apiKey) => SeerrAddresses.TryGet(out urls, out apiKey);
 
         // Seerr instance identity (URL list + key hash): a config change never serves another instance's results.
-        private static string Fingerprint(string[] urls, string apiKey)
+        private static string Fingerprint(string[] urls, string apiKey) => SeerrAddresses.Identity(urls, apiKey);
+    }
+
+    /// <summary>
+    /// The title facts the import lookups take from a contract read (review round 8, D53 "parse once into typed facts"): the
+    /// TYPED values of <see cref="ResponseContract"/>'s title rows, details and seasons, in TMDB's names or Seerr's camelCase
+    /// of them. Nothing here reads JSON: a value the contract couldn't use is no value (and made the answer Partial).
+    /// </summary>
+    internal static class TypedTitles
+    {
+        private const int MaxOverview = 300;
+
+        /// <summary>A title row (search, find, <c>tmdb:N</c>, the title part of details), or null without an id and title.</summary>
+        /// <param name="row">The read row.</param>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="camel">Seerr's names.</param>
+        /// <returns>The title, or null.</returns>
+        public static TitleHit? Hit(ContractRead row, string mediaType, bool camel)
         {
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(apiKey));
-            return string.Join('\n', urls) + "|" + Convert.ToHexString(hash, 0, 8);
+            string N(string name) => camel ? ResponseContract.CamelName(name) : name;
+            var movie = mediaType == "movie";
+            var id = row.Int("id");
+            var title = Clip(row.Text(movie ? "title" : "name"), 200);
+            if (id is not > 0 || title == null || row.Bool("adult") == true)
+            {
+                return null;
+            }
+
+            return new TitleHit(mediaType, id.Value, title, Clip(row.Text(N(movie ? "original_title" : "original_name")), 200), row.Date(N(movie ? "release_date" : "first_air_date")),
+                row.Poster(N("poster_path")), Clip(row.Text("overview"), MaxOverview), row.Number("popularity") ?? 0, row.Int(N("vote_count")) ?? 0);
         }
+
+        /// <summary>Details (not Malformed): the title, its ids, status, production state and seasons; with the answer's verdict.</summary>
+        /// <param name="read">The read details.</param>
+        /// <param name="mediaType">"movie" or "tv".</param>
+        /// <param name="camel">Seerr's names.</param>
+        /// <returns>The answer (Transient when it isn't a title JE can use: no id or title, an adult title).</returns>
+        public static LookupAnswer Details(ContractRead read, string mediaType, bool camel)
+        {
+            string N(string name) => camel ? ResponseContract.CamelName(name) : name;
+            var hit = Hit(read, mediaType, camel);
+            if (hit == null)
+            {
+                return LookupAnswer.Transient;
+            }
+
+            var external = read.Member(N("external_ids"));
+            var seasons = new List<SeasonFacts>();
+            if (mediaType == "tv")
+            {
+                foreach (var season in read.Rows("seasons"))
+                {
+                    var number = season.Int(N("season_number"))!.Value; // required: the contract read every row
+                    if (number <= 500)
+                    {
+                        seasons.Add(new SeasonFacts(number, season.Int(N("episode_count")), season.Date(N("air_date")), Clip(season.Text("name"), 100)));
+                    }
+                }
+            }
+
+            var details = new TitleDetails(hit, read.Imdb(N("imdb_id")) ?? external?.Imdb(N("imdb_id")), external?.Int(N("tvdb_id")), Clip(read.Text("status"), 40), read.Bool(N("in_production")), seasons)
+            {
+                Verdict = read.Verdict,
+            };
+            return LookupAnswer.Ok(details, read.Verdict);
+        }
+
+        /// <summary>A season's episodes (the contract read every row: each has its episode number).</summary>
+        /// <param name="read">The read season.</param>
+        /// <param name="season">The season asked for (an episode without its own season number is of it).</param>
+        /// <param name="camel">Seerr's names.</param>
+        /// <returns>The episodes.</returns>
+        public static List<EpisodeFacts> Episodes(ContractRead read, int season, bool camel)
+        {
+            string N(string name) => camel ? ResponseContract.CamelName(name) : name;
+            return read.Rows("episodes")
+                .Select(e => new EpisodeFacts(e.Int(N("season_number")) ?? season, e.Int(N("episode_number"))!.Value, Clip(e.Text("name"), 200), e.Date(N("air_date"))))
+                .ToList();
+        }
+
+        /// <summary>Text cut to <paramref name="max"/> characters; null when empty.</summary>
+        /// <param name="text">Text.</param>
+        /// <param name="max">Length.</param>
+        /// <returns>The text or null.</returns>
+        public static string? Clip(string? text, int max) => string.IsNullOrEmpty(text) ? null : text.Length > max ? text[..max] : text;
     }
 }

@@ -62,16 +62,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
                 var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, fresh, cancellationToken)).ConfigureAwait(false);
-                return movie is { } m ? ListMetadataService.FromMovie(m.Root, fetchedAt, m.Verdict) : null;
+                return movie == null ? null : ListMetadataService.FromMovie(movie, fetchedAt);
             }
 
             var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", ResponseContract.MetadataShow, fresh, cancellationToken)).ConfigureAwait(false);
-            if (tv is not { } show)
+            if (tv == null)
             {
                 return null;
             }
 
-            (JsonElement Root, ResponseVerdict Verdict)? season = null;
+            ContractRead? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
                 // A season read that fails leaves season null: FromTv then marks the answer partial (it never shrinks the
@@ -79,12 +79,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, ResponseContract.MetadataSeason, fresh, cancellationToken)).ConfigureAwait(false);
             }
 
-            return ListMetadataService.FromTv(placeholder, show.Root, season?.Root, fetchedAt, todayUtc, show.Verdict, season?.Verdict ?? ResponseVerdict.Valid);
+            return ListMetadataService.FromTv(placeholder, tv, season, fetchedAt, todayUtc);
         }
 
-        // One TMDB resource in Seerr's field names (camelCase) with its verdict by `schema`, or null (not found, an error, a
-        // Malformed answer). An answer that isn't Valid is dropped from TMDB's response cache (asked again next time).
-        private async Task<(JsonElement Root, ResponseVerdict Verdict)?> GetAsync(string path, string query, ResourceSchema schema, bool fresh, CancellationToken cancellationToken)
+        // One TMDB resource in Seerr's field names (camelCase) as `schema` reads it (its verdict and typed values), or null (not
+        // found, an error, a Malformed answer). An answer that isn't Valid is dropped from TMDB's response cache (asked again
+        // next time).
+        private async Task<ContractRead?> GetAsync(string path, string query, ResourceSchema schema, bool fresh, CancellationToken cancellationToken)
         {
             try
             {
@@ -105,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                     _logger.Debug($"[Lists] TMDB metadata {path} answered {(read.Verdict == ResponseVerdict.Partial ? "in part" : "something JE can't read")} ({read.Reason})");
                 }
 
-                return read.Verdict == ResponseVerdict.Malformed ? null : (root, read.Verdict);
+                return read.Verdict == ResponseVerdict.Malformed ? null : read;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

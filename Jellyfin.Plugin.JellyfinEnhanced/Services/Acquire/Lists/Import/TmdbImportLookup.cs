@@ -37,9 +37,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         public static readonly TimeSpan CallTimeout = TmdbResponseCache.UpstreamTimeout + TimeSpan.FromSeconds(2);
 
         private const int MaxCacheEntries = 5000;
-        private const int MaxOverview = 300;
-        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex DateRegex = new("^\\d{4}-\\d{2}-\\d{2}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex YearSuffix = new("^(?<title>.+?)\\s+year:(?<year>\\d{4})$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -143,18 +140,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return LookupAnswer.Transient;
             }
 
-            foreach (var episode in root.GetProperty("tv_episode_results").EnumerateArray())
-            {
-                var show = episode.ValueKind == JsonValueKind.Object ? Int(episode, "show_id") : null;
-                var s = show == null ? null : Int(episode, "season_number");
-                var e = show == null ? null : Int(episode, "episode_number");
-                if (show > 0 && s >= 0 && e >= 0)
-                {
-                    return LookupAnswer.Ok(new ImdbEpisodeFind(show!.Value, s!.Value, e!.Value, Str(episode, "name", 200), Date(episode, "air_date")), read.Verdict);
-                }
-            }
-
-            return LookupAnswer.NotFound; // a Valid, empty list
+            // The contract's usable rows (each has its show, season and episode: required) as typed values (review round 8).
+            var episode = read.Rows("tv_episode_results").FirstOrDefault();
+            return episode == null
+                ? LookupAnswer.NotFound // a Valid, empty list
+                : LookupAnswer.Ok(new ImdbEpisodeFind(episode.Int("show_id")!.Value, episode.Int("season_number")!.Value, episode.Int("episode_number")!.Value, TypedTitles.Clip(episode.Text("name"), 200), episode.Date("air_date")), read.Verdict);
         }
 
         // ── Search forms ─────────────────────────────────────────────────────
@@ -382,46 +372,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
         // Movie or TV details by their contract (ResponseContract.TmdbMovieDetails / TmdbTvDetails, review round 7):
         // Malformed is transient (a season row JE can't read too: a season missing from the list would be taken as "no such
-        // season"); Partial details (an external id or the season list unknown) are used, never kept, and never prove an
-        // id absent or a season missing (4c2-R7-1/2).
+        // season"); Partial details (an external id or the season list unknown, or a field JE can't use: review round 8) are
+        // used, never kept, and never prove an id absent or a season missing (4c2-R7-1/2). Typed values only (review round 8).
         private static LookupAnswer ParseDetails(JsonElement root, string mediaType)
         {
             var read = (mediaType == "movie" ? ResponseContract.TmdbMovieDetails : ResponseContract.TmdbTvDetails).Read(root);
-            var hit = read.Verdict == ResponseVerdict.Malformed ? null : ReadHit(root, mediaType);
-            if (hit == null)
-            {
-                return LookupAnswer.Transient;
-            }
-
-            var imdb = Str(root, "imdb_id", 12);
-            int? tvdb = null;
-            if (root.TryGetProperty("external_ids", out var external) && external.ValueKind == JsonValueKind.Object)
-            {
-                imdb ??= Str(external, "imdb_id", 12);
-                tvdb = Int(external, "tvdb_id");
-            }
-
-            if (imdb != null && !ImdbRegex.IsMatch(imdb))
-            {
-                imdb = null;
-            }
-
-            var seasons = new List<SeasonFacts>();
-            if (mediaType == "tv")
-            {
-                foreach (var season in Array(root, "seasons"))
-                {
-                    var number = Int(season, "season_number")!.Value; // the contract read every row
-                    if (number <= 500)
-                    {
-                        seasons.Add(new SeasonFacts(number, Int(season, "episode_count"), Date(season, "air_date"), Str(season, "name", 100)));
-                    }
-                }
-            }
-
-            bool? inProduction = root.TryGetProperty("in_production", out var prod) && prod.ValueKind is JsonValueKind.True or JsonValueKind.False ? prod.GetBoolean() : null;
-            var details = new TitleDetails(hit, imdb, tvdb is > 0 ? tvdb : null, Str(root, "status", 40), inProduction, seasons) { Verdict = read.Verdict };
-            return LookupAnswer.Ok(details, read.Verdict);
+            return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : TypedTitles.Details(read, mediaType, camel: false);
         }
 
         // A season by its contract (ResponseContract.TmdbSeason): an episode row JE can't read makes it Malformed (an
@@ -429,18 +385,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         private static LookupAnswer ParseSeason(JsonElement root, int season)
         {
             var read = ResponseContract.TmdbSeason.Read(root);
-            if (read.Verdict == ResponseVerdict.Malformed)
-            {
-                return LookupAnswer.Transient;
-            }
-
-            var list = new List<EpisodeFacts>();
-            foreach (var episode in root.GetProperty("episodes").EnumerateArray())
-            {
-                list.Add(new EpisodeFacts(Int(episode, "season_number") ?? season, Int(episode, "episode_number")!.Value, Str(episode, "name", 200), Date(episode, "air_date")));
-            }
-
-            return LookupAnswer.Ok(list, read.Verdict);
+            return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : LookupAnswer.Ok(TypedTitles.Episodes(read, season, camel: false), read.Verdict);
         }
 
         // One row of a search or find answer: a title, a deliberate drop (an adult title, a person or another kind that
@@ -459,69 +404,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return RowRead.Dropped;
             }
 
-            verdict = (mediaType == "movie" ? ResponseContract.TmdbMovieRow : ResponseContract.TmdbTvRow).Read(element).Verdict;
-            hit = verdict == ResponseVerdict.Malformed ? null : ReadHit(element, mediaType);
+            var read = (mediaType == "movie" ? ResponseContract.TmdbMovieRow : ResponseContract.TmdbTvRow).Read(element);
+            verdict = read.Verdict;
+            hit = verdict == ResponseVerdict.Malformed ? null : TypedTitles.Hit(read, mediaType, camel: false);
             return hit == null ? RowRead.Unusable : RowRead.Hit;
-        }
-
-        private static TitleHit? ReadHit(JsonElement element, string? mediaType)
-        {
-            if (mediaType is not ("movie" or "tv") || element.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
-            {
-                return null;
-            }
-
-            var id = Int(element, "id");
-            var title = mediaType == "movie" ? Str(element, "title", 200) : Str(element, "name", 200);
-            if (id is not > 0 || string.IsNullOrWhiteSpace(title))
-            {
-                return null;
-            }
-
-            var original = mediaType == "movie" ? Str(element, "original_title", 200) : Str(element, "original_name", 200);
-            var date = mediaType == "movie" ? Date(element, "release_date") : Date(element, "first_air_date");
-            var poster = Str(element, "poster_path", 100);
-            if (poster != null && !PosterRegex.IsMatch(poster))
-            {
-                poster = null;
-            }
-
-            var popularity = element.TryGetProperty("popularity", out var pop) && pop.ValueKind == JsonValueKind.Number && pop.TryGetDouble(out var p) ? p : 0;
-            var votes = Int(element, "vote_count") ?? 0;
-            return new TitleHit(mediaType, id.Value, title.Trim(), original, date, poster, Str(element, "overview", MaxOverview), popularity, votes);
-        }
-
-        private static IEnumerable<JsonElement> Array(JsonElement element, string name) =>
-            element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array ? array.EnumerateArray() : Enumerable.Empty<JsonElement>();
-
-        private static int? Int(JsonElement element, string name) =>
-            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var result) ? result : null;
-
-        private static string? Str(JsonElement element, string name, int max)
-        {
-            if (!element.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
-            {
-                return null;
-            }
-
-            var text = ListRules.CleanText(value.GetString());
-            if (text.Length == 0)
-            {
-                return null;
-            }
-
-            return text.Length > max ? text[..max] : text;
-        }
-
-        private static string? Date(JsonElement element, string name)
-        {
-            var value = Str(element, name, 10);
-            return value != null && DateRegex.IsMatch(value) && ListRules.TryParseDate(value, out _) ? value : null;
         }
     }
 

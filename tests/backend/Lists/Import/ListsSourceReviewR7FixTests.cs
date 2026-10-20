@@ -32,24 +32,24 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     private static readonly CancellationToken None = CancellationToken.None;
     private static readonly DateTime Today = new(2025, 9, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    private const string Tmdb = "api.themoviedb.org/3/";
-    private const string SeerrA = "seerr-a.test/api/v1/";
-    private const string SeerrB = "seerr-b.test/api/v1/";
+    internal const string Tmdb = "api.themoviedb.org/3/";
+    internal const string SeerrA = "seerr-a.test/api/v1/";
+    internal const string SeerrB = "seerr-b.test/api/v1/";
 
     // ── 1. The generated contract model: resource kind × field × {missing, null, wrong type, empty} ──
 
     // Valid answers in TMDB's names; Seerr's are the same in camelCase (Camel).
-    private const string MovieBody = "{\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false,\"status\":\"Released\",\"imdb_id\":\"tt0770828\",\"external_ids\":{\"imdb_id\":\"tt0770828\"}}";
-    private const string ShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"original_name\":\"Arrow\",\"first_air_date\":\"2012-10-10\",\"poster_path\":\"/a.jpg\",\"overview\":\"Oliver.\",\"popularity\":20.5,\"vote_count\":5000,\"status\":\"Ended\",\"in_production\":false,\"external_ids\":{\"imdb_id\":\"tt2193021\",\"tvdb_id\":257655},\"seasons\":[{\"season_number\":1,\"episode_count\":23,\"air_date\":\"2012-10-10\",\"name\":\"Season 1\"},{\"season_number\":2,\"episode_count\":23,\"air_date\":\"2013-10-09\",\"name\":\"Season 2\"}]}";
-    private const string SeasonBody = "{\"id\":3,\"season_number\":1,\"air_date\":\"2012-10-10\",\"episodes\":[{\"episode_number\":1,\"season_number\":1,\"name\":\"Pilot\",\"air_date\":\"2012-10-10\"},{\"episode_number\":2,\"season_number\":1,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
+    internal const string MovieBody = "{\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false,\"status\":\"Released\",\"imdb_id\":\"tt0770828\",\"external_ids\":{\"imdb_id\":\"tt0770828\"}}";
+    internal const string ShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"original_name\":\"Arrow\",\"first_air_date\":\"2012-10-10\",\"poster_path\":\"/a.jpg\",\"overview\":\"Oliver.\",\"popularity\":20.5,\"vote_count\":5000,\"status\":\"Ended\",\"in_production\":false,\"external_ids\":{\"imdb_id\":\"tt2193021\",\"tvdb_id\":257655},\"seasons\":[{\"season_number\":1,\"episode_count\":23,\"air_date\":\"2012-10-10\",\"name\":\"Season 1\"},{\"season_number\":2,\"episode_count\":23,\"air_date\":\"2013-10-09\",\"name\":\"Season 2\"}]}";
+    internal const string SeasonBody = "{\"id\":3,\"season_number\":1,\"air_date\":\"2012-10-10\",\"episodes\":[{\"episode_number\":1,\"season_number\":1,\"name\":\"Pilot\",\"air_date\":\"2012-10-10\"},{\"episode_number\":2,\"season_number\":1,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
     private const string EpisodeFindBody = "{\"movie_results\":[],\"tv_results\":[],\"tv_episode_results\":[{\"show_id\":1412,\"season_number\":1,\"episode_number\":2,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
-    private const string MultiBody = "{\"page\":1,\"results\":[{\"media_type\":\"movie\",\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false},{\"media_type\":\"tv\",\"id\":1412,\"name\":\"Arrow\",\"first_air_date\":\"2012-10-10\"}],\"total_results\":2}";
+    internal const string MultiBody = "{\"page\":1,\"results\":[{\"media_type\":\"movie\",\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false},{\"media_type\":\"tv\",\"id\":1412,\"name\":\"Arrow\",\"first_air_date\":\"2012-10-10\"}],\"total_results\":2}";
     private const string FindBody = "{\"movie_results\":[{\"id\":49521,\"title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"adult\":false}],\"tv_results\":[{\"id\":1412,\"name\":\"Arrow\"}],\"tv_episode_results\":[]}";
 
     // Placeholder metadata (Seerr's names; JE mode reads TMDB's, Snake).
-    private const string MetaMovieBody = "{\"id\":10,\"title\":\"Inception\",\"releaseDate\":\"2010-07-16\",\"posterPath\":\"/i.jpg\",\"overview\":\"Dreams.\",\"imdbId\":\"tt1375666\",\"externalIds\":{\"imdbId\":\"tt1375666\"}}";
-    private const string MetaShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"firstAirDate\":\"2012-10-10\",\"posterPath\":\"/a.jpg\",\"overview\":\"Oliver.\",\"status\":\"Returning Series\",\"inProduction\":true,\"externalIds\":{\"imdbId\":\"tt2193021\",\"tvdbId\":257655},\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3,\"airDate\":\"2012-10-10\"}],\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":3,\"airDate\":\"2012-10-24\"}}";
-    private const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"}]}";
+    internal const string MetaMovieBody = "{\"id\":10,\"title\":\"Inception\",\"releaseDate\":\"2010-07-16\",\"posterPath\":\"/i.jpg\",\"overview\":\"Dreams.\",\"imdbId\":\"tt1375666\",\"externalIds\":{\"imdbId\":\"tt1375666\"}}";
+    internal const string MetaShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"firstAirDate\":\"2012-10-10\",\"posterPath\":\"/a.jpg\",\"overview\":\"Oliver.\",\"status\":\"Returning Series\",\"inProduction\":true,\"externalIds\":{\"imdbId\":\"tt2193021\",\"tvdbId\":257655},\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3,\"airDate\":\"2012-10-10\"}],\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":3,\"airDate\":\"2012-10-24\"}}";
+    internal const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"}]}";
 
     // THE ORACLE: each kind's declared contract restated per field as the verdict of (missing, null, wrong type, empty):
     // V valid (definitive: used and kept), P partial (used, never kept, never proof of an absence), M malformed (transient,
@@ -123,13 +123,13 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     private static readonly (string Path, string Verdicts)[] PosterFields = { ("poster_path", "MVMV") };
 
-    private sealed record Kind(string Name, string Body, (string Path, string Verdicts)[] Fields, Func<World, string, Task<Seen>> Read);
+    internal sealed record Kind(string Name, string Body, (string Path, string Verdicts)[] Fields, Func<World, string, Task<Seen>> Read);
 
     // What a production entry point made of one answer: whether it used it, whether it kept it (a second read sent
     // nothing), and (metadata) whether applying it cleared a value the entry already had.
-    private sealed record Seen(bool Used, LookupStatus? Status, bool Kept, bool Cleared = false);
+    internal sealed record Seen(bool Used, LookupStatus? Status, bool Kept, bool Cleared = false);
 
-    private static readonly Kind[] Kinds =
+    internal static readonly Kind[] Kinds =
     {
         new("tmdb details movie", MovieBody, MovieFields, (w, b) => LookupAsync(w, Tmdb + "movie/49521", b, () => StatusOf(w.TmdbLookup.GetDetailsAsync("movie", 49521, w.Context, None)))),
         new("tmdb details tv", ShowBody, ShowFields, (w, b) => LookupAsync(w, Tmdb + "tv/1412", b, () => StatusOf(w.TmdbLookup.GetDetailsAsync("tv", 1412, w.Context, None)))),
@@ -222,7 +222,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         return new Seen(first != LookupStatus.Transient, first, w.Total == calls);
     }
 
-    private static Placeholder Prefilled(string kind)
+    internal static Placeholder Prefilled(string kind)
     {
         var movie = kind == PlaceholderKinds.Movie;
         var placeholder = new Placeholder
@@ -305,7 +305,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     // ── JSON helpers of the model ──
 
-    private static string Mutate(string body, string path, string mutation)
+    internal static string Mutate(string body, string path, string mutation)
     {
         var root = JsonNode.Parse(body)!;
         var segments = path.Split('.');
@@ -349,7 +349,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         return root.ToJsonString();
     }
 
-    private static JsonNode? Step(JsonNode node, string segment)
+    internal static JsonNode? Step(JsonNode node, string segment)
     {
         var open = segment.IndexOf('[', StringComparison.Ordinal);
         if (open < 0)
@@ -385,7 +385,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     private static string RenamePath(string path, Func<string, string> rename) =>
         string.Join('.', path.Split('.').Select(s => s.IndexOf('[', StringComparison.Ordinal) is var i and >= 0 ? rename(s[..i]) + s[i..] : rename(s)));
 
-    private static string Camel(string body) => Rename(body, CamelName);
+    internal static string Camel(string body) => Rename(body, CamelName);
 
     private static (string Path, string Verdicts)[] Camel((string Path, string Verdicts)[] fields) => fields.Select(f => (RenamePath(f.Path, CamelName), f.Verdicts)).ToArray();
 
@@ -400,7 +400,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // become placeholders without a title lookup, also its title: missing, null, wrong type or empty → the row is malformed
     // and the snapshot isn't complete) or "display" (title, year: unreadable → no value; the snapshot is complete by its
     // keys). The row types are review rounds 4–5's table (ListsSourceReviewR3FixTests.RowCases).
-    private static readonly Dictionary<string, (string Path, string Role)[]> RowFields = new()
+    internal static readonly Dictionary<string, (string Path, string Role)[]> RowFields = new()
     {
         ["tmdb list"] = new[] { ("id", "required"), ("title", "display"), ("release_date", "display") },
         ["tmdb trending"] = new[] { ("id", "required"), ("title", "display"), ("release_date", "display") },

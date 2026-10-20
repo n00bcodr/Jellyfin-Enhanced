@@ -84,9 +84,15 @@ public class ListsImportMetadataTests
         Assert.Null(hits.Value[1].ReleaseDate);
         Assert.Equal("tmdb", net.Lookup.Provider);
 
+        // Review round 8: a row's poster that isn't a TMDB path is a field JE can't use, so the answer is partial (used,
+        // never kept): asked again. A whole answer is kept (normalized query).
+        await net.Lookup.SearchAsync("man of steel", net.Context, CancellationToken.None);
+        Assert.Equal(2, net.Calls.Count);
+        net.Routes["https://api.themoviedb.org/3/search/multi"] = _ => Json(Multi.Replace("\"poster_path\":\"https://evil.test/x.jpg\"", "\"poster_path\":null", StringComparison.Ordinal));
+        await net.Lookup.SearchAsync("Man of Steel", net.Context, CancellationToken.None);
         await net.Lookup.SearchAsync("man of steel", net.Context, CancellationToken.None); // cached (normalized)
-        Assert.Single(net.Calls);
-        Assert.Equal(1, net.Context.Calls);
+        Assert.Equal(3, net.Calls.Count);
+        Assert.Equal(3, net.Context.Calls);
         Assert.DoesNotContain(net.Calls, c => c.Contains("tmdb-key", StringComparison.Ordinal) && !c.Contains("api_key=tmdb-key", StringComparison.Ordinal));
     }
 
