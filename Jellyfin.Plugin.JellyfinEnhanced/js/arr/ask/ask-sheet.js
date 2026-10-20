@@ -1268,5 +1268,12 @@
 
     JE.arrAskSheet = Object.freeze({ open, openOrAsk, close, mount });
     JE.internals = JE.internals || {};
-    JE.internals.arrAskSheet = { costOf, costLine, episodeCost, needsSheet, seriesCards, limited, posterUrl, current: () => current };
+    /**
+     * Whether a title status leaves the title to be asked for, as the mount decides (nothing under way for it, or a Search):
+     * the action bar offers Request only then.
+     * @param {Object|null} status Title status.
+     * @returns {boolean} Askable.
+     */
+    const askable = status => !status || (STAGES_REQUESTABLE.has(status.stage) && !status.attention) || !!JE.arrStatus?.searchable?.(status);
+    JE.internals.arrAskSheet = { costOf, costLine, episodeCost, needsSheet, seriesCards, limited, posterUrl, askable, current: () => current };
 })(window.JellyfinEnhanced);

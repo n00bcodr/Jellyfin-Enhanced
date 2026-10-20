@@ -16,7 +16,7 @@ const MOVIE = { id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 1, st
 export const SHOW = { id: 1399, name: 'Game of Thrones', mediaInfo: { id: 78, status: 1, status4k: 1 }, externalIds: { tvdbId: 121361 },
   seasons: [{ seasonNumber: 1, episodeCount: 10, airDate: '2011-04-17', posterPath: '/p.jpg' }] };
 
-export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false } = {}) {
+export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false, stage = 'notHere' } = {}) {
   let user = 'user-a';
   const requests = []; const gates = []; const toasts = []; const feeds = [];
   async function answer(method, path, body) {
@@ -25,7 +25,7 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
     // A held request answers with the value it is released with (when given), else as below.
     if (index >= 0) { const [gate] = gates.splice(index, 1); const value = await gate.d.promise; if (value !== undefined) return [200, value]; }
     if (path.startsWith('/title-actions/')) return [200, { allowed: true, itemId: null }];
-    if (path.startsWith('/acquire/status')) return [200, { items: [{ key: 'movie:tmdb:603', stage: 'notHere', admin: { instances: [] } }] }];
+    if (path.startsWith('/acquire/status')) return [200, { items: [{ key: 'movie:tmdb:603', stage, admin: { instances: [] } }] }];
     if (path.startsWith('/jellyseerr/user-status')) return [200, { active: true, userFound: true, canReportIssues: true, canRequestAdvanced: advanced }];
     if (path === '/jellyseerr/radarr') return [200, [{ id: 1, name: 'Radarr', isDefault: true, is4k: false }]];
     if (path === '/jellyseerr/radarr/1') return [200, { profiles: [{ id: 4, name: 'HD' }], rootFolders: [{ id: 1, path: '/movies' }] }];

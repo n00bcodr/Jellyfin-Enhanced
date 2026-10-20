@@ -219,10 +219,10 @@ test('read path: the window\'s Refresh answering after the window\'s operation e
   const modal = await openWindow(h);
   const held = h.hold('GET', '/jellyseerr/movie/603');
   modal.querySelector('.modal-refresh').click(); await settle();
-  await rerender(h);
-  const actions = modal.querySelector('[data-mount="je-actions"]').innerHTML;
+  await rerender(h); await delivered();
+  assert.ok(modal.querySelector('.jellyseerr-request-button'), 'the window shows Request (status not requested)');
   held.resolve({ id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 2, status4k: 1 } }); await delivered();
-  assert.equal(modal.querySelector('[data-mount="je-actions"]').innerHTML, actions);
+  assert.ok(modal.querySelector('.jellyseerr-request-button'), 'the answer (requested) did not redraw the ended window');
 });
 
 test('read path: two request sheet openings, the older one\'s reads answer last → the newer sheet stays', async t => {
@@ -379,4 +379,27 @@ test('control: a native window\'s Request in 4K sends natively, once', async t =
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await delivered();
   (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
+});
+
+// ---------------------------------------------------------------- Q-PLAYR18-2: no Request over a title already on its way
+
+for (const stage of ['asked', 'downloading', 'ready']) {
+  test(`Q-PLAYR18-2: a title already ${stage} (JE requests on) → the bar offers no Request, in the row or the More sheet`, async t => {
+    const h = setup(t, { asks: true, stage });
+    h.a.initialize(); mount(h); await settle(); await delivered();
+    const primary = h.row().querySelector('.je-actions-row .je-actions-primary');
+    assert.equal(primary?.textContent.includes('jellyseerr_btn_request') ?? false, false, 'no Request primary');
+    h.row().querySelector('.je-actions-more').click(); await delivered();
+    const entries = [...h.document.querySelectorAll('.je-actions-entry')].map(n => n.dataset.action);
+    assert.ok(entries.length > 0, 'the sheet is open');
+    assert.equal(entries.includes('request'), false);
+  });
+}
+
+test('control: a title not here (nothing under way) → the bar offers Request in the row and the sheet', async t => {
+  const h = setup(t, { asks: true, stage: 'notHere' });
+  h.a.initialize(); mount(h); await settle(); await delivered();
+  assert.match(h.row().querySelector('.je-actions-row .je-actions-primary')?.textContent || '', /jellyseerr_btn_request/);
+  h.row().querySelector('.je-actions-more').click(); await delivered();
+  assert.ok([...h.document.querySelectorAll('.je-actions-entry')].some(n => n.dataset.action === 'request'));
 });

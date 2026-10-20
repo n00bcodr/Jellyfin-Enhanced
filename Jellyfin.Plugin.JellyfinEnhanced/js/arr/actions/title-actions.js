@@ -237,10 +237,16 @@
                     return result.ok;
                 } });
         }
+        // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
+        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
+        if (!action.current()) return [];
+        const titleStatus = status?.items?.[0];
         if (c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet) {
             const caps = await JE.arrAsk.me();
             if (!action.current()) return [];
-            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series')) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
+            // Not while the title is already asked for, on its way or here: the page's own request control shows no
+            // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
+            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
                 run: (opener, submitted) => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
                     initialSeason: c.season, initialEpisode: c.episode }, { opener, operation: submitted }) });
         } else if (c.absent && !JE.arrAsk?.enabled?.() && JE.pluginConfig?.JellyseerrEnabled && JE.jellyseerrMoreInfo?.open && !root?.matches?.('.je-more-info-modal')) {
@@ -267,10 +273,6 @@
                     ...(control ? { control } : { run: (_opener, submitted) => JE.jellyseerrIssueReporter.showReportModal(String(c.tmdbId), displayName(), c.type, null, item, submitted) }) });
             }
         }
-        // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
-        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
-        if (!action.current()) return [];
-        const titleStatus = status?.items?.[0];
         if (JE.pluginConfig?.ArrManageDrawerEnabled && JE.arrManage && titleStatus?.admin) {
             if (!source('manage', '.je-manage-open, .je-arr-modal-manage', 'requests', JE.t('arr_manage_button'), 'tune'))
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
