@@ -42,6 +42,7 @@ export const EXCLUDED_MODULES = {
   'arr/adminusers/admin-users.js': 'Dashboard → Users → Jellyfin Enhanced tab: its only flagged site is ApiClient.serverVersion(), a local version read, no title action',
   'arr/lists/list-api.js': 'the list pages\' transport (phase 4c, own fetch, Q-PLAYD51-3): list tickets and the session check bind it; the bar never opens a list sheet (it never sets `fixed`)',
   'arr/lists/list-grid.js': 'the list grid\'s summaries read, a POST that changes nothing (phase 4c, own fetch, Q-PLAYD51-3), no title action',
+  'arr/ready/ready-settings.js': 'the JE settings panel\'s "Ready to watch" section (phase 4f): the person\'s own Ready settings saves, no title action',
 };
 for (const [file, reason] of Object.entries(EXCLUDED_MODULES)) if (reason === null) delete EXCLUDED_MODULES[file];
 
@@ -131,6 +132,7 @@ export const SITES = {
   // Play edge only (see EXCLUDED_MODULES): list-pages.js and list-render.js are reads.
   'arr/admin/admin-automation.js': 2, 'arr/adminusers/admin-users-api.js': 1, 'arr/adminusers/admin-users.js': 3,
   'arr/lists/list-api.js': 1, 'arr/lists/list-grid.js': 1, 'arr/lists/list-pages.js': 1, 'arr/lists/list-render.js': 1,
+  'arr/ready/ready-settings.js': 1,
 };
 
 /**
