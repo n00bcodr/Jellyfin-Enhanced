@@ -8670,7 +8670,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // mutated nothing is shared (TryGetSerializedItems reports it not
             // shareable) and the request is serialized on its own below, like
             // the delta and strip paths.
-            if (!since.HasValue && spPolicy == null)
+            // Hidden Content: a hidden item's entry is not answered (the same verdict as every list it would sit in), so
+            // a viewer with hiding rules never shares another viewer's serialized cache.
+            var hiddenPolicy = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, HttpContext, _libraryManager);
+
+            if (!since.HasValue && spPolicy == null && hiddenPolicy.IsEmpty)
             {
                 if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount, out var shareable))
                 {
@@ -8704,9 +8708,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
 
+            if (!hiddenPolicy.IsEmpty)
+            {
+                foreach (var (key, entry) in items.ToList())
+                {
+                    var kindName = entry?.Type;
+                    var titleKey = Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", kindName is "Episode" or "Season" ? entry?.SeriesTmdbId : entry?.TmdbId);
+                    if (hiddenPolicy.IsHidden(titleKey, key, entry?.SeriesId, "library")) items.Remove(key);
+                }
+                // The client replaces its stored copy (rather than applying a delta) when the hiding rules change.
+                stripFingerprint = "h" + hiddenPolicy.Revision;
+            }
+
             if (spPolicy != null)
             {
-                stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
+                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
             }
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
@@ -8973,6 +8989,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var spStripGenres = spoilerPolicy?.StripGenres == true;
             var spStripRatings = spoilerPolicy?.StripRatings == true;
             var spReplaceTitle = spoilerPolicy?.ReplaceTitle == true;
+            // A protected item's stub carries only values the host vouches for (its language and rating lists,
+            // ffprobe's codec tokens): never free text from a file's tags.
+            var values = _spoilerTagDataStripper.Host();
+
+            // Hidden Content: a hidden item's card data is not answered, by the same verdict as every list it would sit in
+            // (the item, its owning title, that title's provider key).
+            var hiddenIds = new HashSet<Guid>();
+            var hiddenPolicy = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, HttpContext, _libraryManager);
+            if (!hiddenPolicy.IsEmpty)
+            {
+                var guids = ids.Select(i => Guid.TryParse(i?.Trim(), out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).Distinct().ToArray();
+                var identities = Services.PrivacyIdentities.Resolve(_libraryManager, guids);
+                foreach (var identity in identities.Values) hiddenPolicy.Bind(identity);
+                foreach (var g in guids)
+                    if (identities.TryGetValue(g, out var identity) ? hiddenPolicy.IsHidden(identity, "library") : hiddenPolicy.IsHidden(null, g.ToString("N"), null, "library")) hiddenIds.Add(g);
+            }
+
+            // The stream fields the tag renderers read, from validated values only (a stub's streams).
+            List<object> StubStreams(BaseItem stubItem) => SelectTagDataMediaSources(stubItem.GetMediaSources(false))
+                .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, stubItem.Path))
+                .Where(resolved => resolved.Stream.Type == MediaStreamType.Video || resolved.Stream.Type == MediaStreamType.Audio)
+                .Select(resolved =>
+                {
+                    var s = resolved.Stream;
+                    return (object)new
+                    {
+                        Type = s.Type.ToString(),
+                        Language = values.Language(resolved.Language) ? resolved.Language : null,
+                        Codec = Services.PrivacyTokens.Codec(s.Codec) ? s.Codec : null,
+                        CodecTag = Services.PrivacyTokens.FourCc(s.CodecTag) ? s.CodecTag : null,
+                        Profile = Services.PrivacyTokens.Profile(s.Profile) ? s.Profile : null,
+                        Height = s.Height,
+                        Channels = s.Channels,
+                        ChannelLayout = Services.PrivacyTokens.Layout(s.ChannelLayout) ? s.ChannelLayout : null,
+                        VideoRangeType = s.VideoRangeType,
+                        // DisplayTitle's GETTER prepends the raw Title field, which on user-muxed files commonly carries
+                        // the title; qualitytags.js recomputes overlay text from Codec / Height / VideoRangeType / Profile.
+                        DisplayTitle = default(string?),
+                    };
+                })
+                .ToList();
+            string? StubRating(string? rating) => values.Rating(rating) ? rating : null;
 
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
@@ -8981,6 +9039,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             foreach (var idStr in itemIds)
             {
                 if (!Guid.TryParse(idStr.Trim(), out var itemId))
+                    continue;
+
+                if (hiddenIds.Contains(itemId))
                     continue;
 
                 var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
@@ -9013,43 +9074,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // (e.g. "S05E14 - The Death of Optimus Prime.mkv"), defeating
                     // SpoilerReplaceTitle. Losing the IMAX/3D media-stub overlays on
                     // stripped episodes only is the correct trade-off.
-                    List<object>? stubStreams = null;
+                    // Streams only when SpoilerStripTags is off (quality / language overlays still render under a
+                    // rating-only strip), from validated values. MediaSources stays null: file and version names
+                    // commonly carry the episode title.
+                    List<object>? stubStreams = spStripGenres ? null : StubStreams(spEp);
                     List<object>? stubSources = null;
-                    if (!spStripGenres)
-                    {
-                        var stubMediaSources =
-                            SelectTagDataMediaSources(spEp.GetMediaSources(false));
-                        stubStreams = stubMediaSources
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path))
-                            .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
-                            .Select(resolved =>
-                            {
-                                var s = resolved.Stream;
-                                return (object)new
-                                {
-                                    Type = s.Type.ToString(),
-                                    Language = resolved.Language,
-                                    Codec = s.Codec,
-                                    CodecTag = s.CodecTag,
-                                    Profile = s.Profile,
-                                    Height = s.Height,
-                                    Channels = s.Channels,
-                                    ChannelLayout = s.ChannelLayout,
-                                    VideoRangeType = s.VideoRangeType,
-                                    // DisplayTitle's GETTER prepends the raw Title field,
-                                    // which on user-muxed mkvs (MakeMKV / Plex / Sonarr
-                                    // renamers) commonly carries the episode name — under
-                                    // SpoilerReplaceTitle that leaks via the stream projection.
-                                    // Null it; qualitytags.js recomputes overlay text from
-                                    // Codec / Height / VideoRangeType / Profile, not Title.
-                                    DisplayTitle = default(string?),
-                                };
-                            })
-                            .ToList();
-                        // stubSources stays null — see comment above.
-                    }
 
                     // Per-field strip: a field is preserved when its toggle is OFF,
                     // nulled when ON. SeriesId is nulled only when ratings are
@@ -9061,7 +9090,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
-                        OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
+                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings)),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -9101,7 +9130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
-                        OfficialRating = ResolveTagDataOfficialRating(spSeries),
+                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spSeries)),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9114,62 +9143,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     continue;
                 }
 
-                // Movie-stub: for an unwatched Movie in the user's spoiler scope,
-                // return the same Id+Type stub so JE tag overlays don't render on the
-                // blurred poster. Mirrors the Episode stub.
-                if (spoilerStub == Services.SpoilerTagDataStub.Movie
-                    && item is MediaBrowser.Controller.Entities.Movies.Movie spMovie)
+                // Movie-stub: for an unwatched Movie in the user's spoiler scope (and an extra of a guarded title, by
+                // its owner's rules), the same stub so JE tag overlays don't render on the blurred poster. Mirrors the
+                // Episode stub. The title is the library's own (Spoiler Guard does not hide movie titles or an extra's
+                // own name).
+                if (spoilerStub is Services.SpoilerTagDataStub.Movie or Services.SpoilerTagDataStub.Extra)
                 {
-                    // Movie title is NOT rewritten under SpoilerReplaceTitle — it stays
-                    // visible in overlays/tooltips (matching the field-strip movie carve-out).
-                    string? stubName = item.Name;
-
-                    List<object>? stubStreams = null;
-                    if (!spStripGenres)
-                    {
-                        var stubMs =
-                            SelectTagDataMediaSources(spMovie.GetMediaSources(false));
-                        stubStreams = stubMs
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path))
-                            .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
-                            .Select(resolved =>
-                            {
-                                var s = resolved.Stream;
-                                return (object)new
-                                {
-                                    Type = s.Type.ToString(),
-                                    Language = resolved.Language,
-                                    Codec = s.Codec,
-                                    CodecTag = s.CodecTag,
-                                    Profile = s.Profile,
-                                    Height = s.Height,
-                                    Channels = s.Channels,
-                                    ChannelLayout = s.ChannelLayout,
-                                    VideoRangeType = s.VideoRangeType,
-                                    DisplayTitle = default(string?),
-                                };
-                            })
-                            .ToList();
-                    }
-
                     results.Add(new
                     {
                         Id = item.Id,
                         Type = kind.ToString(),
-                        Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
-                        CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
-                        CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
-                        OfficialRating = ResolveTagDataOfficialRating(spMovie),
+                        Genres = spStripGenres ? Array.Empty<string>() : (item.Genres ?? Array.Empty<string>()),
+                        CommunityRating = spStripRatings ? (float?)null : item.CommunityRating,
+                        CriticRating = spStripRatings ? (float?)null : item.CriticRating,
+                        OfficialRating = StubRating(ResolveTagDataOfficialRating(item)),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
-                        Name = stubName,
+                        Name = item.Name,
                         Path = (string?)null,
-                        MediaStreams = stubStreams,
+                        MediaStreams = spStripGenres ? null : StubStreams(item),
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
-                        Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
+                        Tags = spStripGenres ? Array.Empty<string>() : (item.Tags ?? Array.Empty<string>()),
                     });
                     continue;
                 }
@@ -9194,7 +9189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
-                        OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
+                        OfficialRating = StubRating(ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings)),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9261,11 +9256,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         // The frontend fetches this episode's region-aware stream
                         // projection from tag-data and shares it across renderers.
+                        // The episode is judged on its own: a protected one's genres follow the tag strip, as on its stub.
+                        var firstProtected = stripTagsEnabled && _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, epRef) != Services.SpoilerTagDataStub.None;
                         firstEpisodeData = new
                         {
                             Id = epRef.Id,
                             Type = epRef.GetBaseItemKind().ToString(),
-                            Genres = epRef.Genres,
+                            Genres = firstProtected && spStripGenres ? Array.Empty<string>() : epRef.Genres,
                             NeedsStreamFetch = true
                         };
                     }

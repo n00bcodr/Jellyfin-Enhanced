@@ -17,7 +17,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 /// handed to the visitor, which returns its replacement (itself, a private copy, a stub, or null to remove it; which
 /// members keep a stub comes from <see cref="PrivacyFieldClassification"/>) and walks
 /// that replacement's own members. A collection whose member changes is replaced by a private copy (the host may share
-/// it); a member that cannot be replaced throws, so the caller withholds instead of delivering it.
+/// it); a member that cannot be replaced throws, so the caller withholds instead of delivering it. Members are judged by
+/// their RUNTIME values too: a member declared as <see cref="object"/> (a boxed value) holding a DTO, or a sequence of
+/// them, is a title member like a declared one.
 /// </summary>
 internal static class PrivacyAnswerGraph
 {
@@ -27,7 +29,7 @@ internal static class PrivacyAnswerGraph
     /// <summary>Deeper than any host answer (sign-in → session → now-playing channel → its programme is 3).</summary>
     private const int MaxDepth = 16;
 
-    private sealed record Member(PropertyInfo Property, bool Dto, bool Sequence, bool KeepsControls);
+    private sealed record Member(PropertyInfo Property, bool Dto, bool Sequence, bool KeepsControls, bool Boxed = false);
 
     private static readonly ConcurrentDictionary<Type, Member[]> _members = new();
     private static readonly ConcurrentDictionary<Type, bool> _reaches = new();
@@ -59,10 +61,12 @@ internal static class PrivacyAnswerGraph
             foreach (var element in sequence) Walk(element, listed, visit, mutate, depth + 1, seen);
             return;
         }
-        foreach (var member in Members(node.GetType()))
+        foreach (var declared in Members(node.GetType()))
         {
-            var value = member.Property.GetValue(node);
+            var value = declared.Property.GetValue(node);
             if (value == null) continue;
+            // A boxed member is judged by what it holds at run time: a DTO, a sequence, or anything else walked as such.
+            var member = declared.Boxed ? declared with { Dto = value is BaseItemDto, Sequence = value is IEnumerable and not string } : declared;
             if (member.Dto)
             {
                 var dto = (BaseItemDto)value;
@@ -109,10 +113,10 @@ internal static class PrivacyAnswerGraph
     /// <summary>The properties of a type that can hold a title member, cached per type.</summary>
     private static Member[] Members(Type type) => _members.GetOrAdd(type, t => t
         .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-        .Where(p => p.GetMethod is { IsPublic: true } && p.GetIndexParameters().Length == 0 && Reaches(p.PropertyType))
+        .Where(p => p.GetMethod is { IsPublic: true } && p.GetIndexParameters().Length == 0 && (Reaches(p.PropertyType) || p.PropertyType == typeof(object)))
         // A member a session's controls hang on (host-required in the one field classification: a session's NowPlayingItem,
         // 10.11's NowPlayingQueueFullItems): a hidden one leaves a stub, not a gap. Any other title member is title-bearing.
-        .Select(p => new Member(p, typeof(BaseItemDto).IsAssignableFrom(p.PropertyType), Element(p.PropertyType) != null, PrivacyFieldClassification.KeepsControls(p)))
+        .Select(p => new Member(p, typeof(BaseItemDto).IsAssignableFrom(p.PropertyType), Element(p.PropertyType) != null, PrivacyFieldClassification.KeepsControls(p), p.PropertyType == typeof(object)))
         .ToArray());
 
     private static bool Reaches(Type type, HashSet<Type> visiting)

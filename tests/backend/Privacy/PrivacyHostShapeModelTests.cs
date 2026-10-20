@@ -161,9 +161,12 @@ public class PrivacyHostShapeModelTests
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object, new SpoilerIdentityService(Users.Object, F.Core.Logger), F.Core.Logger);
             var resolver = new SpoilerUserResolver(F.Core.Manager, Library.Object, F.Core.Logger, identities);
             _next = new SpoilerNextUnwatchedService(Library.Object, Users.Object, data.Object, F.Core.Logger);
-            Strip = new SpoilerFieldStripFilter(resolver, Library.Object, Users.Object, data.Object, _next);
+            Strip = PrivacyTestHost.Create<SpoilerFieldStripFilter>(resolver, Library.Object, Users.Object, data.Object, _next, Localization);
             Spoilers = new SpoilerPresentation(F.Core.Manager, Library.Object, Users.Object, data.Object);
         }
+
+        /// <summary>The host's localization (its closed language, rating and label lists), as the privacy projection asks it.</summary>
+        public MediaBrowser.Model.Globalization.ILocalizationManager Localization { get; } = PrivacyTestHost.Localization();
 
         /// <summary>Every captured library item as the host's own kind, with the host's own owners.</summary>
         private void BuildLibrary()
@@ -248,7 +251,7 @@ public class PrivacyHostShapeModelTests
         }
 
         public TitlePresentationResultFilter Gate()
-            => new(F.Core.Manager, Spoilers, Library.Object, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), Strip);
+            => PrivacyTestHost.Create<TitlePresentationResultFilter>(F.Core.Manager, Spoilers, Library.Object, Mock.Of<MediaBrowser.Controller.IServerApplicationHost>(), Strip, Localization);
 
         public void Dispose()
         {
@@ -353,20 +356,20 @@ public class PrivacyHostShapeModelTests
     }
 
     /// <summary>Hidden Content's and Spoiler Guard's action filters around the action, then the final gate; the delivered JSON.</summary>
-    internal static async Task<(IActionResult Result, string Body)> Deliver(Rig rig, Shot shot, Action? inFlight = null)
+    internal static async Task<(IActionResult Result, string Body)> Deliver(Rig rig, Shot shot, Action? inFlight = null, object? answer = null)
     {
         var viewer = shot.Viewer == "viewer" ? rig.Viewer : rig.Admin;
         if (shot.Socket)
         {
             // The session listener builds the update, then projects it for the connection's viewer (a rule saved in between applies).
-            var update = (List<SessionInfoDto>)Value(shot);
+            var update = (List<SessionInfoDto>)(answer ?? Value(shot));
             inFlight?.Invoke();
             var sent = rig.Gate().ProjectSessions(update, viewer);
             await Task.CompletedTask;
             return (new ObjectResult(sent), JsonSerializer.Serialize(sent, typeof(IReadOnlyList<SessionInfoDto>), Json));
         }
         var context = Context(shot, viewer);
-        var result = new ObjectResult(Value(shot));
+        var result = new ObjectResult(answer ?? Value(shot));
         var filters = new List<IFilterMetadata>();
         Task<ActionExecutedContext> Action()
         {

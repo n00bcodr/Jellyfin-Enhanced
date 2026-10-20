@@ -39,6 +39,8 @@ Confirmed manager Unhide actions remain valid when you close the manager, but ca
 
 Failed title and parent-series metadata batches retry on the next normal scan after a 30-second wait, including the same cards already on screen and later batches that were never requested. No page reload is needed. When you return to a view, cards that previously had no provider metadata are checked again, including cards retained on screen. Rule and account changes also recheck those cards; pending and failed reads keep their existing retry wait. List-view rows get the same checks as cards, so a hidden movie or series disappears from list views too. A parent-series lookup that finishes after you open a details page doesn't hide that page's episodes; the next scan decides them. Cards and rows that leave the page before a hide is shown on them (for example because you navigated away) are checked again when they come back, so a hidden title never reappears. A hide saved while search results or another page are still loading also applies to that response.
 
+Jellyfin Enhanced's own card data (tags, ratings and language chips) leaves hidden titles out as well. If another account is playing something you hid, your remote control for that session still works. The title shows as "Hidden content", its tracks are listed by language, codec and channels without their titles, and only values Jellyfin itself vouches for are kept (a language tag that isn't a known language is left out).
+
 Native movie and series card hides honor your confirmation preference before saving. Cancel leaves the title visible; turning confirmations off, or temporarily suppressing them, saves the hide directly.
 
 ![Hidden content management panel](../images/hidden-content-panel.png)

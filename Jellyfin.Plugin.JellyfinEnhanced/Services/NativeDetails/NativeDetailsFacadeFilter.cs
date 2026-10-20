@@ -722,10 +722,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 }).ToArray();
                 ok.Value = new QueryResult<BaseItemDto>(query.StartIndex, Math.Max(0, query.TotalRecordCount - query.Items.Count + kept.Length), kept);
             }
-            if (result is OkObjectResult cards && cards.Value is QueryResult<BaseItemDto> page)
-                foreach (var dto in page.Items)
-                    if (SyntheticId.TryParse(dto.Id, _host.SystemId, out var title) && title.IsTitle)
-                        Guard(new OkObjectResult(dto), Guarded(context.HttpContext, viewer, title), viewer);
+            if (result is OkObjectResult cards && cards.Value is QueryResult<BaseItemDto> page && page.Items != null)
+                // Each absent title is judged by its own guard and replaced by what the strip delivers in its place.
+                page.Items = page.Items.Select(dto => dto != null && SyntheticId.TryParse(dto.Id, _host.SystemId, out var title) && title.IsTitle
+                    ? (BaseItemDto)((OkObjectResult)Guard(new OkObjectResult(dto), Guarded(context.HttpContext, viewer, title), viewer)).Value! : dto!).ToArray();
             _spoilerStrip?.StripLibraryItems(result, context, viewer.Id);
             return result;
         }
@@ -734,26 +734,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || result is not OkObjectResult ok) return result;
-            IEnumerable<BaseItemDto> items = ok.Value switch
+            // Library items in the list are stripped by Spoiler Guard's own rules (Library), by watched state; each absent
+            // title is replaced by what the strip delivers in its place.
+            BaseItemDto Absent(BaseItemDto dto)
             {
-                BaseItemDto one => new[] { one },
-                QueryResult<BaseItemDto> page => page.Items,
-                IEnumerable<BaseItemDto> list => list,
-                _ => Array.Empty<BaseItemDto>(),
-            };
-            // Library items in the list are stripped by Spoiler Guard's own rules (Library), by watched state.
-            foreach (var dto in items.Where(d => SyntheticId.HasNamespace(d.Id)))
-            {
+                if (!SyntheticId.HasNamespace(dto.Id)) return dto;
                 dto.ProviderIds ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 dto.ProviderIds["JeSpoilerGuarded"] = state != null ? "true" : "false";
-                if (state == null || _spoilerStrip == null) continue;
-                _spoilerStrip.StripAbsent(dto, state, config, viewer.Id);
-                if (!HidesArtwork(dto.Type, dto.IndexNumber ?? 0, ImageType.Primary)) continue;
+                if (state == null || _spoilerStrip == null) return dto;
+                dto = _spoilerStrip.StripAbsent(dto, state, config, viewer.Id);
+                if (!HidesArtwork(dto.Type, dto.IndexNumber ?? 0, ImageType.Primary)) return dto;
                 dto.ImageTags?.Remove(ImageType.Primary);
                 dto.ImageTags?.Remove(ImageType.Thumb);
                 dto.ImageBlurHashes = null;
                 dto.PrimaryImageAspectRatio = null;
+                return dto;
             }
+            NativeResponseValue.Replace(ok, Absent);
 
             return result;
         }

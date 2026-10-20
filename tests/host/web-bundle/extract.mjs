@@ -6,7 +6,9 @@
 // projection delivers (tests/fixtures/host-web/projected/). Regenerate for a new Jellyfin release:
 //   id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin/jellyfin-web ./web-12.2 && docker rm "$id"
 //   node tests/host/web-bundle/extract.mjs ./web-12.2 tests/fixtures/host-web/12.2 jellyfin/jellyfin:12.2
-import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+// jellyfin-web is GPL-2.0-or-later (see tests/fixtures/host-web/README.md): every licence sidecar a copied file refers
+// to ("For license information please see X.LICENSE.txt") is copied with it, and a missing one fails the extraction.
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
@@ -33,11 +35,22 @@ export function block(source, from) {
 }
 
 mkdirSync(out, { recursive: true });
-const manifest = { image: image || null, sources: {} };
+const manifest = { image: image || null, sources: {}, licenses: {} };
+const sha256 = text => createHash('sha256').update(text).digest('hex');
+/** Copies every licence sidecar the text refers to, verbatim and under its own name; a missing one is an error. */
+const licenses = text => {
+  for (const [, sidecar] of text.matchAll(/For license information please see ([\w.-]+\.LICENSE\.txt)/g)) {
+    if (!existsSync(join(web, sidecar))) throw new Error(`referenced licence file ${sidecar} is missing from ${web}`);
+    const notice = readFileSync(join(web, sidecar), 'utf8');
+    writeFileSync(join(out, sidecar), notice);
+    manifest.licenses[sidecar] = { sha256: sha256(notice) };
+  }
+};
 const copy = (prefix, name) => {
   const file = one(prefix), text = readFileSync(join(web, file), 'utf8');
   writeFileSync(join(out, name), text);
-  manifest.sources[name] = { file, sha256: createHash('sha256').update(text).digest('hex') };
+  manifest.sources[name] = { file, sha256: sha256(text) };
+  licenses(text);
   return text;
 };
 const queue = copy('playback-queue.', 'playback-queue.chunk.js');
@@ -51,10 +64,13 @@ const imports = queue.slice(moduleStart, at);
 const id = new RegExp('[,\\s]' + call[1].replace('$', '\\$') + '=n\\((\\d+)\\)').exec(imports)[1];
 const main = files.find(f => /^main\.jellyfin\.bundle\.js$/.test(f));
 const bundle = readFileSync(join(web, main), 'utf8');
+// The names module is part of the main bundle: its licence sidecar comes with it.
+licenses(bundle.slice(0, 400));
 const start = bundle.indexOf(id + ':function(');
 if (start < 0) throw new Error('names module ' + id + ' not in ' + main);
 const names = block(bundle, start + id.length + 1);
-writeFileSync(join(out, 'now-playing-names.module.js'), `// Module ${id} of ${main} (jellyfin-web's getNowPlayingNames), verbatim.\nmodule.exports = ${names};\n`);
+const mainLicense = /For license information please see ([\w.-]+\.LICENSE\.txt)/.exec(bundle.slice(0, 400))?.[1];
+writeFileSync(join(out, 'now-playing-names.module.js'), `// Module ${id} of ${main} (jellyfin-web's getNowPlayingNames), verbatim.${mainLicense ? ` For license information please see ${mainLicense}` : ''}\nmodule.exports = ${names};\n`);
 manifest.sources['now-playing-names.module.js'] = { file: main, module: Number(id), export: call[2], sha256: createHash('sha256').update(names).digest('hex') };
 writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 1) + '\n');
 console.log(out, Object.keys(manifest.sources).join(' '));

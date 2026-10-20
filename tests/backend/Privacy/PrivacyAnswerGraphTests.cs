@@ -99,4 +99,23 @@ public class PrivacyAnswerGraphTests
         var carrying = outbound.Where(PrivacyAnswerGraph.Reaches).Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         Assert.Equal(["SessionsMessage"], carrying);
     }
+
+    /// <summary>A shape whose title members are declared as object (boxed values).</summary>
+    private sealed class Boxed
+    {
+        public object? Payload { get; set; }
+
+        public object? Many { get; set; }
+    }
+
+    [Fact]
+    public void BoxedMembersAreJudgedByTheValueTheyHoldAtRunTime()
+    {
+        // Review round 19: a member's declared type is not the judge; a DTO (or a sequence of them) behind object is a title member.
+        var envelope = new Boxed { Payload = new BaseItemDto { Id = Guid.NewGuid(), Name = "drop" }, Many = new List<BaseItemDto> { new() { Id = Guid.NewGuid(), Name = "drop" }, new() { Id = Guid.NewGuid(), Name = "keep" } } };
+        PrivacyAnswerGraph.Rewrite(envelope, null, (dto, _) => dto.Name == "drop" ? null : dto);
+        Assert.Null(envelope.Payload);
+        Assert.Equal(["keep"], ((IEnumerable<BaseItemDto>)envelope.Many!).Select(d => d.Name));
+    }
 }
+

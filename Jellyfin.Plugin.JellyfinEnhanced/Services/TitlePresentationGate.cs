@@ -78,6 +78,36 @@ public static class NativeResponseValue
 
     /// <summary>Arrays and lists are already materialized; anything else is enumerated exactly once.</summary>
     private static IReadOnlyList<T> Once<T>(IEnumerable<T> values) => values is T[] or List<T> ? (IReadOnlyList<T>)values : values.ToArray();
+
+    /// <summary>
+    /// Replaces every listed item of a materialized item answer (single, page, list, recommendation categories, theme
+    /// lists) with what <paramref name="map"/> delivers in its place (a protected item's rebuilt projection).
+    /// </summary>
+    public static void Replace(ObjectResult result, Func<BaseItemDto, BaseItemDto> map)
+    {
+        BaseItemDto[] Mapped(IEnumerable<BaseItemDto> items) => items.Select(i => i == null ? i! : map(i)).ToArray();
+        switch (result.Value)
+        {
+            case BaseItemDto one:
+                result.Value = map(one);
+                break;
+            case QueryResult<BaseItemDto> page when page.Items != null:
+                page.Items = Mapped(page.Items);
+                break;
+            case IReadOnlyList<RecommendationDto> categories:
+                foreach (var category in categories)
+                    if (category?.Items != null) category.Items = Mapped(category.Items);
+                break;
+            case IEnumerable<BaseItemDto> list:
+                // The answer keeps its own sequence shape (an array stays an array).
+                result.Value = list is BaseItemDto[] ? Mapped(list) : Mapped(list).ToList();
+                break;
+            case AllThemeMediaResult all:
+                foreach (var part in new[] { all.ThemeVideosResult, all.ThemeSongsResult, all.SoundtrackSongsResult })
+                    if (part?.Items != null) part.Items = Mapped(part.Items);
+                break;
+        }
+    }
 }
 
 /// <summary>
@@ -206,14 +236,33 @@ internal static class NativePrivacyProjection
 
     /// <summary>
     /// What a hidden now-playing (or queued) item leaves: every field the host's own clients need to drive the session
-    /// (ids, kinds, length, its media streams without their titles, queue position) and a neutral name; no title-bearing
-    /// field (<see cref="PrivacyFieldClassification.Stub"/>).
+    /// (ids, kinds, length, its media streams rebuilt from validated values, queue position) and a neutral name; no
+    /// title-bearing field and no value the host cannot vouch for (<see cref="PrivacyValues.Stub"/>).
     /// </summary>
-    public static BaseItemDto Stub(BaseItemDto dto) => PrivacyFieldClassification.Stub(dto);
+    public static BaseItemDto Stub(BaseItemDto dto, PrivacyValueHost host) => PrivacyValues.Stub(dto, host);
+
+    /// <summary>
+    /// The host's JSON options without BaseItemDto.Trickplay: its tile info has no constructor the serializer can bind,
+    /// so a copy carries the tiles by reference (nothing changes them) instead of failing the whole projection.
+    /// </summary>
+    private static readonly JsonSerializerOptions _copyOptions = new(Jellyfin.Extensions.Json.JsonDefaults.Options)
+    {
+        TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.WithAddedModifier(
+            Jellyfin.Extensions.Json.JsonDefaults.Options.TypeInfoResolver ?? new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(), info =>
+            {
+                if (info.Type != typeof(BaseItemDto)) return;
+                for (var i = info.Properties.Count - 1; i >= 0; i--)
+                    if (info.Properties[i].Name.Equals(nameof(BaseItemDto.Trickplay), StringComparison.OrdinalIgnoreCase)) info.Properties.RemoveAt(i);
+            }),
+    };
 
     /// <summary>A private copy of a DTO the host may share (a session's now-playing item), for projection.</summary>
     public static BaseItemDto Copy(BaseItemDto dto)
-        => JsonSerializer.Deserialize<BaseItemDto>(JsonSerializer.SerializeToUtf8Bytes(dto, Jellyfin.Extensions.Json.JsonDefaults.Options), Jellyfin.Extensions.Json.JsonDefaults.Options)!;
+    {
+        var copy = JsonSerializer.Deserialize<BaseItemDto>(JsonSerializer.SerializeToUtf8Bytes(dto, _copyOptions), _copyOptions)!;
+        copy.Trickplay = dto.Trickplay?.ToDictionary(t => t.Key, t => t.Value?.ToDictionary(i => i.Key, i => i.Value)!);
+        return copy;
+    }
 
     /// <summary>The DTOs of an item answer (single, page or list).</summary>
     public static IReadOnlyList<BaseItemDto> Items(object? value) => value switch
@@ -317,8 +366,12 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
 /// never from the request path's text; policy is always re-read here, at delivery.
 /// </summary>
 public sealed class TitlePresentationResultFilter(UserConfigurationManager manager, SpoilerPresentation spoilers, ILibraryManager library,
-    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null, IUserManager? users = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
+    MediaBrowser.Controller.IServerApplicationHost host, SpoilerFieldStripFilter strip, Logger? logger = null, IUserManager? users = null,
+    MediaBrowser.Model.Globalization.ILocalizationManager? localization = null) : IAlwaysRunResultFilter, IResourceFilter, IOrderedFilter
 {
+    /// <summary>What the host vouches for in one projection (its closed lists, the library's entities).</summary>
+    private PrivacyValueHost Values() => new(library, localization);
+
     /// <inheritdoc />
     public int Order => int.MaxValue;
 
@@ -471,19 +524,15 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             foreach (var identity in identities.Values) final.Hidden.Bind(identity);
             NativePrivacyProjection.Hide(result, hc ? final.Hidden : null, Surface, identities, single: value is BaseItemDto,
                 sg ? seed => identities.TryGetValue(seed, out var owner) && final.Spoilers!.Guarded(owner) : null);
-            ProjectNested(result.Value, final, identities, viewer, entry.HcExempt == null ? null : PrivacySurfaceRegistry.OpenedItem(context, result.Value));
-            if (rows) ProjectActivityLog(result, final, identities);
+            var opened = entry.HcExempt == null ? null : PrivacySurfaceRegistry.OpenedItem(context, result.Value);
+            ProjectTimers(result, final, identities, opened);
+            ProjectNested(result.Value, final, identities, viewer, opened);
+            if (rows) ProjectActivityLog(result, final, identities, viewer);
             if (!sg) return;
             switch (result.Value)
             {
-                case BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto>:
-                    StripItems(NativePrivacyProjection.Items(result.Value), final, identities, viewer);
-                    return;
-                case IReadOnlyList<RecommendationDto> recommendations:
-                    StripItems(recommendations.Where(r => r?.Items != null).SelectMany(r => r.Items).ToArray(), final, identities, viewer);
-                    return;
-                case AllThemeMediaResult all:
-                    StripItems(NativePrivacyProjection.ThemeItems(all), final, identities, viewer);
+                case BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> or IReadOnlyList<RecommendationDto> or AllThemeMediaResult:
+                    StripItems(result, final, identities, viewer);
                     return;
                 default:
                     StripDelivered(result, final, viewer, context);
@@ -522,35 +571,52 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
         var config = JellyfinEnhanced.Instance?.Configuration;
         if (!hc && spoiler == null) return;
-        if (hc)
-            foreach (var timer in NativePrivacyProjection.Timers(value))
-                if (NativePrivacyProjection.ProgramOf(timer) is { } program && program != opened
-                    && final.Hidden.IsHidden(identities.TryGetValue(program, out var row) ? row : new PrivacyIdentity(program, BaseItemKind.Program, program, null, Array.Empty<Guid>(), null), "library"))
-                {
-                    // A hidden programme's timer or series-timer row stays (it can still be cancelled) without its title-bearing
-                    // fields (the programme's title and overview, free text naming it, never patched; a timer's ProgramInfo).
-                    PrivacyFieldClassification.ClearTitles(timer);
-                }
+        var values = Values();
         PrivacyAnswerGraph.Rewrite(value, NativePrivacyProjection.Listed(value), Member);
 
         BaseItemDto? Member(BaseItemDto dto, bool keepsControls)
         {
             var identity = identities.GetValueOrDefault(dto.Id);
             if (hc && dto.Id != opened && final.Hidden.IsHidden(dto, identity, "library"))
-                return keepsControls ? NativePrivacyProjection.Stub(dto) : null;
-            var guard = spoiler != null && config != null;
+                return keepsControls ? NativePrivacyProjection.Stub(dto, values) : null;
+            var guard = spoiler != null && config != null && strip != null;
             if (!guard && !PrivacyAnswerGraph.HasMembers(dto)) return dto;
             var copy = NativePrivacyProjection.Copy(dto);
             if (guard)
             {
                 // The decision is this viewer's: a session's item carries no (or another account's) watched state.
                 copy.UserData = null;
-                if (spoiler!.Unavailable) strip?.StripAbsent(copy, spoiler.State, config!, viewer);
-                else strip?.StripLibraryItem(copy, identity, spoiler.State, config!, viewer);
+                copy = spoiler!.Unavailable ? strip!.StripAbsent(copy, spoiler.State, config!, viewer) : strip!.StripLibraryItem(copy, identity, spoiler.State, config!, viewer);
             }
             // The copy's own members, at any depth (a now-playing channel's CurrentProgram), with the same policy.
             PrivacyAnswerGraph.Rewrite(copy, null, Member);
             return copy;
+        }
+    }
+
+    /// <summary>
+    /// A hidden programme's timer or series-timer row stays (it can still be cancelled) as the value walk rebuilds it:
+    /// no programme title, overview or programme item, only validated ids, tags and the host's own values.
+    /// </summary>
+    private void ProjectTimers(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid? opened)
+    {
+        if (final.Hidden.IsEmpty) return;
+        var values = Values();
+        T Project<T>(T timer) where T : MediaBrowser.Model.LiveTv.BaseTimerInfoDto
+            => timer != null && NativePrivacyProjection.ProgramOf(timer) is { } program && program != opened
+                && final.Hidden.IsHidden(identities.TryGetValue(program, out var row) ? row : new PrivacyIdentity(program, BaseItemKind.Program, program, null, Array.Empty<Guid>(), null), "library")
+                ? PrivacyValues.Row(timer, null, values) : timer!;
+        switch (result.Value)
+        {
+            case MediaBrowser.Model.LiveTv.BaseTimerInfoDto one:
+                result.Value = Project(one);
+                break;
+            case QueryResult<MediaBrowser.Model.LiveTv.TimerInfoDto> { Items: not null } page:
+                page.Items = page.Items.Select(Project).ToArray();
+                break;
+            case QueryResult<MediaBrowser.Model.LiveTv.SeriesTimerInfoDto> { Items: not null } page:
+                page.Items = page.Items.Select(Project).ToArray();
+                break;
         }
     }
 
@@ -562,45 +628,56 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// resolve while a policy applies) its text is rebuilt from structured data only (the entry's type and account, the
     /// episode's series and numbers) and its overviews are dropped. Entries without an item are unchanged.
     /// </summary>
-    private void ProjectActivityLog(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities)
+    private void ProjectActivityLog(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer)
     {
         if (result.Value is not QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page) return;
         var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
         var config = JellyfinEnhanced.Instance?.Configuration;
-        var titles = spoiler != null && config != null && (spoiler.Unavailable || SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title);
+        // The title strip off (the administrator's or the viewer's switch) reveals the stored text of an entry Spoiler Guard protects.
+        var titleRevealed = spoiler is { Unavailable: false } && config != null && !SpoilerFieldStripFilter.AbsentRowStrip(spoiler.State, config).Title;
+        var values = Values();
         var kept = new List<MediaBrowser.Model.Activity.ActivityLogEntry>(page.Items.Count);
+        var changed = false;
         foreach (var entry in page.Items)
         {
             if (entry == null) continue;
             if (NativePrivacyProjection.ItemOf(entry) is not { } id) { kept.Add(entry); continue; }
             var identity = identities.GetValueOrDefault(id);
-            if (!final.Hidden.IsEmpty && (identity != null ? final.Hidden.IsHidden(identity, "library") : final.Hidden.IsHidden(null, id.ToString("N"), null, "library"))) continue;
-            // An item the library can no longer resolve cannot be judged: its entry is not trusted to name a title.
-            if (identity == null ? PolicyApplies(final) : titles && identity.Kind == BaseItemKind.Episode && (spoiler!.Unavailable || spoiler.Guarded(identity)))
-            {
-                // Every title-bearing field of the entry goes; its name is constructed, never patched.
-                PrivacyFieldClassification.ClearTitles(entry);
-                entry.Name = ActivityText(entry, identity);
-            }
-            kept.Add(entry);
+            if (!final.Hidden.IsEmpty && (identity != null ? final.Hidden.IsHidden(identity, "library") : final.Hidden.IsHidden(null, id.ToString("N"), null, "library"))) { changed = true; continue; }
+            // An item the library can no longer resolve cannot be judged: its entry is not trusted to name a title. Any
+            // other entry asks Spoiler Guard's one verdict, for whatever kind its item is (episode, season, movie, series, extra).
+            var protect = identity == null ? PolicyApplies(final)
+                : spoiler != null && config != null && strip != null && (spoiler.Unavailable || strip.Protects(identity, spoiler.State, viewer));
+            if (!protect) { kept.Add(entry); continue; }
+            // A new entry: its text constructed from structured data (never patched), every other value validated.
+            kept.Add(PrivacyValues.Row(entry, titleRevealed && identity != null ? entry.Name : ActivityText(entry, identity, values), values));
+            changed = true;
         }
-        if (kept.Count != page.Items.Count)
+        if (changed)
             result.Value = new QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry>(page.StartIndex, Math.Max(0, page.TotalRecordCount - page.Items.Count + kept.Count), kept);
     }
 
     /// <summary>
     /// An activity entry's text built from structured data only: the account (by the entry's user id), what happened (by
-    /// the entry's type) and the item as Spoiler Guard names it ("Series - Season 1, Episode 2"); never the stored text.
+    /// the entry's type) and the item as Spoiler Guard names it ("Series - Season 1, Episode 2", "Series - Season 2", or
+    /// the library's own title of a kind whose title Spoiler Guard shows); never the stored text.
     /// </summary>
-    private string ActivityText(MediaBrowser.Model.Activity.ActivityLogEntry entry, PrivacyIdentity? identity)
+    private string ActivityText(MediaBrowser.Model.Activity.ActivityLogEntry entry, PrivacyIdentity? identity, PrivacyValueHost values)
     {
+        static string Join(string? series, string numbers) => string.IsNullOrEmpty(series) ? numbers : series + " - " + numbers;
         var label = "an item";
-        if (identity != null && library.GetItemById(identity.ItemId) is MediaBrowser.Controller.Entities.TV.Episode episode)
+        if (identity != null)
         {
-            var numbers = NeutralNames.Episode(episode.ParentIndexNumber, episode.IndexNumber);
-            label = string.IsNullOrEmpty(episode.SeriesName) ? numbers : episode.SeriesName + " - " + numbers;
+            var item = values.Item(identity.ItemId);
+            label = identity.Kind switch
+            {
+                BaseItemKind.Episode => item is MediaBrowser.Controller.Entities.TV.Episode episode
+                    ? Join(values.Item(identity.OwnerId)?.Name ?? episode.SeriesName, NeutralNames.Episode(episode.ParentIndexNumber, episode.IndexNumber)) : "an episode",
+                BaseItemKind.Season => item is MediaBrowser.Controller.Entities.TV.Season season
+                    ? Join(values.Item(identity.OwnerId)?.Name, NeutralNames.Season(season.IndexNumber)) : "a season",
+                _ => item?.Name ?? "an item",
+            };
         }
-        else if (identity != null) label = "an episode";
         var user = entry.UserId != Guid.Empty ? users?.GetUserById(entry.UserId)?.Username : null;
         var playing = entry.Type is "VideoPlayback" or "AudioPlayback";
         var finished = entry.Type is "VideoPlaybackStopped" or "AudioPlaybackStopped";
@@ -631,7 +708,8 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         {
             logger?.Error($"Presentation gate could not project sessions: {ex.GetType().Name}");
             // No title survives a failed projection: every member at the first level becomes a stub (none has members) or leaves.
-            PrivacyAnswerGraph.Rewrite(list, null, (dto, keepsControls) => keepsControls ? NativePrivacyProjection.Stub(dto) : null);
+            var values = Values();
+            PrivacyAnswerGraph.Rewrite(list, null, (dto, keepsControls) => keepsControls ? NativePrivacyProjection.Stub(dto, values) : null);
         }
         return list;
     }
@@ -668,12 +746,13 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <summary>
     /// Spoiler Guard for materialized DTOs. A library item gets the full native rule set (Jellyfin ID, collection,
     /// provider and watched state) whether or not it carries TMDB metadata; an absent title is judged by its typed identity.
+    /// Every listed item is replaced by what the strip delivers in its place (a protected item's rebuilt projection).
     /// </summary>
-    private void StripItems(IReadOnlyList<BaseItemDto> items, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer)
+    private void StripItems(ObjectResult result, TitlePresentationPolicy final, IReadOnlyDictionary<Guid, PrivacyIdentity> identities, Guid viewer)
     {
         var config = JellyfinEnhanced.Instance?.Configuration;
-        if (final.Spoilers is not { Enabled: true } presentation || config == null) return;
-        foreach (var dto in items)
+        if (final.Spoilers is not { Enabled: true } presentation || config == null || strip == null) return;
+        NativeResponseValue.Replace(result, dto =>
         {
             if (SyntheticId.HasNamespace(dto.Id))
             {
@@ -682,13 +761,12 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 var guarded = presentation.Guarded(key);
                 dto.ProviderIds ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 dto.ProviderIds["JeSpoilerGuarded"] = guarded ? "true" : "false";
-                if (guarded) strip?.StripAbsent(dto, presentation.State, config, viewer);
-                continue;
+                return guarded ? strip.StripAbsent(dto, presentation.State, config, viewer) : dto;
             }
             // Unknown policy fails closed; otherwise the native strip decides from the item's resolved identity, never from a TMDB key.
-            if (presentation.Unavailable) strip?.StripAbsent(dto, presentation.State, config, viewer);
-            else if (SpoilerFieldStripFilter.HasEntries(presentation.State)) strip?.StripLibraryItem(dto, identities.GetValueOrDefault(dto.Id), presentation.State, config, viewer);
-        }
+            if (presentation.Unavailable) return strip.StripAbsent(dto, presentation.State, config, viewer);
+            return SpoilerFieldStripFilter.HasEntries(presentation.State) ? strip.StripLibraryItem(dto, identities.GetValueOrDefault(dto.Id), presentation.State, config, viewer) : dto;
+        });
     }
 
     private sealed record Schema(string Surface, string? Title, string Resource, string? Kind = null, string? Scope = null, int Season = 0, int Episode = 0);

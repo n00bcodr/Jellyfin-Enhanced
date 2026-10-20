@@ -1075,6 +1075,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyTokens.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyValues.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ProviderPresentationSchema.cs",
       "category": "Services"
     },
@@ -9723,7 +9731,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 547,
+    "files": 549,
     "routes": 258,
     "configuration_properties": 579,
     "storage_references": 84,

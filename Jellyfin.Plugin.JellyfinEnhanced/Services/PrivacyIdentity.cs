@@ -111,6 +111,24 @@ public static class PrivacyIdentities
         return answer;
     }
 
+    /// <summary>
+    /// The identity of a library item a caller already holds (one item, by the same rules as <see cref="Resolve(ILibraryManager, IEnumerable{Guid}, JUser?, IUserDataManager?, IEnumerable{Guid}?)"/>):
+    /// a season's or episode's series owns it even when the series entity cannot be loaded; an extra's owner is
+    /// followed up to two hops.
+    /// </summary>
+    public static PrivacyIdentity Of(ILibraryManager library, BaseItem item, JUser? viewer = null, IUserDataManager? userData = null)
+    {
+        var owner = item;
+        var ownerId = OwnerOf(item) is var first && first != Guid.Empty ? first : item.Id;
+        for (var hop = 0; hop < 2 && OwnerOf(owner) is var next && next != Guid.Empty && library.GetItemById(next) is { } found; hop++) owner = found;
+        if (owner != item) ownerId = owner.Id;
+        var title = item is Movie ? item : owner is Movie ? owner : null;
+        bool? played = viewer != null && userData != null && (item is Movie or Episode || title != null)
+            ? userData.GetUserData(viewer, item is Episode ? item : title!)?.Played == true : null;
+        var ownerKind = owner != item ? owner.GetBaseItemKind() : item is Episode or Season ? BaseItemKind.Series : item.GetBaseItemKind();
+        return new PrivacyIdentity(item.Id, item.GetBaseItemKind(), ownerId, TitleKey(owner == item && item is Episode or Season ? null : owner), Array.Empty<Guid>(), played, ownerKind);
+    }
+
     private const string RequestKey = "__JE_PRIVACY_IDENTITIES";
 
     /// <summary>

@@ -6791,6 +6791,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -6926,7 +6927,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -7310,6 +7310,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -7445,7 +7446,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -7623,6 +7623,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -7758,7 +7759,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -10041,6 +10041,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -10176,7 +10177,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -10560,6 +10560,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -10695,7 +10696,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -10873,6 +10873,7 @@
                   "Type": "Default",
                   "Container": "mkv",
                   "Size": 2815928,
+                  "Name": "144p H264 SDR",
                   "IsRemote": false,
                   "ETag": "31f59bfcf6910e2856c77593f81d6e49",
                   "RunTimeTicks": 6000230000,
@@ -11008,7 +11009,6 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
-                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
