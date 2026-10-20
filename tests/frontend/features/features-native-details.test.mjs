@@ -36,8 +36,8 @@ function setup(t, { cap = { Enabled: true, ContractVersion: 1 }, url = 'http://j
       pluginConfig: { NativeAbsentDetails: cap, JellyseerrEnabled: seerr || !!modalData },
       t: (key, params) => (params ? `${key}:${JSON.stringify(params)}` : key),
       escapeHtml: text => String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`),
-      jellyseerrMoreInfo: { open: (...args) => modal.push(args) },
-      jellyseerrUI: { showCollectionRequestModal: (...args) => collections.push(args) },
+      jellyseerrMoreInfo: { open: (...args) => { if (!args[3]) throw new Error('the More Info window opened without an owner'); modal.push(args.slice(0, args[2] === undefined ? 2 : 3)); } },
+      jellyseerrUI: { showCollectionRequestModal: (...args) => { if (!args[3]?.operation) throw new Error('the Collection modal opened without an owner'); collections.push(args.slice(0, 2)); } },
       seerrStatus: { hasStatus: s => s > 1 },
       internals: internal ? { moreInfoModal: internal, spoilerGuard: { appendSeerrToggle: (mount, data, type) => { toggles.push([data.id, type]); mount.append('spoiler'); } } } : {},
       core: { api: { plugin: async path => { resolved.push(path); return resolve ? resolve(path) : null; } } },
@@ -1085,7 +1085,7 @@ function cards(t, { cap, useModal = true, item, resolve } = {}) {
       escapeHtml: text => String(text).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`),
       seerrStatus: { MEDIA: { BLOCKED: 6 } },
       cdn: { url: (host, path) => `https://cdn.test/${host}/${path}`, selfhst: path => `https://cdn.test/selfhst/${path}` },
-      jellyseerrMoreInfo: { open: (...args) => modal.push(args) },
+      jellyseerrMoreInfo: { open: (...args) => { if (!args[3]) throw new Error('the More Info window opened without an owner'); modal.push(args.slice(0, args[2] === undefined ? 2 : 3)); } },
       jellyseerrAPI: { resolveJellyseerrBaseUrl: () => 'https://seerr.test' },
       hiddenContent: { getSettings: () => ({ enabled: false }) },
       core: { ui: { addTouchTapListener: () => {}, addDelegatedTouchTapListener: () => {} }, api: { plugin: async path => { resolved.push(path); return resolve ? resolve(path) : null; } } },
@@ -1358,7 +1358,7 @@ test('absent Hide survives action-row cloning with exactly one live provider con
   assert.equal(page.querySelectorAll('.je-detail-hide-btn').length,1);
  }
  const button=page.querySelector('.je-detail-hide-btn');
- await button.onclick({preventDefault(){},stopPropagation(){}});
+ await button.onclick({type:'click',target:button,preventDefault(){},stopPropagation(){}});
  assert.equal(writes.length,1);assert.equal(JSON.parse(writes[0].data).tmdbId,'693134');assert.equal(JSON.stringify(writes).includes(MOVIE),false);
  assert.equal(button.getAttribute('aria-label'),'hidden_content_unhide');
 });

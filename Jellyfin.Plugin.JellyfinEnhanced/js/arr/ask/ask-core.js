@@ -327,7 +327,7 @@
      * On success the surfaces showing the title refresh.
      * @param {Object} input Mutation input (see movieInput / seasonsInput / episodesInput).
      * @param {{clientRequestId?: string, signal?: AbortSignal, bound?: Object}} [options] Options; bound: the core
-     *     transport binding of the operation that asks (JE.captureSubmitted().bound()), checked right before the POST.
+     *     transport binding of the operation that asks (JE.captureSubmitted(owner).bound()), checked right before the POST.
      * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came, plus `stale`
      *     when a bound ask was never sent (its operation or session ended).
      */

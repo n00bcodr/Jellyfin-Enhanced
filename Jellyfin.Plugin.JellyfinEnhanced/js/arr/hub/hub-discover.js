@@ -196,7 +196,7 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
         const mediaType = card.kind === 'tv' ? 'tv' : 'movie';
         // The title's native details page when offered, else Seerr's window.
         if (JE.titleDetails?.open?.(card.tmdbId, mediaType)) return;
-        if (seerrWindow()) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType);
+        if (seerrWindow()) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType, undefined, JE.NATIVE);
     }
 
     /**
@@ -297,7 +297,7 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             const sheet = JE.arrAskSheet;
             const title = { key: card.key, kind: series ? 'series' : 'movie', name: card.title, year: card.year ?? null, poster: card.poster ?? null };
             if (series && Array.isArray(card.mineSeasons)) title.askedSeasons = card.mineSeasons.slice();
-            const options = left.variant ? { opener: button, variant: left.variant } : { opener: button };
+            const options = left.variant ? { opener: button, variant: left.variant, operation: JE.NATIVE } : { opener: button, operation: JE.NATIVE };
             button.setAttribute('aria-busy', 'true');
             if (!series && !words) text.textContent = tr('arr_ask_asking');
             const started = epoch();

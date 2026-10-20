@@ -640,7 +640,7 @@ lands while the page is saving.
 
 Request-mode title cards use the Hidden Content switch for their surface: recommendations, discovery or search. Full-document Hidden Content saves carry a base rule revision; a stale replacement is rejected so newer rules from another tab remain saved.
 
-The compact title action row and shared More menu follow **Native absent details** or **JE request mode**. Individual menu entries retain their existing Hidden Content, Spoiler Guard, notifications, requests, issue-reporting and administrator Manage switches. Issue reporting requires Seerr and a permitted linked account; an unavailable entry explains that requirement. Adding provider titles to playlists or collections is an optional integration supplied by the list feature; no empty placeholder button is shown.
+The compact title action row and shared More menu follow **Native absent details** or **JE request mode**. Individual menu entries retain their existing Hidden Content, Spoiler Guard, notifications, requests, issue-reporting and administrator Manage switches. Issue reporting requires Seerr and a permitted linked account; an unavailable entry explains that requirement. In Seerr's More Info window the menu also offers **Request in 4K** while Seerr's 4K requests are on and the title's 4K copy can be requested (the window's compact row has no room for Seerr's 4K split button); it makes the window's own 4K request. Adding provider titles to playlists or collections is an optional integration supplied by the list feature; no empty placeholder button is shown.
 
 ### Per-person settings in Dashboard → Users
 

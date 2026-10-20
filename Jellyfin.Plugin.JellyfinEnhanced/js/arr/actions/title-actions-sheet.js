@@ -89,13 +89,16 @@
     /**
      * Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. The sheet
      * is the OFFER: a press counts only while it is open, its session and route are current and its
-     * owning host (a row or card, `owner.current()`) is still mounted. The press starts an OPERATION
+     * owning host (a row or card: `owner`, required, D46S2-R6) is still current. The press starts an OPERATION
      * owned by the session, the route and that host, so it outlives the sheet (D53).
      */
-    function show(c, entries, opener = document.activeElement, owner = null) {
+    function show(c, entries, opener, owner) {
+        const host = JE.requireOwner(owner, 'the title actions sheet');
+        if (!host) return false;
         close(false); styles();
+        opener = opener || document.activeElement;
         const lease = { open: true };
-        const action = A.generation(() => lease.open && owner?.current?.() !== false);
+        const action = A.generation(() => lease.open && host.current() !== false);
         const backdrop = el('div', 'je-actions-backdrop');
         const sheet = el('section', 'je-actions-sheet focuscontainer');
         sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', JE.t('title_actions_more'));
@@ -105,7 +108,7 @@
         dismiss.onclick = () => close(); head.append(heading, dismiss); sheet.append(el('div', 'je-actions-handle'), head);
         const pairs = [];
         for (const group of groups) {
-            const order = { watch: ['replay', 'shuffle', 'instant-mix', 'trailer', 'played', 'open'], view: ['guard', 'hide'], requests: ['report', 'follow', 'request', 'manage'], other: ['share', 'native-more'] }[group];
+            const order = { watch: ['replay', 'shuffle', 'instant-mix', 'trailer', 'played', 'open'], view: ['guard', 'hide'], requests: ['report', 'follow', 'request', 'request-4k', 'manage'], other: ['share', 'native-more'] }[group];
             const rank = id => order.includes(id) ? order.indexOf(id) : 100;
             const rows = entries.filter(e => (e.group || 'other') === group).sort((a, b) => rank(a.id) - rank(b.id));
             if (!rows.length) continue;
@@ -122,7 +125,7 @@
                 sync(entry, button); pairs.push([entry, button]);
                 button.onclick = async () => {
                     if (!action.current() || button.disabled) return;
-                    const operation = A.generation(() => owner?.current?.() !== false);
+                    const operation = A.generation(() => host.current() !== false);
                     // Close before opening the owner's modal; that modal owns focus from this point.
                     try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
                     catch (_) { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); }
@@ -139,7 +142,7 @@
         });
         const observer = new MutationObserver(() => pairs.forEach(([entry, button]) => sync(entry, button)));
         pairs.forEach(([entry]) => { const source = entry.source || entry.control; if (source) observer.observe(source, { subtree: true, childList: true, attributes: true }); });
-        current = { backdrop, opener, action, owner, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
+        current = { backdrop, opener, action, owner: host, observer, inert, lease, returnHost: opener?.closest('.mainDetailButtons, .detailButtons, .card, .jellyseerr-card'), release: action.onCancel(() => close(false)) };
         dismiss.onclick = () => close();
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
         // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
@@ -154,11 +157,15 @@
             e.preventDefault(); e.stopImmediatePropagation(); buttons[next]?.focus();
         });
         sheet.querySelector('.je-actions-entry:not(:disabled)')?.focus();
+        return true;
     }
 
-    /** Supplies a selectable link when neither Web Share nor the clipboard is available. */
-    function showLink(url) {
-        show({}, [], document.activeElement);
+    /**
+     * Supplies a selectable link when neither Web Share nor the clipboard is available (or either refused). `owner`
+     * (required): the Share operation, which the link sheet belongs to and closes with (D46S2-R6-4).
+     */
+    function showLink(url, owner) {
+        if (!show({}, [], document.activeElement, owner)) return;
         const input = el('input', 'je-actions-link'); input.readOnly = true; input.value = url;
         input.setAttribute('aria-label', JE.t('title_actions_share')); current.backdrop.querySelector('section').append(input); input.focus(); input.select();
     }

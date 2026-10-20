@@ -1077,6 +1077,8 @@
             // Handle 4K popup item clicks
             if (event.target.closest('.jellyseerr-4k-popup-item')) {
                 const item = event.target.closest('.jellyseerr-4k-popup-item');
+                // Taken before the popup goes: where the item was pressed (a Seerr card's popup is native).
+                const owner = JE.ownerOf(item);
                 const action = item.dataset.action;
                 const tmdbId = item.dataset.tmdbId;
                 const mediaType = String(item.dataset.mediaType || 'movie').toLowerCase();
@@ -1100,16 +1102,16 @@
                     try {
                         if (mediaType === 'tv') {
                             if (popup) popup.remove();
-                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true);
+                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner);
                             return;
                         }
 
                         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();
-                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true);
+                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner);
                         } else {
-                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(item).bound() }); // true for 4K, pass searchResultItem for override rules
+                            const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // true for 4K, pass searchResultItem for override rules
                             console.debug(`${logPrefix} Seerr 4K request response:`, response);
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
@@ -1161,18 +1163,18 @@
                 || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
 
             if (mediaType === 'collection' && collectionId) {
-                showCollectionRequestModal(collectionId, titleText, searchResultItem);
+                showCollectionRequestModal(collectionId, titleText, searchResultItem, { operation: button });
                 return;
             }
 
             if (mediaType === 'tv') {
-                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem);
+                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, button);
                 return;
             }
 
             if (mediaType === 'movie') {
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    showMovieRequestModal(tmdbId, titleText, searchResultItem);
+                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, button);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;

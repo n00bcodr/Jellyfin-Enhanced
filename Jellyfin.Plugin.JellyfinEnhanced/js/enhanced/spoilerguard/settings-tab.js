@@ -114,7 +114,7 @@
                 const prefs = internal.getUserPrefs();
                 const key = changed.dataset.pref;
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
-                await internal.setUserPrefs(prefs);
+                await internal.setUserPrefs(prefs, JE.NATIVE);
             } catch (e) {
                 if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);

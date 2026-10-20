@@ -216,7 +216,7 @@
                 const requestHandler = async (e) => {
                     e.stopPropagation();
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
+                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
                     } else {
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
@@ -288,7 +288,7 @@
                 e.preventDefault();
                 e.stopPropagation();
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false);
+                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;

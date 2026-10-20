@@ -17,11 +17,14 @@
  * Open the more info modal for a movie or TV show
  * @param {number} tmdbId - The TMDB ID
  * @param {string} mediaType - 'movie' or 'tv'
+ * @param {{season?: number, episode?: number}|undefined} scope - The season/episode a title action opened it for
+ * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, JE.NATIVE,
+ *   or the node or press it is opened from. The window opens only while it is current and belongs to its scope.
  */
-moreInfoModal.open = async function(tmdbId, mediaType, scope) {
+moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
     const generation = ++openGeneration;
-    // Opened for a title action (if any): the window opens only while that operation is current.
-    const submitted = JE.captureSubmitted();
+    const submitted = JE.captureSubmitted(owner);
+    if (!submitted.owner) return;
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
@@ -72,6 +75,8 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope) {
  * Refresh modal data and update displays
  */
 async function refreshModalData(data, mediaType, modal, refreshBtn) {
+    const newest = modal._jeReads(JE.ownerOf(modal));
+    const shown = () => state.currentModal === modal && !modal._isClosing && newest();
     try {
         // Show loading state on button
         refreshBtn.classList.add('loading');
@@ -79,7 +84,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
 
         // Fetch fresh data
         const freshData = await internal.fetchMediaDetails(data.id, mediaType);
-        if (state.currentModal !== modal || modal._isClosing) return;
+        if (!shown()) return;
         if (!freshData) {
             internal.showError('jellyseerr_modal_refresh_failed');
             refreshBtn.classList.remove('loading');
@@ -100,7 +105,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         refreshBtn.disabled = false;
 
     } catch (error) {
-        if (state.currentModal !== modal || modal._isClosing) return;
+        if (!shown()) return;
         if (!internal.isExplained?.(error)) console.error('Error refreshing modal data:', error);
         internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_refresh_failed') : 'jellyseerr_modal_refresh_failed');
         refreshBtn.classList.remove('loading');
@@ -132,7 +137,9 @@ function showModal(data, mediaType, scope, submitted) {
 
     // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
     // the Collection and request modals); once the operation ends, it takes no more input and closes.
-    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted?.operation ?? null);
+    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted.owner);
+    // The window's reads (Refresh, a TV request's refresh) render only for the newest one while its owner is current.
+    modal._jeReads = JE.latestIntent();
 
     // Add event listeners
     modal.addEventListener('click', (e) => {
@@ -198,11 +205,13 @@ function showModal(data, mediaType, scope, submitted) {
     if (mediaType === 'tv') {
         const handleTvRequest = async (e) => {
             if (!e.detail?.tmdbId || String(e.detail.tmdbId) !== String(data.id)) return;
+            const newest = modal._jeReads(JE.ownerOf(modal));
+            const shown = () => state.currentModal === modal && !modal._isClosing && newest();
 
             try {
                 // Refresh details to pull latest status/progress
                 const fresh = await internal.fetchMediaDetails(data.id, 'tv');
-                if (state.currentModal !== modal || modal._isClosing) return;
+                if (!shown()) return;
                 if (fresh?.mediaInfo) {
                     data.mediaInfo = fresh.mediaInfo;
                 } else {
@@ -211,7 +220,7 @@ function showModal(data, mediaType, scope, submitted) {
                     mediaInfo.status = mediaInfo.status || 2;
                 }
             } catch (_) {
-                if (state.currentModal !== modal || modal._isClosing) return;
+                if (!shown()) return;
                 const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
                 mediaInfo.status = mediaInfo.status || 2;
             }
@@ -269,17 +278,19 @@ function closeCurrentModal() {
         closeCurrentModal();
     };
 
-    // Remove rendered metadata synchronously, then reopen from the current server projection.
+    // Remove rendered metadata synchronously, then reopen from the current server projection. The replacement is the
+    // replaced window's: it inherits that window's owner, taken before it closes, and opens only while it is current
+    // (D46S2-R6-1); an ended operation's window just closes.
     window.addEventListener('je-spoiler-policy-changed', event => {
         const modal = state.currentModal;
         if (!modal || modal._isClosing) return;
         const type = modal.dataset.mediaType;
         const id = Number(modal.dataset.tmdbId);
         if (event.detail?.type && (type !== event.detail.type || id !== Number(event.detail.tmdbId))) return;
+        const owner = JE.ownerOf(modal);
         modal.replaceChildren();
         moreInfoModal.close();
-        if (modal.jeActionScope) void moreInfoModal.open(id, type, modal.jeActionScope);
-        else void moreInfoModal.open(id, type);
+        if (owner && owner.current() !== false) void moreInfoModal.open(id, type, modal.jeActionScope, owner);
     });
 
     // Request permissions and details belong to the active account. Invalidate

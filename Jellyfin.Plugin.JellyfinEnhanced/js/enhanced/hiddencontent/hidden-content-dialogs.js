@@ -313,9 +313,13 @@
      * @param {boolean} [dialogOptions.showEpisodeChoice] If true, shows "Hide episode" vs "Hide show" choice.
      * @param {Function} [dialogOptions.onChooseShow] Called if user picks "Hide entire show".
      * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
+     * @param {Object|Node|Event} dialogOptions.owner The owner (required, D46S2-R6): the operation a title action pressed
+     *     Hide for (the confirmation is in its scope and its accept is refused once it ends), JE.NATIVE, or the node or
+     *     press it comes from.
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
-        const action = JE.createSessionAction({ submitted: true });
+        const action = JE.createSessionAction({ owner: dialogOptions.owner });
+        if (!action.owner) return;
         onConfirm = action.bind(onConfirm);
         dialogOptions = { ...dialogOptions };
         for (const key of ['onChooseShow', 'onChooseScoped']) {
@@ -357,7 +361,7 @@
         };
         const release = action.onCancel(closeDialog);
         // Asked for a title action: the confirmation is in that operation's scope and closes once it ends.
-        const releaseScope = JE.openSurface(overlay, closeDialog, action.operation);
+        const releaseScope = JE.openSurface(overlay, closeDialog, action.owner);
         overlay.jeDismiss = closeDialog;
         // Also reject detached old buttons, including the suppression checkbox write.
         overlay.addEventListener('click', event => {
@@ -391,16 +395,18 @@
      * Episode-choice and surface-scoped dialogs always show (never suppressed).
      * @param {Object} itemData Data for the item to hide.
      * @param {Function} onHidden Callback after hiding.
-     * @param {Object} [dialogOptions] Options passed to showHideConfirmation.
+     * @param {Object} dialogOptions Options passed to showHideConfirmation (owner required there).
      */
     function confirmAndHide(itemData, onHidden, dialogOptions = {}) {
+        const owner = JE.requireOwner(dialogOptions.owner, 'confirmAndHide');
+        if (!owner) return;
         if (!dialogOptions.showEpisodeChoice && !dialogOptions.surface && isConfirmationSuppressed()) {
-            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
+            Promise.resolve(hideItem(itemData, owner)).then(saved => { if (saved !== false) onHidden?.(); });
             return;
         }
         showHideConfirmation(itemData.name || 'Item', () => {
-            Promise.resolve(hideItem(itemData)).then(saved => { if (saved !== false) onHidden?.(); });
-        }, dialogOptions);
+            Promise.resolve(hideItem(itemData, owner)).then(saved => { if (saved !== false) onHidden?.(); });
+        }, { ...dialogOptions, owner });
     }
 
     Object.assign(internal, { showUndoToast, confirmAndHide, showHideConfirmation, isConfirmationSuppressed });

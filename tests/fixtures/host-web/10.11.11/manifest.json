@@ -19,5 +19,13 @@
    "export": "Y",
    "sha256": "4559476942dd7ae6ba9627d56a2fcdae10c31972105b2fb4d324f0655570a1da"
   }
+ },
+ "licenses": {
+  "sessionPlayer-plugin.b0fb6e5a7eb9fb4d93e5.chunk.js.LICENSE.txt": {
+   "sha256": "8c9946dfc859a2bfb26cc541125631cd96e7110fa20a702eb19275c9d1658805"
+  },
+  "main.jellyfin.bundle.js.LICENSE.txt": {
+   "sha256": "be00e9ae0b464141b75106ce36313c47070d2536728441c2cc24495ca08c7c99"
+  }
  }
 }

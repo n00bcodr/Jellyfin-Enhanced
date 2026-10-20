@@ -19,6 +19,8 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced: Requests:';
     const state = { installed: false, listening: false };
+    // The newest JE-mode Collection picker opening (D46S2-R6).
+    const pickerOpening = JE.latestIntent();
 
     /**
      * True in JE mode: the request controls are on and Jellyfin Enhanced (not Seerr) handles requests.
@@ -63,11 +65,13 @@
         if (!sheet || !title) return null;
         const opener = options?.opener || null;
         const variant = options?.variant === '4k' ? '4k' : 'standard';
+        // The owner (required, D46S2-R6): the operation the Seerr control was pressed for, else where it was pressed.
+        const operation = options?.owner;
         let result = null;
         try {
             result = title.kind === 'movie' && variant === 'standard'
-                ? await sheet.openOrAsk(title, { opener })
-                : await sheet.open(title, { opener, variant });
+                ? await sheet.openOrAsk(title, { opener, operation })
+                : await sheet.open(title, { opener, variant, operation });
         } catch (err) {
             console.warn(`${logPrefix} the request sheet could not open (${err?.message || err})`);
             JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
@@ -173,8 +177,10 @@
      */
     async function collectionAsk(collectionId, collectionName, options) {
         const submitted = JE.captureSubmitted(options?.operation);
+        // Only the newest opening opens its picker (D46S2-R6): an older one whose reads answer later is dropped.
+        const newest = pickerOpening(submitted);
         const caps = await JE.arrAsk.me();
-        if (!submitted.current()) return;
+        if (!newest()) return;
         if (!JE.arrAsk.canAsk(caps, 'movie')) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return;
@@ -196,7 +202,7 @@
         } catch {
             details = null;
         }
-        if (!submitted.current()) return;
+        if (!newest()) return;
         if (!details) {
             JE.arrAsk.toast(JE.arrAsk.tr('jellyseerr_toast_collection_fetch_failed'));
             return;
@@ -216,7 +222,7 @@
             Promise.all(candidates.map(movie => (typeof JE.arrAsk.check === 'function' ? JE.arrAsk.check(`movie:tmdb:${movie.id}`, 'standard') : null))),
             knownTitles(candidates.map(movie => `movie:tmdb:${movie.id}`))
         ]);
-        if (!submitted.current()) return;
+        if (!newest()) return;
         const paused = new Map();
         candidates.forEach((movie, i) => {
             const answer = answers[i];
@@ -257,7 +263,7 @@
                 + `<div class="jellyseerr-collection-list" style="max-height: 600px; overflow-y: auto;">${rows}</div>`,
             backdropPath: details.backdropPath || details.backdrop_path,
             buttonText: JE.arrAsk.tr('jellyseerr_modal_request_selected_movies'),
-            operation: submitted.operation,
+            operation: submitted.owner,
             onSave: async (modalEl, button, closeFn) => {
                 // Each ask of the loop is the picker's operation's (if any), checked by the transport before each send.
                 const bound = JE.captureSubmitted(modalEl).bound();
@@ -308,6 +314,8 @@
         if (!jeMode()) return;
         const target = e.target instanceof Element ? e.target : null;
         if (!target) return;
+        // Taken at the press: the operation it was dispatched for, else the surface it happened in (else native).
+        const owner = JE.ownerOf(e);
         let title = null;
         let variant = 'standard';
         let opener = null;
@@ -336,7 +344,7 @@
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 const item = parseItem(seerrButton.dataset.searchResultItem);
-                collectionAsk(seerrButton.dataset.tmdbId || item?.id, item?.name || item?.title || cardName(seerrButton.closest('.jellyseerr-card')));
+                collectionAsk(seerrButton.dataset.tmdbId || item?.id, item?.name || item?.title || cardName(seerrButton.closest('.jellyseerr-card')), { operation: owner });
                 return;
             }
             const item = parseItem(seerrButton.dataset.searchResultItem);
@@ -351,7 +359,7 @@
         e.preventDefault();
         e.stopImmediatePropagation();
         if (popupItem) popupItem.closest('.jellyseerr-4k-popup')?.remove();
-        openSheet(title, { opener, variant });
+        openSheet(title, { opener, variant, owner });
     }
 
     /**
@@ -393,15 +401,15 @@
         const showCollection = ui.showCollectionRequestModal;
         const advanced = api.shouldShowAdvanced;
         if (typeof showMovie === 'function') {
-            ui.showMovieRequestModal = function (tmdbId, titleText, item, is4k) {
+            ui.showMovieRequestModal = function (tmdbId, titleText, item, is4k, owner) {
                 if (!jeMode()) return showMovie.apply(this, arguments);
-                return openSheet(titleOf('movie', tmdbId, item, titleText), { opener: document.activeElement, variant: is4k ? '4k' : 'standard' });
+                return openSheet(titleOf('movie', tmdbId, item, titleText), { opener: document.activeElement, variant: is4k ? '4k' : 'standard', owner });
             };
         }
         if (typeof showSeasons === 'function') {
-            ui.showSeasonSelectionModal = function (tmdbId, mediaType, showTitle, item, is4k) {
+            ui.showSeasonSelectionModal = function (tmdbId, mediaType, showTitle, item, is4k, owner) {
                 if (!jeMode()) return showSeasons.apply(this, arguments);
-                return openSheet(titleOf(String(mediaType || 'tv').toLowerCase(), tmdbId, item, showTitle), { opener: document.activeElement, variant: is4k ? '4k' : 'standard' });
+                return openSheet(titleOf(String(mediaType || 'tv').toLowerCase(), tmdbId, item, showTitle), { opener: document.activeElement, variant: is4k ? '4k' : 'standard', owner });
             };
         }
         if (typeof showCollection === 'function') {

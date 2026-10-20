@@ -158,7 +158,9 @@
             button.onclick = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const action = JE.createSessionAction();
+                // The press's owner (D46S2-R6): the operation a title action pressed Hide for, else the page (native).
+                const owner = JE.ownerOf(e);
+                const action = JE.createSessionAction({ owner });
 
                 // Get item name from the page title
                 const nameEl = visiblePage.querySelector('.itemName, h1, h2, [class*="itemName"]');
@@ -205,6 +207,7 @@
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
                     }, {
+                        owner,
                         showEpisodeChoice: true,
                         onChooseShow: async () => {
                             // User chose to hide the entire show
@@ -231,12 +234,12 @@
                     // Season: hide with series metadata
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    });
+                    }, { owner });
                 } else {
                     // Movie or Series: standard hide
                     JE.hiddenContent.confirmAndHide(baseItemData, () => {
                         setHiddenState();
-                    });
+                    }, { owner });
                 }
             };
         }

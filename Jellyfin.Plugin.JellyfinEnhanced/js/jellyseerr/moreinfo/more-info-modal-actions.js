@@ -22,7 +22,7 @@ function buildSingle4kButton(data) {
         e.preventDefault();
         e.stopPropagation();
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, button);
             return;
         }
         button.disabled = true;
@@ -80,7 +80,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, mainButton);
                 return;
             }
             mainButton.disabled = true;
@@ -154,7 +154,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 ev.stopPropagation();
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     close4k();
-                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true);
+                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, option);
                     return;
                 }
                 option.disabled = true;
@@ -202,7 +202,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, requestButton);
                 return;
             }
             requestButton.disabled = true;
@@ -228,6 +228,32 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         container.appendChild(requestButton);
     }
     return container;
+}
+
+/**
+ * The window's 4K movie request, as its 4K option makes it (the advanced form when that is on), for the action bar's
+ * More sheet (D46S2-R6, Q-D46S2FIX5-1): `origin` is a node of the window, so the request is the window's owner's.
+ * @param {Object} data Seerr details.
+ * @param {Node} origin The window (or a node in it).
+ * @returns {Promise<void>}
+ */
+async function requestMovie4k(data, origin) {
+    if (JE.jellyseerrAPI.shouldShowAdvanced()) {
+        JE.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, origin);
+        return;
+    }
+    try {
+        const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', { is4k: true }, false, data, null, { bound: JE.captureSubmitted(origin).bound() });
+        mountRequestedChip(data, 'movie', true, response);
+    } catch (error) {
+        // Its owner ended before the send: nothing was sent, nothing to say.
+        if (error?.name === 'AbortError') return;
+        if (JE.jellyseerrUI?.isQuotaError?.(error)) {
+            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+            return;
+        }
+        JE.toast?.(escapeHtml(error?.responseJSON?.message || JE.t('jellyseerr_btn_error')), 4000);
+    }
 }
 
 function mountRequestedChip(data, mediaType, is4k, response = null) {
@@ -486,6 +512,9 @@ function drawActions(data, mediaType) {
     if (requestedByMount) requestedByMount.innerHTML = '';
 
     const myToken = ++_renderActionsToken;
+    // The window's 4K request for the action bar's More sheet: set below while Seerr 4K is on and 4K can be requested.
+    const modal = state.currentModal;
+    modal.jeRequest4k = null;
     renderRequestedBy(requestedByMount, data.mediaInfo);
     if (data.jePublicDetails === true) renderPublicNote(requestedByMount);
     JE.internals.spoilerGuard?.appendSeerrToggle?.(secondaryMount, data, mediaType);
@@ -535,6 +564,7 @@ function drawActions(data, mediaType) {
 
         const canRequestNormal = JE.seerrStatus.isRequestable(effectiveMovieStatus);
         const canRequest4k = JE.seerrStatus.isRequestable(effectiveMovieStatus4k);
+        if (show4k && canRequest4k) modal.jeRequest4k = origin => requestMovie4k(data, origin);
 
         if (!canRequestNormal) {
             if (show4k && canRequest4k && actionMount) {
@@ -591,6 +621,7 @@ function drawActions(data, mediaType) {
 
         const canRequestNormal = JE.seerrStatus.isRequestable(effectiveStatus);
         const canRequest4k = JE.seerrStatus.isRequestable(effectiveStatus4k);
+        if (show4kTv && canRequest4k) modal.jeRequest4k = origin => JE.jellyseerrUI?.showSeasonSelectionModal?.(data.id, 'tv', data.title || data.name, data, true, origin);
         if (canRequestNormal) {
             const actions = internal.buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
@@ -610,7 +641,8 @@ function drawActions(data, mediaType) {
                 return;
             }
             internal.checkForUnrequestedSeasons(data).then(hasUnrequestedSeasons => {
-                if (myToken !== _renderActionsToken) return;
+                // Only the newest render, into a window still shown (a closed one's owner may have ended).
+                if (myToken !== _renderActionsToken || !actionMount?.isConnected) return;
                 if (hasUnrequestedSeasons && actionMount) {
                     const requestMoreButton = internal.buildTvRequestMoreButton(data, show4kTv, canRequest4k);
                     if (requestMoreButton) actionMount.appendChild(requestMoreButton);

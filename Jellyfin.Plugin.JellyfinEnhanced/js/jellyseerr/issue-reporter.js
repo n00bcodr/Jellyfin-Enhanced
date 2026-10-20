@@ -108,11 +108,14 @@
      * @param {string} itemName - Name of the media item
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
+     * @param {Object|null} item - The Jellyfin item (absent titles report catalogue issues only)
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, JE.NATIVE,
+     *   or the node or press it comes from. It lasts through the form and into reportIssue's POST.
      */
-    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null) {
-        // The operation a title action submitted (if any) lasts through the form and into reportIssue's POST.
-        const submitted = JE.captureSubmitted();
-        const action = JE.createSessionAction({ submitted: true });
+    issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null, owner) {
+        const submitted = JE.captureSubmitted(owner);
+        if (!submitted.owner) return;
+        const action = JE.createSessionAction({ owner: submitted.owner });
         // Absent titles can report catalogue/acquisition issues, not problems with a nonexistent file.
         const absent = item?.jeAbsent === true || !!JE.titleDetails?.parse?.(item?.Id);
         const ISSUE_TYPES = getIssueTypes().filter(type => !absent || type.value === '4');
@@ -176,7 +179,7 @@
             bodyHtml: formHtml,
             backdropUrl: backdropUrl,
             buttonText: JE.t('jellyseerr_report_issue_submit'),
-            operation: submitted.operation,
+            operation: submitted.owner,
             onClose: () => releaseAction?.(),
             onSave: async (modalEl, button, closeModal) => {
                 if (!action.current()) return;
@@ -206,7 +209,7 @@
                     button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
-                    const result = await submitted.run(() => JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode));
+                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, submitted.owner);
 
                     if (!action.current()) return;
                     if (result) {
@@ -618,7 +621,8 @@
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropUrl, item);
+            // The press's owner: the operation a title action pressed it for, else where it was pressed.
+            issueReporter.showReportModal(tmdbId, itemName, mediaType, backdropUrl, item, e);
         });
 
         return button;

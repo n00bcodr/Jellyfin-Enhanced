@@ -659,7 +659,7 @@
             case 'remove_search': {
                 // The row says how many episodes the download covers (the Activity answer too, when read).
                 const group = (state.data.activity?.queue || []).find(g => g.instanceId === item.instanceId && g.downloadId === item.downloadId);
-                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance, canDeleteData: canDeleteData(item) }, item.id, opener, true);
+                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance, canDeleteData: canDeleteData(item) }, item.id, opener, true, undefined, JE.NATIVE);
                 return;
             }
             case 'remove_with_data':
@@ -682,7 +682,7 @@
         const busyId = A.downloadKey(g);
         if (state.busy.has(busyId)) return;
         const target = { instanceId: g.instanceId, downloadId: g.downloadId, title: [g.title, g.scope].filter(Boolean).join(' '), scope: g.scope, episodes: g.episodes, instance: g.instance, canDeleteData: (g.actions || []).includes('remove_with_data') };
-        if (action === 'remove') removeDialog(target, busyId, opener, false);
+        if (action === 'remove') removeDialog(target, busyId, opener, false, undefined, JE.NATIVE);
         else runQueue({ instanceId: g.instanceId, downloadId: g.downloadId, action }, busyId, opener);
     }
 
@@ -774,6 +774,7 @@
         const d = state.dialog;
         if (!d || (owner && d.owner !== owner)) return;
         state.dialog = null;
+        d.releaseScope?.();
         document.removeEventListener('keydown', d.onKey, true);
         document.removeEventListener('focusin', d.onFocus, true);
         d.overlay.remove();
@@ -803,9 +804,12 @@
      * @param {HTMLElement} opener The control that opened it.
      * @param {string} [owner] Who opened it ('tabs' by default, 'drawer' for the Manage drawer):
      *   leaving the admin tabs closes only theirs, closing the drawer only its own.
-     * @returns {{box: HTMLElement, buttons: HTMLElement}} Parts to fill.
+     * @param {Object} scope The owner it opens for (required, D46S2-R6): the drawer's operation (or JE.NATIVE); once
+     *   that operation ends the dialog takes no more input and closes.
+     * @returns {{box: HTMLElement, buttons: HTMLElement}|null} Parts to fill (null: no owner, nothing opened).
      */
-    function openDialog(title, opener, owner) {
+    function openDialog(title, opener, owner, scope) {
+        if (!JE.requireOwner(scope, 'the arr dialog')) return null;
         closeDialog();
         A.injectStyles?.();
         const overlay = el('div', 'je-ops-dialog-overlay');
@@ -852,7 +856,8 @@
         document.addEventListener('focusin', onFocus, true);
         document.body.appendChild(overlay);
         const focusId = opener?.closest?.('[data-je-focus]')?.dataset.jeFocus || null;
-        state.dialog = { overlay, opener, onKey, onFocus, focusId, owner: owner || 'tabs' };
+        const dialog = state.dialog = { overlay, opener, onKey, onFocus, focusId, owner: owner || 'tabs' };
+        dialog.releaseScope = JE.openSurface(overlay, () => { if (state.dialog === dialog) closeDialog(); }, scope);
         return { box, buttons };
     }
 
@@ -878,10 +883,13 @@
      * @param {boolean} searchByDefault Pre-tick "search again" (the Remove & search again fix).
      * @param {(body: Object) => void} [run] Runs the removal instead of the tab (the Manage drawer;
      *   it offers only the non-destructive removal, so there is no "delete the data too").
+     * @param {Object} owner The owner it opens for (required): the drawer's operation, or JE.NATIVE from the tabs.
      * @returns {void}
      */
-    function removeDialog(target, busyId, opener, searchByDefault, run) {
-        const { box, buttons } = openDialog(tr('arr_ops_remove_title'), opener, run ? 'drawer' : 'tabs');
+    function removeDialog(target, busyId, opener, searchByDefault, run, owner) {
+        const parts = openDialog(tr('arr_ops_remove_title'), opener, run ? 'drawer' : 'tabs', owner);
+        if (!parts) return;
+        const { box, buttons } = parts;
         box.appendChild(el('p', '', tr('arr_ops_remove_body', { title: target.title || '', instance: target.instance || instance(target.instanceId)?.name || '' })));
         if (target.episodes > 1) box.appendChild(el('p', 'je-ops-warn', tr('arr_ops_remove_pack', { scope: target.scope || '', n: target.episodes })));
         const blockLabel = el('label');
@@ -948,7 +956,7 @@
         draw();
         const dl = confirmation?.download || {};
         const word = tr('arr_ops_confirm_word');
-        const { box, buttons } = openDialog(tr('arr_ops_delete_title'), opener);
+        const { box, buttons } = openDialog(tr('arr_ops_delete_title'), opener, 'tabs', JE.NATIVE);
         const warn = el('div', 'je-ops-warnbox');
         warn.appendChild(el('p', '', tr('arr_ops_delete_body', { title: [dl.title, dl.scope].filter(Boolean).join(' '), instance: dl.instance || '' })));
         if (dl.episodes > 1) warn.appendChild(el('p', '', tr('arr_ops_remove_pack', { scope: dl.scope || '', n: dl.episodes })));

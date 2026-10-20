@@ -596,7 +596,7 @@ test('the Manage drawer offers a download\'s non-destructive queue actions (phas
     }
   });
   h.JE.initializeArrStatus();
-  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' });
+  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' }, { operation: h.JE.NATIVE });
   await until(() => h.document.querySelector('.je-manage-download'));
   const row = h.document.querySelector('.je-manage-download');
   assert.match(row.textContent, /S02E01–E03/);
@@ -650,7 +650,7 @@ test('the drawer\'s Remove dialog survives hub re-renders and goes away with the
   });
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-hub-tab[data-tab="mine"]'));
-  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' });
+  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' }, { operation: h.JE.NATIVE });
   await until(() => h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
   h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
   assert.ok(h.document.querySelector('.je-ops-dialog'));
@@ -728,7 +728,7 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
   await until(() => h.document.querySelector('.je-ops-warnbox'));
   cancelled();
   // The Manage drawer's Remove….
-  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' });
+  await h.JE.arrManage.open({ key: 'tv:tvdb:391153:s2' }, { operation: h.JE.NATIVE });
   await until(() => h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]'));
   h.document.querySelector('[data-je-focus="dl-remove-s1|pack"]').click();
   assert.equal(h.JE.internals.arrHub.admin.state.dialog?.owner, 'drawer');

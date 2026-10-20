@@ -89,14 +89,15 @@
     /**
      * Toggles the follow of a button's key.
      * @param {HTMLElement} button Button.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)).
      * @returns {Promise<void>}
      */
-    async function toggle(button) {
+    async function toggle(button, owner) {
         if (button.getAttribute('aria-busy') === 'true') return;
         const key = button.dataset.key;
         const on = !JE.arrNotify.isFollowing(key);
         button.setAttribute('aria-busy', 'true');
-        const res = await JE.arrNotify.setFollow(key, on);
+        const res = await JE.arrNotify.setFollow(key, on, owner);
         button.removeAttribute('aria-busy');
         if (!res.ok) {
             const msg = res.code === 'not_allowed' ? 'arr_notify_follow_not_allowed' : res.code === 'too_many' ? 'arr_notify_follow_too_many' : 'arr_notify_follow_failed';
@@ -127,7 +128,7 @@
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            toggle(button);
+            toggle(button, JE.ownerOf(e));
         });
         update(button);
         return button;
@@ -151,8 +152,9 @@
             e.preventDefault();
             e.stopPropagation();
             if (button.getAttribute('aria-disabled') === 'true') return;
+            const owner = JE.ownerOf(e);
             button.setAttribute('aria-disabled', 'true');
-            const res = await JE.arrNotify.remind(status.key, itemId);
+            const res = await JE.arrNotify.remind(status.key, itemId, owner);
             if (res.ok) text.textContent = JE.arrNotify.tr('arr_notify_reminded', { contact: who });
             else if (res.code === 'too_soon') text.textContent = JE.arrNotify.tr('arr_notify_reminded_already', { contact: who });
             else {

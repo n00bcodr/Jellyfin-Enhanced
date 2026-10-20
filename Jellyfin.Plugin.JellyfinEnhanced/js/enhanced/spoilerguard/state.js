@@ -106,12 +106,14 @@
         }, RECOVERY_DELAYS_MS[recoveryAttempt]);
     }
 
-    /** All controls share one ordered write, authoritative read and policy notification path. */
-    function mutateState(path, options, project) {
+    /**
+     * All controls share one ordered write, authoritative read and policy notification path. `owner` (required,
+     * D46S2-R6): the operation a title action pressed the control for (it must still be current right before the
+     * write), JE.NATIVE, or the node or press it comes from. What follows an accepted write stays bound to the session only.
+     */
+    function mutateState(path, options, project, owner) {
         const action = JE.createSessionAction();
-        // A submitted operation (a title action press) must still be current right before the write;
-        // what follows an accepted write stays bound to the session only.
-        const submitted = JE.createSessionAction({ submitted: true });
+        const submitted = JE.createSessionAction({ owner });
         const task = mutationQueue.catch(() => {}).then(async () => {
             if (!action.current() || !submitted.current()) return;
             // The transport checks the operation (if any) again right before the bytes go out (after the core queue).
@@ -221,29 +223,29 @@
         return internal.isEnabledFor(id);
     };
 
-    internal.enableForSeries = function(id) {
+    internal.enableForSeries = function(id, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, true));
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, true), owner);
     };
-    internal.disableForSeries = function(id) {
+    internal.disableForSeries = function(id, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, false));
+        return mutateState(`/spoiler-blur/series/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('series', key, enabledSeries, false), owner);
     };
-    internal.enableForMovie = function(id, name) {
+    internal.enableForMovie = function(id, name, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, true));
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'POST', body: { MovieName: name || '' }, skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, true), owner);
     };
-    internal.disableForMovie = function(id) {
+    internal.disableForMovie = function(id, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, false));
+        return mutateState(`/spoiler-blur/movies/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('movie', key, enabledMovies, false), owner);
     };
-    internal.enableForCollection = function(id, name) {
+    internal.enableForCollection = function(id, name, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, true));
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'POST', body: { CollectionName: name || '' }, skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, true), owner);
     };
-    internal.disableForCollection = function(id) {
+    internal.disableForCollection = function(id, owner) {
         const key = internal.normalizeId(id);
-        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, false));
+        return mutateState(`/spoiler-blur/collections/${encodeURIComponent(key)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('collection', key, enabledCollections, false), owner);
     };
 
     /** True when the mirrors can answer for this title: a loaded state, or an accepted write since. */
@@ -266,26 +268,26 @@
         return false;
     };
 
-    internal.enableForTmdb = function(mediaType, tmdbId, displayName) {
+    internal.enableForTmdb = function(mediaType, tmdbId, displayName, owner) {
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
         const query = displayName ? `?displayName=${encodeURIComponent(displayName)}` : '';
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, true));
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, true), owner);
     };
-    internal.disableForTmdb = function(mediaType, tmdbId) {
+    internal.disableForTmdb = function(mediaType, tmdbId, owner) {
         const type = String(mediaType || '').toLowerCase();
         const id = String(tmdbId || '').trim();
         if (!id || (type !== 'tv' && type !== 'movie')) return Promise.reject(new Error('invalid mediaType/tmdbId'));
-        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, false));
+        return mutateState(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true }, () => applyConfirmed('tmdb', internal.pendingKey(type, id), enabledPendingTmdb, false), owner);
     };
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
-    internal.setUserPrefs = function(next) {
-        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true }, () => { userPrefs = { ...(next || {}) }; })
+    internal.setUserPrefs = function(next, owner) {
+        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true }, () => { userPrefs = { ...(next || {}) }; }, owner)
             .then(() => internal.getUserPrefs());
     };
 

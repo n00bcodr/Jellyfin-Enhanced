@@ -92,13 +92,13 @@ const OWNERS = {
     path: '/jellyseerr/request',
     load: h => h.load('jellyseerr/api.js'),
     // Every caller passes its operation's binding (D46S2-R5, shape 2), as the window's buttons and modals do.
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false, null, null, { bound: h.JE.captureSubmitted().bound() })),
+    submit: (h, op) => h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false, null, null, { bound: h.JE.captureSubmitted(op).bound() }),
     sent: h => h.writes('POST', '/jellyseerr/request').length,
   },
   'Seerr requestTvSeasons (POST /jellyseerr/request)': {
     path: '/jellyseerr/request',
     load: h => h.load('jellyseerr/api.js'),
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], { serverId: 1 }, null, false, null, { bound: h.JE.captureSubmitted().bound() })),
+    submit: (h, op) => h.JE.jellyseerrAPI.requestTvSeasons(1399, [1], { serverId: 1 }, null, false, null, { bound: h.JE.captureSubmitted(op).bound() }),
     sent: h => h.writes('POST', '/jellyseerr/request').length,
   },
   'Report (POST /jellyseerr/issue)': {
@@ -106,13 +106,13 @@ const OWNERS = {
     load: h => h.load('jellyseerr/api.js'),
     // The record read is already cached (the Report form read it when it opened), so the POST is the queued request.
     ready: async h => { await h.JE.jellyseerrAPI.reportContext(603, 'movie'); },
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'x')),
+    submit: (h, op) => h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'x', 0, 0, op),
     sent: h => h.writes('POST', '/jellyseerr/issue').length,
   },
   'Follow (PUT /acquire/follows)': {
     path: '/acquire/follows',
     load: h => h.load('arr/notify/notify-core.js'),
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.arrNotify.setFollow('movie:tmdb:603', true)),
+    submit: (h, op) => h.JE.arrNotify.setFollow('movie:tmdb:603', true, op),
     sent: h => h.writes('PUT', '/acquire/follows').length,
   },
   'Hide (PUT hidden-content rule)': {
@@ -123,7 +123,7 @@ const OWNERS = {
       Object.assign(hidden, { refreshNativeCardVisibility() {}, restoreNativeCardsForIds() {}, debouncedSave() {}, showUndoToast() {} });
       hidden.resetFromUserConfig();
     },
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.internals.hiddenContent.saveTitleRule({ type: 'movie', tmdbId: 603, name: 'The Matrix' }, true)),
+    submit: (h, op) => h.JE.internals.hiddenContent.saveTitleRule({ type: 'movie', tmdbId: 603, name: 'The Matrix' }, true, op),
     sent: h => h.writes('PUT', '/user-settings/').length,
   },
   'Spoiler Guard (POST /spoiler-blur/pending)': {
@@ -132,7 +132,7 @@ const OWNERS = {
       h.JE.internals.spoilerGuard = h.JE.internals.spoilerGuard || {};
       h.load('enhanced/spoilerguard/ids.js'); h.load('enhanced/spoilerguard/state.js');
     },
-    submit: (h, op) => h.JE.runSubmitted(op, () => h.JE.internals.spoilerGuard.enableForTmdb('movie', 603, 'The Matrix')),
+    submit: (h, op) => h.JE.internals.spoilerGuard.enableForTmdb('movie', 603, 'The Matrix', op),
     sent: h => h.writes('POST', '/spoiler-blur/pending/').length,
   },
   'JE ask from the request sheet (POST /acquire/requests)': {

@@ -263,11 +263,11 @@
      * @param {string} mediaType "movie" or "tv".
      * @returns {boolean} True when the modal was asked to open.
      */
-    function openModal(tmdbId, mediaType, scope) {
+    function openModal(tmdbId, mediaType, scope, owner) {
         const tmdb = Number(tmdbId);
         if (!(tmdb > 0) || (mediaType !== 'movie' && mediaType !== 'tv') || typeof JE.jellyseerrMoreInfo?.open !== 'function') return false;
-        if (scope?.season != null) JE.jellyseerrMoreInfo.open(tmdb, mediaType, { season: scope.season, ...(scope.episode != null ? { episode: scope.episode } : {}) });
-        else JE.jellyseerrMoreInfo.open(tmdb, mediaType);
+        if (scope?.season != null) JE.jellyseerrMoreInfo.open(tmdb, mediaType, { season: scope.season, ...(scope.episode != null ? { episode: scope.episode } : {}) }, owner);
+        else JE.jellyseerrMoreInfo.open(tmdb, mediaType, undefined, owner);
         return true;
     }
 
@@ -281,7 +281,8 @@
      */
     function show(tmdbId, mediaType, scope) {
         if (open(tmdbId, mediaType, scope)) return true;
-        return openModal(tmdbId, mediaType, scope);
+        // The fallback of a title page: a page the person opened, not part of any title action (native, D46S2-R6).
+        return openModal(tmdbId, mediaType, scope, JE.NATIVE);
     }
 
     /**
@@ -339,7 +340,7 @@
             }
         }
         if (options.modal === false) return false;
-        return action.current() && options.current?.() !== false && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options);
+        return action.current() && options.current?.() !== false && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, JE.NATIVE);
     }
 
     // ------------------------------------------------------------------ page adapter
@@ -925,7 +926,7 @@
             pendingModal = null;
             if (pending.landing !== null && window.location.hash !== pending.landing) return;
             if ((window.ApiClient?.getCurrentUserId?.() || null) !== user) return;
-            openModal(tmdbId, mediaType);
+            openModal(tmdbId, mediaType, undefined, JE.NATIVE);
         }, 300);
         pendingModal = pending;
         history.back();
@@ -1016,7 +1017,8 @@
         const b = pageButton('add', JE.t('jellyseerr_btn_request'), 'button-submit je-native-absent-legacy-request');
         b.addEventListener('click', (e) => {
             e.preventDefault();
-            openModal(parts.tmdbId, parts.kind === 'movie' ? 'movie' : 'tv');
+            // The row's primary: a press a title action dispatched opens the window for its operation (D46S2-R6).
+            openModal(parts.tmdbId, parts.kind === 'movie' ? 'movie' : 'tv', undefined, JE.ownerOf(e));
         });
         slot.appendChild(b);
     }
@@ -1175,7 +1177,7 @@
             e.stopPropagation();
             const btn = /** @type {HTMLElement} */ (e.currentTarget);
             const id = parseInt(btn.dataset.collectionId || '', 10);
-            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '');
+            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '', null, { operation: e });
         });
         const host = page.querySelector('.detailPagePrimaryContent .detailSection') || page.querySelector('.detailPageContent');
         if (!host || state.aborted || current !== state) return;
@@ -1364,7 +1366,7 @@
                 // Opened from outside Jellyfin: Back would leave it (or do nothing). The page says it
                 // couldn't load, and the modal opens over it once.
                 refuse(page, 'native_details_failed');
-                openModal(parts.tmdbId, state.mediaType);
+                openModal(parts.tmdbId, state.mediaType, undefined, JE.NATIVE);
             }
             return;
         }

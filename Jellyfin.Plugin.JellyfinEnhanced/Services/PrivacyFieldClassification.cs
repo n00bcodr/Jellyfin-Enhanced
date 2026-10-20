@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -31,10 +30,11 @@ public enum PrivacyField
 /// <summary>
 /// The one field classification of every DTO type the privacy walker touches (host-verified: tests/fixtures/host-endpoints
 /// dto-fields-*.tsv lists every public property of those types on 12.2 and 10.11.11, and every one must be classified
-/// here). Applied by the walker: a hidden member a session's controls hang on (a <see cref="PrivacyField.HostRequired"/>
-/// BaseItemDto member) becomes <see cref="Stub"/>, any other hidden member (title-bearing) is removed; a hidden
-/// programme's timer row and a protected activity entry lose their title-bearing fields; a guarded item's title-bearing
-/// fields are replaced by Spoiler Guard's strip, the name fields unconditionally (<see cref="NeutralNames"/>).
+/// here). It says which members a protected item keeps at all: a hidden member a session's controls hang on (a
+/// <see cref="PrivacyField.HostRequired"/> BaseItemDto member) becomes a stub of its host-required members, any other
+/// hidden member (title-bearing) is removed. What each kept member may carry is decided by its VALUE, never by its name:
+/// <see cref="PrivacyValues"/> rebuilds every protected item (stub, guarded item, timer and activity rows, search hints)
+/// from values that are constructed or validated.
 /// Host-required evidence: jellyfin-web's remote-control page reads NowPlayingItem.MediaStreams[0].Type and its track
 /// menus list MediaStreams by DisplayTitle and Index; its now-playing names helper returns nothing for an empty Name
 /// (the page then throws); the remote session player matches queue items by PlaylistItemId.
@@ -148,69 +148,6 @@ public static class PrivacyFieldClassification
 
     /// <summary>Whether a BaseItemDto member of this type is one the host's controls hang on (a hidden one leaves a stub).</summary>
     public static bool KeepsControls(PropertyInfo property) => Of(property.DeclaringType ?? typeof(object), property.Name) == PrivacyField.HostRequired;
-
-    /// <summary>Clears every title-bearing field of a row (a timer, an activity entry) in place.</summary>
-    public static void ClearTitles(object row)
-    {
-        foreach (var property in Writable(row.GetType()))
-            if (Of(row.GetType(), property.Name) == PrivacyField.TitleBearing) property.SetValue(row, null);
-    }
-
-    /// <summary>
-    /// What a hidden item a session's controls hang on leaves: its host-required fields only (media streams without
-    /// their title-bearing fields, so DisplayTitle is rebuilt from codec, language and channels), and the neutral name.
-    /// </summary>
-    public static BaseItemDto Stub(BaseItemDto dto)
-    {
-        var stub = new BaseItemDto();
-        foreach (var property in Writable(typeof(BaseItemDto)))
-            if (Of(typeof(BaseItemDto), property.Name) == PrivacyField.HostRequired) property.SetValue(stub, Sanitized(property.GetValue(dto)));
-        stub.Name = HiddenName;
-        return stub;
-    }
-
-    /// <summary>A copy of a nested value without its title-bearing fields (sequences element by element); other values as they are.</summary>
-    private static object? Sanitized(object? value)
-    {
-        switch (value)
-        {
-            case null or string: return value;
-            case MediaStream stream:
-            {
-                var copy = Copy(stream);
-                // An external stream whose delivery URL is its raw location (a remote or .strm source) names the file.
-                if (copy.IsExternal && copy.IsExternalUrl == true) copy.DeliveryUrl = null;
-                return copy;
-            }
-            case IList list when value.GetType().IsArray && _table.ContainsKey(Key(value.GetType().GetElementType()!)):
-            {
-                var array = Array.CreateInstance(value.GetType().GetElementType()!, list.Count);
-                for (var i = 0; i < list.Count; i++) array.SetValue(Sanitized(list[i]), i);
-                return array;
-            }
-            case IEnumerable sequence when value.GetType().IsGenericType && value.GetType().GetGenericArguments() is [var element] && _table.ContainsKey(Key(element)):
-            {
-                var copy = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(element))!;
-                foreach (var item in sequence) copy.Add(Sanitized(item));
-                return copy;
-            }
-            default:
-                return _table.ContainsKey(Key(value.GetType())) ? Copy(value) : value;
-        }
-    }
-
-    /// <summary>A member-wise copy of a classified value with its title-bearing fields left out.</summary>
-    private static T Copy<T>(T value) where T : notnull
-    {
-        var type = value.GetType();
-        var copy = Activator.CreateInstance(type)!;
-        foreach (var property in Writable(type))
-            if (Of(type, property.Name) != PrivacyField.TitleBearing) property.SetValue(copy, property.GetValue(value));
-        return (T)copy;
-    }
-
-    private static IEnumerable<PropertyInfo> Writable(Type type)
-        => type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0 && p.GetMethod is { IsPublic: true } && p.SetMethod is { IsPublic: true });
 }
 
 /// <summary>

@@ -1,0 +1,18 @@
+# Host web client fixtures (third-party code)
+
+The files under `12.2/` and `10.11.11/` are unmodified excerpts of **jellyfin-web**, the Jellyfin project's web client,
+as shipped in the official `jellyfin/jellyfin:12.2` and `jellyfin/jellyfin:10.11.11` container images (jellyfin-web
+12.2.0 and 10.11.11). They are copied by `tests/host/web-bundle/extract.mjs`; each directory's `manifest.json` records the
+source file name and SHA-256 of every excerpt and of every licence file it carries.
+
+- **Upstream project:** jellyfin-web, https://github.com/jellyfin/jellyfin-web
+- **Licence:** GPL-2.0-or-later, as stated in the upstream repository's `package.json` and `LICENSE` (GNU General Public
+  License, version 2) at the shipped versions (tags `v12.2` and `v10.11.11`).
+- **Corresponding source:** https://github.com/jellyfin/jellyfin-web/tree/v12.2 and
+  https://github.com/jellyfin/jellyfin-web/tree/v10.11.11 (the bundles are webpack builds of those trees).
+- **Bundled third-party notices:** the `*.LICENSE.txt` files are the licence sidecars the bundles themselves refer to
+  ("For license information please see …"), copied verbatim. `now-playing-names.module.js` is one module of
+  `main.jellyfin.bundle.js`; its notice is `main.jellyfin.bundle.js.LICENSE.txt`.
+
+`projected/` is not third-party code: it holds the sessions Jellyfin Enhanced's own privacy projection delivers, generated
+by the backend tests.

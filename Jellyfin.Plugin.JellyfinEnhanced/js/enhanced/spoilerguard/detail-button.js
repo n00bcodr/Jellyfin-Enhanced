@@ -36,7 +36,7 @@
     }
     const stateName = enabled => enabled === null ? 'unknown' : enabled ? 'on' : 'off';
 
-    function performToggle(button, itemId, kind, page, enable) {
+    function performToggle(button, itemId, kind, page, enable, owner) {
         const action = JE.createSessionAction();
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
@@ -49,9 +49,9 @@
         }
 
         let operation;
-        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName) : internal.disableForMovie(itemId);
-        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName) : internal.disableForCollection(itemId);
-        else operation = enable ? internal.enableForSeries(itemId) : internal.disableForSeries(itemId);
+        if (kind === 'movie') operation = enable ? internal.enableForMovie(itemId, displayName, owner) : internal.disableForMovie(itemId, owner);
+        else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName, owner) : internal.disableForCollection(itemId, owner);
+        else operation = enable ? internal.enableForSeries(itemId, owner) : internal.disableForSeries(itemId, owner);
 
         operation.then(function() {
             if (!action.current()) return;
@@ -94,17 +94,18 @@
         });
     }
 
-    function onToggle(button, itemId, kind, page) {
-        const action = JE.createSessionAction({ submitted: true });
+    /** `owner`: the press's (JE.ownerOf(event)): the operation a title action pressed the button for, else native. */
+    function onToggle(button, itemId, kind, page, owner) {
+        const action = JE.createSessionAction({ owner });
         if (button.disabled || stateOf(kind, itemId) === null) return;
         const enable = !internal.isEnabledForKind(kind, itemId);
         button.disabled = true;
         if (enable) {
-            JE.runSubmitted(action, () => performToggle(button, itemId, kind, page, true));
+            performToggle(button, itemId, kind, page, true, owner);
             return;
         }
-        internal.confirmDisableSpoiler().then(function(proceed) {
-            if (proceed && action.current()) JE.runSubmitted(action, () => performToggle(button, itemId, kind, page, false));
+        internal.confirmDisableSpoiler(owner).then(function(proceed) {
+            if (proceed && action.current()) performToggle(button, itemId, kind, page, false, owner);
             else button.disabled = false;
         }).catch(function(err) {
             console.warn(`${logPrefix} disable confirmation failed:`, err);
@@ -150,7 +151,7 @@
                 const liveId = button.getAttribute('data-je-item-id') || '';
                 const liveKind = button.getAttribute('data-je-spoiler-kind') || 'series';
                 const livePage = button.closest('#itemDetailPage:not(.hide)') || visiblePage;
-                onToggle(button, liveId, liveKind, livePage);
+                onToggle(button, liveId, liveKind, livePage, JE.ownerOf(event));
             });
             button.setAttribute('data-je-item-id', itemId);
             button.setAttribute('data-je-spoiler-kind', kind);

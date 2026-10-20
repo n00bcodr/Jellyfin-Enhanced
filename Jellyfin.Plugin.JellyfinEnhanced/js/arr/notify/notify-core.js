@@ -262,12 +262,13 @@
      * Follows or unfollows a title.
      * @param {string} key Movie, series or season key.
      * @param {boolean} on Follow.
+     * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action, the PUT is that
+     *     operation's, checked by the transport right before it goes out; JE.NATIVE (or a native press) otherwise.
      * @returns {Promise<{ok: boolean, code?: string}>} Outcome.
      */
-    async function setFollow(key, on) {
+    async function setFollow(key, on, owner) {
         const action = JE.createSessionAction();
-        // Pressed for a title action: the PUT is that operation's, checked by the transport right before it goes out.
-        const submitted = JE.captureSubmitted();
+        const submitted = JE.captureSubmitted(owner);
         try {
             await api('/acquire/follows', { method: 'PUT', body: { key, on }, bound: submitted.bound() });
         } catch (err) {
@@ -283,12 +284,12 @@
      * "Remind {contact}" about a stuck title.
      * @param {string} key Title key.
      * @param {string|null} itemId Jellyfin item shown, if any.
+     * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action (the library More
+     *     sheet's Remind), the POST is that operation's, checked by the transport right before it goes out.
      * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
      */
-    async function remind(key, itemId) {
-        // Pressed for a title action (the library More sheet's Remind): the POST is that operation's, checked by the
-        // transport right before it goes out.
-        const submitted = JE.captureSubmitted();
+    async function remind(key, itemId, owner) {
+        const submitted = JE.captureSubmitted(owner);
         try {
             const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound() });
             return { ok: true, nextAt: res?.nextAt };

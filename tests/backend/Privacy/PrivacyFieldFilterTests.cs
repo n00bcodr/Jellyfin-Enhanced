@@ -89,9 +89,13 @@ public class PrivacyFieldFilterTests
         var hidden = f.Episode(); var watched = f.Episode(true); var outside = f.Episode(); outside.SeriesId = Guid.NewGuid();
         var query = new QueryResult<BaseItemDto> { Items = [hidden, watched, outside], TotalRecordCount = 25, StartIndex = 4 };
         Assert.Same(query, await f.Invoke(query));
-        Assert.Equal("Season 2, Episode 3", hidden.Name);
-        Assert.Null(hidden.OriginalTitle); Assert.Null(hidden.SortName);
-        Assert.Null(hidden.CommunityRating); Assert.Null(hidden.CriticRating);
+        // A protected item is delivered as the value walk rebuilt it; unprotected items are the host's own.
+        var delivered = query.Items[0];
+        Assert.NotSame(hidden, delivered);
+        Assert.Same(watched, query.Items[1]); Assert.Same(outside, query.Items[2]);
+        Assert.Equal("Season 2, Episode 3", delivered.Name);
+        Assert.Null(delivered.OriginalTitle); Assert.Null(delivered.SortName);
+        Assert.Null(delivered.CommunityRating); Assert.Null(delivered.CriticRating);
         Assert.Equal("Secret ending", watched.Name); Assert.Equal("Secret plot", watched.Overview);
         Assert.Equal("Secret original", watched.OriginalTitle); Assert.Equal("Secret sort", watched.SortName);
         Assert.Equal(9, watched.CommunityRating); Assert.Equal(80, watched.CriticRating);
@@ -106,21 +110,23 @@ public class PrivacyFieldFilterTests
     {
         using var f = new Fixture();
         var dto = f.Episode();
-        static MediaStream[] Streams() => [new MediaStream { IsExternal = true, Path = "/Secret.srt", Title = "Secret", DeliveryUrl = "/Videos/1/Subtitles/0/Stream.srt" },
+        var url = "/Videos/" + dto.Id.ToString("D") + "/" + dto.Id.ToString("N") + "/Subtitles/0/0/Stream.srt";
+        MediaStream[] Streams() => [new MediaStream { IsExternal = true, Path = "/Secret.srt", Title = "Secret", DeliveryUrl = url, Codec = "subrip", Type = MediaStreamType.Subtitle },
             new MediaStream { IsExternal = true, IsExternalUrl = true, Path = "https://provider/Secret.srt", DeliveryUrl = "https://provider/Secret.srt" },
             new MediaStream { Title = "Secret" }];
         dto.MediaStreams = Streams();
         // Each media source nests its own copy of the streams, scrubbed by the same rules.
         dto.MediaSources = [new MediaSourceInfo { Name = "Secret", Path = "/Secret.mkv", MediaStreams = Streams() }];
-        await f.Invoke(dto, "UserLibrary", "GetItem");
-        foreach (var streams in new[] { dto.MediaStreams, dto.MediaSources[0].MediaStreams })
+        dto = Assert.IsType<BaseItemDto>(await f.Invoke(dto, "UserLibrary", "GetItem"));
+        foreach (var streams in new[] { dto.MediaStreams!, dto.MediaSources![0].MediaStreams })
         {
             Assert.Null(streams[0].Path); Assert.Null(streams[0].Title);
-            Assert.Equal("/Videos/1/Subtitles/0/Stream.srt", streams[0].DeliveryUrl);
+            Assert.Equal(url, streams[0].DeliveryUrl);
             Assert.Null(streams[1].Path); Assert.Null(streams[1].DeliveryUrl);
             Assert.Null(streams[2].Title);
         }
-        Assert.Null(dto.MediaSources[0].Path); Assert.Null(dto.MediaSources[0].Name);
+        // A version's label is constructed from validated values (never the file's name); here it has no video stream.
+        Assert.Null(dto.MediaSources[0].Path); Assert.Equal("Version 1", dto.MediaSources[0].Name);
     }
 
     [Fact]
@@ -135,7 +141,7 @@ public class PrivacyFieldFilterTests
         Assert.True(SpoilerUserResolver.IsUserStateCachedForTest(f.User.ToString("N")));
         var state = new UserSpoilerBlur(); state.Series[f.Series.ToString("N")] = new(); state.Movies[id.ToString("N")] = new();
         f.Save(state);
-        var after = Movie(); await f.Invoke(after);
+        var after = Assert.IsType<BaseItemDto>(await f.Invoke(Movie()));
         Assert.NotEqual("Secret plot", after.Overview);
     }
 
@@ -148,8 +154,11 @@ public class PrivacyFieldFilterTests
             UserData = new UserItemDataDto { Key = "test", PlaybackPositionTicks = 100 },
             Chapters = [new ChapterInfo { Name = "Past", StartPositionTicks = 99, ImagePath = "/past.jpg" }, new ChapterInfo { Name = "Boundary secret", StartPositionTicks = 100, ImagePath = "/secret.jpg" }],
             MediaSources = [new MediaSourceInfo { Name = "Director's Cut", Path = "/Secret.mkv" }] };
-        await f.Invoke(movie);
-        Assert.Equal("Movie name", movie.Name); Assert.Equal("Director's Cut", movie.MediaSources[0].Name);
+        // The movie's title is the library's own (Spoiler Guard does not hide movie titles).
+        f.Library.Setup(l => l.GetItemById(id)).Returns(new MediaBrowser.Controller.Entities.Movies.Movie { Id = id, Name = "Movie name" });
+        movie = Assert.IsType<BaseItemDto>(await f.Invoke(movie));
+        // A version's label is constructed from its validated values (free text from the file name never leaves).
+        Assert.Equal("Movie name", movie.Name); Assert.Equal("Version 1", movie.MediaSources![0].Name); Assert.Null(movie.MediaSources[0].Path);
         Assert.Equal("Past", movie.Chapters[0].Name); Assert.Equal("/past.jpg", movie.Chapters[0].ImagePath);
         Assert.Equal("Chapter 2", movie.Chapters[1].Name); Assert.Null(movie.Chapters[1].ImagePath);
     }

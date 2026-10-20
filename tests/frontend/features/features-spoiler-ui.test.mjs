@@ -88,6 +88,7 @@ test('the pending Spoiler Guard switch drawn for a native action row looks like 
   assert.equal(button.getAttribute('aria-label'), 'Enable Spoiler Guard');
   assert.equal(button.title, 'Enable Spoiler Guard');
   assert.equal(button.textContent, 'blur_off', 'icon only, like the row\'s own buttons');
+  h.document.body.append(button); // pressed where it is drawn (a native row): its press is native
   button.click();
   await new Promise(r => setTimeout(r, 0));
   assert.deepEqual(enabled, [['tv', 1849, 'Benson']]);

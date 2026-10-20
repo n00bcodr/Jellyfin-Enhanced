@@ -146,12 +146,13 @@
     }
 
     /**
-     * Presses an owner's control for a submitted operation. Owners whose write follows a confirmation
-     * or an await (Spoiler Guard, Hide, Report) take the operation and recheck it right before writing.
+     * Presses an owner's control for a submitted operation: the click carries it (JE.press), and owners whose write
+     * follows a confirmation or an await (Spoiler Guard, Hide, Report) take it from their event and recheck it right
+     * before writing.
      */
-    function dispatch(source, operation, press = () => source.click()) {
+    function dispatch(source, operation) {
         pressing.add(source);
-        try { return JE.runSubmitted(operation, press); } finally { pressing.delete(source); }
+        try { return JE.press(source, operation); } finally { pressing.delete(source); }
     }
 
     /**
@@ -168,8 +169,8 @@
             const { owner: live, native: own } = presses.get(node);
             if (pressing.has(node) || (own && !live.current())) return;
             event.preventDefault(); event.stopImmediatePropagation();
-            // A fresh event: click() is a no-op while this element's own click is still in progress.
-            if (live.current()) dispatch(node, generation(() => live.current()), () => node.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+            // A fresh event (JE.press): click() is a no-op while this element's own click is still in progress.
+            if (live.current()) dispatch(node, generation(() => live.current()));
         }, true);
     }
 
@@ -191,7 +192,7 @@
         }
         if (!await admit(c, operation) || !operation.current()) return false;
         entry.beforeRun?.();
-        const result = await JE.runSubmitted(operation, () => entry.run(opener, operation));
+        const result = await entry.run(opener, operation);
         return operation.current() && result !== false;
     }
 
@@ -231,41 +232,47 @@
             out.push({ id: 'follow', group: 'requests', label: JE.t('title_actions_follow'), icon: 'notifications_none',
                 pressed: JE.arrNotify.isFollowing(c.key), run: async (_opener, submitted) => {
                     const on = !JE.arrNotify.isFollowing(c.key);
-                    const result = await JE.arrNotify.setFollow(c.key, on);
+                    const result = await JE.arrNotify.setFollow(c.key, on, submitted);
                     if (submitted.current() && !result.ok) JE.toast?.(JE.t('arr_notify_follow_failed'));
                     return result.ok;
                 } });
         }
+        // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
+        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
+        if (!action.current()) return [];
+        const titleStatus = status?.items?.[0];
         if (c.absent && JE.arrAsk?.enabled?.() && JE.arrAskSheet) {
             const caps = await JE.arrAsk.me();
             if (!action.current()) return [];
-            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series')) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
+            // Not while the title is already asked for, on its way or here: the page's own request control shows no
+            // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
+            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
                 run: (opener, submitted) => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
                     initialSeason: c.season, initialEpisode: c.episode }, { opener, operation: submitted }) });
         } else if (c.absent && !JE.arrAsk?.enabled?.() && JE.pluginConfig?.JellyseerrEnabled && JE.jellyseerrMoreInfo?.open && !root?.matches?.('.je-more-info-modal')) {
             // Not in the window itself: its own Request is the row's primary there, and a second window would replace
             // (and so end) the one it was pressed in.
-            out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), run: () => JE.jellyseerrMoreInfo.open(c.tmdbId, c.type, { season: c.season, episode: c.episode }) });
+            out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), run: (_opener, submitted) => JE.jellyseerrMoreInfo.open(c.tmdbId, c.type, { season: c.season, episode: c.episode }, submitted) });
         }
+        // The window's 4K request (Q-D46S2FIX5-1 (b)): its compact row hides Seerr's 4K split, so its More sheet offers
+        // it while Seerr 4K is on. It is the window's own request: owned by the window's owner, as its 4K option is.
+        const request4k = root?.matches?.('.je-more-info-modal') ? root.jeRequest4k : null;
+        if (typeof request4k === 'function') out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: () => request4k(root) });
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
                 const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;
                 if (!action.current() || status?.cancelled) return [];
                 const permitted = status?.active === true && status.userFound === true && status.canReportIssues !== false;
-                const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type) : null;
+                const record = permitted && JE.jellyseerrAPI?.reportContext ? await JE.jellyseerrAPI.reportContext(c.tmdbId, c.type, action) : null;
                 if (!action.current()) return [];
                 const ok = permitted && (!JE.jellyseerrAPI?.reportContext || !!record?.mediaId);
                 const item = { jeAbsent: c.absent, Type: c.episode != null ? 'Episode' : c.season != null ? 'Season' : c.type === 'movie' ? 'Movie' : 'Series', IndexNumber: c.episode ?? c.season, ParentIndexNumber: c.season };
                 const control = ok && JE.jellyseerrIssueReporter.createReportButton?.(root || document.body, String(c.tmdbId), displayName(), c.type, null, item);
                 out.push({ id: 'report', group: 'requests', icon: 'warning', label: JE.t('jellyseerr_report_issue_button'),
                     disabled: !ok, reason: JE.t(!JE.pluginConfig.JellyseerrEnabled ? 'title_actions_report_no_seerr' : status?.canReportIssues === false ? 'title_actions_report_no_permission' : permitted && !record?.mediaId ? 'title_actions_report_no_record' : 'title_actions_report_no_account'),
-                    ...(control ? { control } : { run: () => JE.jellyseerrIssueReporter.showReportModal(String(c.tmdbId), displayName(), c.type, null, item) }) });
+                    ...(control ? { control } : { run: (_opener, submitted) => JE.jellyseerrIssueReporter.showReportModal(String(c.tmdbId), displayName(), c.type, null, item, submitted) }) });
             }
         }
-        // Status is per title (the endpoint refuses season/episode keys); Manage still opens on the exact scope.
-        const status = JE.arrStatus?.enabled?.() && JE.arrStatus.fetchKey ? await JE.arrStatus.fetchKey(c.titleKey) : null;
-        if (!action.current()) return [];
-        const titleStatus = status?.items?.[0];
         if (JE.pluginConfig?.ArrManageDrawerEnabled && JE.arrManage && titleStatus?.admin) {
             if (!source('manage', '.je-manage-open, .je-arr-modal-manage', 'requests', JE.t('arr_manage_button'), 'tune'))
                 out.push({ id: 'manage', group: 'requests', icon: 'tune', label: JE.t('arr_manage_button'),
@@ -281,9 +288,11 @@
         } });
         out.push({ id: 'share', group: 'other', icon: 'share', label: JE.t('title_actions_share'), run: async (_opener, submitted) => {
             const url = shareUrl(c);
-            if (navigator.share) { try { await navigator.share({ url }); } catch (error) { if (submitted.current() && error?.name !== 'AbortError') JE.titleActions.showLink?.(url); } }
-            else if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(url); if (submitted.current()) JE.toast?.(JE.t('title_actions_copied')); } catch (_) { if (submitted.current()) JE.titleActions.showLink?.(url); } }
-            else JE.titleActions.showLink?.(url);
+            // The fallback link sheet is the operation's own (D46S2-R6-4): it opens only while the operation is current and
+            // closes with it, also after Web Share or the clipboard refused.
+            if (navigator.share) { try { await navigator.share({ url }); } catch (error) { if (submitted.current() && error?.name !== 'AbortError') JE.titleActions.showLink?.(url, submitted); } }
+            else if (navigator.clipboard?.writeText) { try { await navigator.clipboard.writeText(url); if (submitted.current()) JE.toast?.(JE.t('title_actions_copied')); } catch (_) { if (submitted.current()) JE.titleActions.showLink?.(url, submitted); } }
+            else JE.titleActions.showLink?.(url, submitted);
         } });
         for (const provider of providers.values()) {
             const result = await provider(c, { action, root, surface: options.surface });

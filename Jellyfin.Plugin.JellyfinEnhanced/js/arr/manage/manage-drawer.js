@@ -176,8 +176,9 @@
     /**
      * Opens the drawer for a Jellyfin item or a title key.
      * @param {{itemId?: string, key?: string}} target What to manage.
-     * @param {{operation?: Object}} [options] The operation a title action submitted (else the dispatched press,
-     *     if any): the drawer reads, shows and writes only while it is current, and closes once it isn't.
+     * @param {{operation: Object|Node|Event}} options The owner (required, D46S2-R6): the operation a title action
+     *     submitted, JE.NATIVE, or the node or press it comes from. The drawer reads, shows and writes only while it is
+     *     current, and closes once it isn't.
      * @returns {Promise<void>}
      */
     async function open(target, options) {
@@ -202,13 +203,13 @@
         const session = JE.createSessionAction();
         const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel,
             bound: owner => session.bound(() => submitted.current() && (!owner || owner() === true)) };
-        current = { target, overlay, root, opener, action, submitted, unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
+        current = { target, overlay, root, opener, action, submitted, loads: JE.latestIntent(), unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
         // A stale drawer takes no input: a link in it opens nothing (D46S2-R4-3), and an ended operation closes it.
         JE.rejectEnded(overlay, () => current !== opening || !opening.action.current(), () => ended(opening));
         // Opened for an operation: the drawer (and the Remove dialog it opens, which goes with it) is in its scope and
         // closes once the operation ends, even untouched.
-        current.releaseScope = JE.openSurface(overlay, () => { if (current === opening) close(); }, submitted.operation);
+        current.releaseScope = JE.openSurface(overlay, () => { if (current === opening) close(); }, submitted.owner);
         current.releaseAction = current.action.onCancel(close);
         JE.internals.arrManage.injectStyles?.();
         renderShell(root, null);
@@ -271,7 +272,10 @@
      */
     async function load(mine) {
         const state = current;
-        const owned = () => current === state && state.generation === mine && (!state.action || state.action.current());
+        // Only the newest read of this drawer renders (D46S2-R6-3): feed updates and retries start reads that can
+        // overlap, and each binding is its own request, so an older, slower answer is dropped instead of replacing it.
+        const newest = state?.loads();
+        const owned = () => current === state && state.generation === mine && (!state.action || state.action.current()) && newest();
         if (!state || !owned()) return;
         const q = state.target.itemId ? `itemId=${encodeURIComponent(state.target.itemId)}` : `key=${encodeURIComponent(state.target.key)}`;
         try {
@@ -551,7 +555,7 @@
             return;
         }
         const target = { instanceId: instance.id, downloadId: download.downloadId, title: [download.title, download.scope].filter(Boolean).join(' '), scope: download.scope, episodes: download.episodes || 0, instance: instance.name };
-        JE.internals.arrHub.admin.removeDialog(target, key, opener, !!download.problem, send);
+        JE.internals.arrHub.admin.removeDialog(target, key, opener, !!download.problem, send, state.submitted.owner);
     }
 
     /**
@@ -1085,7 +1089,8 @@
         button.appendChild(content);
         button.addEventListener('click', (e) => {
             e.preventDefault();
-            open(absent ? { key } : { itemId });
+            // The press's owner: the operation a title action pressed it for, else the page (native).
+            open(absent ? { key } : { itemId }, { operation: JE.ownerOf(e) });
         });
         host.appendChild(button);
     }

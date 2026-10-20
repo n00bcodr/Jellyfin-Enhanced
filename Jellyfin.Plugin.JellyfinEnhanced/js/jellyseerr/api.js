@@ -986,27 +986,31 @@
     // to be provided by the UI. Keep logic in `api.reportIssue` that
     // parses the numeric value and forwards it to Seerr.
 
-    /** The authorized Seerr record needed for reporting; absent files may still have a request record. */
-    api.reportContext = async function(mediaId, mediaType) {
+    /**
+     * The authorized Seerr record needed for reporting; absent files may still have a request record. A read: `owner`
+     * (an operation or JE.NATIVE), when given, cancels it once it ends.
+     */
+    api.reportContext = async function(mediaId, mediaType, owner) {
         if (!['movie', 'tv'].includes(mediaType) || !Number.isInteger(Number(mediaId)) || Number(mediaId) <= 0 || Number(mediaId) > 2147483647) throw new TypeError('Invalid provider title');
         const action = JE.createSessionAction();
-        const submitted = JE.captureSubmitted();
+        const live = () => !owner || owner.current() !== false;
         const data = await get(`/${mediaType === 'movie' ? 'movie' : 'tv'}/${mediaId}`);
-        if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
+        if (!action.current() || !live()) throw new DOMException('Cancelled', 'AbortError');
         return { mediaId: data?.mediaInfo?.id || null };
     };
 
-    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0) {
+    api.reportIssue = async function(mediaId, mediaType, problemType, message = '', problemSeason = 0, problemEpisode = 0, owner) {
         const action = JE.createSessionAction();
-        // A report submitted from title actions stays theirs until the POST: another page, mount or user ends it.
-        const submitted = JE.captureSubmitted();
+        // The report's owner (required, D46S2-R6): a report submitted from title actions stays theirs until the POST;
+        // another page, mount or user ends it.
+        const submitted = JE.captureSubmitted(owner);
         try {
             // problemType is now a numeric issue type (1, 2, 3, or 4) from the form
             const issueType = parseInt(problemType) || 4;
 
             // Fetch the correct internal media id from Seerr
 
-            const context = await submitted.run(() => api.reportContext(mediaId, mediaType));
+            const context = await api.reportContext(mediaId, mediaType, submitted);
             if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
             const internalId = context.mediaId;
             if (!internalId) {

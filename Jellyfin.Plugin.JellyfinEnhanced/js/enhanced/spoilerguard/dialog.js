@@ -45,7 +45,7 @@
             }
             const release = action.onCancel(() => finish(false));
             // Asked for a title action: the dialog is in that operation's scope and closes (declined) once it ends.
-            const releaseScope = JE.openSurface(dialog, () => finish(false), action.operation);
+            const releaseScope = JE.openSurface(dialog, () => finish(false), action.owner);
             cancel.onclick = () => finish(false);
             accept.onclick = () => finish(true);
             dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
@@ -57,8 +57,12 @@
         });
     }
 
-    internal.confirmDisableSpoiler = function() {
-        const action = JE.createSessionAction({ submitted: true });
+    /**
+     * Asks before Spoiler Guard is turned off. `owner` (required, D46S2-R6): the operation the Guard press was made for
+     * (the dialog is in its scope and declines once it ends), JE.NATIVE, or the node or press it comes from.
+     */
+    internal.confirmDisableSpoiler = function(owner) {
+        const action = JE.createSessionAction({ owner });
         return internal.whenLoaded().then(function() {
             if (!action.current()) return false;
             if (internal.getUserPrefs().SkipDisableConfirm) return true;

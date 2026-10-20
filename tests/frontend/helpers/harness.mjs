@@ -32,6 +32,8 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   // Modules loaded by the host bundle run after the document is ready.
   Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
   window.JellyfinEnhanced = JE;
+  // D46S2-R6: an owner-taking call (an opener or an owned write) made without an owner throws in tests.
+  if (JE.strictOwners === undefined) JE.strictOwners = true;
   window.ApiClient = {
     getCurrentUserId: () => 'user-a', accessToken: () => 'test-token', serverId: () => 'server-a',
     getUrl: path => `http://jellyfin.test${path.startsWith('/') ? '' : '/'}${path}`, ...apiClient
