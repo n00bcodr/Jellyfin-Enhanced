@@ -49,7 +49,7 @@ public class PrivacyHostShapeModelTests
 
     internal sealed record Manifest(Dictionary<string, string> Roles, Dictionary<string, string> Owners, List<Shot> Shots);
 
-    private static readonly JsonSerializerOptions Json = Jellyfin.Extensions.Json.JsonDefaults.Options;
+    internal static readonly JsonSerializerOptions Json = Jellyfin.Extensions.Json.JsonDefaults.Options;
 
     private static readonly Lazy<Manifest> _manifest = new(() =>
     {
@@ -338,6 +338,9 @@ public class PrivacyHostShapeModelTests
     public static ActionContext Context(Shot shot, Guid viewer)
     {
         var http = new DefaultHttpContext { User = TestCallers.Principal(viewer, viewer == G(Data.Roles["user:admin"])) };
+        // The request's own device and token (the host puts them into the URLs it builds for this caller).
+        ((System.Security.Claims.ClaimsIdentity)http.User.Identity!).AddClaims([
+            new System.Security.Claims.Claim("Jellyfin-DeviceId", PrivacyTestHost.CallerDeviceId), new System.Security.Claims.Claim("Jellyfin-Token", PrivacyTestHost.CallerToken)]);
         http.Request.Method = shot.Method;
         var parts = shot.Path.Split('?', 2);
         http.Request.Path = parts[0];

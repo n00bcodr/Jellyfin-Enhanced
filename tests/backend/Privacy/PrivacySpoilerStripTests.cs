@@ -81,13 +81,15 @@ public class PrivacySpoilerStripTests
         var library = new Mock<ILibraryManager>();
         var season = new Season { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid(), IndexNumber = number };
         library.Setup(x => x.GetItemById<BaseItem>(season.Id)).Returns(season);
+        // The series the season belongs to: its own genres are the season entry's (the entry aggregates its episodes').
+        library.Setup(x => x.GetItemById(season.SeriesId)).Returns(new MediaBrowser.Controller.Entities.TV.Series { Id = season.SeriesId, Genres = ["Mystery"] });
         var state = new UserSpoilerBlur(); state.Series[season.SeriesId.ToString("N")] = new();
         var policy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = true, SpoilerStripRatings = true }, state)!;
         var stripper = new SpoilerTagDataStripper(library.Object, Mock.Of<IUserDataManager>(), new SpoilerUserResolver(null!, library.Object, null!, null!));
-        var source = Entry(season.SeriesId); source.Type = "Season";
+        var source = Entry(season.SeriesId); source.Type = "Season"; source.Genres = ["Mystery", "The killer's genre"];
         var user = new User("test", "default", "default");
         var result = stripper.StripEntry(policy, user, season, source, out var stripped);
-        Assert.True(stripped); Assert.Equal(source.Genres, result.Genres);
+        Assert.True(stripped); Assert.Equal(["Mystery"], result.Genres);
         // Exempt itself, but what it carries of its episodes is a validated copy: codec tokens stay, the first episode's name
         // and stream titles go with the title strip (on by default); the shared entry is untouched.
         Assert.NotSame(source.StreamData, result.StreamData); Assert.Equal("hevc", result.StreamData!.Streams![0].Codec);

@@ -21,24 +21,30 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 
 /// <summary>
-/// What the host vouches for, asked by a protected item's projection: its own closed lists (languages, parental ratings,
-/// countries, the labels a media stream's display title uses) and the library's own entities (genres, studios, people,
-/// artists, an item's own and its parent's titles). Answers are memoized for one projection.
+/// What the host vouches for, asked by a protected item's projection. Every answer is the host's OWN value, never the
+/// value asked about: the entry of one of its closed tables (a language's code, a parental rating as its rating table
+/// spells it, a country's code, the labels a media stream's display title uses), the title-level item a protected item's
+/// vocabulary is copied from (an episode's series, an extra's owner) with that item's own genres, studios and people, and
+/// the request's own device id and access token (the values the host puts into its URLs). Answers are memoized for one
+/// projection.
 /// </summary>
 public sealed class PrivacyValueHost
 {
     private readonly Dictionary<string, CultureDto?> _languages = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _ratings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _ratingEntries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, BaseItem?> _items = new();
-    private HashSet<string>? _countries;
+    private readonly Dictionary<Guid, IReadOnlyList<PersonInfo>> _people = new();
+    private Dictionary<string, string>? _countries;
 
     /// <summary>Creates the host view for one projection.</summary>
     /// <param name="library">The library (entities); null vouches for none.</param>
     /// <param name="localization">The host's localization (closed lists and labels); null vouches for none.</param>
-    public PrivacyValueHost(ILibraryManager? library, ILocalizationManager? localization)
+    /// <param name="caller">The request the projection answers (its device id and token), when there is one.</param>
+    public PrivacyValueHost(ILibraryManager? library, ILocalizationManager? localization, System.Security.Claims.ClaimsPrincipal? caller = null)
     {
         Library = library;
         Localization = localization;
+        Caller = new PrivacyTokens.Caller(caller?.FindFirst("Jellyfin-DeviceId")?.Value, caller?.FindFirst("Jellyfin-Token")?.Value);
     }
 
     /// <summary>The library.</summary>
@@ -46,6 +52,9 @@ public sealed class PrivacyValueHost
 
     /// <summary>The host's localization.</summary>
     public ILocalizationManager? Localization { get; }
+
+    /// <summary>The request's own device id and access token.</summary>
+    internal PrivacyTokens.Caller Caller { get; }
 
     private CultureDto? Culture(string value)
     {
@@ -56,23 +65,39 @@ public sealed class PrivacyValueHost
         return _languages[value] = found;
     }
 
-    /// <summary>
-    /// A language the host's own language list knows (a code, a culture name or its display name), or a BCP-47 tag whose
-    /// language the host knows with a region subtag ("en-US", "es-419", as Matroska stores them).
-    /// </summary>
-    public bool Language(string? value)
+    /// <summary>The culture's own code (or name) that the value names, as the host's language list spells it.</summary>
+    private static string? EntryOf(CultureDto culture, string value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return false;
-        if (Culture(value) != null) return true;
+        foreach (var code in culture.ThreeLetterISOLanguageNames ?? []) if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase)) return code;
+        if (string.Equals(culture.TwoLetterISOLanguageName, value, StringComparison.OrdinalIgnoreCase)) return culture.TwoLetterISOLanguageName;
+        if (string.Equals(culture.Name, value, StringComparison.OrdinalIgnoreCase)) return culture.Name;
+        if (string.Equals(culture.DisplayName, value, StringComparison.OrdinalIgnoreCase)) return culture.DisplayName;
+        return null;
+    }
+
+    /// <summary>
+    /// A language as the host's language list spells it: the entry (code, culture name or display name) the value names, or
+    /// a BCP-47 tag rebuilt from the language's entry and a region from the host's country list ("en-US") or a UN M.49 number
+    /// ("es-419", as Matroska stores them). Null when the host does not know it.
+    /// </summary>
+    public string? Language(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return null;
+        if (Culture(value) is { } culture && EntryOf(culture, value) is { } entry) return entry;
         var dash = value.IndexOf('-', StringComparison.Ordinal);
-        if (dash <= 0) return false;
+        if (dash <= 0 || Culture(value[..dash]) is not { } language || EntryOf(language, value[..dash]) is not { } code) return null;
         var region = value[(dash + 1)..];
-        return (region.Length == 2 && region.All(char.IsAsciiLetter) || region.Length == 3 && region.All(char.IsAsciiDigit)) && Culture(value[..dash]) != null;
+        if (region.Length == 3 && region.All(char.IsAsciiDigit)) return code + "-" + int.Parse(region, CultureInfo.InvariantCulture).ToString("D3", CultureInfo.InvariantCulture);
+        return Country(region) is { } country ? code + "-" + country : null;
     }
 
     /// <summary>The host's display name of a known language (its first name, as Jellyfin 12 builds LocalizedLanguage).</summary>
     public string? LanguageName(string? value)
-        => Language(value) && (Culture(value!) ?? Culture(value![..value!.IndexOf('-', StringComparison.Ordinal)])) is { } culture ? culture.DisplayName.Split(';', ',')[0].Trim() : null;
+    {
+        if (Language(value) is not { } entry) return null;
+        var culture = Culture(entry) ?? Culture(entry[..entry.IndexOf('-', StringComparison.Ordinal)]);
+        return culture?.DisplayName.Split(';', ',')[0].Trim();
+    }
 
     /// <summary>The host's own localized label for one of its phrases.</summary>
     public string? Label(string phrase)
@@ -81,27 +106,52 @@ public sealed class PrivacyValueHost
         catch (Exception) { return null; }
     }
 
-    /// <summary>A parental rating the host's rating tables know.</summary>
-    public bool Rating(string? value)
+    /// <summary>
+    /// A parental rating as the host's rating tables spell it: the table entry the value names (every country's table, read
+    /// from the host's own rating resources, and the server's list of ratings), a country-qualified entry rebuilt as
+    /// "{country}-{entry}" with the country's table, a whole number (the host reads it as a score), or the first entry of a
+    /// "/"-separated list. A value with any other text (the host's parser accepts "text:PG" or "text/PG") is null.
+    /// </summary>
+    public string? Rating(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 32) return false;
-        if (_ratings.TryGetValue(value, out var known)) return known;
-        bool ok;
-        try { ok = Localization?.GetRatingScore(value) != null; }
-        catch (Exception) { ok = false; }
-        return _ratings[value] = ok;
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 64) return null;
+        if (_ratingEntries.TryGetValue(value, out var known)) return known;
+        var tables = PrivacyRatingTables.Of(Localization);
+        string? Single(string text)
+        {
+            text = text.Trim();
+            if (text.Length is > 0 and <= 3 && text.All(char.IsAsciiDigit)) return int.Parse(text, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
+            if (tables.Any.TryGetValue(text, out var entry)) return entry;
+            if (text.Length > 3 && text[2] is '-' or ':' && tables.ByCountry.TryGetValue(text[..2], out var country) && country.Table.TryGetValue(text[3..].Trim(), out var qualified))
+                return country.Code + "-" + qualified;
+            return null;
+        }
+        var answer = Single(value);
+        if (answer == null && value.Contains('/', StringComparison.Ordinal))
+        {
+            var parts = value.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            // Every part is a rating the tables name; the first is the one the host scores.
+            var entries = parts.Select(Single).ToArray();
+            answer = entries.Length > 0 && entries.All(e => e != null) ? entries[0] : null;
+        }
+        return _ratingEntries[value] = answer;
     }
 
-    /// <summary>A two-letter country code the host's country list knows.</summary>
-    public bool Country(string? value)
+    /// <summary>A two-letter country code as the host's country list spells it.</summary>
+    public string? Country(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return false;
+        if (string.IsNullOrWhiteSpace(value)) return null;
         if (_countries == null)
         {
-            try { _countries = (Localization?.GetCountries() ?? []).Select(c => c.TwoLetterISORegionName).Where(c => !string.IsNullOrEmpty(c)).ToHashSet(StringComparer.OrdinalIgnoreCase); }
-            catch (Exception) { _countries = new HashSet<string>(); }
+            _countries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var c in Localization?.GetCountries() ?? [])
+                    if (!string.IsNullOrEmpty(c.TwoLetterISORegionName)) _countries.TryAdd(c.TwoLetterISORegionName, c.TwoLetterISORegionName);
+            }
+            catch (Exception) { _countries.Clear(); }
         }
-        return _countries.Contains(value);
+        return _countries.TryGetValue(value, out var entry) ? entry : null;
     }
 
     /// <summary>The library's item (memoized; null when the library cannot resolve it).</summary>
@@ -118,20 +168,102 @@ public sealed class PrivacyValueHost
     /// <summary>Whether the library holds an entity of this kind with this id and exactly this name.</summary>
     public bool Named<T>(Guid id, string? name) where T : BaseItem => name != null && Item(id) is T entity && string.Equals(entity.Name, name, StringComparison.Ordinal);
 
-    /// <summary>A genre (or music genre) entity's name.</summary>
-    public bool Genre(string? name)
+    /// <summary>
+    /// The title-level item a protected item's vocabulary (genres, studios, people) is copied from: an episode's or season's
+    /// series, an extra's owner (that owner's series when it is an episode or season), else the item itself (a movie or a
+    /// series is its own title). Null when the library cannot resolve it.
+    /// </summary>
+    public BaseItem? Title(Guid id)
     {
-        if (string.IsNullOrWhiteSpace(name) || Library == null) return false;
-        try { return Named<Genre>(Library.GetGenreId(name), name) || Named<MusicGenre>(Library.GetMusicGenreId(name), name); }
-        catch (Exception) { return false; }
+        var item = Item(id);
+        for (var hop = 0; hop < 2 && item != null; hop++)
+        {
+            if (item.OwnerId != Guid.Empty) { item = Item(item.OwnerId); continue; }
+            if (item is MediaBrowser.Controller.Entities.TV.Episode episode) { item = Item(episode.SeriesId); continue; }
+            if (item is MediaBrowser.Controller.Entities.TV.Season season) { item = Item(season.SeriesId); continue; }
+            break;
+        }
+        return item is MediaBrowser.Controller.Entities.TV.Episode or MediaBrowser.Controller.Entities.TV.Season ? null : item;
     }
 
-    /// <summary>A studio entity's name.</summary>
-    public bool Studio(string? name)
+    /// <summary>The title's own entry for a name in one of its lists (as the title spells it), or null.</summary>
+    public static string? EntryIn(IEnumerable<string>? list, string? name)
+        => name == null ? null : list?.FirstOrDefault(entry => string.Equals(entry, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The title's own people (the library's people of that item), memoized.</summary>
+    public IReadOnlyList<PersonInfo> People(BaseItem title)
     {
-        if (string.IsNullOrWhiteSpace(name) || Library == null) return false;
-        try { return Named<Studio>(Library.GetStudioId(name), name); }
-        catch (Exception) { return false; }
+        if (_people.TryGetValue(title.Id, out var known)) return known;
+        IReadOnlyList<PersonInfo> people;
+        try { people = Library?.GetPeople(title) ?? []; }
+        catch (Exception) { people = []; }
+        return _people[title.Id] = people;
+    }
+}
+
+/// <summary>
+/// The host's parental rating tables: every country's table, as its own rating resources hold them (the files
+/// LocalizationManager loads: "countryCode", "ratings[].ratingStrings"), plus the server's list of ratings. Read once per
+/// localization implementation.
+/// </summary>
+internal sealed class PrivacyRatingTables
+{
+    private static readonly ConditionalWeakTable<object, PrivacyRatingTables> _cache = new();
+
+    /// <summary>Any table's entry, by its spelling (case-insensitive).</summary>
+    public Dictionary<string, string> Any { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A country's own table, by its two-letter code.</summary>
+    public Dictionary<string, (string Code, Dictionary<string, string> Table)> ByCountry { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static PrivacyRatingTables Of(ILocalizationManager? localization)
+    {
+        if (localization == null) return new PrivacyRatingTables();
+        return _cache.GetValue(localization, l => Load((ILocalizationManager)l));
+    }
+
+    private static PrivacyRatingTables Load(ILocalizationManager localization)
+    {
+        var tables = new PrivacyRatingTables();
+        try
+        {
+            var assembly = localization.GetType().Assembly;
+            foreach (var name in assembly.GetManifestResourceNames().Where(n => n.Contains(".Localization.Ratings.", StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
+            {
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) continue;
+                using var json = System.Text.Json.JsonDocument.Parse(stream);
+                var root = json.RootElement;
+                var code = Property(root, "countryCode")?.GetString();
+                if (Property(root, "ratings") is not { ValueKind: System.Text.Json.JsonValueKind.Array } ratings) continue;
+                var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var rating in ratings.EnumerateArray())
+                    if (Property(rating, "ratingStrings") is { ValueKind: System.Text.Json.JsonValueKind.Array } strings)
+                        foreach (var entry in strings.EnumerateArray())
+                            if (entry.GetString() is { Length: > 0 and <= 32 } text) { table.TryAdd(text, text); tables.Any.TryAdd(text, text); }
+                if (code is { Length: 2 } && code.All(char.IsAsciiLetter)) tables.ByCountry[code] = (code.ToUpperInvariant(), table);
+            }
+        }
+        catch (Exception)
+        {
+            // A host without readable rating resources still has its server list.
+        }
+        try
+        {
+            foreach (var rating in localization.GetParentalRatings() ?? [])
+                if (rating?.Name is { Length: > 0 and <= 32 } text) tables.Any.TryAdd(text, text);
+        }
+        catch (Exception)
+        {
+        }
+        return tables;
+    }
+
+    private static System.Text.Json.JsonElement? Property(System.Text.Json.JsonElement element, string name)
+    {
+        if (element.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+        foreach (var p in element.EnumerateObject()) if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
+        return null;
     }
 }
 
@@ -276,8 +408,32 @@ public static class PrivacyValues
     {
         var copy = known.GetConstructor(Type.EmptyTypes) != null ? Activator.CreateInstance(known)! : RuntimeHelpers.GetUninitializedObject(known);
         foreach (var (property, rule) in Plan(known, scope.Mode))
-            property.SetValue(copy, rule.Apply(property.GetValue(value), scope, new Context(value, property.PropertyType, index)));
+        {
+            var original = property.GetValue(value);
+            // Shapes are host-required too: a collection the host sent stays a collection (empty when its values are
+            // withheld), because the host's clients index it (RequiredHttpHeaders.length, MediaStreams.filter).
+            var kept = rule.Apply(original, scope, new Context(value, property.PropertyType, index)) ?? (original != null ? Empty(property.PropertyType) : null);
+            if (kept == null && property.PropertyType.IsValueType && Nullable.GetUnderlyingType(property.PropertyType) == null) continue;
+            property.SetValue(copy, kept);
+        }
         return Admit(copy) ? copy : null;
+    }
+
+    /// <summary>An empty collection of a member's declared type (an array, a list or a dictionary); null for anything else.</summary>
+    internal static object? Empty(Type declared)
+    {
+        if (declared == typeof(string)) return null;
+        if (declared.IsArray) return Array.CreateInstance(declared.GetElementType()!, 0);
+        if (!declared.IsGenericType) return null;
+        var arguments = declared.GetGenericArguments();
+        var definition = declared.GetGenericTypeDefinition();
+        if (arguments.Length == 2 && (definition == typeof(Dictionary<,>) || definition == typeof(IDictionary<,>) || definition == typeof(IReadOnlyDictionary<,>)))
+            return Activator.CreateInstance(typeof(Dictionary<,>).MakeGenericType(arguments));
+        if (arguments.Length != 1) return null;
+        var array = Array.CreateInstance(arguments[0], 0);
+        if (declared.IsAssignableFrom(array.GetType())) return array;
+        var list = typeof(List<>).MakeGenericType(arguments);
+        return declared.IsAssignableFrom(list) ? Activator.CreateInstance(list) : null;
     }
 
     /// <summary>The members a type's projection copies, each with its rule; cached per type and mode.</summary>
@@ -287,8 +443,9 @@ public static class PrivacyValues
         return key.Item1.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetIndexParameters().Length == 0 && p.GetMethod is { IsPublic: true } && p.SetMethod is { IsPublic: true })
             // A stub keeps the host-required members of the item itself only (the classification); nested values keep theirs.
-            .Where(p => !(key.Item2 == Mode.Stub && key.Item1 == typeof(BaseItemDto) && PrivacyFieldClassification.Of(typeof(BaseItemDto), p.Name) != PrivacyField.HostRequired && p.Name != "Name"))
-            .Select(p => (p, table.TryGetValue(p.Name, out var rule) ? rule : Default(p.PropertyType)))
+            // The others are withheld (a collection keeps its empty shape).
+            .Select(p => (p, key.Item2 == Mode.Stub && key.Item1 == typeof(BaseItemDto) && PrivacyFieldClassification.Of(typeof(BaseItemDto), p.Name) != PrivacyField.HostRequired && p.Name != "Name"
+                ? Drop : table.TryGetValue(p.Name, out var rule) ? rule : Default(p.PropertyType)))
             .ToArray();
     });
 
@@ -318,6 +475,17 @@ public static class PrivacyValues
     private static Rule Str(string name, Func<string, Scope, Context, bool> ok) => new(name, (v, s, c) => v is string t && ok(t, s, c) ? t : null);
 
     private static Rule Str(string name, Func<string?, bool> ok) => Str(name, (t, _, _) => ok(t));
+
+    /// <summary>A value the rule CONSTRUCTS from the original (a table's own entry, a rebuilt URL, a title's own name); null drops it.</summary>
+    private static Rule Val(string name, Func<string, Scope, Context, string?> make) => new(name, (v, s, c) => v is string t ? make(t, s, c) : null);
+
+    private static Rule Val(string name, Func<string?, string?> make) => Val(name, (t, _, _) => make(t));
+
+    /// <summary>A sequence of strings, each constructed by the rule (dropped when it gives none); the sequence's own type kept.</summary>
+    private static Rule Vals(string name, Func<string, Scope, Context, string?> make) => new(name, (v, s, c) =>
+        v is IEnumerable<string> values ? Typed(c.Declared, values.Where(t => t != null).Select(t => make(t, s, c)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray()) : null);
+
+    private static Rule Vals(string name, Func<string?, string?> make) => Vals(name, (t, _, _) => make(t));
 
     /// <summary>A sequence of strings, each through the validator (the sequence's own type kept: an array or a list).</summary>
     private static Rule Strs(string name, Func<string, Scope, Context, bool> ok) => new(name, (v, s, c) => v is IEnumerable<string> values ? Typed(c.Declared, values.Where(t => t != null && ok(t, s, c)).ToArray()) : null);
@@ -358,11 +526,27 @@ public static class PrivacyValues
         return list;
     }
 
-    /// <summary>Name/id pairs the library vouches for: the entity with that id has exactly that name.</summary>
-    private static Rule Pairs(string name, Func<PrivacyValueHost, Guid, string?, bool> ok) => new(name, (v, s, c) =>
+    /// <summary>
+    /// The title-level item a protected item's vocabulary is copied from (an episode's or season's series, an extra's owner;
+    /// a movie or series is its own title): never the protected item's own names, which Jellyfin creates its genre, studio
+    /// and person entities FROM (an entity's existence vouches for nothing).
+    /// </summary>
+    private static BaseItem? TitleOf(Scope s) => s.Item is { } item ? s.Host.Title(item.Id) : null;
+
+    /// <summary>A name in the title's own list, as the title spells it (an absent title: the facade's own construction).</summary>
+    private static Rule TitleEntry(string list, Func<BaseItem, IEnumerable<string>?> entries)
+        => Vals("the title's own " + list + " entry (copied from the series / owner / title, never the protected item's)", (t, s, _) => s.Synthetic ? t : PrivacyValueHost.EntryIn(TitleOf(s) is { } title ? entries(title) : null, t));
+
+    /// <summary>Name/id pairs whose name is in the title's own list: the title's spelling, the host's id.</summary>
+    private static Rule TitlePairs(string list, Func<BaseItem, IEnumerable<string>?> entries) => new("the title's own " + list + " (copied from the series / owner / title)", (v, s, c) =>
         v is IEnumerable<NameGuidPair> pairs
-            ? Typed(c.Declared, pairs.Where(p => p != null && (s.Synthetic || ok(s.Host, p.Id, p.Name))).Select(p => new NameGuidPair { Name = p.Name, Id = p.Id }).ToArray())
+            ? Typed(c.Declared, pairs.Where(p => p != null)
+                .Select(p => (Pair: p, Name: s.Synthetic ? p.Name : PrivacyValueHost.EntryIn(TitleOf(s) is { } title ? entries(title) : null, p.Name)))
+                .Where(p => p.Name != null).Select(p => new NameGuidPair { Name = p.Name, Id = p.Pair.Id }).ToArray())
             : null);
+
+    /// <summary>A value only an absent title's facade constructs (a library item's own artist and album tags are not trusted).</summary>
+    private static Rule FacadeOnly(Rule rule) => new("the facade's own (absent titles); a library item's dropped", (v, s, c) => s.Synthetic ? rule.Apply(v, s, c) : null);
 
     /// <summary>An image-tag dictionary: keys are the enum, values image tags.</summary>
     private static readonly Rule ImageTags = new("image tag per image type", (v, _, _) =>
@@ -420,6 +604,26 @@ public static class PrivacyValues
 
     private static bool Protects(BaseItemKind kind) => kind is BaseItemKind.Episode or BaseItemKind.Season;
 
+    /// <summary>Whether the projected item is an extra another title owns (a library item with an owner).</summary>
+    private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.Item(((BaseItemDto)c.Source).Id) is { } item && item.OwnerId != Guid.Empty;
+
+    /// <summary>An extra's constructed name: what kind of extra it is ("Trailer", "Theme video", "Behind the scenes").</summary>
+    internal static string ExtraLabel(BaseItem extra, BaseItemKind kind) => extra.ExtraType switch
+    {
+        ExtraType.Trailer => "Trailer",
+        ExtraType.ThemeSong => "Theme song",
+        ExtraType.ThemeVideo => "Theme video",
+        ExtraType.BehindTheScenes => "Behind the scenes",
+        ExtraType.DeletedScene => "Deleted scene",
+        ExtraType.Interview => "Interview",
+        ExtraType.Scene => "Scene",
+        ExtraType.Sample => "Sample",
+        ExtraType.Featurette => "Featurette",
+        ExtraType.Short => "Short",
+        ExtraType.Clip => "Clip",
+        _ => kind switch { BaseItemKind.Trailer => "Trailer", BaseItemKind.Audio => "Theme song", _ => "Extra" },
+    };
+
     private static readonly string[] _statuses = ["Continuing", "Ended", "Unreleased", "New", "InProgress", "Completed", "Cancelled", "ConflictedOk", "ConflictedNotOk", "Error"];
 
     private static readonly string[] _displayOrders =
@@ -438,7 +642,7 @@ public static class PrivacyValues
 
     private static readonly Rule Tag = Str("image tag", PrivacyTokens.Tag);
     private static readonly Rule Tags = Strs("image tags", PrivacyTokens.Tag);
-    private static readonly Rule IdText = Str("id", PrivacyTokens.Id);
+    private static readonly Rule IdText = Val("id (rebuilt from its parsed value)", PrivacyTokens.IdOf);
     private static readonly Rule TitleFamily = Revealed(r => r.TitleFamily, Drop, "kept");
 
     private static Rule LabelOf(string phrase) => Construct("the host's \"" + phrase + "\" label", (v, s, _) => v == null ? null : s.Host.Label(phrase));
@@ -447,17 +651,21 @@ public static class PrivacyValues
     {
         [typeof(BaseItemDto)] = new(StringComparer.Ordinal)
         {
-            ["Name"] = Construct("neutral name (stub); episode/season neutral name unless revealed; else the library entity's name", (v, s, c) =>
+            ["Name"] = Construct("constructed: the stub's neutral name, an episode's or season's neutral name, an extra's kind (\"Trailer\"); a movie's or series' own title from the library (the guard's subject); the original only where a switch reveals it", (v, s, c) =>
             {
                 var item = (BaseItemDto)c.Source;
                 if (s.Mode == Mode.Stub) return PrivacyFieldClassification.HiddenName;
                 if (Protects(item.Type)) return s.Reveal.Title ? v : item.Type == BaseItemKind.Episode ? NeutralNames.Episode(item.ParentIndexNumber, item.IndexNumber) : NeutralNames.Season(item.IndexNumber);
+                // An extra's own name is its file's or provider's text (a featurette's "…ending explained"): constructed from
+                // its extra type unless Spoiler Guard reveals the title family.
+                if (!s.Synthetic && s.Host.Item(item.Id) is { OwnerId: var owner } extra && owner != Guid.Empty)
+                    return s.Reveal.TitleFamily ? extra.Name : ExtraLabel(extra, item.Type);
                 return Entity(s, item.Id, e => e.Name, v) ?? item.Type.ToString();
             }),
-            ["SortName"] = Construct("episode/season: dropped unless revealed; else the library entity's sort name", (v, s, c) =>
-                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : Entity(s, ((BaseItemDto)c.Source).Id, e => e.SortName, v)),
-            ["OriginalTitle"] = Construct("episode/season: dropped unless revealed; else the library entity's original title", (v, s, c) =>
-                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : Entity(s, ((BaseItemDto)c.Source).Id, e => e.OriginalTitle, v)),
+            ["SortName"] = Construct("episode/season: dropped unless revealed; an extra: dropped unless its title family is revealed; else the title's own sort name", (v, s, c) =>
+                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, ((BaseItemDto)c.Source).Id, e => e.SortName, v)),
+            ["OriginalTitle"] = Construct("episode/season: dropped unless revealed; an extra: dropped unless its title family is revealed; else the title's own original title", (v, s, c) =>
+                Protects(((BaseItemDto)c.Source).Type) ? (s.Reveal.Title ? v : null) : IsExtra(s, c) && !s.Reveal.TitleFamily ? null : Entity(s, ((BaseItemDto)c.Source).Id, e => e.OriginalTitle, v)),
             ["ForcedSortName"] = TitleFamily,
             ["EpisodeTitle"] = TitleFamily,
             ["Path"] = TitleFamily,
@@ -469,15 +677,15 @@ public static class PrivacyValues
             ["Tags"] = Construct("kept when revealed, else empty", (v, s, _) => s.Reveal.Tags ? v : v == null ? null : Array.Empty<string>()),
             ["SeriesName"] = Construct("the series entity's name", (v, s, c) => Entity(s, ((BaseItemDto)c.Source).SeriesId, e => e.Name, v)),
             ["SeasonName"] = Construct("kept when revealed, else the neutral season name", (v, s, c) => v == null ? null : s.Reveal.Title ? v : NeutralNames.Season(((BaseItemDto)c.Source).ParentIndexNumber)),
-            ["Album"] = Construct("the album entity's name", (v, s, c) => Entity(s, ((BaseItemDto)c.Source).AlbumId, e => e is MusicAlbum ? e.Name : null, v)),
-            ["AlbumArtist"] = Str("a vouched album artist's name", (t, s, c) => s.Synthetic || ((BaseItemDto)c.Source).AlbumArtists?.Any(p => p.Name == t && s.Host.Named<MusicArtist>(p.Id, p.Name)) == true),
-            ["AlbumArtists"] = Pairs("music artist entities", (h, id, n) => h.Named<MusicArtist>(id, n)),
-            ["Artists"] = Strs("a vouched artist's name", (t, s, c) => s.Synthetic || ((BaseItemDto)c.Source).ArtistItems?.Any(p => p.Name == t && s.Host.Named<MusicArtist>(p.Id, p.Name)) == true),
-            ["ArtistItems"] = Pairs("music artist entities", (h, id, n) => h.Named<MusicArtist>(id, n)),
-            ["SeriesStudio"] = Str("a studio entity's name", (t, s, _) => s.Synthetic || s.Host.Studio(t)),
-            ["Genres"] = Strs("genre entities' names", (t, s, _) => s.Synthetic || s.Host.Genre(t)),
-            ["GenreItems"] = Pairs("genre entities", (h, id, n) => h.Named<Genre>(id, n) || h.Named<MusicGenre>(id, n)),
-            ["Studios"] = Pairs("studio entities", (h, id, n) => h.Named<Studio>(id, n)),
+            ["Album"] = FacadeOnly(Keep),
+            ["AlbumArtist"] = FacadeOnly(Keep),
+            ["AlbumArtists"] = FacadeOnly(Keep),
+            ["Artists"] = FacadeOnly(Keep),
+            ["ArtistItems"] = FacadeOnly(Keep),
+            ["SeriesStudio"] = Val("the title's own studio entry (copied from the series / owner / title)", (t, s, _) => s.Synthetic ? t : PrivacyValueHost.EntryIn(TitleOf(s)?.Studios, t)),
+            ["Genres"] = TitleEntry("genre", e => e.Genres),
+            ["GenreItems"] = TitlePairs("genres", e => e.Genres),
+            ["Studios"] = TitlePairs("studios", e => e.Studios),
             ["People"] = Nested(typeof(BaseItemPerson)),
             ["Chapters"] = Nested(typeof(ChapterInfo)),
             ["MediaSources"] = Nested(typeof(MediaSourceInfo)),
@@ -500,14 +708,14 @@ public static class PrivacyValues
             ["AspectRatio"] = Str("ratio", PrivacyTokens.Ratio),
             ["ChannelNumber"] = Str("number", PrivacyTokens.Number),
             ["Number"] = Str("number", PrivacyTokens.Number),
-            ["Container"] = Str("container tokens (host ffprobe)", PrivacyTokens.Container),
-            ["DisplayOrder"] = Str("display order name", t => PrivacyTokens.OneOf(t, _displayOrders)),
-            ["SourceType"] = Str("source type name", t => PrivacyTokens.OneOf(t, "Library", "LiveTV", "Channel")),
-            ["Status"] = Str("status name", t => PrivacyTokens.OneOf(t, _statuses)),
-            ["OfficialRating"] = Str("a rating the host's tables know", (t, s, _) => s.Host.Rating(t)),
-            ["OriginalLanguage"] = Str("a language the host knows", (t, s, _) => s.Host.Language(t)),
-            ["PreferredMetadataLanguage"] = Str("a language the host knows", (t, s, _) => s.Host.Language(t)),
-            ["PreferredMetadataCountryCode"] = Str("a country the host knows", (t, s, _) => s.Host.Country(t)),
+            ["Container"] = Val("the container table's entries (host ffprobe)", PrivacyTokens.Container),
+            ["DisplayOrder"] = Val("the display order list's entry", t => PrivacyTokens.OneOf(t, _displayOrders)),
+            ["SourceType"] = Val("the source type list's entry", t => PrivacyTokens.OneOf(t, "Library", "LiveTV", "Channel")),
+            ["Status"] = Val("the status list's entry", t => PrivacyTokens.OneOf(t, _statuses)),
+            ["OfficialRating"] = Val("the host's rating table entry (a country-qualified entry rebuilt; any other text dropped)", (t, s, _) => s.Host.Rating(t)),
+            ["OriginalLanguage"] = Val("the host's language list entry", (t, s, _) => s.Host.Language(t)),
+            ["PreferredMetadataLanguage"] = Val("the host's language list entry", (t, s, _) => s.Host.Language(t)),
+            ["PreferredMetadataCountryCode"] = Val("the host's country list entry", (t, s, _) => s.Host.Country(t)),
             ["ProviderIds"] = Providers,
             ["ImageTags"] = ImageTags,
             ["ImageBlurHashes"] = BlurHashes,
@@ -529,45 +737,50 @@ public static class PrivacyValues
             ["Title"] = TitleFamily,
             ["Comment"] = TitleFamily,
             ["Path"] = TitleFamily,
-            ["Language"] = Str("a language the host knows", (t, s, _) => s.Host.Language(t)),
-            ["LocalizedLanguage"] = Construct("the host's name of the validated language", (v, s, c) => v == null ? null : s.Host.LanguageName(((MediaStream)c.Source).Language)),
+            ["Language"] = Val("the host's language list entry", (t, s, _) => s.Host.Language(t)),
+            ["LocalizedLanguage"] = Construct("the host's own display name of the language list entry (constructed)", (v, s, c) => v == null ? null : s.Host.LanguageName(((MediaStream)c.Source).Language)),
             ["LocalizedDefault"] = LabelOf("Default"),
             ["LocalizedExternal"] = LabelOf("External"),
             ["LocalizedForced"] = LabelOf("Forced"),
             ["LocalizedHearingImpaired"] = LabelOf("HearingImpaired"),
             ["LocalizedOriginal"] = LabelOf("Original"),
             ["LocalizedUndefined"] = LabelOf("Undefined"),
-            ["Codec"] = Str("codec token (host ffprobe)", PrivacyTokens.Codec),
+            ["Codec"] = Val("the codec table's entry (host ffprobe)", PrivacyTokens.Codec),
             ["CodecTag"] = Str("four-character code", PrivacyTokens.FourCc),
-            ["Profile"] = Str("codec profile name", PrivacyTokens.Profile),
-            ["ChannelLayout"] = Str("channel layout token (host ffprobe)", PrivacyTokens.Layout),
-            ["PixelFormat"] = Str("pixel format token (host ffprobe)", PrivacyTokens.PixelFormat),
-            ["ColorPrimaries"] = Str("colour token", PrivacyTokens.Color),
-            ["ColorRange"] = Str("colour token", PrivacyTokens.Color),
-            ["ColorSpace"] = Str("colour token", PrivacyTokens.Color),
-            ["ColorTransfer"] = Str("colour token", PrivacyTokens.Color),
+            ["Profile"] = Val("the profile table's entry", PrivacyTokens.Profile),
+            ["ChannelLayout"] = Val("the channel layout table's entry (host ffprobe), or \"N channels\" rebuilt", PrivacyTokens.Layout),
+            ["PixelFormat"] = Val("the pixel format table's entry (host ffprobe)", PrivacyTokens.PixelFormat),
+            ["ColorPrimaries"] = Val("the colour table's entry", PrivacyTokens.Color),
+            ["ColorRange"] = Val("the colour table's entry", PrivacyTokens.Color),
+            ["ColorSpace"] = Val("the colour table's entry", PrivacyTokens.Color),
+            ["ColorTransfer"] = Val("the colour table's entry", PrivacyTokens.Color),
             ["AspectRatio"] = Str("ratio", PrivacyTokens.Ratio),
             ["TimeBase"] = Str("rational", PrivacyTokens.Rational),
             ["CodecTimeBase"] = Str("rational", PrivacyTokens.Rational),
             ["NalLengthSize"] = Str("number", PrivacyTokens.Number),
-            ["DeliveryUrl"] = Construct("the host's indexed delivery URL (a raw external URL only when revealed)", (v, s, c) =>
-                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : ((MediaStream)c.Source).IsExternalUrl == true || !PrivacyTokens.DeliveryUrl(v as string) ? null : v),
+            ["DeliveryUrl"] = Construct("rebuilt from the host's subtitle route template (named parameters, the host's file name \"Stream\", the caller's token); a raw external URL only when revealed", (v, s, c) =>
+                s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : ((MediaStream)c.Source).IsExternalUrl == true ? null : PrivacyTokens.DeliveryUrl(v as string, s.Host.Caller)),
         },
         [typeof(MediaSourceInfo)] = new(StringComparer.Ordinal)
         {
             ["Name"] = Construct("kept when revealed, else a label from the version's validated video stream (\"1080p HEVC SDR\") or \"Version N\"", (v, s, c) =>
                 s.Mode != Mode.Stub && s.Reveal.TitleFamily ? v : VersionLabel((MediaSourceInfo)c.Source, s, c.Index)),
             ["Path"] = TitleFamily,
+            // A remote source's Path is the URL a client direct-plays (jellyfin-web plays MediaSource.Path when it may):
+            // withheld, the source is offered for the host's own stream route instead (Videos/{id}/stream, which the server
+            // proxies), so the client never needs the remote URL and its file name.
+            ["SupportsDirectPlay"] = Construct("kept for a file source; a remote source whose URL is withheld: false (the client streams it through the host's route)", (v, s, c) =>
+                v is true && ((MediaSourceInfo)c.Source).Protocol != MediaBrowser.Model.MediaInfo.MediaProtocol.File && !(s.Mode != Mode.Stub && s.Reveal.TitleFamily) ? false : v),
             ["EncoderPath"] = Drop,
             ["OpenToken"] = Drop,
             ["RequiredHttpHeaders"] = Drop,
-            ["Id"] = Str("id", t => PrivacyTokens.Id(t) || PrivacyTokens.IdShaped(t) || HexList(t)),
-            ["LiveStreamId"] = Str("id", HexList),
+            ["Id"] = Val("id (rebuilt from its parsed value) or the host's hex/underscore source id", t => PrivacyTokens.IdOf(t) ?? (PrivacyTokens.IdShaped(t) || HexList(t) ? t : null)),
+            ["LiveStreamId"] = Str("the host's hex/underscore live stream id (closed format)", HexList),
             ["ETag"] = Tag,
-            ["Container"] = Str("container tokens (host ffprobe)", PrivacyTokens.Container),
-            ["TranscodingContainer"] = Str("container tokens (host ffprobe)", PrivacyTokens.Container),
-            ["Formats"] = Strs("container tokens (host ffprobe)", PrivacyTokens.Container),
-            ["TranscodingUrl"] = Str("the host's transcoding route with token parameters", PrivacyTokens.TranscodingUrl),
+            ["Container"] = Val("the container table's entries (host ffprobe)", PrivacyTokens.Container),
+            ["TranscodingContainer"] = Val("the container table's entries (host ffprobe)", PrivacyTokens.Container),
+            ["Formats"] = Vals("the container table's entries (host ffprobe)", PrivacyTokens.Container),
+            ["TranscodingUrl"] = Val("rebuilt from the host's transcoding route template (named parameters, each value by its rule; the caller's device id and token)", (t, s, _) => PrivacyTokens.TranscodingUrl(t, s.Host.Caller)),
             ["MediaStreams"] = Nested(typeof(MediaStream)),
             ["MediaAttachments"] = Nested(typeof(MediaAttachment)),
         },
@@ -575,10 +788,10 @@ public static class PrivacyValues
         {
             ["Comment"] = TitleFamily,
             ["FileName"] = TitleFamily,
-            ["Codec"] = Str("codec token (host ffprobe)", PrivacyTokens.Codec),
+            ["Codec"] = Val("the codec table's entry (host ffprobe)", PrivacyTokens.Codec),
             ["CodecTag"] = Str("four-character code", PrivacyTokens.FourCc),
-            ["MimeType"] = Str("attachment MIME type", PrivacyTokens.MimeType),
-            ["DeliveryUrl"] = Str("the host's indexed delivery URL", PrivacyTokens.DeliveryUrl),
+            ["MimeType"] = Val("the attachment MIME table's entry", PrivacyTokens.MimeType),
+            ["DeliveryUrl"] = Val("rebuilt from the host's attachment route template", (t, s, _) => PrivacyTokens.DeliveryUrl(t, s.Host.Caller)),
         },
         [typeof(ChapterInfo)] = new(StringComparer.Ordinal)
         {
@@ -589,7 +802,8 @@ public static class PrivacyValues
         },
         [typeof(BaseItemPerson)] = new(StringComparer.Ordinal)
         {
-            ["Name"] = Str("a person entity's name (the person leaves without it)", (t, s, c) => s.Synthetic || s.Host.Named<Person>(((BaseItemPerson)c.Source).Id, t)),
+            ["Name"] = Val("the title's own person (copied from the series / owner / title; an episode's guest leaves)", (t, s, _) =>
+                s.Synthetic ? t : TitleOf(s) is { } title ? s.Host.People(title).FirstOrDefault(p => string.Equals(p.Name, t, StringComparison.OrdinalIgnoreCase))?.Name : null),
             ["Role"] = TitleFamily,
             ["PrimaryImageTag"] = Tag,
             ["ImageBlurHashes"] = BlurHashes,
@@ -614,7 +828,7 @@ public static class PrivacyValues
             ["AlbumArtist"] = Drop,
             ["Artists"] = Drop,
             ["ChannelName"] = Construct("the channel entity's name", (_, s, c) => Entity(s, ((SearchHint)c.Source).ChannelId, e => e.Name, null)),
-            ["Status"] = Str("status name", t => PrivacyTokens.OneOf(t, _statuses)),
+            ["Status"] = Val("the status list's entry", t => PrivacyTokens.OneOf(t, _statuses)),
             ["BackdropImageItemId"] = IdText,
             ["ThumbImageItemId"] = IdText,
             ["BackdropImageTag"] = Tag,
@@ -629,7 +843,7 @@ public static class PrivacyValues
             ["Name"] = Construct("the constructed text", (_, s, _) => s.Name),
             ["Overview"] = Drop,
             ["ShortOverview"] = Drop,
-            ["Type"] = Str("activity type name", t => PrivacyTokens.OneOf(t, _activityTypes)),
+            ["Type"] = Val("the activity type list's entry", t => PrivacyTokens.OneOf(t, _activityTypes)),
             ["ItemId"] = IdText,
             ["UserPrimaryImageTag"] = Tag,
         },
@@ -644,7 +858,7 @@ public static class PrivacyValues
         ["ServiceName"] = Drop,
         ["Id"] = IdText,
         ["ServerId"] = IdText,
-        ["Type"] = Str("timer type name", t => PrivacyTokens.OneOf(t, "Timer", "SeriesTimer")),
+        ["Type"] = Val("the timer type list's entry", t => PrivacyTokens.OneOf(t, "Timer", "SeriesTimer")),
         ["ProgramId"] = IdText,
         ["SeriesTimerId"] = IdText,
         ["ExternalId"] = Str("provider id", PrivacyTokens.IdShaped),

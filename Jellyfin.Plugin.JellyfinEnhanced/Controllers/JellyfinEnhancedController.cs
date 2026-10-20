@@ -8702,10 +8702,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
 
+            // Entries whose kind is not a title of its own (theme videos, trailers, featurettes) follow their owner: one
+            // batched identity lookup gives both Hidden Content and Spoiler Guard the verdict tag data uses.
+            var owned = !hiddenPolicy.IsEmpty || spPolicy != null ? _spoilerTagDataStripper.OwnedIdentities(items, user) : null;
+
             if (!hiddenPolicy.IsEmpty)
             {
+                foreach (var identity in owned!.Values) hiddenPolicy.Bind(identity);
                 foreach (var (key, entry) in items.ToList())
                 {
+                    if (owned.TryGetValue(key, out var ownedIdentity))
+                    {
+                        if (hiddenPolicy.IsHidden(ownedIdentity, "library")) items.Remove(key);
+                        continue;
+                    }
                     var kindName = entry?.Type;
                     var titleKey = Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", kindName is "Episode" or "Season" ? entry?.SeriesTmdbId : entry?.TmdbId);
                     if (hiddenPolicy.IsHidden(titleKey, key, entry?.SeriesId, "library")) items.Remove(key);
@@ -8716,7 +8726,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (spPolicy != null)
             {
-                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
+                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items, owned);
             }
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
@@ -9010,13 +9020,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return (object)new
                     {
                         Type = s.Type.ToString(),
-                        Language = values.Language(resolved.Language) ? resolved.Language : null,
-                        Codec = Services.PrivacyTokens.Codec(s.Codec) ? s.Codec : null,
+                        Language = values.Language(resolved.Language),
+                        Codec = Services.PrivacyTokens.Codec(s.Codec),
                         CodecTag = Services.PrivacyTokens.FourCc(s.CodecTag) ? s.CodecTag : null,
-                        Profile = Services.PrivacyTokens.Profile(s.Profile) ? s.Profile : null,
+                        Profile = Services.PrivacyTokens.Profile(s.Profile),
                         Height = s.Height,
                         Channels = s.Channels,
-                        ChannelLayout = Services.PrivacyTokens.Layout(s.ChannelLayout) ? s.ChannelLayout : null,
+                        ChannelLayout = Services.PrivacyTokens.Layout(s.ChannelLayout),
                         VideoRangeType = s.VideoRangeType,
                         // DisplayTitle's GETTER prepends the raw Title field, which on user-muxed files commonly carries
                         // the title; qualitytags.js recomputes overlay text from Codec / Height / VideoRangeType / Profile.
@@ -9024,7 +9034,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                 })
                 .ToList();
-            string? StubRating(string? rating) => values.Rating(rating) ? rating : null;
+            string? StubRating(string? rating) => values.Rating(rating);
 
             var itemIds = ids;
             var results = new List<object>(itemIds.Length);
@@ -9153,7 +9163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         OfficialRating = StubRating(ResolveTagDataOfficialRating(item)),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
-                        Name = item.Name,
+                        // An extra's own name is its file's or provider's text: constructed from its extra type (as on its DTO).
+                        Name = spoilerStub == Services.SpoilerTagDataStub.Extra && spoilerPolicy!.SanitizeTitleStreams ? Services.PrivacyValues.ExtraLabel(item, kind) : item.Name,
                         Path = (string?)null,
                         MediaStreams = spStripGenres ? null : StubStreams(item),
                         MediaSources = (List<object>?)null,

@@ -3816,9 +3816,15 @@
             "Name": "Hidden content",
             "ServerId": "851801200c8e48db8bc663665dbae462",
             "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+            "ExternalUrls": [],
+            "Taglines": [],
+            "Genres": [],
             "RunTimeTicks": 6000230000,
+            "ProviderIds": {},
             "IsFolder": false,
             "Type": "Movie",
+            "Studios": [],
+            "GenreItems": [],
             "MediaStreams": [
               {
                 "Codec": "subrip",
@@ -3961,6 +3967,11 @@
                 "Level": 0
               }
             ],
+            "ImageTags": {},
+            "BackdropImageTags": [],
+            "ImageBlurHashes": {},
+            "Chapters": [],
+            "Trickplay": {},
             "LocationType": "FileSystem",
             "MediaType": "Video"
           },
@@ -3984,9 +3995,20 @@
               "Name": "Hidden content",
               "ServerId": "851801200c8e48db8bc663665dbae462",
               "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+              "ExternalUrls": [],
+              "MediaSources": [],
+              "ProductionLocations": [],
+              "Taglines": [],
+              "Genres": [],
               "RunTimeTicks": 6000230000,
+              "RemoteTrailers": [],
+              "ProviderIds": {},
               "IsFolder": false,
               "Type": "Movie",
+              "People": [],
+              "Studios": [],
+              "GenreItems": [],
+              "Tags": [],
               "MediaStreams": [
                 {
                   "Codec": "subrip",
@@ -4129,8 +4151,14 @@
                   "Level": 0
                 }
               ],
+              "ImageTags": {},
+              "BackdropImageTags": [],
+              "ImageBlurHashes": {},
+              "Chapters": [],
+              "Trickplay": {},
               "LocationType": "FileSystem",
-              "MediaType": "Video"
+              "MediaType": "Video",
+              "LockedFields": []
             },
             {
               "Name": "D46 R19 Plain (1991)",
@@ -4505,9 +4533,15 @@
             "Name": "Hidden content",
             "ServerId": "851801200c8e48db8bc663665dbae462",
             "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+            "ExternalUrls": [],
+            "Taglines": [],
+            "Genres": [],
             "RunTimeTicks": 6000230000,
+            "ProviderIds": {},
             "IsFolder": false,
             "Type": "Movie",
+            "Studios": [],
+            "GenreItems": [],
             "MediaStreams": [
               {
                 "Codec": "subrip",
@@ -4650,6 +4684,11 @@
                 "Level": 0
               }
             ],
+            "ImageTags": {},
+            "BackdropImageTags": [],
+            "ImageBlurHashes": {},
+            "Chapters": [],
+            "Trickplay": {},
             "LocationType": "FileSystem",
             "MediaType": "Video"
           },
@@ -4673,9 +4712,20 @@
               "Name": "Hidden content",
               "ServerId": "851801200c8e48db8bc663665dbae462",
               "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+              "ExternalUrls": [],
+              "MediaSources": [],
+              "ProductionLocations": [],
+              "Taglines": [],
+              "Genres": [],
               "RunTimeTicks": 6000230000,
+              "RemoteTrailers": [],
+              "ProviderIds": {},
               "IsFolder": false,
               "Type": "Movie",
+              "People": [],
+              "Studios": [],
+              "GenreItems": [],
+              "Tags": [],
               "MediaStreams": [
                 {
                   "Codec": "subrip",
@@ -4818,8 +4868,14 @@
                   "Level": 0
                 }
               ],
+              "ImageTags": {},
+              "BackdropImageTags": [],
+              "ImageBlurHashes": {},
+              "Chapters": [],
+              "Trickplay": {},
               "LocationType": "FileSystem",
-              "MediaType": "Video"
+              "MediaType": "Video",
+              "LockedFields": []
             },
             {
               "Name": "D46 R19 Plain (1991)",
@@ -6611,6 +6667,7 @@
             "DateCreated": "2026-10-20T00:38:44.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -6784,6 +6841,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -6927,6 +6985,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -6937,6 +6996,7 @@
               "Genres": [],
               "RunTimeTicks": 6000230000,
               "ParentIndexNumber": 1,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",
@@ -7127,6 +7187,7 @@
             "DateCreated": "2026-10-20T00:38:44.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -7303,6 +7364,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -7446,6 +7508,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -7456,6 +7519,7 @@
               "Genres": [],
               "RunTimeTicks": 6000230000,
               "ParentIndexNumber": 1,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",
@@ -7616,6 +7680,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -7759,6 +7824,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -7768,6 +7834,7 @@
               "Taglines": [],
               "Genres": [],
               "RunTimeTicks": 6000230000,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",
@@ -9861,6 +9928,7 @@
             "DateCreated": "2026-10-20T00:38:44.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -10034,6 +10102,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -10177,6 +10246,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -10187,6 +10257,7 @@
               "Genres": [],
               "RunTimeTicks": 6000230000,
               "ParentIndexNumber": 1,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",
@@ -10377,6 +10448,7 @@
             "DateCreated": "2026-10-20T00:38:44.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -10553,6 +10625,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -10696,6 +10769,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -10706,6 +10780,7 @@
               "Genres": [],
               "RunTimeTicks": 6000230000,
               "ParentIndexNumber": 1,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",
@@ -10866,6 +10941,7 @@
               "CanDownload": true,
               "HasSubtitles": true,
               "Container": "mkv",
+              "ExternalUrls": [],
               "MediaSources": [
                 {
                   "Protocol": "File",
@@ -11009,6 +11085,7 @@
                   "MediaAttachments": [],
                   "Formats": [],
                   "Bitrate": 421544,
+                  "RequiredHttpHeaders": {},
                   "TranscodingSubProtocol": "http",
                   "HasSegments": false
                 }
@@ -11018,6 +11095,7 @@
               "Taglines": [],
               "Genres": [],
               "RunTimeTicks": 6000230000,
+              "RemoteTrailers": [],
               "ProviderIds": {},
               "IsFolder": false,
               "ParentId": "01ea11344223aff727c1b850e5276da1",

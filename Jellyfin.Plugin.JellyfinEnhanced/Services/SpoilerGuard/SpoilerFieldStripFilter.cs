@@ -262,7 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>What the host vouches for in this projection (its closed lists, the library's entities).</summary>
-        internal PrivacyValueHost Host() => new(_libraryManager, _localization);
+        internal PrivacyValueHost Host(Microsoft.AspNetCore.Http.HttpContext? http = null) => new(_libraryManager, _localization, http?.User);
 
         /// <summary>
         /// What Spoiler Guard reveals of a guarded item for this viewer: the parts whose strip the administrator or the
@@ -296,7 +296,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (RouteVerdict(context, userState, userId) == null) return imgs;
             var reveal = Reveal(userState, cfg);
-            var host = Host();
+            var host = Host(context.HttpContext);
             return imgs.Select(info => info == null ? null! : PrivacyValues.Image(info, reveal, host)).ToList();
         }
 
@@ -313,7 +313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (pbi.MediaSources == null) return;
             if (RouteVerdict(context, userState, userId) is not { } kind) return;
             var reveal = Reveal(userState, cfg);
-            var host = Host();
+            var host = Host(context.HttpContext);
             pbi.MediaSources = pbi.MediaSources.Select((ms, i) => ms == null ? null! : PrivacyValues.Source(ms, kind, reveal, host, i)).ToArray();
         }
 
@@ -790,6 +790,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     Jellyfin.Data.Enums.BaseItemKind.Episode => reveal.Title ? hint.Name : NeutralNames.Episode(hint.ParentIndexNumber, hint.IndexNumber),
                     Jellyfin.Data.Enums.BaseItemKind.Season => reveal.Title ? hint.Name : NeutralNames.Season(hint.IndexNumber),
+                    // An extra's own name is its file's or provider's text: constructed from its extra type (as on its DTO).
+                    _ when identity.IsExtra && host.Item(identity.ItemId) is { } extra => reveal.TitleFamily ? extra.Name : PrivacyValues.ExtraLabel(extra, identity.Kind),
                     _ => host.Item(identity.ItemId)?.Name ?? identity.Kind.ToString(),
                 };
                 var series = identity.Kind is Jellyfin.Data.Enums.BaseItemKind.Episode or Jellyfin.Data.Enums.BaseItemKind.Season ? host.Item(identity.OwnerId)?.Name : null;

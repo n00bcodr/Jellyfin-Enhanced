@@ -123,7 +123,8 @@ public class PrivacyReviewRound18Tests
         Assert.All(Streams(item), s => Assert.False(string.IsNullOrWhiteSpace(s.Display)));
         foreach (var stream in (JsonArray)item["MediaStreams"]!)
             foreach (var field in new[] { "Title", "Comment", "Path" }) Assert.Null(stream![field]);
-        foreach (var field in Describing) Assert.Null(item[field]);
+        // No describing value; a collection the host sent keeps its shape, empty (D46-R20-5: the clients index it).
+        foreach (var field in Describing) Assert.True(item[field] == null || item[field] is JsonArray { Count: 0 } || item[field] is JsonObject { Count: 0 }, field + " left in the stub");
         // The session and its controls are the host's own.
         foreach (var control in new[] { "PlayState", "SupportsRemoteControl", "SupportsMediaControl", "Capabilities", "NowPlayingQueue", "PlaylistItemId" })
             Assert.True(JsonNode.DeepEquals(before[control], after[control]), control + " changed");

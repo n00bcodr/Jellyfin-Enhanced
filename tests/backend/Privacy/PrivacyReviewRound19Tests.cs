@@ -174,7 +174,8 @@ public class PrivacyReviewRound19Tests
         }
         Walk(JsonNode.Parse(body));
         Assert.NotEmpty(sources);
-        Assert.All(sources, s => Assert.Null(s["RequiredHttpHeaders"]));
+        // Shapes are host-required too (D46-R20-5): the clients index it (RequiredHttpHeaders.length), so it stays an empty collection.
+        Assert.All(sources, s => Assert.Equal("{}", s["RequiredHttpHeaders"]?.ToJsonString()));
     }
 
     // ---------------------------------------------------------------------------------------------------------------
@@ -513,7 +514,7 @@ public class PrivacyReviewRound19Tests
     /// GET /tag-cache and POST /tag-data over a real TagCacheService: a movie Alice hides and an episode of a series she
     /// guards, every string member of their cache entries and of the library items tag data reads planted with sentinels.
     /// </summary>
-    private sealed class TagSite : IDisposable
+    internal sealed class TagSite : IDisposable
     {
         public readonly ApiPluginFixture Fixture = new();
         public readonly Jellyfin.Database.Implementations.Entities.User Alice = new("alice", "default", "default") { Id = Guid.NewGuid() };
@@ -523,6 +524,11 @@ public class PrivacyReviewRound19Tests
         public readonly Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService Cache;
         public readonly Jellyfin.Plugin.JellyfinEnhanced.Controllers.JellyfinEnhancedController Controller;
         public readonly Sentinels Sentinels = new();
+        /// <summary>Theme videos (extras) of the guarded series and of the hidden movie (with <c>extras</c>).</summary>
+        public readonly Guid SeriesExtra = Guid.NewGuid(), MovieExtra = Guid.NewGuid();
+        public Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerTagDataStripper Stripper { get; private set; } = null!;
+        public Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur State { get; } = new();
+        public readonly Dictionary<Guid, MediaBrowser.Controller.Entities.BaseItem> Items = new();
         private readonly Microsoft.Extensions.DependencyInjection.ServiceProvider _provider;
         private readonly MediaBrowser.Controller.Library.ILibraryManager? _previousLibrary = MediaBrowser.Controller.Entities.BaseItem.LibraryManager;
         private readonly MediaBrowser.Controller.Library.IMediaSourceManager? _previousMedia = MediaBrowser.Controller.Entities.BaseItem.MediaSourceManager;
@@ -530,7 +536,7 @@ public class PrivacyReviewRound19Tests
         private static readonly PropertyInfo? _segments = typeof(MediaBrowser.Controller.Entities.BaseItem).GetProperty("MediaSegmentManager", BindingFlags.Public | BindingFlags.Static);
         private readonly object? _previousSegments = _segments?.GetValue(null);
 
-        public TagSite(bool rules, bool stripTags)
+        public TagSite(bool rules, bool stripTags, bool extras = false, Action<Dictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry>>? edit = null)
         {
             var config = Fixture.Plugin.Configuration;
             config.TagCacheServerMode = true;
@@ -540,7 +546,7 @@ public class PrivacyReviewRound19Tests
             var users = new Mock<MediaBrowser.Controller.Library.IUserManager>();
             users.Setup(x => x.GetUserById(Alice.Id)).Returns(Alice);
             Library.Setup(x => x.GetItemIds(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
-                .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.IsPlayed == true ? [] : [Movie, Episode, Season]);
+                .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.IsPlayed == true ? [] : extras ? [Movie, Episode, Season, SeriesExtra, MovieExtra] : [Movie, Episode, Season]);
             // Season 1 of the guarded series: exempt itself (the viewer's entry point), but its entry aggregates its episodes'
             // audio languages and carries its first episode's stream data and name.
             var season = new MediaBrowser.Controller.Entities.TV.Season { Id = Season, SeriesId = Series, IndexNumber = 1, Name = "Season 1" };
@@ -565,7 +571,35 @@ public class PrivacyReviewRound19Tests
                     new() { Type = MediaStreamType.Audio, Index = 2, Codec = "aac", Language = "eng", Channels = 2 },
                 };
                 Media.Setup(x => x.GetMediaStreams(item.Id)).Returns(streams);
+                Items[item.Id] = item;
             }
+            Items[Season] = season;
+            // The series' own genre: the exempt season's (and every guarded entry's) genres come from it.
+            Items[Series] = new MediaBrowser.Controller.Entities.TV.Series { Id = Series, Name = "Guarded show", Genres = ["Season genre"] };
+            if (extras)
+            {
+                // Theme videos: owned by the guarded series and by the hidden movie; their own names, paths and streams carry text.
+                foreach (var (extraId, owner, name) in new[] { (SeriesExtra, Series, "seriesExtra"), (MovieExtra, Movie, "movieExtra") })
+                {
+                    var video = new MediaBrowser.Controller.Entities.Video
+                    {
+                        Id = extraId, OwnerId = owner, ExtraType = ExtraType.ThemeVideo, Name = Sentinels.Token(name + ".Name"), Path = "/media/" + Sentinels.Token(name + ".Path") + ".mkv",
+                        Genres = [Sentinels.Token(name + ".Genres[]")], OfficialRating = Sentinels.Token(name + ".OfficialRating") + ":PG",
+                    };
+                    Library.Setup(x => x.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(extraId, It.IsAny<Jellyfin.Database.Implementations.Entities.User>())).Returns(video);
+                    Library.Setup(x => x.GetItemById<MediaBrowser.Controller.Entities.BaseItem>(extraId)).Returns(video);
+                    Library.Setup(x => x.GetItemById(extraId)).Returns(video);
+                    Media.Setup(x => x.GetMediaStreams(extraId)).Returns(new List<MediaStream>
+                    {
+                        new() { Type = MediaStreamType.Video, Index = 0, Codec = "h264", Height = 720, Title = Sentinels.Token(name + ".stream.Title") },
+                        new() { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Language = Sentinels.Token(name + ".stream.Language"), Channels = 2 },
+                    });
+                    Items[extraId] = video;
+                }
+            }
+            Library.Setup(x => x.GetItemById(It.IsAny<Guid>())).Returns((Guid i) => Items.GetValueOrDefault(i)!);
+            Library.Setup(x => x.GetItemList(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
+                .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => (q.ItemIds ?? []).Select(i => Items.GetValueOrDefault(i)).OfType<MediaBrowser.Controller.Entities.BaseItem>().ToList());
             Media.Setup(x => x.GetMediaAttachments(It.IsAny<Guid>())).Returns([]);
             Media.Setup(x => x.GetPathProtocol(It.IsAny<string>())).Returns(MediaBrowser.Model.MediaInfo.MediaProtocol.File);
             MediaBrowser.Controller.Entities.BaseItem.LibraryManager = Library.Object;
@@ -581,6 +615,13 @@ public class PrivacyReviewRound19Tests
                 [Episode.ToString("N")] = new() { Type = "Episode", SeriesId = Series.ToString("N"), SeasonNumber = 1, EpisodeNumber = 3, LastUpdated = 100 },
             };
             foreach (var (key, entry) in entries) Sentinels.Plant(entry, (key == Movie.ToString("N") ? "movie" : "episode") + "Entry", new HashSet<string> { "Type", "SeriesId" });
+            if (extras)
+                foreach (var (extraId, name) in new[] { (SeriesExtra, "seriesExtra"), (MovieExtra, "movieExtra") })
+                {
+                    var entry = new Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry { Type = "Video", LastUpdated = 100 };
+                    Sentinels.Plant(entry, name + "Entry", new HashSet<string> { "Type", "SeriesId" });
+                    entries[extraId.ToString("N")] = entry;
+                }
             entries[Season.ToString("N")] = new()
             {
                 Type = "Season", SeriesId = Series.ToString("N"), SeasonNumber = 1, LastUpdated = 100, Genres = ["Season genre"],
@@ -588,6 +629,7 @@ public class PrivacyReviewRound19Tests
                 StreamData = new() { ItemName = Sentinels.Token("seasonEntry.StreamData.ItemName (the first episode's)"), ItemPath = Sentinels.Token("seasonEntry.StreamData.ItemPath"),
                     Streams = [new() { Type = "Audio", Language = Sentinels.Token("seasonEntry.StreamData.Streams[0].Language"), Codec = "aac", DisplayTitle = Sentinels.Token("seasonEntry.StreamData.Streams[0].DisplayTitle") }] },
             };
+            edit?.Invoke(entries);
             File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new { SchemaVersion = 7, Version = 9, LastModified = 200, Items = entries }));
             var localization = PrivacyTestHost.Localization();
             Cache = new Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService(Library.Object, Fixture.Core.Paths.Object, localization, Fixture.Core.Logger);
@@ -602,8 +644,8 @@ public class PrivacyReviewRound19Tests
             _provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
             var resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver(Fixture.Core.Manager, Library.Object, Fixture.Core.Logger, null!);
             var userData = Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>();
-            Controller = ApiAssetTests.Controller(Fixture.Core, users.Object, Cache, Library.Object, userData, Fixture.Core.Manager, resolver,
-                PrivacyTestHost.Create<Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerTagDataStripper>(Library.Object, userData, resolver, localization), localization);
+            Stripper = PrivacyTestHost.Create<Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerTagDataStripper>(Library.Object, userData, resolver, localization);
+            Controller = ApiAssetTests.Controller(Fixture.Core, users.Object, Cache, Library.Object, userData, Fixture.Core.Manager, resolver, Stripper, localization);
             if (!rules) return;
             var id = Alice.Id.ToString("N");
             Fixture.Core.Manager.SaveUserConfiguration(id, "hidden-content.json", new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserHiddenContent
@@ -612,9 +654,8 @@ public class PrivacyReviewRound19Tests
                 Items = new() { [Movie.ToString("N")] = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.HiddenContentItem { ItemId = Movie.ToString("D"), Type = "Movie", HideScope = "global" } },
             });
             Jellyfin.Plugin.JellyfinEnhanced.Services.HiddenContentResponseFilter.InvalidateUser(id);
-            var state = new Jellyfin.Plugin.JellyfinEnhanced.Configuration.UserSpoilerBlur();
-            state.Series[Series.ToString("N")] = new();
-            Fixture.Core.Manager.SaveUserConfiguration(id, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+            State.Series[Series.ToString("N")] = new();
+            Fixture.Core.Manager.SaveUserConfiguration(id, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, State);
             Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(id);
         }
 
@@ -635,10 +676,10 @@ public class PrivacyReviewRound19Tests
             return System.Text.Encoding.UTF8.GetString(stream.ToArray());
         }
 
-        public string TagData()
+        public string TagData(params Guid[] ids)
         {
             SignIn();
-            var result = Assert.IsType<OkObjectResult>(Controller.GetTagData(Alice.Id, [Movie.ToString(), Episode.ToString()]));
+            var result = Assert.IsType<OkObjectResult>(Controller.GetTagData(Alice.Id, (ids.Length > 0 ? ids : [Movie, Episode]).Select(i => i.ToString()).ToArray()));
             return JsonSerializer.Serialize(result.Value);
         }
 
@@ -671,7 +712,7 @@ public class PrivacyReviewRound19Tests
         var leaked = tags.Sentinels.In(body).Where(p => stripTags || !(p.StartsWith("episode", StringComparison.Ordinal) && RevealedWithTags(p))).ToList();
         Assert.True(leaked.Count == 0, site + ": " + leaked.Count + " of " + tags.Sentinels.Planted.Count + " planted members delivered, e.g. " + string.Join(", ", leaked.Take(20)));
         Assert.Contains(tags.Episode.ToString("N"), body.Replace("-", "", StringComparison.Ordinal));
-        // The exempt season keeps its own values.
+        // The exempt season keeps its series' genre.
         if (site == "tag-cache") Assert.Contains("Season genre", body);
     }
 

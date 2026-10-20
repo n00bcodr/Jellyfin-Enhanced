@@ -17,13 +17,15 @@ function webFrom(host) {
   const fixture = repositoryRoot + 'tests/fixtures/host-web/' + host + '/';
   const manifest = JSON.parse(readFileSync(fixture + 'manifest.json', 'utf8'));
   const web = mkdtempSync(join(tmpdir(), 'je-host-web-'));
+  // The main bundle's modules (the names helper, the playback manager) are rebuilt into one bundle below.
+  const modules = Object.entries(manifest.sources).filter(([, source]) => source.module != null);
   for (const [name, source] of Object.entries(manifest.sources)) {
-    if (name === 'now-playing-names.module.js') continue;
+    if (source.module != null) continue;
     writeFileSync(join(web, source.file), readFileSync(fixture + name, 'utf8'));
   }
   const names = manifest.sources['now-playing-names.module.js'];
-  const module = readFileSync(fixture + 'now-playing-names.module.js', 'utf8').split('\nmodule.exports = ')[1].replace(/;\n$/, '');
-  writeFileSync(join(web, names.file), `/*! For license information please see ${names.file}.LICENSE.txt */\n(self.webpackChunk=self.webpackChunk||[]).push([[1],{${names.module}:${module}}]);\n`);
+  const body = modules.map(([name, source]) => source.module + ':' + readFileSync(fixture + name, 'utf8').split('\nmodule.exports = ')[1].replace(/;\n$/, '')).join(',');
+  writeFileSync(join(web, names.file), `/*! For license information please see ${names.file}.LICENSE.txt */\n(self.webpackChunk=self.webpackChunk||[]).push([[1],{${body}}]);\n`);
   for (const sidecar of Object.keys(manifest.licenses)) writeFileSync(join(web, sidecar), readFileSync(fixture + sidecar, 'utf8'));
   return { fixture, manifest, web };
 }

@@ -1091,9 +1091,15 @@
             "Name": "Hidden content",
             "ServerId": "0202511b0eac4284ab045b3ba556d72e",
             "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+            "ExternalUrls": [],
+            "Taglines": [],
+            "Genres": [],
             "RunTimeTicks": 6000230000,
+            "ProviderIds": {},
             "IsFolder": false,
             "Type": "Movie",
+            "Studios": [],
+            "GenreItems": [],
             "MediaStreams": [
               {
                 "Codec": "subrip",
@@ -1234,6 +1240,11 @@
                 "SupportsExternalStream": true
               }
             ],
+            "ImageTags": {},
+            "BackdropImageTags": [],
+            "ImageBlurHashes": {},
+            "Chapters": [],
+            "Trickplay": {},
             "LocationType": "FileSystem",
             "MediaType": "Video"
           },
@@ -1291,9 +1302,15 @@
             "Name": "Hidden content",
             "ServerId": "0202511b0eac4284ab045b3ba556d72e",
             "Id": "9716dc6c391aacd8e47a387b281ed7f6",
+            "ExternalUrls": [],
+            "Taglines": [],
+            "Genres": [],
             "RunTimeTicks": 6000230000,
+            "ProviderIds": {},
             "IsFolder": false,
             "Type": "Movie",
+            "Studios": [],
+            "GenreItems": [],
             "MediaStreams": [
               {
                 "Codec": "subrip",
@@ -1434,6 +1451,11 @@
                 "SupportsExternalStream": true
               }
             ],
+            "ImageTags": {},
+            "BackdropImageTags": [],
+            "ImageBlurHashes": {},
+            "Chapters": [],
+            "Trickplay": {},
             "LocationType": "FileSystem",
             "MediaType": "Video"
           },
@@ -1904,6 +1926,7 @@
             "DateCreated": "2026-10-20T00:38:22.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -2100,6 +2123,7 @@
             "DateCreated": "2026-10-20T00:38:22.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -2764,6 +2788,7 @@
             "DateCreated": "2026-10-20T00:38:22.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
@@ -2960,6 +2985,7 @@
             "DateCreated": "2026-10-20T00:38:22.0000000Z",
             "HasSubtitles": true,
             "Container": "mkv",
+            "ExternalUrls": [],
             "EnableMediaSourceDisplay": true,
             "Overview": "Spoiler Guard activated",
             "Taglines": [],
