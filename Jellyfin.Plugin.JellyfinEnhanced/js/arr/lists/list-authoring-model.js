@@ -12,7 +12,8 @@
  *   uncertain, a different body for the same thing is refused rather than sent beside it (so an uncertain create is
  *   never made twice), unless the person deliberately starts a new one. A definite answer (including a conflict)
  *   ends the confirmation: nothing is resent automatically; the next press is a new confirmation on the fresh view.
- * - {@link submit} sends a confirmation once through the caller's transport and reads the answer.
+ * - {@link submit} sends a confirmation once through the caller's transport and reads the answer under the surface it
+ *   was confirmed on (nothing is settled for a surface that ended meanwhile).
  *
  * Internal: lp.authoring { LIMITS, clean, validateNote, validateCustom, validateEpisodes, linkTarget, capabilities,
  * toPlaceholder, present, classify, intents, submit, guarded }.
@@ -185,10 +186,12 @@
         const known = new Map((facts?.episodes || []).map(f => [f.e, f]));
         const episodes = checked.episodes.map(ep => {
             const fact = known.get(ep.e);
-            const out = { s: ep.s, e: ep.e };
-            if (fact?.title) out.title = clean(fact.title).slice(0, LIMITS.title);
-            if (day(fact?.airDate)) out.airDate = day(fact.airDate);
-            return out;
+            return {
+                s: ep.s,
+                e: ep.e,
+                ...(fact?.title ? { title: clean(fact.title).slice(0, LIMITS.title) } : {}),
+                ...(day(fact?.airDate) ? { airDate: day(fact.airDate) } : {})
+            };
         });
         return { ...base, kind: 'episodes', seasonNumber: selection.seasonNumber, episodes, ...edition };
     }
@@ -291,30 +294,35 @@
     }
 
     /**
-     * Sends a confirmation once and reads the answer. Never sends again by itself.
+     * Sends a confirmation once and reads the answer under the surface it was confirmed on. Never sends again by itself.
+     * The answer is read through the surface's checked step (lp.surface effects/origin task): when the owner, session,
+     * lifecycle or surface ended meanwhile, nothing is settled or reported ('stale'); without a surface nothing is sent.
      * @param {Object} tracker From {@link intents}.
      * @param {Object} conf A confirmation.
      * @param {function(Object): Promise<{status: number, body: Object|null}>} send The caller's transport call.
+     * @param {{task: Function}} bound The surface (an origin or its effects).
      * @returns {Promise<{outcome: string, answer?: Object, view?: Object|null, entryGone?: boolean, resubmits: 0}>} Outcome.
      */
-    async function submit(tracker, conf, send) {
-        if (!conf || conf.ok !== true) return { outcome: 'refused', reason: conf?.reason || 'invalid', resubmits: 0 };
-        let answer;
-        try {
-            answer = await send(conf);
-        } catch (error) {
-            // The rule refused the answer (another person, or the owner ended): the confirmation is over for them.
-            const outcome = error?.stale === true ? 'stale' : 'uncertain';
+    function submit(tracker, conf, send, bound) {
+        if (!conf || conf.ok !== true) return Promise.resolve({ outcome: 'refused', reason: conf?.reason || 'invalid', resubmits: 0 });
+        if (!bound || typeof bound.task !== 'function') return Promise.resolve({ outcome: 'refused', reason: 'unbound', resubmits: 0 });
+        return bound.task(null, async (step) => {
+            const sent = await step(() => send(conf));
+            if (!sent.ok) {
+                // The rule refused the answer (another person, or the owner ended): the confirmation is over for them.
+                const outcome = sent.error?.stale === true ? 'stale' : 'uncertain';
+                tracker.settled(conf, outcome);
+                return { outcome, resubmits: 0 };
+            }
+            const answer = sent.value;
+            const outcome = classify(answer);
             tracker.settled(conf, outcome);
-            return { outcome, resubmits: 0 };
-        }
-        const outcome = classify(answer);
-        tracker.settled(conf, outcome);
-        const body = answer?.body || null;
-        const view = body?.view || body?.result?.view || (body?.listId && Array.isArray(body?.placeholders) ? body : null);
-        const out = { outcome, answer, view, resubmits: 0 };
-        if (conf.entry && view) out.entryGone = !present(view, conf.entry);
-        return out;
+            const body = answer?.body || null;
+            const view = body?.view || body?.result?.view || (body?.listId && Array.isArray(body?.placeholders) ? body : null);
+            const result = { outcome, answer, view, resubmits: 0 };
+            if (conf.entry && view) result.entryGone = !present(view, conf.entry);
+            return result;
+        }, { outcome: 'stale', resubmits: 0 });
     }
 
     /**

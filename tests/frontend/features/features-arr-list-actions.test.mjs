@@ -4,7 +4,7 @@
 // whose answer was lost is sent again with the same id), the entry menu and the note/custom presenters through the
 // paint gate. Sends go through the real list transport against a route table.
 import test from 'node:test';
-import { setupAuthoring, ph, view, LIST, P, ITEM, json, PROPOSED_KEYS, assert } from './fixtures/arr-list-authoring.mjs';
+import { setupAuthoring, ph, view, LIST, P, ITEM, json, PROPOSED_KEYS, surfaceOf, owner, deferred, assert } from './fixtures/arr-list-authoring.mjs';
 
 const ROLE_VIEWS = {
   // Owner of a playlist: edits, reorders and may ask.
@@ -117,12 +117,14 @@ function routes(answers) {
 test('a definite conflict refreshes the entry and sends nothing more; the next press is a new confirmation', async t => {
   const fresh = view([ph(P(1), { note: 'theirs', actions: ['remove', 'note'] })], ['p:' + P(1)], { rev: 7, canEdit: true, actions: ['edit'] });
   const r = routes([[{ error: true, code: 'rev_conflict', message: 'x', view: fresh }, 409], [fresh, 200]]);
-  const { lp, JE, settle } = setupAuthoring(t, { route: r.route });
+  const s = setupAuthoring(t, { route: r.route });
+  const { lp, JE, settle } = s;
   const a = lp().authoring;
+  const o = surfaceOf(s);
   const intents = a.intents();
   const send = conf => JE.arrLists.patchItem(LIST, P(1), conf.body);
   const first = intents.confirm('note', LIST, { rev: 6, note: 'mine' }, { entry: P(1) });
-  const out = await a.submit(intents, first, send);
+  const out = await a.submit(intents, first, send, o);
   await settle();
   assert.equal(out.outcome, 'conflict');
   assert.equal(out.view.rev, 7);
@@ -132,7 +134,7 @@ test('a definite conflict refreshes the entry and sends nothing more; the next p
   // The person presses again on the refreshed view: new body, new id.
   const second = intents.confirm('note', LIST, { rev: 7, note: 'mine' }, { entry: P(1) });
   assert.notEqual(second.body.requestId, first.body.requestId);
-  assert.equal((await a.submit(intents, second, send)).outcome, 'ok');
+  assert.equal((await a.submit(intents, second, send, o)).outcome, 'ok');
   assert.equal(r.sent.length, 2);
   // Even an identical body pressed again after a definite answer is a new confirmation.
   const third = intents.confirm('note', LIST, { rev: 7, note: 'mine' }, { entry: P(1) });
@@ -142,17 +144,19 @@ test('a definite conflict refreshes the entry and sends nothing more; the next p
 test('only the exact confirmation whose answer was lost is sent again, with the same body and id', async t => {
   const ok = view([], [], { rev: 8, canEdit: true, actions: ['edit'] });
   const r = routes([new TypeError('Failed to fetch'), [ok, 200]]);
-  const { lp, JE } = setupAuthoring(t, { route: r.route });
+  const s = setupAuthoring(t, { route: r.route });
+  const { lp, JE } = s;
   const a = lp().authoring;
+  const o = surfaceOf(s);
   const intents = a.intents();
   const send = conf => JE.arrLists.removeItem(LIST, P(1), conf.body);
   const conf = intents.confirm('remove', LIST, { rev: 7 }, { entry: P(1) });
-  const lost = await a.submit(intents, conf, send);
+  const lost = await a.submit(intents, conf, send, o);
   assert.equal(lost.outcome, 'uncertain');
   assert.equal(r.sent.length, 1);
   const again = intents.replay(conf);
   assert.deepEqual(again, conf, 'same body, same id');
-  assert.equal((await a.submit(intents, again, send)).outcome, 'ok');
+  assert.equal((await a.submit(intents, again, send, o)).outcome, 'ok');
   assert.equal(r.sent.length, 2);
   assert.equal(r.sent[0].path, r.sent[1].path, 'the same request id in the query');
   assert.match(r.sent[0].path, new RegExp(`requestId=${conf.body.requestId}`));
@@ -161,7 +165,7 @@ test('only the exact confirmation whose answer was lost is sent again, with the 
   const s2 = setupAuthoring(t, { route: r2.route });
   const i2 = s2.lp().authoring.intents();
   const c2 = i2.confirm('note', LIST, { rev: 7, note: 'a' }, { entry: P(1) });
-  await s2.lp().authoring.submit(i2, c2, conf => s2.JE.arrLists.patchItem(LIST, P(1), conf.body));
+  await s2.lp().authoring.submit(i2, c2, conf => s2.JE.arrLists.patchItem(LIST, P(1), conf.body), surfaceOf(s2));
   assert.deepEqual(i2.confirm('note', LIST, { rev: 7, note: 'b' }, { entry: P(1) }), { ok: false, reason: 'uncertain_pending' });
   assert.equal(i2.confirm('note', LIST, { rev: 7, note: 'a' }, { entry: P(1) }).body.requestId, c2.body.requestId, 'the identical press replays');
   assert.notEqual(i2.confirm('note', LIST, { rev: 7, note: 'b' }, { entry: P(1), fresh: true }).body.requestId, c2.body.requestId, 'a deliberate new confirmation');
@@ -170,11 +174,12 @@ test('only the exact confirmation whose answer was lost is sent again, with the 
 test('an entry deleted or swapped in meanwhile: the canonical view is shown, nothing is resent', async t => {
   const gone = view([], ['e:' + ITEM(1) + ':0'], { rev: 9, canEdit: true, actions: ['edit'] });
   const r = routes([[{ error: true, code: 'rev_conflict', view: gone }, 409]]);
-  const { lp, JE } = setupAuthoring(t, { route: r.route });
+  const s = setupAuthoring(t, { route: r.route });
+  const { lp, JE } = s;
   const a = lp().authoring;
   const intents = a.intents();
   const conf = intents.confirm('remove', LIST, { rev: 8 }, { entry: P(1) });
-  const out = await a.submit(intents, conf, c => JE.arrLists.removeItem(LIST, P(1), c.body));
+  const out = await a.submit(intents, conf, c => JE.arrLists.removeItem(LIST, P(1), c.body), surfaceOf(s));
   assert.deepEqual([out.outcome, out.entryGone, out.view.order], ['conflict', true, ['e:' + ITEM(1) + ':0']]);
   assert.equal(a.present(out.view, P(1)), false);
   assert.equal(r.sent.length, 1);
@@ -256,4 +261,27 @@ test('every string the presenters use is in en.json or the English handoff list'
   assert.deepEqual(missing, []);
   // The handoff list holds nothing unused.
   assert.deepEqual(Object.keys(PROPOSED_KEYS).filter(k => !used.has(k)), []);
+});
+
+test('a write\'s answer is read under its surface: no binding sends nothing; an owner ending mid-send settles nothing', async t => {
+  const answer = deferred();
+  const sent = [];
+  const s = setupAuthoring(t);
+  const a = s.lp().authoring;
+  const intents = a.intents();
+  const send = conf => { sent.push(conf.body.requestId); return answer.promise; };
+  const conf = intents.confirm('remove', LIST, { rev: 7 }, { entry: P(1) });
+  assert.deepEqual(await a.submit(intents, conf, send), { outcome: 'refused', reason: 'unbound', resubmits: 0 }, 'no surface: nothing is sent');
+  assert.deepEqual(sent, []);
+  const op = owner();
+  const o = surfaceOf(s, op);
+  const pending = a.submit(intents, conf, send, o);
+  assert.equal(sent.length, 1, 'sent once while the owner is current');
+  op.end();
+  answer.resolve({ status: 503, body: null });
+  assert.deepEqual(await pending, { outcome: 'stale', resubmits: 0 });
+  assert.equal(intents.replay(conf), null, 'an ended owner\'s uncertain answer is not kept for a replay');
+  // An ended surface sends nothing.
+  assert.deepEqual(await a.submit(intents, intents.confirm('remove', LIST, { rev: 7 }, { entry: P(1) }), send, o), { outcome: 'stale', resubmits: 0 });
+  assert.equal(sent.length, 1);
 });

@@ -8,7 +8,10 @@
  *   collections they may edit, a new playlist (private unless they deliberately make it public) and, for collection
  *   managers only, a new collection. Position: end or start (playlists only; a collection keeps the server's order).
  *   "After a row" belongs to the list page's own Add title, not here.
- * - Choosing an existing list makes it the origin's target (its own ticket and generation).
+ * - Choosing an existing list makes it the origin's target (its own ticket); choosing a new playlist or collection
+ *   clears the target, so the old list's reads, results and target-bound work end either way.
+ * - The picker has its own effects on its origin (lp.surface): its own intents and a destroyed state that nothing held
+ *   for the Spoiler policy outlives; its words are the origin's guarded words.
  * - {@link showResult}: what happened (added, added from the library, partly from the library, not added), with a link
  *   back to the list, only while the origin and that target are current.
  * - {@link canOffer}: the offer gate for an external Add to list: the household switch (effective ArrListAddToListEnabled
@@ -32,9 +35,6 @@
     ]);
     const POSITIONS = Object.freeze(['end', 'start']);
     const ID_RE = /^[0-9a-f]{32}$/;
-
-    /** @param {string} key Key. @param {Object} [params] Parameters. @returns {string} Words. */
-    const tr = (key, params) => lp.render.tr(key, params);
 
     /**
      * Whether an external Add to list is offered for a title.
@@ -66,16 +66,18 @@
      * @returns {{ready: Promise<void>, choose: function(string): void, form: function(): Object|null, destroy: function(): void}} Picker.
      */
     function create({ origin, root, editableLists }) {
-        const el = lp.render.el;
+        const put = lp.surface.put;
+        // The picker's own effects on its origin's ticket: its own intents and destroyed state (the origin may outlive it).
+        const fx = origin.effects();
+        const w = lp.surface.words(origin.ticket);
         let lists = null;
-        let destroyed = false;
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const check = origin.intent('lists');
+        const check = fx.intent('lists');
         const q = sel => root.querySelector(`.je-list-picker ${sel}`);
 
         /** Shows the fields of the chosen value. @param {string} [choice] Choice (default: the select's). */
         function sync(choice) {
-            origin.paint(null, origin.ticket, () => {
+            fx.paint(null, () => {
                 const value = choice ?? q('select[name="list"]')?.value ?? '';
                 const fresh = q('[data-je-new]');
                 if (fresh) fresh.hidden = !value.startsWith('new-');
@@ -90,58 +92,59 @@
         function draw(body) {
             const own = (body.playlists || []).filter(p => p.isOwn === true);
             const shared = (body.playlists || []).filter(p => p.isOwn !== true);
-            return origin.paint(check, origin.ticket, () => {
-                const box = el('div', 'je-list-picker');
-                const label = el('label', 'je-list-author-field');
-                label.appendChild(el('span', 'je-list-author-label', tr('arr_lists_picker_label')));
+            return fx.paint(check, () => {
+                const box = put.el('div', 'je-list-picker');
+                const label = put.el('label', 'je-list-author-field');
+                label.appendChild(put.el('span', 'je-list-author-label', w.key('arr_lists_picker_label')));
                 const select = document.createElement('select');
                 select.name = 'list';
                 const group = (key, items, kind) => {
                     const valid = items.filter(i => ID_RE.test(String(i?.id || '')));
                     if (!valid.length) return;
                     const g = document.createElement('optgroup');
-                    g.label = tr(key);
+                    put.attr(g, 'label', w.key(key));
                     for (const item of valid) {
-                        const text = kind === 'playlist' && item.isOwn !== true && item.ownerName ? tr('arr_lists_picker_owned_by', { name: item.name, owner: item.ownerName }) : item.name;
-                        const option = el('option', '', text);
-                        option.value = `${kind}:${item.id}`;
+                        const text = kind === 'playlist' && item.isOwn !== true && item.ownerName
+                            ? w.key('arr_lists_picker_owned_by', { name: w.name(item.name), owner: w.name(item.ownerName) }) : w.name(item.name);
+                        const option = put.el('option', '', text);
+                        put.data(option, `${kind}:${item.id}`);
                         g.appendChild(option);
                     }
                     select.appendChild(g);
                 };
                 group('arr_lists_picker_playlists', own.concat(shared), 'playlist');
                 group('arr_lists_picker_collections', body.collections || [], 'collection');
-                const add = (value, key) => { const o = el('option', '', tr(key)); o.value = value; select.appendChild(o); };
+                const add = (value, key) => { const o = put.el('option', '', w.key(key)); put.data(o, value); select.appendChild(o); };
                 add('new-playlist', 'arr_lists_picker_new_playlist');
                 if (body.canManageCollections === true) add('new-collection', 'arr_lists_picker_new_collection');
                 label.appendChild(select);
                 box.appendChild(label);
-                const fresh = el('div', 'je-list-picker-new');
+                const fresh = put.el('div', 'je-list-picker-new');
                 fresh.dataset.jeNew = '';
-                const nameLabel = el('label', 'je-list-author-field');
-                nameLabel.appendChild(el('span', 'je-list-author-label', tr('arr_lists_picker_name')));
+                const nameLabel = put.el('label', 'je-list-author-field');
+                nameLabel.appendChild(put.el('span', 'je-list-author-label', w.key('arr_lists_picker_name')));
                 const name = document.createElement('input');
                 name.name = 'name';
                 name.setAttribute('maxlength', String(lp.authoring.LIMITS.title));
                 nameLabel.appendChild(name);
                 fresh.appendChild(nameLabel);
-                const pubLabel = el('label', 'je-list-picker-public');
+                const pubLabel = put.el('label', 'je-list-picker-public');
                 pubLabel.dataset.jePublic = '';
                 const pub = document.createElement('input');
                 pub.type = 'checkbox';
                 pub.name = 'public';
                 pub.checked = false;
-                pubLabel.append(pub, el('span', '', tr('arr_lists_picker_public')));
+                pubLabel.append(pub, put.el('span', '', w.key('arr_lists_picker_public')));
                 fresh.appendChild(pubLabel);
                 box.appendChild(fresh);
-                const positionLabel = el('label', 'je-list-author-field');
+                const positionLabel = put.el('label', 'je-list-author-field');
                 positionLabel.dataset.jePosition = '';
-                positionLabel.appendChild(el('span', 'je-list-author-label', tr('arr_lists_picker_position')));
+                positionLabel.appendChild(put.el('span', 'je-list-author-label', w.key('arr_lists_picker_position')));
                 const position = document.createElement('select');
                 position.name = 'position';
                 for (const value of POSITIONS) {
-                    const o = el('option', '', tr(`arr_lists_picker_${value}`));
-                    o.value = value;
+                    const o = put.el('option', '', w.key(`arr_lists_picker_${value}`));
+                    put.data(o, value);
                     position.appendChild(o);
                 }
                 positionLabel.appendChild(position);
@@ -150,43 +153,39 @@
             }, 'picker');
         }
 
-        const ready = (async () => {
-            let answer = null;
-            try {
-                answer = await editableLists(controller?.signal);
-            } catch {
-                answer = null;
-            }
-            if (destroyed || check() !== true) return;
+        const ready = fx.task(check, async (step) => {
+            const read = await step(() => editableLists(controller?.signal));
+            const answer = read.ok ? read.value : null;
             if (answer?.status !== 200 || !answer.body || typeof answer.body !== 'object') {
-                origin.paint(check, origin.ticket, () => root.appendChild(el('div', 'je-list-picker-failed', tr('arr_lists_picker_failed'))), 'picker');
+                fx.paint(check, () => root.appendChild(put.el('div', 'je-list-picker-failed', w.key('arr_lists_picker_failed'))), 'picker');
                 return;
             }
-            // Drawn now, or once the viewer's Spoiler policy is known (the gate holds it until then).
+            // Drawn now, or once the viewer's Spoiler policy is known (the gate holds it until then; checked again then).
             lists = answer.body;
             draw(answer.body);
             sync();
-        })();
+        });
 
         /** Follows the person's choice. @param {Event} e Change. */
-        const onChange = (e) => {
+        fx.on(root, 'change', (e) => {
             if (e.target?.matches?.('.je-list-picker select[name="list"]') && root.contains(e.target)) picker.choose(e.target.value);
-        };
-        root.addEventListener('change', onChange);
+        });
 
         const picker = {
             ready,
             /**
-             * Chooses a list (an existing one becomes the origin's target) or a new one.
+             * Chooses a list: an existing one becomes the origin's target; a new one leaves no existing target, so the
+             * old target's reads, results and target-bound work end either way.
              * @param {string} value 'playlist:<id>', 'collection:<id>', 'new-playlist' or 'new-collection'.
              */
             choose(value) {
-                if (!lists || destroyed) return;
+                if (!lists || fx.destroyed) return;
                 const select = q('select[name="list"]');
                 if (!select || ![...select.options].some(o => o.value === value)) return;
-                origin.paint(null, origin.ticket, () => { select.value = value; }, 'picker-choice');
+                fx.paint(null, () => put.data(select, value), 'picker-choice');
                 const [kind, id] = value.split(':');
                 if (id) origin.selectTarget(id, { listKind: kind });
+                else origin.clearTarget();
                 sync(value);
             },
             /**
@@ -195,7 +194,7 @@
              *   existing one; null before the lists are shown.
              */
             form() {
-                if (!lists || destroyed || !origin.current() || !q('select[name="list"]')) return null;
+                if (!lists || fx.destroyed || !origin.current() || !q('select[name="list"]')) return null;
                 const value = q('select[name="list"]')?.value || '';
                 const position = POSITIONS.includes(q('select[name="position"]')?.value) ? q('select[name="position"]').value : 'end';
                 const name = lp.authoring.clean(q('input[name="name"]')?.value);
@@ -205,11 +204,10 @@
                 if (!ID_RE.test(id || '')) return null;
                 return kind === 'playlist' ? { listKind: 'playlist', listId: id, position } : { listKind: 'collection', listId: id, position: null };
             },
-            /** Stops the read and takes the picker away. */
+            /** Stops the read and takes the picker away, for good (its origin is the caller's). */
             destroy() {
-                destroyed = true;
+                fx.destroy();
                 controller?.abort();
-                root.removeEventListener('change', onChange);
                 lp.gate.erase(() => root.querySelectorAll('.je-list-picker, .je-list-picker-failed').forEach(n => n.remove()));
             }
         };
@@ -223,17 +221,19 @@
      */
     function showResult({ origin, target, root, listId, name, result }) {
         if (!target || !ID_RE.test(String(listId || '')) || target.listId !== listId || !target.current()) return false;
-        const el = lp.render.el;
+        const put = lp.surface.put;
+        const w = lp.surface.words(target.ticket);
         const added = (result?.added || []).length;
         const real = (result?.addedAsItems || []).length;
         const key = added && real ? 'arr_lists_picker_added_partly' : real ? 'arr_lists_picker_added_real' : added ? 'arr_lists_picker_added' : 'arr_lists_picker_skipped';
-        return origin.paint(null, target.ticket, () => {
-            const box = el('div', 'je-list-picker-result');
+        return origin.paint(target.current, target.ticket, () => {
+            const list = w.name(name);
+            const box = put.el('div', 'je-list-picker-result');
             box.setAttribute('role', 'status');
-            box.appendChild(el('span', '', tr(key, { list: name })));
-            const link = el('a', 'je-list-picker-link', tr('arr_lists_picker_open_list', { list: name }));
+            box.appendChild(put.el('span', '', w.key(key, { list })));
+            const link = put.el('a', 'je-list-picker-link', w.key('arr_lists_picker_open_list', { list }));
             link.setAttribute('href', `#/details?id=${listId}`);
-            box.append(' ', link);
+            box.append(put.el('span', '', w.space), link);
             root.appendChild(box);
         }, 'picker-result');
     }

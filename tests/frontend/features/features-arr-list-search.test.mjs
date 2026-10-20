@@ -106,10 +106,13 @@ test('only complete facts are cached, under the viewer, policy and source they w
 test('JE-only season enumeration is a pending producer read: without it seasons are unavailable, not empty', async t => {
   const { lp } = setupAuthoring(t);
   const m = lp().metadata;
-  assert.deepEqual(await m.readSeasons(undefined, 5, {}), { state: 'unavailable', reason: 'producer_missing' });
-  assert.deepEqual(await m.readSeasons(async () => { throw new Error('down'); }, 5, {}), { state: 'unavailable', reason: 'outage' });
-  assert.deepEqual(await m.readSeasons(async () => ({ status: 200, body: { state: 'complete', count: 1, seasons: [{ seasonNumber: 1, episodeCount: 4 }] } }), 5, {}), { state: 'complete', seasons: [{ seasonNumber: 1, episodeCount: 4, airDate: null }] });
-  assert.deepEqual(await m.readSeasons(async () => ({ status: 403, body: null }), 5, {}), { state: 'unavailable', reason: 'denied' });
+  // The presenter reads through its checked step (lp.surface) and hands the settled read here: {ok, value} | {ok: false, error}.
+  assert.deepEqual(m.seasonsFrom(null), { state: 'unavailable', reason: 'producer_missing' });
+  assert.deepEqual(m.seasonsFrom({ ok: false, error: new Error('down') }), { state: 'unavailable', reason: 'outage' });
+  assert.deepEqual(m.seasonsFrom({ ok: true, value: { status: 200, body: { state: 'complete', count: 1, seasons: [{ seasonNumber: 1, episodeCount: 4 }] } } }), { state: 'complete', seasons: [{ seasonNumber: 1, episodeCount: 4, airDate: null }] });
+  assert.deepEqual(m.seasonsFrom({ ok: true, value: { status: 403, body: null } }), { state: 'unavailable', reason: 'denied' });
+  assert.deepEqual(m.seasonsFrom({ ok: true, value: { status: 503, body: null } }), { state: 'unavailable', reason: 'outage' });
+  assert.deepEqual(m.episodesFrom({ ok: true, value: { status: 200, body: { state: 'complete', count: 0, seasonNumber: 1, episodes: [] } } }), { state: 'unavailable', reason: 'unproven' });
 });
 
 /** A reader of the plugin's routes for the presenter (b2 wires the household's real reader). */
@@ -190,4 +193,33 @@ test('arr results without TMDB are labelled custom-only; a revoked ticket draws 
   const before = root.innerHTML;
   await search.query('other');
   assert.equal(root.innerHTML, before, 'nothing painted after the ticket ended');
+});
+
+test('4C3B1-R1-4: search years follow the ticket\'s date policy (no policy: no years; guarded with air dates hidden: no unreleased year)', async t => {
+  const s = setupAuthoring(t, {
+    route: async (m, path) => path.startsWith('/jellyseerr/search')
+      ? json({ results: [SEERR(9, { firstAirDate: '2099-03-04' }), { id: 10, mediaType: 'movie', title: 'Old Movie', releaseDate: '1999-01-01' }] })
+      : null
+  });
+  const L = s.lp();
+  const rows = async policy => {
+    const ticket = L.gate.issue(null, () => true, policy);
+    const root = s.mount();
+    const search = L.search.create({ ticket, root, source: 'seerr', read: reader(s), lang: 'en' });
+    await search.query('show');
+    const meta = [...root.querySelectorAll('[data-je-candidate]')].map(n => n.textContent);
+    search.destroy();
+    return meta;
+  };
+  const all = await rows(L.gate.GUARD_ALL);
+  assert.equal(all.length, 2);
+  assert.doesNotMatch(all.join(' '), /2099|1999/, 'a policy that could not be read hides every year');
+  const guarded = await rows(L.gate.policy(() => true, true));
+  assert.doesNotMatch(guarded[0], /2099/, 'a guarded title not out yet loses its year');
+  assert.match(guarded[1], /1999/, 'a guarded title already out keeps its year');
+  const open = await rows(L.gate.policy(() => false, false));
+  assert.match(open[0], /2099/);
+  assert.match(open[1], /1999/);
+  const datesShown = await rows(L.gate.policy(() => true, false));
+  assert.match(datesShown[0], /2099/, 'air dates not hidden: the year stays');
 });

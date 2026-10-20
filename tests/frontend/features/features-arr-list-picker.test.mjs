@@ -178,7 +178,7 @@ test('a new list: confirmed body and id stay fixed; its id starts a separate rea
   const dto = { kind: 'movie', mediaType: 'movie', tmdbId: 5, title: 'M' };
   const conf = intents.confirm('create', null, L.picker.createBody({ create: 'playlist', name: 'Friday', isPublic: false }, dto));
   const frozen = JSON.stringify(conf);
-  const out = await L.authoring.submit(intents, conf, c => s.JE.arrLists.createPlaylist(c.body));
+  const out = await L.authoring.submit(intents, conf, c => s.JE.arrLists.createPlaylist(c.body), o);
   assert.equal(out.outcome, 'ok');
   assert.equal(JSON.stringify(conf), frozen, 'the confirmation never changes');
   assert.throws(() => { conf.body.name = 'other'; }, TypeError);
@@ -205,17 +205,18 @@ test('an uncertain create is replayed as the same request, never a second list o
     }
   });
   const L = s.lp();
+  const o = origin(s);
   const intents = L.authoring.intents();
   const body = L.picker.createBody({ create: 'playlist', name: 'Friday', isPublic: false }, { kind: 'movie', mediaType: 'movie', tmdbId: 5, title: 'M' });
   const send = c => s.JE.arrLists.createPlaylist(c.body);
   const first = intents.confirm('create', null, body);
-  assert.equal((await L.authoring.submit(intents, first, send)).outcome, 'uncertain');
+  assert.equal((await L.authoring.submit(intents, first, send, o)).outcome, 'uncertain');
   const again = intents.confirm('create', null, body);
   assert.equal(again.body.requestId, first.body.requestId, 'the identical press replays');
-  assert.equal((await L.authoring.submit(intents, again, send)).outcome, 'uncertain_create');
+  assert.equal((await L.authoring.submit(intents, again, send, o)).outcome, 'uncertain_create');
   assert.equal(intents.replay(again).body.requestId, first.body.requestId, 'still the same request');
   assert.deepEqual(intents.confirm('create', null, { ...body, name: 'Saturday' }), { ok: false, reason: 'uncertain_pending' }, 'no other create while one may exist');
-  assert.equal((await L.authoring.submit(intents, intents.replay(again), send)).outcome, 'ok');
+  assert.equal((await L.authoring.submit(intents, intents.replay(again), send, o)).outcome, 'ok');
   assert.equal(new Set(posts.map(p => p.requestId)).size, 1, 'one create request id throughout');
   assert.equal(s.calls.filter(c => c.path === '/acquire/lists/editable').length, 0, 'never looked up by name');
 });
@@ -279,4 +280,65 @@ test('Add to list is offered only behind the admin gate, for titles not already 
   for (const bad of [{ type: 'person', tmdbId: 5, absent: true }, { type: 'movie', tmdbId: 0, absent: true }, null]) assert.equal(offer(bad, ON).offer, false);
   // The positions an external picker offers.
   assert.deepEqual(s.lp().picker.POSITIONS, ['end', 'start']);
+});
+
+test('4C3B1-R1-3: choosing a new playlist or collection ends the previous target, its reads, target-bound intents and results', async t => {
+  const gets = new Map();
+  const s = setupAuthoring(t, {
+    route: async (m, path) => {
+      if (path === '/acquire/lists/editable') return json(EDITABLE);
+      const id = /^\/acquire\/lists\/([0-9a-f]{32})$/.exec(path)?.[1];
+      if (!id) return null;
+      const d = deferred();
+      gets.set(id, d);
+      return d.promise;
+    }
+  });
+  const L = s.lp();
+  const o = origin(s);
+  const root = s.mount();
+  const picker = L.picker.create({ origin: o, root, media: { mediaType: 'movie', tmdbId: 5 }, editableLists: signal => s.JE.arrLists.editableLists(signal) });
+  await picker.ready;
+  for (const fresh of ['new-playlist', 'new-collection']) {
+    picker.choose(`playlist:${LIST}`);
+    const target = o.target();
+    assert.equal(target.listId, LIST);
+    const bound = o.intent('details', { target: true });
+    const read = s.JE.arrLists.getList(LIST, { ticket: target.ticket });
+    await s.settle();
+    picker.choose(fresh);
+    assert.equal(o.target(), null, `${fresh}: no existing list is the target any more`);
+    assert.equal(target.ticket.current(), false, `${fresh}: the old target's ticket is revoked`);
+    assert.equal(bound(), false, `${fresh}: target-bound intents end`);
+    gets.get(LIST).resolve(json(view([], [])));
+    await assert.rejects(read, e => e?.stale === true, `${fresh}: the old target's read is dropped`);
+    const late = s.mount();
+    assert.equal(L.picker.showResult({ origin: o, target, root: late, listId: LIST, name: 'Mine', result: { added: [{}], addedAsItems: [], skipped: [] } }), false);
+    assert.equal(o.publish(bound, () => assert.fail('published for the old target')), false);
+    assert.equal(late.textContent, '');
+    assert.equal(o.current(), true, 'the origin lives on');
+  }
+  // Positive control: an existing list chosen again is the current target.
+  picker.choose(`collection:${COLL}`);
+  assert.equal(o.target().listId, COLL);
+  assert.equal(o.target().ticket.current(), true);
+});
+
+test('4C3B1-R1-5 (picker): a destroyed picker is never drawn by a paint held for the policy; its origin lives on', async t => {
+  const s = setupAuthoring(t, { route: async (m, path) => path === '/acquire/lists/editable' ? json(EDITABLE) : null });
+  const L = s.lp();
+  const policy = deferred();
+  const o = origin(s, { policy: () => policy.promise });
+  const root = s.mount();
+  const picker = L.picker.create({ origin: o, root, media: { mediaType: 'movie', tmdbId: 5 }, editableLists: signal => s.JE.arrLists.editableLists(signal) });
+  await picker.ready;
+  picker.destroy();
+  policy.resolve(L.gate.policy(() => false, false));
+  await s.settle();
+  assert.equal(root.childNodes.length, 0, 'nothing drawn after destroy');
+  assert.equal(o.current(), true);
+  const again = s.mount();
+  const p2 = L.picker.create({ origin: o, root: again, media: { mediaType: 'movie', tmdbId: 5 }, editableLists: signal => s.JE.arrLists.editableLists(signal) });
+  await p2.ready;
+  assert.equal(again.querySelectorAll('select[name="list"] option').length, 5, 'a new picker on the same origin draws');
 });

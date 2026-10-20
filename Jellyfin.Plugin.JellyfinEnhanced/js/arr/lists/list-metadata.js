@@ -12,12 +12,13 @@
  * - Season and episode facts come only from the producer's typed contract: `complete` (with an explicit count that
  *   matches), `partial` (usable, never cached, never read as all there is) or `unavailable` (with a reason). A raw
  *   provider payload, an empty or unproven answer is unavailable, never "zero seasons". JE-only season/episode
- *   enumeration is a pending producer read: without it seasons are unavailable.
+ *   enumeration is a pending producer read: without it seasons are unavailable. The presenters read through their
+ *   checked step (lp.surface) and hand the settled read here ({@link seasonsFrom}, {@link episodesFrom}).
  * - {@link factCache}: complete facts only, keyed by the person (session epoch, user, server), policy and source;
  *   bounded.
  *
  * Internal: lp.metadata { searchSource, searchPath, searchOutcome, searchGroups, fromJe, fromSeerr, fromArr,
- * seasonFacts, episodeFacts, readSeasons, readEpisodes, factCache }.
+ * seasonFacts, episodeFacts, seasonsFrom, episodesFrom, factCache }.
  */
 (function (JE) {
     'use strict';
@@ -207,45 +208,34 @@
     }
 
     /**
-     * Reads facts through the producer's read (injected; absent until the producer lands).
-     * @param {function(...*): Promise<{status: number, body: *}>|undefined} read The read.
-     * @param {Array} args Its arguments.
+     * Facts from a producer read, as the presenter's checked step settled it (lp.surface): {ok: true, value: {status,
+     * body}} or {ok: false, error}; null when there is no producer read (it lands later).
+     * @param {{ok: boolean, value?: Object, error?: *}|null} settled The settled read.
      * @param {function(*): Object} typed Conversion.
-     * @returns {Promise<Object>} Typed facts.
+     * @returns {Object} Typed facts.
      */
-    async function readFacts(read, args, typed) {
-        if (typeof read !== 'function') return unavailable('producer_missing');
-        let answer;
-        try {
-            answer = await read(...args);
-        } catch (error) {
-            if (error?.name === 'AbortError') throw error;
-            return unavailable('outage');
-        }
-        const status = Number(answer?.status) || 0;
+    function factsFrom(settled, typed) {
+        if (!settled) return unavailable('producer_missing');
+        if (settled.ok !== true) return unavailable('outage');
+        const status = Number(settled.value?.status) || 0;
         if (status === 401 || status === 403 || status === 404) return unavailable('denied');
         if (status !== 200) return unavailable('outage');
-        return typed(answer.body);
+        return typed(settled.value.body);
     }
 
     /**
-     * A show's season facts.
-     * @param {Function|undefined} read The producer's read (tmdbId, options) → {status, body}.
-     * @param {number} tmdbId Show.
-     * @param {{signal?: AbortSignal}} options Options.
-     * @returns {Promise<Object>} Season facts.
+     * A show's season facts from its settled producer read (tmdbId, options) → {status, body}.
+     * @param {{ok: boolean, value?: Object, error?: *}|null} settled The settled read (null: no producer read).
+     * @returns {Object} Season facts.
      */
-    const readSeasons = (read, tmdbId, options) => readFacts(read, [tmdbId, options], seasonFacts);
+    const seasonsFrom = settled => factsFrom(settled, seasonFacts);
 
     /**
-     * A season's episode facts.
-     * @param {Function|undefined} read The producer's read (tmdbId, season, options) → {status, body}.
-     * @param {number} tmdbId Show.
-     * @param {number} season Season.
-     * @param {{signal?: AbortSignal}} options Options.
-     * @returns {Promise<Object>} Episode facts.
+     * A season's episode facts from its settled producer read (tmdbId, season, options) → {status, body}.
+     * @param {{ok: boolean, value?: Object, error?: *}|null} settled The settled read (null: no producer read).
+     * @returns {Object} Episode facts.
      */
-    const readEpisodes = (read, tmdbId, season, options) => readFacts(read, [tmdbId, season, options], episodeFacts);
+    const episodesFrom = settled => factsFrom(settled, episodeFacts);
 
     /**
      * Who is asking now: the session's epoch, user and server.
@@ -285,6 +275,6 @@
 
     lp.metadata = Object.freeze({
         MAX_QUERY, searchSource, searchPath, searchOutcome, searchGroups, fromJe, fromSeerr, fromArr, seasonFacts, episodeFacts,
-        readSeasons, readEpisodes, factCache
+        seasonsFrom, episodesFrom, factCache
     });
 })(window.JellyfinEnhanced);

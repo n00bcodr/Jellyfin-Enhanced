@@ -49,6 +49,7 @@ export const PROPOSED_KEYS = Object.freeze({
   arr_lists_author_custom_type: 'Type',
   arr_lists_author_custom_year: 'Year',
   arr_lists_author_custom_date: 'Release date',
+  arr_lists_author_custom_date_hint: 'YYYY-MM-DD',
   arr_lists_author_custom_note: 'Note',
   arr_lists_search_label: 'Search for a title',
   arr_lists_search_empty: 'Nothing found.',
@@ -181,6 +182,15 @@ export function setupAuthoring(t, { route, config = {}, JE = {}, authoring = tru
 export function owner(name = 'op') {
   let live = true;
   return { name, current: () => live, end() { live = false; } };
+}
+
+/**
+ * A live surface (origin) for a harness, owned by a fresh operation: what a write's answer is read under
+ * (lp.authoring.submit runs its continuation through the surface's checked step).
+ */
+export function surfaceOf(s, op = owner()) {
+  const L = s.lp();
+  return L.surface.origin({ owner: op, mount: s.mount(), live: () => true, policy: () => L.gate.policy(() => false, false) });
 }
 
 /** A JSON answer. */

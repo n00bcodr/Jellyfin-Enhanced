@@ -1,7 +1,9 @@
 /**
  * @file Requests & downloads, phase 4c3b: the entry menu and the note and custom-entry editors of list authoring.
- * Presenters only: they draw into a root their caller owns, every write through the paint gate with the caller's
- * ticket (nothing is drawn for a ticket that ended), and send nothing; the caller confirms and sends (lp.authoring).
+ * Presenters only: they draw into a root their caller owns, every write through their own effects on the caller's
+ * ticket (lp.surface: nothing is drawn for a ticket that ended, or once the presenter is destroyed, even by a paint held
+ * for the Spoiler policy), every word through the ticket's guarded words, and send nothing; the caller confirms and
+ * sends (lp.authoring).
  * Nothing runs on load.
  *
  * - {@link menuItems}: what this person may do with an entry, from the server's actions (lp.authoring.capabilities):
@@ -26,11 +28,9 @@
         'arr_lists_author_remove', 'arr_lists_author_note_label', 'arr_lists_author_note_label_guarded', 'arr_lists_author_note_count',
         'arr_lists_author_err_title', 'arr_lists_author_err_year', 'arr_lists_author_err_date', 'arr_lists_author_err_note',
         'arr_lists_author_err_type', 'arr_lists_author_custom_title', 'arr_lists_author_custom_type', 'arr_lists_author_custom_year',
-        'arr_lists_author_custom_date', 'arr_lists_author_custom_note', 'arr_lists_note_hidden', 'arr_lists_kind_movie', 'arr_lists_kind_series'
+        'arr_lists_author_custom_date', 'arr_lists_author_custom_date_hint', 'arr_lists_author_custom_note', 'arr_lists_note_hidden',
+        'arr_lists_kind_movie', 'arr_lists_kind_series'
     ]);
-
-    /** @param {string} key Key. @param {Object} [params] Parameters. @returns {string} Words. */
-    const tr = (key, params) => lp.render.tr(key, params);
 
     /**
      * The menu of an entry.
@@ -55,18 +55,19 @@
 
     /**
      * Shows a field's error (or clears every one) in the form's alert region.
-     * @param {Object} ticket Paint ticket.
+     * @param {Object} fx The presenter's effects.
+     * @param {Object} w Its words.
      * @param {HTMLElement} root Root.
      * @param {Object} result A validation result.
      */
-    function report(ticket, root, result) {
-        lp.gate.paint(ticket, () => {
+    function report(fx, w, root, result) {
+        fx.paint(null, () => {
             for (const field of root.querySelectorAll('[name]')) {
                 if (!result.ok && field.name === result.field) field.setAttribute('aria-invalid', 'true');
                 else field.removeAttribute('aria-invalid');
             }
             const alert = root.querySelector('[role="alert"]');
-            if (alert) alert.textContent = result.ok ? '' : tr(result.key);
+            if (alert) lp.surface.put.text(alert, result.ok ? w.none : w.key(result.key));
         }, 'report');
     }
 
@@ -74,13 +75,13 @@
      * A labelled field.
      * @param {string} tag Tag.
      * @param {string} name Name.
-     * @param {string} label Words.
+     * @param {Object} label Words.
      * @returns {{wrap: HTMLElement, field: HTMLElement}} Field.
      */
     function field(tag, name, label) {
-        const el = lp.render.el;
-        const wrap = el('label', 'je-list-author-field');
-        wrap.appendChild(el('span', 'je-list-author-label', label));
+        const put = lp.surface.put;
+        const wrap = put.el('label', 'je-list-author-field');
+        wrap.appendChild(put.el('span', 'je-list-author-label', label));
         const input = document.createElement(tag);
         input.name = name;
         wrap.appendChild(input);
@@ -93,19 +94,23 @@
      * @returns {{read: function(): Object, destroy: function(): void}} Editor.
      */
     function noteEditor({ ticket, root, ph }) {
-        const el = lp.render.el;
-        lp.gate.paint(ticket, () => {
-            const covered = lp.authoring.guarded(ticket, ph);
-            const box = el('div', 'je-list-note-editor');
-            const label = covered ? tr('arr_lists_author_note_label_guarded') : tr('arr_lists_author_note_label', { title: ph.title || '' });
+        const put = lp.surface.put;
+        const fx = lp.surface.effects({ ticket });
+        const w = lp.surface.words(ticket);
+        fx.paint(null, () => {
+            // Words made now, when the paint runs: the Spoiler policy is the resolved one.
+            const covered = w.covered(ph);
+            const box = put.el('div', 'je-list-note-editor');
+            const label = covered ? w.key('arr_lists_author_note_label_guarded') : w.key('arr_lists_author_note_label', { title: w.title(ph, ph.title || '') });
             const { wrap, field: area } = field('textarea', 'note', label);
             area.setAttribute('maxlength', String(lp.authoring.LIMITS.note));
-            area.setAttribute('aria-label', label);
-            area.value = covered ? '' : (ph.note || '');
+            put.attr(area, 'aria-label', label);
+            const note = w.note(ph, ph.note || '');
+            put.value(area, note);
             box.appendChild(wrap);
-            if (covered && ph.note) box.appendChild(el('div', 'je-list-note-hidden', tr('arr_lists_note_hidden')));
-            box.appendChild(el('div', 'je-list-note-count', tr('arr_lists_author_note_count', { count: area.value.length, max: lp.authoring.LIMITS.note })));
-            const alert = el('div', 'je-list-author-error');
+            if (covered && ph.note) box.appendChild(put.el('div', 'je-list-note-hidden', w.key('arr_lists_note_hidden')));
+            box.appendChild(put.el('div', 'je-list-note-count', w.key('arr_lists_author_note_count', { count: note.text.length, max: lp.authoring.LIMITS.note })));
+            const alert = put.el('div', 'je-list-author-error');
             alert.setAttribute('role', 'alert');
             box.appendChild(alert);
             root.appendChild(box);
@@ -115,11 +120,12 @@
             read() {
                 const area = root.querySelector('textarea[name="note"]');
                 const result = lp.authoring.validateNote(area ? area.value : '');
-                report(ticket, root, result);
+                report(fx, w, root, result);
                 return result;
             },
-            /** Takes the editor away. */
+            /** Takes the editor away, for good (nothing held for the Spoiler policy draws it again). */
             destroy() {
+                fx.destroy();
                 lp.gate.erase(() => root.querySelectorAll('.je-list-note-editor').forEach(n => n.remove()));
             }
         };
@@ -131,29 +137,31 @@
      * @returns {{read: function(): Object, prefill: function(Object): void, destroy: function(): void}} Form.
      */
     function customForm({ ticket, root }) {
-        const el = lp.render.el;
-        lp.gate.paint(ticket, () => {
-            const form = el('div', 'je-list-custom-form');
-            const type = field('select', 'type', tr('arr_lists_author_custom_type'));
+        const put = lp.surface.put;
+        const fx = lp.surface.effects({ ticket });
+        const w = lp.surface.words(ticket);
+        fx.paint(null, () => {
+            const form = put.el('div', 'je-list-custom-form');
+            const type = field('select', 'type', w.key('arr_lists_author_custom_type'));
             for (const [value, key] of [['movie', 'arr_lists_kind_movie'], ['tv', 'arr_lists_kind_series']]) {
-                const option = el('option', '', tr(key));
-                option.value = value;
+                const option = put.el('option', '', w.key(key));
+                put.data(option, value);
                 type.field.appendChild(option);
             }
             form.appendChild(type.wrap);
-            const title = field('input', 'title', tr('arr_lists_author_custom_title'));
+            const title = field('input', 'title', w.key('arr_lists_author_custom_title'));
             title.field.setAttribute('maxlength', String(lp.authoring.LIMITS.title));
             form.appendChild(title.wrap);
-            const year = field('input', 'year', tr('arr_lists_author_custom_year'));
+            const year = field('input', 'year', w.key('arr_lists_author_custom_year'));
             year.field.setAttribute('inputmode', 'numeric');
             form.appendChild(year.wrap);
-            const date = field('input', 'date', tr('arr_lists_author_custom_date'));
-            date.field.setAttribute('placeholder', 'YYYY-MM-DD');
+            const date = field('input', 'date', w.key('arr_lists_author_custom_date'));
+            put.attr(date.field, 'placeholder', w.key('arr_lists_author_custom_date_hint'));
             form.appendChild(date.wrap);
-            const note = field('textarea', 'note', tr('arr_lists_author_custom_note'));
+            const note = field('textarea', 'note', w.key('arr_lists_author_custom_note'));
             note.field.setAttribute('maxlength', String(lp.authoring.LIMITS.note));
             form.appendChild(note.wrap);
-            const alert = el('div', 'je-list-author-error');
+            const alert = put.el('div', 'je-list-author-error');
             alert.setAttribute('role', 'alert');
             form.appendChild(alert);
             root.appendChild(form);
@@ -163,23 +171,26 @@
             /** @returns {Object} The entry, validated (its error shown). */
             read() {
                 const result = lp.authoring.validateCustom({ type: value('type') || 'movie', title: value('title'), year: value('year'), date: value('date'), note: value('note') });
-                report(ticket, root, result);
+                report(fx, w, root, result);
                 return result;
             },
             /**
-             * Fills in the words of a title without an identity (never an id).
+             * Fills in the words of a title without an identity (never an id); its year follows the date policy.
              * @param {{title?: string, year?: number, mediaType?: string}} words Words.
              */
             prefill(words) {
-                lp.gate.paint(ticket, () => {
-                    const set = (name, v) => { const n = root.querySelector(`[name="${name}"]`); if (n) n.value = v; };
-                    set('title', String(words?.title || '').slice(0, lp.authoring.LIMITS.title));
-                    set('year', Number.isInteger(words?.year) ? String(words.year) : '');
-                    set('type', words?.mediaType === 'tv' ? 'tv' : 'movie');
+                fx.paint(null, () => {
+                    const node = name => root.querySelector(`[name="${name}"]`);
+                    const kind = words?.mediaType === 'tv' ? 'tv' : 'movie';
+                    const entry = { kind: kind === 'tv' ? 'series' : 'movie', mediaType: kind };
+                    if (node('title')) put.value(node('title'), w.name(String(words?.title || '').slice(0, lp.authoring.LIMITS.title)));
+                    if (node('year')) put.value(node('year'), w.year(entry, { year: words?.year }));
+                    if (node('type')) put.data(node('type'), kind);
                 }, 'prefill');
             },
-            /** Takes the form away. */
+            /** Takes the form away, for good. */
             destroy() {
+                fx.destroy();
                 lp.gate.erase(() => root.querySelectorAll('.je-list-custom-form').forEach(n => n.remove()));
             }
         };

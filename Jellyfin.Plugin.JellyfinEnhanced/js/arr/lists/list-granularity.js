@@ -1,6 +1,7 @@
 /**
  * @file Requests & downloads, phase 4c3b: what part of a title a list entry holds. A presenter: it draws into a root its
- * caller owns, every write through the paint gate with the caller's ticket, and reads season and episode facts only
+ * caller owns, every write, awaited read and listener through its own effects on the caller's ticket (lp.surface:
+ * checked again when they run), every word through the ticket's guarded words, and reads season and episode facts only
  * through the producer reads it is given (typed by lp.metadata; JE-only enumeration is a pending producer read). Nothing
  * runs on load.
  *
@@ -11,7 +12,7 @@
  * be read, that scope never widens to the season or the show: nothing is chosen until the person chooses. Episode
  * titles and air dates of a title Spoiler Guard covers (by the ticket's policy) stay out of the text and labels.
  *
- * Internal: lp.granularity { KEYS, create }.
+ * Internal: lp.granularity { KEYS, DEPENDS, create }.
  */
 (function (JE) {
     'use strict';
@@ -25,10 +26,18 @@
         'arr_lists_gran_unavailable', 'arr_lists_gran_partial', 'arr_lists_gran_limit', 'arr_lists_gran_scope_lost'
     ]);
     const MODES = ['series', 'season', 'episodes'];
+    /**
+     * What depends on what (upstream → dependents). A change of an upstream ends its dependents' work in flight and
+     * resets them: any choice of the person ends the preselection (initialization is an intent too); a mode change drops
+     * the episodes picked in the old mode; a season change drops the old season's episode facts, its episode load and its
+     * picks, whatever the mode.
+     */
+    const DEPENDS = Object.freeze({
+        user: Object.freeze(['preselect']),
+        mode: Object.freeze(['selection']),
+        season: Object.freeze(['episodes', 'selection'])
+    });
     let instances = 0;
-
-    /** @param {string} key Key. @param {Object} [params] Parameters. @returns {string} Words. */
-    const tr = (key, params) => lp.render.tr(key, params);
 
     /**
      * A scope picker for one title.
@@ -39,55 +48,71 @@
      * @returns {Object} Picker.
      */
     function create({ ticket, root, media, initial, seasons, episodes }) {
-        const el = lp.render.el;
+        const put = lp.surface.put;
+        const fx = lp.surface.effects({ ticket, depends: DEPENDS });
+        const w = lp.surface.words(ticket);
         const max = lp.authoring.LIMITS.episodes;
         const edition = initial?.edition === '4k' ? '4k' : 'standard';
         const tv = media?.mediaType === 'tv';
         const uid = `je-list-gran-${++instances}`;
-        const state = { mode: 'series', season: null, seasonFacts: null, episodeFacts: null, checked: new Set(), reason: null, destroyed: false };
+        const state = { mode: 'series', season: null, seasonFacts: null, episodeFacts: null, checked: new Set(), reason: null, pending: false };
+        /** What Spoiler Guard is asked about: the title's episodes (fail closed until the policy is known). */
+        const entry = { kind: 'episodes', mediaType: 'tv', tmdbId: media?.tmdbId };
         let seasonsLoad = null;
-        let episodeSeq = 0;
         let controller = null;
-        /** The guard asks about the title (fail closed: everything covered until the policy is known). */
-        const covered = () => lp.authoring.guarded(ticket, { kind: 'episodes', mediaType: 'tv', tmdbId: media?.tmdbId });
 
-        const paint = (fn, key) => !state.destroyed && lp.gate.paint(ticket, fn, key);
+        fx.reset('preselect', () => {
+            state.pending = false;
+            state.reason = null;
+        });
+        fx.reset('selection', () => state.checked.clear());
+        fx.reset('episodes', () => {
+            controller?.abort();
+            controller = null;
+            state.episodeFacts = null;
+        });
+
+        const paint = (fn, key, check = null) => fx.paint(check, fn, key);
         const q = sel => root.querySelector(`.${uid} ${sel}`);
 
         paint(() => {
-            const box = el('div', `je-list-gran ${uid}`);
+            const box = put.el('div', `je-list-gran ${uid}`);
             if (!tv) {
-                box.appendChild(el('div', 'je-list-gran-movie', tr('arr_lists_gran_movie')));
+                box.appendChild(put.el('div', 'je-list-gran-movie', w.key('arr_lists_gran_movie')));
                 root.appendChild(box);
                 return;
             }
-            const modes = el('div', 'je-list-gran-modes');
+            const modes = put.el('div', 'je-list-gran-modes');
             modes.setAttribute('role', 'radiogroup');
-            modes.setAttribute('aria-label', tr('arr_lists_gran_label'));
+            put.attr(modes, 'aria-label', w.key('arr_lists_gran_label'));
             for (const mode of MODES) {
-                const label = el('label', 'je-list-gran-mode');
+                const label = put.el('label', 'je-list-gran-mode');
                 const radio = document.createElement('input');
                 radio.type = 'radio';
                 radio.name = uid;
-                radio.value = mode;
+                put.data(radio, mode);
                 radio.checked = mode === 'series';
-                label.append(radio, el('span', '', tr(`arr_lists_gran_${mode}`)));
+                label.append(radio, put.el('span', '', w.key(`arr_lists_gran_${mode}`)));
                 modes.appendChild(label);
             }
             const select = document.createElement('select');
             select.className = 'je-list-gran-season';
             select.hidden = true;
-            select.setAttribute('aria-label', tr('arr_lists_gran_season'));
-            const list = el('div', 'je-list-gran-episodes');
+            put.attr(select, 'aria-label', w.key('arr_lists_gran_season'));
+            const list = put.el('div', 'je-list-gran-episodes');
             list.hidden = true;
-            const status = el('div', 'je-list-gran-status');
+            const status = put.el('div', 'je-list-gran-status');
             status.setAttribute('aria-live', 'polite');
             box.append(modes, select, list, status);
             root.appendChild(box);
         }, 'gran');
 
-        /** @param {string} text Words in the status line. */
-        const say = text => paint(() => { const s = q('.je-list-gran-status'); if (s) s.textContent = text; }, 'gran-status');
+        /** @param {Object} text Words in the status line. @param {function(): boolean|null} [check] Intent. */
+        const say = (text, check = null) => paint(() => { const s = q('.je-list-gran-status'); if (s) put.text(s, text); }, 'gran-status', check);
+        /** @returns {Object} The standing words of the status line. */
+        const statusWords = () => (state.reason === 'scope_lost' ? w.key('arr_lists_gran_scope_lost')
+            : state.seasonFacts?.state === 'unavailable' ? w.key('arr_lists_gran_unavailable')
+                : state.seasonFacts?.state === 'partial' ? w.key('arr_lists_gran_partial') : w.none);
 
         /** Shows the controls of the mode and the season list. */
         function sync() {
@@ -101,28 +126,51 @@
                     select.hidden = state.mode === 'series' || !usable;
                     if (usable && select.options.length !== state.seasonFacts.seasons.length) {
                         select.replaceChildren(...state.seasonFacts.seasons.map(s => {
-                            const option = el('option', '', s.seasonNumber === 0 ? tr('arr_lists_gran_specials') : tr('arr_lists_gran_season_n', { number: s.seasonNumber }));
-                            option.value = String(s.seasonNumber);
+                            const option = put.el('option', '', s.seasonNumber === 0 ? w.key('arr_lists_gran_specials') : w.key('arr_lists_gran_season_n', { number: s.seasonNumber }));
+                            put.data(option, String(s.seasonNumber));
                             return option;
                         }));
                     }
                     if (usable) {
                         if (state.season === null) select.selectedIndex = -1;
-                        else select.value = String(state.season);
+                        else put.data(select, String(state.season));
                     }
                 }
                 if (list) list.hidden = state.mode !== 'episodes';
             }, 'gran-sync');
         }
 
-        /** Loads the season facts once. @returns {Promise<Object>} Facts. */
+        /**
+         * Draws the episode checklist of the facts loaded (none while they load or after the season changed).
+         * @param {function(): boolean|null} [check] The load's intent.
+         */
+        function drawEpisodes(check = null) {
+            paint(() => {
+                const list = q('.je-list-gran-episodes');
+                if (!list) return;
+                const facts = state.episodeFacts;
+                list.replaceChildren(...(facts && facts.state !== 'unavailable' ? facts.episodes : []).map(ep => {
+                    const label = put.el('label', 'je-list-gran-episode');
+                    const box = document.createElement('input');
+                    box.type = 'checkbox';
+                    put.data(box, String(ep.e));
+                    box.checked = state.checked.has(ep.e);
+                    // Episode titles and air dates through the guarded words: out of the text while the title is guarded.
+                    const words = w.join([w.key('arr_lists_gran_episode_n', { number: ep.e }), w.title(entry, ep.title || ''), ep.airDate ? w.date(entry, ep.airDate) : w.none], ' · ');
+                    label.append(box, put.el('span', '', words));
+                    return label;
+                }));
+            }, 'gran-episodes', check);
+        }
+
+        /** Loads the season facts once. @returns {Promise<Object|null>} Facts (null: the picker ended). */
         function loadSeasons() {
             if (!seasonsLoad) {
-                say(tr('arr_lists_gran_loading'));
-                seasonsLoad = lp.metadata.readSeasons(seasons, media.tmdbId, {}).then((facts) => {
+                say(w.key('arr_lists_gran_loading'));
+                seasonsLoad = fx.task(fx.intent('seasons'), async (step) => {
+                    const facts = lp.metadata.seasonsFrom(typeof seasons === 'function' ? await step(() => seasons(media.tmdbId, {})) : null);
                     state.seasonFacts = facts;
-                    if (facts.state === 'unavailable') say(state.reason === 'scope_lost' ? tr('arr_lists_gran_scope_lost') : tr('arr_lists_gran_unavailable'));
-                    else say(facts.state === 'partial' ? tr('arr_lists_gran_partial') : '');
+                    say(statusWords());
                     sync();
                     return facts;
                 });
@@ -130,72 +178,40 @@
             return seasonsLoad;
         }
 
-        /** Draws the episode checklist of the facts loaded. */
-        function drawEpisodes() {
-            paint(() => {
-                const list = q('.je-list-gran-episodes');
-                if (!list) return;
-                const facts = state.episodeFacts;
-                const hide = covered();
-                list.replaceChildren(...(facts && facts.state !== 'unavailable' ? facts.episodes : []).map(ep => {
-                    const label = el('label', 'je-list-gran-episode');
-                    const box = document.createElement('input');
-                    box.type = 'checkbox';
-                    box.value = String(ep.e);
-                    box.checked = state.checked.has(ep.e);
-                    const words = [tr('arr_lists_gran_episode_n', { number: ep.e })];
-                    if (!hide && ep.title) words.push(ep.title);
-                    if (!hide && ep.airDate) words.push(lp.render.formatDate(ep.airDate));
-                    label.append(box, el('span', '', words.join(' · ')));
-                    return label;
-                }));
-            }, 'gran-episodes');
-        }
-
         /**
-         * Loads a season's episodes; only the newest season's answer is used.
+         * Loads a season's episodes; only the newest load of the current season is used (a season change ends it).
          * @param {number} season Season.
-         * @returns {Promise<void>}
+         * @returns {Promise<Object|null>} Facts (null: superseded).
          */
-        async function loadEpisodes(season) {
-            const mine = ++episodeSeq;
+        function loadEpisodes(season) {
             controller?.abort();
-            controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const check = fx.intent('episodes');
+            const local = typeof AbortController === 'function' ? new AbortController() : null;
+            controller = local;
             state.episodeFacts = null;
             drawEpisodes();
-            let facts;
-            try {
-                facts = await lp.metadata.readEpisodes(episodes, media.tmdbId, season, { signal: controller?.signal });
-            } catch {
-                facts = { state: 'unavailable', reason: 'outage' };
-            }
-            if (mine !== episodeSeq || state.destroyed) return;
-            // Facts of another season are not this season's.
-            state.episodeFacts = facts.state !== 'unavailable' && facts.seasonNumber !== season ? { state: 'unavailable', reason: 'mismatch' } : facts;
-            drawEpisodes();
+            return fx.task(check, async (step) => {
+                const read = typeof episodes === 'function' ? await step(() => episodes(media.tmdbId, season, { signal: local?.signal })) : null;
+                const facts = lp.metadata.episodesFrom(read);
+                // Facts of another season are not this season's.
+                state.episodeFacts = facts.state !== 'unavailable' && facts.seasonNumber !== season ? { state: 'unavailable', reason: 'mismatch' } : facts;
+                if (controller === local) controller = null;
+                drawEpisodes(check);
+                return state.episodeFacts;
+            });
         }
-
-        /** Ticks/unticks from the checklist. @param {Event} e Change. */
-        const onChange = (e) => {
-            const target = e.target;
-            if (!target || !root.contains(target) || !target.closest?.(`.${uid}`)) return;
-            if (target.type === 'radio' && target.name === uid) picker.setMode(target.value);
-            else if (target.matches?.('select.je-list-gran-season')) picker.setSeason(Number(target.value));
-            else if (target.type === 'checkbox') picker.toggleEpisode(Number(target.value), target.checked);
-        };
-        root.addEventListener('change', onChange);
 
         const picker = {
             ready: Promise.resolve(),
             /** @returns {string|null} Why nothing is chosen ('scope_lost'), or null. */
             reason: () => state.reason,
             /**
-             * The current choice, or null while incomplete.
+             * The current choice, or null while incomplete (or while the caller's scope is still being preselected).
              * @returns {Object|null} Selection.
              */
             selection() {
                 if (!tv) return { kind: 'movie', edition };
-                if (state.reason === 'scope_lost') return null;
+                if (state.pending || state.reason === 'scope_lost') return null;
                 if (state.mode === 'series') return { kind: 'series', edition };
                 const usable = state.seasonFacts && state.seasonFacts.state !== 'unavailable';
                 if (!usable || state.season === null || !state.seasonFacts.seasons.some(s => s.seasonNumber === state.season)) return null;
@@ -204,41 +220,56 @@
                 return { kind: 'episodes', seasonNumber: state.season, episodes: Array.from(state.checked).sort((a, b) => a - b).map(e => ({ s: state.season, e })), edition };
             },
             /**
-             * The person chooses a scope.
+             * The person chooses a scope (it supersedes the preselection; a changed mode drops the old picks).
              * @param {'series'|'season'|'episodes'} mode Mode.
              * @returns {Promise<void>}
              */
-            async setMode(mode) {
-                if (!tv || !MODES.includes(mode) || state.destroyed) return;
-                state.mode = mode;
-                if (mode === 'series') {
-                    state.reason = null;
-                    sync();
-                    return;
+            setMode(mode) {
+                if (!tv || !MODES.includes(mode) || fx.destroyed) return Promise.resolve();
+                const check = fx.intent('user');
+                if (mode !== state.mode) {
+                    fx.change('mode');
+                    state.mode = mode;
                 }
                 sync();
-                await loadSeasons();
-                if (mode === 'episodes' && state.season !== null && state.mode === 'episodes' && !state.episodeFacts) await loadEpisodes(state.season);
+                drawEpisodes();
+                say(statusWords());
+                if (mode === 'series') return Promise.resolve();
+                return fx.task(check, async (step) => {
+                    await step(loadSeasons());
+                    if (state.mode === 'episodes' && state.season !== null && state.episodeFacts === null) await step(loadEpisodes(state.season));
+                });
             },
             /**
-             * The person chooses a season.
+             * The person chooses a season (it supersedes the preselection; a changed season drops the old season's
+             * episodes, their load and the picks, whatever the mode).
              * @param {number} season Season (0 = specials).
              * @returns {Promise<void>}
              */
-            async setSeason(season) {
-                if (!tv || !Number.isInteger(season) || state.destroyed) return;
-                state.season = season;
-                state.checked.clear();
+            setSeason(season) {
+                if (!tv || !Number.isInteger(season) || fx.destroyed) return Promise.resolve();
+                const check = fx.intent('user');
+                if (season !== state.season) {
+                    fx.change('season');
+                    state.season = season;
+                }
                 sync();
-                if (state.mode === 'episodes') await loadEpisodes(season);
+                drawEpisodes();
+                say(statusWords());
+                if (state.mode !== 'episodes' || state.episodeFacts !== null) return Promise.resolve();
+                return fx.task(check, async (step) => {
+                    await step(loadEpisodes(season));
+                });
             },
             /**
-             * Ticks or unticks an episode.
+             * Ticks or unticks an episode (the person's choice: it supersedes the preselection).
              * @param {number} e Episode.
              * @param {boolean} on Ticked.
              * @returns {boolean} Done (false: the 101st pick, or not an episode of the season).
              */
             toggleEpisode(e, on) {
+                if (fx.destroyed) return false;
+                fx.intent('user');
                 const facts = state.episodeFacts;
                 const known = facts && facts.state !== 'unavailable' && facts.episodes.some(ep => ep.e === e);
                 let ok = true;
@@ -250,46 +281,64 @@
                     const box = q(`input[type="checkbox"][value="${e}"]`);
                     if (box) box.checked = state.checked.has(e);
                 }, `gran-box-${e}`);
-                if (!ok && known) say(tr('arr_lists_gran_limit', { count: max }));
-                else if (state.checked.size < max) say(state.seasonFacts?.state === 'partial' ? tr('arr_lists_gran_partial') : '');
+                if (!ok && known) say(w.key('arr_lists_gran_limit', { count: max }));
+                else if (state.checked.size < max) say(statusWords());
                 return ok;
             },
-            /** Stops loads and takes the picker away. */
+            /** Stops loads and takes the picker away, for good. */
             destroy() {
-                state.destroyed = true;
+                fx.destroy();
                 controller?.abort();
-                root.removeEventListener('change', onChange);
                 lp.gate.erase(() => root.querySelectorAll(`.${uid}`).forEach(n => n.remove()));
             }
         };
 
-        // The caller's exact scope: preselected once its facts are known; never widened when they aren't.
+        /** Follows the person's choices in the controls. @param {Event} e Change. */
+        fx.on(root, 'change', (e) => {
+            const target = e.target;
+            if (!target || !root.contains(target) || !target.closest?.(`.${uid}`)) return;
+            if (target.type === 'radio' && target.name === uid) picker.setMode(target.value);
+            else if (target.matches?.('select.je-list-gran-season')) picker.setSeason(Number(target.value));
+            else if (target.type === 'checkbox') picker.toggleEpisode(Number(target.value), target.checked);
+        });
+
+        // The caller's exact scope, preselected once its facts are known, as an intent of its own: any choice of the
+        // person supersedes it (it then changes nothing and says nothing), and it never widens when the facts can't be read.
         if (tv && initial && (initial.kind === 'season' || initial.kind === 'episodes') && Number.isInteger(initial.seasonNumber)) {
-            state.reason = 'scope_lost';
-            picker.ready = (async () => {
-                const facts = await loadSeasons();
-                if (facts.state === 'unavailable' || !facts.seasons.some(s => s.seasonNumber === initial.seasonNumber) || state.destroyed) {
-                    say(tr('arr_lists_gran_scope_lost'));
-                    return;
+            const check = fx.intent('preselect');
+            state.pending = true;
+            /** Nothing is chosen: the person chooses (a later valid choice of theirs is never blocked). */
+            const lost = () => {
+                state.pending = false;
+                state.reason = 'scope_lost';
+                say(statusWords(), check);
+            };
+            picker.ready = fx.task(check, async (step) => {
+                const facts = (await step(loadSeasons())).value;
+                if (!facts || facts.state === 'unavailable' || !facts.seasons.some(s => s.seasonNumber === initial.seasonNumber)) return lost();
+                if (state.mode !== initial.kind) {
+                    fx.change('mode');
+                    state.mode = initial.kind;
                 }
-                state.mode = initial.kind;
-                state.season = initial.seasonNumber;
+                if (state.season !== initial.seasonNumber) {
+                    fx.change('season');
+                    state.season = initial.seasonNumber;
+                }
                 if (initial.kind === 'episodes') {
-                    await loadEpisodes(initial.seasonNumber);
-                    const wanted = (initial.episodes || []).filter(e => state.episodeFacts?.episodes?.some(ep => ep.e === e));
-                    if (!wanted.length || wanted.length !== (initial.episodes || []).length) {
-                        say(tr('arr_lists_gran_scope_lost'));
-                        return;
-                    }
+                    const loaded = (await step(loadEpisodes(initial.seasonNumber))).value;
+                    const wanted = (initial.episodes || []).filter(e => loaded?.episodes?.some(ep => ep.e === e));
+                    if (!wanted.length || wanted.length !== (initial.episodes || []).length) return lost();
                     for (const e of wanted.slice(0, max)) state.checked.add(e);
-                    drawEpisodes();
+                    drawEpisodes(check);
                 }
-                state.reason = null;
+                state.pending = false;
                 sync();
-            })();
+                say(statusWords(), check);
+                return undefined;
+            });
         }
         return picker;
     }
 
-    lp.granularity = Object.freeze({ KEYS, create });
+    lp.granularity = Object.freeze({ KEYS, DEPENDS, create });
 })(window.JellyfinEnhanced);
