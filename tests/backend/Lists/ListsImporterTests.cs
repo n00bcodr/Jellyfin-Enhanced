@@ -338,6 +338,43 @@ public class ListsImporterTests
     }
 
     [Fact]
+    public async Task ACollageMarkerWithholdsTheListsCollageBeforeAndAfterTheImportButNotAnImageSetLater()
+    {
+        // #936's own marker shape over the list's real current image: the collage is withheld whether the import has
+        // run (its copy) or not (the original), and an image the owner sets later is served. Nothing is written.
+        using var r = new Rig();
+        var list = r.H.Host.AddPlaylist(r.Owner);
+        var ids = NewIds(list.Info.Id, r.Owner);
+        r.Write(ids.List + ".json", SchemaOne(ids));
+        var image = Path.Combine(r.H.Plugin.Core.Root, "metadata", ids.List, "folder.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(image)!);
+        File.WriteAllBytes(image, new byte[] { 0xFF, 0xD8, 9, 8, 7, 0xFF, 0xD9 });
+        r.Write(ids.List + ".json", "{\"listId\":\"" + ids.List + "\",\"imagePath\":\"" + image + "\",\"sha256\":\"" + Sha(File.ReadAllBytes(image))
+            + "\",\"posterKeys\":[\"/a.jpg\",\"/b.jpg\"],\"failedKeys\":[],\"setAt\":\"2025-06-01T00:00:00.0000000Z\",\"pendingSha256\":null,\"pendingPosterKeys\":null}", collage: true);
+        var playlist = new MediaBrowser.Controller.Playlists.Playlist { Id = list.Info.Id, Name = "list" };
+        playlist.ImageInfos = new[] { new MediaBrowser.Controller.Entities.ItemImageInfo { Path = image, Type = MediaBrowser.Model.Entities.ImageType.Primary } };
+        var library = new Moq.Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        library.Setup(l => l.GetItemById(playlist.Id)).Returns(playlist);
+        var dirs = LegacyCollageWithhold.MarkerDirectories(r.H.Plugin.Core.ConfigRoot);
+        Assert.Equal(new[] { Path.Combine(r.StoreDir, ListStore.LegacyCollagesFolder), Path.Combine(r.Source, "collages") }, dirs);
+
+        Assert.Equal(LegacyCollageVerdict.Collage, new LegacyCollageWithhold(dirs, library.Object).Classify(playlist));
+        await r.Importer.RunAsync(apply: true, None);
+        Assert.True(File.Exists(Path.Combine(dirs[0], ids.List + ".json")));
+        File.Delete(Path.Combine(dirs[1], ids.List + ".json"));
+        var withhold = new LegacyCollageWithhold(dirs, library.Object);
+        Assert.Equal(LegacyCollageVerdict.Collage, withhold.Classify(playlist));
+        Assert.True(withhold.WithholdsList(playlist.Id));
+
+        var before = Snapshot(r.H.Plugin.Core.ConfigRoot);
+        File.WriteAllBytes(image, new byte[] { 0xFF, 0xD8, 1, 1, 1, 0xFF, 0xD9 });
+        File.SetLastWriteTimeUtc(image, DateTime.UtcNow.AddMinutes(1));
+        Assert.Equal(LegacyCollageVerdict.Superseded, withhold.Classify(playlist));
+        Assert.False(withhold.WithholdsList(playlist.Id));
+        AssertSame(before, Snapshot(r.H.Plugin.Core.ConfigRoot));
+    }
+
+    [Fact]
     public async Task AnImportReplacesALegacyCollageMarkerLeftByAnEarlierListWithTheSameId()
     {
         // Jellyfin derives a playlist's id from its folder, so a list deleted and made again under the same name gets the
