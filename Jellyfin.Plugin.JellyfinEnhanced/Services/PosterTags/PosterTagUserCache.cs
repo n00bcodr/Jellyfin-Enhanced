@@ -17,7 +17,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     // (GetItemById<BaseItem>(id, user)), the admin flag, and the
     // hidden/disabled flags that decide review visibility. Each entry keeps
     // the user's Jellyfin user version as stamped before the lookup
-    // (UserAuthority.Take) and is served only while UserAuthority.Unchanged,
+    // (UserAuthority.ReadOncePerRequest) and is served only while UserAuthority.Unchanged,
     // so a policy change applies to the next request: the version moves on the
     // Jellyfin user actions JE brackets for the person (the Dashboard's policy
     // save, which 10.11 makes without an event), on JE's own changes to them
@@ -45,11 +45,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>The user, or null when there is none (either answer is cached for the TTL while the user is unchanged).</summary>
-        public JUser? Get(Guid userId)
+        public JUser? Get(Guid userId) => GetStamped(userId).User;
+
+        /// <summary>
+        /// The user and the person's version they were read under: what an answer decided with this user must be kept
+        /// under (a version taken after the read could be newer than the user, e.g. the request's own earlier read).
+        /// </summary>
+        internal (JUser? User, UserAuthority.Stamp Stamp) GetStamped(Guid userId)
         {
-            if (userId == Guid.Empty) return null;
+            // No user: nothing to read, but the answer is still filed under a version taken before it.
+            if (userId == Guid.Empty) return UserAuthority.ReadOncePerRequest(userId, _ => null);
             // Stamped before the read, so a change landing during it is never served later.
-            return _cache.GetHeld(userId, userId, () => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById));
+            return _cache.GetHeldStamped(userId, userId, () => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById));
         }
     }
 }

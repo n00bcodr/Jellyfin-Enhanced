@@ -34,8 +34,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         private readonly Func<PluginConfiguration?> _config;
         private readonly Func<DateTimeOffset> _now;
         private readonly Logger? _logger;
-        // Whether the viewer can open an item: decided by their access, so kept by the viewer's version
-        // (UserAccessCache, through the user cache CanOpen reads them from): a policy change applies on the next poster.
+        // Whether the viewer can open an item: decided by their access, so kept under the version the user it was decided
+        // with was read under (UserAccessCache, IStampLibraryAccess): a policy change applies on the next poster.
         private readonly Helpers.UserAccessCache<(Guid User, Guid Item), bool> _access = new(AccessTtl, MaxMemo);
         private readonly object _fourKGate = new();
         private volatile FourKIndex? _fourK;
@@ -156,13 +156,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
             _library.Removed -= OnChanged;
         }
 
-        private bool CanOpen(Guid user, Guid item)
-            => _access.GetHeld((user, item), user, () =>
-            {
-                // Taken before the user is read (IStampLibrary.CanOpen reads them through the version-stamped user cache).
-                var stamp = Helpers.UserAuthority.Take(user);
-                return (_library.CanOpen(user, item), stamp);
-            });
+        internal bool CanOpen(Guid user, Guid item)
+            => _library is IStampLibraryAccess access
+                // Filed under the version the user it was decided with was read under, never a later one: a request
+                // that read the viewer before a policy save answers from that read, and its answer mustn't outlive it.
+                ? _access.GetHeld((user, item), user, () => access.CanOpenAsRead(user, item))
+                // A library that can't say which read it decided with: asked every time.
+                : _library.CanOpen(user, item);
 
         // New: a played mark or any playback since it arrived ends it. Upgraded: only playback after the upgrade (a played
         // mark carried over from the old file doesn't).

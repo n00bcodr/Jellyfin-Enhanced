@@ -8,8 +8,8 @@ namespace JE.Tests;
 /// Every cache the plugin keeps, found in its own source by syntax and symbols (<see cref="WriteGateWalk"/>'s compilation):
 /// every field and every auto-property without a public setter, static or not, in any type, whose type holds state across
 /// calls (a dictionary, set, list, queue, MemoryCache, ConditionalWeakTable or Lazy memo, a tuple, nullable or array of one,
-/// a type deriving from one, a held Jellyfin user, or the access-stamp helper), and every mutable field named for a user or
-/// viewer. Left out only: a read-only table that nothing writes after it is made (no mutating call, no element assignment,
+/// a type deriving from one, a held Jellyfin user, or the access-stamp helper), every mutable field of one of the plugin's
+/// own types that holds a collection (a snapshot swapped whole), and every mutable field named for a user or viewer. Left out only: a read-only table that nothing writes after it is made (no mutating call, no element assignment,
 /// never handed to a parameter that could change it), which can't hold anything a request computed.
 /// <para>
 /// Whether a cache is keyed by a user isn't guessed from its key type: every cache found must be listed in
@@ -115,6 +115,81 @@ internal static class UserCacheScan
         return found.OrderBy(c => c.Member, StringComparer.Ordinal).ToList();
     }
 
+    private const string Authority = "Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority";
+    private const string StampType = Authority + ".Stamp";
+
+    /// <summary>
+    /// Where a cache could file a value under a version that isn't the one its input was read under (review round 3:
+    /// a value carries the stamp of its inputs). A version is sampled only by the read itself (<c>UserAuthority.Read</c>,
+    /// behind <c>ReadOncePerRequest</c>) and by the helper's fingerprint ticket (filed under the fingerprint of the very
+    /// user it is computed from; the version there only ends it later); nothing else makes one. A held entry's read
+    /// returns its value and version from ONE call, and a held ticket's version is the <c>.Stamp</c> of a read whose
+    /// result the value is computed from.
+    /// </summary>
+    internal static List<string> StampSources(WriteGateWalk plugin)
+    {
+        var problems = new List<string>();
+        foreach (var (tree, model) in plugin.Sources())
+        {
+            foreach (var node in tree.GetRoot().DescendantNodes())
+            {
+                var where = Where(node);
+                var member = node.Ancestors().OfType<BaseMethodDeclarationSyntax>().Cast<SyntaxNode>().Concat(node.Ancestors().OfType<BasePropertyDeclarationSyntax>()).FirstOrDefault() is { } declared
+                    && model.GetDeclaredSymbol(declared) is { ContainingType: { } type } symbol
+                    ? Name(type) + "." + symbol.Name
+                    : string.Empty;
+                switch (node)
+                {
+                    case InvocationExpressionSyntax call when model.GetSymbolInfo(call).Symbol is IMethodSymbol method:
+                        var owner = method.ContainingType.OriginalDefinition.ToDisplayString();
+                        if (owner == Authority && method.Name == "Take" && member is not ("UserAuthority.Read" or "UserAccessCache.Begin"))
+                            problems.Add(where + ": " + member + " samples the person's version itself (UserAuthority.Take); file the value under the version its user was read under");
+                        // (The helper's own forwarding between its overloads aside.)
+                        if (member.StartsWith("UserAccessCache.", StringComparison.Ordinal)) break;
+                        if (owner.StartsWith(Helper, StringComparison.Ordinal) && method.Name is "GetHeld" or "GetHeldStamped")
+                        {
+                            var read = call.ArgumentList.Arguments.ElementAtOrDefault(2)?.Expression;
+                            if (read is not LambdaExpressionSyntax { ExpressionBody: InvocationExpressionSyntax })
+                                problems.Add(where + ": " + member + " " + method.Name + "'s read must return the value and its version from one call (a read), not put them together");
+                        }
+
+                        if (owner.StartsWith(Helper, StringComparison.Ordinal) && method.Name == "BeginHeld" && !FromARead(call.ArgumentList.Arguments.ElementAtOrDefault(1)?.Expression, model))
+                            problems.Add(where + ": " + member + " BeginHeld's version must be the .Stamp of the read the value is computed from");
+                        break;
+                    case BaseObjectCreationExpressionSyntax made when member is not "UserAuthority.Take" && model.GetTypeInfo(made).Type?.ToDisplayString() == StampType:
+                        problems.Add(where + ": " + member + " makes a version (new Stamp) instead of taking the one its user was read under");
+                        break;
+                    case LiteralExpressionSyntax { RawKind: (int)SyntaxKind.DefaultLiteralExpression } or DefaultExpressionSyntax or WithExpressionSyntax
+                        when model.GetTypeInfo(node).ConvertedType?.ToDisplayString() == StampType:
+                        problems.Add(where + ": " + member + " makes a version (default / with) instead of taking the one its user was read under");
+                        break;
+                }
+            }
+        }
+
+        return problems;
+    }
+
+    // "<local>.Stamp" where the local holds the result of a read (a call returning the user and their version).
+    private static bool FromARead(ExpressionSyntax? stamp, SemanticModel model)
+    {
+        if (stamp is not MemberAccessExpressionSyntax { Name.Identifier.ValueText: "Stamp", Expression: IdentifierNameSyntax local }) return false;
+        if (model.GetSymbolInfo(local).Symbol is not ILocalSymbol symbol) return false;
+        var declaration = symbol.DeclaringSyntaxReferences.Select(r => r.GetSyntax()).OfType<VariableDeclaratorSyntax>().FirstOrDefault();
+        return declaration?.Initializer?.Value is InvocationExpressionSyntax read
+            && model.GetSymbolInfo(read).Symbol is IMethodSymbol method
+            && method.ReturnType is INamedTypeSymbol { IsTupleType: true } tuple
+            && tuple.TupleElements.Any(e => e.Type.ToDisplayString() == StampType);
+    }
+
+    private static string Where(SyntaxNode node)
+    {
+        var span = node.GetLocation().GetLineSpan();
+        var root = IntegrationAutoRequestLedgerTests.Root();
+        return Path.GetRelativePath(Path.Combine(root, "Jellyfin.Plugin.JellyfinEnhanced"), span.Path).Replace(Path.DirectorySeparatorChar, '/')
+            + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static bool Auto(PropertyDeclarationSyntax property)
         => property.AccessorList != null && property.AccessorList.Accessors.All(a => a.Body == null && a.ExpressionBody == null);
 
@@ -123,7 +198,9 @@ internal static class UserCacheScan
         var span = at.GetLocation().GetLineSpan();
         var root = IntegrationAutoRequestLedgerTests.Root();
         var file = Path.GetRelativePath(Path.Combine(root, "Jellyfin.Plugin.JellyfinEnhanced"), span.Path).Replace(Path.DirectorySeparatorChar, '/');
-        return new Cache(Name(symbol), type.ToDisplayString(), file + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), Is(type, Helper));
+        // The helper itself (a type nested in it, like its own storage, isn't).
+        var stamped = Is(type, Helper) && type is not INamedTypeSymbol { ContainingType: not null };
+        return new Cache(Name(symbol), type.ToDisplayString(), file + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), stamped);
     }
 
     /// <summary>"Outer.Inner.member".</summary>
@@ -142,11 +219,26 @@ internal static class UserCacheScan
         // A mutable field named for a user or viewer is per-user state, whatever its type (an interface or delegate is a
         // service, not state).
         if (!state && !readOnly && type.TypeKind is not (TypeKind.Interface or TypeKind.Delegate) && Named(member.Name)) return true;
+        // A snapshot swapped whole: a mutable field of one of the plugin's own types that holds a collection.
+        if (!state && !readOnly && Snapshot(type)) return true;
         if (!state) return type is IArrayTypeSymbol && !readOnly && Written(plugin, member);
         if (Contains(type, Mutable)) return true;
         if (!readOnly) return true;
         if (Only(type, ReadOnlyViews)) return false;
         return Written(plugin, member);
+    }
+
+    // One of the plugin's own classes, records or structs with a field or auto-property that holds a collection.
+    private static bool Snapshot(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable) type = nullable.TypeArguments[0];
+        if (type is not INamedTypeSymbol { TypeKind: TypeKind.Class or TypeKind.Struct } named || named.DeclaringSyntaxReferences.Length == 0) return false;
+        return named.GetMembers().Any(m => m switch
+        {
+            IFieldSymbol { IsImplicitlyDeclared: false } f => Contains(f.Type, Containers),
+            IFieldSymbol { AssociatedSymbol: IPropertySymbol p } => Contains(p.Type, Containers),
+            _ => false,
+        });
     }
 
     private static bool Named(string name)

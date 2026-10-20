@@ -3,14 +3,18 @@
 # key builder Type.Method~text it must contain). Classes: stamped = declared as Helpers/UserAccessCache.cs (fingerprint +
 # version, race-safe); keyed = its key holds the viewer's access as the asking request read it; independent = doesn't
 # depend on a user's access, for the reason given. See tests/backend/README.md.
+AcquireDatabase._shared	both	independent	process	the shared database service (a reference, not an answer)
 AcquisitionStampFeeder._pending	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampFeeder._removed	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampFeeder._upgradesDone	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampResolver.FourKIndex.ByKey	both	independent	title key	library structure (4K copies by title); each viewer's access to a copy is checked at read
 AcquisitionStampResolver._access	both	stamped	(user, item)	can the viewer open the item: held-user mode (the user is read through the version-stamped user cache); invalidated by library changes
+AcquisitionStampResolver._fourK	both	independent	library	4K copies in the library, for anyone: whether the viewer can open one is asked per poster (_access)
 AcquisitionStampResolver._fourKChanges	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampStore.NotificationBatch._owner	both	independent	batch	the store service the batch writes back to (a reference)
 AcquisitionStampStore._deleted	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 AcquisitionStampStore._expired	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
+AcquisitionStampStore._index	both	independent	item / person	the stamp store's facts index, rebuilt on write: JE's own data; what the viewer may open is checked per poster
 AcquisitionStampStore._pendingNotifications	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access)
 ArrActionRunner._recent	both	independent	action idempotency key	in-flight arr action de-duplication (an admin action), not a cached answer
 ArrAdminHubController.DeniedSeen	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
@@ -21,10 +25,14 @@ ArrConfirmationTokens._pending	both	independent	token hash	an admin confirmation
 ArrEpisodesSnapshot._byNumber	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrFeedAudience.EpisodeNumberSet._ranges	both	independent	per value	part of a computed value (episode numbers), not a cache
 ArrFeedAudience._cache	both	keyed	(user, title, instance) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
+ArrFeedAudience._registryStamp	both	independent	arr registry	alias inputs of the configured arr instances (configuration)
 ArrFeedAudience._seasons	both	keyed	(user, tvdb, season) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
 ArrFeedAudience._series	both	keyed	(user, tvdb) + stamp	ArrFeedAudience.Visible~PolicyRevisionOf(user)
 ArrFeedLimits._perUser	both	independent	user	how many long-polls each user holds open now (a concurrency limit), not an answer about access
 ArrInstanceLibraries.State.Cache	both	independent	(instance, path)	arr root folder → Jellyfin library mapping: not per user
+ArrInstanceLibraries._libraries	both	independent	arr instance	library folders per arr instance (configuration + library layout)
+ArrInstanceLibraries._state	both	independent	arr instance	the instance-to-library map's last build (configuration + library layout)
+ArrInstanceRegistry._cache	both	independent	configuration	parsed arr instances, per stored configuration value
 ArrLibrarySnapshot._moviesById	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrLibrarySnapshot._moviesByImdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrLibrarySnapshot._moviesByTmdb	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
@@ -39,6 +47,7 @@ ArrLiveService._connections	both	independent	arr instance / change key	the arr l
 ArrLiveService._libraryResyncAt	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveService._libraryResyncDeferred	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveService._searches	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrSnapshotSlot._error	both	independent	arr instance	the last fetch error of an arr read
 ArrSnapshotSlot._patchesDuringRefresh	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.CalendarRangeCache._entries	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.InstanceState.ConfirmedDepartures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
@@ -83,12 +92,14 @@ CompositeImageCache._lruOrder	both	independent	content hash	content-addressed: t
 DiscoverService._cache	both	keyed	user | policy revision | parental | revisions | hidden stamp | what	DiscoverService.CacheKey~PolicyRevision
 DiscoverService._hiddenCache	both	independent	user	the person's own Hidden Content rules (JE data, dropped when the file is saved), not Jellyfin access
 DoesTheDogDieService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+DoesTheDogDieService._catalog	both	independent	service	external metadata catalog
 DoesTheDogDieService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 EpisodeCoverage._seasons	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 FactVersions._versions	both	independent	fact / person	the version counters the stamps are made of
 FeedScheduler.Viewer.Waiting	jf12	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 FeedScheduler._turns	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer
 FeedScheduler._viewers	jf12	independent	viewer	fair scheduling of upstream reads between viewers (whose turn), not an answer
+GroupQuotaPolicy._parsed	both	independent	configuration	parsed group pools, per stored JSON value (membership is decided per request)
 HiddenContentResponseFilter.HideContext.ItemIdScopes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 HiddenContentResponseFilter.HideContext.SeriesIdScopes	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 HiddenContentResponseFilter._hcCache	both	independent	user	the person's own Hidden Content rules (JE data, invalidated on every write), not Jellyfin access
@@ -171,9 +182,11 @@ ListSwapService._lastViewPass	both	independent	list / item	list swap passes over
 ListSwapService._ownerlessLogged	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 ListSwapService._pendingMatches	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
 ListSwapService._queued	both	independent	list / item	list swap passes over JE data: not an answer about a viewer's access
+MaintenanceModeService._cached	both	independent	server	the server-wide maintenance state
 MaintenancePlaybackReminderConsumer._lastSentBySession	both	independent	session	when a maintenance reminder was last sent (rate limit)
 MdblistService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 MdblistService._inFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+NativeClientPolicy._parsed	both	independent	configuration	parsed client names, per stored configuration value
 NativeDetailsArtwork._bytes	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
 NativeDetailsArtwork._inFlight	jf12	independent	artwork path	image bytes; every request is checked against its grant (whose revision follows the viewer)
 NativeDetailsFacadeFilter.BodyProperties	jf12	independent	assembly / type	code and reflection metadata read once
@@ -200,6 +213,7 @@ PosterTagDataProvider._building	both	independent	item	an item's tag data (not pe
 PosterTagDataProvider._memo	both	independent	item	an item's tag data (not per user); the viewer's share is decided when drawn
 PosterTagImageFilter.WarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 PosterTagRenderer._engine	both	independent	none / asset	build, asset and rendering state: the same for everyone
+PosterTagReviewRatings._index	both	independent	review key	every review by key, rebuilt on review writes; which authors the viewer sees is decided per request (held author users)
 PosterTagSettingsProvider._cache	both	independent	user	the person's poster-tag display settings and audio-language preference, compared on each read (display, not access)
 PosterTagText._fallbackFaces	both	independent	font / text	text shaping caches
 PosterTagText._fallbacks	both	independent	font / text	text shaping caches
@@ -252,11 +266,13 @@ SeerrRequestReadModel.Snapshot.ByUser	both	independent	request / title / request
 SeerrRequestReadModel._goneOwners	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrRequestReadModel._goneTitles	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
 SeerrRequestReadModel._meta	both	independent	request / title / requester	Seerr's requests and who made them (Seerr data)
+SeerrRequestReadModel._snapshot	both	independent	title / request	Seerr's requests as last read (JE's own Seerr data; per-viewer visibility is checked where it is shown)
 SeerrScanTriggerService._owners	both	independent	(source, job)	scan trigger ownership
 SpoilerAutoEnableArmer.Candidate.LibraryIds	both	independent	per call	an object made for one request, response or operation (the viewer as that request read them), dropped when it ends
 SpoilerAutoEnableFilter._cachedIds	both	independent	config text	the parsed admin allow-list
 SpoilerBlurImageFilter._warnedShapeAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 SpoilerBlurImageFilter._watchedCache	both	stamped	(user, season)	any episode of the season watched among those the viewer may see: fingerprint + own version; watched-state saves invalidate (user, season / series)
+SpoilerExistingTitlesApplier._lastRun	both	independent	run	the last apply run's summary
 SpoilerIdentityService._markerMap	both	independent	marker / user	spoiler identity markers (who a request is from), not access
 SpoilerIdentityService._mintCache	both	independent	marker / user	spoiler identity markers (who a request is from), not access
 SpoilerLibraryAddAutoEnabler._queue	both	independent	item	queued library additions
@@ -270,6 +286,7 @@ SpoilerUserResolver._corruptionLog	both	independent	log or rate-limit key	log de
 SpoilerUserResolver._userStateCache	both	independent	user	the person's Spoiler Guard state file (JE data, invalidated on every write), not Jellyfin access
 SpoilerUserResolver._warnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 TagCachePendingChanges._pending	both	independent	item	pending library changes for the tag cache
+TagCacheService.Instance	both	independent	process	the service itself (a reference, not an answer)
 TagCacheService.UserAccess.Ids	both	independent	per value	part of the value _userAccessCache (stamped) holds
 TagCacheService._cache	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache)
 TagCacheService._languageIdentities	both	independent	item	the tag cache's entries (not per user); each viewer's share is filtered by their access set (_userAccessCache)
@@ -286,7 +303,7 @@ TmdbResponseCache._inFlight	both	independent	URL / external id	public metadata f
 TmdbResponseCache._lru	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 UsageEventCounterService._counters	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees
 UserAccessCache._entries	both	independent	key / (user, scope)	the access-stamp helper's own storage
-UserAccessCache._invalidated	both	independent	key / (user, scope)	the access-stamp helper's own storage
+UserAccessCache._epoch	both	independent	(user, scope)	the access-stamp helper's own invalidation records, swapped whole
 UserAuthority.Attributed	both	independent	fact / person	the version counters the stamps are made of
 UserAuthorityFields.RowReads	both	independent	assembly / type	code and reflection metadata read once
 UserConfigurationManager._presenceWarnedAt	both	independent	log or rate-limit key	log de-duplication, rate limits and counters: decides nothing a viewer sees

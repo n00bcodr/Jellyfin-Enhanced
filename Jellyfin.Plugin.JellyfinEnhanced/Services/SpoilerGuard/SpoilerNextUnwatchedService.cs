@@ -146,14 +146,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // bounded query below runs once per (user, series) while nothing that
             // decides the boundary changes, amortizing to O(1) per item.
             var user = viewer;
-            var stamp = default(Helpers.UserAuthority.Stamp);
-            if (user == null) (user, stamp) = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
-            var key = (userId, seriesId);
+            Helpers.UserAccessCache<(Guid UserId, Guid SeriesId), NextUnwatchedBoundary?>.Ticket ticket;
             // Taken before the query, so a change landing during it is never
-            // served later. No such user: the slot stands for that (version only).
-            var ticket = user != null
-                ? _cache.Begin(user, seriesId)
-                : _cache.BeginHeld(userId, stamp, seriesId);
+            // served later: filed under the fingerprint of the user it is
+            // computed from. No such user: the slot stands for that, filed
+            // under the version that read was made under.
+            if (user != null)
+            {
+                ticket = _cache.Begin(user, seriesId);
+            }
+            else
+            {
+                var read = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
+                user = read.User;
+                ticket = user != null ? _cache.Begin(user, seriesId) : _cache.BeginHeld(userId, read.Stamp, seriesId);
+            }
+
+            var key = (userId, seriesId);
             if (_cache.TryGet(key, ticket.Authority, out var hit))
             {
                 return hit;

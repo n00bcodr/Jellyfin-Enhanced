@@ -130,6 +130,11 @@ public class UserCacheRegistryTests
             "        private static readonly TimeSpan SeasonWatchedCacheTtl",
             "        private Guid _lastViewer;\n        internal void Plant(Guid user) => _lastViewer = user;\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
         Assert.Contains(Problems(field, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._lastViewer (", StringComparison.Ordinal));
+        // A snapshot swapped whole (round 3): a mutable field of the plugin's own type that holds a dictionary.
+        var snapshot = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
+            "        private static readonly TimeSpan SeasonWatchedCacheTtl",
+            "        private sealed record PlantedSnapshot(Dictionary<Guid, bool> Seen);\n        private PlantedSnapshot? _plantedSnapshot;\n        internal void Plant(Guid season) => _plantedSnapshot = new(new() { [season] = true });\n        private static readonly TimeSpan SeasonWatchedCacheTtl", StringComparison.Ordinal));
+        Assert.Contains(Problems(snapshot, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedSnapshot (", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -149,6 +154,54 @@ public class UserCacheRegistryTests
         // A row whose cache is gone.
         Assert.Contains(Problems(WriteGateWalk.Plugin, Registry().Append(new Row("SpoilerBlurImageFilter._gone", "both", "independent", "user", "x")).ToList()),
             p => p.StartsWith("SpoilerBlurImageFilter._gone: listed, but", StringComparison.Ordinal));
+    }
+}
+
+/// <summary>
+/// Review round 3: a value carries the stamp of the inputs it was computed from. The plugin's source is checked for any
+/// version taken apart from the read the value was computed from (<see cref="UserCacheScan.StampSources"/>).
+/// </summary>
+public class UserCacheStampSourceTests
+{
+    private const string Resolver = "Services/Acquire/Stamps/AcquisitionStampResolver.cs";
+    private const string Fixed = "? _access.GetHeld((user, item), user, () => access.CanOpenAsRead(user, item))";
+
+    [Fact]
+    public void EveryCachedValueIsFiledUnderTheVersionItsUserWasReadUnder()
+    {
+        var problems = UserCacheScan.StampSources(WriteGateWalk.Plugin);
+        Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+    }
+
+    [Fact]
+    public void AVersionTakenApartFromTheReadFails()
+    {
+        // Round 3's 4K memo as it was: a fresh version, then the library's (possibly earlier) read of the user.
+        var fresh = WriteGateWalk.Plugin.With(Resolver, s => s.Replace(Fixed,
+            "? _access.GetHeld((user, item), user, () => { var stamp = Helpers.UserAuthority.Take(user); return (_library.CanOpen(user, item), stamp); })", StringComparison.Ordinal));
+        var problems = UserCacheScan.StampSources(fresh);
+        Assert.Contains(problems, p => p.Contains("AcquisitionStampResolver.CanOpen samples the person's version itself", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.Contains("AcquisitionStampResolver.CanOpen GetHeld's read must return the value and its version from one call", StringComparison.Ordinal));
+
+        // A read's version put together with an answer from another read.
+        var paired = WriteGateWalk.Plugin.With(Resolver, s => s.Replace(Fixed,
+            "? _access.GetHeld((user, item), user, () => (_library.CanOpen(user, item), Helpers.UserAuthority.ReadOncePerRequest(user, _ => null).Stamp))", StringComparison.Ordinal));
+        Assert.Contains(UserCacheScan.StampSources(paired), p => p.Contains("GetHeld's read must return the value and its version from one call", StringComparison.Ordinal));
+
+        // A made-up version for a held ticket.
+        var made = WriteGateWalk.Plugin.With("Services/SpoilerGuard/SpoilerNextUnwatchedService.cs", s => s.Replace(
+            "_cache.BeginHeld(userId, read.Stamp, seriesId)", "_cache.BeginHeld(userId, default, seriesId)", StringComparison.Ordinal));
+        problems = UserCacheScan.StampSources(made);
+        Assert.Contains(problems, p => p.Contains("SpoilerNextUnwatchedService.GetBoundary BeginHeld's version must be the .Stamp of the read", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.Contains("SpoilerNextUnwatchedService.GetBoundary makes a version (default / with)", StringComparison.Ordinal));
+
+        // The user cache stamping its own read afresh.
+        var users = WriteGateWalk.Plugin.With("Services/PosterTags/PosterTagUserCache.cs", s => s.Replace(
+            "() => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById)",
+            "() => (_userManager.GetUserById(userId), new UserAuthority.Stamp(0, 0, 0))", StringComparison.Ordinal));
+        problems = UserCacheScan.StampSources(users);
+        Assert.Contains(problems, p => p.Contains("PosterTagUserCache.GetStamped makes a version (new Stamp)", StringComparison.Ordinal));
+        Assert.Contains(problems, p => p.Contains("PosterTagUserCache.GetStamped GetHeldStamped's read must return", StringComparison.Ordinal));
     }
 }
 

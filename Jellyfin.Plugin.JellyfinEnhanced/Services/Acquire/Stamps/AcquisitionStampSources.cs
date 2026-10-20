@@ -21,7 +21,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
     /// Jellyfin's own check (<c>GetItemById(id, user)</c>: library access and parental limits); users come from the
     /// poster-tag user cache (a Jellyfin 12 user lookup costs a database transaction).
     /// </summary>
-    public sealed class JellyfinStampLibrary : IStampLibrary, IDisposable
+    public sealed class JellyfinStampLibrary : IStampLibrary, IStampLibraryAccess, IDisposable
     {
         private const int MaxCopies = 50;
 
@@ -56,10 +56,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
         public StampItem? Item(Guid id) => id == Guid.Empty ? null : Read(_libraryManager.GetItemById(id));
 
         /// <inheritdoc />
-        public bool CanOpen(Guid userId, Guid itemId)
+        public bool CanOpen(Guid userId, Guid itemId) => ((IStampLibraryAccess)this).CanOpenAsRead(userId, itemId).CanOpen;
+
+        /// <inheritdoc />
+        (bool CanOpen, Helpers.UserAuthority.Stamp Read) IStampLibraryAccess.CanOpenAsRead(Guid userId, Guid itemId)
         {
-            if (_users.Get(userId) is not { } user) return false;
-            return _libraryManager.GetItemById<BaseItem>(itemId, user) != null;
+            // The version the user cache read this user under (the request's read, or its entry's).
+            var (user, read) = _users.GetStamped(userId);
+            return (user != null && _libraryManager.GetItemById<BaseItem>(itemId, user) != null, read);
         }
 
         /// <inheritdoc />

@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// The cached user decides review visibility (hidden, disabled and deleted
     /// authors), so it must never outlive a change to that user. Each entry
     /// keeps the author's Jellyfin user version as stamped before the lookup
-    /// (<see cref="UserAuthority.Take"/>) and is served only while
+    /// (<see cref="UserAuthority.ReadOncePerRequest"/>) and is served only while
     /// <see cref="UserAuthority.Unchanged"/>: the author's own version moves on
     /// the Jellyfin user actions JE brackets for them (the Dashboard's policy
     /// save, which 10.11 makes without an event), on JE's own changes to them
