@@ -114,6 +114,8 @@ function walk(node, visit, fn = null) {
 export function scan(sources) {
   const sites = []; const failures = [];
   const forwarders = new Set(); const wrappers = new Set();
+  /** The modules each forwarder is declared in (a bare-name call reaches it only there). */
+  const forwarderFiles = new Map();
   // Graph modules, and any other module that names a Seerr request (each parse is cached by its text).
   const asts = Object.fromEntries(Object.entries(sources).filter(([file, text]) => file in GRAPH || /requestMedia|requestTvSeasons/.test(text))
     .map(([file, text]) => [file, parsed(text)]));
@@ -128,7 +130,11 @@ export function scan(sources) {
         const value = bound.shorthand ? { type: 'Identifier', name: 'bound' } : bound.value;
         const fromCaller = value.type === 'Identifier' ? fn.params.includes(value.name)
           : ['MemberExpression', 'OptionalMemberExpression'].includes(value.type) && value.property?.name === 'bound' && fn.params.includes(value.object?.name);
-        if (fromCaller && writeMethod(node)) forwarders.add(fn.name);
+        if (fromCaller && writeMethod(node)) {
+          forwarders.add(fn.name);
+          if (!forwarderFiles.has(fn.name)) forwarderFiles.set(fn.name, new Set());
+          forwarderFiles.get(fn.name).add(file);
+        }
         if (!fromCaller && o.properties.some(p => p.type === 'SpreadElement' && fn.params.includes(p.argument?.name))) wrappers.add(fn.name);
       }
     });
@@ -148,7 +154,9 @@ export function scan(sources) {
       }
       if (!inGraph) return;
       const method = writeMethod(node);
-      const forwarded = forwarders.has(name) && !method;
+      // Other modules reach a forwarder through its namespace (JE.arrAsk.cancel(…)); a bare-name call is one only in the
+      // module that declares it, else it is a same-named local (the play edge's sheet-loader canceller `cancel()`).
+      const forwarded = forwarders.has(name) && !method && (node.callee?.type !== 'Identifier' || forwarderFiles.get(name).has(file));
       if (!method && !forwarded) return;
       // `post(path, body, bound)` takes its binding positionally.
       const ok = hasBound(node) || wrappers.has(name) || (name === 'post' && node.arguments.length >= 3 && !(node.arguments[2].type === 'Identifier' && node.arguments[2].name === 'undefined'));
@@ -210,6 +218,8 @@ const PLANTED = {
   'an unbound Seerr post()': ['jellyseerr/api.js', s => s.replace("const result = await post('/issue', body, submitted.bound());", "const result = await post('/issue', body);"), /api\.js:\d+ post/],
   'the JE-mode Collection picker\'s asks without their binding': ['arr/ask/ask-seerr.js', s => s.replace('`), { bound });', '`));'), /ask-seerr\.js:\d+ ask/],
   'a Search sent without its binding': ['arr/ask/ask-sheet.js', s => s.replace('instanceId, { bound: submitted.bound() })', 'instanceId)'), /ask-sheet\.js:\d+ adminSearch/],
+  'a forwarder called through its namespace without its binding': ['arr/ask/ask-sheet.js',
+    s => s.replace('function close() {', "function close() { JE.arrAsk.cancel('x');"), /ask-sheet\.js:\d+ cancel/],
   'Remind without its binding': ['arr/notify/notify-core.js', s => s.replace(', bound: submitted.bound() });\n            return { ok: true, nextAt', ' });\n            return { ok: true, nextAt'), /notify-core\.js:\d+ POST \/acquire\/remind/],
   'a site the scan stops seeing (count)': ['enhanced/spoilerguard/state.js', s => s.replace(/mutateState\('\/spoiler-blur\/user-prefs'[^\n]*\n/, 'Promise.resolve()\n'), /state\.js: 8 write sites, expected 9/],
 };
