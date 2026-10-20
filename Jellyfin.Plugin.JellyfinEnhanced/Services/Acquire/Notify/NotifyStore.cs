@@ -462,17 +462,17 @@ WHERE d.last_error IS NOT NULL AND d.status NOT IN ('sent','suppressed') ORDER B
         /// <summary>Stores a batch.</summary>
         public void SetBatch(Guid userId, string key, string episodes, DateTimeOffset firstAt, DateTimeOffset dueAt) => InTransaction(tx => tx.SetBatch(userId, key, episodes, firstAt, dueAt));
 
-        /// <summary>Batches whose window has closed.</summary>
-        public IReadOnlyList<(Guid User, string Key, string Episodes)> DueBatches(DateTimeOffset now) => _db.Read(c =>
+        /// <summary>Batches whose window has closed, each with its start as read with it.</summary>
+        public IReadOnlyList<(Guid User, string Key, string Episodes, DateTimeOffset FirstAt)> DueBatches(DateTimeOffset now) => _db.Read(c =>
         {
-            var result = new List<(Guid, string, string)>();
-            using var cmd = Command(c, null, "SELECT user_id, key, episodes FROM batches WHERE due_at <= $n", ("$n", Ms(now)));
+            var result = new List<(Guid, string, string, DateTimeOffset)>();
+            using var cmd = Command(c, null, "SELECT user_id, key, episodes, first_at FROM batches WHERE due_at <= $n", ("$n", Ms(now)));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                if (Guid.TryParse(r.GetString(0), out var user)) result.Add((user, r.GetString(1), r.GetString(2)));
+                if (Guid.TryParse(r.GetString(0), out var user)) result.Add((user, r.GetString(1), r.GetString(2), At(r.GetInt64(3))));
             }
-            return (IReadOnlyList<(Guid, string, string)>)result;
+            return (IReadOnlyList<(Guid, string, string, DateTimeOffset)>)result;
         });
 
         /// <summary>Forgets a batch.</summary>

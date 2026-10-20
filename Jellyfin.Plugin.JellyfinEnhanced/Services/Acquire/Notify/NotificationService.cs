@@ -1281,7 +1281,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
             public string? I { get; set; }
 
-            /// <summary>When it arrived (Unix ms; 4f round 10). Null in a batch made before: the batch's own start.</summary>
+            /// <summary>When it arrived (Unix ms; 4f round 10). Null only in a batch stored before: <see cref="ReadBatch"/> gives
+            /// it that batch's own start.</summary>
             public long? A { get; set; }
         }
 
@@ -1301,18 +1302,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             public int F { get; set; }
         }
 
+        // A stored batch, read with its own row's start (4f round 11): a member stored before round 10 has no arrival and takes
+        // that start here, before the batch is merged, added to or sent. A merge keeps the earliest start for the merged row, so
+        // a member dated after it would take another batch's start (and be dropped as stale too early). The one read of a batch.
+        private static BatchState? ReadBatch(string json, DateTimeOffset firstAt)
+        {
+            var state = Deserialize<BatchState>(json);
+            foreach (var x in state?.Episodes ?? new List<BatchEntry>()) x.A ??= firstAt.ToUnixTimeMilliseconds();
+            return state;
+        }
+
         // Merge open batches of the same variant that turn out to be one series. Keep the interest's
         // own batch if open, else the earliest; check copies through every joining id when sent.
         private static string MergeOpenBatches(NotifyTransaction tx, Guid user, string own, bool only4k, HashSet<string> seriesItems)
         {
             if (seriesItems.Count == 0) return own;
             var matches = new List<(string Key, BatchState State, DateTimeOffset FirstAt, DateTimeOffset DueAt)>();
-            foreach (var (key, json) in tx.Batches(user))
+            foreach (var (key, _) in tx.Batches(user))
             {
-                if (key.EndsWith("|4k", StringComparison.Ordinal) != only4k) continue;
-                var state = Deserialize<BatchState>(json) ?? new BatchState();
+                if (key.EndsWith("|4k", StringComparison.Ordinal) != only4k || tx.Batch(user, key) is not { } batch) continue;
+                var state = ReadBatch(batch.Episodes, batch.FirstAt) ?? new BatchState();
                 if (key != own && !(state.Items.Count > 0 ? state.Items.Any(seriesItems.Contains) : state.Series is { } series && seriesItems.Contains(series))) continue;
-                if (tx.Batch(user, key) is { } batch) matches.Add((key, state, batch.FirstAt, batch.DueAt));
+                matches.Add((key, state, batch.FirstAt, batch.DueAt));
             }
             if (matches.Count < 2) return matches.Count == 0 ? own : matches[0].Key;
             var survivor = matches.OrderBy(b => b.Key != own).ThenBy(b => b.FirstAt).ThenBy(b => b.Key, StringComparer.Ordinal).First();
@@ -1356,7 +1367,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id, DateTimeOffset At)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
         {
             var existing = tx.Batch(user, batchKey);
-            var state = existing is { } b ? Deserialize<BatchState>(b.Episodes) ?? new BatchState() : new BatchState();
+            var state = existing is { } b ? ReadBatch(b.Episodes, b.FirstAt) ?? new BatchState() : new BatchState();
             foreach (var item in seriesItems)
             {
                 if (!state.Items.Contains(item, StringComparer.Ordinal)) state.Items.Add(item);
@@ -1386,12 +1397,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         {
             var sent = 0;
             var generation = _store.Generation;
-            foreach (var (user, key, json) in _store.DueBatches(now))
+            foreach (var (user, key, json, firstAt) in _store.DueBatches(now))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    if (FlushBatch(user, key, json, now, generation)) sent++;
+                    if (FlushBatch(user, key, json, firstAt, now, generation)) sent++;
                 }
                 catch (BatchChangedException)
                 {
@@ -1404,7 +1415,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         var dropped = _store.InTransaction(generation, tx =>
                         {
                             if (tx.Batch(user, key) is not { } b) return false;
-                            var state = Deserialize<BatchState>(b.Episodes);
+                            var state = ReadBatch(b.Episodes, b.FirstAt);
                             if (state == null || state.F + 1 >= MaxBatchTries)
                             {
                                 tx.DeleteBatch(user, key);
@@ -1455,11 +1466,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (dropped) _logger?.Warning("Notifications: an episode batch was dropped: the recipient's Hidden Content couldn't be read for a day.");
         }
 
-        private bool FlushBatch(Guid user, string key, string json, DateTimeOffset now, long generation)
+        private bool FlushBatch(Guid user, string key, string json, DateTimeOffset firstAt, DateTimeOffset now, long generation)
         {
             var only4k = key.EndsWith("|4k", StringComparison.Ordinal);
             var title = TitleKey.Parse(only4k ? key[..^3] : key);
-            var state = Deserialize<BatchState>(json);
+            var state = ReadBatch(json, firstAt);
             if (title == null || state == null)
             {
                 // Not a batch that can be told (unreadable): forgotten.
@@ -1513,12 +1524,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seasons = episodes.Select(x => x.S).Distinct().OrderBy(s => s).ToList();
             p["count"] = episodes.Count.ToString(CultureInfo.InvariantCulture);
             p["seasons"] = string.Join(", ", seasons);
-            // Each episode with its own arrival (4f round 10): the gate holds each to the catch-up limit, and drops only those past it.
-            var started = _store.Batch(user, key)?.FirstAt ?? now;
-            DateTimeOffset Arrived(BatchEntry x) => x.A is long ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : started;
+            // Each episode with its own arrival (4f round 10; one stored before, its batch's start as read with it): the gate
+            // holds each to the catch-up limit, and drops only those past it.
+            static DateTimeOffset Arrived(BatchEntry x) => DateTimeOffset.FromUnixTimeMilliseconds(x.A!.Value);
             p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E) { At = Arrived(x) }));
             // The batch's origin: its newest episode's arrival (it is too old to tell only when every episode is).
-            var since = episodes.Count > 0 ? episodes.Max(Arrived) : started;
+            var since = episodes.Count > 0 ? episodes.Max(Arrived) : firstAt;
             if (only4k) p["variant"] = "4k";
             if (episodes.Count == 1)
             {
