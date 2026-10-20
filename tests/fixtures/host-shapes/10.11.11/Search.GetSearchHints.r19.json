@@ -1,0 +1,47 @@
+{
+ "SearchHints": [
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "cd7371fc639dd71200756443634cbbe4",
+   "IndexNumber": 1,
+   "ItemId": "cd7371fc639dd71200756443634cbbe4",
+   "MediaType": "Video",
+   "Name": "Secret ending r19 E1",
+   "ParentIndexNumber": 1,
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "f49ce1699fc6d63d489a40fb34639f94-jeud1a00803477b",
+   "RunTimeTicks": 6000230000,
+   "Series": "D46 R19 Show (1991)",
+   "Type": "Episode"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "29d8dae54f3c3df57606f30f757bf403",
+   "ItemId": "29d8dae54f3c3df57606f30f757bf403",
+   "MediaType": "Video",
+   "Name": "Secret ending r19 E2",
+   "ParentIndexNumber": 1,
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "82afcd48bcdd690996e5ddf633089634-jeud1a00803477b",
+   "RunTimeTicks": 6000230000,
+   "Series": "D46 R19 Show (1991)",
+   "Type": "Episode"
+  },
+  {
+   "Artists": [],
+   "ChannelId": null,
+   "Id": "9597f7ac44b1bd3fefe63a3be539ec9c",
+   "ItemId": "9597f7ac44b1bd3fefe63a3be539ec9c",
+   "MediaType": "Video",
+   "Name": "Secret ending r19 E3",
+   "PrimaryImageAspectRatio": 1.7777777777777777,
+   "PrimaryImageTag": "b6a6a01f6dc9f971cbc9c13cedfa0d30-jeud1a00803477b",
+   "RunTimeTicks": 6000230000,
+   "Series": "D46 R19 Show (1991)",
+   "Type": "Episode"
+  }
+ ],
+ "TotalRecordCount": 3
+}

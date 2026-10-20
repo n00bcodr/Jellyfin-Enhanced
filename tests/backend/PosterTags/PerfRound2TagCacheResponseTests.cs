@@ -253,4 +253,27 @@ public class PerfRound2TagCacheResponseTests
         var json = JsonSerializer.Serialize(tagData.Value);
         Assert.Contains(series.Id.ToString(), json); Assert.DoesNotContain("Series secret", json);
     }
+
+    [Theory]
+    [InlineData(null, null, "Episode")]
+    [InlineData(2, null, "Season 2, Episode")]
+    [InlineData(null, 4, "Episode 4")]
+    [InlineData(2, 4, "Season 2, Episode 4")]
+    public void TagDataNamesAGuardedEpisodeNeutrallyWhateverItsNumbering(int? season, int? number, string expected)
+    {
+        // D46 review round 18: the per-batch stub agrees with the field strip, which no longer needs both numbers.
+        using var endpoint = new Endpoint();
+        endpoint.AliceAccess = [endpoint.First, endpoint.Episode];
+        endpoint.GuardSeries();
+        endpoint.Fixture.Plugin.Configuration.SpoilerReplaceTitle = true;
+        var episode = new MediaBrowser.Controller.Entities.TV.Episode { Id = endpoint.Episode, SeriesId = endpoint.SeriesId, Name = "Secret ending r19", ParentIndexNumber = season, IndexNumber = number };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(episode.Id, It.IsAny<User>())).Returns(episode);
+        endpoint.Library.Setup(x => x.GetItemById(episode.Id)).Returns(episode);
+        endpoint.SignIn(endpoint.Alice);
+        var tagData = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(endpoint.Alice.Id, [episode.Id.ToString()]));
+        var json = JsonSerializer.Serialize(tagData.Value);
+        Assert.Contains(episode.Id.ToString(), json);
+        Assert.DoesNotContain("Secret ending r19", json);
+        Assert.Contains("\"Name\":\"" + expected + "\"", json);
+    }
 }

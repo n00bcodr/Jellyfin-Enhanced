@@ -9001,15 +9001,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     && item is MediaBrowser.Controller.Entities.TV.Episode spEp)
                 {
                     // When SpoilerReplaceTitle is on, the field-strip filter rewrites
-                    // Name to "Season X, Episode Y"; the stub must agree — leaking the
+                    // Name to its neutral form whatever the numbering ("Season X,
+                    // Episode Y", "Episode", …); the stub must agree — leaking the
                     // raw Name here would defeat the title toggle.
-                    string? stubName = item.Name;
-                    if (spReplaceTitle
-                        && spEp.IndexNumber.HasValue
-                        && spEp.ParentIndexNumber.HasValue)
-                    {
-                        stubName = $"Season {spEp.ParentIndexNumber.Value}, Episode {spEp.IndexNumber.Value}";
-                    }
+                    string? stubName = spReplaceTitle ? Services.NeutralNames.Episode(spEp.ParentIndexNumber, spEp.IndexNumber) : item.Name;
 
                     // Compute MediaStreams when SpoilerStripTags is off so quality /
                     // language overlays still render under rating-only strip.
@@ -9191,11 +9186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (spoilerStub == Services.SpoilerTagDataStub.Season
                     && item is MediaBrowser.Controller.Entities.TV.Season spSeason)
                 {
-                    string? stubName = item.Name;
-                    if (spReplaceTitle && spSeason.IndexNumber.HasValue)
-                    {
-                        stubName = $"Season {spSeason.IndexNumber.Value}";
-                    }
+                    string? stubName = spReplaceTitle ? Services.NeutralNames.Season(spSeason.IndexNumber) : item.Name;
                     results.Add(new
                     {
                         Id = item.Id,

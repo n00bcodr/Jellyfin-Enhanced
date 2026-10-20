@@ -205,13 +205,11 @@ internal static class NativePrivacyProjection
         => Guid.TryParse(timer.ProgramId, out var id) ? id : (timer as MediaBrowser.Model.LiveTv.TimerInfoDto)?.ProgramInfo?.Id;
 
     /// <summary>
-    /// What a hidden now-playing (or queued) item leaves: enough for the session's controls (id, kind, length), no title.
+    /// What a hidden now-playing (or queued) item leaves: every field the host's own clients need to drive the session
+    /// (ids, kinds, length, its media streams without their titles, queue position) and a neutral name; no title-bearing
+    /// field (<see cref="PrivacyFieldClassification.Stub"/>).
     /// </summary>
-    public static BaseItemDto Stub(BaseItemDto dto) => new()
-    {
-        Id = dto.Id, ServerId = dto.ServerId, Type = dto.Type, MediaType = dto.MediaType, IsFolder = dto.IsFolder,
-        RunTimeTicks = dto.RunTimeTicks, LocationType = dto.LocationType, Name = string.Empty
-    };
+    public static BaseItemDto Stub(BaseItemDto dto) => PrivacyFieldClassification.Stub(dto);
 
     /// <summary>A private copy of a DTO the host may share (a session's now-playing item), for projection.</summary>
     public static BaseItemDto Copy(BaseItemDto dto)
@@ -529,10 +527,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 if (NativePrivacyProjection.ProgramOf(timer) is { } program && program != opened
                     && final.Hidden.IsHidden(identities.TryGetValue(program, out var row) ? row : new PrivacyIdentity(program, BaseItemKind.Program, program, null, Array.Empty<Guid>(), null), "library"))
                 {
-                    // A hidden programme's timer or series-timer row stays (it can still be cancelled) without the programme's
-                    // title and overview (free text naming it: never patched, removed).
-                    timer.Name = null; timer.Overview = null;
-                    if (timer is MediaBrowser.Model.LiveTv.TimerInfoDto one) one.ProgramInfo = null;
+                    // A hidden programme's timer or series-timer row stays (it can still be cancelled) without its title-bearing
+                    // fields (the programme's title and overview, free text naming it, never patched; a timer's ProgramInfo).
+                    PrivacyFieldClassification.ClearTitles(timer);
                 }
         PrivacyAnswerGraph.Rewrite(value, NativePrivacyProjection.Listed(value), Member);
 
@@ -581,9 +578,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             // An item the library can no longer resolve cannot be judged: its entry is not trusted to name a title.
             if (identity == null ? PolicyApplies(final) : titles && identity.Kind == BaseItemKind.Episode && (spoiler!.Unavailable || spoiler.Guarded(identity)))
             {
+                // Every title-bearing field of the entry goes; its name is constructed, never patched.
+                PrivacyFieldClassification.ClearTitles(entry);
                 entry.Name = ActivityText(entry, identity);
-                entry.ShortOverview = null;
-                entry.Overview = null;
             }
             kept.Add(entry);
         }
@@ -600,8 +597,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         var label = "an item";
         if (identity != null && library.GetItemById(identity.ItemId) is MediaBrowser.Controller.Entities.TV.Episode episode)
         {
-            var numbers = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
-                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Season {season}, Episode {number}") : "Episode";
+            var numbers = NeutralNames.Episode(episode.ParentIndexNumber, episode.IndexNumber);
             label = string.IsNullOrEmpty(episode.SeriesName) ? numbers : episode.SeriesName + " - " + numbers;
         }
         else if (identity != null) label = "an episode";

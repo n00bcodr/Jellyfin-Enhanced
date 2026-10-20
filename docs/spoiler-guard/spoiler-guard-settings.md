@@ -198,6 +198,8 @@ For movies, this is a **progressive strip**: only chapters whose start position 
 
 **Default: On.** Episode names become `Season X, Episode Y` instead of leaking the actual title (e.g. `The Death of Optimus`). Affects every surface where the title appears — list views, Next Up, Continue Watching, search results, the player's "now playing" overlay.
 
+An episode the library has no numbers for is still protected: it becomes `Season X, Episode` (no episode number), `Episode Y` (no season) or just `Episode`. Its original title, sort title and season name go with it.
+
 Some clients use the title in navigation tooltips and breadcrumbs where the synthesized title can look jarring. Turn off if that's a deal-breaker for your users.
 
 ### Hide cast on unwatched episodes
