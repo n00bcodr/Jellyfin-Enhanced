@@ -1460,3 +1460,178 @@ for (const collection of [false, true]) for (const status of [403, 404]) for (co
     assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 1);
   });
 }
+
+// A Request press's in-flight state belongs to the page show that made it. jellyfin-web keeps a left page and shows the
+// same rows on Back, so B presses the very button A disabled, while A's preview may still be on its way.
+const ASKABLE = id => [{ items: [{ placeholderId: id, title: 'x', outcome: 'request', reason: 'looking', cost: 1 }], askable: 1, cost: 1, maxBatch: 20 }];
+const SKIPPED = id => [{ items: [{ placeholderId: id, outcome: 'skip', reason: 'custom' }] }];
+/** How A's held preview ends after B pressed: each would draw something (a sheet, a toast, a refresh) if it were current. */
+const LATE = {
+  askable: (d, id) => d.resolve(ASKABLE(id)),
+  skip: (d, id) => d.resolve(SKIPPED(id)),
+  changed: d => d.resolve([{ error: true, code: 'changed' }, 409]),
+  network: d => d.reject(new TypeError('network'))
+};
+
+/** A list page with one requestable entry whose previews are held until the test answers them. */
+async function heldRequestPage(t, collection) {
+  const previews = [];
+  // Before the harness closes (hooks run in order): what is still held answers, and its cleanup runs.
+  t.after(async () => { previews.forEach(d => d.resolve(SKIPPED(P(1)))); await sleep(20); });
+  const id = collection ? COLL : LIST;
+  const entry = ph(P(1), { actions: ['request'] });
+  const body = view([entry], [entry.token], { listId: id, listKind: collection ? 'collection' : 'playlist', actions: ['request'] });
+  const h = setup(t, {
+    views: () => [body],
+    items: { [id]: { Id: id, Type: collection ? 'BoxSet' : 'Playlist' } },
+    preview: () => { const d = deferred(); previews.push(d); return d.promise; }
+  });
+  await h.start();
+  const page = collection ? h.collectionPage() : h.playlistPage().page;
+  const hash = '#/details?id=' + id;
+  await h.show(page, hash);
+  const other = h.document.createElement('div');
+  other.className = 'page itemDetailPage';
+  h.document.body.appendChild(other);
+  const lp = h.JE.internals.arrListPages;
+  return {
+    h, lp, id, entry, page, previews,
+    ctrl: () => [...lp.pages.controllers].find(c => c.page === page),
+    button: () => page.querySelector('.je-list-request'),
+    away: async () => { page.classList.add('hide'); other.classList.remove('hide'); await h.show(other, '#/details?id=' + 'e'.repeat(32)); },
+    back: async () => { other.classList.add('hide'); page.classList.remove('hide'); await h.show(page, hash); }
+  };
+}
+
+for (const collection of [false, true]) for (const [late, end] of Object.entries(LATE)) {
+  test(`LIST-REQ-INFLIGHT-1: ${collection ? 'collection' : 'playlist'} Request after away-and-back is B's own press; A's late preview (${late}) draws nothing and leaves B alone`, async t => {
+    const r = await heldRequestPage(t, collection);
+    const { h, lp } = r;
+    const a = r.button();
+    a.click();
+    await h.settle();
+    assert.equal(r.previews.length, 1, "A's preview is asked for");
+    assert.equal(a.disabled, true, "A's press takes the button while it prepares");
+    await r.away();
+    assert.equal(a.disabled, false, "leaving the page gives A's button back (A's page show is over)");
+    await r.back();
+    assert.equal(r.button(), a, 'Back shows the page jellyfin-web kept: the same row and button');
+    const toasts = h.toasts.length;
+    r.button().click();
+    await h.settle();
+    assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
+    assert.equal(a.disabled, true, "B's press takes the button");
+    end(r.previews[0], r.entry.id);
+    await h.settle(60);
+    assert.equal(h.toasts.length, toasts, "A's late answer shows no toast: " + h.toasts.join(' / '));
+    assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, "A's late answer opens no sheet");
+    assert.equal(a.disabled, true, "A's cleanup never gives back the button B holds");
+    const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+    await h.settle();
+    assert.equal(r.previews.length, 2, "A's cleanup left B's in-flight entry in place: a second press on B's page show sends nothing");
+    assert.equal(await again, null);
+    r.previews[1].resolve(ASKABLE(r.entry.id));
+    await h.settle(60);
+    assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
+    assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
+    h.document.querySelector('.je-sheet-secondary').click();
+    await h.settle();
+  });
+}
+
+for (const revoked of [true, false]) test(`LIST-REQ-INFLIGHT-1: a press from a later page show is never joined to an older one (A's ticket ${revoked ? 'revoked' : 'out of scope, not revoked'})`, async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  let pageA = true;
+  const ticketA = lp.gate.issue(r.id, () => pageA, lp.gate.policy(() => false, false));
+  const pressA = lp.request.open({ listId: r.id, ticket: () => ticketA }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 1);
+  pageA = false;
+  if (revoked) ticketA.revoke();
+  const ticketB = lp.gate.issue(r.id, () => true, lp.gate.policy(() => false, false));
+  const pressB = lp.request.open({ listId: r.id, ticket: () => ticketB }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, "B's press was joined to A's old work (in-flight keyed by list and entry only)");
+  const toasts = h.toasts.length;
+  r.previews[0].resolve(SKIPPED(r.entry.id));
+  assert.equal(await pressA, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts, 'A draws nothing');
+  const again = lp.request.open({ listId: r.id, ticket: () => ticketB }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, "A's cleanup removed only its own entry: B's second press still does nothing");
+  assert.equal(await again, null);
+  r.previews[1].resolve(SKIPPED(r.entry.id));
+  assert.equal(await pressB, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts + 1, "B's own answer is shown");
+});
+
+test('LIST-REQ-INFLIGHT-1 control: on one page show a second press (tap or call) sends one preview and opens one sheet', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  const a = r.button();
+  a.click();
+  a.click();
+  const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+  await h.settle();
+  assert.equal(r.previews.length, 1, 'one preview for one page show');
+  assert.equal(await again, null);
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1);
+  assert.equal(r.previews.length, 1);
+  h.document.querySelector('.je-sheet-secondary').click();
+  await h.settle();
+});
+
+test('LIST-REQ-INFLIGHT-1: a person switch frees every press; the next person\'s press on the entry is its own and the old one draws nothing', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 1);
+  h.state.epoch++;
+  h.userChange.forEach(fn => fn());
+  await h.settle();
+  const ticket = lp.gate.issue(r.id, () => true, lp.gate.policy(() => false, false));
+  const press = lp.request.open({ listId: r.id, ticket: () => ticket }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, 'the next person starts their own preview');
+  const toasts = h.toasts.length;
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.toasts.length, toasts);
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null);
+  r.previews[1].resolve(SKIPPED(r.entry.id));
+  assert.equal(await press, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts + 1);
+});
+
+test('LIST-REQ-INFLIGHT-1 audit: the Playlists grid left and shown again while its summary is in flight marks the new cards once it answers (one call)', async t => {
+  const held = deferred();
+  t.after(async () => { held.resolve([{ lists: [], pending: [] }]); await sleep(20); });
+  let count = 0;
+  const h = setup(t, { realBody: true, views: () => [null, 404], summaries: () => { count++; return held.promise; } });
+  const cardHtml = `<div class="card squareCard card-withuserdata" data-id="${LIST}" data-type="Playlist"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer itemAction"><div class="cardIndicators"><div class="playedIndicator indicator"></div></div></a></div></div></div>`;
+  const grid = h.document.createElement('div');
+  grid.className = 'page libraryPage';
+  grid.innerHTML = '<div class="itemsContainer vertical-wrap">' + cardHtml + '</div>';
+  h.document.body.appendChild(grid);
+  h.window.location.hash = '#/list?parentId=x';
+  await h.start();
+  await h.settle(300);
+  assert.equal(count, 1, 'the summary is asked for');
+  // Away (jellyfin-web drops the grid's cards) and back (new card elements) while that answer is on its way.
+  grid.querySelector('.itemsContainer').innerHTML = '';
+  await h.settle(60);
+  grid.querySelector('.itemsContainer').innerHTML = cardHtml;
+  await h.settle(300);
+  held.resolve([{ lists: [{ listId: LIST, listKind: 'playlist', missing: 3 }], pending: [] }]);
+  await h.settle(60);
+  const card = grid.querySelector('.card');
+  assert.equal(card.querySelector('.je-list-grid-count')?.textContent, '3', 'the shown card gets the answer');
+  assert.equal(count, 1, 'joined, not asked twice');
+});
