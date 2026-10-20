@@ -61,6 +61,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             SpoilerNextUnwatchedService nextUnwatched,
             MediaBrowser.Model.Globalization.ILocalizationManager? localization = null)
         {
+            // The watched-state and ownership changes the delivery gate compares (verdict inputs with revisions).
+            PrivacyInputs.Observe(libraryManager, userDataManager);
             _resolver = resolver;
             _libraryManager = libraryManager;
             _userManager = userManager;
@@ -375,6 +377,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (!identity.IsExtra) return false;
                     return !(identity.OwnerKind == Jellyfin.Data.Enums.BaseItemKind.Movie && (identity.Played ?? ResolvePlayedServerSide(userId, identity.OwnerId)));
             }
+        }
+
+        /// <summary>
+        /// Replaces the watched state an answer's items carry (the host's, from when it built the answer) with the viewer's
+        /// current one, for a projection the delivery gate asks for again; a folder's counts are dropped, so its verdict is
+        /// read from the server.
+        /// </summary>
+        internal void RefreshUserData(Microsoft.AspNetCore.Mvc.ObjectResult result, Guid viewer)
+        {
+            var user = _userManager.GetUserById(viewer);
+            if (user == null) return;
+            NativeResponseValue.Replace(result, dto =>
+            {
+                if (dto.UserData == null || dto.Id == Guid.Empty || _libraryManager.GetItemById(dto.Id) is not { } item) return dto;
+                var now = _userDataManager.GetUserData(user, item);
+                dto.UserData.Played = now?.Played == true;
+                dto.UserData.PlaybackPositionTicks = now?.PlaybackPositionTicks ?? 0;
+                dto.UserData.PlayCount = now?.PlayCount ?? 0;
+                dto.UserData.UnplayedItemCount = null;
+                return dto;
+            });
         }
 
         /// <summary>

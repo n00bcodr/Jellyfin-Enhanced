@@ -655,15 +655,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             if (!_artwork.IsCached(grant.Path, size) && !_artwork.TakeUpstream(grant.Viewer)) return new StatusCodeResult(StatusCodes.Status429TooManyRequests);
             var image = await _artwork.FetchAsync(grant.Path, size, ct).ConfigureAwait(false);
             if (image is not { } bytes) return new NotFoundResult();
-            var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
-            spoiler = final?.Spoilers;
-            if (HidesArtwork(owner, grant.Type) && spoiler?.Guarded(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString())) == true) return new NotFoundResult();
-            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
-            protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
-                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
+            // The one delivery gate after the fetch (the last await): the artwork is projected under the viewer's policy
+            // revisions (an absent title has no watched state or owner of its own) and leaves only when they still hold.
             var headers = context.HttpContext.Response.Headers;
             headers.CacheControl = "private, no-store";
             headers["X-Content-Type-Options"] = "nosniff";
+            return PrivacyDelivery.Deliver<IActionResult>(viewer.Id, () =>
+            {
+                var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
+                return new(ProjectArtwork(final?.Spoilers, owner, grant, size, pageKey, bytes), final?.Revision ?? "-", static _ => false);
+            }, () => _userConfig == null ? "-" : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library).Revision) ?? new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        /// <summary>One projection of an absent title's artwork under the viewer's Spoiler Guard presentation.</summary>
+        private IActionResult ProjectArtwork(SpoilerPresentationContext? spoiler, SyntheticId owner, ArtworkGrant grant, string size, string? pageKey,
+            (byte[] Bytes, string ContentType) bytes)
+        {
+            if (HidesArtwork(owner, grant.Type) && spoiler?.Guarded(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString())) == true) return new NotFoundResult();
+            if (owner.Kind == SyntheticKind.Person && spoiler?.Flags(pageKey ?? "")["cast"]?.GetValue<bool>() == true) return new NotFoundResult();
+            var protectedArt = spoiler?.ProtectArtwork(HiddenContentPolicy.TitleIdentity(owner.IsMovie ? "movie" : "tv", owner.TmdbId.ToString()),
+                owner.Kind.ToString().ToLowerInvariant(), grant.Type.ToString(), owner.Season) == true;
             if (protectedArt)
             {
                 if (_imageBlur == null) return new NotFoundResult();

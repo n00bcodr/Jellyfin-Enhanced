@@ -33,6 +33,30 @@ public sealed record PrivacyTagDataRequest(SpoilerTagStripPolicy? Policy, string
 /// </summary>
 public static partial class PrivacyValues
 {
+    private static readonly Emby.Naming.Common.NamingOptions _naming = new();
+
+    /// <summary>
+    /// Whether the host's own naming rules make an item's file an extra (an extras folder, an extra's suffix, a theme file):
+    /// an ownership input, read here because the table is the one reader of an item's text.
+    /// </summary>
+    internal static bool SitsLikeAnExtra(MediaBrowser.Controller.Entities.BaseItem item)
+    {
+        if (string.IsNullOrEmpty(item.Path)) return false;
+        try { return Emby.Naming.Video.ExtraRuleResolver.GetExtraInfo(item.Path, _naming).ExtraType != null; }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// The folders that may hold the title owning an item the host's naming rules make an extra: the folder above its
+    /// extras folder, and its own folder (an extra by its suffix or a theme file). Empty for anything else.
+    /// </summary>
+    internal static IEnumerable<string> ExtraOwnerFolders(MediaBrowser.Controller.Entities.BaseItem item)
+    {
+        if (!SitsLikeAnExtra(item) || System.IO.Path.GetDirectoryName(item.Path) is not { Length: > 0 } folder) yield break;
+        if (System.IO.Path.GetDirectoryName(folder) is { Length: > 0 } above) yield return above;
+        yield return folder;
+    }
+
     /// <summary>
     /// A guarded tag-cache entry: a clone (the cache's entries are shared by every user) without what the strip removes,
     /// then only values the host vouches for: provider ids as digits, a rating the host's tables know, languages the host

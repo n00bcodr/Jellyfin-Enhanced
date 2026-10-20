@@ -135,6 +135,8 @@ public class PrivacyHostShapeModelTests
         public HashSet<(Guid User, Guid Item)> Played { get; } = new();
         public Mock<ILibraryManager> Library { get; } = new();
         public Mock<IUserManager> Users { get; } = new();
+        /// <summary>The host's user-data store (its saves raise <c>UserDataSaved</c>).</summary>
+        public Mock<IUserDataManager> UserData { get; } = new();
         public SpoilerFieldStripFilter Strip { get; }
         public SpoilerPresentation Spoilers { get; }
         public Guid Admin { get; }
@@ -155,7 +157,7 @@ public class PrivacyHostShapeModelTests
             BaseItem.LibraryManager = Library.Object;
             foreach (var (id, name) in new[] { (Admin, "real-admin"), (Viewer, "real-viewer") })
                 Users.Setup(u => u.GetUserById(id)).Returns(new User(name, "default", "default") { Id = id });
-            var data = new Mock<IUserDataManager>();
+            var data = UserData;
             data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>()))
                 .Returns((User user, BaseItem item) => new UserItemData { Key = "k", Played = Played.Contains((user.Id, item.Id)) });
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object, new SpoilerIdentityService(Users.Object, F.Core.Logger), F.Core.Logger);

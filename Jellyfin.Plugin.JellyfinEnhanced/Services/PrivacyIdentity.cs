@@ -81,6 +81,15 @@ public static class PrivacyIdentities
         foreach (var batch in unique.Chunk(2000))
             foreach (var item in library.GetItemList(new InternalItemsQuery { ItemIds = batch, DtoOptions = options }) ?? [])
                 if (item != null) items[item.Id] = item;
+        // A stored row that names no owner but sits where the host's own naming rules put an extra is judged by the host's
+        // live item: 10.11 attaches an extra found in another library's folder to its owner in memory (and in the owner's
+        // extras) without saving the extra's own row, so the row the batched lookup reads lags what the host serves.
+        foreach (var item in items.Values.ToList())
+            if (item.OwnerId == Guid.Empty && item is not (Movie or Series or Season or Episode or Folder) && PrivacyValues.SitsLikeAnExtra(item)
+                && library.GetItemById(item.Id) is { } live && live.OwnerId != Guid.Empty)
+                items[item.Id] = live;
+        var listed = ListedOwners(library, items.Values);
+        Guid OwnerOf(BaseItem item) => PrivacyIdentities.OwnerOf(item) is var own && own != Guid.Empty ? own : listed.GetValueOrDefault(item.Id);
         var owners = new Dictionary<Guid, BaseItem>();
         var missing = items.Values.Select(OwnerOf).Where(o => o != Guid.Empty && !items.ContainsKey(o)).Distinct().ToArray();
         foreach (var batch in missing.Chunk(2000))
@@ -118,6 +127,8 @@ public static class PrivacyIdentities
     /// </summary>
     public static PrivacyIdentity Of(ILibraryManager library, BaseItem item, JUser? viewer = null, IUserDataManager? userData = null)
     {
+        var listed = ListedOwners(library, [item]);
+        Guid OwnerOf(BaseItem one) => PrivacyIdentities.OwnerOf(one) is var own && own != Guid.Empty ? own : listed.GetValueOrDefault(one.Id);
         var owner = item;
         var ownerId = OwnerOf(item) is var first && first != Guid.Empty ? first : item.Id;
         for (var hop = 0; hop < 2 && OwnerOf(owner) is var next && next != Guid.Empty && library.GetItemById(next) is { } found; hop++) owner = found;
@@ -163,6 +174,40 @@ public static class PrivacyIdentities
 
     /// <summary>Drops the membership memo (tests and library changes that must be visible at once).</summary>
     public static void ForgetCollections() => _members.Clear();
+
+    /// <summary>
+    /// The title an item is an extra of (its own owner, or on 10.11 the owner that lists it in its extras), or empty: the
+    /// one ownership rule every site that names or judges an extra asks.
+    /// </summary>
+    public static Guid ExtraOwner(ILibraryManager? library, BaseItem item)
+    {
+        if (item is Episode or Season) return Guid.Empty;
+        if (item.OwnerId != Guid.Empty) return item.OwnerId;
+        return library == null ? Guid.Empty : ListedOwners(library, [item]).GetValueOrDefault(item.Id);
+    }
+
+    /// <summary>
+    /// The owners the host lists items under without the items naming them: 10.11 can attach an extra found in another
+    /// library's folder to its owner (saving it in the owner's extras) without ever saving the extra's own owner, and after a
+    /// restart it still serves the item as that owner's extra. Such an item is the owner's. Empty on 12, which saves both.
+    /// </summary>
+    private static Dictionary<Guid, Guid> ListedOwners(ILibraryManager library, IEnumerable<BaseItem> items)
+    {
+        var listed = new Dictionary<Guid, Guid>();
+#if JF10
+        foreach (var item in items)
+        {
+            if (item.OwnerId != Guid.Empty || item is Movie or Series or Season or Episode or Folder) continue;
+            foreach (var folder in PrivacyValues.ExtraOwnerFolders(item))
+                if (library.FindByPath(folder, null) is { } owner && owner is not Folder { IsRoot: true } && owner.ExtraIds?.Contains(item.Id) == true)
+                {
+                    listed[item.Id] = owner.Id;
+                    break;
+                }
+        }
+#endif
+        return listed;
+    }
 
     private static Guid OwnerOf(BaseItem item) => item switch
     {

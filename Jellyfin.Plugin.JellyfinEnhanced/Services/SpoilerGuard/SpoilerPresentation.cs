@@ -22,6 +22,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 /// <summary>Builds one provider-aware spoiler context for a viewer, after access filtering and before presentation caches.</summary>
 public sealed class SpoilerPresentation(UserConfigurationManager config, ILibraryManager library, IUserManager users, IUserDataManager userData)
 {
+    /// <summary>The watched-state and ownership changes the delivery gate compares (verdict inputs with revisions).</summary>
+    private readonly bool _observing = PrivacyInputs.Observe(library, userData);
+
+    /// <summary>
+    /// The viewer's <see cref="SpoilerPresentationContext.StateRevision"/> as of now: the state file and the admin's settings
+    /// only, no library read (the delivery gate's re-read).
+    /// </summary>
+    public string StateRevision(Guid viewer)
+    {
+        var plugin = JellyfinEnhanced.Instance?.Configuration ?? new();
+        try
+        {
+            UserSpoilerBlur state;
+            lock (config.GetUserFileLock(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName))
+                state = config.GetUserConfigurationStrict<UserSpoilerBlur>(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, quarantineCorrupt: false);
+            return new SpoilerPresentationContext(state, plugin).StateRevision;
+        }
+        catch (Exception) { return new SpoilerPresentationContext(new(), plugin, unavailable: true).StateRevision; }
+    }
+
     /// <summary>Loads strictly once per request. Unknown policy suppresses sensitive presentation.</summary>
     public SpoilerPresentationContext Load(Guid viewer, HttpContext? http = null)
     {
@@ -106,6 +126,17 @@ public sealed class SpoilerPresentationContext
     /// <summary>A fingerprint of the full viewer and admin spoiler policy, stable across restarts.</summary>
     public string Revision { get; private set; }
 
+    /// <summary>
+    /// The fingerprint of what the viewer's state file and the admin's settings say, before the library facts the context
+    /// adds (its guarded titles' keys, their watched state, collections' members): what the delivery gate re-reads, the
+    /// library facts being inputs it compares by their own revisions (<see cref="LibraryInputs"/>).
+    /// </summary>
+    public string StateRevision { get; }
+
+    /// <summary>The library items whose facts this context read: the guarded titles and collections, and the collections' members.</summary>
+    internal IEnumerable<Guid> LibraryInputs => State.Series.Keys.Concat(State.Movies.Keys).Concat(State.Collections.Keys)
+        .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty).Concat(_members);
+
     /// <summary>Creates a context; no shared upstream objects are modified.</summary>
     public SpoilerPresentationContext(UserSpoilerBlur state, PluginConfiguration config, bool unavailable = false)
     {
@@ -131,6 +162,7 @@ public sealed class SpoilerPresentationContext
             config.SpoilerStripCast, config.SpoilerStripCastMode, config.SpoilerStripTags, config.SpoilerStripPremiereDate, config.SpoilerStripTaglines,
             config.SpoilerStripReviews, config.SpoilerReplaceTitle, unavailable
         }))));
+        StateRevision = Revision;
     }
 
     internal void Seal() => Revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Revision + "|" + string.Join(',', _titles.OrderBy(k => k, StringComparer.Ordinal)) + "|" + string.Join(',', _watched.OrderBy(k => k, StringComparer.Ordinal)))));

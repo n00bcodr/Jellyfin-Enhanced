@@ -123,6 +123,9 @@ public sealed class HiddenContentPolicy
     /// <summary>Whether this policy contains any rules.</summary>
     public bool IsEmpty => _items.Count + _titles.Count == 0 || !_settings.Enabled;
 
+    /// <summary>The library items the rules name by id (their facts, a title's key among them, are the delivery gate's inputs).</summary>
+    internal IEnumerable<Guid> RuleItems => _items.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty).Where(id => id != Guid.Empty);
+
     /// <summary>The global keys for an existing feed's set-based projection.</summary>
     public HashSet<string> GlobalKeys(string? surface = null)
     {

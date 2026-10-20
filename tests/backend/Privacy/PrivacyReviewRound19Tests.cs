@@ -533,6 +533,8 @@ public class PrivacyReviewRound19Tests
         public readonly Dictionary<Guid, MediaBrowser.Controller.Entities.BaseItem> Items = new();
         /// <summary>The items Alice has watched (user data and the bounded played-state query read it).</summary>
         public readonly HashSet<Guid> Played = new();
+        /// <summary>The host's user-data store (its saves raise <c>UserDataSaved</c>, as the host's do).</summary>
+        public readonly Mock<MediaBrowser.Controller.Library.IUserDataManager> UserData = new();
         private readonly Microsoft.Extensions.DependencyInjection.ServiceProvider _provider;
         private readonly MediaBrowser.Controller.Library.ILibraryManager? _previousLibrary = MediaBrowser.Controller.Entities.BaseItem.LibraryManager;
         private readonly MediaBrowser.Controller.Library.IMediaSourceManager? _previousMedia = MediaBrowser.Controller.Entities.BaseItem.MediaSourceManager;
@@ -648,7 +650,7 @@ public class PrivacyReviewRound19Tests
             });
             _provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
             var resolver = Resolver = new Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver(Fixture.Core.Manager, Library.Object, Fixture.Core.Logger, null!);
-            var data = new Mock<MediaBrowser.Controller.Library.IUserDataManager>();
+            var data = UserData;
             data.Setup(d => d.GetUserData(It.IsAny<Jellyfin.Database.Implementations.Entities.User>(), It.IsAny<MediaBrowser.Controller.Entities.BaseItem>()))
                 .Returns((Jellyfin.Database.Implementations.Entities.User _, MediaBrowser.Controller.Entities.BaseItem item) => new MediaBrowser.Controller.Entities.UserItemData { Key = "k", Played = Played.Contains(item.Id) });
             var userData = data.Object;
@@ -677,6 +679,24 @@ public class PrivacyReviewRound19Tests
             Fixture.Core.Manager.SaveUserConfiguration(id, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, State);
             Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(id);
         }
+
+        /// <summary>Marks an item watched or unwatched for Alice the way the host saves it: the store changes, then UserDataSaved is raised.</summary>
+        public void SetPlayed(Guid item, bool played)
+        {
+            if (played) Played.Add(item); else Played.Remove(item);
+            UserData.Raise(d => d.UserDataSaved += null, UserData.Object, new MediaBrowser.Controller.Library.UserDataSaveEventArgs
+            {
+                UserId = Alice.Id, Item = Items[item], SaveReason = MediaBrowser.Model.Entities.UserDataSaveReason.TogglePlayed,
+                UserData = new MediaBrowser.Controller.Entities.UserItemData { Key = "k", Played = played },
+            });
+        }
+
+        /// <summary>The host's library event for an item it saved (a refresh that re-parented it, for example).</summary>
+        public void Updated(Guid item)
+            => Library.Raise(l => l.ItemUpdated += null, Library.Object, new MediaBrowser.Controller.Library.ItemChangeEventArgs
+            {
+                Item = Items[item], UpdateReason = MediaBrowser.Controller.Library.ItemUpdateType.MetadataImport,
+            });
 
         /// <summary>Takes a series out of Alice's Spoiler Guard.</summary>
         public void Unguard(Guid series)

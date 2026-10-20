@@ -189,7 +189,8 @@ public class PrivacySpoilerContextTests
         var http=new Microsoft.AspNetCore.Http.DefaultHttpContext();var context=service.Load(viewer,http);
         Assert.Same(context,service.Load(viewer,http));
         for(var i=0;i<300;i++) Assert.DoesNotContain("secret",context.ProjectResource("{\"overview\":\"secret\"}","movie:tmdb:42", "title"));
-        Assert.Empty(library.Invocations);
+        // Reads only: the delivery gate's input log subscribes to the library's item events (no read).
+        Assert.Empty(library.Invocations.Where(call => !call.Method.IsSpecialName));
     }
 }
 
@@ -209,8 +210,10 @@ public class PrivacyD46RoundOneTests
         library.Setup(l => l.GetItemList(Moq.It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
             .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.ItemIds.Select(id => (MediaBrowser.Controller.Entities.BaseItem)new MediaBrowser.Controller.Entities.TV.Series { Id = id, ProviderIds = new Dictionary<string,string> { ["Tmdb"] = (Array.IndexOf(ids,id)+1).ToString() } }).ToList());
         var context = new SpoilerPresentation(f.Core.Manager, library.Object, users.Object, Moq.Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()).Load(viewer);
-        Assert.True(context.Guarded("tv:tmdb:2001")); Assert.Equal(2, library.Invocations.Count);
-        Assert.All(library.Invocations, call => Assert.InRange(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length, 1, 2000));
+        // Reads only: the delivery gate's input log subscribes to the library's item events (no read).
+        var reads = library.Invocations.Where(call => !call.Method.IsSpecialName).ToList();
+        Assert.True(context.Guarded("tv:tmdb:2001")); Assert.Equal(2, reads.Count);
+        Assert.All(reads, call => Assert.InRange(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length, 1, 2000));
     }
 
     [Fact]

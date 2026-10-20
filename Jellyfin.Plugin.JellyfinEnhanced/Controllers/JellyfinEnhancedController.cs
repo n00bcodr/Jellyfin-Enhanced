@@ -8603,26 +8603,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // formatter would have applied to Ok(payload), so it is the same body.
             var jsonOptions = TagCacheJsonOptions();
 
-            // Policy fresh at emit: the answer is composed under one read of the
-            // user's Hidden Content and Spoiler Guard policies and leaves (bytes
-            // or a 304) only when a re-read after composing — after the shared
-            // serialization's wait and the cache's locks — finds them unchanged.
-            // A policy changed meanwhile composes again under the new one
-            // (bounded); one that keeps changing gets 503, never stale bytes.
-            var answer = Services.PolicyFreshness.Fresh(
-                () => ComposeTagCache(user, since, jsonOptions),
+            // The one delivery gate: the whole body (items, review ratings) is
+            // built under one verdict identity (the user's Hidden Content and
+            // Spoiler Guard revisions, and the watched state and ownership of
+            // every entry it holds) and leaves (bytes or a 304) only when the
+            // gate, after the build's last wait, lookup and lock, finds that
+            // identity unchanged. A changed one builds again (bounded); one that
+            // keeps changing gets 503, never stale bytes.
+            var body = Services.PrivacyDelivery.Deliver(
+                user.Id,
+                () => BuildTagCacheBody(user, since, jsonOptions),
                 () => TagCachePolicyRevision(user));
-            if (answer == null)
+            if (body == null)
             {
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return StatusCode(503);
             }
 
-            return RespondTagCache(answer, jsonOptions);
+            return RespondTagCache(body);
         }
 
-        /// <summary>One composed tag-cache answer, before the review ratings, ETag and conditional check.</summary>
-        private sealed record TagCacheAnswer(long Version, long Timestamp, long ServedAt, string Access, string StripFingerprint, byte[] Items, int Count);
+        /// <summary>
+        /// One composed tag-cache answer, before the review ratings, ETag and conditional check; <see cref="Keys"/> are the
+        /// entries it holds (null: no policy judged any), <see cref="Owners"/> the owners of its extras (their verdicts).
+        /// </summary>
+        private sealed record TagCacheAnswer(long Version, long Timestamp, long ServedAt, string Access, string StripFingerprint, byte[] Items, int Count,
+            IReadOnlyDictionary<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry>? Keys = null, IReadOnlySet<Guid>? Owners = null);
 
         /// <summary>
         /// The user's tag-cache policies, read fresh (never a request's memo): the effective Spoiler Guard tag strip (null
@@ -8780,12 +8786,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
             var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
-            return (new TagCacheAnswer(cacheVersion, cacheTimestamp, servedAt, accessRevision, stripFingerprint, itemsJson, items.Count), revision);
+            return (new TagCacheAnswer(cacheVersion, cacheTimestamp, servedAt, accessRevision, stripFingerprint, itemsJson, items.Count, items,
+                owned?.Values.Select(o => o.OwnerId).ToHashSet()), revision);
         }
 
-        // The rest of the response — review ratings, filterRevision, body,
-        // ETag/304 — for either source of the items, once the answer is fresh.
-        private IActionResult RespondTagCache(TagCacheAnswer answer, JsonSerializerOptions jsonOptions)
+        /// <summary>
+        /// One attempt at the whole tag-cache body for the delivery gate: the composed items, then the review ratings and
+        /// the body around them. The entries the answer holds are the items it judged (their watched state and ownership
+        /// are its inputs); the shared, unfiltered copy judged none.
+        /// </summary>
+        private Services.DeliveryBuild<Services.TagCacheResponseBody> BuildTagCacheBody(JUser user, long? since, JsonSerializerOptions jsonOptions)
+        {
+            var (answer, revision) = ComposeTagCache(user, since, jsonOptions);
+            var (keys, owners) = (answer.Keys, answer.Owners);
+            return new(ComposeTagCacheBody(answer, jsonOptions), revision,
+                keys == null ? static _ => false : id => keys.ContainsKey(id.ToString("N")) || owners?.Contains(id) == true);
+        }
+
+        // The rest of the body — review ratings, filterRevision — for either
+        // source of the items, built inside the delivery gate's attempt.
+        private Services.TagCacheResponseBody ComposeTagCacheBody(TagCacheAnswer answer, JsonSerializerOptions jsonOptions)
         {
             // The poster review chips resolve from this map instead of asking
             // /reviews/ratings for every page of cards: it holds the average for
@@ -8817,7 +8837,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // receive different stripped bodies, and an ETag keyed on version
             // alone would let one user's stripped body satisfy another user's
             // conditional request.
-            var body = Services.TagCacheResponseBody.Compose(
+            return Services.TagCacheResponseBody.Compose(
                 jsonOptions,
                 answer.Version,
                 answer.Timestamp,
@@ -8826,7 +8846,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 answer.Count,
                 answer.Items,
                 reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
+        }
 
+        // ETag/304 for a body the delivery gate let through (nothing here waits or looks anything up).
+        private IActionResult RespondTagCache(Services.TagCacheResponseBody body)
+        {
             // no-cache (not no-store): the client may keep a copy to revalidate against,
             // but must always revalidate. Freshness is unchanged, this only avoids
             // re-sending an unchanged multi-MB body.
@@ -8965,11 +8989,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // MediaStreamLanguageResolver's Matroska BCP-47 regions (en-US -> eng)
             // and no caller needs a second language-resolution implementation.
             //
-            // Policy fresh at emit: the batch is projected under one read of the
-            // user's Spoiler Guard tag strip and Hidden Content, and leaves only
-            // when a re-read afterwards finds them unchanged (else it is projected
-            // again, bounded; a policy that keeps changing gets 503).
-            var results = Services.PolicyFreshness.Fresh(() => ProjectTagData(user, ids, mediaSourceId), () => TagCachePolicyRevision(user));
+            // The one delivery gate: the batch is projected under one verdict
+            // identity (the user's Spoiler Guard tag strip and Hidden Content
+            // revisions, the watched state and ownership of the batch's items)
+            // and leaves only when the gate, after the projection's lookups,
+            // finds it unchanged (else it is projected again, bounded; an
+            // identity that keeps changing gets 503).
+            var results = Services.PrivacyDelivery.Deliver(user.Id, () =>
+            {
+                var (projected, revision, judged) = ProjectTagData(user, ids, mediaSourceId);
+                return new Services.DeliveryBuild<List<object>>(projected, revision, judged.Contains);
+            }, () => TagCachePolicyRevision(user));
             if (results == null)
             {
                 Response.Headers["Cache-Control"] = "private, no-store";
@@ -8979,7 +9009,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { Items = results });
         }
 
-        private (List<object> Results, string Revision) ProjectTagData(JUser user, string[] ids, string? mediaSourceId)
+        /// <summary>One projection of a tag-data batch; with the items it judged (the batch's and their owners: an extra's verdict is its owner's).</summary>
+        private (List<object> Results, string Revision, HashSet<Guid> Judged) ProjectTagData(JUser user, string[] ids, string? mediaSourceId)
         {
             // Spoiler Guard short-circuit: when the master switch + any tag-relevant
             // strip toggle are on and the user has entries in their spoiler list, a
@@ -9010,6 +9041,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 container => TagEpisodeSelector.GetFirstEpisode(_libraryManager, container, user),
                 episode => _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, episode) != Services.SpoilerTagDataStub.None);
             var results = new List<object>(ids.Length);
+            var judged = new HashSet<Guid>();
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
             foreach (var idStr in ids)
@@ -9017,6 +9049,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!Guid.TryParse(idStr.Trim(), out var itemId))
                     continue;
 
+                judged.Add(itemId);
                 if (hiddenIds.Contains(itemId))
                     continue;
 
@@ -9024,13 +9057,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (item == null)
                     continue;
 
+                judged.Add(item.OwnerId);
                 var spoilerStub = spoilerPolicy != null
                     ? _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy, user, item)
                     : Services.SpoilerTagDataStub.None;
                 results.Add(Services.PrivacyValues.TagData(item, spoilerStub, request, values));
             }
 
-            return (results, revision);
+            return (results, revision, judged);
         }
 
 

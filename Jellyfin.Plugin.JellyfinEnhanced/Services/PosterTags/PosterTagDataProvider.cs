@@ -96,6 +96,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
+            // The ownership changes the delivery gate compares for a poster (the stripper observes user data).
+            PrivacyInputs.Observe(libraryManager, null);
         }
 
         /// <summary>

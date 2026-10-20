@@ -935,10 +935,6 @@
       "category": "Services"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PolicyFreshness.cs",
-      "category": "Services"
-    },
-    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -1056,6 +1052,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyAnswerGraph.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyDelivery.cs",
       "category": "Services"
     },
     {

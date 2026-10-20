@@ -32,6 +32,17 @@ public static class TitlePresentationGate
         lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
             return new(HiddenContentPolicy.Load(manager, viewer, library: library), spoilers?.Load(viewer));
     }
+
+    /// <summary>
+    /// The viewer's <see cref="TitlePresentationPolicy.Revision"/> as the delivery gate re-reads it: both policy files and the
+    /// admin's settings under their mutation locks, no library read (the library facts a policy read are the gate's inputs).
+    /// </summary>
+    public static string Revision(UserConfigurationManager manager, SpoilerPresentation? spoilers, Guid viewer)
+    {
+        lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
+        lock (manager.GetUserFileLock(viewer.ToString("N"), "spoilerblur.json"))
+            return HiddenContentPolicy.Load(manager, viewer).Revision + "|" + spoilers?.StateRevision(viewer);
+    }
 }
 
 /// <summary>
@@ -353,6 +364,19 @@ public sealed record TitlePresentationPolicy(HiddenContentPolicy Hidden, Spoiler
     /// <summary>Opaque identity for personalized inserts and validators.</summary>
     public string Revision => Hidden.Revision + "|" + Spoilers?.Revision;
 
+    /// <summary>What the delivery gate compares (<see cref="TitlePresentationGate.Revision"/>): the policy files' and settings' revision.</summary>
+    public string FileRevision => Hidden.Revision + "|" + Spoilers?.StateRevision;
+
+    /// <summary>
+    /// The items an answer judged under this policy: <paramref name="answer"/>'s, and the library items the policy itself
+    /// read facts of (Hidden Content's rule items, Spoiler Guard's guarded titles and collection members).
+    /// </summary>
+    public Func<Guid, bool> Judges(Func<Guid, bool> answer)
+    {
+        var read = Hidden.RuleItems.Concat(Spoilers?.LibraryInputs ?? []).ToHashSet();
+        return id => answer(id) || read.Contains(id);
+    }
+
     /// <summary>Known JSON schemas are projected from private bytes, including envelopes and seed headings.</summary>
     public string Project(string json, string surface, string? title, string resource, string? kind = null, string? scope = null, int season = 0, int episode = 0)
     {
@@ -377,9 +401,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
+    private const string InputsMark = "__JE_PRESENTATION_INPUTS";
+
     /// <inheritdoc />
     public void OnResourceExecuting(ResourceExecutingContext context)
     {
+        // The input tick before the action reads anything: the host builds its answer (an item's user data, its owner) with
+        // the inputs of that moment, so the delivery gate compares from here.
+        context.HttpContext.Items[InputsMark] = PrivacyInputs.Now;
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -413,17 +442,16 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         try
         {
+            var inputs = context.HttpContext.Items.TryGetValue(InputsMark, out var mark) && mark is long tick ? tick : PrivacyInputs.Now;
             var final = TitlePresentationGate.Read(manager, spoilers, viewer.Value, library);
             if (entry != null)
             {
-                DeliverNative(context, answer!, final, entry, viewer.Value);
+                DeliverNative(context, answer!, final, entry, viewer.Value, inputs);
                 return;
             }
             if (route == null)
             {
-                if (!PolicyApplies(final)) return;
-                WarnUnclassified(context, answer!.Value!);
-                Withhold(context);
+                DeliverUnclassified(context, answer!.Value!, final, viewer.Value, inputs);
                 return;
             }
             var spec = route;
@@ -435,8 +463,12 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 _ => null
             };
             if (json == null) return;
-            if (spec.Resource == "activity") json = ProjectActivity(json, final, viewer.Value);
-            var projected = final.Project(json, spec.Surface, spec.Title, spec.Resource, spec.Kind, spec.Scope, spec.Season, spec.Episode);
+            var projected = DeliverJson(json, spec, ref final, viewer.Value, inputs);
+            if (projected == null)
+            {
+                Withhold(context);
+                return;
+            }
             var etag = TmdbResponseCache.ComputeETag(viewer.Value.ToString("N") + "|" + final.Revision + "|" + projected);
             var conditional = context.HttpContext.Items.TryGetValue(ConditionalHeader, out var original) ? original?.ToString() : context.HttpContext.Request.Headers.IfNoneMatch.ToString();
             context.Result = TmdbResponseCache.IfNoneMatchMatches(conditional, etag) ? new StatusCodeResult(304)
@@ -450,6 +482,44 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             context.Result = new StatusCodeResult(503);
             context.HttpContext.Response.Headers.CacheControl = "private, no-store";
         }
+    }
+
+    /// <summary>
+    /// A title-carrying answer from an endpoint the registry does not classify, through the one delivery gate: delivered
+    /// unprojected only while no policy applies to the viewer (a rule saved while the policy was read withholds it).
+    /// </summary>
+    private void DeliverUnclassified(ResultExecutingContext context, object value, TitlePresentationPolicy final, Guid viewer, long inputs)
+    {
+        var open = !PolicyApplies(final) && PrivacyDelivery.Current(viewer, final.FileRevision, inputs,
+            () => TitlePresentationGate.Revision(manager, spoilers, viewer), final.Judges(static _ => false));
+        if (open) return;
+        WarnUnclassified(context, value);
+        Withhold(context);
+    }
+
+    /// <summary>
+    /// A JE JSON answer through the one delivery gate: projected from the action's JSON under one verdict identity (the
+    /// viewer's policy revisions, and the watched state and ownership of the activity rows' items), delivered only when the
+    /// gate, after the projection's lookups, finds it unchanged; else projected again from the same JSON (bounded). Null:
+    /// withheld.
+    /// </summary>
+    private string? DeliverJson(string json, Schema spec, ref TitlePresentationPolicy final, Guid viewer, long inputs)
+    {
+        for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+        {
+            if (attempt > 0)
+            {
+                // The identity changed: project the same JSON again under the policy the gate read.
+                inputs = PrivacyInputs.Now;
+                final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+            }
+            var judged = new HashSet<Guid>();
+            var rows = spec.Resource == "activity" ? ProjectActivity(json, final, viewer, judged) : json;
+            var projected = final.Project(rows, spec.Surface, spec.Title, spec.Resource, spec.Kind, spec.Scope, spec.Season, spec.Episode);
+            if (PrivacyDelivery.Current(viewer, final.FileRevision, inputs, () => TitlePresentationGate.Revision(manager, spoilers, viewer), final.Judges(judged.Contains)))
+                return projected;
+        }
+        return null;
     }
 
     private static bool IsJellyfinEnhanced(ActionContext context)
@@ -473,7 +543,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// Activity rows: every row's item is judged by the one identity resolver (item, owning series, TMDB key, guarded
     /// collections, the viewer's watched state), then projected by the same schema projection as provider JSON.
     /// </summary>
-    private string ProjectActivity(string json, TitlePresentationPolicy final, Guid viewer)
+    private string ProjectActivity(string json, TitlePresentationPolicy final, Guid viewer, ISet<Guid> judged)
     {
         var root = JsonNode.Parse(json)!;
         var rows = (root["items"] ?? root["Items"]) as JsonArray;
@@ -481,6 +551,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         static JsonNode? Field(JsonNode row, string name) => row[name] ?? row[char.ToUpperInvariant(name[0]) + name[1..]];
         var ids = rows.OfType<JsonObject>().Select(r => Field(r, "item")).Where(i => i != null)
             .Select(i => Guid.TryParse(Field(i!, "id")?.ToString(), out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).Distinct().ToArray();
+        judged.UnionWith(ids);
         var identities = spoilers.Resolve(ids, viewer, final.Spoilers);
         for (var i = rows.Count - 1; i >= 0; i--)
         {
@@ -493,10 +564,38 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     }
 
     /// <summary>
-    /// Every response shape a registered native endpoint returns (host-verified on 12.2 and 10.11.11), with the
-    /// delivery-time policy: materialized once, those instances projected, and the projected value delivered.
+    /// Every response shape a registered native endpoint returns (host-verified on 12.2 and 10.11.11), through the one
+    /// delivery gate: materialized once, those instances projected under one verdict identity (the viewer's policy
+    /// revisions, and the watched state and ownership of every item the answer names, from the start of the request: the host
+    /// built its answer with the inputs of that moment), and delivered only when the gate, after the projection's lookups,
+    /// finds that identity unchanged. A changed identity projects the projected value again under the new one (what was
+    /// removed or stripped stays so; the new rules apply on top), bounded; one that keeps changing is withheld.
     /// </summary>
-    private void DeliverNative(ResultExecutingContext context, ObjectResult result, TitlePresentationPolicy final, PrivacySurface entry, Guid viewer)
+    private void DeliverNative(ResultExecutingContext context, ObjectResult result, TitlePresentationPolicy final, PrivacySurface entry, Guid viewer, long inputs)
+    {
+        for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+        {
+            if (attempt > 0)
+            {
+                // The identity changed: project the projected value again under the policy the gate read, with the viewer's
+                // watched state as it is now (not as the host's answer recorded it).
+                inputs = PrivacyInputs.Now;
+                final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+                strip?.RefreshUserData(result, viewer);
+            }
+            var judged = ProjectNative(context, result, final, entry, viewer);
+            if (judged == null) return;
+            if (PrivacyDelivery.Current(viewer, final.FileRevision, inputs, () => TitlePresentationGate.Revision(manager, spoilers, viewer), final.Judges(PrivacyDelivery.Judges(judged))))
+                return;
+        }
+        Withhold(context);
+    }
+
+    /// <summary>
+    /// One projection of a native answer with <paramref name="final"/>; the identities it judged, or null when the answer was
+    /// withheld.
+    /// </summary>
+    private Dictionary<Guid, PrivacyIdentity>? ProjectNative(ResultExecutingContext context, ObjectResult result, TitlePresentationPolicy final, PrivacySurface entry, Guid viewer)
     {
         try
         {
@@ -511,10 +610,10 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             if (!known)
             {
                 // An answer shape this gate cannot project never leaves while a policy applies to the viewer.
-                if (!PolicyApplies(final)) return;
+                if (!PolicyApplies(final)) return new Dictionary<Guid, PrivacyIdentity>();
                 logger?.Warning($"Presentation gate: {context.ActionDescriptor.DisplayName} answered {value?.GetType().FullName}; withheld while a privacy policy applies.");
                 Withhold(context);
-                return;
+                return null;
             }
             // The viewer's watched state is read only where a decision needs it (a recommendation category's seed).
             var seeds = sg && value is IReadOnlyList<RecommendationDto> && SpoilerFieldStripFilter.HasEntries(final.Spoilers!.State);
@@ -528,21 +627,23 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             ProjectTimers(result, final, identities, opened);
             ProjectNested(result.Value, final, identities, viewer, opened);
             if (rows) ProjectActivityLog(result, final, identities, viewer);
-            if (!sg) return;
+            if (!sg) return identities;
             switch (result.Value)
             {
                 case BaseItemDto or QueryResult<BaseItemDto> or IEnumerable<BaseItemDto> or IReadOnlyList<RecommendationDto> or AllThemeMediaResult:
                     StripItems(result, final, identities, viewer);
-                    return;
+                    break;
                 default:
                     StripDelivered(result, final, viewer, context);
-                    return;
+                    break;
             }
+            return context.Result == result ? identities : null;
         }
         catch (Exception ex)
         {
             logger?.Error($"Presentation gate could not project {context.ActionDescriptor.DisplayName}: {ex.GetType().Name}");
             Withhold(context);
+            return null;
         }
     }
 
@@ -670,19 +771,36 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         if (viewer == Guid.Empty || list.Count == 0 || NativePrivacyProjection.Nested(list).Count == 0) return list;
         try
         {
+            var inputs = PrivacyInputs.Now;
             var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
-            if (!PolicyApplies(final)) return list;
-            var identities = Identities(null, list, final, Guid.Empty);
-            foreach (var identity in identities.Values) final.Hidden.Bind(identity);
-            ProjectNested(list, final, identities, viewer, null);
+            // The one delivery gate after the projection's lookups (and after the policy read's own, when no policy
+            // applies); a changed identity projects the projected sessions again.
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    inputs = PrivacyInputs.Now;
+                    final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
+                }
+                var identities = new Dictionary<Guid, PrivacyIdentity>();
+                if (PolicyApplies(final))
+                {
+                    identities = Identities(null, list, final, Guid.Empty);
+                    foreach (var identity in identities.Values) final.Hidden.Bind(identity);
+                    ProjectNested(list, final, identities, viewer, null);
+                }
+                if (PrivacyDelivery.Current(viewer, final.FileRevision, inputs, () => TitlePresentationGate.Revision(manager, spoilers, viewer), final.Judges(PrivacyDelivery.Judges(identities))))
+                    return list;
+            }
+            logger?.Warning("Presentation gate: the viewer's privacy policy kept changing while sessions were projected; their titles are withheld from this update.");
         }
         catch (Exception ex)
         {
             logger?.Error($"Presentation gate could not project sessions: {ex.GetType().Name}");
-            // No title survives a failed projection: every member at the first level becomes a stub (none has members) or leaves.
-            var values = Values();
-            PrivacyAnswerGraph.Rewrite(list, null, (dto, keepsControls) => keepsControls ? NativePrivacyProjection.Stub(dto, values) : null);
         }
+        // No title survives a failed or withheld projection: every member at the first level becomes a stub (none has members) or leaves.
+        var stubs = Values();
+        PrivacyAnswerGraph.Rewrite(list, null, (dto, keepsControls) => keepsControls ? NativePrivacyProjection.Stub(dto, stubs) : null);
         return list;
     }
 

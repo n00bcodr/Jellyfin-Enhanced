@@ -446,7 +446,7 @@ public static partial class PrivacyValues
         var item = synthetic ? null : known ?? host.Item(id);
         // An extra's own name is its file's or provider's text (a featurette's "…ending explained"): constructed from its
         // extra type unless Spoiler Guard reveals the title family.
-        if (item is { OwnerId: var owner } extra && owner != Guid.Empty)
+        if (item is { } extra && PrivacyIdentities.ExtraOwner(host.Library, extra) != Guid.Empty)
             return reveal.TitleFamily ? extra.Name : ExtraLabel(extra, kind);
         if (item is { } entity)
         {
@@ -684,7 +684,7 @@ public static partial class PrivacyValues
     private static bool Protects(BaseItemKind kind) => kind is BaseItemKind.Episode or BaseItemKind.Season;
 
     /// <summary>Whether the projected item is an extra another title owns (a library item with an owner).</summary>
-    private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.Item(((BaseItemDto)c.Source).Id) is { } item && item.OwnerId != Guid.Empty;
+    private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.Item(((BaseItemDto)c.Source).Id) is { } item && PrivacyIdentities.ExtraOwner(s.Host.Library, item) != Guid.Empty;
 
     /// <summary>An extra's constructed name: what kind of extra it is ("Trailer", "Theme video", "Behind the scenes").</summary>
     internal static string ExtraLabel(BaseItem extra, BaseItemKind kind) => extra.ExtraType switch

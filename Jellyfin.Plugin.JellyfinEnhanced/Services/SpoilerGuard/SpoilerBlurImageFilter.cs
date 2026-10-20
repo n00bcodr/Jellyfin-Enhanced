@@ -317,10 +317,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ActionExecutionDelegate next,
             Configuration.PluginConfiguration pluginConfig)
         {
+            // The action runs once; every decision below works on its answer.
+            ActionExecutedContext? executed = null;
+            async Task<ActionExecutedContext> Once() => executed ??= await next().ConfigureAwait(false);
+
+            // The one delivery gate: the image is decided under one verdict identity (the candidate viewers' Spoiler Guard
+            // state and the admin's image settings, the item's watched state and ownership) and leaves only when the gate,
+            // after the decision's last await (the action that loaded the image), finds it unchanged. A changed identity
+            // decides again on the loaded image (bounded); one that keeps changing gets the fallback image.
+            var candidates = _resolver.ResolveCandidateUserIds(context.HttpContext).Where(c => c != Guid.Empty).Distinct().ToList();
+            var viewer = candidates.Count == 1 ? candidates[0] : Guid.Empty;
+            Guid? itemId = TryGetItemId(context, out var id) ? id : null;
+            var owner = itemId is { } known && _libraryManager.GetItemById(known) is { } item ? PrivacyIdentities.ExtraOwner(_libraryManager, item) : Guid.Empty;
+            var inputs = PrivacyInputs.Now;
+            var revision = ImagePolicyRevision(context.HttpContext, candidates, pluginConfig);
+            string? next2 = null;
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    // The identity changed: decide again on the loaded image under the state the gate read.
+                    inputs = PrivacyInputs.Now;
+                    revision = next2 ?? ImagePolicyRevision(context.HttpContext, candidates, pluginConfig);
+                }
+                if (await DecideAsync(context, Once, pluginConfig).ConfigureAwait(false) || executed == null) return;
+                if (PrivacyDelivery.Current(viewer, revision, inputs, () => next2 = ImagePolicyRevision(context.HttpContext, candidates, pluginConfig),
+                        judged => itemId == judged || judged == owner && owner != Guid.Empty))
+                    return;
+            }
+
+            WithholdImage(executed);
+        }
+
+        /// <summary>An image whose verdict identity kept changing: the fallback image, never cached.</summary>
+        private void WithholdImage(ActionExecutedContext? executed)
+        {
+            if (executed is not { } answered || answered.HttpContext.Response.HasStarted) return;
+            answered.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+            ApplyNoStoreToResponse(answered.HttpContext);
+        }
+
+        /// <summary>
+        /// The revision of what an image decision reads besides the item's own inputs: every candidate viewer's Spoiler Guard
+        /// state, read fresh (the request's memo is replaced, so the decision reads the same state), and the admin's image
+        /// settings.
+        /// </summary>
+        private string ImagePolicyRevision(Microsoft.AspNetCore.Http.HttpContext http, IReadOnlyList<Guid> candidates, Configuration.PluginConfiguration config)
+        {
+            var text = new System.Text.StringBuilder();
+            foreach (var candidate in candidates)
+                text.Append(candidate.ToString("N")).Append('=').Append(Newtonsoft.Json.JsonConvert.SerializeObject(_resolver.LoadUserStateFresh(http, candidate))).Append(';');
+            text.Append(config.SpoilerBlurEnabled).Append(config.SpoilerBlurArtwork).Append(config.SpoilerKeepMoviePosters).Append(config.SpoilerBlurMode)
+                .Append(config.SpoilerBlurIntensity).Append(config.SpoilerAdvancedMode).Append(config.SpoilerNextEpisodeStripImage);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())));
+        }
+
+        /// <summary>
+        /// One decision on an image answer: passes it through (false) or replaces it with its protected form (true; also
+        /// true when nothing was answered). <paramref name="next"/> runs the action once; a later decision reuses its result.
+        /// </summary>
+        private async Task<bool> DecideAsync(
+            ActionExecutingContext context,
+            Func<Task<ActionExecutedContext>> next,
+            Configuration.PluginConfiguration pluginConfig)
+        {
             if (!TryGetItemId(context, out var itemId))
             {
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
             // Trickplay routes don't carry an `imageType` argument —
             // they're sprite-sheet tiles for a video's scrubbing previews.
@@ -339,7 +403,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!TryGetImageType(context, out imageType))
                 {
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
                 // Always-blur tier (poster surface) vs artwork tier (Backdrop/
                 // Art) gated behind SpoilerBlurArtwork. Anything else (logos,
@@ -349,7 +413,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!inAlways && !inArtwork)
                 {
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
             }
             // Do NOT short-circuit Backdrop/Art on SpoilerBlurArtwork=false
@@ -371,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (item == null)
             {
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
 
             // User identification — handles ClaimsPrincipal first, then falls
@@ -405,14 +469,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (userState == null)
             {
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
 
             var jUser = _userManager.GetUserById(effectiveUserId);
             if (jUser == null)
             {
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
 
             // Collections are a SHORTCUT for "blur all movies in this
@@ -423,21 +487,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (item is MediaBrowser.Controller.Entities.Movies.BoxSet)
             {
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
             else if (item is MediaBrowser.Controller.Entities.Movies.Movie movie)
             {
                 if (!_resolver.IsMovieInSpoilerScope(userState, movie.Id, movie.ProviderIds))
                 {
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
                 var movieUd = _userDataManager.GetUserData(jUser, movie);
                 if (movieUd?.Played == true)
                 {
                     RegisterNoStoreOnStarting(context.HttpContext);
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
                 // Admin opt-out for movie posters: when SpoilerKeepMoviePosters
                 // is on, the Primary and Thumb image types (the movie's
@@ -450,7 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     RegisterNoStoreOnStarting(context.HttpContext, imageType);
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
                 // Progressive chapter ("Scenes" rail) blur for unwatched
                 // movies in the spoiler list: chapters whose
@@ -479,7 +543,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 // doesn't round-trip every hover.
                                 RegisterNoStoreOnStarting(context.HttpContext, imageType);
                                 await next().ConfigureAwait(false);
-                                return;
+                                return false;
                             }
                         }
                         catch (Exception ex)
@@ -506,7 +570,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     RegisterNoStoreOnStarting(context.HttpContext, imageType);
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
             }
             else
@@ -523,14 +587,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         break;
                     default:
                         await next().ConfigureAwait(false);
-                        return;
+                        return false;
                 }
 
                 if (seriesId == Guid.Empty
                     || !_resolver.IsSeriesInSpoilerScope(userState, seriesId))
                 {
                     await next().ConfigureAwait(false);
-                    return;
+                    return false;
                 }
 
                 if (item is Episode episode)
@@ -551,7 +615,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // be a no-op.
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
-                        return;
+                        return false;
                     }
                     if (!isTrickplay
                         && (string.Equals(imageType, "Primary", StringComparison.OrdinalIgnoreCase)
@@ -567,7 +631,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             RegisterNoStoreOnStarting(context.HttpContext);
                             await next().ConfigureAwait(false);
-                            return;
+                            return false;
                         }
                     }
 
@@ -580,7 +644,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
-                        return;
+                        return false;
                     }
                 }
                 else
@@ -595,13 +659,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (seasonNum <= 1)
                     {
                         await next().ConfigureAwait(false);
-                        return;
+                        return false;
                     }
                     if (HasWatchedAnyEpisodeInSeason(jUser, season))
                     {
                         RegisterNoStoreOnStarting(context.HttpContext);
                         await next().ConfigureAwait(false);
-                        return;
+                        return false;
                     }
                 }
             }
@@ -614,7 +678,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 RegisterNoStoreOnStarting(context.HttpContext);
                 await next().ConfigureAwait(false);
-                return;
+                return false;
             }
 
             // Cache key incorporates the blur mode so toggling between "blur"
@@ -625,7 +689,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 + ":" + spoilerMode;
 
             var executed = await next().ConfigureAwait(false);
-            if (executed.Canceled || executed.Exception != null) return;
+            if (executed.Canceled || executed.Exception != null) return true;
 
             var originalResult = executed.Result;
             try
@@ -676,6 +740,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     catch (Exception ex) { _logger.Warning($"Spoiler Guard source stream cleanup failed: {ex.Message}"); }
                 }
             }
+
+            return true;
         }
 
         // When an item that SHOULD be considered for blur (user has the

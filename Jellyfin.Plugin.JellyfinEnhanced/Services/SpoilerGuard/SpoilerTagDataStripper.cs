@@ -104,6 +104,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _spoilerResolver = spoilerResolver;
             // The host's closed lists (languages, ratings) a guarded entry's values are checked against.
             _localization = localization;
+            // Verdict inputs with revisions: the watched-state and ownership changes the delivery gate compares, and the
+            // events that invalidate the ownership memo below.
+            PrivacyInputs.Observe(libraryManager, userDataManager);
+            var self = new WeakReference<SpoilerTagDataStripper>(this);
+            Action<IReadOnlyCollection<Guid>>? forget = null;
+            forget = ids => { if (self.TryGetTarget(out var stripper)) stripper.Forget(ids); else PrivacyInputs.LibraryChanged -= forget; };
+            PrivacyInputs.LibraryChanged += forget;
         }
 
         /// <summary>What the host vouches for in one strip (its closed lists, the library's entities).</summary>
@@ -188,29 +195,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public Dictionary<string, PrivacyIdentity> OwnedIdentities(IReadOnlyDictionary<string, TagCacheEntry> items, JUser? viewer)
         {
             var ids = new List<Guid>();
-            var asked = new List<(string Key, long Stamp)>();
             foreach (var (key, entry) in items)
             {
                 if (entry == null || IsTitleKind(entry.Type) || !Guid.TryParse(key, out var id)) continue;
-                // An entry already known not to be an extra (at this build of it) needs no lookup; an extra is resolved
-                // again every time (its owner's verdict and watched state are the viewer's, and current).
-                if (_extras.TryGetValue(key, out var known) && known.Stamp == entry.LastUpdated && !known.Extra) continue;
+                // An entry already known not to be an extra needs no lookup; an extra is resolved again every time (its owner's
+                // verdict and watched state are the viewer's, and current).
+                if (_notExtras.ContainsKey(id)) continue;
                 ids.Add(id);
-                asked.Add((key, entry.LastUpdated));
             }
             if (ids.Count == 0) return new Dictionary<string, PrivacyIdentity>(StringComparer.Ordinal);
-            var owned = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager)
-                .Where(p => p.Value.IsExtra)
-                .ToDictionary(p => p.Key.ToString("N"), p => p.Value, StringComparer.Ordinal);
-            if (_extras.Count > MaxKnownExtras) _extras.Clear();
-            foreach (var (key, stamp) in asked) _extras[key] = (stamp, owned.ContainsKey(key));
+            // The memo is keyed on the library's ownership events (PrivacyInputs), not on the entry's content: an item whose
+            // owner changed while it was being resolved is not remembered from that resolution.
+            var since = PrivacyInputs.Now;
+            var resolved = PrivacyIdentities.Resolve(_libraryManager, ids, viewer, _userDataManager);
+            var owned = resolved.Where(p => p.Value.IsExtra).ToDictionary(p => p.Key.ToString("N"), p => p.Value, StringComparer.Ordinal);
+            lock (_notExtras)
+            {
+                // Under the lock Forget takes: an event logged after this read drops what is written here.
+                var changed = PrivacyInputs.LibraryChangesSince(since);
+                if (changed == null) return owned;
+                if (_notExtras.Count > MaxKnownExtras) _notExtras.Clear();
+                // Only an item the library resolved, as no extra, is remembered as one: an unresolved id is never a negative.
+                foreach (var (id, identity) in resolved)
+                    if (!identity.IsExtra && !changed.Contains(id)) _notExtras[id] = 0;
+            }
             return owned;
         }
 
-        /// <summary>Whether each non-title tag-cache entry is an extra, by the entry's build stamp (ownership is the item's own).</summary>
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Stamp, bool Extra)> _extras = new(StringComparer.Ordinal);
+        /// <summary>The library items known not to be extras, until a library ownership event for them (<see cref="Forget"/>).</summary>
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, byte> _notExtras = new();
 
         private const int MaxKnownExtras = 500_000;
+
+        /// <summary>Drops the ownership memo of items whose ownership facts changed (or may have: added, removed).</summary>
+        private void Forget(IReadOnlyCollection<Guid> ids)
+        {
+            lock (_notExtras)
+                foreach (var id in ids) _notExtras.TryRemove(id, out _);
+        }
 
         /// <summary>
         /// THE guarded set of a tag-cache answer, the one derivation full loads and deltas share (the strip, the strip
@@ -241,7 +263,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public bool MayBeGuarded(UserSpoilerBlur state, string key, TagCacheEntry? entry)
             => entry != null && (GetGuardedKind(state, key, entry) != null
-                || !IsTitleKind(entry.Type) && !(_extras.TryGetValue(key, out var known) && known.Stamp == entry.LastUpdated && !known.Extra));
+                || !IsTitleKind(entry.Type) && !(Guid.TryParse(key, out var id) && _notExtras.ContainsKey(id)));
 
         /// <summary>Whether an extra is stripped for this viewer: its owner is guarded, and a movie's extra until the movie is watched.</summary>
         private bool ExtraGuarded(UserSpoilerBlur state, PrivacyIdentity identity)
