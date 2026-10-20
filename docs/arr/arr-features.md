@@ -1580,10 +1580,29 @@ Jellyfin Enhanced finds the actions that can change or sign in a user by reading
 What reading the code can't see: code found by reflection or created while the server runs, a service looked up by name
 at run time, and code outside Jellyfin's server (another plugin's own code, another process). A user change made there
 through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
-covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
-that person's version when it does, so the next check reads the change. A check already deciding in the moment between
-the change being saved and Jellyfin's announcement can still use what it read before. A change written straight into
-Jellyfin's database, bypassing Jellyfin, isn't covered.
+covered afterwards only when Jellyfin announces it, and Jellyfin doesn't announce every change:
+
+- Announced on both versions: a user deleted, a user locked out by failed sign-ins, a user renamed; on 12.2 also a
+  policy save. Jellyfin Enhanced moves that person's version when Jellyfin announces the change, so the next check reads
+  it. A check already deciding in the moment between the change being saved and the announcement can still use what it
+  read before.
+- Not announced: a user save (`UpdateUserAsync`) on both versions (sign-in activity, profile images, the start-up
+  wizard's user, and on 12.2 a library rename rewriting users' library access), and a policy save (`UpdatePolicyAsync`)
+  on 10.11 (administrator, disabled, parental limits, tags, libraries, schedules). Made through one of the bracketed
+  actions above (the Dashboard's user pages, Jellyfin's user and start-up API) or by Jellyfin Enhanced itself
+  (maintenance mode), such a save is covered all the same: the bracket moves the version whether or not Jellyfin
+  announces anything. Made by other code outside those actions (another plugin calling Jellyfin's user manager
+  directly), it doesn't move the version, so a check that was already deciding when it landed can use the facts it read
+  before. Checks that start afterwards read the new facts.
+
+A change written straight into Jellyfin's database, bypassing Jellyfin, isn't covered.
+
+Jellyfin Enhanced's own caches of what a user may see don't wait for an announcement. The tag cache's per-user filter
+and native details' artwork grants follow the user as each request reads them, so a parental, tag or library change
+applies to the next request however it was made. Review authors (hidden or disabled), poster tags and Spoiler Guard's
+next episode follow the person's version: the next request after a bracketed or announced change. A save by other code
+that moves nothing reaches them when their entry expires (15 seconds for review authors, 30 seconds for poster tags,
+5 minutes for Spoiler Guard's next episode, which only ever hides more while stale).
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
