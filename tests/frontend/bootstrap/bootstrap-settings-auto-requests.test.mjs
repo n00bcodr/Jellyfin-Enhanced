@@ -139,7 +139,7 @@ test('an unrelated setting saved by someone who never chose keeps both choices u
   h.document.getElementById('showFileSizesToggle').checked = true;
   h.document.getElementById('showFileSizesToggle').dispatchEvent(new h.window.Event('change', { bubbles: true }));
   await new Promise(done => setImmediate(done));
-  const saved = JSON.parse(h.writes.at(-1).data);
+  const saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.showFileSizes, true);
   assert.ok(!('autoSeasonRequests' in saved) && !('autoMovieRequests' in saved));
 });

@@ -59,25 +59,16 @@ test('phase-4b switches round trip; an older configuration loads them all off', 
     assert.deepEqual(FIELDS.map(f => off[f]), [false, false, false]);
 });
 
-test('a page save marks the Household-tab rules and pools as read, so the server keeps a newer Household edit', t => {
+test('a page save never carries the Household-tab rules and pools (only the Household tab edits them)', t => {
     const h = setup();
     t.after(() => h.close());
     h.window.load({});
-    const config = {
-        ArrServerOwnedSeen: JSON.stringify({ ArrRequestPreset: 'ask_first' }),
-        ArrHouseholdRules: '{"roles":{"kid":{}}}', ArrHouseholdStreamingCountry: 'GB', ArrHouseholdStreamingServices: '8,9', ArrGroupQuotaPools: '[]'
-    };
+    const config = { ArrHouseholdRules: '{"roles":{"kid":{}}}', ArrHouseholdStreamingCountry: 'GB', ArrHouseholdStreamingServices: '8,9', ArrGroupQuotaPools: '[]' };
     h.window.save(config);
-    assert.deepEqual(JSON.parse(config.ArrServerOwnedSeen), {
-        ArrRequestPreset: 'ask_first',
-        ArrHouseholdRules: '{"roles":{"kid":{}}}', ArrHouseholdStreamingCountry: 'GB', ArrHouseholdStreamingServices: '8,9', ArrGroupQuotaPools: '[]'
-    });
-    // The values themselves are sent as read (no control here changes them).
+    // The form leaves them as they are (so a save's patch never names them) and writes no read marker.
     assert.equal(config.ArrHouseholdRules, '{"roles":{"kid":{}}}');
-    // A read without them (an older server) adds nothing for them.
-    const older = {};
-    h.window.save(older);
-    assert.deepEqual(JSON.parse(older.ArrServerOwnedSeen), {});
+    assert.equal(config.ArrGroupQuotaPools, '[]');
+    assert.equal(config.ArrServerOwnedSeen, undefined);
 });
 
 test('the switch hierarchy: all three under phase 4 and phase 3, group quotas under household rules', t => {

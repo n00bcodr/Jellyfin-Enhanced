@@ -16,7 +16,7 @@ const html = section('                            <div class="checkboxContainer"
 const load = section("            document.querySelector('#arrPhase3Enabled').checked", "            document.querySelector('#arrPhase2Enabled').checked");
 const save = section("            config.ArrPhase3Enabled =", "            config.ArrPhase2Enabled =");
 const parents = section('        var PARENT_DEPS = [', '        ];') + '        ];';
-const serverOwned = section('        var jeArrServerOwnedIds', '        /**\n         * Copies the phase-2 notification settings');
+const serverOwned = section('        function jeArrServerOwned(', '        /**\n         * Copies the phase-2 notification settings');
 
 test('durable request settings round trip through actual config-page wiring without load traffic', t => {
     const h = createHarness({ html });
@@ -66,7 +66,10 @@ test('durable request settings round trip through actual config-page wiring with
     assert.equal(h.document.querySelector('#arrRequestLabEnabled'), null);
 });
 
-test('a save from a page opened before a Household edit or a Seerr move keeps the server\'s household and request handling', t => {
+// Stage 1 fix round 7: a save sends only the fields the administrator changed (jeConfigPatch), so a Household edit or a
+// Seerr move made after the page was opened survives a save that didn't touch them (whole-page cases:
+// pages-config-concurrency.test.mjs). The form itself writes what its controls say and no read marker any more.
+test('the request settings write what the controls say, and no read marker (ArrServerOwnedSeen)', t => {
     const h = createHarness({ html });
     t.after(() => h.close());
     h.window.eval(`${serverOwned} window.loadRequests = function(config) { ${load} }; window.saveRequests = function(config) { ${save} };`);
@@ -76,46 +79,11 @@ test('a save from a page opened before a Household edit or a Seerr move keeps th
         ArrRequestPendingLimit: 10, ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true, ArrKidsHideSearch: false
     };
     h.window.loadRequests(loaded);
-    // Meanwhile, on the server: the Household tab made the child a Kid, set the default role and a limit,
-    // and a move from Seerr switched request handling to Jellyfin Enhanced.
-    const server = { ...loaded, ArrRequestUsers: '{"kid":{"Role":"Kid"}}', ArrRequestDefaultRole: 'Watcher', ArrRequestQuotaLimit: 3, ArrRequestBackend: 'je', ArrRequestRoles: '{"Kid":{"QuotaLimit":2}}' };
-    // This page only changes an unrelated setting, and the house rules on purpose.
-    h.document.getElementById('arrRequestStaleDays').value = '45';
     h.document.getElementById('arrRequestPreset').value = 'open_house';
-    const saved = { ...server };
+    const saved = { ...loaded, ArrRequestUsers: '{"kid":{"Role":"Kid"}}', ArrRequestBackend: 'je' };
     h.window.saveRequests(saved);
-    assert.equal(saved.ArrRequestStaleDays, 45);
-    assert.equal(saved.ArrRequestPreset, 'open_house');            // changed here: the page's value
-    assert.equal(saved.ArrRequestUsers, '{"kid":{"Role":"Kid"}}');  // untouched here: the server's
-    assert.equal(saved.ArrRequestDefaultRole, 'Watcher');
-    assert.equal(saved.ArrRequestQuotaLimit, 3);
-    assert.equal(saved.ArrRequestRoles, '{"Kid":{"QuotaLimit":2}}');
-    assert.equal(saved.ArrRequestBackend, 'je');
-    // The page now shows what was saved, and a deliberate edit of a household field on it still wins.
-    assert.equal(h.document.getElementById('arrRequestUsers').value, '{"kid":{"Role":"Kid"}}');
-    assert.equal(h.document.getElementById('arrRequestBackend').value, 'je');
-    h.document.getElementById('arrRequestUsers').value = '{"kid":{"Role":"Watcher"}}';
-    const again = { ...server };
-    h.window.saveRequests(again);
-    assert.equal(again.ArrRequestUsers, '{"kid":{"Role":"Watcher"}}');
-    assert.equal(again.ArrRequestBackend, 'je');
-});
-
-test('a save sends the server values it read, so the server can keep an edit that lands before the save does', t => {
-    const h = createHarness({ html });
-    t.after(() => h.close());
-    h.window.eval(`${serverOwned} window.loadRequests = function(config) { ${load} }; window.saveRequests = function(config) { ${save} };`);
-    const loaded = {
-        ArrPhase3Enabled: true, ArrRequestBackend: 'seerr', ArrRequest4kMoviesEnabled: false, ArrRequest4kSeriesEnabled: false, ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Member',
-        ArrRequestUsers: '{}', ArrRequestRoles: '{}', ArrRequestQuotaLimit: 0, ArrRequestQuotaWindowDays: 7, ArrRequestSeriesThreshold: 4, ArrRequestDeclineCooldownDays: 7,
-        ArrRequestPendingLimit: 10, ArrRequestQuotaGb: 0, ArrRequestStaleDays: 30, ArrRequestChargeFutureSeasons: true, ArrKidsHideSearch: false
-    };
-    h.window.loadRequests(loaded);
-    h.document.getElementById('arrRequestPreset').value = 'open_house';
-    const saved = { ...loaded, ArrRequestQuotaLimit: 3 };
-    h.window.saveRequests(saved);
-    assert.deepEqual(JSON.parse(saved.ArrServerOwnedSeen), {
-        ArrRequestBackend: 'seerr', ArrRequestPreset: 'ask_first', ArrRequestDefaultRole: 'Member', ArrRequestRoles: '{}', ArrRequestUsers: '{}', ArrRequestQuotaLimit: '3'
-    });
     assert.equal(saved.ArrRequestPreset, 'open_house');
+    assert.equal(saved.ArrRequestUsers, '{"kid":{"Role":"Member"}}', 'the form says what it shows; the patch decides what is sent');
+    assert.equal(saved.ArrRequestBackend, 'seerr');
+    assert.equal(saved.ArrServerOwnedSeen, undefined);
 });

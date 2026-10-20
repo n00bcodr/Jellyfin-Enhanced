@@ -12,6 +12,11 @@ import { shippedLocales } from '../helpers/served-scripts.mjs';
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const tr = key => (key in en ? en[key] : key);
 const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bgColor: '#000', textColor: '#fff' };
+// Stage 1 fix round 7: a settings save is a PATCH of the fields it changes ({ Set }), never a whole document.
+/** A settings save (a field PATCH, or a whole POST of another file), not the consent operation or a read. */
+const isSave = request => request.type === 'POST' || (request.type === 'PATCH' && !String(request.url).endsWith('/consent'));
+/** The fields a settings save sent. */
+const sent = request => { const body = JSON.parse(request.data); return body.Set || body; };
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
@@ -25,8 +30,8 @@ function panel(tt, { config = {}, settings = {}, translate = tr, policy = 'serve
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none'
     },
-    // Settings saves are POSTs; the panel also reads the server's cultures (answered empty).
-    apiClient: { ajax: async request => { if (request.type === 'POST') writes.push(request); return []; } }
+    // Settings saves are PATCHes; the panel also reads the server's cultures (answered empty).
+    apiClient: { ajax: async request => { if (isSave(request)) writes.push(request); return []; } }
   });
   tt.after(() => h.close());
   // The language rule the store's mirror and the language panel write by (loaded before the settings store, as in
@@ -83,21 +88,21 @@ test('choosing saves Hide as false and the household as null; untouched choices 
   const h = panel(t, { config: badges });
   h.wire();
   await h.choose('acquisitionBadgesSelect', 'off');
-  let saved = JSON.parse(h.writes.at(-1).data);
+  let saved = sent(h.writes.at(-1));
   assert.equal(saved.acquisitionBadges, false);
   assert.ok(!('nativeAcquisitionStamps' in saved));
   assert.equal(h.JE.userConfig.settings.acquisitionBadges, false);
   assert.deepEqual(h.toasts, [tr('toast_badge_settings_saved')]);
   assert.deepEqual(h.resets, [false], 'the poster cards are reset with the new choice in place');
   await h.choose('nativeAcquisitionStampsSelect', 'off');
-  saved = JSON.parse(h.writes.at(-1).data);
+  saved = sent(h.writes.at(-1));
   assert.equal(saved.nativeAcquisitionStamps, false);
   assert.equal(h.resets.length, 1, 'the native choice does not touch the web cards');
   await h.choose('acquisitionBadgesSelect', '');
-  assert.equal(JSON.parse(h.writes.at(-1).data).acquisitionBadges, null);
+  assert.equal(sent(h.writes.at(-1)).acquisitionBadges, null);
   assert.deepEqual(h.resets, [false, null]);
   await h.choose('nativeAcquisitionStampsSelect', '');
-  assert.equal(JSON.parse(h.writes.at(-1).data).nativeAcquisitionStamps, null);
+  assert.equal(sent(h.writes.at(-1)).nativeAcquisitionStamps, null);
   assert.equal(h.writes.length, 4);
 });
 
@@ -167,11 +172,11 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) {
     const posted = [];
     let persisted = baseline;
     h.window.ApiClient.ajax = async request => {
-      if (request.type !== 'POST') return [];
+      if (!isSave(request)) return [];
       const n = posted.length;
-      posted.push(JSON.parse(request.data));
+      posted.push(sent(request));
       await held[n].promise;
-      persisted = posted[n];
+      persisted = { ...persisted, ...posted[n] };
     };
     h.wire();
     const keys = nativeFirst ? ['nativeAcquisitionStamps', 'acquisitionBadges'] : ['acquisitionBadges', 'nativeAcquisitionStamps'];
@@ -202,7 +207,7 @@ for (const sameUser of [false, true]) test(`session change cancels unsent saves 
   const held = deferred();
   const posted = [];
   h.window.ApiClient.ajax = request => {
-    if (request.type !== 'POST') return Promise.resolve([]);
+    if (!isSave(request)) return Promise.resolve([]);
     posted.push({ url: request.url, user: h.window.ApiClient.getCurrentUserId() });
     return held.promise;
   };
@@ -262,7 +267,7 @@ for (const [id, key, value, initial] of [
   h.wire();
   const held = deferred();
   // The automatic-request choice is a consent: it goes through the consent operation (PATCH), never a whole document.
-  h.window.ApiClient.ajax = request => request.type === 'POST' || request.type === 'PATCH' ? held.promise : Promise.resolve([]);
+  h.window.ApiClient.ajax = request => (request.type === 'POST' || request.type === 'PATCH') ? held.promise : Promise.resolve([]);
   if (!['listStatusSelect', 'autoSeasonRequestsSelect', 'homeRowSoonSelect'].includes(id)) h.expectConsoleError(/Failed to save settings.json/);
   const input = h.document.getElementById(id);
   if (input.type === 'checkbox') input.checked = value; else input.value = value;
@@ -328,7 +333,7 @@ test('other settings files have independent queues and do not replace the active
   const h = panel(t, { config: badges, settings: { acquisitionBadges: null } });
   const held = deferred(), calls = [];
   h.window.ApiClient.ajax = async request => {
-    if (request.type === 'POST') calls.push(request.url);
+    if (isSave(request)) calls.push(request.url);
     if (request.url.endsWith('bookmark.json')) await held.promise;
   };
   h.wire();
@@ -472,11 +477,11 @@ for (const [chosen, saved] of [['zz-ZZ', ''], ['fr', 'fr'], ['', ''], ['haw-AU',
   await tick();
   const select = h.document.getElementById('displayLanguageSelect');
   for (const code of ['', chosen]) if (![...select.options].some(o => o.value === code)) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
-  h.window.ApiClient.ajax = async request => { if (request.type === 'POST') h.writes.push(request); return []; };
+  h.window.ApiClient.ajax = async request => { if (isSave(request)) h.writes.push(request); return []; };
   await h.choose('displayLanguageSelect', chosen);
   // Fix round 4 (RBS1-R4-2): the select shows what the store holds (the saved tag), never the tampered option chosen.
   assert.equal(select.value, saved);
-  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, saved);
+  assert.equal(sent(h.writes.at(-1)).displayLanguage, saved);
 });
 
 // The panel shows what the server stored once the save is answered, and offers only languages the policy accepts: a
@@ -494,7 +499,7 @@ for (const [chosen, stored] of [['haw-AU', ''], ['kok-GB', ''], ['en-AU', 'en-AU
   assert.ok(offered.includes('en-AU') && offered.includes('fr'), offered.join());
   assert.ok(!offered.includes('ja') && !offered.includes('haw'), offered.join());
   if (!offered.includes(chosen)) select.appendChild(Object.assign(h.document.createElement('option'), { value: chosen, textContent: chosen }));
-  h.window.ApiClient.ajax = async request => { if (request.type !== 'POST') return []; h.writes.push(request); return { success: true, consents: {}, displayLanguage: stored }; };
+  h.window.ApiClient.ajax = async request => { if (!isSave(request)) return []; h.writes.push(request); return { success: true, consents: {}, displayLanguage: stored }; };
   await h.choose('displayLanguageSelect', chosen);
   await tick();
   assert.equal(select.value, stored);
@@ -601,22 +606,23 @@ for (const id of ['listPlaceholdersSelect', 'listStatusSelect', 'listSwapInSelec
   });
 }
 
-// Review round 9: effects follow the committed whole document, even when another input carries the choice.
+// Review round 9, stage 1 fix round 7: effects follow the committed document. A save sends only its own fields, so a
+// later save never carries an earlier choice: the language is saved by its own save or not at all.
 for (const [initial, target] of [['en', 'fr'], ['fr', 'en-US']]) {
   for (const firstSuccess of [false, true]) for (const secondSuccess of [false, true]) {
-    test(`persisted language ${initial}→${target} follows overlapping commits ${firstSuccess}/${secondSuccess}`, async t => {
+    test(`persisted language ${initial}→${target} follows its own commit, never a later one: ${firstSuccess}/${secondSuccess}`, async t => {
       const h = await languagePanel(t, initial, target), second = deferred();
       h.wire();
       h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
       await h.choose('nativeAcquisitionStampsSelect', 'off');
-      assert.equal(h.writes.length, 1, 'second whole document is queued');
+      assert.equal(h.writes.length, 1, 'the second save is queued');
       if (firstSuccess) h.held.resolve(); else h.held.reject(new Error('first fails'));
       await tick();
       assert.equal(h.writes.length, 2);
-      assert.equal(JSON.parse(h.writes[1].data).displayLanguage, target);
+      assert.deepEqual(sent(h.writes[1]), { nativeAcquisitionStamps: false }, 'the later save carries only its own field');
       if (secondSuccess) second.resolve(); else second.reject(new Error('second fails'));
       await tick();
-      const saved = firstSuccess || secondSuccess;
+      const saved = firstSuccess;
       assert.equal(h.window.localStorage.getItem('user-a-language'), saved ? target : initial);
       assert.equal(h.JE.userConfig.settings.displayLanguage, saved ? target : initial);
       assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, saved ? 1 : 0);
@@ -625,20 +631,19 @@ for (const [initial, target] of [['en', 'fr'], ['fr', 'en-US']]) {
     });
   }
   for (const boundary of ['close', 'user switch', 'same-user new epoch', 'server switch']) {
-    test(`carried language ${target} respects ${boundary} before second completion`, async t => {
+    test(`a failed language ${target} is not carried by a later save completing after ${boundary}`, async t => {
       const h = await languagePanel(t, initial, target), second = deferred();
       h.wire();
       h.window.ApiClient.ajax = request => { h.writes.push(request); return second.promise; };
       await h.choose('nativeAcquisitionStampsSelect', 'off');
-      h.held.reject(new Error('language POST fails')); await tick();
+      h.held.reject(new Error('language save fails')); await tick();
       assert.equal(h.writes.length, 2);
       h.transition(boundary);
       second.resolve(); await tick();
-      const current = boundary === 'close';
-      assert.equal(h.window.localStorage.getItem('user-a-language'), current ? target : initial);
+      assert.equal(h.window.localStorage.getItem('user-a-language'), initial);
       assert.equal(h.window.localStorage.getItem('user-b-language'), 'en');
-      assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, current ? 1 : 0);
-      expectReload(h, current);
+      assert.equal(h.toasts.filter(message => message === tr('toast_language_changed')).length, 0);
+      expectReload(h, false);
     });
   }
 }
@@ -662,8 +667,8 @@ for (const [id, key, initial, target, toast] of [
   ['listStatusSelect', 'listStatus', null, 'off', 'toast_list_settings_saved'],
   ['nativePosterTagsToggle', 'useNativePosterTags', true, false, 'toast_native_poster_tags_saved'],
   ['homeRowSoonSelect', 'homeRowSoon', null, 'off', 'panel_settings_home_saved']
-]) for (const carried of [false, true]) {
-  test(`${key} saved notification follows authoritative ${carried ? 'carried commit' : 'failure'}`, async t => {
+]) for (const laterSaved of [false, true]) {
+  test(`${key} saved notification: a failed choice is not carried by a later save (later ${laterSaved ? 'saved' : 'failed'})`, async t => {
     const h = panel(t, { config: { ...badges, NativePosterTagsEnabled: true, ArrListsEnabled: true,
       ArrListStatusEnabled: true, ArrAutomationEngineEnabled: true, ArrHomeRowsEnabled: true }, settings: { [key]: initial } });
     const held = [deferred(), deferred()];
@@ -680,10 +685,11 @@ for (const [id, key, initial, target, toast] of [
     h.allowConsoleError('Failed to save settings.json');
     held[0].reject(new Error('original fails')); await tick();
     assert.equal(h.toasts.length, 0, 'failed original never claims saved');
-    if (carried) held[1].resolve(); else held[1].reject(new Error('later fails'));
+    if (laterSaved) held[1].resolve(); else held[1].reject(new Error('later fails'));
     await later;
-    assert.deepEqual(h.toasts, carried ? [tr(toast)] : []);
-    if (key === 'acquisitionBadges' && carried) assert.equal(h.resets.at(-1), null, 'carried Show refreshes cards');
+    assert.deepEqual(sent(h.writes[1]), { showFileSizes: true });
+    assert.deepEqual(h.toasts, []);
+    assert.equal(h.JE.currentSettings[key], initial, 'the failed choice is shown undone');
   });
 }
 
@@ -715,12 +721,13 @@ for (const [id, key, initial, target, toast] of [
     await later;
     const expected = consentSaved ? (target === 'on') : initial;
     assert.equal(h.JE.currentSettings[key] ?? null, expected);
-    assert.equal(h.writes[1].type, 'POST');
+    assert.equal(h.writes[1].type, 'PATCH');
+    assert.deepEqual(sent(h.writes[1]), { showFileSizes: true });
     assert.deepEqual(h.toasts, consentSaved ? [tr(toast)] : []);
   });
 }
 
-for (const carried of [false, true]) test(`applied subtitle styles and position follow ${carried ? 'carried commit' : 'failed documents'}`, async t => {
+for (const laterSaved of [false, true]) test(`applied subtitle styles and position follow their own failed save (later ${laterSaved ? 'saved' : 'failed'})`, async t => {
   const h = panel(t, { settings: { subtitleHorizontalPosition: 50, subtitleVerticalPosition: 95, selectedFontSizePresetIndex: 2 } });
   const applied = [], held = [deferred(), deferred()];
   h.JE.applySavedStylesWhenReady = () => applied.push(['style', h.JE.currentSettings.selectedFontSizePresetIndex]);
@@ -731,9 +738,9 @@ for (const carried of [false, true]) test(`applied subtitle styles and position 
   const first = h.JE.updateSettings({ subtitleHorizontalPosition: 20, selectedFontSizePresetIndex: 1 }, { throwOnError: true }).catch(() => {});
   const second = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
   held[0].reject(new Error('style POST fails')); await tick();
-  if (carried) held[1].resolve(); else held[1].reject(new Error('later fails'));
+  if (laterSaved) held[1].resolve(); else held[1].reject(new Error('later fails'));
   await Promise.all([first, second]);
-  assert.deepEqual(applied.slice(-2), [['style', carried ? 1 : 2], ['position', carried ? 20 : 50]]);
+  assert.deepEqual(applied.slice(-2), [['style', 2], ['position', 50]]);
 });
 
 test('consent-only success cannot persist or mirror a failed display language', async t => {
@@ -788,7 +795,7 @@ test('an unrelated settings commit or read keeps a language chosen in Jellyfin; 
 });
 
 for (const kind of ['quality tags', 'tag hover', 'random button', 'subtitle styles']) {
-  for (const carried of [false, true]) test(`document projection restores ${kind} after overlapping ${carried ? 'carried commit' : 'failures'}`, async t => {
+  for (const laterSaved of [false, true]) test(`document projection restores ${kind} after its own failed save (later ${laterSaved ? 'saved' : 'failed'})`, async t => {
     const key = { 'quality tags': 'qualityTagsEnabled', 'tag hover': 'tagsHideOnHover', 'random button': 'randomButtonEnabled', 'subtitle styles': 'disableCustomSubtitleStyles' }[kind];
     const id = { 'quality tags': 'qualityTagsToggle', 'tag hover': 'tagsHideOnHoverToggle', 'random button': 'randomButtonToggle', 'subtitle styles': 'disableCustomSubtitleStyles' }[kind];
     const h = panel(t, { settings: { [key]: true } }), held = [deferred(), deferred()];
@@ -810,13 +817,13 @@ for (const kind of ['quality tags', 'tag hover', 'random button', 'subtitle styl
     input.dispatchEvent(new h.window.Event('change', { bubbles: true }));await tick();
     const later = h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true }).catch(() => {});
     h.allowConsoleError('Failed to save settings.json');held[0].reject(new Error('first fails'));await tick();
-    if (carried) held[1].resolve();else held[1].reject(new Error('second fails'));
+    if (laterSaved) held[1].resolve();else held[1].reject(new Error('second fails'));
     await later;
-    assert.equal(h.JE.currentSettings[key], !carried);
-    if (kind === 'quality tags') assert.equal(!!h.document.querySelector('.quality-overlay-container'), !carried);
-    if (kind === 'tag hover') assert.equal(h.document.body.classList.contains('je-tags-hide-on-hover'), !carried);
-    if (kind === 'random button') assert.equal(!!h.document.getElementById('randomItemButtonContainer'), !carried);
-    if (kind === 'subtitle styles') assert.equal(applied, !carried);
+    assert.equal(h.JE.currentSettings[key], true);
+    if (kind === 'quality tags') assert.equal(!!h.document.querySelector('.quality-overlay-container'), true);
+    if (kind === 'tag hover') assert.equal(h.document.body.classList.contains('je-tags-hide-on-hover'), true);
+    if (kind === 'random button') assert.equal(!!h.document.getElementById('randomItemButtonContainer'), true);
+    if (kind === 'subtitle styles') assert.equal(applied, true);
   });
 }
 
@@ -969,7 +976,7 @@ for (const trigger of ['language', 'cache', 'both']) {
       } else {
         assert.equal(h.writes.length, first + 2, 'third save transports before any reload');
         assert.equal(h.clock.reloads, 0);
-        assert.equal(JSON.parse(h.writes.at(-1).data).acquisitionBadges, false);
+        assert.equal(sent(h.writes.at(-1)).acquisitionBadges, false);
         h.held[first + 1].resolve(); await tick(); h.clock.advance(0);
       }
       h.clock.advance(10000);
@@ -980,7 +987,7 @@ for (const trigger of ['language', 'cache', 'both']) {
 test('language reload also waits for an independent per-user file transport', async t => {
   const h = await reloadPanel(t);
   await h.choose('displayLanguageSelect', 'fr'); h.held[0].resolve(); await tick();
-  const other = h.JE.saveUserSettings('bookmark.json', { bookmarks: [] }, { throwOnError: true });
+  const other = h.JE.patchUserSettings('bookmark.json', { upsert: { one: { label: 'scene' } } }, { throwOnError: true });
   await tick(); h.clock.advance(2500); assert.equal(h.clock.reloads, 0);
   h.held[1].resolve(); await other; h.clock.advance(0); assert.equal(h.clock.reloads, 1);
 });
@@ -1020,7 +1027,8 @@ for (const mode of ['quota', 'setItem', 'accessor']) {
     assert.equal(h.JE.currentSettings.listSwapIn, false);
     assert.equal(h.document.getElementById('listSwapInSelect').value, '');
     assert.ok(h.toasts.includes(tr('toast_badge_settings_saved')));
-    assert.ok(h.toasts.includes(tr('toast_list_settings_saved')));
+    // Round 7: only what this save set is announced (the answer's consent value is shown, not announced).
+    assert.ok(!h.toasts.includes(tr('toast_list_settings_saved')));
     assert.equal(observed, 3, 'initial, queued and committed publications all run');
     assert.ok(attempts > 0);
     const failedAttempts = attempts;
@@ -1140,9 +1148,9 @@ async function publicationFault(h, reason) {
     if (request.type === 'GET') return Promise.resolve({ ...persisted });
     const response = deferred(); held.push({ ...response, request });
     return response.promise.then(() => {
-      if (request.type === 'PATCH') {
+      if (request.url.endsWith('/consent')) {
         const patch = JSON.parse(request.data); persisted[patch.Field[0].toLowerCase() + patch.Field.slice(1)] = patch.Value;
-      } else Object.assign(persisted, JSON.parse(request.data));
+      } else Object.assign(persisted, sent(request));
       return { Consents: { ListSwapIn: persisted.listSwapIn } };
     });
   };
@@ -1243,7 +1251,7 @@ async function storedLanguagePanel(t, stored, { policy } = {}) {
   h.window.ApiClient.ajax = async request => {
     if (request.url.includes('/JellyfinEnhanced/locales')) return [...SERVER_LOCALES];
     if (request.url.includes('/Localization/Cultures')) return structuredClone(CULTURES);
-    if (request.type === 'POST') { h.writes.push(request); persisted = { ...persisted, ...JSON.parse(request.data) }; return { success: true, consents: {}, displayLanguage: persisted.displayLanguage }; }
+    if (isSave(request)) { h.writes.push(request); persisted = { ...persisted, ...sent(request) }; return { success: true, consents: {}, displayLanguage: persisted.displayLanguage }; }
     return { ...persisted };
   };
   h.load('enhanced/settingspanel/ui-panel-language.js');
@@ -1271,7 +1279,9 @@ for (const [stored, label] of STORED) test(`an unrelated save keeps the stored l
   const h = await storedLanguagePanel(t, stored);
   await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
   await tick();
-  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, stored, 'the save keeps the stored language');
+  // Round 7: the save sends only its own field; the server keeps the stored language.
+  assert.equal(sent(h.writes.at(-1)).displayLanguage, undefined, 'the save sends only its own field');
+  assert.equal(h.persisted().displayLanguage, stored);
   shows(h, stored, label);
   h.document.getElementById('showFileSizesToggle')?.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   await tick(); await tick();
@@ -1287,10 +1297,10 @@ for (const [from, to, label] of [['fr', 'de-Latn-CH', 'German (de-Latn-CH)'], ['
 test('a stored language the panel shows can be chosen away from and back, saved as stored', async t => {
   const h = await storedLanguagePanel(t, 'en-AU');
   await h.choose('displayLanguageSelect', 'fr'); await tick();
-  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'fr');
+  assert.equal(sent(h.writes.at(-1)).displayLanguage, 'fr');
   shows(h, 'fr', 'French');
   await h.choose('displayLanguageSelect', 'en-AU'); await tick();
-  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'en-AU');
+  assert.equal(sent(h.writes.at(-1)).displayLanguage, 'en-AU');
   shows(h, 'en-AU', 'English (en-AU)');
 });
 
@@ -1335,12 +1345,13 @@ for (const policy of ['blocked', 'unserved']) {
     const h = await storedLanguagePanel(t, 'de', { policy });
     await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
     await tick();
-    assert.equal(JSON.parse(h.writes.at(-1).data).DisplayLanguage ?? JSON.parse(h.writes.at(-1).data).displayLanguage, 'de');
+    // Round 7: a save sends only its own field; the stored language is never part of it.
+    assert.equal(sent(h.writes.at(-1)).DisplayLanguage ?? sent(h.writes.at(-1)).displayLanguage, undefined);
     shows(h, 'de', 'German');
     await h.choose('displayLanguageSelect', 'fr'); await tick();
     h.document.getElementById('showFileSizesToggle')?.dispatchEvent(new h.window.Event('change', { bubbles: true }));
     await tick(); await tick();
-    for (const write of h.writes) assert.equal(JSON.parse(write.data).DisplayLanguage ?? JSON.parse(write.data).displayLanguage, 'de', write.data);
+    for (const write of h.writes) assert.equal(sent(write).DisplayLanguage ?? sent(write).displayLanguage, undefined, write.data);
     assert.equal(h.persisted().displayLanguage, 'de');
     shows(h, 'de', 'German');
     offersNoChange(h);
@@ -1362,6 +1373,6 @@ test('with the language policy the select can be changed and carries no note (no
   assert.equal(h.select.disabled, false);
   assert.equal(h.document.getElementById('displayLanguageUnavailableNote'), null);
   await h.choose('displayLanguageSelect', 'fr'); await tick();
-  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'fr');
+  assert.equal(sent(h.writes.at(-1)).displayLanguage, 'fr');
   shows(h, 'fr', 'French');
 });

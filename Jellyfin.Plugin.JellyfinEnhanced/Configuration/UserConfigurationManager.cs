@@ -346,6 +346,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
         }
 
+        /// <summary>
+        /// Applies field changes to a person's settings.json under <see cref="UserSettingsLock"/>: the stored document (or,
+        /// when they have none yet, <paramref name="seed"/>'s defaults, as the first read would store) gets the named fields
+        /// (property names in any case) and keeps every other one as stored, so another tab's or device's change of another
+        /// field since this client's read stays. Consents change only through <see cref="SetPersonalConsent"/>: a consent
+        /// named here is left as stored, like an unknown field. The display language passes the gate. Throws
+        /// <see cref="UserDocumentPatchException"/> for a value of the wrong type (nothing saved).
+        /// </summary>
+        /// <returns>The settings as stored afterwards, and what changed ("Name: old → new").</returns>
+        public (JellyfinEnhancedUserSettings Settings, IReadOnlyList<string> Changes) PatchUserSettings(string userId, IReadOnlyDictionary<string, System.Text.Json.JsonElement>? set, Func<JellyfinEnhancedUserSettings> seed)
+        {
+            lock (UserSettingsLock(userId))
+            {
+                var exists = UserConfigurationExists(userId, SettingsFileName);
+                var existing = exists ? GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName) : seed();
+                var consents = PersonalConsents.Select(c => c.Field).ToHashSet(StringComparer.Ordinal);
+                var updated = ApplyFieldChanges(existing, set, consents);
+                KeepPersonalConsents(updated, existing);
+                updated.DisplayLanguage = LanguageTags.Sanitize(updated.DisplayLanguage);
+
+                var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
+                var newJson = System.Text.Json.JsonSerializer.Serialize(updated);
+                var changes = new List<string>();
+                if (exists && existingJson == newJson) return (updated, changes);
+                var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
+                foreach (var prop in System.Text.Json.JsonDocument.Parse(newJson).RootElement.EnumerateObject())
+                {
+                    if (!existingDoc.TryGetProperty(prop.Name, out var oldVal) || oldVal.ToString() != prop.Value.ToString())
+                    {
+                        changes.Add($"{prop.Name}: {(existingDoc.TryGetProperty(prop.Name, out var ov) ? ov.ToString() : "—")} → {prop.Value}");
+                    }
+                }
+
+                SaveUserConfiguration(userId, SettingsFileName, updated);
+                return (updated, changes);
+            }
+        }
+
+        /// <summary>
+        /// A copy of <paramref name="current"/> with the named fields set (property names in any case); unknown fields and
+        /// <paramref name="excluded"/> ones are left as they are. Throws <see cref="UserDocumentPatchException"/> for a value of
+        /// the wrong type.
+        /// </summary>
+        public static T ApplyFieldChanges<T>(T current, IReadOnlyDictionary<string, System.Text.Json.JsonElement>? set, ISet<string>? excluded = null) where T : class, new()
+        {
+            var document = JObject.FromObject(current);
+            foreach (var (name, value) in set ?? new Dictionary<string, System.Text.Json.JsonElement>())
+            {
+                var property = typeof(T).GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                if (property == null || property.GetSetMethod() == null || (excluded?.Contains(property.Name) ?? false)) continue;
+                document[property.Name] = JToken.Parse(value.GetRawText());
+            }
+
+            try
+            {
+                return document.ToObject<T>() ?? new T();
+            }
+            catch (Exception ex) when (ex is JsonException or FormatException or InvalidCastException or ArgumentException or OverflowException)
+            {
+                throw new UserDocumentPatchException($"A changed field of {typeof(T).Name} can't be read: {ex.Message}");
+            }
+        }
+
         /// <summary>Writes a person's first settings.json (<paramref name="defaults"/>) when they have none yet, under <see cref="UserSettingsLock"/>.</summary>
         /// <returns>Whether it was written (false: they have settings already).</returns>
         public bool SeedUserSettings(string userId, JellyfinEnhancedUserSettings defaults)
@@ -1387,6 +1450,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 _logger.Error($"Error cleaning up processed watchlist items for user {userId}: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>A per-user document patch with a value of the wrong type.</summary>
+    public sealed class UserDocumentPatchException : Exception
+    {
+        /// <summary>Creates the exception.</summary>
+        public UserDocumentPatchException(string message) : base(message)
+        {
         }
     }
 }

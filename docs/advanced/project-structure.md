@@ -69,6 +69,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Logger.cs
 ├── Configuration/
 │   ├── PluginConfiguration.cs
+│   ├── ConfigurationPatch.cs
 │   ├── UserConfiguration.cs
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
@@ -82,6 +83,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── RequestsHubController.cs       # The Requests page and the Manage drawer
 │   ├── NativeDetails*Controller.cs    # Pages for titles that aren't in the library
 │   ├── NotifyController.cs            # Notifications, follows and reminders
+│   ├── ConfigurationPatchController.cs # The configuration page's save (changed fields only)
 │   └── JeBackupController.cs          # Backup, restore and the credential rollback
 ├── PluginPages/                      # Seven embedded page wrappers
 ├── Helpers/
@@ -168,11 +170,12 @@ This table maps server settings, per-user documents and the configuration UI to 
 | Source | Responsibility |
 |---|---|
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
+| `Configuration/ConfigurationPatch.cs`, `Controllers/ConfigurationPatchController.cs` | The configuration page's save: only the fields the administrator changed (Sonarr/Radarr instances by id), applied by the server to the configuration it holds at that moment (`PATCH /JellyfinEnhanced/configuration`). |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
-| `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
+| `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; holds the one copy of each per-user document every feature reads and writes, and sends changes as operations in order (`PATCH user-settings/{id}/{file}`: changed fields, or bookmarks, shortcuts and trigger picks added or removed), never whole documents. It does not store user settings in localStorage. |
 
 Per-user files live under `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/<normalized-user-id>/`. IDs are lowercase with hyphens removed. Bootstrap loads `settings.json`, `shortcuts.json`, `bookmark.json`, `elsewhere.json` and `hidden-content.json`; Spoiler Guard additionally uses `spoilerblur.json`, and Content Warnings stores its trigger picks in `ddd-triggers.json`, loaded on demand rather than at bootstrap.
 

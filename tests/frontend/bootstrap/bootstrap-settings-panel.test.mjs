@@ -30,7 +30,7 @@ for (const [input, expected] of [['0', 5], ['-3', 1], ['200', 60], ['12', 12], [
     assert.equal(h.JE.pauseScreenInstance.pauseScreenDelayMs, expected * 1000);
     assert.equal(h.writes.length, 1);
     assert.ok(h.writes[0].url.endsWith('/user-a/settings.json'));
-    assert.equal(JSON.parse(h.writes[0].data).pauseScreenDelaySeconds, expected);
+    assert.equal(JSON.parse(h.writes[0].data).Set.pauseScreenDelaySeconds, expected);
   });
 }
 
@@ -44,7 +44,7 @@ for (const enabled of [false, true]) test(`native poster preference is editable 
   const h = setup(t, { NativePosterTagsEnabled: enabled }); await h.change('nativePosterTagsToggle', false);
   assert.equal(h.writes.length, enabled ? 1 : 0);
   assert.equal(h.JE.userConfig.settings.useNativePosterTags, enabled ? false : undefined);
-  if (enabled) assert.equal(JSON.parse(h.writes[0].data).useNativePosterTags, false);
+  if (enabled) assert.equal(JSON.parse(h.writes[0].data).Set.useNativePosterTags, false);
 });
 
 test('quality toggle initializes on enable and removes overlays on disable while persisting each choice', async t => {
@@ -56,5 +56,5 @@ test('quality toggle initializes on enable and removes overlays on disable while
   assert.equal(h.document.querySelector('.quality-overlay-container'), null);
   assert.ok(h.document.querySelector('.genre-overlay-container'));
   assert.equal(h.writes.length, 2);
-  assert.equal(JSON.parse(h.writes[1].data).qualityTagsEnabled, false);
+  assert.equal(JSON.parse(h.writes[1].data).Set.qualityTagsEnabled, false);
 });

@@ -1,6 +1,8 @@
-// Stage 1 fix round 6 (Q-REBUILD1FIX5-1): the per-user settings store saves a whole document only after one read of that
+// Stage 1 fix round 6 (Q-REBUILD1FIX5-1): the per-user settings store writes a document only after one read of that
 // document succeeded in this session. A boot whose read of settings.json failed used to leave the store on an empty
 // document, and the next whole save (a panel toggle, the calendar's or reviews' legacy save) sent defaults for every field.
+// Stage 1 fix round 7: writes are operations (only what changed), and a write to an unread document first reads it (the
+// read publishes the stored document); only when that read fails is the write refused, with the reason.
 // plugin.js, session.js and config.js run unchanged; the server is scripted.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,9 +29,9 @@ async function until(predicate) {
  * `reads`: how later GETs of settings.json answer ('ok' | 'fail').
  */
 function boot(t, { mode = 'ok', reads = 'ok' } = {}) {
-  const posts = [], gets = [], patches = [];
+  const posts = [], gets = [], patches = [], consents = [];
   let readMode = reads;
-  const documents = { Settings: { ...STORED }, Shortcuts: { Shortcuts: [] }, Bookmark: { Bookmarks: { one: { itemId: 'x' } } }, Elsewhere: {}, HiddenContent: { Items: {} } };
+  const documents = { Settings: { ...STORED }, Shortcuts: { Shortcuts: [] }, Bookmark: { Bookmarks: { one: { itemId: 'x' } } }, Elsewhere: {}, HiddenContent: { Items: {} }, Ddd: { Triggers: [3] } };
   const h = createHarness({
     html: '<script plugin="Jellyfin Enhanced" version="1.2.3"></script>',
     apiClient: { ajax: async request => {
@@ -47,11 +49,12 @@ function boot(t, { mode = 'ok', reads = 'ok' } = {}) {
       if (m && request.type === 'GET') {
         gets.push(m[1]);
         if (m[1] === 'settings.json' && (mode === 'per-endpoint' && gets.filter(g => g === 'settings.json').length === 1 || readMode === 'fail')) throw new Error('offline');
-        const key = { 'settings.json': 'Settings', 'shortcuts.json': 'Shortcuts', 'bookmark.json': 'Bookmark', 'elsewhere.json': 'Elsewhere', 'hidden-content.json': 'HiddenContent' }[m[1]];
+        const key = { 'settings.json': 'Settings', 'shortcuts.json': 'Shortcuts', 'bookmark.json': 'Bookmark', 'elsewhere.json': 'Elsewhere', 'hidden-content.json': 'HiddenContent', 'ddd-triggers.json': 'Ddd' }[m[1]];
         return key ? structuredClone(documents[key]) : {};
       }
       if (m && request.type === 'POST') { posts.push({ file: m[1], body: JSON.parse(request.data) }); return JSON.parse(request.data); }
-      if (m && request.type === 'PATCH') { patches.push(JSON.parse(request.data)); return { Consents: {} }; }
+      if (m && request.type === 'PATCH' && m[1] === 'consent') { consents.push(JSON.parse(request.data)); return { Consents: {} }; }
+      if (m && request.type === 'PATCH') { patches.push({ file: m[1], body: JSON.parse(request.data) }); return { success: true }; }
       return {};
     } }
   });
@@ -78,7 +81,7 @@ function boot(t, { mode = 'ok', reads = 'ok' } = {}) {
   h.load('plugin.js');
   const toasts = [];
   return {
-    ...h, posts, gets, patches, toasts,
+    ...h, posts, gets, patches, consents, toasts,
     get JE() { return h.window.JellyfinEnhanced; },
     setReads(value) { readMode = value; },
     async ready() {
@@ -91,73 +94,77 @@ function boot(t, { mode = 'ok', reads = 'ok' } = {}) {
 }
 
 for (const mode of ['settings-failed', 'per-endpoint']) {
-  test(`after a failed boot read (${mode}) no whole settings save is sent; the person is told why and a read follows`, async t => {
+  test(`after a failed boot read (${mode}) nothing is written while reads fail; the person is told why; then a read comes first`, async t => {
     const h = boot(t, { mode, reads: 'fail' });
     await h.ready();
     await h.JE.updateSettings({ autoPauseEnabled: true });
+    h.JE.currentSettings.reviewsExpandedByDefault = true;
     await h.JE.saveUserSettings('settings.json', h.JE.currentSettings); // a legacy whole save (calendar, reviews)
-    assert.equal(h.posts.length, 0, 'no defaults were sent over the stored settings');
+    assert.equal(h.patches.length + h.posts.length, 0, 'nothing was sent over the stored settings');
     await assert.rejects(h.JE.updateSettings({ qualityTagsEnabled: false }, { throwOnError: true }), /was not read/);
     assert.deepEqual([...h.JE.userConfig.unreadDocuments], ['settings.json']);
     assert.equal(h.toasts.length, 3);
     assert.equal(h.toasts.at(-1).message, en.settings_save_not_read);
     assert.ok(h.toasts.at(-1).ms >= 5000, 'shown long enough to read');
-    // Each refusal starts a read; once one succeeds the next save carries the stored document with the change.
+    // Once a read succeeds, the write waits for it and sends only its own change; the stored fields are shown.
     h.setReads('ok');
+    const reads = h.gets.filter(g => g === 'settings.json').length;
     await h.JE.updateSettings({ autoPauseEnabled: true });
-    await h.settle();
+    assert.equal(h.gets.filter(g => g === 'settings.json').length, reads + 1, 'one read first');
     assert.equal(h.posts.length, 0);
+    assert.deepEqual(h.patches, [{ file: 'settings.json', body: { Set: { AutoPauseEnabled: true } } }]);
     assert.equal(h.JE.currentSettings.displayLanguage, 'de');
-    await h.JE.updateSettings({ autoPauseEnabled: true });
-    assert.equal(h.posts.length, 1);
-    assert.equal(h.posts[0].body.DisplayLanguage, 'de');
-    assert.equal(h.posts[0].body.QualityTagsEnabled, true);
-    assert.equal(h.posts[0].body.AutoPauseEnabled, true);
+    assert.equal(h.JE.currentSettings.qualityTagsEnabled, true);
+    assert.equal(h.JE.currentSettings.autoPauseEnabled, true);
   });
 }
 
-test('while reads keep failing every whole save is refused; a personal consent (one field) still goes', async t => {
+test('while reads keep failing every write is refused; a personal consent (one field) still goes', async t => {
   const h = boot(t, { mode: 'settings-failed', reads: 'fail' });
   await h.ready();
   await h.JE.updateSettings({ autoPauseEnabled: true });
   await h.settle();
   await h.JE.updateSettings({ autoPauseEnabled: true });
   await h.settle();
-  assert.equal(h.posts.length, 0);
+  assert.equal(h.patches.length + h.posts.length, 0);
   await h.JE.setPersonalConsent('listSwapIn', true, { throwOnError: true });
-  assert.equal(h.patches.length, 1);
-  assert.deepEqual(h.patches[0], { Field: 'ListSwapIn', Value: true });
+  assert.equal(h.consents.length, 1);
+  assert.deepEqual(h.consents[0], { Field: 'ListSwapIn', Value: true });
 });
 
-test('control: after a successful boot read a whole save goes at once with the stored fields', async t => {
+test('control: after a successful boot read a change goes at once, alone', async t => {
   const h = boot(t, { mode: 'ok' });
   await h.ready();
   await h.JE.updateSettings({ autoPauseEnabled: true });
-  assert.equal(h.posts.length, 1);
-  assert.equal(h.posts[0].body.DisplayLanguage, 'de');
+  assert.deepEqual(h.patches, [{ file: 'settings.json', body: { Set: { AutoPauseEnabled: true } } }]);
   assert.equal(h.toasts.length, 0);
 });
 
-test('other documents follow the same rule: a bookmark save after a failed bookmark read is refused', async t => {
+test('other documents follow the same rule: a bookmark added after a failed bookmark read reads first, then adds only itself', async t => {
   const h = boot(t, { mode: 'ok' });
   await h.ready();
   // As if the boot read of bookmark.json had failed (the store reads the marker when it first opens the document).
   h.JE.userConfig.unreadDocuments?.push('bookmark.json');
-  await assert.rejects(h.JE.saveUserSettings('bookmark.json', { bookmarks: { only: { itemId: 'y' } } }, { throwOnError: true }), /was not read/);
-  assert.equal(h.posts.length, 0);
-  await h.settle();
-  await h.JE.saveUserSettings('bookmark.json', { bookmarks: { one: { itemId: 'x' }, two: { itemId: 'y' } } }, { throwOnError: true });
-  assert.deepEqual(h.posts.map(p => p.file), ['bookmark.json']);
+  h.setReads('ok');
+  await h.JE.patchUserSettings('bookmark.json', { upsert: { two: { itemId: 'y' } } }, { throwOnError: true });
+  assert.ok(h.gets.includes('bookmark.json'), 'the stored bookmarks were read first');
+  assert.deepEqual(h.patches, [{ file: 'bookmark.json', body: { Upsert: { Two: { ItemId: 'y' } }, Remove: [] } }]);
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(), ['one', 'two']);
 });
 
-test('a document only a module reads (Does the Dog Die triggers) saves only after that module reported its read', async t => {
+test('a document only a module reads (Does the Dog Die triggers): a change reads it first, refused while that read fails', async t => {
   const h = boot(t, { mode: 'ok' });
   await h.ready();
   h.setReads('fail');
-  await assert.rejects(h.JE.saveUserSettings('ddd-triggers.json', { Triggers: [1] }, { throwOnError: true }), /was not read/);
-  h.JE.internals.noteSettingsRead('ddd-triggers.json', { Triggers: [3] });
-  await h.JE.saveUserSettings('ddd-triggers.json', { Triggers: [3, 1] }, { throwOnError: true });
-  assert.deepEqual(h.posts.map(p => p.file), ['ddd-triggers.json']);
+  // The scripted server fails only settings.json reads: make the trigger read fail too.
+  const ajax = h.window.ApiClient.ajax;
+  h.window.ApiClient.ajax = async request => { if (request.type === 'GET' && request.url.includes('ddd-triggers.json')) throw new Error('offline'); return ajax(request); };
+  await assert.rejects(h.JE.patchUserSettings('ddd-triggers.json', { add: [1] }, { throwOnError: true }), /was not read/);
+  assert.equal(h.patches.length, 0);
+  h.window.ApiClient.ajax = ajax;
+  await h.JE.patchUserSettings('ddd-triggers.json', { add: [1] }, { throwOnError: true });
+  assert.deepEqual(h.patches, [{ file: 'ddd-triggers.json', body: { Add: [1], Remove: [] } }]);
+  assert.deepEqual([...h.JE.internals.userDocument('ddd-triggers.json').document.Triggers], [3, 1], 'the stored pick stays');
 });
 
 test('before the boot read every document is unread, and the marker never travels in a document', async t => {

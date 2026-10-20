@@ -8,6 +8,8 @@ Use these controls to personalize Jellyfin and manage your server. Unless marked
 
     After changing configuration fields, click **Save Settings** and reload the web client. Branding uploads and cache actions apply separately.
 
+    **Save Settings** saves only the settings you changed on the page. A setting another administrator (or another browser tab) saved after you opened the page keeps their value unless you changed that same setting; Sonarr/Radarr instances are saved per instance. If another administrator removed an instance you edited, the page says so and asks you to reload.
+
     | Admin tab | Settings covered here |
     |---|---|
     | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, **Content Warnings**, client tag-cache clearing |

@@ -318,6 +318,9 @@
         }
         // Create settings modal
         function createSettingsModal() {
+            // What this dialog shows (it is drawn once): a save sends only what the person changed in it, so a setting
+            // changed in another tab or device meanwhile stays.
+            let dialogShown = { Region: userRegion, Regions: userRegions.slice(), Services: userServices.slice(), SeasonProviders: userSeasonProviders };
             const modal = document.createElement('div');
             modal.id = 'streaming-settings-modal';
             modal.style.cssText = `
@@ -453,7 +456,12 @@
                     Services: userServices,
                     SeasonProviders: userSeasonProviders
                 };
-                JE.saveUserSettings('elsewhere.json', elsewhereSettings);
+                const set = {};
+                for (const key of Object.keys(elsewhereSettings)) {
+                    if (JSON.stringify(elsewhereSettings[key]) !== JSON.stringify(dialogShown[key])) set[key] = elsewhereSettings[key];
+                }
+                dialogShown = JSON.parse(JSON.stringify(elsewhereSettings));
+                JE.patchUserSettings('elsewhere.json', { set }).catch(() => { /* the store logs and shows the stored values again */ });
             };
 
             // Close on backdrop click
@@ -1372,6 +1380,8 @@
         // --- Initialization ---
         loadRegionsAndProviders();
         loadSettings();
+        // The settings store's elsewhere.json is the one source: follow what it publishes (a save's answer, a read).
+        JE.internals?.observeUserDocument?.('elsewhere.json', 'elsewhere-settings', () => loadSettings());
 
         // Use deferred initialization with requestIdleCallback
         if (typeof requestIdleCallback !== 'undefined') {

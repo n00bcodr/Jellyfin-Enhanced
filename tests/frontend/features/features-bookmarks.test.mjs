@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import { createHarness, plain } from '../helpers/harness.mjs';
 
 /**
- * Loads the real settings saver and bookmarks. `save` answers each user-settings POST made through
- * ApiClient.ajax (reject it to fail the save); `routes.items` answers item lookups.
+ * Loads the real settings saver and bookmarks. `save` answers each user-settings save made through ApiClient.ajax (a
+ * PATCH of the changes since stage 1 fix round 7: bookmarks as { Upsert, Remove }; reject it to fail the save);
+ * `routes.items` answers item lookups.
  */
 function setup(t, bookmarks = {}, save = async()=>{}) {
   const events=[],toasts=[];
   const routes={save,items:null};
   const ajax=request=>{
-    if(request.type==='POST'&&request.url.includes('/JellyfinEnhanced/user-settings/user-a/'))return routes.save(request.url.split('/').pop(),JSON.parse(request.data));
+    if((request.type==='POST'||request.type==='PATCH')&&request.url.includes('/JellyfinEnhanced/user-settings/user-a/'))return routes.save(request.url.split('/').pop(),JSON.parse(request.data));
     if(routes.items)return routes.items(request);
     throw new Error(`Unexpected request: ${request.url}`);
   };
@@ -54,7 +55,8 @@ test('bookmark update/delete persist and emit only successful changes',async t=>
   assert.equal(saved.length,0);
   assert.equal(await h.api.update('one',{label:'new'}),true);
   assert.equal(saved[0][0],'bookmark.json');
-  assert.equal(saved[0][1].bookmarks.one.label,'new');
+  assert.equal(saved[0][1].Upsert.one.label,'new');
+  assert.deepEqual(Object.keys(saved[0][1].Upsert),['one'],'only the changed bookmark travels');
   assert.equal(await h.api.delete('one'),true);
   assert.deepEqual(h.events,['update','delete']);
   assert.equal(Object.keys(h.JE.userConfig.bookmark.bookmarks).length,0);
@@ -155,7 +157,9 @@ test('overlapping bookmark deletes cannot resurrect a record the server no longe
   (await saves.next(2)).resolve();
   assert.deepEqual([await first,await second],[false,true]);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['a']);
-  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks),['a']);
+  // Round 7: each delete sends only its own removal; the server keeps what nobody removed.
+  assert.deepEqual(saves.calls[1].data.Remove,['b']);
+  assert.deepEqual(saves.calls[1].data.Upsert,{});
   assert.deepEqual(h.events,['delete']);
 });
 test('overlapping bookmark adds leave memory equal to the saved set',async t=>{
@@ -168,7 +172,7 @@ test('overlapping bookmark adds leave memory equal to the saved set',async t=>{
   (await saves.next(2)).resolve();
   await firstFailure;const added=await second;
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),[added.id]);
-  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks),[added.id]);
+  assert.deepEqual(Object.keys(saves.calls[1].data.Upsert),[added.id]);
   assert.equal(h.JE.userConfig.bookmark.bookmarks[added.id].timestamp,2);
 });
 // Each mutation is queued behind a pending delete; another user signs in before it runs. Its
@@ -208,14 +212,19 @@ test('failed bookmark migration keeps the old group, and the next save still per
   await settle(()=>h.toasts.includes('bookmark_migration_failed'));
   assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),before);
   fail=false;assert.equal(await h.api.update('keep',{label:'edited'}),true);
-  assert.deepEqual(Object.keys(saved[0].bookmarks).sort(),['a','b','keep']);
+  // Round 7: the next save sends only its own bookmark; the old group was never removed on the server.
+  assert.deepEqual(Object.keys(saved[0].Upsert),['keep']);
+  assert.deepEqual(saved[0].Remove,[]);
+  assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks).sort(),['a','b','keep']);
 });
 test('successful bookmark migration replaces the old group in one save',async t=>{
   const saved=[];const h=setup(t,{a:{itemId:'old-item-0000000000000000',timestamp:5}},async(file,data)=>saved.push(plain(data)));
   await migrate(h,orphanGroup(h.JE.userConfig.bookmark.bookmarks));
   await settle(()=>h.toasts.some(message=>message.startsWith('bookmark_migrated')));
   const records=Object.values(h.JE.userConfig.bookmark.bookmarks);
-  assert.equal(saved.length,1);assert.deepEqual(Object.keys(saved[0].bookmarks),Object.keys(h.JE.userConfig.bookmark.bookmarks));
+  // One save: the copies added and the originals removed together.
+  assert.equal(saved.length,1);assert.deepEqual(Object.keys(saved[0].Upsert),Object.keys(h.JE.userConfig.bookmark.bookmarks));
+  assert.deepEqual(saved[0].Remove,['a']);
   assert.deepEqual(records.map(bm=>[bm.itemId,bm.timestamp,bm.syncedFrom]),[['new-item-0000000000000000',5,'old-item-0000000000000000']]);
 });
 test('orphan cleanup counts only deletes that were saved',async t=>{
@@ -257,9 +266,10 @@ test('episode backfill queued behind a failing delete also saves the restored re
   saves.calls[0].reject(new Error('offline'));
   assert.equal(await deleting,false);
   (await saves.next(2)).resolve();await backfill;
-  assert.deepEqual(Object.keys(saves.calls[1].data.bookmarks).sort(),['ep','other']);
-  assert.deepEqual(plain(saves.calls[1].data.bookmarks.ep),{itemId:'ep-item',mediaType:'tv',tvdbId:'episode',seasonNumber:2,episodeNumber:5});
-  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),saves.calls[1].data.bookmarks);
+  // Round 7: the backfill sends only the record it filled; the failed delete left "other" on the server and in memory.
+  assert.deepEqual(Object.keys(saves.calls[1].data.Upsert),['ep']);
+  assert.deepEqual(plain(saves.calls[1].data.Upsert.ep),{itemId:'ep-item',mediaType:'tv',tvdbId:'episode',seasonNumber:2,episodeNumber:5});
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{ep:plain(saves.calls[1].data.Upsert.ep),other:{itemId:'movie',mediaType:'movie'}});
 });
 test('episode backfill skips a record deleted meanwhile and rolls back a failed save',async t=>{
   let fail=false,release;const saved=[];const gate=new Promise(done=>{release=done;});
@@ -269,7 +279,7 @@ test('episode backfill skips a record deleted meanwhile and rolls back a failed 
   await settle(()=>lookups===1);
   assert.equal(await h.api.delete('gone'),true);
   release();await backfill;
-  assert.deepEqual(saved.map(data=>Object.keys(data.bookmarks)),[['kept'],['kept']]);
+  assert.deepEqual(saved.map(data=>[Object.keys(data.Upsert),data.Remove]),[[[],['gone']],[['kept'],[]]]);
   assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{kept:{itemId:'ep-kept',mediaType:'tv',seasonNumber:1,episodeNumber:2}});
 
   const failing=setup(t,{ep:{itemId:'ep-item',mediaType:'tv',tvdbId:'series'}},async()=>{throw new Error('offline');});
@@ -284,12 +294,13 @@ test('delete-all runs after queued mutations and restores them when its save fai
   const clearFailure=assert.rejects(clearing,/offline/);
   (await saves.next(1)).resolve();
   (await saves.next(2)).resolve();
-  const clear=await saves.next(3);assert.deepEqual(clear.data.bookmarks,{});
+  // Delete-all removes the bookmarks this page shows (after the delete and update before it).
+  const clear=await saves.next(3);assert.deepEqual(clear.data.Remove,['b']);
   clear.reject(new Error('offline'));await clearFailure;
   assert.deepEqual([await deleting,await updating],[true,true]);
   assert.deepEqual(Object.keys(h.JE.userConfig.bookmark.bookmarks),['b']);
   assert.equal(h.JE.userConfig.bookmark.bookmarks.b.label,'new');
-  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),plain(saves.calls[1].data.bookmarks));
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks.b),plain(saves.calls[1].data.Upsert.b));
 });
 /** Loads the bookmarks library and renders it into a fresh `.sections.bookmarks` container. */
 async function renderLibrary(h){
@@ -318,11 +329,12 @@ test('a repeated delete of the same bookmark reports nothing to delete rather th
   assert.equal(saves.calls.length,1);
   // Cleanup counts a record that vanished before its delete (b, removed while gone-2 was
   // checked) as neither removed nor an error.
-  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')delete h.JE.userConfig.bookmark.bookmarks.b;throw new Error('404');};
+  // Removed elsewhere: a read of another tab's removal reaches the store (the one source).
+  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')h.JE.internals.noteSettingsRead('bookmark.json',{bookmarks:{c:{itemId:'gone-2'}}});throw new Error('404');};
   const cleanup=h.api.cleanupOrphaned();
   (await saves.next(2)).resolve();
   assert.deepEqual(plain(await cleanup),{cleaned:1,errors:0});
-  assert.deepEqual(h.JE.userConfig.bookmark.bookmarks,{});
+  assert.deepEqual(plain(h.JE.userConfig.bookmark.bookmarks),{});
 });
 test('a delete button for a bookmark already removed elsewhere shows no toast',async t=>{
   const h=setup(t,{a:{itemId:'one',mediaType:'movie',timestamp:1},b:{itemId:'one',mediaType:'movie',timestamp:2}});

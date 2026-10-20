@@ -686,7 +686,8 @@ for (const initial of [null, false]) for (const outcomes of [[false, false], [fa
       responses: path => stampAnswer(path, { [id(0)]: 'new' }),
       apiClient: { ajax: async request => {
         const n = posted.length;
-        posted.push(JSON.parse(request.data).acquisitionBadges);
+        const body = JSON.parse(request.data);
+        posted.push((body.Set || body).acquisitionBadges);
         await saves[n].promise;
         persisted = posted[n];
       } }
@@ -723,7 +724,7 @@ for (const initial of [null, false]) for (const outcomes of [[false, false], [fa
   });
 }
 
-// Review round 5: both controls save whole documents through the same queue.
+// Review round 5, stage 1 fix round 7: both controls save through the same queue, each only its own field.
 for (const initial of [null, false]) for (const nativeFirst of [false, true]) for (const outcomes of [[false, false], [false, true], [true, false], [true, true]]) {
   test(`mixed badge toggles from ${initial}, native first ${nativeFirst}, outcomes ${outcomes}`, async t => {
     const saves = [deferred(), deferred()];
@@ -736,9 +737,10 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) fo
       responses: path => stampAnswer(path, { [id(0)]: 'new' }),
       apiClient: { ajax: async request => {
         const n = posted.length;
-        posted.push(JSON.parse(request.data));
+        const body = JSON.parse(request.data);
+        posted.push(body.Set || body);
         await saves[n].promise;
-        persisted = posted[n];
+        persisted = { ...persisted, ...posted[n] };
       } }
     });
     h.JE.userConfig = { settings: { ...h.JE.currentSettings }, shortcuts: { Shortcuts: [] } };
@@ -765,8 +767,10 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) fo
     for (let n = 0; n < 2; n++) {
       if (outcomes[n]) saves[n].resolve(); else saves[n].reject(new Error('blocked save'));
       await nextTurn();
-      if (n === 0) for (const key of keys) {
-        assert.equal(h.JE.currentSettings[key], initial === false ? null : false, 'the pending document retains both choices');
+      if (n === 0) {
+        const chosen = initial === false ? null : false;
+        assert.equal(h.JE.currentSettings[keys[0]], outcomes[0] ? chosen : initial, 'the first choice follows its own save');
+        assert.equal(h.JE.currentSettings[keys[1]], chosen, 'the second choice is still pending');
       }
     }
     await h.show();

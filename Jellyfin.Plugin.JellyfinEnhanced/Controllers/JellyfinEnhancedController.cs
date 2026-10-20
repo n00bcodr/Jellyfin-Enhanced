@@ -5436,7 +5436,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            return SettingsDocument(_userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json"));
+        }
+
+        /// <summary>A settings.json document as the settings routes hand it out (gated display language, the caller's IsAdmin).</summary>
+        private object SettingsDocument(JellyfinEnhancedUserSettings userConfig)
+        {
             // Handed out as the display-language gate stores it: a file written before the gate existed (or restored by an
             // older version) never gives the client a language to mirror into Jellyfin's shared key. The file isn't rewritten.
             userConfig.DisplayLanguage = LanguageTags.Sanitize(userConfig.DisplayLanguage);
@@ -5567,6 +5572,190 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save personal consent for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save personal consent." });
+            }
+        }
+
+        /// <summary>
+        /// A change to a per-user document as the operations the client made: <c>Set</c> (field → value) for settings.json and
+        /// elsewhere.json, <c>Upsert</c> (key → record) and <c>Remove</c> (keys) for bookmark.json (bookmark ids) and
+        /// shortcuts.json (shortcut names), <c>Add</c> and <c>Remove</c> (topic ids) for ddd-triggers.json. The server applies
+        /// them to the document it holds now, so what another tab or device changed since this client's read stays.
+        /// </summary>
+        public sealed class UserDocumentPatch
+        {
+            /// <summary>Fields to set.</summary>
+            public Dictionary<string, System.Text.Json.JsonElement>? Set { get; set; }
+
+            /// <summary>Records to add or replace, by key.</summary>
+            public Dictionary<string, System.Text.Json.JsonElement>? Upsert { get; set; }
+
+            /// <summary>Items to add (ddd-triggers.json).</summary>
+            public List<System.Text.Json.JsonElement>? Add { get; set; }
+
+            /// <summary>Keys or items to remove.</summary>
+            public List<System.Text.Json.JsonElement>? Remove { get; set; }
+        }
+
+        private const int UserDocumentPatchBytes = 1024 * 1024;
+
+        private static readonly System.Text.Json.JsonSerializerOptions UserDocumentReadOptions = new() { PropertyNameCaseInsensitive = true };
+
+        private static string? PatchKey(System.Text.Json.JsonElement e) => e.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => e.GetString(),
+            System.Text.Json.JsonValueKind.Number => e.GetRawText(),
+            _ => null,
+        };
+
+        /// <summary>Applies field changes to the person's settings.json (consents excepted: see the consent operation).</summary>
+        [HttpPatch("user-settings/{userId}/settings.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsSettings(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            try
+            {
+                var (settings, changes) = _userConfigurationManager.PatchUserSettings(authorizedUserId, patch?.Set,
+                    () => JellyfinEnhanced.Instance?.Configuration is { } c ? UserSettingsDefaults.Create(c) : new JellyfinEnhancedUserSettings());
+                if (changes.Count > 0) _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, document = SettingsDocument(settings) });
+            }
+            catch (UserDocumentPatchException ex)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>Adds or replaces bookmarks by id and removes others, keeping every bookmark the patch doesn't name.</summary>
+        [HttpPatch("user-settings/{userId}/bookmark.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserBookmark(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<UserBookmark>(userId, "bookmark.json", patch, (doc, p) =>
+            {
+                var n = 0;
+                foreach (var key in (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+                {
+                    if (key != null && doc.Bookmarks.Remove(key)) n++;
+                }
+
+                foreach (var (id, value) in p.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+                {
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    doc.Bookmarks[id] = value.Deserialize<BookmarkItem>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Bookmark {id} is empty.");
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Adds and removes Does the Dog Die topic ids, keeping every other pick.</summary>
+        [HttpPatch("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsDdd(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<DddSettings>(userId, "ddd-triggers.json", patch, (doc, p) =>
+            {
+                static int Topic(System.Text.Json.JsonElement e) => e.ValueKind == System.Text.Json.JsonValueKind.Number && e.TryGetInt32(out var id)
+                    ? id : throw new UserDocumentPatchException("A trigger is a topic id (a number).");
+                var n = 0;
+                var remove = (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(Topic).ToHashSet();
+                n += doc.Triggers.RemoveAll(remove.Contains);
+                foreach (var id in (p.Add ?? new List<System.Text.Json.JsonElement>()).Select(Topic))
+                {
+                    if (doc.Triggers.Contains(id)) continue;
+                    doc.Triggers.Add(id);
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Adds or replaces shortcuts by name and removes others, keeping every shortcut the patch doesn't name.</summary>
+        [HttpPatch("user-settings/{userId}/shortcuts.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsShortcuts(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<UserShortcuts>(userId, "shortcuts.json", patch, (doc, p) =>
+            {
+                var n = 0;
+                foreach (var name in (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+                {
+                    if (name != null) n += doc.Shortcuts.RemoveAll(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+                }
+
+                foreach (var (name, value) in p.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+                {
+                    var shortcut = value.Deserialize<Shortcut>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Shortcut {name} is empty.");
+                    shortcut.Name = name;
+                    var index = doc.Shortcuts.FindIndex(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+                    if (index >= 0) doc.Shortcuts[index] = shortcut; else doc.Shortcuts.Add(shortcut);
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Applies field changes to the person's elsewhere.json.</summary>
+        [HttpPatch("user-settings/{userId}/elsewhere.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsElsewhere(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<ElsewhereSettings>(userId, "elsewhere.json", patch, (doc, p) =>
+            {
+                var updated = UserConfigurationManager.ApplyFieldChanges(doc, p.Set);
+                doc.Region = updated.Region;
+                doc.Regions = updated.Regions;
+                doc.Services = updated.Services;
+                doc.SeasonProviders = updated.SeasonProviders;
+                return 1;
+            });
+        }
+
+        // Applies a patch to a per-user document under its file lock (strict read: a corrupt file is never overwritten) and
+        // answers the document as stored afterwards.
+        private IActionResult PatchUserDocument<T>(string userId, string fileName, UserDocumentPatch? patch, Func<T, UserDocumentPatch, int> apply) where T : class, new()
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (patch == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+            try
+            {
+                T? stored = null;
+                _userConfigurationManager.RmwUserConfiguration<T>(authorizedUserId, fileName, doc =>
+                {
+                    stored = doc;
+                    return apply(doc, patch);
+                });
+                return Ok(new { success = true, file = fileName, document = stored });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = $"Failed to save {fileName}." });
             }
         }
 

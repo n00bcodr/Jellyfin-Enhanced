@@ -355,13 +355,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // transition queue — turning it off must actually release the cache
         // memory, and turning it on must catch up on the off window right away
         // rather than serving a stale snapshot until the daily 3 AM refresh.
-        public override void UpdateConfiguration(BasePluginConfiguration configuration)
+        public override void UpdateConfiguration(BasePluginConfiguration configuration) => ApplyConfiguration(_ => configuration);
+
+        /// <summary>
+        /// Applies a configuration page save made of the administrator's changes (<see cref="ConfigurationPatch"/>) to the
+        /// configuration held at that moment, under the lock every configuration write takes, then saves it like any other
+        /// configuration update. Throws <see cref="ConfigurationPatchException"/> (nothing saved) for a patch that can't be read.
+        /// </summary>
+        internal ConfigurationPatchResult PatchConfiguration(ConfigurationPatch patch)
         {
-            // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
-            // Configuration, so an actual OFF<->ON transition is distinguishable
-            // from an unrelated config save (this method fires on every save).
-            var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+            ConfigurationPatchResult? result = null;
+            ApplyConfiguration(current =>
+            {
+                var next = ConfigurationPatcher.Clone(current ?? new PluginConfiguration());
+                result = ConfigurationPatcher.Apply(next, patch);
+                return next;
+            });
+            return result!;
+        }
+
+        // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
+        // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
+        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build)
+        {
+            bool tagCacheWasEnabled, analyticsWasEnabled;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -381,13 +398,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            if (configuration is PluginConfiguration gated)
-            {
-                gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
-            }
-
             lock (AnalyticsCredentialLock)
             {
+                // Captured BEFORE base.UpdateConfiguration replaces Configuration, so an actual OFF<->ON transition is
+                // distinguishable from an unrelated config save (this runs on every save).
+                tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+                analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+                var configuration = build(Configuration as PluginConfiguration);
+                if (configuration is PluginConfiguration gated)
+                {
+                    gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
+                }
+
                 if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
                     // Credentials: placeholders/blanks keep the stored value, the clear token removes
