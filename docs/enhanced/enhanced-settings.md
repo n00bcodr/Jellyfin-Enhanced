@@ -347,7 +347,7 @@ To clear this browser's JE translations, click **Clear Translation Cache**. The 
 
 ??? info "How it works"
 
-    Changing **Display Language** saves the server preference and this browser's user-language key. An existing browser language key takes priority during translation loading. Changing the preference on another device does not automatically replace it. Choose the desired language in this browser if it continues to use an older choice.
+    Changing **Display Language** saves the server preference and this browser's user-language key. An existing browser language key takes priority during translation loading. Changing the preference on another device does not automatically replace it. Choose the desired language in this browser if it continues to use an older choice. If JE's translations script didn't load, the menu still shows your saved language but can't be changed, and a note asks you to reload the page; until then JE saves no language, and saving other settings keeps the one you have.
 
     **Clear Translation Cache** removes this browser's JE translation-cache entries. It differs from the server's **Refresh Translation Cache** scheduled task, which signals invalidation on clients' next load. Clearing does not guarantee a newer translation: bundled translations are tried first.
 

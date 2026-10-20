@@ -44,16 +44,37 @@
                 return displayName || code;
             };
 
+            // Without the display-language policy (translations.js didn't load, or came without it) JE has no rule to write
+            // a language by: the select still shows the stored language but can't be changed, a note says why, and the
+            // panel saves nothing for it (unrelated saves carry the stored value as the server handed it out).
+            const policyAvailable = () => typeof JE.supportedLanguageCode === 'function';
+            if (!policyAvailable()) {
+                displayLanguageSelect.disabled = true;
+                displayLanguageSelect.style.cursor = 'not-allowed';
+                displayLanguageSelect.style.opacity = '0.6';
+                const key = 'panel_settings_language_unavailable';
+                const translated = typeof JE.t === 'function' ? JE.t(key) : '';
+                const note = document.createElement('div');
+                note.id = 'displayLanguageUnavailableNote';
+                note.setAttribute('role', 'note');
+                note.style.cssText = 'font-size:12px; color:rgba(255,255,255,0.75); margin-top:8px;';
+                // Without translations.js, JE.t has no strings and answers the key: the English text instead.
+                note.textContent = translated && translated !== key ? translated : "The language list couldn't be loaded, so the display language can't be changed right now. Reload the page to try again.";
+                displayLanguageSelect.insertAdjacentElement('afterend', note);
+            }
+
             // The stored display language, exactly: the server's canonical tag (en-AU, de-Latn-CH), never truncated to a
             // base language. A tag without an option of its own gets one, labelled by the bundle the policy resolves it to
             // ("English (en-AU)"). Runs once the languages are listed and on every update of the settings store (a save of
-            // another setting, a read), so the select never ends up showing nothing or another language.
+            // another setting, a read), so the select never ends up showing nothing or another language. Without the
+            // policy the value the server handed out (it gates every read) is shown as it is, labelled by its base language.
             const renderStoredLanguage = () => {
                 const select = document.getElementById('displayLanguageSelect');
                 if (!select) return;
-                const stored = typeof JE.supportedLanguageCode === 'function' ? JE.supportedLanguageCode(JE.currentSettings?.displayLanguage) : '';
+                const raw = JE.currentSettings?.displayLanguage;
+                const stored = policyAvailable() ? JE.supportedLanguageCode(raw) : (typeof raw === 'string' ? raw : '');
                 if (stored && ![...select.options].some(option => option.value === stored)) {
-                    const bundle = JE.languageBundle?.(stored) || '';
+                    const bundle = policyAvailable() ? JE.languageBundle?.(stored) || '' : stored.split('-')[0];
                     const option = document.createElement('option');
                     option.value = stored;
                     option.dataset.jeStoredLanguage = 'true';
@@ -131,12 +152,17 @@
 
             // Save language on change
             listen(displayLanguageSelect, 'change', async (e) => {
+                // No policy, no write: a change that reaches the select anyway (it is disabled) is undone and saves nothing.
+                if (!policyAvailable()) {
+                    renderStoredLanguage();
+                    return;
+                }
                 const newLang = e.target.value;
 
                 // The store mirrors the persisted document (what the server stored) and schedules its session-owned reload.
                 // Only a tag of a shipped bundle is saved, in canonical case; anything else ("undefined", "null", a malformed
                 // value, a language JE ships no bundle for) is Auto (''), never written to the shared language key.
-                const languageTag = typeof JE.supportedLanguageCode === 'function' ? JE.supportedLanguageCode(newLang) : '';
+                const languageTag = JE.supportedLanguageCode(newLang);
                 try {
                     await JE.updateSettings({ displayLanguage: languageTag }, { throwOnError: true });
                 } catch (err) {

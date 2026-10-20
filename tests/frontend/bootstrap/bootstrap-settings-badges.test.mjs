@@ -15,7 +15,7 @@ const preset = { name: 'p', previewText: 'Aa', size: 1, family: 'sans-serif', bg
 const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
-function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
+function panel(tt, { config = {}, settings = {}, translate = tr, policy = 'served' } = {}) {
   const writes = [], toasts = [], panelCleanups = [];
   const h = createHarness({
     JE: {
@@ -30,8 +30,9 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
   });
   tt.after(() => h.close());
   // The language rule the store's mirror and the language panel write by (loaded before the settings store, as in
-  // production).
-  h.load('enhanced/translations.js');
+  // production). Without it: 'blocked' (the script never loaded) or 'unserved' (the file as committed, no policy line).
+  if (policy === 'served') h.load('enhanced/translations.js');
+  else if (policy === 'unserved') h.window.eval(`[function () {\n${readFileSync(resolve(jsRoot, 'enhanced/translations.js'), 'utf8')}\n}][0]();`);
   h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
@@ -1234,8 +1235,8 @@ test('a throwing language toast cannot skip its reload, other notifications or p
 // the bundle the policy resolves it to; on enumeration and on every store update (a save of another setting, a read).
 const SERVER_LOCALES = shippedLocales().filter(code => code !== 'en');
 const CULTURES = JSON.parse(readFileSync(new URL('../helpers/jellyfin-12.2-cultures.json', import.meta.url), 'utf8'));
-async function storedLanguagePanel(t, stored) {
-  const h = panel(t, { config: badges, settings: { displayLanguage: stored } });
+async function storedLanguagePanel(t, stored, { policy } = {}) {
+  const h = panel(t, { config: badges, settings: { displayLanguage: stored }, policy });
   h.wire();
   let persisted = { displayLanguage: stored };
   h.window.fetch = async () => ({ ok: false }); // no locale newer than this build
@@ -1249,7 +1250,7 @@ async function storedLanguagePanel(t, stored) {
   h.JE.internals.enhancedUi.wireLanguageControls({ panelCleanups: h.panelCleanups, resetAutoCloseTimer() {} });
   await tick(); await tick();
   const select = h.document.getElementById('displayLanguageSelect');
-  return { ...h, select, setPersisted(value) { persisted = { ...persisted, ...value }; } };
+  return { ...h, select, persisted: () => persisted, setPersisted(value) { persisted = { ...persisted, ...value }; } };
 }
 function shows(h, tag, label) {
   const { select } = h;
@@ -1291,4 +1292,76 @@ test('a stored language the panel shows can be chosen away from and back, saved 
   await h.choose('displayLanguageSelect', 'en-AU'); await tick();
   assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'en-AU');
   shows(h, 'en-AU', 'English (en-AU)');
+});
+
+
+// Stage 1 fix round 5 (RBS1-R5-1): no writer of the display language acts without the policy. When translations.js didn't
+// load (blocked) or came without the policy line (unserved), JE has no rule to write a language by: the panel still shows
+// the stored language, exactly, but offers no change (the select is disabled, with a note why) and saves nothing for that
+// field; a choice that reaches it anyway (a scripted change) is undone and saves nothing; unrelated saves and reads keep
+// and show the stored language; Jellyfin's shared language key is never written.
+const UNAVAILABLE_NOTE = en.panel_settings_language_unavailable;
+const NO_POLICY_STORED = [['de', 'German'], ['en-AU', 'English (en-AU)'], ['de-Latn-CH', 'German (de-Latn-CH)'], ['pt-BR', 'Portuguese (Brazil)'], ['', null]];
+function offersNoChange(h) {
+  assert.equal(h.select.disabled, true, 'the select is disabled');
+  const note = h.document.getElementById('displayLanguageUnavailableNote');
+  assert.ok(note && !note.hidden, 'the note says why');
+  assert.equal(note.textContent, UNAVAILABLE_NOTE);
+}
+for (const policy of ['blocked', 'unserved']) {
+  for (const [stored, label] of NO_POLICY_STORED) test(`without the language policy (${policy}) the panel shows the stored language ${JSON.stringify(stored)} and offers no change`, async t => {
+    const h = await storedLanguagePanel(t, stored, { policy });
+    assert.equal(h.JE.supportedLanguageCode, undefined);
+    shows(h, stored, label);
+    offersNoChange(h);
+  });
+  for (const [stored, label] of NO_POLICY_STORED) test(`without the language policy (${policy}) choosing another language for ${JSON.stringify(stored)} saves nothing and keeps showing it`, async t => {
+    const h = await storedLanguagePanel(t, stored, { policy });
+    for (const choice of ['fr', '', 'en-AU', 'undefined']) {
+      if (choice === stored) continue;
+      if (![...h.select.options].some(o => o.value === choice)) {
+        const option = h.document.createElement('option'); option.value = choice; h.select.appendChild(option);
+      }
+      await h.choose('displayLanguageSelect', choice); await tick(); await tick();
+      assert.equal(h.writes.length, 0, `choosing ${JSON.stringify(choice)} wrote ${h.writes.map(w => w.data).join(' ')}`);
+      shows(h, stored, label);
+      offersNoChange(h);
+    }
+    assert.equal(h.persisted().displayLanguage, stored, 'the server keeps the stored language');
+    assert.equal(h.JE.currentSettings.displayLanguage, stored);
+    assert.equal(h.window.localStorage.getItem('user-a-language'), null, 'the shared language key is never written');
+  });
+  test(`without the language policy (${policy}) unrelated saves keep the stored "de" and show it`, async t => {
+    const h = await storedLanguagePanel(t, 'de', { policy });
+    await h.JE.updateSettings({ showFileSizes: true }, { throwOnError: true });
+    await tick();
+    assert.equal(JSON.parse(h.writes.at(-1).data).DisplayLanguage ?? JSON.parse(h.writes.at(-1).data).displayLanguage, 'de');
+    shows(h, 'de', 'German');
+    await h.choose('displayLanguageSelect', 'fr'); await tick();
+    h.document.getElementById('showFileSizesToggle')?.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    await tick(); await tick();
+    for (const write of h.writes) assert.equal(JSON.parse(write.data).DisplayLanguage ?? JSON.parse(write.data).displayLanguage, 'de', write.data);
+    assert.equal(h.persisted().displayLanguage, 'de');
+    shows(h, 'de', 'German');
+    offersNoChange(h);
+    assert.equal(h.window.localStorage.getItem('user-a-language'), null, 'the shared language key is never written');
+  });
+  test(`without the language policy (${policy}) a read that brings another stored language shows it, still unchangeable`, async t => {
+    const h = await storedLanguagePanel(t, 'de', { policy });
+    h.setPersisted({ displayLanguage: 'en-AU' });
+    assert.equal(await h.JE.readUserSettings('settings.json'), true);
+    await tick();
+    shows(h, 'en-AU', 'English (en-AU)');
+    offersNoChange(h);
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.window.localStorage.getItem('user-a-language'), null);
+  });
+}
+test('with the language policy the select can be changed and carries no note (normal path unchanged)', async t => {
+  const h = await storedLanguagePanel(t, 'de');
+  assert.equal(h.select.disabled, false);
+  assert.equal(h.document.getElementById('displayLanguageUnavailableNote'), null);
+  await h.choose('displayLanguageSelect', 'fr'); await tick();
+  assert.equal(JSON.parse(h.writes.at(-1).data).displayLanguage, 'fr');
+  shows(h, 'fr', 'French');
 });
