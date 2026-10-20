@@ -38,6 +38,9 @@
     <EmbeddedResource Include="../fixtures/presentation-settings-matrix.json" LogicalName="JE.Tests.ProviderContracts.SettingsMatrix" />
     <EmbeddedResource Include="../fixtures/host-endpoints/jellyfin-12.2.tsv" LogicalName="JE.Tests.HostEndpoints.12.2" />
     <EmbeddedResource Include="../fixtures/host-endpoints/jellyfin-10.11.11.tsv" LogicalName="JE.Tests.HostEndpoints.10.11.11" />
+    <EmbeddedResource Include="../fixtures/host-endpoints/dto-fields-12.2.tsv" LogicalName="JE.Tests.HostDtoFields.12.2" />
+    <EmbeddedResource Include="../fixtures/host-endpoints/dto-fields-10.11.11.tsv" LogicalName="JE.Tests.HostDtoFields.10.11.11" />
+    <EmbeddedResource Include="../fixtures/host-web/projected/*.json" LogicalName="JE.Tests.HostWebProjected.%(Filename)" />
     <!-- Answers captured from owned 12.2 / 10.11.11 labs: the privacy model's fixtures are the host's real shapes. -->
     <EmbeddedResource Include="../fixtures/host-shapes/12.2/*.json" LogicalName="JE.Tests.HostShapes.12.2.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../fixtures/host-shapes/10.11.11/*.json" LogicalName="JE.Tests.HostShapes.10.11.11.%(Filename)%(Extension)" />

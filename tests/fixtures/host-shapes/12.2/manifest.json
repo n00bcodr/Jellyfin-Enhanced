@@ -1,7 +1,8 @@
 {
  "captured": "2026-10-19T20:34:09+0800",
+ "captured-r19": "2026-10-20T08:39:48+0800",
  "host": "12.2",
- "note": "Captured by .notes/tools/d46-r18/capture-r18.py from an owned rig-only lab with no privacy rule set.",
+ "note": "Captured from disposable test servers with no privacy rule set (fixture titles only; tokens removed, endpoints replaced by 127.0.0.1); the r19 files were added later from the same kind of server.",
  "owners": {
   "guardedFeature": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "guardedSong": "f54a9a67c8bff46ec62af9ca063c8eaf",
@@ -14,6 +15,9 @@
  },
  "roles": {
   "channel:r17": "d62b34b608b68954cf34042239720060",
+  "episode:r19-e1": "cd7371fc639dd71200756443634cbbe4",
+  "episode:r19-e2": "29d8dae54f3c3df57606f30f757bf403",
+  "episode:r19-e3": "9597f7ac44b1bd3fefe63a3be539ec9c",
   "episode:show-e1": "6770089c05c9ff11ce37ffc0fba72b0d",
   "episode:show-e2": "a8be74a03a35ac05db2077507004bc8d",
   "extra:guardedFeature:0": "2ab5420e73034a76aa58a3cc852d975d",
@@ -27,9 +31,13 @@
   "movie:guarded": "f54a9a67c8bff46ec62af9ca063c8eaf",
   "movie:hidden": "99e9b37dd2d610f20696f697f6af6edf",
   "movie:plain": "be7f1a11579d285bc676f6484b2dd389",
+  "movie:r19-hidden": "9716dc6c391aacd8e47a387b281ed7f6",
+  "movie:r19-plain": "533040a860f9ee76765a26c6e5387687",
   "program:later": "295bc478a9e121d11faae8991506642e",
   "program:now": "eeaa430c6b878c210066b9b74aaad046",
+  "season:r19-s1": "01ea11344223aff727c1b850e5276da1",
   "season:show-s1": "4b1ac6fd256eed7cba781bc31c409ed2",
+  "series:r19-show": "451afc0d77acec61b9b0f82bfe9dcc42",
   "series:show": "b970e608063e6608f89a0b31a5dae2a8",
   "seriestimer:later": "253fd18da786312c84468818acd5875b",
   "timer:later": "f4d9c4a7edcbe6788a7068f55e724daf",
@@ -678,6 +686,55 @@
    "path": "/Users/AuthenticateByName",
    "status": 200,
    "viewer": "viewer"
+  },
+  {
+   "endpoint": "Session.GetSessions",
+   "file": "Session.GetSessions.admin-r19.json",
+   "method": "GET",
+   "path": "/Sessions",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Session.WebSocket",
+   "file": "Session.WebSocket.admin-r19.json",
+   "method": "WS",
+   "path": "/socket SessionsStart",
+   "socket": true,
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "TvShows.GetEpisodes",
+   "file": "TvShows.GetEpisodes.r19.json",
+   "method": "GET",
+   "path": "/Shows/451afc0d77acec61b9b0f82bfe9dcc42/Episodes?userId=7ef882cd307344279240d0eca8333a9f&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle,Chapters,SortName",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Search.GetSearchHints",
+   "file": "Search.GetSearchHints.r19.json",
+   "method": "GET",
+   "path": "/Search/Hints?searchTerm=Secret%20ending%20r19&userId=7ef882cd307344279240d0eca8333a9f",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "UserLibrary.GetItem",
+   "file": "UserLibrary.GetItem.r19-e3.json",
+   "method": "GET",
+   "path": "/Users/7ef882cd307344279240d0eca8333a9f/Items/9597f7ac44b1bd3fefe63a3be539ec9c",
+   "status": 200,
+   "viewer": "admin"
+  },
+  {
+   "endpoint": "Items.GetItems",
+   "file": "Items.GetItems.r19.json",
+   "method": "GET",
+   "path": "/Items?ParentId=e2b426a553fbeb8f604f90f0e071579a&Recursive=true&fields=Overview,Path,ProviderIds,MediaSources,MediaStreams,Taglines,People,Genres,Tags,OriginalTitle,Chapters,SortName",
+   "status": 200,
+   "viewer": "admin"
   }
  ]
 }

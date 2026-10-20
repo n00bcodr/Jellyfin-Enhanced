@@ -101,6 +101,11 @@ public class PrivacyHostShapeModelTests
         new("sg-movie", "movie:guarded", ["Secret plot r17 movie Guarded", "Secret plot r17 theme guarded"], ["Secret plot r17 movie Plain", "Secret plot r17 theme plainSong", "Secret ending r17"]),
         new("sg-series", "series:show", ["Secret plot r17 series", "Secret plot r17 episode", "Secret ending r17", "Secret plot r17 theme show"],
             ["Secret plot r17 movie Plain", "Secret plot r17 theme plainSong", "Secret plot r17 movie Guarded"]),
+        // Round 19's captures: a multi-track movie (titled audio and subtitle tracks, a sidecar subtitle named after it) and a
+        // series whose episodes have incomplete numbering (no episode number; no numbers at all).
+        new("hc-r19-movie", "movie:r19-hidden", ["D46 R19 Hidden"], ["D46 R19 Plain", "Secret ending r19"]),
+        new("sg-r19-series", "series:r19-show", ["Secret ending r19", "Secret original r19", "Secret sort r19", "secret sort r0000000019", "Secret plot r19 episode", "Secret tagline r19 E"],
+            ["D46 R19 Show", "D46 R19 Hidden"]),
     ];
 
     public static readonly string[] Moments = ["before", "in-flight"];
@@ -183,16 +188,18 @@ public class PrivacyHostShapeModelTests
             foreach (var (key, owner) in Data.Owners)
                 foreach (var role in Data.Roles.Where(r => r.Key.StartsWith("extra:" + key + ":", StringComparison.Ordinal)))
                     owners[G(role.Value)] = G(owner);
+            // Each episode and season belongs to the series (and season) its own captured DTO names.
             var series = G(Data.Roles["series:show"]);
             var season = G(Data.Roles["season:show-s1"]);
+            Guid Own(JsonObject dto, string field, Guid fallback) => Guid.TryParse(dto[field]?.ToString(), out var id) && id != Guid.Empty ? id : fallback;
             foreach (var (id, (type, dto)) in kinds)
             {
                 BaseItem? item = type switch
                 {
                     "Movie" => new MediaBrowser.Controller.Entities.Movies.Movie(),
                     "Series" => new MediaBrowser.Controller.Entities.TV.Series(),
-                    "Season" => new MediaBrowser.Controller.Entities.TV.Season { SeriesId = series },
-                    "Episode" => new MediaBrowser.Controller.Entities.TV.Episode { SeriesId = series, SeasonId = season },
+                    "Season" => new MediaBrowser.Controller.Entities.TV.Season { SeriesId = Own(dto, "SeriesId", series) },
+                    "Episode" => new MediaBrowser.Controller.Entities.TV.Episode { SeriesId = Own(dto, "SeriesId", series), SeasonId = Own(dto, "SeasonId", season), SeriesName = dto["SeriesName"]?.ToString() },
                     "Audio" => new MediaBrowser.Controller.Entities.Audio.Audio(),
                     "Video" => new Video(),
                     "Trailer" => new Trailer(),
@@ -207,6 +214,14 @@ public class PrivacyHostShapeModelTests
                 item.ParentIndexNumber = dto["ParentIndexNumber"]?.GetValue<int>();
                 if (owners.TryGetValue(id, out var owner)) item.OwnerId = owner;
                 Items[id] = item;
+            }
+            // A series (or season) the captures name only through its episodes is still the host's own item.
+            foreach (var episode in Items.Values.OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToArray())
+            {
+                if (!Items.ContainsKey(episode.SeriesId))
+                    Items[episode.SeriesId] = new MediaBrowser.Controller.Entities.TV.Series { Id = episode.SeriesId, Name = episode.SeriesName };
+                if (episode.SeasonId != Guid.Empty && !Items.ContainsKey(episode.SeasonId))
+                    Items[episode.SeasonId] = new MediaBrowser.Controller.Entities.TV.Season { Id = episode.SeasonId, SeriesId = episode.SeriesId, IndexNumber = 1 };
             }
         }
 

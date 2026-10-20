@@ -1055,6 +1055,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyFieldClassification.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyIdentity.cs",
       "category": "Services"
     },
@@ -9694,7 +9698,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 542,
+    "files": 543,
     "routes": 257,
     "configuration_properties": 579,
     "storage_references": 84,
