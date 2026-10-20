@@ -300,7 +300,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 case "season":
                     status = StatusComposer.Season(facts, item, item.SeriesId is Guid sid ? c.FolderOf!(sid).EpisodesOf(item.Season, includeVirtual: viewer.DisplayMissingEpisodes) : Array.Empty<JfEpisode>(), c, detail: true, seriesCopies, page, seriesItem,
-                        elsewhere: item.SeriesId is Guid own && item.Season is int number ? () => PlayedElsewhere(seriesCopies, own, number, c) : null);
+                        elsewhere: item.SeriesId is Guid own && item.Season is int number ? () => PlayedElsewhere(seriesCopies, own, number, viewer) : null);
+                    if (status.Copy is { } bound) Reach(bound, viewer);
                     break;
                 default:
                     status = StatusComposer.Episode(facts, item, c, detail: true, seriesCopies, page, seriesItem);
@@ -310,12 +311,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// The episodes of one season that another copy of the series the viewer can open plays (each copy's own physical
-        /// folder, as they see it): a gap of the page's copy among them is that copy's gap, never the title's.
+        /// The episodes of one season that another copy of the series the viewer can open plays (D53, edition round 15:
+        /// playable means playable): each copy's own episodes the viewer can open that have a playable source (never a missing
+        /// one, a placeholder or one Jellyfin hides from them). A gap of the page's copy among them is that copy's gap, never the
+        /// title's.
         /// </summary>
-        private static EpisodeCoverage PlayedElsewhere(IReadOnlyList<JfCopy>? copies, Guid own, int season, ComposeContext c)
+        private EpisodeCoverage PlayedElsewhere(IReadOnlyList<JfCopy>? copies, Guid own, int season, StatusViewer viewer)
             => new((copies ?? Array.Empty<JfCopy>()).Where(x => x.Visible && x.ItemId != own).DistinctBy(x => x.ItemId)
-                .SelectMany(x => c.FolderOf!(x.ItemId).EpisodesOf(season, includeVirtual: false)).Where(e => !e.Hidden && !e.Virtual));
+                .SelectMany(x => _view.EpisodeSources(x.ItemId, season, viewer, readDimensions: false))
+                .Where(e => e.Sources.Count > 0)
+                .Select(e => new JfEpisode { ItemId = e.ItemId, Season = e.Season, Episode = e.Episode, EpisodeEnd = e.EpisodeEnd }));
+
+        /// <summary>
+        /// Where a season page's copy-qualified controls land (D53, edition round 15: one binding decides wording and action):
+        /// a request names the copy's edition and goes to that edition's default Sonarr (the request target), so it reaches the
+        /// copy only when that is the copy's own Sonarr; a household Search runs on the standard request target only. An
+        /// administrator's Search runs on the copy's own Sonarr; nobody else is told which one it is. (Seerr mode: a request is
+        /// bound for visibility to the same default instance; which server Seerr then uses is Seerr's own setting.)
+        /// </summary>
+        private void Reach(CopyBinding bound, StatusViewer viewer)
+        {
+            var config = _config();
+            bound.Variant = bound.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null };
+            var target = bound.Variant == null ? null : _store.Registry.DefaultFor(ArrKind.Sonarr, bound.Variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard);
+            bound.Ask = target != null && string.Equals(target.Id, bound.InstanceId, StringComparison.OrdinalIgnoreCase);
+            // JE mode searches the request target only; Seerr mode any non-4K Sonarr bound for the viewer, so only when there is one.
+            bound.Search = bound.Ask && bound.Variant == "standard"
+                && (config?.ArrRequestBackend == "je" || _store.Instances(ArrKind.Sonarr).Count(i => i.Role != Model.Arr.ArrInstanceRole.FourK) == 1);
+            if (!viewer.IsAdmin) bound.InstanceId = null;
+        }
 
         /// <summary>
         /// The current status of one title for a viewer, uncached (notifications and "Remind"): of a
@@ -1354,7 +1378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     History: await _store.GetHistoryAsync(i, ct).ConfigureAwait(false)))).ConfigureAwait(false);
                 foreach (var (instance, library, queue, history) in reads)
                 {
-                    revision.Append(instance.Id).Append(':').Append(instance.Name).Append(':').Append(instance.Role)
+                    revision.Append(instance.Id).Append(':').Append(instance.Name).Append(':').Append(instance.Role).Append(instance.IsDefault ? "*" : string.Empty)
                         .Append(':').Append(string.Join(",", instance.LinkedLibraryIds))
                         .Append(':').Append(string.Join(",", instance.PathMappings.Select(m => m.ArrPath + ">" + m.JellyfinPath)))
                         .Append(':').Append(Stamp(library.LoadedAt)).Append(library.Error?.Kind.ToString() ?? string.Empty)

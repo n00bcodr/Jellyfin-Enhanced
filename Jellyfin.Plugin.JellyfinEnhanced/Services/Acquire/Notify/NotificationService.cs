@@ -939,7 +939,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // Exactly this copy's own folder (never the folders automatic series grouping shows with it: a 4K
                 // watch must not read the standard folder's episodes as 4K arrivals).
                 files.AddRange(_view.SeriesFolder(copy.ItemId, viewer).EpisodesOf(null, includeVirtual: false)
-                    .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).Select(e => (copy.ItemId, e)));
+                    .Where(e => !e.Hidden && e.Playable && e.ItemId != Guid.Empty).Select(e => (copy.ItemId, e)));
             }
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
             foreach (var (series, e) in files)
@@ -1265,7 +1265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Each copy's own folder (see EvaluateSeries), read once for the whole flush.
             var folders = copies.ToDictionary(copy => copy.ItemId, copy => _view.SeriesFolder(copy.ItemId, viewer));
             var files = folders.Values.SelectMany(folder => folder.EpisodesOf(null, includeVirtual: false))
-                .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).ToList();
+                .Where(e => !e.Hidden && e.Playable && e.ItemId != Guid.Empty).ToList();
             var coverage = new EpisodeCoverage(files);
             // A pending batch already supplies every number we need. Check full membership rather
             // than expanding a combined file (even when its metadata claims billions of episodes).

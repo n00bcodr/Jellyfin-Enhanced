@@ -239,6 +239,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Number of the next episode.</summary>
         public int? NextEpisode { get; init; }
 
+        /// <summary>
+        /// Season pages: of <see cref="LongMissing"/>, the episodes that are gaps of this page's copy only (another copy the
+        /// viewer can open plays them; <see cref="EpisodeStatus.CopyGap"/>), so the summary says what the rows say.
+        /// </summary>
+        public int? MissingInCopy { get; set; }
+
         /// <summary>Series only: season numbers whose aired episodes are all ready.</summary>
         public IReadOnlyList<int>? ReadySeasons { get; init; }
     }
@@ -297,6 +303,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// the viewer can open plays it. Null when it is missing from every copy they can open (or isn't missing).
         /// </summary>
         public string? CopyGap { get; init; }
+    }
+
+    /// <summary>
+    /// The copy a season page's copy-qualified controls act on (D53, edition round 15: one binding decides wording and action):
+    /// the words name <see cref="Role"/>, and a control is offered under them only when its action reaches that copy's Sonarr.
+    /// </summary>
+    public sealed class CopyBinding
+    {
+        /// <summary>The copy's role (standard, 4k, anime, custom): the words.</summary>
+        public string Role { get; init; } = string.Empty;
+
+        /// <summary>The edition a request for this copy names (standard or 4k); null when no request can name it.</summary>
+        public string? Variant { get; set; }
+
+        /// <summary>A request of <see cref="Variant"/> goes to this copy's Sonarr (the default instance of that edition).</summary>
+        public bool Ask { get; set; }
+
+        /// <summary>A household Search (standard copies on the request target only) reaches this copy's Sonarr.</summary>
+        public bool Search { get; set; }
+
+        /// <summary>Administrators only: the copy's Sonarr, where their Search runs. Never given to anyone else.</summary>
+        public string? InstanceId { get; set; }
     }
 
     /// <summary>Admin view of one copy (instance) of a title.</summary>
@@ -474,6 +502,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Per episode (season details only).</summary>
         public IReadOnlyList<EpisodeStatus>? Episodes { get; init; }
+
+        /// <summary>
+        /// Season details with gaps of this page's copy only (<see cref="EpisodeStatus.CopyGap"/>): the copy every control named
+        /// for it acts on. Absent otherwise.
+        /// </summary>
+        public CopyBinding? Copy { get; set; }
 
         /// <summary>Server-side actions this viewer may take (none in phase 1).</summary>
         public IReadOnlyList<string> Actions { get; init; } = Array.Empty<string>();

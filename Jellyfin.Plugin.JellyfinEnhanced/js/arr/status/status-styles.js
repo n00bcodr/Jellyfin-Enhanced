@@ -66,7 +66,9 @@ button.je-arr-pill:focus-visible, .layout-tv button.je-arr-pill:focus { outline:
   color: color-mix(in srgb, var(--je-arr-tone, #9aa0a6) 60%, #fff); white-space: nowrap; }
 .je-arr-chip-row { margin: 0.4em 0 0.2em; }
 .je-arr-chip-row .je-arr-chip { margin-left: 0; }
-.je-arr-chip-overlay { position: absolute; left: 6px; bottom: 6px; z-index: 3; margin: 0; background: rgba(0,0,0,0.78); pointer-events: none; }
+.je-arr-chip-overlay { position: absolute; left: 6px; bottom: 6px; z-index: 101; margin: 0; background: rgba(0,0,0,0.78); pointer-events: none;
+  box-sizing: border-box; max-width: calc(100% - 12px); white-space: normal; overflow-wrap: anywhere; line-height: 1.15;
+  border-radius: 6px; font-size: 0.72em; padding: 0.15em 0.45em; }
 .je-arr-banner { display: flex; gap: 0.7em; align-items: center; margin: 0.5em 0 1em; padding: 0.7em 1em; border-radius: 8px;
   border: 1px solid rgba(229,160,13,0.45); background: rgba(229,160,13,0.07); }
 .je-arr-banner-icon { color: #e5a00d; }

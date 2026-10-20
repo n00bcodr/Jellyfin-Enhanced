@@ -154,16 +154,68 @@
      */
     function adminSearchable(ep) {
         if (!JE.arrAsk?.enabled() || !season?.rows || !JE.arrStatus?.searchable?.(ep)) return false;
-        return !!JE.arrAsk.searchInstance?.(season.caps, season.statusRef, ep.key);
+        return !!adminInstance([ep], null, ep.key);
     }
 
     /**
-     * True when the episode gets a button (Get it, or Search).
+     * The one copy binding a control for these episodes acts on (D53, edition round 15: one binding decides wording and
+     * action). Null when none of them is a gap of this page's copy only: the control is title-wide (plain words, a standard
+     * ask). For a copy's gap, the season's `copy` from the server: the edition a request names and whether that request
+     * reaches the copy's Sonarr, whether a household Search does, and (administrators) the copy's instance. A server that
+     * names none for that copy: nothing reaches it.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {{role: string, variant: string|null, ask: boolean, search: boolean, instanceId?: string}|null} Binding.
+     */
+    function bindingOf(eps, status) {
+        const gap = eps.find(ep => ep?.copyGap)?.copyGap;
+        if (!gap) return null;
+        const copy = (status || season?.statusRef)?.copy;
+        return copy && copy.role === gap ? copy : { role: gap, variant: null, ask: false, search: false };
+    }
+
+    /**
+     * The instance an administrator's Search for these episodes runs on: the copy's own Sonarr under a copy's binding, else
+     * the title's (JE.arrAsk.searchInstance). Null when the caller can't run one.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} status Season status (null: the one shown).
+     * @param {string} key Title key in scope.
+     * @param {Object|null} [caps] Capabilities (default: the season's).
+     * @returns {string|null} Instance id.
+     */
+    function adminInstance(eps, status, key, caps) {
+        const who = caps || season?.caps;
+        const binding = bindingOf(eps, status);
+        if (!binding) return JE.arrAsk.searchInstance?.(who, status || season?.statusRef, key) || null;
+        if (who?.role !== 'admin' || JE.pluginConfig?.ArrManageDrawerEnabled !== true) return null;
+        return binding.instanceId || null;
+    }
+
+    /**
+     * What a control under a copy's binding may do: 'search' when its Search reaches the copy (an administrator's on the
+     * copy's own Sonarr, a household Search on its request target), else 'get' when an ask for the copy's edition reaches it
+     * (and the viewer may ask for that edition), else null: nothing is offered under the copy's name. A title-wide control
+     * keeps its mode.
+     * @param {Object|null} binding Binding ({@link bindingOf}).
+     * @param {'get'|'search'} mode The mode the episodes would have.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status.
+     * @returns {'get'|'search'|null} Mode.
+     */
+    function reach(binding, mode, eps, status) {
+        if (!binding) return mode;
+        if (mode === 'search' && (adminInstance(eps, status || null, eps[0]?.key) || (binding.search && canAsk()))) return 'search';
+        if (binding.ask && canAsk() && (binding.variant !== '4k' || season?.caps?.can4kSeries === true)) return 'get';
+        return null;
+    }
+
+    /**
+     * True when the episode gets a button (Get it, or Search) that reaches what its chip names.
      * @param {Object} ep Episode status.
      * @returns {boolean} Offered.
      */
     function offered(ep) {
-        return canAsk() || adminSearchable(ep);
+        return (canAsk() || adminSearchable(ep)) && modeOf(ep) !== null;
     }
 
     /**
@@ -458,16 +510,18 @@
 
     /**
      * Whether an episode's button asks for it (Get it) or searches for it (Search: monitored and
-     * missing for a long while, see JE.arrStatus.searchable).
+     * missing for a long while, see JE.arrStatus.searchable); null for a copy's gap nothing reaches.
      * @param {Object} ep Episode status.
-     * @returns {'get'|'search'} Mode.
+     * @returns {'get'|'search'|null} Mode.
      */
     function modeOf(ep) {
-        if (!JE.arrStatus?.searchable?.(ep)) return 'get';
+        let mode = 'search';
+        if (!JE.arrStatus?.searchable?.(ep)) mode = 'get';
         // Seerr mode: someone else's Search that would turn into an ask (nothing sent for the episode yet) asks for the
         // season instead, and its button says so.
-        if (rounded() && !adminSearchable(ep) && ep?.reason?.params?.sent !== '1') return 'get';
-        return 'search';
+        else if (rounded() && !adminSearchable(ep) && ep?.reason?.params?.sent !== '1') mode = 'get';
+        // A copy's own gap: only what reaches that copy (null: no button).
+        return reach(bindingOf([ep]), mode, [ep]);
     }
 
     /**
@@ -546,6 +600,7 @@
     function getItButton(ep) {
         const S = JE.arrStatus;
         const mode = modeOf(ep);
+        const binding = bindingOf([ep]);
         const btn = S.el('button', `je-ask-get${mode === 'search' ? ' je-ask-search' : ''}`);
         btn.type = 'button';
         btn.dataset.jeAskEpisode = String(ep.episode);
@@ -563,17 +618,19 @@
             btn.dataset.rounded = '1';
             btn.title = words.note;
             btn.setAttribute('aria-label', `${words.label}. ${words.note}`);
+        } else if (binding) {
+            btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_in_copy_label' : 'arr_ask_get_it_in_copy_label', { episode: ep.episode, title, copy: S.copyPhrase(binding.role) }));
         } else {
             btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_label' : 'arr_ask_get_it_label', { episode: ep.episode, title }));
         }
         // The button asks for this season's episode only, even if another season is shown by the
-        // time it is pressed (a dialog left open across a navigation).
+        // time it is pressed (a dialog left open across a navigation); a copy's gap in that copy's edition.
         const scope = season?.itemId || null;
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (mode === 'search') searchEpisode(ep, btn, scope);
-            else getEpisodes([ep.episode], btn, false, scope);
+            else getEpisodes([ep.episode], btn, false, scope, binding?.variant);
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -611,21 +668,23 @@
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         if (JE.arrAsk.epoch() !== started || season !== target) return;
-        const instanceId = JE.arrAsk.searchInstance(caps, target.statusRef, ep.key);
+        const binding = bindingOf([ep], target.statusRef);
+        const instanceId = adminInstance([ep], target.statusRef, ep.key, caps);
         const place = button?.closest('.listItem') || null;
         busy.add(ep.episode);
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : await JE.arrAsk.familySearch(ep.key);
+            // A household Search runs on the standard request target: never for a copy it doesn't reach.
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key) : null;
         } finally {
             busy.delete(ep.episode);
         }
         if (JE.arrAsk.epoch() !== started) return;
         if (!result) {
-            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it.
+            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it (a copy's gap in its edition).
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes([ep.episode], button, true, target.itemId);
+            await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant);
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
@@ -652,9 +711,10 @@
      * @param {HTMLButtonElement} button The button pressed (focus goes to the new chip after).
      * @param {boolean} [search] The ask is a Search (its state then shows for a while only).
      * @param {string|null} [scope] The season the button was made for (nothing is asked on another).
+     * @param {string|null} [variant] The edition asked for (a copy's binding; default standard).
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope) {
+    async function getEpisodes(episodes, button, search, scope, variant) {
         const target = season;
         const rows = target?.rows;
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
@@ -668,13 +728,13 @@
         let result = null;
         try {
             const caps = await JE.arrAsk.me();
-            let input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })));
+            let input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })), variant || 'standard');
             if (JE.arrAsk.seasonsOnly?.(caps)) {
                 if (season === target && !target.caps) target.caps = caps;
                 // Seerr takes whole seasons: only a button that said so asks for the season; any other (a Search that
                 // would turn into an ask, a button drawn before the caller's capabilities were known) asks for nothing
                 // and says why, and the page's buttons are drawn again with the season on them.
-                input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season]) : null;
+                input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season], variant || 'standard') : null;
                 if (!input) result = { ok: false, state: button?.dataset.rounded === '1' ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
             if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input);
@@ -1031,14 +1091,26 @@
         const asked = missing.filter(n => states.get(n));
         // What the button is for: every episode left when the viewer may ask; otherwise an administrator's Search
         // for the ones missing for a long while (it runs whatever the request policy says).
-        const offerEps = canAsk() ? openEps : openEps.filter(adminSearchable);
+        const candidates = canAsk() ? openEps : openEps.filter(adminSearchable);
+        // Some of them another copy the viewer can open plays: the button acts for that copy, says which, and is offered under
+        // its name only when its action reaches it (one binding decides wording and action); otherwise only the episodes no
+        // copy has get the plain button.
+        let offerEps = candidates;
+        let binding = bindingOf(offerEps, status);
+        const modes = eps => (eps.length > 0 && eps.every(ep => modeOf(ep) === 'search') ? 'search' : 'get');
+        let act = offerEps.length ? reach(binding, modes(offerEps), offerEps, status) : null;
+        if (binding && !act) {
+            offerEps = candidates.filter(ep => !ep.copyGap);
+            binding = null;
+            act = offerEps.length ? modes(offerEps) : null;
+        }
+        if (!act) offerEps = [];
         const offer = offerEps.map(ep => ep.episode);
-        // Every episode offered is monitored and missing for a long while: the button searches.
-        const search = offer.length > 0 && offerEps.every(ep => modeOf(ep) === 'search');
+        // Every episode offered is monitored and missing for a long while (and the Search reaches them): the button searches.
+        const search = act === 'search';
         // Seerr mode: Get them asks for the whole season, and says so.
         const seasonWords = !search && rounded() ? roundedWords() : null;
-        // Some of them another copy the viewer can open plays: the button gets them for this copy, and says which.
-        const gap = offerEps.find(ep => ep.copyGap)?.copyGap || null;
+        const gap = binding?.role || null;
         const copy = gap ? { name: S.copyName(gap), phrase: S.copyPhrase(gap) } : null;
         if (bannerSearched && (bannerSearched.itemId !== normalize(status.itemId) || Date.now() - bannerSearched.at > SEARCHED_TTL_MS)) bannerSearched = null;
         const outcome = search ? bannerSearched : null;
@@ -1049,7 +1121,7 @@
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}:${binding?.variant || ''}:${binding?.ask ? 1 : 0}:${binding?.search ? 1 : 0}:${binding?.instanceId || ''}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -1095,7 +1167,7 @@
                 btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
             }
             const scope = normalize(status.itemId);
-            btn.addEventListener('click', () => (search ? searchBanner(offerEps, status, btn) : getEpisodes(offer, btn, false, scope)));
+            btn.addEventListener('click', () => (search ? searchBanner(offerEps, status, btn) : getEpisodes(offer, btn, false, scope, binding?.variant)));
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
         }
@@ -1123,7 +1195,8 @@
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
         if (JE.arrAsk.epoch() !== started || season !== target) return;
-        const instanceId = key ? JE.arrAsk.searchInstance(caps, status, key) : null;
+        const binding = bindingOf(eps, status);
+        const instanceId = key ? adminInstance(eps, status, key, caps) : null;
         numbers.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
@@ -1131,6 +1204,9 @@
         try {
             if (instanceId) {
                 result = await JE.arrAsk.adminSearch(key, instanceId);
+            } else if (binding && !binding.search) {
+                // A household Search doesn't reach this copy: they are asked for in its edition instead.
+                result = null;
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
                 const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key) : null;
@@ -1150,11 +1226,11 @@
         if (JE.arrAsk.epoch() !== started) return;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes(numbers, button, true, target.itemId);
+            await getEpisodes(numbers, button, true, target.itemId, binding?.variant);
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId);
+        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         announce(result.text);

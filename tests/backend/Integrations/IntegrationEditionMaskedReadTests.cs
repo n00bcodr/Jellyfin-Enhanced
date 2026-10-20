@@ -60,10 +60,12 @@ public class IntegrationEditionMaskedReadTests
     {
         var (copy, mask) = Show();
         var read = copy.Through(mask);
-        // Statistics: no hidden season; the hidden episode (and its file) counts nowhere, in the season or the series.
+        // Statistics: no hidden season; season 1 (an episode hidden in it) is derived from its visible episodes (D53, edition
+        // round 15: E1 with a file, E3 neither aired nor monitored), never Sonarr's counts minus the hidden one.
         var season = Assert.Single(read.Series!.Seasons);
-        Assert.Equal((1, 1, 2, 2), (season.SeasonNumber, season.EpisodeFileCount, season.EpisodeCount, season.TotalEpisodeCount));
-        Assert.Equal((1, 2), (read.Series.EpisodeFileCount, read.Series.EpisodeCount));
+        Assert.Equal((1, 1, 1, 2), (season.SeasonNumber, season.EpisodeFileCount, season.EpisodeCount, season.TotalEpisodeCount));
+        Assert.Equal((1, 1), (read.Series.EpisodeFileCount, read.Series.EpisodeCount));
+        Assert.Empty(read.Unvouched);
         Assert.Null(read.Series.NextAiring); // the next airing was the hidden season's
         Assert.Equal(new[] { 11, 13 }, read.Episodes!.Episodes.Select(e => e.Id).ToArray());
         Assert.Null(read.Episodes.Find(1, 2));

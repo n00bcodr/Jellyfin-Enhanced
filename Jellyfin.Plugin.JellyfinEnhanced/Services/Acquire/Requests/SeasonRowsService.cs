@@ -176,7 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private async Task<SeasonRows?> ComposeAsync(StatusViewer viewer, TitleKey key, string seriesId, int season, int? tmdbId, List<JfEpisode> jf, string? language, CancellationToken ct)
         {
             var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
-            var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && !e.Virtual).SelectMany(Numbers));
+            var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && e.Playable).SelectMany(Numbers));
             var series = key.Title;
             var canonical = _aliases?.Canonical(series) ?? series;
 

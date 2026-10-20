@@ -343,6 +343,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     Episode = e.IndexNumber.Value,
                     EpisodeEnd = e.IndexNumberEnd,
                     Virtual = e.IsMissingEpisode,
+                    Placeholder = Placeholder(e),
                     DateCreated = Utc(e.DateCreated),
                 });
             }
@@ -450,7 +451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else if (item is Episode e && FolderEpisode(e, series.Id) && (e.ParentIndexNumber ?? seasonNumbers.GetValueOrDefault(e.SeasonId)) is int s)
                 {
-                    episodes.Add(new JfEpisode { ItemId = e.Id, Season = s, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Virtual = e.IsMissingEpisode, DateCreated = Utc(e.DateCreated) });
+                    episodes.Add(new JfEpisode { ItemId = e.Id, Season = s, Episode = e.IndexNumber!.Value, EpisodeEnd = e.IndexNumberEnd, Virtual = e.IsMissingEpisode, Placeholder = Placeholder(e), DateCreated = Utc(e.DateCreated) });
                 }
                 else
                 {
@@ -734,6 +735,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>True for a movie or episode with a file (a missing episode is a virtual item without one).</summary>
         private static bool Playable(Video video) => !video.IsVirtualItem && !video.IsPlaceHolder && !string.IsNullOrEmpty(video.Path);
+
+        /// <summary>A listed (not missing) episode that plays nothing: a stub file (Jellyfin's IsPlaceHolder) or no file path.</summary>
+        private static bool Placeholder(Episode e) => !e.IsMissingEpisode && !Playable(e);
 
         /// <summary>
         /// The playable sources of a movie or episode as Jellyfin plays them (its media sources, every version

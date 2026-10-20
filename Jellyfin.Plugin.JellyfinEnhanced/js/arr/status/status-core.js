@@ -389,7 +389,11 @@
         const known = missing - unknown;
         const long = typeof s.longMissing === 'number' ? Math.min(known, Math.max(0, s.longMissing)) : known;
         if (known - long > 0) pieces.push({ text: tr('arr_summary_looking', { n: known - long }), tone: 'looking', icon: 'search' });
-        if (long > 0) pieces.push({ text: tr('arr_summary_missing', { n: long }), tone: 'looking', icon: 'search' });
+        // Of those, the page copy's own gaps (another copy the viewer opens plays them) say so, as their rows do.
+        const role = status.copy?.role || (status.episodes || []).find(e => e?.copyGap)?.copyGap || null;
+        const inCopy = role ? Math.min(long, Math.max(0, s.missingInCopy || 0)) : 0;
+        if (long - inCopy > 0) pieces.push({ text: tr('arr_summary_missing', { n: long - inCopy }), tone: 'looking', icon: 'search' });
+        if (inCopy > 0) pieces.push({ text: tr('arr_summary_missing_in_copy', { n: inCopy, copy: copyName(role) }), tone: 'looking', icon: 'search' });
         const attention = (s.attention || 0) + unknown;
         if (attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: attention }), tone: 'attention', icon: 'schedule' });
         return pieces;

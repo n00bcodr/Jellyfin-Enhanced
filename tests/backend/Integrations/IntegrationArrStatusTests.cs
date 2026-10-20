@@ -1161,8 +1161,10 @@ public class IntegrationArrStatusTests
         var (flashSeries, _, flashQueue) = FlashSeasonArr();
         noEpisodes.Copies.Add(new ArrCopyFacts(Sonarr) { Series = flashSeries, Queue = flashQueue });
         var card = StatusComposer.Season(noEpisodes, seasonItem, withHidden, Ctx(), detail: false);
-        // 6 aired, 3 files, one of them hidden: 5 aired, 1 ready, 1 downloading, 1 (+1 blocked) almost ready.
-        Assert.Equal((5, 1, 1, 2), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady));
+        // An episode of the season is hidden and Sonarr's episode list isn't in memory: its statistics can't be vouched for
+        // (D53, edition round 15), so the card says only what is visibly here or on its way: 1 ready, 1 downloading, 1 import
+        // blocked (3 "aired"); the hidden episode's file is never pending.
+        Assert.Equal((3, 1, 1, 1), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady));
     }
 
     [Fact]

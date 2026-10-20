@@ -302,6 +302,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Virtual (missing) episode.</summary>
         public bool Virtual { get; init; }
 
+        /// <summary>
+        /// A placeholder: Jellyfin lists the episode (a stub file such as a ".disc" one, or no file path) but it plays nothing.
+        /// </summary>
+        public bool Placeholder { get; init; }
+
+        /// <summary>
+        /// Jellyfin plays it (D53, edition round 15: playable means playable): not missing (virtual) and not a placeholder.
+        /// </summary>
+        public bool Playable => !Virtual && !Placeholder;
+
         /// <summary>When Jellyfin added it (UTC).</summary>
         public DateTime? DateCreated { get; init; }
 

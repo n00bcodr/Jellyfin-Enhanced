@@ -906,7 +906,14 @@ ask fetch the episodes that are missing, one tap each.
     - **Missing from this copy only.** When another copy of the show that you can open plays an episode (a 4K copy shown
       next to this one, or the show in another library), that episode is missing from this copy, not from the show: the
       line reads *Missing in the standard copy: E3* (or *the 4K copy*), the button **Get them in standard**, and its row
-      *Missing in standard*. *Missing: E5* is kept for episodes no copy you can open has.
+      *Missing in standard*. *Missing: E5* is kept for episodes no copy you can open has. The season's summary says the same
+      (*1 missing* and *1 missing in standard*). A copy's buttons act on that copy: **Get them in 4K** asks for the 4K
+      edition, so it goes to the 4K Sonarr, and an administrator's **Search in 4K** searches the 4K Sonarr. Where a button
+      can't reach the copy it would be named for (someone who may not ask for 4K, an anime or other copy no request goes
+      to, or a household Search, which only searches standard copies), it isn't offered under that name: episodes no copy
+      has keep the plain **Get them**, and a household Search on a 4K copy's gaps becomes **Get them in 4K**. A copy plays an
+      episode only when it has a file Jellyfin can play: a placeholder or stub file (such as a *.disc* stub) is never
+      *Ready*, in this copy or another.
     - **What happens after a tap** is said plainly on the row: *Waiting for OK* when the ask needs someone's OK (Kids
       always; Members over their allowance or house rules), *Asked!* when it went straight through, *Someone asked* when
       another person in the household already asked for it. Anything else (over the week's allowance, not allowed,

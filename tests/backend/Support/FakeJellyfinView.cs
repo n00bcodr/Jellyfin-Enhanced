@@ -203,7 +203,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         if (Withdrawn(seriesItemId, viewer)) return new List<JfEpisode>();
         bool Sees((JfEpisode Episode, HashSet<Guid>? VisibleTo) e) => (e.VisibleTo == null || e.VisibleTo.Contains(viewer.UserId)) && !Withdrawn(e.Episode.ItemId, viewer);
         var inSeason = list.Where(e => season == null || e.Episode.Season == season).ToList();
-        var result = inSeason.Where(e => Sees(e) && (includeVirtual || !e.Episode.Virtual)).Select(e => e.Episode).ToList();
+        var result = inSeason.Where(e => Sees(e) && (includeVirtual || !e.Episode.Virtual)).Select(e => Shown(e.Episode)).ToList();
         // Like the real view: episodes (real or virtual, whatever includeVirtual says) hidden from a
         // viewer with parental limits, numbers only.
         if (!viewer.IsAdmin && viewer.HasParentalLimit)
@@ -316,7 +316,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true)
     {
         bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
-        if (!viewer.IsLibraryContext && Withdrawn(itemId, viewer)) return Array.Empty<JfSource>();
+        if (Placeholders.Contains(itemId) || (!viewer.IsLibraryContext && Withdrawn(itemId, viewer))) return Array.Empty<JfSource>();
         IReadOnlyList<JfSource> Read(DateTime? created)
         {
             var all = SourcesOf(itemId, created);
@@ -340,6 +340,24 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         return Array.Empty<JfSource>();
     }
 
+    /// <summary>
+    /// Episode items that are placeholders (Jellyfin's IsPlaceHolder: a stub such as a ".disc" file): listed like any other
+    /// episode, but with no playable source.
+    /// </summary>
+    public HashSet<Guid> Placeholders { get; } = new();
+
+    /// <summary>
+    /// An episode as the view lists it: a placeholder carries JfEpisode.Placeholder (set by name, so this file also builds
+    /// against a plugin without that property, where a stub lists like any other episode).
+    /// </summary>
+    internal JfEpisode Shown(JfEpisode episode)
+    {
+        if (!Placeholders.Contains(episode.ItemId) || typeof(JfEpisode).GetProperty("Placeholder") is not { } flag) return episode;
+        var copy = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden };
+        flag.SetValue(copy, true);
+        return copy;
+    }
+
     /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
     public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
     {
@@ -347,7 +365,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
         return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
                 && Sees(e.VisibleTo) && (viewer.IsLibraryContext || !Withdrawn(e.Episode.ItemId, viewer)) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))
-            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
+            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
             .ToList();
     }
 

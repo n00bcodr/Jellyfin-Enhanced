@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text.Json;
@@ -21,13 +22,13 @@ public class IntegrationEditionMaskedTests
 {
     private static readonly TitleKey Firefly = TitleKey.Parse("tv:tvdb:78874")!;
 
-    private static List<JsonElement> Items(StatusBody body)
+    internal static List<JsonElement> Items(StatusBody body)
     {
         using var doc = JsonDocument.Parse(body.Json);
         return doc.RootElement.GetProperty("items").EnumerateArray().Select(e => e.Clone()).ToList();
     }
 
-    private static async Task<JsonElement> Page(Rig rig, StatusViewer viewer, Guid id)
+    internal static async Task<JsonElement> Page(Rig rig, StatusViewer viewer, Guid id)
     {
         await rig.Service.ForItemAsync(viewer, id, default);
         await Task.Delay(20);
@@ -116,7 +117,7 @@ public class IntegrationEditionMaskedTests
     // ------------------------------------------------------------------ ED-R14-2: a copy's own gap is that copy's gap
 
     /// <summary>One library holds both folders, both Sonarrs linked to it (the 4K folder has S1E1 only), optionally grouped.</summary>
-    private static Rig OneLibrary(bool grouped)
+    internal static Rig OneLibrary(bool grouped)
     {
         var rig = new Rig(Layout.SeparateLibraries, Has.Both, movie: false);
         var library = Guid.NewGuid().ToString("N");
@@ -138,21 +139,21 @@ public class IntegrationEditionMaskedTests
         return rig;
     }
 
-    private static JsonObject Aired(int id, int number)
+    internal static JsonObject Aired(int id, int number)
         => new() { ["id"] = id, ["seriesId"] = 1, ["seasonNumber"] = 1, ["episodeNumber"] = number, ["airDateUtc"] = $"2002-10-0{number}T00:00:00Z", ["hasFile"] = false, ["monitored"] = true };
 
     /// <summary>The season page item of a series copy's own season 1.</summary>
-    private static Guid SeasonPage(Rig rig, Guid copy)
+    internal static Guid SeasonPage(Rig rig, Guid copy)
     {
         var id = rig.View.SeasonsBySeries[copy].Single().Season.ItemId;
         rig.View.AddItem(new JfItemRef { ItemId = id, Kind = "season", Key = Firefly.WithSeason(1), SeriesId = copy, Season = 1 });
         return id;
     }
 
-    private static JsonElement EpisodeOf(JsonElement season, int number)
+    internal static JsonElement EpisodeOf(JsonElement season, int number)
         => season.GetProperty("episodes").EnumerateArray().Single(e => e.GetProperty("episode").GetInt32() == number);
 
-    private static string? GapOf(JsonElement episode) => episode.TryGetProperty("copyGap", out var gap) ? gap.GetString() : null;
+    internal static string? GapOf(JsonElement episode) => episode.TryGetProperty("copyGap", out var gap) ? gap.GetString() : null;
 
     [Theory]
     [InlineData(true)]  // the finding: one grouped show; the 4K folder's E3 plays beside the standard copy's rows
@@ -213,7 +214,10 @@ public class IntegrationEditionMaskedTests
 
     // ------------------------------------------------------------------ ED-R14-3: the grouped-list guard, by symbol
 
-    /// <summary>Every method (and constructor) of an assembly with the methods its IL calls or takes a delegate to.</summary>
+    /// <summary>
+    /// Every method (and constructor) of an assembly with the methods its IL calls, takes a delegate to (ldftn/ldvirtftn) or
+    /// loads as a token (ldtoken: an expression tree's method, a reflection handle; D53, edition round 15: token operands).
+    /// </summary>
     internal static IEnumerable<(MethodBase Caller, MethodBase Callee)> Calls(Assembly assembly)
     {
         var codes = typeof(OpCodes).GetFields(BindingFlags.Public | BindingFlags.Static).Select(f => (OpCode)f.GetValue(null)!).ToDictionary(o => o.Value);
@@ -233,12 +237,13 @@ public class IntegrationEditionMaskedTests
                 {
                     var op = il[i] == 0xFE ? codes[unchecked((short)(0xFE00 | il[i + 1]))] : codes[il[i]];
                     i += op.Size;
-                    if (op.OperandType == OperandType.InlineMethod)
+                    if (op.OperandType is OperandType.InlineMethod or OperandType.InlineTok)
                     {
                         MethodBase? callee = null;
                         try
                         {
-                            callee = method.Module.ResolveMethod(BitConverter.ToInt32(il, i), type.IsGenericType ? type.GetGenericArguments() : null, method.IsGenericMethod ? method.GetGenericArguments() : null);
+                            // ldtoken names a type, field or method: only a method is a symbol judged here.
+                            callee = method.Module.ResolveMember(BitConverter.ToInt32(il, i), type.IsGenericType ? type.GetGenericArguments() : null, method.IsGenericMethod ? method.GetGenericArguments() : null) as MethodBase;
                         }
                         catch (Exception)
                         {
@@ -317,13 +322,32 @@ public class IntegrationEditionMaskedTests
 
         public static int Native(MediaBrowser.Controller.Entities.TV.Series series, Jellyfin.Database.Implementations.Entities.User user)
             => series.GetSeasons(user, new MediaBrowser.Controller.Dto.DtoOptions(false)).Count;
+
+        // ED-R15-3: an expression tree names its method by token (ldtoken), never by a call.
+        public static int InAnExpression(IArrJellyfinView view, Guid id, StatusViewer viewer)
+        {
+            Expression<Func<int>> read = () => view.Episodes(id, null, viewer, false).Count;
+            return read.Compile()();
+        }
+
+        public static Expression<Func<IArrJellyfinView, Guid, StatusViewer, IReadOnlyList<JfSeason>>> AnExpressionReturned()
+            => (view, id, viewer) => view.Seasons(id, viewer);
+
+        // The masked-read guard's own plants: a read of a Sonarr copy made outside its binding, by token and by delegate.
+        public static ArrCopyRead ThroughInAnExpression(ArrCopyFacts facts)
+        {
+            Expression<Func<ArrCopyRead>> read = () => facts.Through(HiddenParts.None);
+            return read.Compile()();
+        }
+
+        public static Func<HiddenParts, ArrCopyRead> ThroughAsADelegate(ArrCopyFacts facts) => facts.Through;
     }
 
     [Fact]
     public void TheSymbolGuardCatchesEveryPlantedBypass()
     {
         var found = GroupedListReaders(typeof(IntegrationEditionMaskedTests).Assembly);
-        foreach (var planted in new[] { "OtherReceiver", "Helper", "InALambda", "AsADelegate", "InAnAsyncMethod", "OnTheConcreteType", "Native" })
+        foreach (var planted in new[] { "OtherReceiver", "Helper", "InALambda", "AsADelegate", "InAnAsyncMethod", "OnTheConcreteType", "Native", "InAnExpression", "AnExpressionReturned" })
             Assert.True(found.Contains("Planted." + planted), $"Planted.{planted} not seen: {string.Join(", ", found.Where(f => f.StartsWith("Planted.", StringComparison.Ordinal)))}");
         Assert.DoesNotContain("Planted.ThroughAHelper", found);
     }
@@ -355,13 +379,27 @@ public class IntegrationEditionMaskedTests
         Assert.True(GroupedListExceptions.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(found), "grouped-list readers: " + string.Join(", ", found));
     }
 
+    /// <summary>The source-level methods of an assembly that create a masked read of a Sonarr copy (any IL operand naming Through).</summary>
+    internal static SortedSet<string> MaskedReadCreators(Assembly assembly)
+    {
+        var through = typeof(ArrCopyFacts).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Where(m => m.Name == "Through").Cast<MethodBase>().ToHashSet();
+        Assert.NotEmpty(through);
+        return new SortedSet<string>(Calls(assembly).Where(c => through.Contains(c.Callee)).Select(c => Owner(c.Caller)), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void TheMaskedReadGuardCatchesEveryPlantedBypass()
+    {
+        var found = MaskedReadCreators(typeof(IntegrationEditionMaskedTests).Assembly);
+        foreach (var planted in new[] { "ThroughInAnExpression", "ThroughAsADelegate" })
+            Assert.True(found.Contains("Planted." + planted), $"Planted.{planted} not seen: {string.Join(", ", found)}");
+    }
+
     /// <summary>The production methods that create a masked read of a Sonarr copy: the bindings and the pages' own copy.</summary>
     [Fact]
     public void ASonarrCopyIsMaskedOnlyWhereItIsBound()
     {
-        var through = typeof(ArrCopyFacts).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Where(m => m.Name == "Through").Cast<MethodBase>().ToHashSet();
-        Assert.NotEmpty(through);
-        var callers = new SortedSet<string>(Calls(typeof(ArrStatusService).Assembly).Where(c => through.Contains(c.Callee)).Select(c => Owner(c.Caller)), StringComparer.Ordinal);
+        var callers = MaskedReadCreators(typeof(ArrStatusService).Assembly);
         // (ArrCopyFacts.Through: its eager overload calls the lazy one.)
         Assert.True(new[] { "ArrCopyFacts.Through", "SeriesBinding.Read", "StatusComposer.PageRead", "StatusComposer.RequestedSeasons", "StatusComposer.SeriesCard" }.SequenceEqual(callers), "masked-read creators: " + string.Join(", ", callers));
     }

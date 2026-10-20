@@ -345,7 +345,7 @@ function withGaps(status, gaps, role = 'standard') {
 
 test('a gap another copy plays is that copy\'s gap: the banner, Get them and the row chip name the copy; others stay plainly Missing', async t => {
   // E2 plays in the 4K copy right beside this standard copy's rows; nobody has E4.
-  const h = setup(t, { status: withGaps(season(), [2]), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  const h = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }), server: { rows: () => rowsBody({ displayMissing: false }) } });
   await h.open();
   const banner = h.document.querySelector('.je-arr-banner');
   same([...banner.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing: E4', 'Missing in the standard copy: E2']);
@@ -357,23 +357,130 @@ test('a gap another copy plays is that copy\'s gap: the banner, Get them and the
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
 
   // Only a copy's gap left: no title-wide "Missing" at all; one episode names it too. A 4K page says 4K; another role "this copy".
-  const only = setup(t, { status: withGaps(season(), [2, 4], '4k'), server: { rows: () => rowsBody({ displayMissing: false, requests: { 2: 'waiting' } }) } });
+  const only = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false, requests: { 2: 'waiting' } }) } });
   await only.open();
   const b = only.document.querySelector('.je-arr-banner');
   same([...b.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing in the 4K copy: E2, E4']);
   assert.equal(b.querySelector('.je-ask-get').textContent, 'downloadGet E4 in 4K');
-  const custom = setup(t, { status: withGaps(season(), [2, 4], 'custom'), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  // A custom copy: no request names it (D53, edition round 15), so nothing is offered under its name.
+  const custom = setup(t, { status: withCopy(season(), [2, 4], 'custom', { variant: null, ask: false, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
   await custom.open();
   same([...custom.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in this copy: E2, E4']);
-  assert.equal(custom.document.querySelector('.je-arr-banner .je-ask-get').textContent, 'downloadGet them in this copy');
+  assert.equal(custom.document.querySelector('.je-arr-banner .je-ask-get'), null);
 
   // Rows mode: the JE row of a copy's gap says so; the others keep "Missing".
-  const rows = setup(t, { status: withGaps(season(), [2]) });
+  const rows = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }) });
   await rows.open();
   assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Missing in standard');
   assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
   // Phase 1 alone (no asking): the chips say it the same way.
   assert.equal(rows.JE.arrStatus.chipText({ stage: 'looking', reason: { code: 'no_release_yet' }, copyGap: 'standard' }), 'Missing in standard');
+});
+
+/** A status whose gaps are the page copy's (`role`), with the server's binding of that copy (null: an older server, none). */
+function withCopy(status, gaps, role, copy) {
+  const next = withGaps(status, gaps, role);
+  return copy ? { ...next, copy: { role, ...copy } } : next;
+}
+
+const KID_4K = { role: 'kid', canRequest: true, contact: 'Dad', asksFirst: true, can4kSeries: true };
+
+test('one binding decides wording and action: Get them in 4K asks for the 4K edition; a copy no ask reaches gets no button under its name', async t => {
+  // The 4K page: E2 and E4 are its gaps (the standard copy plays them); a 4K request lands on its Sonarr.
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  btn.click();
+  await settle(20);
+  same({ variant: h.posts[0].body.input.variant, episodes: h.posts[0].body.input.episodes }, { variant: '4k', episodes: [{ season: 1, episode: 2 }, { season: 1, episode: 4 }] }, 'the 4K edition, as the button says');
+
+  // Rows mode: the row's Get it beside "Missing in 4K" asks for the 4K edition too.
+  const rows = setup(t, { status: withCopy(season(), [2], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K } });
+  await rows.open();
+  const two = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-arr-chip').textContent, 'Missing in 4K');
+  assert.equal(two.querySelector('.je-ask-get').getAttribute('aria-label'), 'Get episode 2 for the 4K copy: Two');
+  two.querySelector('.je-ask-get').click();
+  await settle(20);
+  assert.equal(rows.posts[0].body.input.variant, '4k');
+  // A title-wide gap on the same page keeps its plain Get it (a standard ask).
+  rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  await settle(20);
+  same({ variant: rows.posts[1].body.input.variant, label: rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent }, { variant: 'standard', label: 'Waiting for OK' });
+
+  // Someone who may not ask for 4K: nothing under the 4K copy's name.
+  const no4k = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await no4k.open();
+  assert.equal(no4k.document.querySelector('.je-arr-banner .je-ask-get'), null);
+  // A copy no request reaches (an anime Sonarr: asks go to the standard one), or a server that names no binding: no button either.
+  for (const copy of [{ variant: null, ask: false, search: false }, null]) {
+    const h2 = setup(t, { status: withCopy(season(), [2, 4], 'anime', copy), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+    await h2.open();
+    assert.equal(h2.document.querySelector('.je-arr-banner .je-ask-get'), null, `binding ${JSON.stringify(copy)}`);
+    same([...h2.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in the anime copy: E2, E4'], 'the words stay');
+  }
+});
+
+test('one binding decides Search: an administrator searches the copy\'s own instance; a household Search that can\'t reach it asks for that copy\'s edition', async t => {
+  const fourK = { variant: '4k', ask: true, search: false };
+  const admin = setup(t, {
+    status: { ...withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...fourK, instanceId: 'son4k' }) },
+    config: { ArrManageDrawerEnabled: true },
+    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+  });
+  await admin.open();
+  const btn = admin.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search in 4K');
+  btn.click();
+  await settle(20);
+  same({ path: admin.posts[0].path, instanceId: admin.posts[0].body.instanceId }, { path: '/arr/admin/manage/search', instanceId: 'son4k' }, 'the 4K Sonarr, never the standard one');
+
+  // A Kid's Search runs on standard copies only: under the 4K name the button asks for the 4K edition instead.
+  const kid = setup(t, { status: withCopy(longMissing(), [2, 4], '4k', fourK), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await kid.open();
+  const get = kid.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(get.querySelector('.je-ask-get-text').textContent, 'Get them in 4K');
+  get.click();
+  await settle(20);
+  same(kid.searches, [], 'no household Search (it would search the standard copy)');
+  assert.equal(kid.posts[0].body.input.variant, '4k');
+  // Its rows too.
+  const rows = setup(t, { status: withCopy(longMissing(), [2], '4k', fourK), server: { me: KID_4K } });
+  await rows.open();
+  const row = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(row.querySelector('.je-ask-get-text').textContent, 'Get it');
+  row.click();
+  await settle(20);
+  same({ searches: rows.searches.length, variant: rows.posts[0].body.input.variant }, { searches: 0, variant: '4k' });
+
+  // The standard copy: a household Search reaches it (its request target), as before.
+  const standard = setup(t, {
+    status: withCopy(longMissing(), [2, 4], 'standard', { variant: 'standard', ask: true, search: true }),
+    server: { rows: () => rowsBody({ displayMissing: false }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) }
+  });
+  await standard.open();
+  const search = standard.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(search.querySelector('.je-ask-get-text').textContent, 'Search in standard');
+  search.click();
+  await settle(30);
+  same(standard.searches.map(x => x.body.key), ['tv:tvdb:1:s1']);
+});
+
+test('the season summary counts a copy\'s own gaps as the rows do ("1 missing" and "1 missing in standard")', t => {
+  const h = setup(t);
+  const pieces = h.JE.arrStatus.summaryPieces({ kind: 'season', summary: { aired: 4, ready: 2, missing: 2, longMissing: 2, missingInCopy: 1 }, copy: { role: 'standard' } }).map(p => p.text);
+  assert.ok(pieces.includes('1 missing') && pieces.includes('1 missing in standard'), pieces.join(' | '));
+  const all = h.JE.arrStatus.summaryPieces({ kind: 'season', summary: { aired: 4, ready: 2, missing: 2, longMissing: 2, missingInCopy: 2 }, copy: { role: '4k' } }).map(p => p.text);
+  assert.ok(all.includes('2 missing in 4K') && !all.some(x => /^\d+ missing$/.test(x)), all.join(' | '));
+});
+
+test('phones: a chip on a row\'s thumbnail stays inside the thumbnail (it wraps), never over Jellyfin\'s title', t => {
+  const h = setup(t);
+  const css = [...h.document.querySelectorAll('style')].map(s => s.textContent).join('\n');
+  const rule = /\.je-arr-chip-overlay\s*\{([^}]*)\}/.exec(css)?.[1] || '';
+  assert.match(rule, /max-width:\s*calc\(100% - 12px\)/, rule);
+  assert.match(rule, /white-space:\s*normal/, rule);
 });
 
 test('a season that is not in the library at all: the banner lists it and leaves asking to Get Season N', async t => {

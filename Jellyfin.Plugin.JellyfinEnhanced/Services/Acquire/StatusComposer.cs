@@ -104,7 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     /// One arr copy's facts as one viewer may hear them (D53, edition round 14), from <see cref="ArrCopyFacts.Through(HiddenParts)"/>
     /// (Sonarr) or <see cref="ArrCopyFacts.Radarr"/>: for a Sonarr copy every fact has already passed the mask of what Jellyfin
     /// hides from the viewer in the copy it is bound to (<see cref="Mask"/>), so a hidden season has no statistics, a hidden
-    /// episode no entry, queue row, history or file count. Each fact is masked once, when it is first asked for.
+    /// episode no entry, queue row or history, and every count and date is derived from the visible episodes, never Sonarr's
+    /// own minus what is hidden (D53, edition round 15; see <see cref="Series"/>). Each fact is masked once, when it is first
+    /// asked for.
     /// </summary>
     internal sealed class ArrCopyRead
     {
@@ -118,6 +120,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private ArrEpisodesSnapshot? _maskedEpisodes;
         private IReadOnlyList<ArrQueueEntry>? _maskedQueue;
         private IReadOnlyList<ArrHistoryEntry>? _maskedHistory;
+        private HashSet<int>? _unvouched;
+        private static readonly IReadOnlySet<int> NoSeasons = new HashSet<int>();
 
         internal ArrCopyRead(ArrCopyFacts facts, ArrSeriesEntry? series, ArrEpisodesSnapshot? episodes, IReadOnlyList<ArrQueueEntry> queue, IReadOnlyList<ArrHistoryEntry> history, Func<HiddenParts?>? mask)
         {
@@ -142,10 +146,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public ArrMovieEntry? Movie => Facts.Movie;
 
         /// <summary>
-        /// The series (Sonarr), its statistics masked: no wholly hidden season, and a season's (and the series') episode and file
-        /// counts without the episodes hidden in it.
+        /// The series (Sonarr) as the viewer may hear it (D53, edition round 15: aggregates derived, never subtracted): no wholly
+        /// hidden season, and each other season's statistics only from what the viewer may see: Sonarr's own when no episode of
+        /// the season is hidden from them, else derived from the visible episodes of Sonarr's list (when it is in memory), else
+        /// not given (no counts, no next airing: the season is <see cref="Unvouched"/>). The series' counts and next airing are
+        /// those seasons' together whenever anything is hidden.
         /// </summary>
-        public ArrSeriesEntry? Series => _series == null ? null : _maskedSeries ??= MaskSeries(_series, Mask);
+        public ArrSeriesEntry? Series => _series == null ? null : _maskedSeries ??= Derive(_series, Mask);
+
+        /// <summary>
+        /// Seasons whose statistics this read can't vouch for (some episode of them is hidden from the viewer and Sonarr's
+        /// episode list isn't in memory): <see cref="Series"/> gives them no counts and no next airing, and nothing may read
+        /// them as done.
+        /// </summary>
+        public IReadOnlySet<int> Unvouched => Series == null ? NoSeasons : _unvouched ?? NoSeasons;
 
         /// <summary>Episodes (Sonarr), when held in memory: none the mask hides.</summary>
         public ArrEpisodesSnapshot? Episodes => _episodes == null ? null : _maskedEpisodes ??= Hidden ? new ArrEpisodesSnapshot(_episodes.SeriesId, _episodes.Episodes.Where(e => !Mask.Hides(e.SeasonNumber, e.EpisodeNumber)).ToList()) : _episodes;
@@ -187,40 +201,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return episodeId is int id && _episodes?.Episodes.FirstOrDefault(x => x.Id == id) is { } known && Mask.Hides(known.SeasonNumber, known.EpisodeNumber);
         }
 
-        private static ArrSeriesEntry MaskSeries(ArrSeriesEntry series, HiddenParts mask)
+        /// <summary>
+        /// The series' statistics from the episodes the viewer may see (see <see cref="Series"/>): never Sonarr's own count minus
+        /// what is hidden, which can't know a hidden episode's file or air date Jellyfin doesn't hold.
+        /// </summary>
+        private ArrSeriesEntry Derive(ArrSeriesEntry series, HiddenParts mask)
         {
             if (mask.Seasons.Count == 0 && mask.Episodes.Count == 0) return series;
+            var unvouched = new HashSet<int>();
             var seasons = new List<ArrSeasonEntry>();
-            int files = series.EpisodeFileCount, aired = series.EpisodeCount;
+            // An episode had aired when the library was read (a date-only snapshot, no clock of its own): before then, else
+            // before Sonarr's own next airing of its season.
+            var readAt = Facts.EpisodesLoadedAt ?? Facts.LibraryLoadedAt;
             foreach (var s in series.Seasons)
             {
-                if (mask.Seasons.Contains(s.SeasonNumber))
+                if (mask.Seasons.Contains(s.SeasonNumber)) continue;
+                if (mask.Episodes.CountInSeason(s.SeasonNumber) == 0)
                 {
-                    files -= s.EpisodeFileCount;
-                    aired -= s.EpisodeCount;
+                    // Nothing hidden in it: Sonarr's own statistics are the viewer's.
+                    seasons.Add(s);
                     continue;
                 }
-                var hidden = (int)Math.Min(int.MaxValue, mask.Episodes.CountInSeason(s.SeasonNumber));
-                var hiddenFiles = (int)Math.Min(int.MaxValue, mask.WithFile.CountInSeason(s.SeasonNumber));
-                files -= Math.Min(s.EpisodeFileCount, hiddenFiles);
-                aired -= Math.Min(s.EpisodeCount, hidden);
+                if (_episodes == null)
+                {
+                    unvouched.Add(s.SeasonNumber);
+                    seasons.Add(new ArrSeasonEntry { SeasonNumber = s.SeasonNumber, Monitored = s.Monitored });
+                    continue;
+                }
+                bool Aired(ArrEpisodeEntry e) => e.AirDateUtc is DateTime at && (readAt is DateTime read ? at <= read : s.NextAiring is not DateTime next || at < next);
+                var visible = _episodes.Episodes.Where(e => e.SeasonNumber == s.SeasonNumber && !mask.Hides(e.SeasonNumber, e.EpisodeNumber)).ToList();
                 seasons.Add(new ArrSeasonEntry
                 {
                     SeasonNumber = s.SeasonNumber,
                     Monitored = s.Monitored,
-                    EpisodeFileCount = Math.Max(0, s.EpisodeFileCount - hiddenFiles),
-                    EpisodeCount = Math.Max(0, s.EpisodeCount - hidden),
-                    TotalEpisodeCount = Math.Max(0, s.TotalEpisodeCount - hidden),
-                    NextAiring = s.NextAiring,
+                    EpisodeFileCount = visible.Count(e => e.HasFile),
+                    EpisodeCount = visible.Count(e => e.HasFile || (e.Monitored && Aired(e))),
+                    TotalEpisodeCount = visible.Count,
+                    // Sonarr's next airing of the season is when its next monitored episode airs: the first visible one from then.
+                    NextAiring = s.NextAiring is DateTime from ? visible.Where(e => e.Monitored && e.AirDateUtc >= from).Select(e => e.AirDateUtc).Min() : null,
                 });
             }
-            var next = mask.Seasons.Count == 0 ? series.NextAiring : seasons.Where(s => s.NextAiring.HasValue).Select(s => s.NextAiring).DefaultIfEmpty(null).Min();
+            _unvouched = unvouched;
             return new ArrSeriesEntry
             {
                 Id = series.Id, TvdbId = series.TvdbId, TmdbId = series.TmdbId, ImdbId = series.ImdbId, Title = series.Title, TitleSlug = series.TitleSlug,
                 Monitored = series.Monitored, Path = series.Path, QualityProfileId = series.QualityProfileId, Tags = series.Tags,
-                EpisodeFileCount = Math.Max(0, files), EpisodeCount = Math.Max(0, aired), PercentOfEpisodes = series.PercentOfEpisodes, SizeOnDisk = series.SizeOnDisk,
-                Status = series.Status, NextAiring = next, Added = series.Added, Seasons = seasons,
+                EpisodeFileCount = seasons.Sum(x => x.EpisodeFileCount), EpisodeCount = seasons.Sum(x => x.EpisodeCount), PercentOfEpisodes = series.PercentOfEpisodes, SizeOnDisk = series.SizeOnDisk,
+                Status = series.Status, NextAiring = seasons.Where(x => x.NextAiring.HasValue).Select(x => x.NextAiring).DefaultIfEmpty(null).Min(), Added = series.Added, Seasons = seasons,
             };
         }
     }
@@ -775,7 +802,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (copy == null)
             {
                 var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
-                var hasEpisodes = jfEpisodes?.Any(e => !e.Virtual) == true;
+                var hasEpisodes = jfEpisodes?.Any(e => e.Playable) == true;
                 return new TitleStatus
                 {
                     Key = facts.Key.ToString(), ItemId = Id(item.ItemId), Kind = "series",
@@ -891,6 +918,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     AirDate = e.Arr?.AirDateUtc,
                 }).ToList();
             }
+            // The copy those gaps belong to, which every copy-qualified control acts on (D53, edition round 15: one binding
+            // decides wording and action; the service says where its asks and Searches land), and the summary counts them as
+            // the rows name them.
+            CopyBinding? bound = null;
+            if (list != null && list.Any(e => e.CopyGap != null))
+            {
+                bound = new CopyBinding { Role = copy.Instance.Role, InstanceId = copy.Instance.Id };
+                summary.MissingInCopy = episodes.Zip(list).Count(x => x.Second.CopyGap != null && IsLongMissing(x.First.State));
+            }
             var quiet = summary.Downloading == 0 && summary.AlmostReady == 0 && summary.Attention == 0 && summary.Missing == 0
                 && !(summary.NextAir is DateTime next && next - c.Now <= UpcomingShownWithin);
             AdminStatus? admin = null;
@@ -916,6 +952,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 NextDay = summary.NextAirIsDay && summary.NextAir is DateTime day ? DayOf(day) : null,
                 Summary = summary,
                 Episodes = list,
+                Copy = bound,
                 Admin = admin,
             };
         }
@@ -1196,10 +1233,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, boundSeasons);
             var wanted = new HashSet<int>(seasons);
             var all = visibleEpisodes ?? Array.Empty<JfEpisode>();
-            var real = all.Where(e => !e.Virtual && wanted.Contains(e.Season)).ToList();
+            var real = all.Where(e => e.Playable && wanted.Contains(e.Season)).ToList();
             // Single episodes outside the requested seasons, with the Jellyfin episode that has each (if any).
             var picked = (episodes ?? Array.Empty<(int Season, int Episode)>()).Where(p => !wanted.Contains(p.Season)).Distinct()
-                .Select(p => (Part: p, Have: all.FirstOrDefault(e => !e.Virtual && e.Season == p.Season && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(p.Episode))))
+                .Select(p => (Part: p, Have: all.FirstOrDefault(e => e.Playable && e.Season == p.Season && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(p.Episode))))
                 .ToList();
             var arrived = real.Select(e => e.DateCreated).Concat(picked.Where(p => p.Have != null).Select(p => p.Have!.DateCreated))
                 .Where(d => d.HasValue).DefaultIfEmpty(null).Max();
@@ -1233,7 +1270,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }).ToList();
                 // A season asked for has arrived when every aired episode of it is here: one Sonarr doesn't monitor (yet:
                 // Seerr hasn't OK'd the request, or someone unmonitored it) is still to come, not "not wanted".
-                var waiting = per.Where(x => SummaryStage(x) != StatusStage.Ready || (x.Aired > 0 && x.Ready < x.Aired)).ToList();
+                // A season whose statistics can't be vouched for (episodes hidden from the viewer, no episode list) is never
+                // done on Sonarr's word: the request says where it is (D53, edition round 15).
+                var order = wanted.OrderBy(n => n).ToList();
+                var waiting = per.Where((x, i) => SummaryStage(x) != StatusStage.Ready || (x.Aired > 0 && x.Ready < x.Aired) || (perStates[i] == null && copy.Unvouched.Contains(order[i]))).ToList();
                 var singlesDone = singles.All(x => x.State.Stage == StatusStage.Ready);
                 if (!singlesDone) waiting.Add(Summarize(singles.Where(x => x.State.Stage != StatusStage.Ready).ToList(), c));
                 if (waiting.Count == 0)
@@ -1370,7 +1410,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var series = copy.Series!;
             if (series.EpisodeFileCount > 0) return new CopyState(StatusStage.AlmostReady, StatusReasonCode.LibraryPending);
             if (!series.Monitored) return new CopyState(StatusStage.NotHere, StatusReasonCode.Unmonitored);
-            if (series.EpisodeCount == 0 && series.NextAiring is DateTime next && next > c.Now)
+            // "Not out yet" only on counts that cover every season the viewer may see.
+            if (series.EpisodeCount == 0 && copy.Unvouched.Count == 0 && series.NextAiring is DateTime next && next > c.Now)
                 return new CopyState(StatusStage.NotOut, StatusReasonCode.NotAired, Date: next);
             if (copy.QueueUnknown) return Unknown();
             return Looking(Latest(Valid(series.Added), SentFor(request, copy, null, null, c)), c);
@@ -1572,12 +1613,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static bool IsGap(CopyState state)
             => state.Stage is StatusStage.Looking or StatusStage.NotHere && !state.Attention && state.Reason is not (StatusReasonCode.ServiceDown or StatusReasonCode.Failed);
 
+        /// <summary>An aired episode missing for a long while (monitored, nothing grabbed): "Missing", with a Search button.</summary>
+        private static bool IsLongMissing(CopyState state)
+            => state.Stage == StatusStage.Looking && state.Reason == StatusReasonCode.NoReleaseYet && !state.Attention;
+
         /// <summary>A queue state that is an upgrade (see <see cref="QueuedEpisode"/>).</summary>
         private static bool IsUpgrade(CopyState state) => state.Reason == StatusReasonCode.Upgrading;
 
-        /// <summary>The Jellyfin episode the viewer plays an episode number from (a combined file covers its range), if any.</summary>
+        /// <summary>The Jellyfin episode the viewer plays an episode number from (a combined file covers its range; never a placeholder), if any.</summary>
         private static JfEpisode? Have(IReadOnlyList<JfEpisode>? files, int season, int episode)
-            => files?.FirstOrDefault(x => x.Season == season && !x.Hidden && !x.Virtual && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(episode));
+            => files?.FirstOrDefault(x => x.Season == season && !x.Hidden && x.Playable && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(episode));
 
         // ------------------------------------------------------------------ summaries
 
@@ -1616,7 +1661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             // Its downloads can't be checked now: not known to be missing.
                             if (state.Reason == StatusReasonCode.ServiceDown) unknown++;
                             // Missing for a long while (shown as Missing with a Search button).
-                            if (state.Reason == StatusReasonCode.NoReleaseYet && !state.Attention)
+                            if (IsLongMissing(state))
                             {
                                 longMissing++;
                                 if (state.Since is DateTime since && (longSince == null || since < longSince)) longSince = since;
@@ -1631,21 +1676,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// A season from Sonarr's statistics (when its episodes are not in memory: poster cards, the Requests page). The read's
-        /// statistics are masked: a season Jellyfin hides from the viewer has none, and its counts leave out the episodes hidden
-        /// in it (neither theirs nor pending).
+        /// statistics are the viewer's own (<see cref="ArrCopyRead.Series"/>): a season Jellyfin hides from them has none, and
+        /// one with hidden episodes has no counts or next airing (<see cref="ArrCopyRead.Unvouched"/>): it reads only what
+        /// Jellyfin plays for them and its visible queue.
         /// </summary>
         private static StatusSummary SeasonFromStats(ArrCopyRead copy, int season, IReadOnlyList<JfEpisode>? jfEpisodes, ComposeContext c)
         {
             var stats = copy.Series?.Seasons.FirstOrDefault(s => s.SeasonNumber == season);
             // Sonarr counts episodes with a file, not files: a two-part file covers two episodes.
-            var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Hidden && !e.Virtual));
+            var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Hidden && e.Playable));
             var ready = (int)Math.Min(int.MaxValue, coverage.CountInSeason(season));
             // The queue as the season's page reads it: a download of an episode the viewer plays is an upgrade (ready).
             var queued = QueuedEpisodes(copy, jfEpisodes, c, season);
             var downloading = queued.Count(x => x.State.Stage == StatusStage.Downloading);
             var almost = queued.Count(x => x.State.Stage == StatusStage.AlmostReady);
             var attention = queued.Count(x => x.State.Attention);
-            var aired = Math.Max(stats?.EpisodeCount ?? 0, ready);
+            // A season whose statistics can't be vouched for: what is visibly here or on its way, nothing more.
+            var aired = copy.Unvouched.Contains(season) ? ready + downloading + almost : Math.Max(stats?.EpisodeCount ?? 0, ready);
             var files = stats?.EpisodeFileCount ?? 0;
             var pending = Math.Max(0, files - ready);
             var missing = Math.Max(0, aired - ready - pending - downloading - almost);

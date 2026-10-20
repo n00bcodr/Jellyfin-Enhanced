@@ -21,7 +21,7 @@ internal sealed partial class FakeJellyfinView
         var episodes = EpisodesBySeries.TryGetValue(seriesItemId, out var e) ? e : new();
         var seasons = SeasonsBySeries.TryGetValue(seriesItemId, out var s) ? s : new();
         bool Sees(Guid id, HashSet<Guid>? to) => (to == null || to.Contains(viewer.UserId)) && !Withdrawn(id, viewer);
-        var shownEpisodes = episodes.Where(x => Sees(x.Episode.ItemId, x.VisibleTo)).Select(x => x.Episode).ToList();
+        var shownEpisodes = episodes.Where(x => Sees(x.Episode.ItemId, x.VisibleTo)).Select(x => Shown(x.Episode)).ToList();
         if (parental)
             shownEpisodes.AddRange(episodes.Where(x => !Sees(x.Episode.ItemId, x.VisibleTo)).Select(x => new JfEpisode { Season = x.Episode.Season, Episode = x.Episode.Episode, EpisodeEnd = x.Episode.EpisodeEnd, Virtual = x.Episode.Virtual, Hidden = true }));
         var shownSeasons = seasons.Where(x => Sees(x.Season.ItemId, x.VisibleTo)).Select(x => x.Season).ToList();
