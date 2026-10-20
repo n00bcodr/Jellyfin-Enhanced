@@ -431,6 +431,8 @@ Keep maintenance on until you disable it, or set a duration.
 
     An empty selection means all eligible non-admin users. **Deselect All** does not mean “affect nobody.”
 
+    While the user list is loading, or if it fails to load, saving keeps the stored selection. Maintenance that's switched on then uses that selection, never every account. **Select specific users** takes effect once the list has loaded.
+
 ??? info "How it works"
 
     Both **Action** boxes unchecked stores `none`; account-only stores `disable_accounts`, remote-only stores `disable_remote`, and both stores `both`.

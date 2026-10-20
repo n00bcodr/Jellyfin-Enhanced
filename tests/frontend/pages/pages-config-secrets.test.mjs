@@ -14,7 +14,8 @@ function block(start, end) {
   if (from < 0 || to < 0) throw new Error(`config page block not found: ${start}`);
   return page.slice(from, to);
 }
-const helpers = block('        function createEl(tag, attrs, children) {', '        function createInstanceCard(type, instance, startOpen) {');
+const helpers = block('        // ==================== Asynchronously filled fields', '        // Auto Movie Request - Quality Profile Mode helpers')
+  + block('        function createEl(tag, attrs, children) {', '        function createInstanceCard(type, instance, startOpen) {');
 
 const PREFIX = '•'.repeat(8);
 function setup(t, { libraries = [] } = {}) {
@@ -98,6 +99,7 @@ test('instance registry fields round-trip, keeping links to libraries that are n
   const out = JSON.parse(JSON.stringify(je.jeReadInstanceRegistryFields(card)));
   assert.deepEqual(out, { Role: '4k', IsDefault: true, LinkedLibraryIds: ['bbbb2222', 'gone0000'], LiveUpdates: 'auto', PathMappings: [{ ArrPath: '/movies', JellyfinPath: '/media/movies' }] });
   card.querySelector('[data-library-id="aaaa1111"]').checked = true;
+  card.querySelector('[data-library-id="aaaa1111"]').dispatchEvent(new window.Event('change', { bubbles: true }));
   card.querySelector('.arr-instance-role').value = 'anime';
   card.querySelector('.arr-instance-pathmappings').value = '/tv|/media/tv\nbroken line\n|/x';
   const edited = JSON.parse(JSON.stringify(je.jeReadInstanceRegistryFields(card)));

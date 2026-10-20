@@ -87,7 +87,11 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/ddd-triggers.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
-                if (picked === mine && ApiClient.getCurrentUserId() === userId) (doc?.Triggers || []).forEach((id) => mine.add(id));
+                if (picked === mine && ApiClient.getCurrentUserId() === userId) {
+                    (doc?.Triggers || []).forEach((id) => mine.add(id));
+                    // The settings store saves this document whole only after a read of it (a failed read would lose picks).
+                    JE.internals?.noteSettingsRead?.('ddd-triggers.json', doc);
+                }
             } catch (e) {
                 console.warn(`${logPrefix} Could not load your triggers.`, e);
             }
@@ -242,9 +246,17 @@
             search.addEventListener('input', () => fill(search.value));
 
             save.addEventListener('click', async () => {
-                picked = draft;
                 close();
-                await JE.saveUserSettings('ddd-triggers.json', { Triggers: Array.from(draft) });
+                const shown = picked;
+                try {
+                    // Refused (with a toast) while the picks were never read: they would replace the stored ones.
+                    await JE.saveUserSettings('ddd-triggers.json', { Triggers: Array.from(draft) }, { throwOnError: true });
+                } catch (e) {
+                    console.warn(`${logPrefix} Could not save your triggers.`, e);
+                    return;
+                }
+                if (picked !== shown) return; // another viewer's picks since: theirs stay
+                picked = draft;
                 onSaved();
             });
         }

@@ -442,6 +442,7 @@
     "panel_settings_language_display": "Display Language",
     "panel_settings_language_display_desc": "Select the language for Jellyfin Enhanced interface. Changes take effect after page refresh.",
     "panel_settings_language_unavailable": "The language list couldn't be loaded, so the display language can't be changed right now. Reload the page to try again.",
+    "settings_save_not_read": "Your settings couldn't be loaded, so this change wasn't saved. Try again in a moment, or reload the page.",
     "panel_settings_language_clear_cache": "Clear Translation Cache",
     "panel_settings_language_clear_cache_desc": "Removes all cached translations. Useful to fetch a recently updated translation from Github.",
     "toast_language_changed": "{{icon:language}} Language changed! Refreshing page…",

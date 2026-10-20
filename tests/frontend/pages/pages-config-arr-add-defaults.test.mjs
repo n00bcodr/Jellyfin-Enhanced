@@ -17,6 +17,7 @@ function block(start, end) {
 }
 const createEl = block('        function createEl(tag, attrs, children) {', '        // ==================== Stored credentials');
 const helpers = block('        // ==================== Arr instance add defaults', '        /**\n         * Builds the registry fields of an instance card');
+const fields = block('        // ==================== Asynchronously filled fields', '        // Auto Movie Request - Quality Profile Mode helpers');
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const options = {
@@ -37,7 +38,7 @@ function setup(t, respond) {
     }
   });
   t.after(() => h.close());
-  h.window.eval(`${createEl}\n${helpers}\nwindow.__je = { jeBuildInstanceAddDefaults, jeReadInstanceAddDefaults };`);
+  h.window.eval(`${fields}\n${createEl}\n${helpers}\nwindow.__je = { jeBuildInstanceAddDefaults, jeReadInstanceAddDefaults };`);
   return { ...h, je: h.window.__je, requests };
 }
 
@@ -83,8 +84,11 @@ test('a closed card asks nothing until it is opened, then offers only the instan
   assert.equal(details.querySelector('.arr-instance-add-tags b'), null);
   assert.deepEqual(plain([...details.querySelectorAll('.arr-instance-add-tag')].map(cb => cb.checked)), [false, true]);
   assert.match(details.querySelector('.arr-instance-add-status').textContent, /no quality profile and root folder set/);
+  // Loaded but not changed by the admin: the stored defaults are kept as they are (byte for byte).
+  assert.equal(h.je.jeReadInstanceAddDefaults(details), undefined);
 
-  profile.value = '5';
+  const change = el => el.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  profile.value = '5'; change(profile);
   details.querySelector('.arr-instance-add-availability').value = 'inCinemas';
   details.querySelectorAll('.arr-instance-add-tag')[0].checked = true;
   assert.deepEqual(plain(h.je.jeReadInstanceAddDefaults(details)), { QualityProfileId: 5, RootFolderPath: '/data/movies', Tags: [2, 3], MinimumAvailability: 'inCinemas' });
@@ -102,6 +106,8 @@ test('Sonarr offers a series type; an unsaved instance or a failed read keeps th
   await until(() => sonarr.querySelector('.arr-instance-add').dataset.loaded === '1');
   assert.equal(sonarr.querySelector('.arr-instance-add-seriestype').value, 'anime');
   assert.equal(sonarr.querySelector('.arr-instance-add-availability'), null);
+  assert.equal(h.je.jeReadInstanceAddDefaults(sonarr), undefined, 'unchanged: the stored defaults are kept');
+  sonarr.querySelector('.arr-instance-add-seriestype').dispatchEvent(new h.window.Event('change', { bubbles: true }));
   assert.deepEqual(plain(h.je.jeReadInstanceAddDefaults(sonarr)), { QualityProfileId: 4, RootFolderPath: '/data/movies', Tags: [], SeriesType: 'anime' });
 
   const fresh = card(h, 'sonarr', { Name: 'New' }, true);

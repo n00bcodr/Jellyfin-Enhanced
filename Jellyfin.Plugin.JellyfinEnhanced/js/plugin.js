@@ -8,7 +8,7 @@
         // dom, api, ui). Created here so core modules can attach to it.
         core: {},
         pluginConfig: {},
-        userConfig: { settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } },
+        userConfig: markUnreadDocuments({ settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } }),
         translations: {},
         pluginVersion: 'unknown',
         // Local CDN helper. Every third-party static asset (icons, fonts, flags, theme
@@ -976,6 +976,22 @@
     };
 
     /**
+     * Records on a userConfig object which per-user documents it does NOT hold from a read (non-enumerable, so it never
+     * travels in a document). The settings store (enhanced/config.js) refuses whole-document saves of those until a read
+     * of them succeeds: a default document saved back would replace the person's own settings.
+     * @param {object} userConfig - The userConfig object
+     * @param {string[]} [unread] - Server file names not read (default: all five)
+     * @returns {object} The same object
+     */
+    function markUnreadDocuments(userConfig, unread) {
+        Object.defineProperty(userConfig, 'unreadDocuments', {
+            value: unread || ['settings.json', 'shortcuts.json', 'bookmark.json', 'elsewhere.json', 'hidden-content.json'],
+            enumerable: false, configurable: true, writable: true
+        });
+        return userConfig;
+    }
+
+    /**
      * Assembles a fresh userConfig object from the five per-user documents.
      * A document that is missing or failed to load (null/undefined/non-object)
      * keeps its default; settings, bookmark and hidden-content are converted
@@ -987,9 +1003,11 @@
      */
     function buildUserConfig(documents) {
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+        const unread = [];
+        markUnreadDocuments(userConfig, unread);
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
-            if (!value || typeof value !== 'object') continue; // keep the default
+            if (!value || typeof value !== 'object') { unread.push(USER_CONFIG_DOCUMENTS[name]); continue; } // keep the default
             // *** CONVERT PASCALCASE TO CAMELCASE ***
             if (name === 'settings' || name === 'bookmark' || name === 'hiddenContent') {
                 userConfig[name] = toCamelCase(value);
@@ -1107,7 +1125,7 @@
         // Synchronous reset: wipe every boot-time global the moment the
         // identity changes, so nothing can read user A's data under user B.
         JE.session.onUserChange('plugin-globals', () => {
-            JE.userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
+            JE.userConfig = markUnreadDocuments({ settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } });
             JE.currentSettings = {};
             // Cleared (not merged over) so user A's extra shortcuts don't
             // survive into user B's session — initializeShortcuts() merges.

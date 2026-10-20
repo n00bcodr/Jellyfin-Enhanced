@@ -103,7 +103,10 @@
         if (!state) {
             const own = JE.userConfig?.[fileName.replace(/\.json$/, '')];
             const persisted = copyDocument(own);
-            state = { fileName, identity, persisted, shown: copyDocument(persisted), pending: [],
+            // Whether this session holds the document as the server last handed it out: the boot read (plugin.js marks the
+            // documents it could not read) or a later read. Until then no whole document may be saved.
+            const readOk = own !== undefined && !(JE.userConfig?.unreadDocuments || []).includes(fileName);
+            state = { fileName, identity, persisted, shown: copyDocument(persisted), pending: [], readOk, recovery: undefined,
                 revision: 0, readRevision: 0, serialized: undefined, chain: Promise.resolve(), observers: new Map(), effectWarnings: new Set(),
                 mirroredLanguage: undefined };
             documents.set(fileName, state);
@@ -356,9 +359,44 @@
             state.persisted = copyDocument(JE.toCamelCase ? JE.toCamelCase(response) : response);
             // A fresh read may reflect another browser's write: invalidate POST deduplication.
             state.serialized = undefined;
+            state.readOk = true;
         }
         publishDocument(state, previousPersisted, 'read');
         return true;
+    };
+
+    /**
+     * A module that reads a per-user document itself (not through readUserSettings) reports the read here, so the store
+     * accepts whole-document saves of it.
+     * @param {string} fileName Settings document that was read.
+     * @param {object} document The document as read.
+     */
+    JE.internals.noteSettingsRead = (fileName, document) => {
+        const state = settingsDocument(fileName);
+        if (state.pending.length || !document || typeof document !== 'object') return;
+        state.persisted = copyDocument(document);
+        state.serialized = undefined;
+        state.readOk = true;
+        publishDocument(state, state.persisted, 'read');
+    };
+
+    /**
+     * Refuse a whole-document save of a document this session never read: what it would send is built on defaults and
+     * would replace the person's stored settings. Views fall back to the persisted document, the person is told why, and
+     * one read is started so a later save can go through.
+     * @param {object} state Document state.
+     * @returns {Error} The refusal, for callers that reject.
+     */
+    const refuseUnreadSave = state => {
+        publishDocument(state, state.persisted, 'failed');
+        // Long enough to read (the default toast is gone in 1.5 s).
+        try { JE.toast?.(JE.t?.('settings_save_not_read') || 'Your settings couldn\'t be loaded, so this change wasn\'t saved. Try again in a moment, or reload the page.', 6000); } catch { /* Best effort. */ }
+        if (!state.recovery) {
+            state.recovery = JE.readUserSettings(state.fileName).catch(() => false).finally(() => { state.recovery = undefined; });
+        }
+        const error = new Error(`${state.fileName} was not read in this session; nothing was saved`);
+        error.settingsNotRead = true;
+        return error;
     };
 
     /** Save a patch through the same whole-document queue as legacy settings writers. */
@@ -389,6 +427,7 @@
             const userId = ApiClient.getCurrentUserId();
             if (!userId) throw new Error('User ID not available');
             const state = settingsDocument(fileName);
+            if (!options.consentKey && !state.readOk) throw refuseUnreadSave(state);
             let data = settings;
             if (fileName === 'settings.json' && settings === JE.currentSettings && state.shown.useNativePosterTags == null) {
                 data = { ...settings, useNativePosterTags: null };
@@ -441,7 +480,8 @@
             }
         } catch (error) {
             if (options?.throwOnError === true) throw error;
-            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, error);
+            if (error?.settingsNotRead) console.warn(`🪼 Jellyfin Enhanced: ${error.message}`);
+            else console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, error);
         }
     };
 

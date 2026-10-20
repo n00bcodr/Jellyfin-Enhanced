@@ -63,6 +63,10 @@ In **Overview**, the What's New notice links to the settings groups that contain
 
     Tabs scroll when they don't fit. Search, section jumps, and links in the What's New notice don't save changes. API fields are masked when unfocused and revealed while editing.
 
+    Some choices load after the page: languages, regions, libraries, users, and Seerr's Radarr servers, profiles, and folders. Until you change one of them, saving keeps its stored value, even while its list is still loading or if it fails to load. A choice you make while a list is loading is kept when the list arrives.
+
+    If the page can't read its saved settings, a **Settings not loaded** notice appears and saving is turned off, so the defaults the page shows can't replace your settings. Select **Retry** or reload the page.
+
     The **Docs** tab loads the hosted documentation when you first select it. It isn't an offline copy bundled with the plugin; your browser needs access to the hosted site. JE retains the loaded page across tab switches. If it doesn't receive a load event within eight seconds, it replaces the frame with a message and external link. **Open in new tab** is available independently.
 
 ## The personal Enhanced panel
@@ -122,6 +126,8 @@ Open **About** to check your JE version or select **Release Notes** or **Contrib
     The panel-opening ++"?"++ listener remains available even when ordinary shortcuts are disabled. Saved shortcut overrides don't change it.
 
     Opening the panel fetches fresh `settings.json`. For a full update of scripts, feature availability, and other user documents on another device, refresh that client.
+
+    If your saved settings couldn't be loaded, a change isn't saved and a message says so. JE reads them again, so a later change can save. This stops the defaults the panel would show from replacing your saved settings.
 
 ## Admin defaults and personal overrides
 
