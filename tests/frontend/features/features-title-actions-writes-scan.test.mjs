@@ -35,6 +35,13 @@ export const EXCLUDED_MODULES = {
   'enhanced/spoilerguard/watched-refresh.js': 'observes jellyfin-web\'s own played/unplayed requests (wraps XMLHttpRequest#open/send to notice them); sends nothing of its own',
   'extras/active-streams.js': 'the administrators\' active streams panel (no title action)',
   'tags/tag-pipeline.js': 'tag overlays: their projection reads are POSTs that change nothing (no title action)',
+  // Play edge only (modules the action-bar branch doesn't have; the integration rebuild owns them). None is reachable
+  // from the bar; the three own-fetch modules are also the Q-PLAYD51-3 pendingRebuild exemption in core-session-requests.
+  'arr/admin/admin-automation.js': 'the Requests page\'s administrator automation card (phase 4a): its mode and kill-switch POSTs, no title action',
+  'arr/adminusers/admin-users-api.js': 'Dashboard → Users → Jellyfin Enhanced tab: the administrator user-settings transport (own fetch, Q-PLAYD51-3), no title action',
+  'arr/adminusers/admin-users.js': 'Dashboard → Users → Jellyfin Enhanced tab: its only flagged site is ApiClient.serverVersion(), a local version read, no title action',
+  'arr/lists/list-api.js': 'the list pages\' transport (phase 4c, own fetch, Q-PLAYD51-3): list tickets and the session check bind it; the bar never opens a list sheet (it never sets `fixed`)',
+  'arr/lists/list-grid.js': 'the list grid\'s summaries read, a POST that changes nothing (phase 4c, own fetch, Q-PLAYD51-3), no title action',
 };
 for (const [file, reason] of Object.entries(EXCLUDED_MODULES)) if (reason === null) delete EXCLUDED_MODULES[file];
 
@@ -121,6 +128,9 @@ export const SITES = {
   'jellyseerr/ui/ui-request-modals.js': 3, 'jellyseerr/ui/ui-season-modal.js': 5, 'others/letterboxd-links.js': 1,
   'others/mdblist-ratings.js': 3, 'plugin.js': 8, 'tags/ageratingtags.js': 1, 'tags/peopletags.js': 3,
   'tags/qualitytags.js': 1, 'tags/tag-pipeline.js': 8, 'tags/tag-styles.js': 1, 'tags/userreviewtags.js': 1,
+  // Play edge only (see EXCLUDED_MODULES): list-pages.js and list-render.js are reads.
+  'arr/admin/admin-automation.js': 2, 'arr/adminusers/admin-users-api.js': 1, 'arr/adminusers/admin-users.js': 3,
+  'arr/lists/list-api.js': 1, 'arr/lists/list-grid.js': 1, 'arr/lists/list-pages.js': 1, 'arr/lists/list-render.js': 1,
 };
 
 /**
@@ -176,6 +186,8 @@ export const OWNER_SITES = {
   'jellyseerr/nativedetails/native-details.js': 8, 'jellyseerr/seerr-detail-link.js': 1,
   'jellyseerr/ui/ui-buttons.js': 5, 'jellyseerr/ui/ui-cards.js': 16, 'jellyseerr/ui/ui-request-modals.js': 5,
   'jellyseerr/ui/ui-results.js': 1, 'jellyseerr/ui/ui-season-modal.js': 5,
+  // Play edge only: a list placeholder's request sheet and its More Info fallback, both a native entry point (JE.NATIVE).
+  'arr/lists/list-pages.js': 1, 'arr/lists/list-request.js': 1,
 };
 
 const CONFIG = { excludedModules: EXCLUDED_MODULES, excludedSites: EXCLUDED_SITES, forwarders: FORWARDERS };
@@ -264,6 +276,9 @@ const PLANTED = {
   'r5: a Search sent without its binding': ['arr/ask/ask-sheet.js', s => s.replace('instanceId, { bound: submitted.bound() })', 'instanceId)'), /ask-sheet\.js:\d+ write adminSearch\(\)/],
   'r5: Remind without its binding': ['arr/notify/notify-core.js', s => s.replace(', bound: submitted.bound() });\n            return { ok: true, nextAt', ' });\n            return { ok: true, nextAt'), /notify-core\.js:\d+ write api\(\) \(POST without bound\) \/acquire\/remind/],
   'r5: a site the scan stops seeing (count)': ['enhanced/spoilerguard/state.js', s => s.replace('return JE.core.api.plugin(path, options);', 'return Promise.resolve(path, options);'), /state\.js: \d+ transport sites, expected \d+/],
+  // Play edge: a list placeholder's request sheet without its owner (r6's ask sheet then opens nothing).
+  'play edge: the list request sheet without its owner': ['arr/lists/list-request.js',
+    s => s.replace('                    operation: JE.NATIVE,\n', ''), /list-request\.js:\d+ open\(…\) without an owner/],
   // Shape 1: an opener without its owner.
   'R6-1: the spoiler-policy reopen without the replaced window\'s owner': ['jellyseerr/moreinfo/more-info-modal-init.js',
     s => s.replace('void moreInfoModal.open(id, type, modal.jeActionScope, owner);', 'void moreInfoModal.open(id, type, modal.jeActionScope);'), /more-info-modal-init\.js:\d+ open\(…\) without an owner/],
