@@ -308,16 +308,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private sealed class UserAccess
         {
-            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation)
+            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation, string authority)
             {
                 Ids = ids;
                 CachedAt = cachedAt;
                 Generation = generation;
+                Authority = authority;
             }
 
             public HashSet<string> Ids { get; }
             public DateTime CachedAt { get; }
             public long Generation { get; }
+
+            /// <summary>
+            /// The user's authority the set was computed for
+            /// (<see cref="Helpers.UserAuthority.Fingerprint"/>): the set is only
+            /// used for a request whose user, as it just read them, has the same.
+            /// </summary>
+            public string Authority { get; }
 
             /// <summary>
             /// Memo of the <c>accessRevision</c> this set yields for one cache
@@ -1643,17 +1651,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// The user's accessible-id set, from <see cref="_userAccessCache"/> while
-        /// its entry is current (same access generation, within the TTL), else
+        /// its entry is current (same access generation, within the TTL, and
+        /// computed for the authority <paramref name="user"/> has now), else
         /// computed with one GetItemIds query and cached.
         /// </summary>
+        /// <param name="user">The user, as the request just read them (Jellyfin's lookup reads its database on both versions).</param>
         private UserAccess ResolveUserAccess(JUser user)
         {
             var userKey = user.Id.ToString("N");
+            // Keyed by the user's policy as read for this request, not only by
+            // the user events: 10.11 saves a policy with no event, and both
+            // versions save UpdateUserAsync with none, so an event-only key kept
+            // the old set for the TTL after a parental, tag or library change.
+            var authority = Helpers.UserAuthority.Fingerprint(user);
 
-            // Check user access cache
             if (_userAccessCache.TryGetValue(userKey, out var cached)
                 && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
-                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl)
+                && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl
+                && string.Equals(cached.Authority, authority, StringComparison.Ordinal))
             {
                 return cached;
             }
@@ -1667,7 +1682,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var access = new UserAccess(
                 new HashSet<string>(accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())),
                 DateTime.UtcNow,
-                accessGeneration);
+                accessGeneration,
+                authority);
 
             // Store under _publishLock with the released flag re-checked:
             // the live check in CaptureGeneration is check-then-act, and a

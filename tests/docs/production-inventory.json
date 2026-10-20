@@ -295,6 +295,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserAuthority.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserHelper.cs",
       "category": "Helpers"
     },
@@ -10879,7 +10883,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 628,
+    "files": 629,
     "routes": 292,
     "configuration_properties": 638,
     "storage_references": 93,

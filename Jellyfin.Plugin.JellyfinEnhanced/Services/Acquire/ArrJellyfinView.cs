@@ -51,30 +51,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var user = Helpers.ArrCaller.Find(userId, _userManager);
             if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
             var isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
-            var allFolders = user.HasPermission(PermissionKind.EnableAllFolders);
-            var folders = allFolders ? Array.Empty<Guid>() : user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders);
-            var blockedTags = user.GetPreference(PreferenceKind.BlockedTags) ?? Array.Empty<string>();
-            var allowedTags = user.GetPreference(PreferenceKind.AllowedTags) ?? Array.Empty<string>();
-            var blockedUnrated = user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems);
-            // Folders blocked through the user policy API: library access in another form (like
-            // EnabledFolders), so part of the fingerprint but not a parental limit. A series' seasons
-            // and episodes always sit in the series' own library, so they never hide parts of it.
-            var blockedFolders = user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders);
             var parental = HasParentalLimit(user);
 
+            // Role, library access (all, enabled and blocked folders), parental settings and "show missing episodes":
+            // the same fields the user caches key by (Helpers.UserAuthority).
             var fingerprint = new StringBuilder();
-            fingerprint.Append(isAdmin ? 'A' : 'U').Append('|').Append(allFolders ? '*' : '-').Append('|');
-            foreach (var f in folders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
-            fingerprint.Append('|').Append(user.MaxParentalRatingScore?.ToString(CultureInfo.InvariantCulture) ?? "-")
-                .Append('.').Append(user.MaxParentalRatingSubScore?.ToString(CultureInfo.InvariantCulture) ?? "-").Append('|');
-            foreach (var t in blockedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
-            fingerprint.Append('|');
-            foreach (var t in allowedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
-            fingerprint.Append('|');
-            foreach (var u in blockedUnrated.OrderBy(u => u)) fingerprint.Append((int)u).Append(',');
-            fingerprint.Append('|');
-            foreach (var f in blockedFolders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
-            fingerprint.Append('|').Append(user.DisplayMissingEpisodes ? 'M' : '-');
+            Helpers.UserAuthority.AppendPolicy(fingerprint, user);
 
             return new StatusViewer
             {

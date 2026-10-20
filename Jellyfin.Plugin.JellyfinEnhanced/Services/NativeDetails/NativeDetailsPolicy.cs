@@ -65,7 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly IJellyfinLibraryAccess _libraries;
         private readonly IRequestPolicy? _requests;
         private readonly NativeDetailsLibrary? _physical;
-        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At)> _revisions = new();
+        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At, string Authority)> _revisions = new();
         private readonly ConcurrentDictionary<Guid, long> _epochs;
         private readonly string? _epochFile;
         private readonly object _epochWrite = new();
@@ -492,7 +492,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>An opaque revision string.</returns>
         public string Revision(User viewer)
         {
-            if (_revisions.TryGetValue(viewer.Id, out var hit) && DateTime.UtcNow - hit.At < RevisionTtl) return hit.Revision;
+            // The memo is keyed by the viewer as just read too: a parental or library change made a moment ago (10.11
+            // saves it with no event) ends the grants on the next request, not when the memo expires.
+            var authority = Helpers.UserAuthority.Fingerprint(viewer);
+            if (_revisions.TryGetValue(viewer.Id, out var hit) && DateTime.UtcNow - hit.At < RevisionTtl
+                && string.Equals(hit.Authority, authority, StringComparison.Ordinal))
+            {
+                return hit.Revision;
+            }
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             var text = JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(viewer))
                 + "|" + viewer.HasPermission(PermissionKind.EnableAllFolders)
@@ -506,7 +514,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture);
             var revision = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).Substring(0, 16);
             if (_revisions.Count > 1000) _revisions.Clear();
-            _revisions[viewer.Id] = (revision, DateTime.UtcNow);
+            _revisions[viewer.Id] = (revision, DateTime.UtcNow, authority);
             return revision;
         }
 

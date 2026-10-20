@@ -35,8 +35,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// The strip filter consumes this as an amortized in-memory lookup; a cache
     /// miss costs one series-scoped Limit=1 library query (the same bounded shape
     /// as TagCacheService.GetFirstEpisode). Watched-state changes evict the
-    /// affected key via IUserDataManager.UserDataSaved; library mutations are
-    /// covered by the TTL alone — a stale boundary can only mis-categorize the
+    /// affected key via IUserDataManager.UserDataSaved, and a change to the
+    /// user's Jellyfin user version (their library access or parental limits
+    /// decide which episodes the query sees) misses the cached boundary; library
+    /// mutations are covered by the TTL alone — a stale boundary can only mis-categorize the
     /// episode the user is about to watch between reveal tiers, never bypass a
     /// base strip, so a bounded staleness window is acceptable.
     /// </summary>
@@ -45,12 +47,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The next-unwatched episode's identity and position.</summary>
         public readonly record struct NextUnwatchedBoundary(Guid EpisodeId, int SeasonNumber, int EpisodeNumber);
 
-        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks);
+        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, long UserStamp);
 
         // Boundary cache keyed (userId, seriesId). Worst case is
         // f(users × guarded series) but hard-capped at MaxCacheEntries slots of
-        // ~72 bytes (two Guids + a nullable record struct + expiry) ≈ 150 KiB —
-        // bounded independent of library size. Overflow clears the whole map
+        // ~80 bytes (two Guids + a nullable record struct + expiry + user
+        // version) ≈ 160 KiB — bounded independent of library size. Overflow clears the whole map
         // (recompute is one bounded query per active key); TTL keeps entries
         // from outliving library changes.
         private readonly ConcurrentDictionary<(Guid UserId, Guid SeriesId), CacheSlot> _cache = new();
@@ -118,10 +120,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // watched-state change, amortizing to O(1) per item.
             var now = ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks;
             var key = (userId, seriesId);
-            if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now)
+            if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now
+                && Helpers.UserAuthority.Unchanged(userId, slot.UserStamp))
             {
                 return slot.Boundary;
             }
+
+            // Sampled before the query, so a policy change landing during it is never served later.
+            var userStamp = Helpers.UserAuthority.Version(userId);
 
             var boundary = BoundaryComputerForTest != null
                 ? BoundaryComputerForTest(userId, seriesId)
@@ -135,7 +141,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _cache.Clear();
             }
 
-            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks);
+            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, userStamp);
             return boundary;
         }
 

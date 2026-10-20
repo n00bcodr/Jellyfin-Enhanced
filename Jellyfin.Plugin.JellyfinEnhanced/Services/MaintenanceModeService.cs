@@ -312,6 +312,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         // Inside the person's Jellyfin permission version's bracket (the automatic-write check reads it).
                         await JellyfinUserVersions.Mutate(user.Id, () => _userManager.UpdatePolicyAsync(user.Id, dto.Policy)).ConfigureAwait(false);
+                        // 10.11 saves a policy with no event: drop the review authors now (the bracket moved this
+                        // person's version too, which the user caches check on their next read).
+                        ReviewAuthorCache.Invalidate();
                     }
                 }
                 catch (Exception ex)
@@ -607,6 +610,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             if (remoteSet.Contains(idStr))  dto.Policy.EnableRemoteAccess = true;
 
                             await JellyfinUserVersions.Mutate(userId, () => _userManager.UpdatePolicyAsync(userId, dto.Policy)).ConfigureAwait(false);
+                            ReviewAuthorCache.Invalidate();
                             _logger.Info($"[Maintenance] Restored user '{user.Username}'");
                         }
                     }

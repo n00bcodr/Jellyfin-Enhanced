@@ -122,6 +122,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
     /// inside, so <see cref="JellyfinUserChangeBracket"/> brackets the HTTP actions that make them (odd before the action
     /// runs, even after it returned), JE's own changes run inside <see cref="Mutate"/>, and Jellyfin's user events move it
     /// too (after the change: changes made by other code than these actions).
+    /// KNOWN LIMIT (D58; docs/arr/arr-features.md "Known limits of the user-change check"): Jellyfin doesn't announce every
+    /// change. <c>UpdateUserAsync</c> publishes no event on 10.11 or 12.2, and <c>UpdatePolicyAsync</c> publishes none on
+    /// 10.11. Inside a bracket (the user/start-up API, JE's own writes) the version moves all the same; made by other code
+    /// outside one (another plugin calling the user manager directly) it doesn't, so a check deciding while it lands can
+    /// accept the facts it read before. Caches of a user's authority therefore never rely on the events alone (see
+    /// <c>Helpers.UserAuthority</c>).
     /// </summary>
     public static class JellyfinUserVersions
     {
@@ -189,7 +195,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         }
     }
 
-    /// <summary>Moves a person's <see cref="JellyfinUserVersions"/> on Jellyfin's user events (changes made outside the bracketed actions).</summary>
+    /// <summary>
+    /// Moves a person's <see cref="JellyfinUserVersions"/> on Jellyfin's user events (changes made outside the bracketed
+    /// actions). Only the announced ones: a silent save outside a bracket moves nothing (see the known limit on
+    /// <see cref="JellyfinUserVersions"/>).
+    /// </summary>
     public sealed class JellyfinUserChangeVersion : IEventConsumer<UserUpdatedEventArgs>, IEventConsumer<UserDeletedEventArgs>, IEventConsumer<UserLockedOutEventArgs>
     {
         /// <inheritdoc />
