@@ -183,6 +183,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>A virtual (missing) episode or season: no file.</summary>
         public bool Virtual { get; init; }
 
+        /// <summary>
+        /// A movie or episode Jellyfin lists but that plays nothing: a stub file such as a ".disc" one (Jellyfin's
+        /// IsPlaceHolder), or no file path. Never true for a virtual one.
+        /// </summary>
+        public bool Placeholder { get; init; }
+
+        /// <summary>
+        /// Jellyfin plays it (D53, edition round 16: one item reference carries every fact): not missing (virtual) and not
+        /// a placeholder, the same fact as <see cref="JfEpisode.Playable"/>. Every reader of "the viewer has this item's
+        /// file" (pages, cards, arrivals, queued downloads as upgrades, versions) reads this, never <see cref="Virtual"/>.
+        /// </summary>
+        public bool Playable => !Virtual && !Placeholder;
+
         /// <summary>File or folder path (server-side matching only; never sent).</summary>
         public string? Path { get; init; }
 

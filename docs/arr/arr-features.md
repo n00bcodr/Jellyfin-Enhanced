@@ -911,9 +911,16 @@ ask fetch the episodes that are missing, one tap each.
       edition, so it goes to the 4K Sonarr, and an administrator's **Search in 4K** searches the 4K Sonarr. Where a button
       can't reach the copy it would be named for (someone who may not ask for 4K, an anime or other copy no request goes
       to, or a household Search, which only searches standard copies), it isn't offered under that name: episodes no copy
-      has keep the plain **Get them**, and a household Search on a 4K copy's gaps becomes **Get them in 4K**. A copy plays an
-      episode only when it has a file Jellyfin can play: a placeholder or stub file (such as a *.disc* stub) is never
-      *Ready*, in this copy or another.
+      has keep the plain **Get them**, and a household Search on a 4K copy's gaps becomes **Get them in 4K**. With Seerr
+      handling requests, a copy's ask is offered only when Seerr's own default server for that edition is this copy's
+      Sonarr (Jellyfin Enhanced doesn't pick Seerr's server), so with two 4K Sonarrs only the one Seerr sends 4K requests to
+      gets **Get them in 4K**; when Seerr's servers can't be read, no copy's ask is offered under its name. Every button is
+      checked again when you press it: if what you may do there has changed since the page was shown (your permissions,
+      or which Sonarr a request would reach), nothing is sent, the buttons are drawn again for what you can do now and a
+      short message says so. A copy plays an episode only when it has a file Jellyfin can play: a placeholder or stub file
+      (such as a *.disc* stub) is never *Ready*, in this copy or another, on its season page, its own episode page, its
+      card or a movie's page, a download of it is that episode on its way (not a better copy), and its arrival is never
+      announced.
     - **What happens after a tap** is said plainly on the row: *Waiting for OK* when the ask needs someone's OK (Kids
       always; Members over their allowance or house rules), *Asked!* when it went straight through, *Someone asked* when
       another person in the household already asked for it. Anything else (over the week's allowance, not allowed,

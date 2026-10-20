@@ -489,13 +489,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (unlisted != null && HoldsFolder(arrCopy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
                 var copy = arrCopy.Radarr();
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
-                var visible = own ?? matched.FirstOrDefault(m => m.Visible);
+                // The page's own item is a stub (D53, edition round 16: it plays nothing): this copy reads where its Radarr
+                // has got to, a download of it included, never Ready.
+                var stub = own != null && !item!.Playable;
+                var visible = stub ? null : own ?? matched.FirstOrDefault(m => m.Visible);
                 CopyState state;
                 if (visible != null)
                 {
                     state = copy.Queue.Count > 0
                         ? new CopyState(StatusStage.Ready, StatusReasonCode.Upgrading, Progress: Progress(copy.Queue[0], c, copy), Since: visible.DateCreated, Row: copy.Queue[0])
                         : new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: visible.DateCreated);
+                }
+                else if (stub)
+                {
+                    state = MovieFromArr(copy, c, facts.Request);
                 }
                 else if (matched.Count > 0)
                 {
@@ -505,10 +512,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     state = MovieFromArr(copy, c, facts.Request);
                 }
-                variants.Add((copy, state, visible ?? matched.FirstOrDefault()));
+                variants.Add((copy, state, stub ? own : visible ?? matched.FirstOrDefault()));
             }
 
-            // The headline: the item asked for is ready by definition (the viewer opened it); on the key
+            // The headline: the item asked for is ready by definition (the viewer opened it) when Jellyfin plays it; on the key
             // path, the best copy the viewer could open (4K copies only when their item is visible).
             CopyState headline;
             ArrCopyRead? headlineCopy = null;
@@ -522,7 +529,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else
                 {
-                    headline = new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated);
+                    headline = item.Playable ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated) : NothingKnown(facts);
                 }
             }
             else if (jf.Any(x => x.Visible))
@@ -958,7 +965,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// An episode page (or card); a virtual episode shows where the arr has got to. <paramref name="series"/> is its
+        /// An episode page (or card); a virtual episode or a placeholder (<see cref="JfItemRef.Playable"/>) shows where the arr has got to. <paramref name="series"/> is its
         /// series item as the viewer opens it now (null when they can't), see <see cref="SeriesCopyFor"/>.
         /// </summary>
         public static TitleStatus Episode(TitleFacts facts, JfItemRef item, ComposeContext c, bool detail, IReadOnlyList<JfCopy>? copies = null, Guid? page = null, JfItemRef? series = null)
@@ -970,7 +977,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (copy?.Mask.Hides(season, number) == true) copy = null;
             CopyState state;
             ArrEpisodeEntry? arr = null;
-            if (!item.Virtual)
+            // One item reference carries every fact (D53, edition round 16): a stub Jellyfin lists reads where its arr has
+            // got to, as its season row does; only an episode Jellyfin plays is Ready (and a download of it an upgrade).
+            if (item.Playable)
             {
                 arr = copy?.Episodes?.Find(season, number);
                 state = (copy == null ? null : QueuedEpisode(copy, RowsFor(copy, season, number, arr), have: true, item.DateCreated, c))

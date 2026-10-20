@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
@@ -21,6 +22,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Movie4k">A 4K Radarr is set up in Seerr.</param>
     /// <param name="Series4k">A 4K Sonarr is set up in Seerr.</param>
     public sealed record SeerrRequestSettings(bool? Partial, bool Specials, bool Movie4k, bool Series4k);
+
+    /// <summary>One of Seerr's Sonarr or Radarr servers: its id, the address Seerr reaches it at, its edition and default flag.</summary>
+    /// <param name="Id">Seerr's server id.</param>
+    /// <param name="Url">The address Seerr reaches it at (scheme, host, port and base path, as Seerr's settings give them).</param>
+    /// <param name="Is4k">A 4K server.</param>
+    /// <param name="IsDefault">Seerr's default server for its edition.</param>
+    public sealed record SeerrServer(int Id, string Url, bool Is4k, bool IsDefault);
+
+    /// <summary>
+    /// Where Seerr sends a request (D53, edition round 16: the binding is verified for every transport). Jellyfin Enhanced
+    /// sends Seerr no server, so a request of an edition goes to Seerr's own default server for that edition: a page may say a
+    /// request reaches one copy only when that server is the copy's own arr.
+    /// </summary>
+    public interface ISeerrDestinations
+    {
+        /// <summary>
+        /// Reads Seerr's servers of <paramref name="kind"/> again when the held read is older than a minute (one read at a
+        /// time, bounded at a few seconds; a read that fails leaves nothing known).
+        /// </summary>
+        /// <param name="kind">Sonarr or Radarr.</param>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>A task that completes when the read is current or has failed.</returns>
+        Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct);
+
+        /// <summary>
+        /// The server Seerr sends a request of <paramref name="kind"/> and that edition to (its one default server for the
+        /// edition), as last read from the Seerr configured now; null when that isn't known.
+        /// </summary>
+        /// <param name="kind">Sonarr or Radarr.</param>
+        /// <param name="is4k">The 4K edition.</param>
+        /// <returns>The server, or null.</returns>
+        SeerrServer? DefaultServer(ArrKind kind, bool is4k);
+
+        /// <summary>Changes whenever what <see cref="DefaultServer"/> answers changes (status bodies are cached on it).</summary>
+        string DestinationsRevision { get; }
+    }
 
     /// <summary>A series' seasons as Seerr describes them (see <see cref="SeerrBackend.SeasonFactsAsync"/>).</summary>
     /// <param name="Started">Regular seasons that have started, ascending.</param>
@@ -38,7 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// scoped read of the title settles it. A 409 or a 202 "No seasons available" counts as success only
     /// with a JSON body and a fresh read that shows the scope already requested or available.
     /// </summary>
-    public sealed class SeerrBackend : IRequestBackend
+    public sealed class SeerrBackend : IRequestBackend, ISeerrDestinations
     {
         /// <summary>How long prepared identity facts may be used for policy decisions.</summary>
         internal static readonly TimeSpan PreparedFor = TimeSpan.FromMinutes(10);
@@ -63,6 +100,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ConcurrentDictionary<Guid, Prepared> _prepared = new();
         private readonly ConcurrentDictionary<string, (int? Id, DateTimeOffset At)> _ids = new(StringComparer.Ordinal);
         private SettingsRead? _settings;
+        private readonly ConcurrentDictionary<ArrKind, DestinationsRead> _destinations = new();
+        private readonly SemaphoreSlim _destinationsGate = new(1, 1);
+        private long _destinationsRevision;
 
         /// <summary>
         /// Creates the backend (DI); each send is bound on its ledger job before it leaves, and a person's requests waiting
@@ -110,6 +150,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
+
+        private sealed record DestinationsRead(string Source, IReadOnlyList<SeerrServer>? Servers, DateTimeOffset At);
 
         private sealed record Prepared(string Source, int? SeerrUser, long Permissions, SeerrRequestSettings? Settings,
             QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset At);
@@ -284,6 +326,87 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (source == null || held == null || held.Source != source || _now() - held.At > FourKKnownFor) return null;
             return movie ? held.Settings.Movie4k : held.Settings.Series4k;
         }
+
+        // ---------------- where a request goes ----------------
+
+        /// <summary>How long a read of Seerr's servers is used before it is read again.</summary>
+        private static readonly TimeSpan DestinationsFor = TimeSpan.FromMinutes(1);
+
+        /// <summary>How long a read of Seerr's servers counts as known at all (a page is never bound on an older one).</summary>
+        private static readonly TimeSpan DestinationsKnownFor = TimeSpan.FromMinutes(10);
+
+        /// <summary>The most a page waits for Seerr's servers (a slow Seerr leaves them unknown: nothing is bound on them).</summary>
+        private static readonly TimeSpan DestinationsTimeout = TimeSpan.FromSeconds(3);
+
+        /// <inheritdoc />
+        public string DestinationsRevision => Interlocked.Read(ref _destinationsRevision).ToString(CultureInfo.InvariantCulture);
+
+        /// <inheritdoc />
+        public async Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (config == null || source == null || Fresh(kind, source)) return;
+            await _destinationsGate.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                if (Fresh(kind, source)) return;
+                IReadOnlyList<SeerrServer>? servers = null;
+                // Read where requests are sent (the first address), as every confirming read is.
+                if (Urls(config).FirstOrDefault() is { } url)
+                {
+                    using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    budget.CancelAfter(DestinationsTimeout);
+                    try
+                    {
+                        var json = await GetAsync(config, "/api/v1/settings/" + (kind == ArrKind.Sonarr ? "sonarr" : "radarr"), budget.Token, url).ConfigureAwait(false);
+                        servers = json is { ValueKind: JsonValueKind.Array } rows ? Servers(rows) : null;
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        // Too slow: nothing is known.
+                    }
+                }
+                var before = _destinations.TryGetValue(kind, out var held) ? held : null;
+                _destinations[kind] = new DestinationsRead(source, servers, _now());
+                if (before == null || before.Source != source || !SameServers(before.Servers, servers)) Interlocked.Increment(ref _destinationsRevision);
+            }
+            finally
+            {
+                _destinationsGate.Release();
+            }
+        }
+
+        /// <inheritdoc />
+        public SeerrServer? DefaultServer(ArrKind kind, bool is4k)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (source == null || !_destinations.TryGetValue(kind, out var held) || held.Source != source || held.Servers == null || _now() - held.At > DestinationsKnownFor) return null;
+            // Seerr takes its default server of the edition; two defaults (Seerr's settings allow only one) prove nothing.
+            var defaults = held.Servers.Where(s => s.Is4k == is4k && s.IsDefault).Take(2).ToList();
+            return defaults.Count == 1 ? defaults[0] : null;
+        }
+
+        private bool Fresh(ArrKind kind, string source)
+            => _destinations.TryGetValue(kind, out var held) && held.Source == source && _now() - held.At < DestinationsFor;
+
+        // Seerr's server rows: the address as Seerr reaches it (as the config page builds an imported instance's URL).
+        private static List<SeerrServer> Servers(JsonElement rows)
+        {
+            var list = new List<SeerrServer>();
+            foreach (var row in rows.EnumerateArray())
+            {
+                if (row.ValueKind != JsonValueKind.Object || Int(row, "id") is not int id || Str(row, "hostname") is not { Length: > 0 } host || Int(row, "port") is not int port || port <= 0) continue;
+                var ssl = row.TryGetProperty("useSsl", out var s) && s.ValueKind == JsonValueKind.True;
+                var url = (ssl ? "https://" : "http://") + host + ":" + port.ToString(CultureInfo.InvariantCulture) + (Str(row, "baseUrl") ?? string.Empty).Trim();
+                list.Add(new SeerrServer(id, url, row.TryGetProperty("is4k", out var k) && k.ValueKind == JsonValueKind.True, row.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True));
+            }
+            return list;
+        }
+
+        private static bool SameServers(IReadOnlyList<SeerrServer>? a, IReadOnlyList<SeerrServer>? b)
+            => a == null || b == null ? a == b : a.SequenceEqual(b);
 
         private async Task<SeerrRequestSettings?> SettingsAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {

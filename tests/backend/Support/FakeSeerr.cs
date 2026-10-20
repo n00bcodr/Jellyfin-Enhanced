@@ -51,6 +51,16 @@ internal sealed class FakeSeerr : IDisposable
 
     private int _nextRequest = 900;
 
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/sonarr</c> (Seerr's Sonarr servers; else 403, as for a key that isn't an administrator's).</summary>
+    public JsonArray? SonarrServers { get; set; }
+
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/radarr</c> (else 403).</summary>
+    public JsonArray? RadarrServers { get; set; }
+
+    /// <summary>One of Seerr's Sonarr/Radarr server rows (the fields its settings route answers with).</summary>
+    public static JsonObject Server(int id, string host, int port, bool is4k, bool isDefault, string baseUrl = "", bool ssl = false)
+        => new() { ["id"] = id, ["name"] = host, ["hostname"] = host, ["port"] = port, ["useSsl"] = ssl, ["baseUrl"] = baseUrl, ["is4k"] = is4k, ["isDefault"] = isDefault, ["activeProfileId"] = 1, ["activeDirectory"] = "/tv", ["apiKey"] = "ARR-KEY" };
+
     /// <summary>Non-null: the body of <c>GET /api/v1/settings/main</c> (else 404).</summary>
     public JsonObject? MainSettings { get; set; }
 
@@ -119,6 +129,8 @@ internal sealed class FakeSeerr : IDisposable
                 return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
             }
         }
+        if (path == "/api/v1/settings/sonarr") return SonarrServers == null ? IntegrationTransport.Response("{\"message\":\"You do not have permission to access this endpoint.\"}", 403) : IntegrationTransport.Response(SonarrServers.ToJsonString());
+        if (path == "/api/v1/settings/radarr") return RadarrServers == null ? IntegrationTransport.Response("{\"message\":\"You do not have permission to access this endpoint.\"}", 403) : IntegrationTransport.Response(RadarrServers.ToJsonString());
         if (path == "/api/v1/settings/main") return MainSettings == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(MainSettings.ToJsonString());
         if (path == "/api/v1/settings/jobs") return Jobs == null ? IntegrationTransport.Response("{}", 404) : IntegrationTransport.Response(Jobs.ToJsonString());
         if (path == "/api/v1/user")

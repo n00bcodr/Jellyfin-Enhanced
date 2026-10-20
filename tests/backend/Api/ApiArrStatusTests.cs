@@ -970,6 +970,10 @@ public class ApiArrStatusTests
         // An episode with a file opens it; a missing (virtual) one the library lists is no copy: its native page.
         Assert.Equal((200, $$"""{"itemId":"{{rig.Episode1:N}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 1));
         Assert.Equal((200, $$"""{"id":"{{Syn(Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.SyntheticId.EpisodeOf(1437, 1, 3))}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 3));
+        // A stub (a ".disc" file: listed, plays nothing) is no copy either.
+        rig.View.Placeholders.Add(rig.Episode1);
+        rig.View.Rev++;
+        Assert.Equal((200, $$"""{"id":"{{Syn(Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.SyntheticId.EpisodeOf(1437, 1, 1))}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 1));
         // Bad input, no person, switched off.
         Assert.Equal(400, (await Resolve(rig.Member, "nonsense")).Status);
         Assert.Equal(400, (await Resolve(rig.Member, "movie:tmdb:1", season: 1)).Status);

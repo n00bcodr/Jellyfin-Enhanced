@@ -125,7 +125,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
     {
         if (Withdrawn(itemId, viewer)) return null;
-        if (Items.TryGetValue(itemId, out var item)) return (item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId)) && (item.Ref.SeriesId is not Guid of || !Withdrawn(of, viewer)) ? item.Ref : null;
+        if (Items.TryGetValue(itemId, out var item)) return (item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId)) && (item.Ref.SeriesId is not Guid of || !Withdrawn(of, viewer)) ? ShownItem(item.Ref) : null;
         if (!ResolveAnyItem) return null;
         bool Sees(HashSet<Guid>? to) => to == null || to.Contains(viewer.UserId);
         foreach (var list in CopiesByKey.Values)
@@ -354,6 +354,18 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     {
         if (!Placeholders.Contains(episode.ItemId) || typeof(JfEpisode).GetProperty("Placeholder") is not { } flag) return episode;
         var copy = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden };
+        flag.SetValue(copy, true);
+        return copy;
+    }
+
+    /// <summary>
+    /// An item as the view resolves it: a placeholder carries JfItemRef.Placeholder (set by name, so this file also builds
+    /// against a plugin without that property, where a stub resolves like any other item).
+    /// </summary>
+    internal JfItemRef ShownItem(JfItemRef item)
+    {
+        if (!Placeholders.Contains(item.ItemId) || typeof(JfItemRef).GetProperty("Placeholder") is not { } flag) return item;
+        var copy = (JfItemRef)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(item, null)!;
         flag.SetValue(copy, true);
         return copy;
     }

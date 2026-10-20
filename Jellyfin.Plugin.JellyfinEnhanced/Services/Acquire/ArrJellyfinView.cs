@@ -159,7 +159,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         DateCreated = Utc(movie.DateCreated),
                         LibraryId = library?.Id.ToString("N", CultureInfo.InvariantCulture),
                         LibraryName = library?.Name,
-                        Versions = movie.MediaSourceCount,
+                        Placeholder = !Playable(movie),
+                        Versions = Playable(movie) ? movie.MediaSourceCount : 0,
                         PrimaryId = PrimaryOf(movie),
                     };
                 }
@@ -204,9 +205,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                         Episode = number,
                         EpisodeEnd = episode.IndexNumberEnd,
                         Virtual = episode.IsMissingEpisode,
+                        Placeholder = Placeholder(episode),
                         Path = episode.Path,
                         DateCreated = Utc(episode.DateCreated),
-                        Versions = episode.IsMissingEpisode ? 0 : episode.MediaSourceCount,
+                        Versions = Playable(episode) ? episode.MediaSourceCount : 0,
                         PrimaryId = PrimaryOf(episode),
                     };
                 }

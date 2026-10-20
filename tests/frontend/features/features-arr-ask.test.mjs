@@ -467,6 +467,74 @@ test('one binding decides Search: an administrator searches the copy\'s own inst
   same(standard.searches.map(x => x.body.key), ['tv:tvdb:1:s1']);
 });
 
+const MEMBER_4K = { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false, can4kSeries: true };
+
+test('check at click: "Search in 4K" for a 4K copy no ask reaches, after a permission change, refreshes the controls and sends nothing', async t => {
+  // An administrator's page of a second 4K Sonarr's copy: a 4K ask goes to the default 4K Sonarr (another copy), so the
+  // binding offers only the administrator's Search on the copy's own instance.
+  const bound = { variant: '4k', ask: false, search: false };
+  const server = { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
+  const h = setup(t, { status: withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...bound, instanceId: 'son4kB' }), config: { ArrManageDrawerEnabled: true }, server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search in 4K');
+  // They are no longer an administrator: the server names no instance now, and their capabilities are read again.
+  server.me = MEMBER_4K;
+  h.setStatus(withCopy(longMissing(), [2, 4], '4k', bound));
+  await h.JE.arrAsk.me(true);
+  btn.click();
+  await settle(40);
+  same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
+  const now = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.ok(!now || now.querySelector('.je-ask-get-text').textContent !== 'Search in 4K', 'the controls are drawn again for what is allowed now');
+  assert.equal(h.toasts.at(-1), translate('arr_ask_changed'), 'and the person is told why nothing happened');
+});
+
+test('check at click: a row\'s Search for that copy, after a permission change, sends nothing', async t => {
+  const bound = { variant: '4k', ask: false, search: false };
+  const server = { me: ADMIN_ME, post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
+  const h = setup(t, { status: withCopy(longMissing({ admin: true }), [2], '4k', { ...bound, instanceId: 'son4kB' }), config: { ArrManageDrawerEnabled: true }, server });
+  await h.open();
+  const row = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(row.dataset.mode, 'search');
+  server.me = MEMBER_4K;
+  h.setStatus(withCopy(longMissing(), [2], '4k', bound));
+  await h.JE.arrAsk.me(true);
+  row.click();
+  await settle(40);
+  same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-search'), null, 'no Search under the copy\'s name any more');
+});
+
+test('check at click: "Get them in 4K" asks only while the 4K ask is still allowed and still reaches the copy', async t => {
+  // The 4K permission is taken away after the page was drawn.
+  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  server.me = { ...KID_4K, can4kSeries: false };
+  btn.click();
+  await settle(40);
+  same(h.posts, [], 'no 4K ask once it is no longer allowed');
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-get'), null, 'nothing under the 4K copy\'s name any more');
+
+  // The binding changed: a 4K ask no longer lands on this copy (the default 4K Sonarr is now another one).
+  const moved = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await moved.open();
+  moved.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
+  moved.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(40);
+  same(moved.posts, [], 'no ask for a copy it no longer reaches');
+
+  // Nothing changed: it asks for exactly what it says.
+  const kept = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await kept.open();
+  kept.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(40);
+  assert.equal(kept.posts[0]?.body.input.variant, '4k');
+});
+
 test('the season summary counts a copy\'s own gaps as the rows do ("1 missing" and "1 missing in standard")', t => {
   const h = setup(t);
   const pieces = h.JE.arrStatus.summaryPieces({ kind: 'season', summary: { aired: 4, ready: 2, missing: 2, longMissing: 2, missingInCopy: 1 }, copy: { role: 'standard' } }).map(p => p.text);

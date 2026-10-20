@@ -151,6 +151,9 @@ public class IntegrationEditionDerivedTests
         rig.Sonarr4k!.Episodes.Add(M.Aired(103, 3));
         rig.View.AddEpisodeFile(rig.UhdCopy, Firefly, 1, 3, 3840, 2160, rig.Now.AddDays(-1));
         rig.Sonarr4k.Episodes.Single(e => (int)e["id"]! == 103)["hasFile"] = true;
+        // Jellyfin Enhanced's own transport: a request goes to the edition's default Sonarr (Seerr mode is proven by Seerr's own
+        // servers, IntegrationEditionReferenceTests).
+        rig.Arr.Plugin.Plugin.Configuration.ArrRequestBackend = "je";
 
         // The standard page: a request (standard) and a household Search reach the standard Sonarr. Family members get no instance.
         var standard = CopyOf(await M.Page(rig, rig.Member, M.SeasonPage(rig, rig.HdCopy)));

@@ -49,16 +49,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly ArrChangeFeed? _feed;
         private readonly TitleAliases _aliases;
         private readonly ArrInstanceLibraries _libraries;
+        private readonly Requests.ISeerrDestinations? _seerr;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
-        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed, ArrInstanceLibraries libraries)
-            : this(store, view, requests, null, null, feed, libraries)
+        public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed, ArrInstanceLibraries libraries, Requests.SeerrBackend seerr)
+            : this(store, view, requests, null, null, feed, libraries, seerr)
         {
         }
 
-        /// <summary>A service with explicit configuration, clock and change feed (tests).</summary>
-        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null, ArrInstanceLibraries? libraries = null)
+        /// <summary>
+        /// A service with explicit configuration, clock and change feed (tests). <paramref name="seerr"/> says where Seerr sends
+        /// a request (null: nowhere known, so no Seerr-mode page binds an ask to a copy).
+        /// </summary>
+        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null, ArrInstanceLibraries? libraries = null, Requests.ISeerrDestinations? seerr = null)
         {
+            _seerr = seerr;
             _store = store;
             _view = view;
             _requests = requests;
@@ -214,6 +219,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             if (_view.Resolve(itemId, viewer) is not { Key: not null } item) return null;
             var title = item.Key.Title;
+            // A season page's copy binding in Seerr mode needs Seerr's own servers (where its request goes, see Reach).
+            if (item.Kind == "season" && _seerr != null && _config()?.ArrRequestBackend != "je") await _seerr.RefreshDestinationsAsync(ArrKind.Sonarr, cancellationToken).ConfigureAwait(false);
             var episodes = item.Kind is "series" or "season" or "episode" ? new[] { title } : Array.Empty<TitleKey>();
             return await GatherAsync(viewer, new[] { title }, loadEpisodes: load ? episodes : null, peekEpisodes: load ? null : episodes, cancellationToken).ConfigureAwait(false);
         }
@@ -232,7 +239,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A missing (virtual) episode or season whose file has arrived: Jellyfin adds the file's item
             // under a new id and drops the virtual one at its next series refresh. Until then the page of
             // the virtual item reads as the arrived one and names it, so the page can move there.
-            if (item.Virtual && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { Virtual: false } arrived && arrived.ItemId != item.ItemId)
+            if (!item.Playable && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { Playable: true } arrived && arrived.ItemId != item.ItemId)
             {
                 var status = WithVersions(ComposeItem(viewer, arrived, gather), arrived, viewer);
                 status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
@@ -259,7 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private TitleStatus WithVersions(TitleStatus status, JfItemRef item, StatusViewer viewer)
         {
-            if (item.Kind is "movie" or "episode" && !item.Virtual && item.Versions > 0)
+            if (item.Kind is "movie" or "episode" && item.Playable && item.Versions > 0)
                 status.Versions = item.Versions > 1 ? Math.Max(1, _view.Sources(item.ItemId, viewer).Select(s => s.BackingItemId).Distinct().Count()) : item.Versions;
             return status;
         }
@@ -323,22 +330,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 .Select(e => new JfEpisode { ItemId = e.ItemId, Season = e.Season, Episode = e.Episode, EpisodeEnd = e.EpisodeEnd }));
 
         /// <summary>
-        /// Where a season page's copy-qualified controls land (D53, edition round 15: one binding decides wording and action):
-        /// a request names the copy's edition and goes to that edition's default Sonarr (the request target), so it reaches the
-        /// copy only when that is the copy's own Sonarr; a household Search runs on the standard request target only. An
-        /// administrator's Search runs on the copy's own Sonarr; nobody else is told which one it is. (Seerr mode: a request is
-        /// bound for visibility to the same default instance; which server Seerr then uses is Seerr's own setting.)
+        /// Where a season page's copy-qualified controls land (D53, edition round 15: one binding decides wording and action;
+        /// round 16: the binding is verified for every transport). A request names the copy's edition and reaches the copy only
+        /// when its EFFECTIVE destination is the copy's own Sonarr: in Jellyfin Enhanced mode that edition's default Sonarr (the
+        /// request target); in Seerr mode the server Seerr itself sends it to (JE sends Seerr no server: Seerr's default server
+        /// for the edition), proven only when exactly one Sonarr here is that server (same address, and the same Seerr id when
+        /// the instance was imported from Seerr) and it is the copy's. Unknown (Seerr's servers unread, unreadable, or none
+        /// for the edition): not proven, so nothing is offered under the copy's name. A household Search runs on the standard
+        /// request target only (Seerr mode: any non-4K Sonarr, so only when there is one), and asks when nothing was sent, so it
+        /// needs the ask too. An administrator's Search runs on the copy's own Sonarr; nobody else is told which one it is.
         /// </summary>
         private void Reach(CopyBinding bound, StatusViewer viewer)
         {
             var config = _config();
             bound.Variant = bound.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null };
-            var target = bound.Variant == null ? null : _store.Registry.DefaultFor(ArrKind.Sonarr, bound.Variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard);
-            bound.Ask = target != null && string.Equals(target.Id, bound.InstanceId, StringComparison.OrdinalIgnoreCase);
-            // JE mode searches the request target only; Seerr mode any non-4K Sonarr bound for the viewer, so only when there is one.
+            var je = config?.ArrRequestBackend == "je";
+            var destination = bound.Variant == null ? null
+                : je ? _store.Registry.DefaultFor(ArrKind.Sonarr, bound.Variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id
+                : SeerrSendsTo(bound.Variant == "4k");
+            bound.Ask = destination != null && string.Equals(destination, bound.InstanceId, StringComparison.OrdinalIgnoreCase);
             bound.Search = bound.Ask && bound.Variant == "standard"
-                && (config?.ArrRequestBackend == "je" || _store.Instances(ArrKind.Sonarr).Count(i => i.Role != Model.Arr.ArrInstanceRole.FourK) == 1);
+                && (je || _store.Instances(ArrKind.Sonarr).Count(i => i.Role != Model.Arr.ArrInstanceRole.FourK) == 1);
             if (!viewer.IsAdmin) bound.InstanceId = null;
+        }
+
+        /// <summary>
+        /// The Sonarr instance Seerr sends a series request of that edition to: the one instance here that is Seerr's default
+        /// server for it (see <see cref="Reach"/>); null when that isn't proven.
+        /// </summary>
+        private string? SeerrSendsTo(bool is4k)
+        {
+            if (_seerr?.DefaultServer(ArrKind.Sonarr, is4k) is not { } server) return null;
+            var matches = _store.Instances(ArrKind.Sonarr).Where(i => (i.SeerrServerId == null || i.SeerrServerId == server.Id) && SameAddress(i.Url, server.Url)).Take(2).ToList();
+            return matches.Count == 1 ? matches[0].Id : null;
+        }
+
+        /// <summary>Two arr addresses name the same server: scheme, host, port and base path (case-insensitive, no trailing slash).</summary>
+        internal static bool SameAddress(string? a, string? b)
+        {
+            if (!Uri.TryCreate(a?.Trim(), UriKind.Absolute, out var x) || !Uri.TryCreate(b?.Trim(), UriKind.Absolute, out var y)) return false;
+            return string.Equals(x.Scheme, y.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Host, y.Host, StringComparison.OrdinalIgnoreCase) && x.Port == y.Port
+                && string.Equals(x.AbsolutePath.TrimEnd('/'), y.AbsolutePath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -515,7 +547,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (copies.FirstOrDefault(x => x.Visible) is not { } shown) return null;
             if (page.Kind is "movie" or "series") return shown.ItemId.ToString("N", CultureInfo.InvariantCulture);
             var scope = ScopeItem(viewer, page.ScopeKey);
-            if (scope == null || (page.Kind == "episode" && scope.Virtual)) return null;
+            if (scope == null || (page.Kind == "episode" && !scope.Playable)) return null;
             return scope.ItemId.ToString("N", CultureInfo.InvariantCulture);
         }
 
@@ -524,7 +556,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// series (a virtual episode included); null otherwise or for movie/series keys. In the series item
         /// <paramref name="seriesId"/> when given (a page's own copy: a 4K copy, or the series in another
         /// library, is another series item; never swapped for one). Unpinned (no series named), every copy the
-        /// viewer can open is searched: the first copy's item with the file, else the first missing item.
+        /// viewer can open is searched: the first copy's item Jellyfin plays (<see cref="JfItemRef.Playable"/>), else the first
+        /// missing item or placeholder.
         /// </summary>
         internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key, Guid? seriesId = null)
         {
@@ -536,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var copy in copies.Where(x => x.Visible).DistinctBy(x => x.ItemId))
             {
                 var item = ScopeItemIn(viewer, key, copy.ItemId, season);
-                if (item is { Virtual: false }) return item;
+                if (item is { Playable: true }) return item;
                 first ??= item;
             }
             return first;
@@ -550,12 +583,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var kind = key.Episode != null ? "episode" : "season";
             var ids = _view.SeriesParts(seriesItemId, season, key.Episode, viewer);
             // Jellyfin can list a missing (virtual) item and the one its file brought for the same slot
-            // until its next series refresh: the one with the file is the scope's item.
+            // until its next series refresh: the one Jellyfin plays is the scope's item (a stub such as a ".disc" file is not).
             JfItemRef? first = null;
             foreach (var id in ids)
             {
                 if (_view.Resolve(id, viewer) is not { } item || item.Kind != kind || item.SeriesId != seriesItemId) continue;
-                if (!item.Virtual) return item;
+                if (item.Playable) return item;
                 first ??= item;
             }
             return first;
@@ -601,7 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return null;
 
-            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && scope.Virtual) ? null : scope.ItemId;
+            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && !scope.Playable) ? null : scope.ItemId;
         }
 
         /// <summary>
@@ -1284,6 +1317,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
                 _libraries.Revision,
+                _seerr?.DestinationsRevision ?? "-",
                 (config?.ArrRequestBackend ?? "seerr") + "#" + (config?.ArrPhase3Enabled == true ? "3" : "0") + "#" + (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
                 bucket.ToString(CultureInfo.InvariantCulture));

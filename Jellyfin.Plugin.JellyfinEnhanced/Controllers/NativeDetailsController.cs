@@ -82,15 +82,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             // A copy the caller can open wins: the scope asked for when it is there, else the title. An
-            // episode counts only with a file: a missing (virtual) episode the library lists is not a copy,
-            // as for the arrival hand-off, so it opens the native page with its Get it / Search instead.
+            // episode counts only with a file Jellyfin plays: a missing (virtual) episode or a stub the library
+            // lists is not a copy, as for the arrival hand-off, so it opens the native page with its Get it /
+            // Search instead.
             var copies = _status.CopiesOf(title, viewer).Display;
             if (copies.FirstOrDefault(x => x.Visible) is { } shown)
             {
                 if (season is int s)
                 {
                     var scopeKey = episode is int e ? title.WithEpisode(s, e) : title.WithSeason(s);
-                    if (_status.ScopeItem(viewer, scopeKey) is { } scope && !(episode != null && scope.Virtual)) return Ok(new { itemId = scope.ItemId.ToString("N", CultureInfo.InvariantCulture) });
+                    if (_status.ScopeItem(viewer, scopeKey) is { } scope && !(episode != null && !scope.Playable)) return Ok(new { itemId = scope.ItemId.ToString("N", CultureInfo.InvariantCulture) });
                 }
                 else
                 {
