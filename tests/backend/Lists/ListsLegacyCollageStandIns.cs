@@ -39,10 +39,22 @@ internal sealed class JellyfinEnhancedController(LegacyCollageScenario scenario)
             }).ToList(),
         });
 
+    // GetBootstrap: a JsonResult whose Prefetched.ActiveStreamSessions is BuildActiveSessionList's list.
+    [HttpGet("bootstrap")]
+    public ActionResult GetBootstrap()
+        => new JsonResult(new
+        {
+            Version = "1.0.0.0",
+            UserId = Guid.Empty.ToString("N"),
+            Prefetched = new { SpoilerBlurSeries = (object?)null, SeerrUserStatus = (object?)null, SeerrStatus = (object?)null, ActiveStreamSessions = Sessions() },
+        });
+
     // GetActiveSessions: BuildActiveSessionList's shape (ImageTags keyed by type name).
     [HttpGet("active-streams/sessions")]
-    public IActionResult GetActiveSessions()
-        => Ok(scenario.Names.Values.Select(id => scenario.Dto(id)).Select(dto => (object)new
+    public IActionResult GetActiveSessions() => Ok(Sessions());
+
+    private List<object> Sessions()
+        => scenario.Names.Values.Select(id => scenario.Dto(id)).Select(dto => (object)new
         {
             UserName = "viewer",
             UserHasPrimaryImage = true,
@@ -54,5 +66,5 @@ internal sealed class JellyfinEnhancedController(LegacyCollageScenario scenario)
                 ImageTags = dto.ImageTags?.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
                 SeriesPrimaryImageTag = (string?)null,
             },
-        }).ToList());
+        }).ToList();
 }

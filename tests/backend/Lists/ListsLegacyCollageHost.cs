@@ -262,7 +262,7 @@ internal sealed class LegacyCollageScenario
 }
 
 /// <summary>The scenario, run inside the host's load context.</summary>
-public static class LegacyCollageHostEntry
+public static partial class LegacyCollageHostEntry
 {
     private const string Blur = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
 
@@ -380,7 +380,12 @@ public static class LegacyCollageHostEntry
         // JE's own answers in their own shapes (activity feed rows, active streams).
         Answer("je:activity", "/JellyfinEnhanced/activity", users.Viewer);
         Answer("je:sessions", "/JellyfinEnhanced/active-streams/sessions", users.Admin);
+        // JE's start-up answer: a JsonResult carrying the active sessions' playing items.
+        Answer("je:bootstrap", "/JellyfinEnhanced/bootstrap", users.Admin);
         report["answers"] = answers;
+        report["results"] = ResultTypes(client, users.Viewer);
+        report["exact"] = ExactBodies(scenario);
+        report["corpus"] = Corpus(server, scenario);
         report["socket"] = Socket(server, scenario, users.Viewer);
         report["filesUnchanged"] = Same(before, Snapshot(root));
         report["sticky"] = sticky;
@@ -459,7 +464,7 @@ public static class LegacyCollageHostEntry
     {
         var api = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "Jellyfin.Api" && AssemblyLoadContext.GetLoadContext(a) == AssemblyLoadContext.GetLoadContext(typeof(LegacyCollageHostEntry).Assembly))
             ?? AssemblyLoadContext.GetLoadContext(typeof(LegacyCollageHostEntry).Assembly)!.LoadFromAssemblyName(new AssemblyName("Jellyfin.Api"));
-        var controllers = new[] { api.GetType("Jellyfin.Api.Controllers.ImageController", true)!, api.GetType("Jellyfin.Api.Controllers.SearchController", true)!, typeof(JeLegacyShapesController), typeof(LegacyCollageStandIns.JellyfinEnhancedController) };
+        var controllers = new[] { api.GetType("Jellyfin.Api.Controllers.ImageController", true)!, api.GetType("Jellyfin.Api.Controllers.SearchController", true)!, typeof(JeLegacyShapesController), typeof(LegacyCollageStandIns.JellyfinEnhancedController), typeof(JeLegacyResultsController) };
         var paths = Paths(root);
         var library = Library(scenario);
         BaseItem.LibraryManager = library;
@@ -486,7 +491,9 @@ public static class LegacyCollageHostEntry
         }
 
         var middleware = api.GetType("Jellyfin.Api.Middleware.WebSocketHandlerMiddleware", true)!;
+        Directory.CreateDirectory(Path.Combine(root, "wwwroot"));
         return new TestServer(new WebHostBuilder()
+            .UseWebRoot(Path.Combine(root, "wwwroot"))
             .ConfigureServices(services => Configure(services, scenario, paths, library, inert, controllers, api, sockets))
             .Configure(app =>
             {
@@ -635,7 +642,7 @@ public static class LegacyCollageHostEntry
 
     private static string Sha(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    // Every image and every JSON file under JE's folder but JE's own record of library tiles it has seen built from a
+    // Every image and every JSON file under JE's folder (answers the result-type run wrote under wwwroot aside) but JE's own record of library tiles it has seen built from a
     // collage (its only write).
     private static Dictionary<string, (string Sha, DateTime Mtime)> Snapshot(string root) => Directory.EnumerateFiles(Path.Combine(root, "metadata"), "*", SearchOption.AllDirectories)
         .Concat(Directory.EnumerateFiles(Path.Combine(root, "plugins", "configurations", "Jellyfin.Plugin.JellyfinEnhanced"), "*.json", SearchOption.AllDirectories)
@@ -723,6 +730,15 @@ public static class LegacyCollageHostEntry
                 task.GetAwaiter().GetResult();
                 sent[id.ToString("N")] = name;
             }
+        }
+
+        // A dashboard's "Send message": a general command whose arguments differ only in case.
+        if (host.Session.SessionControllers.Count > 0)
+        {
+            var id = Guid.NewGuid();
+            host.Session.SessionControllers[0].SendMessage(SessionMessageType.GeneralCommand, id, DisplayMessage(), CancellationToken.None).GetAwaiter().GetResult();
+            report["display"] = id.ToString("N");
+            sent[id.ToString("N")] = "GeneralCommand:DisplayMessage";
         }
 
         report["sent"] = sent;

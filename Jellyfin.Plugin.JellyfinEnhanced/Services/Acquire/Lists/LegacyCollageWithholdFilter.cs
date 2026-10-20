@@ -2,10 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Jellyfin.Extensions.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -18,12 +15,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 {
     /// <summary>
-    /// Delivery side of <see cref="LegacyCollageWithhold"/> on every MVC action, both Jellyfin versions: a withheld image
-    /// request is answered before the host's image action runs (so no size, validator, 304 or file is ever reached) with
-    /// the host's own no-image answer, and every answer goes through <see cref="LegacyCollageProjection"/>: the host's
-    /// item-carrying shapes in place, any other answer (JE's own included) in its JSON form, replaced only when something
-    /// in it was withheld. Image infos lose the withheld images (path included). Runs outside every other JE filter, so
-    /// its rewrite is the last one applied. Does nothing while no collage marker or tile record exists.
+    /// Delivery side of <see cref="LegacyCollageWithhold"/> on the host's image actions, both Jellyfin versions: a withheld
+    /// image request is answered before the host's image action runs (so no size, validator, 304 or file is ever reached)
+    /// with the host's own no-image answer. Image infos lose the withheld images (path included): they name their item
+    /// only by the route. Every answer body, whatever its result type, goes through <see cref="LegacyCollageBody"/>.
+    /// Does nothing while no collage marker or tile record exists.
     /// </summary>
     public sealed class LegacyCollageWithholdFilter : IAsyncActionFilter
     {
@@ -48,13 +44,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             _logger = logger;
         }
 
-        /// <summary>Registers the owner, the filter and its place in the MVC filter order, and the WebSocket projection.</summary>
+        /// <summary>Registers the owner, the image filter, the answer body boundary, and the WebSocket projection.</summary>
         /// <param name="services">The plugin's service collection (the host's own registrations are already in it).</param>
         public static void Register(IServiceCollection services)
         {
             services.AddSingleton<LegacyCollageWithhold>();
             services.AddSingleton<LegacyCollageWithholdFilter>();
-            services.Configure<MvcOptions>(o => o.Filters.AddService<LegacyCollageWithholdFilter>(Order));
+            services.AddSingleton<LegacyCollageBody>();
+            services.Configure<MvcOptions>(o =>
+            {
+                o.Filters.AddService<LegacyCollageWithholdFilter>(Order);
+                o.Filters.AddService<LegacyCollageBody>(LegacyCollageBody.Order);
+            });
             LegacyCollageSockets.Decorate(services);
         }
 
@@ -102,30 +103,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     return;
                 }
 
-                if (executed.Result is ObjectResult { Value: { } value } result)
+                if (executed.Result is ObjectResult { Value: IEnumerable<ImageInfo> infos } result
+                    && string.Equals(controller, "Image", StringComparison.Ordinal) && string.Equals(action, "GetItemImageInfos", StringComparison.Ordinal)
+                    && RouteItem(context) is { } item)
                 {
-                    if (string.Equals(controller, "Image", StringComparison.Ordinal) && string.Equals(action, "GetItemImageInfos", StringComparison.Ordinal))
-                    {
-                        if (value is IEnumerable<ImageInfo> infos && RouteItem(context) is { } item)
-                        {
-                            result.Value = infos.Where(i => !view.Withholds(item, i.ImageType)).ToList();
-                        }
-
-                        return;
-                    }
-
-                    if (LegacyCollageProjection.Rewrite(value, view, out var replacement))
-                    {
-                        if (replacement != null)
-                        {
-                            result.Value = replacement;
-                        }
-                    }
-                    else if (Projectable(value) && LegacyCollageProjection.ProjectAnswer(value, JsonOptions(context), view) is { } projected)
-                    {
-                        result.Value = projected;
-                        result.DeclaredType = typeof(JsonNode);
-                    }
+                    result.Value = infos.Where(i => !view.Withholds(item, i.ImageType)).ToList();
                 }
             }
             catch (Exception ex)
@@ -135,24 +117,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 executed.Result = new StatusCodeResult(500);
             }
         }
-
-        /// <summary>The rewrite of one answer value (tests: every host answer shape carrying item DTOs).</summary>
-        /// <param name="value">The answer's value.</param>
-        /// <returns>A replacement value when a lazy sequence had to be materialized, else null.</returns>
-        internal object? RewriteValue(object value)
-        {
-            LegacyCollageProjection.Rewrite(value, _withhold.Begin(), out var replacement);
-            return replacement;
-        }
-
-        // Answers with a JSON form that can name an item (not text, numbers or flags).
-        private static bool Projectable(object value) => value is not (string or bool or Guid or DateTime) && !value.GetType().IsPrimitive && !value.GetType().IsEnum;
-
-        // The host's JSON profiles: camelCase when the client asked for it, PascalCase otherwise (the host's default).
-        private static JsonSerializerOptions JsonOptions(ActionContext context)
-            => context.HttpContext.Request.Headers.Accept.Any(a => a != null && a.Contains("CamelCase", StringComparison.OrdinalIgnoreCase))
-                ? JsonDefaults.CamelCaseOptions
-                : JsonDefaults.PascalCaseOptions;
 
         private ActionResult? WithheldImage(ActionExecutingContext context, LegacyCollageView view)
         {

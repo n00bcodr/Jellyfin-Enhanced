@@ -15,8 +15,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// server sends (each listener's: sessions, activity, scheduled tasks; and each session controller's: playback,
     /// SyncPlay, library and user-data changes, and whatever a plugin sends a session) is serialized by the host's one
     /// <c>WebSocketConnection</c> onto the socket its <c>WebSocketManager</c> accepted. JE decorates that manager so the
-    /// socket it accepts is a projecting one: each text message is projected before it leaves, and one that can't be
-    /// checked is not sent.
+    /// socket it accepts is a projecting one: each text message is projected before it leaves (byte for byte as the host
+    /// wrote it when nothing in it is withheld), and one that reads as JSON but can't be checked is not sent.
     /// </summary>
     internal static class LegacyCollageSockets
     {
@@ -178,11 +178,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     _pending = null;
                 }
 
-                byte[]? projected;
+                byte[]? projected = null;
                 try
                 {
                     var view = _withhold.Begin();
-                    projected = view.Idle ? null : LegacyCollageProjection.ProjectMessage(buffer.Span, view);
+                    if (!view.Idle && LegacyCollageProjection.Project(buffer.Span, view, out projected) == LegacyCollageProjected.NotJson && LooksLikeJson(buffer.Span))
+                    {
+                        // Fail closed: a message that reads as JSON but couldn't be checked is not sent.
+                        Warn("a message that isn't JSON");
+                        return ValueTask.CompletedTask;
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -192,6 +197,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 return _inner.SendAsync(projected ?? buffer, WebSocketMessageType.Text, flags | WebSocketMessageFlags.EndOfMessage, cancellationToken);
+            }
+
+            // Text a client could read as JSON: an object or an array (anything else holds no item).
+            private static bool LooksLikeJson(ReadOnlySpan<byte> text)
+            {
+                var trimmed = text.TrimStart(" \t\r\n"u8);
+                if (trimmed.StartsWith(new byte[] { 0xEF, 0xBB, 0xBF }))
+                {
+                    trimmed = trimmed[3..].TrimStart(" \t\r\n"u8);
+                }
+
+                return trimmed.Length > 0 && trimmed[0] is (byte)'{' or (byte)'[';
             }
 
             private void Warn(string why)

@@ -49,7 +49,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <item>Absence is a listing: a marker folder's markers come from a listing taken now; a folder that can't be opened
     /// counts as absent only when its parent lists without it. Anything JE can't list, read or understand counts as the
     /// collage (fail closed).</item>
-    /// <item>A library tile built while a list of its kind was a collage stays withheld until the host regenerates it
+    /// <item>A library tile built while a list of its kind was (or may have been) a collage stays withheld until the host
+    /// regenerates it; one the host wrote while a list of its kind was proven to be a collage stays withheld for good
     /// (<see cref="LegacyCollageTiles"/>, kept across restarts).</item>
     /// </list>
     /// Each answer, WebSocket message or image request gets its own <see cref="LegacyCollageView"/>.
@@ -510,6 +511,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return withheld;
         }
 
+        /// <summary>True when an object naming this id may be a list with a marker (any id while the markers can't be listed).</summary>
+        /// <param name="id">Item id.</param>
+        /// <returns>Whether the library should be asked about it.</returns>
+        public bool ListCandidate(Guid id) => !Idle && id != Guid.Empty && (_listing == null || _listing.ContainsKey(id));
+
         /// <summary>True when the list with this id withholds its Primary image.</summary>
         /// <param name="listId">List id.</param>
         /// <returns>Whether it does.</returns>
@@ -595,6 +601,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             var identity = new List<string>(images.Length);
             var collage = false;
+            DateTime? since = null;
             foreach (var image in images)
             {
                 if (!image.IsLocalFile || string.IsNullOrEmpty(image.Path))
@@ -607,7 +614,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var sha = LegacyCollageWithhold.HashFile(image.Path);
                     var info = new FileInfo(image.Path);
                     identity.Add(sha + ":" + info.Length + ":" + info.LastWriteTimeUtc.Ticks);
-                    collage |= hashes.Contains(sha);
+                    if (hashes.Contains(sha))
+                    {
+                        collage = true;
+                        // The earliest the collage can have been there: its file's time or the host's record of the image.
+                        var at = info.LastWriteTimeUtc < image.DateModified ? info.LastWriteTimeUtc : image.DateModified;
+                        since = since is { } s && s < at ? s : at;
+                    }
                 }
                 catch (Exception ex) when (LegacyCollageWithhold.IsFileError(ex))
                 {
@@ -615,7 +628,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            return new Judgement(collage ? LegacyCollageVerdict.Collage : LegacyCollageVerdict.Superseded, string.Join("|", identity));
+            return new Judgement(collage ? LegacyCollageVerdict.Collage : LegacyCollageVerdict.Superseded, string.Join("|", identity)) { CollageSince = since };
         }
 
         // What the lists of that kind look like now, and the moment from which a tile of that kind can be clean.
@@ -628,11 +641,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (_listing == null)
             {
-                return _kinds[kind] = new KindState(true, null);
+                return _kinds[kind] = new KindState(true, null, null);
             }
 
             var lists = new Dictionary<string, string>(StringComparer.Ordinal);
             var withheld = false;
+            DateTime? collageSince = null;
             foreach (var id in _listing.Keys)
             {
                 var item = _owner.Library.GetItemById(id);
@@ -646,10 +660,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var judgement = Judge(item);
                     lists[id.ToString("N")] = judgement.Verdict + ":" + judgement.Identity;
                     withheld |= LegacyCollageWithhold.IsWithheld(judgement.Verdict);
+                    if (judgement.Verdict == LegacyCollageVerdict.Collage && judgement.CollageSince is { } since && (collageSince == null || since < collageSince))
+                    {
+                        collageSince = since;
+                    }
                 }
             }
 
-            return _kinds[kind] = new KindState(withheld, _owner.Tiles.Observe(kind, withheld, lists));
+            return _kinds[kind] = new KindState(withheld, collageSince, _owner.Tiles.Observe(kind, withheld, lists));
         }
 
         private bool Tile(BaseItem holder, ImageType type, BaseItemKind kind)
@@ -658,16 +676,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var images = (holder.ImageInfos ?? Array.Empty<ItemImageInfo>()).Where(i => i.Type == type).ToArray();
             if (state.WithheldNow)
             {
-                // Whatever this tile holds now may hold a collage's pixels: remembered, so a copy of it later is known.
-                foreach (var image in images)
+                if (state.CollageSince is { } since)
                 {
-                    Remember(image);
+                    // A list of this kind is proven to be a collage: a tile the host wrote while it was there may hold its
+                    // pixels, and is remembered for good, so a copy of it later is known. One written before the collage
+                    // was (it predates it) can't hold it, and only waits like any other.
+                    foreach (var image in images)
+                    {
+                        Remember(image, since - LegacyCollageTiles.FileTimeSlack);
+                    }
                 }
 
                 return true;
             }
 
-            if (state.CleanFrom is not { } cleanFrom || images.Length == 0)
+            if (_owner.Tiles.Saturated)
+            {
+                return true;
+            }
+
+            if (images.Length == 0 || (state.CleanFrom == null && !_owner.Tiles.HasHistory))
             {
                 return false;
             }
@@ -688,15 +716,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
 
                     var written = info.LastWriteTimeUtc;
-                    var sha = LegacyCollageWithhold.HashFile(image.Path);
-                    if (written <= cleanFrom + LegacyCollageTiles.RegenerationMargin)
+                    if (_owner.Tiles.Contaminated(LegacyCollageWithhold.HashFile(image.Path)))
                     {
-                        // Not regenerated since the last list of its kind stopped being (or could have been) a collage.
-                        _owner.Tiles.Record(sha);
+                        // Proven: monotone, whatever the tile's time.
                         return true;
                     }
 
-                    if (_owner.Tiles.Contaminated(sha))
+                    // Unknown or replaced history waits, without suspecting the content, until the host proves it has
+                    // regenerated the tile since: its own record of the image and the file are both newer.
+                    if (state.CleanFrom is { } cleanFrom && !(written > cleanFrom + LegacyCollageTiles.RegenerationMargin && image.DateModified > cleanFrom + LegacyCollageTiles.RegenerationMargin))
                     {
                         return true;
                     }
@@ -710,7 +738,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return false;
         }
 
-        private void Remember(ItemImageInfo image)
+        private void Remember(ItemImageInfo image, DateTime notBefore)
         {
             if (!image.IsLocalFile || string.IsNullOrEmpty(image.Path))
             {
@@ -719,6 +747,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             try
             {
+                var written = new FileInfo(image.Path).LastWriteTimeUtc;
+                if (written < notBefore && image.DateModified < notBefore)
+                {
+                    return;
+                }
+
                 _owner.Tiles.Record(LegacyCollageWithhold.HashFile(image.Path));
             }
             catch (Exception ex) when (LegacyCollageWithhold.IsFileError(ex))
@@ -729,9 +763,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private sealed record Judgement(LegacyCollageVerdict Verdict, string Identity)
         {
+            /// <summary>For a collage: the earliest moment it can have been the list's image.</summary>
+            public DateTime? CollageSince { get; init; }
+
             public static readonly Judgement None = new(LegacyCollageVerdict.NoEvidence, string.Empty);
         }
 
-        private sealed record KindState(bool WithheldNow, DateTime? CleanFrom);
+        private sealed record KindState(bool WithheldNow, DateTime? CollageSince, DateTime? CleanFrom);
     }
 }

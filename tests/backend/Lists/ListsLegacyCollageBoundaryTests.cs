@@ -109,8 +109,47 @@ public class ListsLegacyCollageBoundaryTests : IDisposable
         BackdropImageTags = new[] { "b" },
     };
 
+    // What the rule takes out of a DTO, written out by hand: the expectation the projection is held to.
+    private static BaseItemDto Without(BaseItemDto dto, bool primary = false, bool thumb = false, bool parentPrimary = false, bool parentThumb = false)
+    {
+        if (primary)
+        {
+            dto.ImageTags!.Remove(ImageType.Primary);
+            dto.ImageBlurHashes!.Remove(ImageType.Primary);
+            dto.PrimaryImageAspectRatio = null;
+        }
+
+        if (thumb)
+        {
+            dto.ImageTags!.Remove(ImageType.Thumb);
+            dto.ImageBlurHashes!.Remove(ImageType.Thumb);
+        }
+
+        if (parentPrimary)
+        {
+            dto.ImageBlurHashes!.GetValueOrDefault(ImageType.Primary)?.Remove(dto.ParentPrimaryImageTag!);
+            dto.ParentPrimaryImageItemId = null;
+            dto.ParentPrimaryImageTag = null;
+        }
+
+        if (parentThumb)
+        {
+            dto.ImageBlurHashes!.GetValueOrDefault(ImageType.Thumb)?.Remove(dto.ParentThumbImageTag!);
+            dto.ParentThumbItemId = null;
+            dto.ParentThumbImageTag = null;
+        }
+
+        return dto;
+    }
+
+    private static JsonNode? Projected(byte[] json, LegacyCollageWithhold withhold, out LegacyCollageProjected outcome)
+    {
+        outcome = LegacyCollageProjection.Project(json, withhold.Begin(), out var projected);
+        return JsonNode.Parse(projected ?? json);
+    }
+
     [Fact]
-    public void TheWireFormTakesOutExactlyWhatTheTypedFormDoesInBothJsonProfiles()
+    public void TheProjectionTakesOutExactlyTheRulesFieldsInBothOfTheHostsJsonProfiles()
     {
         var legacy = Item(new Playlist(), Bytes(1));
         Marker(legacy, Bytes(1));
@@ -120,56 +159,60 @@ public class ListsLegacyCollageBoundaryTests : IDisposable
         var view = Item(new UserView { ViewType = CollectionType.playlists }, Bytes(4), ImageType.Thumb);
         var movies = Item(new CollectionFolder { CollectionType = CollectionType.movies }, Bytes(5));
         var movie = Item(new Movie(), Bytes(6));
-        var dtos = new Func<BaseItemDto>[]
+        // (DTO, expected): the legacy list loses its Primary; the playlists library and view (built while it is a
+        // collage) lose Primary and Thumb; a movie pointing at them loses the references.
+        var cases = new (Func<BaseItemDto> Make, Func<BaseItemDto, BaseItemDto> Expect)[]
         {
-            () => Dto(legacy), () => Dto(set), () => Dto(library), () => Dto(view, library.Id, library.Id), () => Dto(movies),
-            () => Dto(movie, legacy.Id, view.Id), () => Dto(movie, set.Id, movies.Id), () => Dto(movie),
+            (() => Dto(legacy), d => Without(d, primary: true)),
+            (() => Dto(set), d => d),
+            (() => Dto(library), d => Without(d, primary: true, thumb: true)),
+            (() => Dto(view, library.Id, library.Id), d => Without(d, primary: true, thumb: true, parentPrimary: true, parentThumb: true)),
+            (() => Dto(movies), d => d),
+            (() => Dto(movie, legacy.Id, view.Id), d => Without(d, parentPrimary: true, parentThumb: true)),
+            (() => Dto(movie, set.Id, movies.Id), d => d),
+            (() => Dto(movie), d => d),
         };
         var withhold = New();
         foreach (var options in new[] { JsonDefaults.PascalCaseOptions, JsonDefaults.CamelCaseOptions })
         {
-            var changed = 0;
-            foreach (var make in dtos)
+            foreach (var (make, expect) in cases)
             {
-                var typed = make();
-                LegacyCollageProjection.Strip(typed, withhold.Begin());
-                var wire = JsonNode.Parse(JsonSerializer.Serialize(make(), options), new JsonNodeOptions { PropertyNameCaseInsensitive = true });
-                if (LegacyCollageProjection.Project(wire, withhold.Begin())) changed++;
-                Assert.True(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(typed, options)), JsonNode.Parse(wire!.ToJsonString())), typed.Name + ": " + wire.ToJsonString());
+                var json = JsonSerializer.SerializeToUtf8Bytes(make(), options);
+                var actual = Projected(json, withhold, out var outcome);
+                var expected = expect(make());
+                Assert.True(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(expected, options)), actual), expected.Name + ": " + actual!.ToJsonString());
+                Assert.Equal(JsonSerializer.Serialize(expected, options) == JsonSerializer.Serialize(make(), options) ? LegacyCollageProjected.Unchanged : LegacyCollageProjected.Changed, outcome);
             }
-
-            // The legacy list, the playlists library and view (built while it is a collage), and the movie pointing at them.
-            Assert.Equal(4, changed);
         }
 
-        // And a search hint, typed against wire.
+        // And a search hint.
         var hint = new SearchHint { Id = legacy.Id, Type = BaseItemKind.Playlist, PrimaryImageTag = "p", PrimaryImageAspectRatio = 1, ThumbImageItemId = library.Id.ToString("N"), ThumbImageTag = "t", BackdropImageTag = "b" };
-        var hintJson = JsonNode.Parse(JsonSerializer.Serialize(hint, JsonDefaults.PascalCaseOptions), new JsonNodeOptions { PropertyNameCaseInsensitive = true });
-        Assert.True(LegacyCollageProjection.Project(hintJson, withhold.Begin()));
-        var result = new SearchHintResult(new[] { hint }, 1);
-        LegacyCollageProjection.Rewrite(result, withhold.Begin(), out _);
-        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(hint, JsonDefaults.PascalCaseOptions)), hintJson));
-        Assert.Equal("b", hint.BackdropImageTag);
+        var hintJson = Projected(JsonSerializer.SerializeToUtf8Bytes(hint, JsonDefaults.PascalCaseOptions), withhold, out _)!;
+        Assert.Null(hintJson["PrimaryImageTag"]);
+        Assert.Null(hintJson["PrimaryImageAspectRatio"]);
+        Assert.Null(hintJson["ThumbImageItemId"]);
+        Assert.Null(hintJson["ThumbImageTag"]);
+        Assert.Equal("b", hintJson["BackdropImageTag"]!.GetValue<string>());
     }
 
     [Fact]
-    public void JesOwnShapesLoseTheFlagsAndTagsOfAWithheldImage()
+    public void JesOwnShapesLoseTheFlagsAndTagsOfAWithheldImageByTheirExactNames()
     {
         var legacy = Item(new Playlist(), Bytes(7));
         Marker(legacy, Bytes(7));
         var plain = Item(new Playlist(), Bytes(8));
-        var json = JsonSerializer.Serialize(new object[]
+        var json = JsonSerializer.SerializeToUtf8Bytes(new object[]
         {
             new { Id = legacy.Id.ToString("N"), Type = "Playlist", HasPrimaryImage = true, HasThumbImage = true },
-            new { id = legacy.Id.ToString("D"), type = "playlist", imageTags = new Dictionary<string, string> { ["primary"] = "x", ["Logo"] = "l" } },
+            new { id = legacy.Id.ToString("D"), type = "playlist", imageTags = new Dictionary<string, string> { ["Primary"] = "x", ["Logo"] = "l" } },
             new { Id = plain.Id.ToString("N"), Type = "Playlist", HasPrimaryImage = true, ImageTags = new Dictionary<string, string> { ["Primary"] = "y" } },
         });
-        var node = JsonNode.Parse(json, new JsonNodeOptions { PropertyNameCaseInsensitive = true })!;
-        Assert.True(LegacyCollageProjection.Project(node, New().Begin()));
+        var node = Projected(json, New(), out var outcome)!;
+        Assert.Equal(LegacyCollageProjected.Changed, outcome);
         Assert.False(node[0]!["HasPrimaryImage"]!.GetValue<bool>());
         // A list never withholds its Thumb (only its Primary was ever a collage).
         Assert.True(node[0]!["HasThumbImage"]!.GetValue<bool>());
-        Assert.False(node[1]!["imageTags"]!.AsObject().ContainsKey("primary"));
+        Assert.False(node[1]!["imageTags"]!.AsObject().ContainsKey("Primary"));
         Assert.Equal("l", node[1]!["imageTags"]!["Logo"]!.GetValue<string>());
         Assert.True(node[2]!["HasPrimaryImage"]!.GetValue<bool>());
         Assert.Equal("y", node[2]!["ImageTags"]!["Primary"]!.GetValue<string>());

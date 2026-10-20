@@ -198,7 +198,8 @@ public class ListsLegacyCollageHostTests
         switch (node)
         {
             case JsonObject o:
-                if (o["Id"] is JsonValue id && id.TryGetValue<string>(out var raw) && names.TryGetValue(raw.Replace("-", string.Empty, StringComparison.Ordinal), out var name)) yield return (name, o);
+                // The host's spelling or its camelCase profile's.
+                if ((o["Id"] ?? o["id"]) is JsonValue id && id.TryGetValue<string>(out var raw) && names.TryGetValue(raw.Replace("-", string.Empty, StringComparison.Ordinal), out var name)) yield return (name, o);
                 foreach (var child in o.Select(p => p.Value).ToList())
                     foreach (var found in Named(child, names)) yield return found;
                 break;
@@ -211,10 +212,12 @@ public class ListsLegacyCollageHostTests
 
     private static Dictionary<string, string> Names(JsonObject run) => run["names"]!.AsObject().ToDictionary(p => p.Value!.GetValue<string>(), p => p.Key);
 
+    private static JsonNode? Field(JsonObject item, string pascal) => item[pascal] ?? item[char.ToLowerInvariant(pascal[0]) + pascal[1..]];
+
     private static bool HasOwnImage(JsonObject item, string type)
-        => item["ImageTags"]?.AsObject().ContainsKey(type) == true || item["ImageBlurHashes"]?.AsObject().ContainsKey(type) == true
-            || (type == "Primary" && (item["PrimaryImageAspectRatio"] != null || item["PrimaryImageTag"] != null || item["HasPrimaryImage"]?.GetValue<bool>() == true))
-            || (type == "Thumb" && item["HasThumbImage"]?.GetValue<bool>() == true);
+        => (Field(item, "ImageTags") as JsonObject)?.ContainsKey(type) == true || (Field(item, "ImageBlurHashes") as JsonObject)?.ContainsKey(type) == true
+            || (type == "Primary" && (Field(item, "PrimaryImageAspectRatio") != null || Field(item, "PrimaryImageTag") != null || Field(item, "HasPrimaryImage")?.GetValue<bool>() == true))
+            || (type == "Thumb" && Field(item, "HasThumbImage")?.GetValue<bool>() == true);
 
     private static List<string> Leaks(IEnumerable<JsonNode?> nodes, IReadOnlyDictionary<string, string> names, out HashSet<string> servedSeen)
     {
@@ -387,5 +390,112 @@ public class ListsLegacyCollageHostTests
         Assert.Equal(200, Status("regenerated", "tile"));
         Assert.Equal(200, Status("regenerated", "tileTagged"));
         Assert.True(TileTagged("regenerated"));
+    }
+
+    // ── the answer body boundary: every result type (COLLAGE-R2-1) ───────
+
+    [Fact]
+    public void EveryResultTypeTheHostOrJeCanAnswerWithIsProjectedWhereItsBodyIsWritten()
+    {
+        var run = LegacyCollageHost.Run();
+        var results = run["results"]!.AsObject();
+        var known = LegacyResultTypes.Variants.Values.Select(v => v.Type.FullName!).ToHashSet(StringComparer.Ordinal);
+
+        // Every concrete result type of MVC and of the release's and JE's own assemblies is answered with below, or is one
+        // that nothing in the host or JE can produce. A type an update adds fails here until it is.
+        var universe = results["universe"]!.AsArray().Select(u => u!.GetValue<string>()).ToList();
+        Assert.Contains("Microsoft.AspNetCore.Mvc.JsonResult", universe);
+        Assert.Contains("Microsoft.AspNetCore.Mvc.ContentResult", universe);
+        var unhandled = universe.Where(u => !known.Contains(u) && !LegacyResultTypes.Excluded.ContainsKey(u)).ToList();
+        Assert.True(unhandled.Count == 0, "result types with no answer here: " + string.Join(", ", unhandled));
+
+        // Every action of the release's and JE's controllers returns a value (an ObjectResult), ActionResult<T>, an abstract
+        // result (any of the above), or a concrete type answered with below; none returns a type nobody checked.
+        var declared = results["declared"]!.AsArray().Select(d => d!.AsObject()).ToList();
+        Assert.Contains(declared, d => S(d, "assembly") == "Jellyfin.Api");
+        Assert.Contains(declared, d => S(d, "assembly") == "Jellyfin.Plugin.JellyfinEnhanced" && S(d, "action") == "JellyfinEnhancedController.GetBootstrap");
+        var bad = declared.Where(d => S(d, "kind") is var k && (k.StartsWith("IResult:", StringComparison.Ordinal)
+                || (k.StartsWith("concrete:", StringComparison.Ordinal) && !known.Contains(k["concrete:".Length..]))))
+            .Select(d => S(d, "action") + " " + S(d, "kind")).ToList();
+        Assert.True(bad.Count == 0, "actions returning an unchecked result type: " + string.Join(", ", bad));
+
+        var names = Names(run);
+        var exact = run["exact"]!.AsObject();
+        foreach (var row in results["runs"]!.AsArray().Select(r => r!.AsObject()))
+        {
+            var label = S(row, "variant") + "/" + S(row, "item") + " -> " + row["status"];
+            var text = S(row, "text");
+            JsonNode? body = null;
+            try { body = text.Length > 0 ? JsonNode.Parse(text) : null; } catch (System.Text.Json.JsonException) { }
+            var leaks = Leaks(new[] { body }, names, out var served);
+            Assert.True(leaks.Count == 0, label + ": " + string.Join("; ", leaks));
+            // The withheld ids leave nothing behind in a body JE couldn't parse either.
+            Assert.DoesNotContain("\"Primary\":\"", S(row, "item") == "unrelated" ? string.Empty : text, StringComparison.Ordinal);
+            if (row["contentLength"] is { } length) Assert.Equal(length.GetValue<long>(), row["length"]!.GetValue<int>());
+            if (!row["body"]!.GetValue<bool>()) continue;
+
+            // The body really carried the item (the check above isn't vacuous), and a served item keeps its image, byte
+            // for byte where the test wrote the bytes.
+            Assert.True(body != null && Named(body, names).Any(n => n.Name == S(row, "item")), label + ": " + text);
+            if (S(row, "item") == "unrelated")
+            {
+                Assert.Contains("unrelated", served);
+                if (exact[S(row, "variant") + "/unrelated"] is { } expected) Assert.Equal(expected.GetValue<string>(), text);
+            }
+        }
+    }
+
+    [Fact]
+    public void JesStartUpAnswerCarriesNoWithheldImageInItsActiveSessions()
+    {
+        var run = LegacyCollageHost.Run();
+        var answer = run["answers"]!["je:bootstrap"]!.AsObject();
+        Assert.Equal(200, answer["status"]!.GetValue<int>());
+        var body = JsonNode.Parse(S(answer, "body"))!;
+        var sessions = body["Prefetched"]!["ActiveStreamSessions"]!.AsArray();
+        var names = Names(run);
+        Assert.Equal(names.Count, sessions.Count);
+        var leaks = Leaks(new[] { body }, names, out var served);
+        Assert.True(leaks.Count == 0, string.Join("\n", leaks.Take(6)));
+        Assert.Contains("unrelated", served);
+        Assert.Contains("custom", served);
+    }
+
+    // ── the WebSocket corpus (COLLAGE-R2-4) ──────────────────────────────
+
+    [Fact]
+    public void EveryOutgoingWebSocketMessageTypeWithTheHostsOwnPayloadsLeavesByteForByteWhileMarkersExist()
+    {
+        var corpus = LegacyCollageHost.Run()["corpus"]!.AsArray().Select(r => r!.AsObject()).ToList();
+        var errors = corpus.Where(r => r["error"] != null).Select(r => S(r, "name") + ": " + S(r, "error")).ToList();
+        Assert.True(errors.Count == 0, string.Join("\n", errors));
+        // The projection really ran on each (JE has markers, one of them for a list the payloads name).
+        Assert.All(corpus, r => Assert.False(r["idle"]!.GetValue<bool>()));
+        Assert.InRange(corpus.Count, 30, 80);
+        foreach (var name in new[] { "GeneralCommandMessage", "SessionsMessage", "UserDataChangedMessage", "PlayMessage", "LibraryChangedMessage", "GeneralCommand:DisplayMessage", "SyncPlayGroupUpdate:SyncPlayGroupJoinedUpdate" })
+            Assert.Contains(corpus, r => S(r, "name") == name);
+        var changed = corpus.Where(r => !r["equal"]!.GetValue<bool>()).Select(r => S(r, "name") + " (frames sent: " + r["sent"] + ")").ToList();
+        Assert.True(changed.Count == 0, "not sent byte for byte: " + string.Join(", ", changed));
+
+        var display = S(corpus.Single(r => S(r, "name") == "GeneralCommand:DisplayMessage"), "host");
+        Assert.Contains("\"Text\":", display, StringComparison.Ordinal);
+        Assert.Contains("\"text\":", display, StringComparison.Ordinal);
+        // The payloads hold served items' images (what the projection must leave alone).
+        Assert.Contains(corpus, r => S(r, "host").Contains("\"ImageTags\":{\"Primary\":", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ADashboardMessageWhoseArgumentsDifferOnlyInCaseReachesTheSessionOverTheHostsRealWebSocket()
+    {
+        var run = LegacyCollageHost.Run();
+        var socket = run["socket"]!.AsObject();
+        var id = S(socket, "display");
+        Assert.False(string.IsNullOrEmpty(id));
+        var frame = Frames(run).SingleOrDefault(f => f?["MessageId"]?.GetValue<string>()?.Replace("-", string.Empty, StringComparison.Ordinal) == id);
+        Assert.NotNull(frame);
+        var arguments = frame!["Data"]!["Arguments"]!.AsObject();
+        Assert.Equal("lower-case twin", arguments["text"]!.GetValue<string>());
+        Assert.StartsWith("Maintenance at 22:00", arguments["Text"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal("Server notice", arguments["Header"]!.GetValue<string>());
     }
 }

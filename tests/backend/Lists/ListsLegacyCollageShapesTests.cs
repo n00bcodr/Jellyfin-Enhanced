@@ -2,6 +2,8 @@ using System.Collections;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Jellyfin.Extensions.Json;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
@@ -21,15 +23,15 @@ namespace JE.Tests;
 // Every answer shape the pinned Jellyfin release's own controllers return that can carry an item DTO or a search hint
 // (found by walking Jellyfin.Api.dll's action return types, so a shape a Jellyfin update adds fails here until the
 // rewrite handles it) is built holding a withheld list at every place a DTO can sit, lazy sequences included, and must
-// come out of the rewrite with none of that list's Primary image left; the same shapes holding a list without a
-// marker keep everything (the walk really reaches the DTOs).
+// come out of the projection, as the host writes them (its JSON settings), with none of that list's Primary image
+// left; the same shapes holding a list without a marker keep everything (the walk really reaches the DTOs).
 public class ListsLegacyCollageShapesTests : IDisposable
 {
     private const string Tag = "0123456789abcdef0123456789abcdef";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "je-legacy-shapes-" + Guid.NewGuid().ToString("N"));
     private readonly Playlist _withheld = new() { Id = Guid.NewGuid(), Name = "legacy" };
     private readonly Playlist _plain = new() { Id = Guid.NewGuid(), Name = "plain" };
-    private readonly LegacyCollageWithholdFilter _filter;
+    private readonly LegacyCollageWithhold _withhold;
 
     public ListsLegacyCollageShapesTests()
     {
@@ -43,9 +45,7 @@ public class ListsLegacyCollageShapesTests : IDisposable
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemById(_withheld.Id)).Returns(_withheld);
         library.Setup(l => l.GetItemById(_plain.Id)).Returns(_plain);
-        var paths = new Mock<IApplicationPaths>();
-        paths.SetupGet(p => p.LogDirectoryPath).Returns(_root);
-        _filter = new LegacyCollageWithholdFilter(new LegacyCollageWithhold(dirs, library.Object), library.Object, new Logger(paths.Object, NullLoggerFactory.Instance));
+        _withhold = new LegacyCollageWithhold(dirs, library.Object);
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -138,27 +138,28 @@ public class ListsLegacyCollageShapesTests : IDisposable
         yield return (T)make()!;
     }
 
-    private static void Walk(object? value, List<object> found, HashSet<object> seen)
+    // Every object in the answer's JSON that names the list (DTOs and hints alike), after the projection.
+    private List<JsonObject> Projected(Type shape, Playlist list)
     {
-        if (value == null || value is string || value.GetType().IsPrimitive || value.GetType().IsEnum || !seen.Add(value)) return;
-        if (value is BaseItemDto or SearchHint) found.Add(value);
-        if (value is IEnumerable sequence and not IDictionary)
+        var json = JsonSerializer.SerializeToUtf8Bytes(Build(shape, list), shape, JsonDefaults.PascalCaseOptions);
+        var outcome = LegacyCollageProjection.Project(json, _withhold.Begin(), out var projected);
+        Assert.NotEqual(LegacyCollageProjected.NotJson, outcome);
+        var found = new List<JsonObject>();
+        void Walk(JsonNode? node)
         {
-            foreach (var item in sequence) Walk(item, found, seen);
-            return;
+            switch (node)
+            {
+                case JsonObject o:
+                    if (o["Id"] is JsonValue id && Guid.TryParse(id.GetValue<string>(), out var g) && g == list.Id) found.Add(o);
+                    foreach (var child in o.Select(p => p.Value).ToList()) Walk(child);
+                    break;
+                case JsonArray a:
+                    foreach (var child in a) Walk(child);
+                    break;
+            }
         }
 
-        if (value.GetType().Namespace?.StartsWith("MediaBrowser", StringComparison.Ordinal) != true) return;
-        foreach (var property in value.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0 && Carries(p.PropertyType, new HashSet<string>())))
-            Walk(property.GetValue(value), found, seen);
-    }
-
-    private List<object> Rewritten(Type shape, Playlist list)
-    {
-        var value = Build(shape, list)!;
-        var answer = _filter.RewriteValue(value) ?? value;
-        var found = new List<object>();
-        Walk(answer, found, new HashSet<object>(ReferenceEqualityComparer.Instance));
+        Walk(JsonNode.Parse(projected ?? json));
         Assert.True(found.Count > 0, shape + ": the walk found no DTO");
         return found;
     }
@@ -179,20 +180,15 @@ public class ListsLegacyCollageShapesTests : IDisposable
     {
         foreach (var shape in CarrierShapes())
         {
-            foreach (var found in Rewritten(shape, _withheld))
+            foreach (var found in Projected(shape, _withheld))
             {
-                switch (found)
+                Assert.Null(found["PrimaryImageTag"]);
+                Assert.Null(found["PrimaryImageAspectRatio"]);
+                if (found["ImageTags"] is JsonObject tags)
                 {
-                    case BaseItemDto dto:
-                        Assert.False(dto.ImageTags!.ContainsKey(ImageType.Primary), shape.ToString());
-                        Assert.True(dto.ImageTags.ContainsKey(ImageType.Backdrop), shape.ToString());
-                        Assert.False(dto.ImageBlurHashes!.ContainsKey(ImageType.Primary), shape.ToString());
-                        Assert.Null(dto.PrimaryImageAspectRatio);
-                        break;
-                    case SearchHint hint:
-                        Assert.Null(hint.PrimaryImageTag);
-                        Assert.Null(hint.PrimaryImageAspectRatio);
-                        break;
+                    Assert.False(tags.ContainsKey("Primary"), shape.ToString());
+                    Assert.True(tags.ContainsKey("Backdrop"), shape.ToString());
+                    Assert.False(found["ImageBlurHashes"]!.AsObject().ContainsKey("Primary"), shape.ToString());
                 }
             }
         }
@@ -203,17 +199,17 @@ public class ListsLegacyCollageShapesTests : IDisposable
     {
         foreach (var shape in CarrierShapes())
         {
-            foreach (var found in Rewritten(shape, _plain))
+            foreach (var found in Projected(shape, _plain))
             {
-                if (found is BaseItemDto dto)
+                if (found["ImageTags"] is JsonObject tags)
                 {
-                    Assert.Equal(Tag, dto.ImageTags![ImageType.Primary]);
-                    Assert.True(dto.ImageBlurHashes!.ContainsKey(ImageType.Primary));
-                    Assert.Equal(1, dto.PrimaryImageAspectRatio);
+                    Assert.Equal(Tag, tags["Primary"]!.GetValue<string>());
+                    Assert.True(found["ImageBlurHashes"]!.AsObject().ContainsKey("Primary"));
+                    Assert.Equal(1, found["PrimaryImageAspectRatio"]!.GetValue<double>());
                 }
                 else
                 {
-                    Assert.Equal(Tag, ((SearchHint)found).PrimaryImageTag);
+                    Assert.Equal(Tag, found["PrimaryImageTag"]!.GetValue<string>());
                 }
             }
         }
