@@ -82,6 +82,109 @@ public class ListsCollageLegacyEvidenceTests
         Assert.Null(parsed.Marker);
     }
 
+    // Every way the bytes fail to decode (reader or string decoder, at any position) is Malformed: never an exception,
+    // never a marker. Generated from a fixed table of bad fragments x every place a string can sit in the marker.
+    [Fact]
+    public void EveryDecodeFailureAnywhereIsMalformedNotAnException()
+    {
+        var failures = new List<string>();
+        var cases = 0;
+        foreach (var (label, fragment) in BadFragments())
+        {
+            foreach (var (place, json) in Placements(fragment))
+            {
+                cases++;
+                ListCollageLegacyParse parsed;
+                try
+                {
+                    parsed = ListCollageLegacyEvidence.Parse(json, ListIdN);
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{label} in {place}: threw {ex.GetType().Name}");
+                    continue;
+                }
+
+                if (parsed.Status != P.Malformed || parsed.Marker != null)
+                {
+                    failures.Add($"{label} in {place}: {parsed.Status}{(parsed.Marker != null ? " with a marker" : string.Empty)}");
+                }
+            }
+        }
+
+        Assert.True(cases >= 300, "fuzz table shrank: " + cases);
+        var byOutcome = failures.GroupBy(f => f[(f.IndexOf(": ", StringComparison.Ordinal) + 2)..]).Select(g => g.Key + " x" + g.Count());
+        Assert.True(failures.Count == 0, failures.Count + " of " + cases + " decode failures were not Malformed (" + string.Join("; ", byOutcome) + "):\n" + string.Join("\n", failures.Take(60)));
+    }
+
+    // Seeded byte mutations of a complete marker (bounded): whatever the bytes become, Parse answers with a status and
+    // never throws; only Valid and PendingOnly carry a marker.
+    [Fact]
+    public void MutatedMarkerBytesAlwaysGetAStatusNeverAnException()
+    {
+        var original = Encoding.UTF8.GetBytes("{\"listId\":\"" + ListIdN + "\",\"imagePath\":\"" + ImagePath + "\",\"sha256\":\"" + Sha + "\",\"posterKeys\":[\"/p\\u00e90.jpg\",\"/p1.jpg\"],\"failedKeys\":[\"/gone.jpg\"],\"setAt\":\"2026-10-01T10:00:00Z\",\"pendingSha256\":null,\"pendingPosterKeys\":[\"/p2.jpg\"]}");
+        var random = new Random(4313);
+        var insert = new byte[][] { Encoding.ASCII.GetBytes("\\ud800"), Encoding.ASCII.GetBytes("\\udc00"), Encoding.ASCII.GetBytes("\\u"), new byte[] { 0xed, 0xa0, 0x80 }, new byte[] { 0xc0, 0x80 }, new byte[] { 0 }, new byte[] { 0xff } };
+        var thrown = new List<string>();
+        for (var i = 0; i < 3000; i++)
+        {
+            var bytes = original.ToList();
+            for (var edits = random.Next(1, 4); edits > 0; edits--)
+            {
+                var at = random.Next(bytes.Count);
+                switch (random.Next(3))
+                {
+                    case 0:
+                        bytes[at] = (byte)random.Next(256);
+                        break;
+                    case 1:
+                        bytes.InsertRange(at, insert[random.Next(insert.Length)]);
+                        break;
+                    default:
+                        bytes.RemoveAt(at);
+                        break;
+                }
+            }
+
+            try
+            {
+                var parsed = ListCollageLegacyEvidence.Parse(bytes.ToArray(), ListIdN);
+                Assert.Equal(parsed.Status is P.Valid or P.PendingOnly, parsed.Marker != null);
+            }
+            catch (Exception ex) when (ex is not Xunit.Sdk.XunitException)
+            {
+                thrown.Add(ex.GetType().Name + ": " + Convert.ToHexString(bytes.ToArray()));
+            }
+        }
+
+        Assert.True(thrown.Count == 0, thrown.Count + " mutated markers threw:\n" + string.Join("\n", thrown.Take(10)));
+    }
+
+    // Valid Unicode (escaped or raw), controls included, decodes like any other text: the marker stays Valid.
+    [Fact]
+    public void ValidUnicodeAndEscapedControlsStayValid()
+    {
+        foreach (var (label, fragment) in GoodFragments())
+        {
+            foreach (var (place, json) in Placements(fragment, includePropertyName: false))
+            {
+                var parsed = ListCollageLegacyEvidence.Parse(json, ListIdN);
+                Assert.True(parsed.Status == P.Valid && parsed.Marker != null, $"{label} in {place}: {parsed.Status}");
+            }
+        }
+
+        // An escaped spelling of a known property name is that name.
+        var escapedName = Encoding.UTF8.GetBytes("{\"\\u006cistId\":\"" + ListIdN + "\",\"imagePath\":\"" + ImagePath + "\",\"sha256\":\"" + Sha + "\"}");
+        Assert.Equal(P.Valid, ListCollageLegacyEvidence.Parse(escapedName, ListIdN).Status);
+
+        // Text decoded exactly: a raw and an escaped emoji, a control and a line separator in a poster key.
+        var keys = ListCollageLegacyEvidence.Parse(Encoding.UTF8.GetBytes("{\"listId\":\"" + ListIdN + "\",\"imagePath\":\"" + ImagePath + "\",\"sha256\":\"" + Sha + "\",\"posterKeys\":[\"/\U0001F3AC\\ud83c\\udfac\\u0001\\u2028.jpg\"]}"), ListIdN);
+        Assert.Equal("/\U0001F3AC\U0001F3AC\u0001\u2028.jpg", Assert.Single(keys.Marker!.PosterKeys));
+
+        // A control character in the image path is still an ambiguous path (not a decode failure).
+        Assert.Equal(P.InvalidPath, Parse("{\"listId\":\"" + ListIdN + "\",\"imagePath\":\"/config/a\\u0001b.jpg\",\"sha256\":\"" + Sha + "\"}").Status);
+    }
+
     [Fact]
     public void AnUnknownFieldMeansAnUnknownFormat()
     {
@@ -276,6 +379,119 @@ public class ListsCollageLegacyEvidenceTests
     private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
 
     private static ListCollageLegacyParse Parse(string json) => ListCollageLegacyEvidence.Parse(Encoding.UTF8.GetBytes(json), ListIdN);
+
+    // Bytes that can't decode inside a JSON string: escapes that make no text (unpaired or reversed surrogates), escapes
+    // JSON doesn't have, raw NUL and other raw controls, and UTF-8 that isn't (overlong, encoded surrogates, stray or
+    // truncated sequences, past U+10FFFF).
+    private static IEnumerable<(string Label, byte[] Fragment)> BadFragments()
+    {
+        static byte[] A(string s) => Encoding.ASCII.GetBytes(s);
+        foreach (var escape in new[]
+                 {
+                     "\\ud800", "\\udbff", "\\udc00", "\\udfff", "\\ud800x", "\\ud800\\u0041", "\\udc00\\ud800", "\\ud800\\ud800",
+                     "\\udfff\\udfff", "a\\ud834", "\\uDC00", "\\uD83C\\u0020\\uDFAC",
+                     "\\x41", "\\u12", "\\u12g4", "\\U0041", "\\'", "\\0", "\\a", "\\u", "\\u-123", "\\v",
+                 })
+        {
+            yield return ("escape " + escape, A(escape));
+        }
+
+        foreach (var raw in new[]
+                 {
+                     new byte[] { 0x00 }, new byte[] { 0x01 }, new byte[] { 0x1f }, new byte[] { 0x0a }, new byte[] { 0x41, 0x00, 0x42 },
+                     new byte[] { 0xc0, 0x80 }, new byte[] { 0xc1, 0xbf }, new byte[] { 0xe0, 0x80, 0x80 }, new byte[] { 0xf0, 0x80, 0x80, 0x80 },
+                     new byte[] { 0xed, 0xa0, 0x80 }, new byte[] { 0xed, 0xbf, 0xbf }, new byte[] { 0x80 }, new byte[] { 0xbf }, new byte[] { 0xff },
+                     new byte[] { 0xfe }, new byte[] { 0xf5, 0x80, 0x80, 0x80 }, new byte[] { 0xf4, 0x90, 0x80, 0x80 }, new byte[] { 0xc3 },
+                     new byte[] { 0xe2, 0x82 }, new byte[] { 0xf0, 0x9f, 0x8e },
+                 })
+        {
+            yield return ("raw " + Convert.ToHexString(raw), raw);
+        }
+    }
+
+    private static IEnumerable<(string Label, byte[] Fragment)> GoodFragments()
+    {
+        static byte[] A(string s) => Encoding.ASCII.GetBytes(s);
+        foreach (var escape in new[] { "\\u0000", "\\u0001", "\\u001f", "\\t", "\\n", "\\r", "\\b", "\\f", "\\u007f", "\\u0085", "\\u2028", "\\u202e", "\\ufeff", "\\ud83c\\udfac", "\\uDBFF\\uDFFF", "\\\"", "\\\\", "\\/" })
+        {
+            yield return ("escape " + escape, A(escape));
+        }
+
+        foreach (var text in new[] { "\u007f", "\u0085", "é", "日本", "\U0001F3AC", "\U0010FFFF", "\u2028" })
+        {
+            yield return ("raw " + Convert.ToHexString(Encoding.UTF8.GetBytes(text)), Encoding.UTF8.GetBytes(text));
+        }
+    }
+
+    // A complete Valid marker with the fragment spliced into one string: a property name, each scalar text value (in the
+    // middle of the value, so a valid fragment keeps hashes and the path as they are where those can't hold text) and an
+    // element of each array.
+    private static IEnumerable<(string Place, byte[] Json)> Placements(byte[] fragment, bool includePropertyName = true)
+    {
+        var fields = new (string Name, string Value)[]
+        {
+            ("listId", "\"" + ListIdN + "\""), ("imagePath", "\"" + ImagePath + "\""), ("sha256", "\"" + Sha + "\""),
+            ("posterKeys", "[\"/p0.jpg\",\"/p1.jpg\"]"), ("failedKeys", "[\"/gone.jpg\"]"), ("setAt", "\"2026-10-01T10:00:00Z\""),
+            ("pendingSha256", "null"), ("pendingPosterKeys", "[\"/p2.jpg\"]"),
+        };
+
+        byte[] Build(Func<int, string, string, (string Name, byte[]? NameFragment, string Value, byte[]? ValueFragment)> edit)
+        {
+            using var json = new MemoryStream();
+            void W(string s) => json.Write(Encoding.UTF8.GetBytes(s));
+
+            // The fragment goes at the first "|" of the edited text.
+            void Spliced(string text, byte[]? part)
+            {
+                var at = part == null ? -1 : text.IndexOf('|', StringComparison.Ordinal);
+                W(at < 0 ? text : text[..at]);
+                if (at >= 0)
+                {
+                    json.Write(part);
+                    W(text[(at + 1)..]);
+                }
+            }
+
+            W("{");
+            for (var i = 0; i < fields.Length; i++)
+            {
+                var (name, nameFragment, value, valueFragment) = edit(i, fields[i].Name, fields[i].Value);
+                W(i > 0 ? "," : string.Empty);
+                Spliced("\"" + name + "\"", nameFragment);
+                W(":");
+                Spliced(value, valueFragment);
+            }
+
+            W("}");
+            return json.ToArray();
+        }
+
+        if (includePropertyName)
+        {
+            yield return ("property name (known)", Build((i, n, v) => i == 0 ? ("list|Id", fragment, v, null) : (n, null, v, null)));
+            yield return ("property name (new)", Build((i, n, v) => i == 7 ? ("x|", fragment, v, null) : (n, null, v, null)));
+        }
+
+        // Text-carrying scalars (a fragment in listId/sha256 would only be a wrong list or hash if it decoded).
+        foreach (var target in includePropertyName ? new[] { "setAt", "imagePath" } : new[] { "setAt" })
+        {
+            yield return (target + " value", Build((i, n, v) => n == target ? (n, null, target == "imagePath" ? "\"/config/data/a|b.jpg\"" : "\"2026|\"", fragment) : (n, null, v, null)));
+        }
+
+        if (includePropertyName)
+        {
+            foreach (var target in new[] { "listId", "sha256", "pendingSha256" })
+            {
+                yield return (target + " value", Build((i, n, v) => n == target ? (n, null, "\"|\"", fragment) : (n, null, v, null)));
+            }
+        }
+
+        foreach (var target in new[] { "posterKeys", "failedKeys", "pendingPosterKeys" })
+        {
+            yield return (target + " element", Build((i, n, v) => n == target ? (n, null, "[\"/p0.jpg\",\"/p|.jpg\"]", fragment) : (n, null, v, null)));
+            yield return (target + " first element", Build((i, n, v) => n == target ? (n, null, "[\"|\"]", fragment) : (n, null, v, null)));
+        }
+    }
 
     private static ListCollageLegacyParse Valid() =>
         Parse("{\"listId\":\"" + ListIdN + "\",\"imagePath\":\"" + ImagePath + "\",\"sha256\":\"" + Sha + "\",\"posterKeys\":[\"/p0.jpg\"],\"failedKeys\":[],\"setAt\":\"2026-10-01T10:00:00Z\",\"pendingSha256\":null,\"pendingPosterKeys\":null}");

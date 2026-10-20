@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Unicode;
 using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
@@ -155,6 +156,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
                 return Fail(ListCollageLegacyParseStatus.TooLarge);
             }
 
+            // Bytes that aren't UTF-8 are not this format, whatever the reader would make of them.
+            if (!Utf8.IsValid(json))
+            {
+                return Fail(ListCollageLegacyParseStatus.Malformed);
+            }
+
             Dictionary<string, object?> fields;
             try
             {
@@ -164,8 +171,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
                     return Fail(status.Value);
                 }
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
             {
+                // Every way the reader or its string decoder refuses the bytes: the reader's JsonException, GetString's
+                // InvalidOperationException (an escape that makes no text, such as an unpaired surrogate) and the
+                // decoder's ArgumentException family (DecoderFallbackException).
                 return Fail(ListCollageLegacyParseStatus.Malformed);
             }
 
@@ -266,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
                     return ListCollageLegacyParseStatus.Malformed;
                 }
 
-                var name = reader.GetString()!;
+                var name = Text(ref reader);
                 if (name.Length > MaxStringLength)
                 {
                     return ListCollageLegacyParseStatus.TooLarge;
@@ -284,7 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
                         value = null;
                         break;
                     case JsonTokenType.String:
-                        var text = reader.GetString()!;
+                        var text = Text(ref reader);
                         if (text.Length > MaxStringLength)
                         {
                             return ListCollageLegacyParseStatus.TooLarge;
@@ -301,7 +311,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
                                 return ListCollageLegacyParseStatus.Malformed;
                             }
 
-                            var item = reader.GetString()!;
+                            var item = Text(ref reader);
                             if (item.Length > MaxStringLength || items.Count == MaxArrayItems)
                             {
                                 return ListCollageLegacyParseStatus.TooLarge;
@@ -330,6 +340,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Collages
             }
 
             return ListCollageLegacyParseStatus.Malformed;
+        }
+
+        // A property name or string value as text. One that decodes to an unpaired surrogate is no text at all (the
+        // reader already refuses it; this keeps that true whatever the runtime's decoder does).
+        private static string Text(ref Utf8JsonReader reader)
+        {
+            var text = reader.GetString()!;
+            for (var i = 0; i < text.Length; i++)
+            {
+                if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    i++;
+                }
+                else if (char.IsSurrogate(text[i]))
+                {
+                    throw new InvalidOperationException("Unpaired surrogate.");
+                }
+            }
+
+            return text;
         }
 
         private static bool TryString(Dictionary<string, object?> fields, string name, bool required, out string? value)
