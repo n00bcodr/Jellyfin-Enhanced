@@ -7384,9 +7384,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public double? Rating { get; set; }
         }
 
-        /// <summary>Rating must be 1–5 in 0.5 increments (2, 3.5, 5, etc.).</summary>
+        /// <summary>Rating must be 0.5–5 in 0.5 increments (0.5, 3.5, 5, etc.).</summary>
         private static bool IsValidRating(double? rating) =>
-            !rating.HasValue || (rating.Value >= 1 && rating.Value <= 5 && Math.Abs(rating.Value * 2 - Math.Round(rating.Value * 2)) < 0.0001);
+            !rating.HasValue || (rating.Value >= 0.5 && rating.Value <= 5 && Math.Abs(rating.Value * 2 - Math.Round(rating.Value * 2)) < 0.0001);
 
         private static readonly System.Text.RegularExpressions.Regex _tmdbIdRegex =
             new System.Text.RegularExpressions.Regex(@"^\d+$", System.Text.RegularExpressions.RegexOptions.Compiled);
@@ -7690,7 +7690,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
 
             if (!IsValidRating(payload.Rating))
-                return BadRequest(new { success = false, message = "Rating must be between 1 and 5, in 0.5 increments." });
+                return BadRequest(new { success = false, message = "Rating must be between 0.5 and 5, in 0.5 increments." });
 
             var currentUserId = UserHelper.GetCurrentUserId(User);
             if (!currentUserId.HasValue || currentUserId.Value == Guid.Empty) return Forbid();
@@ -7741,7 +7741,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Review content must not exceed 2000 characters." });
 
             if (!IsValidRating(payload.Rating))
-                return BadRequest(new { success = false, message = "Rating must be between 1 and 5, in 0.5 increments." });
+                return BadRequest(new { success = false, message = "Rating must be between 0.5 and 5, in 0.5 increments." });
 
             try
             {
