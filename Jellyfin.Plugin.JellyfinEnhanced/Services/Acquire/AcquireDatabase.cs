@@ -258,6 +258,10 @@ CREATE INDEX IF NOT EXISTS acquisition_stamps_user ON acquisition_stamps(user_id
 CREATE TABLE IF NOT EXISTS acquisition_seen (item_id TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS acquisition_arrivals (part_key TEXT PRIMARY KEY, first_at INTEGER NOT NULL, item_id TEXT NOT NULL);
 ",
+            // 8: phase 4f, the private Ready playlist (D47): consent and binding per server and owner, entries per interest,
+            // native-message attempts. The same constant is ensured at every start (Ready.ReadyTables.Ensure), so a database
+            // that reached 8 without these tables gets them; guarded, so the step doesn't depend on another phase-4 step.
+            Ready.ReadyTables.Sql,
         };
 
         // Seerr import batches (authority transfer, rollback by batch) and the automation outcome log.
@@ -479,6 +483,9 @@ CREATE INDEX IF NOT EXISTS automation_log_user ON automation_log(user_id);
                             source.Open();
                             // A file that isn't a database fails here, before the live one is touched.
                             UserVersion(source);
+                            // Phase 4f (D47): the copy carries a fresh restore stamp, so the start-up ensure applies the
+                            // Ready restore policy even if the server stops before the restore's listeners run.
+                            StampRestore(source);
                             using var live = Open();
                             // Every automation table is replaced: inside its version's bracket, like any other write of them.
                             Automation.Mutate(() =>
@@ -672,6 +679,8 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                         transaction.Commit();
                     }
                 }
+                // Phase 4f (D47): the Ready tables and the restore policy, on every supported start and after every restore.
+                if (UserVersion(connection) >= 8) Ready.ReadyTables.Ensure(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);
@@ -693,6 +702,18 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 .Skip(3)
                 .ToList();
             foreach (var stale in old) TryDelete(stale);
+        }
+
+        // A restored copy's stamp (its meta table exists from schema 1 on; an emptier file is left as it is).
+        private static void StampRestore(SqliteConnection source)
+        {
+            using var command = source.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'";
+            if (Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 0) return;
+            command.CommandText = "INSERT INTO meta(key,value) VALUES($k,$v) ON CONFLICT(key) DO UPDATE SET value=excluded.value";
+            command.Parameters.AddWithValue("$k", Ready.ReadyTables.RestoredKey);
+            command.Parameters.AddWithValue("$v", Guid.NewGuid().ToString("N"));
+            command.ExecuteNonQuery();
         }
 
         private static int UserVersion(SqliteConnection connection)

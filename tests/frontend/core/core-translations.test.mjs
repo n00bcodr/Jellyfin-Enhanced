@@ -164,3 +164,15 @@ test('JE.languageCode accepts language tags only', t => {
   assert.equal(code('fr'), 'fr');
   for (const junk of ['undefined', 'null', 'Undefined', 'nan', 'true', '', ' ', 'e', 'en_US', 'en-', '../en', 'en/../../x', null, undefined, 42, {}]) assert.equal(code(junk), '', String(junk));
 });
+// 4f review rounds 1 and 2 (D50): new Ready strings live in en.json only; a German viewer gets them through the per-key fallback.
+test('the Ready playlist strings added in en.json only reach a German viewer through the English fallback',async t=>{
+  const { readFileSync }=await import('node:fs');
+  const read=code=>JSON.parse(readFileSync(new URL(`../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/${code}.json`,import.meta.url),'utf8'));
+  const en=read('en');const de=read('de');
+  const added=['arr_ready_forget','arr_ready_kept','arr_ready_state_kept','arr_ready_state_lost','arr_user_readyState_lost'];
+  for(const key of added){assert.equal(typeof en[key],'string',key);assert.ok(en[key].length>0,key);}
+  const calls=[];const h=setup(t,routes({[bundled('de')]:()=>jsonResponse(de),[bundled('en')]:()=>jsonResponse(en)},calls));
+  h.window.localStorage.setItem('a-language','de');
+  const strings=plain(await h.JE.loadTranslations());
+  for(const key of added)assert.equal(strings[key],de[key]??en[key],key);
+});

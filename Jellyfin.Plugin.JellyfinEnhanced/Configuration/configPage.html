@@ -2700,6 +2700,15 @@
                                 <div class="je-setting-description" data-desc-for="arrPhase4ListCollectionUiEnabled"><div class="fieldDescription">Collection pages get a "Not in your library" section with the collection's entries that aren't in the library, by release date (dates still to be announced last). Everyone can hide this for themselves.</div></div>
                             </div>
                             <!-- /Phase 4c3a: list pages -->
+                            <!-- Phase 4f: Ready playlist and native Ready messages -->
+                            <div id="arrReadySettings" class="je-arr-ready-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ReadyPlaylistEnabled" is="emby-checkbox" type="checkbox"/><span>Ready playlist: a private "Ready to watch" playlist for each person</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ReadyPlaylistEnabled"><div class="fieldDescription">Needs phase 4 and "Ask for it" (phase 3); notifications aren't needed. Each person who turns it on in their own Jellyfin Enhanced settings gets one private playlist (only they see it) with what they asked for or follow, once it is in the library in the version they asked for (a 4K request waits for a 4K copy). A title leaves when they have watched it, after the days below, or when they can no longer open it or hid it. It works in every Jellyfin app. Turning this off (or a person turning theirs off) stops the updates and keeps each playlist as it is; people can remove theirs. A playlist a person deletes isn't made again until they turn it on again, and after a Jellyfin Enhanced backup is restored each person turns it on again first. Off for everyone until they turn it on.</div></div>
+                                <div class="inputContainer"><label class="inputLabel" for="arrReadyRetentionDays">Days a title stays in a Ready playlist (1–90)</label><input id="arrReadyRetentionDays" is="emby-input" type="number" min="1" max="90"/></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ReadyMessagesEnabled" is="emby-checkbox" type="checkbox"/><span>Ready messages on TVs and apps</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ReadyMessagesEnabled"><div class="fieldDescription">Needs phase 4 and notifications. When something a person asked for or follows is ready, a short message appears on one Jellyfin app or TV signed in as them (and nobody else), only while nothing is playing or paused there or on their other devices; never in their quiet hours, never for a hidden title, and "hide titles" keeps the title out. Busy or closed apps just miss it; the bell, phone and e-mail alerts are unchanged. Some apps can't show these messages. Off for everyone until they turn it on.</div></div>
+                            </div>
+                            <!-- /Phase 4f: Ready playlist and native Ready messages -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -6744,6 +6753,10 @@
             // Phase 4c3a: list pages
             document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked = config.ArrPhase4ListPlaylistUiEnabled === true;
             document.querySelector('#arrPhase4ListCollectionUiEnabled').checked = config.ArrPhase4ListCollectionUiEnabled === true;
+            // Phase 4f: Ready playlist and native Ready messages
+            document.querySelector('#arrPhase4ReadyPlaylistEnabled').checked = config.ArrPhase4ReadyPlaylistEnabled === true;
+            document.querySelector('#arrPhase4ReadyMessagesEnabled').checked = config.ArrPhase4ReadyMessagesEnabled === true;
+            document.querySelector('#arrReadyRetentionDays').value = num(config.ArrReadyRetentionDays, 30);
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -6823,6 +6836,11 @@
             // Phase 4c3a: list pages
             config.ArrPhase4ListPlaylistUiEnabled = document.querySelector('#arrPhase4ListPlaylistUiEnabled').checked;
             config.ArrPhase4ListCollectionUiEnabled = document.querySelector('#arrPhase4ListCollectionUiEnabled').checked;
+            // Phase 4f: Ready playlist and native Ready messages
+            config.ArrPhase4ReadyPlaylistEnabled = document.querySelector('#arrPhase4ReadyPlaylistEnabled').checked;
+            config.ArrPhase4ReadyMessagesEnabled = document.querySelector('#arrPhase4ReadyMessagesEnabled').checked;
+            var readyDays = parseInt(document.querySelector('#arrReadyRetentionDays').value, 10);
+            config.ArrReadyRetentionDays = isNaN(readyDays) ? 30 : Math.min(90, Math.max(1, readyDays));
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -10585,6 +10603,11 @@
             { parent: 'nativePosterTagsEnabled', label: 'Enable Native Poster Tags (Experimental)', children: ['arrPhase4NativeStampsEnabled'] },
             // Phase 4c3a: list pages
             { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListPlaylistUiEnabled', 'arrPhase4ListCollectionUiEnabled'] },
+            // Phase 4f: Ready playlist and native Ready messages
+            { parent: 'arrPhase4Enabled', label: 'Everywhere and gentle automation (phase 4)', children: ['arrPhase4ReadyPlaylistEnabled', 'arrPhase4ReadyMessagesEnabled'] },
+            { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ReadyPlaylistEnabled'] },
+            { parent: 'arrPhase4ReadyPlaylistEnabled', label: 'Ready playlist: a private "Ready to watch" playlist for each person', children: ['arrReadyRetentionDays'] },
+            { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrPhase4ReadyMessagesEnabled'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },

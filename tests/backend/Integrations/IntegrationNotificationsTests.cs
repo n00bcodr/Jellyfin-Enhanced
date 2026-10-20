@@ -34,7 +34,8 @@ public class IntegrationNotificationsTests
         /// <summary>Makes the item-name lookup throw (a Jellyfin library query failing mid-scan).</summary>
         public bool FailItemName { get; set; }
 
-        public IReadOnlyList<Guid> Admins() => AdminIds;
+        // A snapshot, as Jellyfin's user manager gives (NotifyUsers.Admins).
+        public IReadOnlyList<Guid> Admins() => AdminIds.ToList();
 
         public bool Exists(Guid userId) => !Gone.Contains(userId);
 
@@ -52,13 +53,28 @@ public class IntegrationNotificationsTests
         public List<SentMail> Sent { get; } = new();
         public bool Fail { get; set; }
 
+        /// <summary>Runs inside every send before it is taken (tests change things while an e-mail is on its way).</summary>
+        public Func<Task>? OnSend { get; set; }
+
         public Task SendAsync(PluginConfiguration config, string password, MailMessage message, CancellationToken cancellationToken)
+        {
+            if (OnSend is { } onSend) return HookedAsync(onSend, password, message);
+            Take(password, message);
+            return Task.CompletedTask;
+        }
+
+        private async Task HookedAsync(Func<Task> onSend, string password, MailMessage message)
+        {
+            await onSend();
+            Take(password, message);
+        }
+
+        private void Take(string password, MailMessage message)
         {
             if (Fail) throw new SmtpException("mailbox unavailable");
             var view = message.AlternateViews.Count > 0 ? message.AlternateViews[0] : null;
             var html = view != null ? new StreamReader(view.ContentStream).ReadToEnd() : string.Empty;
             lock (Sent) Sent.Add(new SentMail(message.To[0].Address, message.Subject, message.Body, html, view?.ContentType.MediaType ?? string.Empty, message.Headers["List-Unsubscribe"], password));
-            return Task.CompletedTask;
         }
     }
 
@@ -154,7 +170,7 @@ public class IntegrationNotificationsTests
             Db?.Dispose();
             Db = new AcquireDatabase(DbPath);
             NotifyStore = new NotifyStore(Db);
-            Dispatcher = new NotifyDispatcher(NotifyStore, new NtfySender(Ntfy), new EmailSender(Mail), null, () => Config, () => Arr.Now, Users, View, Status.Aliases);
+            Dispatcher = new NotifyDispatcher(NotifyStore, new NtfySender(Ntfy), new EmailSender(Mail), null, () => Config, () => Arr.Now, Users, View, Status.Aliases, requests: Requests);
             Service = new NotificationService(NotifyStore, Status, Requests, View, Feed, Store, Users, Dispatcher, null, null, () => Config, () => Arr.Now, Hub, Bridge);
         }
 

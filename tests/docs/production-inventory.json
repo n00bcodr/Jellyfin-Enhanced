@@ -91,6 +91,10 @@
       "category": "Controllers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireReadyController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireRequestsController.cs",
       "category": "Controllers"
     },
@@ -671,6 +675,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyFinal.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyModels.cs",
       "category": "Services"
     },
@@ -688,6 +696,46 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Notify/NotifyUsers.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyCopySelector.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyInterests.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyJellyfin.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyModels.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyNativeChannel.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyPlaylistHost.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyPlaylistService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyPlaylistStore.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadySessionMessages.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyTables.cs",
       "category": "Services"
     },
     {
@@ -1708,6 +1756,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/notify/notify-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/ready/ready-settings.js",
       "category": "js"
     },
     {
@@ -2805,6 +2857,35 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireMigrationController.cs",
       "following_attributes": [
         "BodyLimit"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/acquire/ready",
+      "method": "Get",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireReadyController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "PUT",
+      "path": "/JellyfinEnhanced/acquire/ready",
+      "method": "Put",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireReadyController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(1024)"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/acquire/ready/remove",
+      "method": "Remove",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireReadyController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(1024)"
       ]
     },
     {
@@ -7050,6 +7131,30 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ArrPhase4ReadyPlaylistEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrPhase4ReadyMessagesEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ArrReadyRetentionDays",
+      "type": "int",
+      "initializer": "30",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ArrPhase1Enabled",
       "type": "bool",
       "initializer": null,
@@ -10288,6 +10393,10 @@
     },
     {
       "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Ready/ReadyJellyfin.cs"
+    },
+    {
+      "literal": "hidden-content.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/DiscoverService.cs"
     },
     {
@@ -10711,10 +10820,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 625,
-    "routes": 289,
-    "configuration_properties": 624,
-    "storage_references": 90,
+    "files": 638,
+    "routes": 292,
+    "configuration_properties": 627,
+    "storage_references": 91,
     "scheduled_tasks": 15,
     "locales": 33
   }

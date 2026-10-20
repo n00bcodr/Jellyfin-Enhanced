@@ -428,17 +428,49 @@ looked at again, without waiting for a library scan or for Jellyfin to finish re
 (`acquire.db`) in Jellyfin Enhanced's data folder, included in JE backups. Failed phone or e-mail deliveries are
 retried (30 s, 2 min, 10 min, 30 min, 2 h, 6 h) and then shown to administrators under **Notification status**; an
 e-mail server that doesn't answer is given up on after 30 seconds for that try, so other alerts aren't held up.
-Switching notifications off holds what is queued until they are back on; switching phone alerts or e-mail off (or a
-person switching theirs off) drops what was queued for that channel. When four or more alerts for one person are due on
+Switching notifications off holds what is queued until they are back on, including an alert that was being prepared at
+that moment; switching phone alerts or e-mail off (or a person switching theirs off) drops what was queued for that
+channel. Every alert is decided at the moment something is done with it (sent, counted in a summary, written to the bell,
+or put back to wait), from the settings, the person and the request as they are then: an alert about a request that has
+since moved on (an OK'd request sent back to waiting, a decline or an ask that no longer stands, in Jellyfin Enhanced or in
+Seerr) is dropped, and one about a person disabled meanwhile goes nowhere. When four or more alerts for one person are due on
 one channel at once (a backlog after quiet hours or after notifications were off), they go out as one "N new
 notifications" message linking to the bell instead of one push or e-mail each (new alerts wait up to a couple of seconds
-for others that follow, so a backlog that comes in one by one is grouped too). Pointing Jellyfin Enhanced at another Seerr
+for others that follow, so a backlog that comes in one by one is grouped too). The count is decided at the moment the
+summary goes out, from your settings and Hidden Content as they are then: an alert whose title you hid or can no longer
+see is dropped and not counted, alerts that can't be checked right now wait and go later, and when fewer than four are
+left they go one by one. Pointing Jellyfin Enhanced at another Seerr
 server starts its request list afresh: the requests already on it are not announced as new, approved or declined.
 
-Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends:
-no visible episodes suppresses the delivery without retries; a partially visible batch announces only
-the remaining count and seasons, never a whole season that is no longer all visible. Deliveries saved
-before episode files were recorded continue using the parent item's visibility check.
+Every alert about a title (Ready and new episodes) respects your Hidden Content and library access on every channel: the
+TV message, phone, e-mail, the bell and its pop-ups. It is decided when the alert is made and again right before each
+send, for the whole title: hiding a movie or series on any of its copies (in any library, however many copies there are)
+hides it everywhere, and a title you hid before it arrived makes no alert at all (unhiding it later doesn't announce it).
+A title hidden after its alert was made isn't sent, and the bell keeps the entry without naming it: a generic line with
+no title, picture, scope, names or decline reason. When several alerts go out one by one, each is checked again right
+before its own send. The answer to your own request ("approved", "declined") follows the same rule from the title's
+current visibility: a title in the library is told only while you can open one of its copies (library access, parental
+limits) and haven't hidden it; a title not in the library only while the request rules let you see it, judged for the
+request as it was made and routed (its edition: a 4K request by the 4K libraries it would land in; the instance and
+folder an administrator sent it to; parental limits on its rating), and you haven't hidden it. With "hide titles" on, a
+decline's phone and e-mail text leave out the reason too. When the title's copies, the request, your Hidden Content or
+the title's rating for your parental limits can't be read or checked at that moment (a rating lookup that failed, or
+one not done yet), the answer is never dropped for it: it waits in its own queue and is looked at again every few
+minutes whatever else happens (one person's waiting answers never hold back anyone else's), and it is dropped unsent
+three days after the answer was given; a phone alert or e-mail waits the same way (up to a day), and a bell entry
+shows without its title until the rating is checked, which happens in the background right after. An OK that is
+no longer one when its held phone or e-mail would go out (the request went back to waiting, was declined, cancelled or
+removed) isn't sent, and the delivery log says which.
+
+Episode batches also recheck every stored episode file when a quiet-hours or retry hold ends, and right before each
+send: an episode you can no longer open, or one you hid with Hidden Content (the episode itself, its series or the whole
+title), is left out. No episodes left suppresses the delivery without retries; a partially visible batch announces only
+the remaining count and seasons (one left is named as that episode), never a whole season that is no longer all visible.
+The TV message, phone, e-mail and the bell all show the same narrowed batch; episodes hidden before the batch is put
+together are left out from the start, and a batch with every episode hidden makes no notification at all (no bell entry).
+If your Hidden Content can't be read at that moment, nothing is told: a new alert or batch waits until it can be read,
+phone and e-mail wait too (given up after a day), the TV message isn't shown and the bell doesn't name the title.
+Deliveries saved before episode files were recorded continue using the parent item's visibility check.
 
 ## ARR Links
 
@@ -1688,6 +1720,60 @@ own poster address, so one person's badge never shows on another's screen, and a
 (watched, upgraded, expired). An app that still holds an old address gets the current picture, cached for an hour.
 
 Each person can hide the web badges, or turn off the drawn ones, in the Jellyfin Enhanced panel (*Poster badges*).
+
+### Ready playlist and TV messages (phase 4)
+
+**Ready playlist.** With *Ready playlist* on (under phase 4 and *Ask for it*; notifications aren't needed), each person
+can turn on *Keep a private "Ready to watch" playlist* in the Jellyfin Enhanced panel (*Ready to watch*). Jellyfin
+Enhanced then keeps one playlist of theirs, private and shared with nobody, that works in every Jellyfin app:
+
+- **What goes in.** Their own requests (also those made from a list or an import, and through Seerr when Seerr handles
+  requests) and the titles they follow with *Notify me*, once they are in the library and the person can open them. It
+  holds the exact version: a 4K request waits for a 4K copy and puts in that file, a standard request takes a standard
+  copy (any copy unless *Standard requests need a non-4K copy* is on), a follow takes a standard copy, else 4K. A season
+  goes in episode by episode in order; a series or season is never put in as one item. Someone else's request, or a
+  title on a list they can see, never adds anything.
+- **What comes out.** A title leaves when the person has watched it, after 30 days (*Days a title stays in a Ready
+  playlist*), or while they can't open it any more or have hidden it with Hidden Content (hiding the movie or series, on
+  any of its copies in any library, hides every copy and every episode; hiding one episode or one copy leaves the other
+  copy in). Watched or expired titles don't
+  come back unless they ask for them again. A title that was here before they asked or followed isn't added. A better
+  copy replacing the file swaps the entry in place, with no duplicate and no new 30 days.
+- **It's theirs.** People can rename it and play it like any playlist. If they delete it, Jellyfin Enhanced doesn't make
+  it again until they turn the option on again. Turning the option off stops the updates and keeps the playlist as it
+  is; *Remove the playlist* deletes it (only that playlist). If they share it or make it public, it is no longer updated,
+  and it is never deleted: the button becomes *Stop managing it*, which keeps the playlist as it is. A playlist they made
+  themselves is never touched, even one named like the Ready playlist while it was being made: Jellyfin Enhanced writes
+  a random code (a field the person can't see or set) into the playlist inside its own create, on the very playlist
+  Jellyfin's create makes, and only ever updates or deletes the playlist carrying that code and exactly its original
+  creation time (Jellyfin keeps it to the second). Jellyfin gives a playlist made again under the same name the same id;
+  if the person deletes the Ready playlist (at any moment, even within the same second as its create, or while the option
+  is off) and makes one of their own with that name, theirs carries no code: it is left alone and the panel says the Ready
+  playlist was replaced; turning the option on again makes a new one. The one case Jellyfin can't tell apart is a
+  playlist deleted and made again while Jellyfin's own create is still saving it (Jellyfin then saves its own playlist
+  over the new one; it has no conditional save).
+- **After a restore.** When a Jellyfin Enhanced backup is restored, each person turns the option on again before the
+  playlist is updated (Jellyfin Enhanced first checks that it is still their own, private playlist, carrying its code).
+- **Nothing is written before it is proven to be theirs.** Before any change (an update, the name, a removal), the
+  playlist Jellyfin stored and the very copy Jellyfin is about to save must both carry the code and the original
+  creation time; a playlist put in its place at that moment is left exactly as it is (nothing of Jellyfin Enhanced's is
+  copied into it), and the panel says the Ready playlist was replaced.
+- **Right before each change** Jellyfin Enhanced checks again that every version it puts in is still one the person can
+  open and hasn't hidden, reading the person's Hidden Content and every copy of the title again (a copy that arrived
+  meanwhile with the title hidden on it counts); if one changed, it chooses again instead of adding it. When a title's
+  copies can't all be read, it is left out until they can. It also reads the playlist again right
+  before Jellyfin saves it: if the person shared it, made it public or renamed it in that moment, nothing is written.
+
+**TV messages.** With *Ready messages on TVs and apps* on (under phase 4 and notifications), each person can turn on
+*Show a message on my TV or app when something is ready*. When a title they asked for or follow becomes ready, one short
+message appears on one Jellyfin app signed in as them (and no one else), and only if nothing is playing or paused on any
+of their devices. It is never shown in their quiet hours or for a hidden title, *hide titles* keeps the title out of it,
+and a message that can't be shown right away is dropped, never shown later. The bell, phone and e-mail alerts are
+unchanged, so nothing is missed with the app closed. Not every app shows these messages (the web client does); Jellyfin
+only tells Jellyfin Enhanced that it passed the message on, not that the app displayed it. *Send me a test* in *Requests &
+alerts* also sends one.
+
+Administrators see each person's choices, read-only, on **Dashboard → Users** (they can't turn them on for anyone).
 
 ### Privacy and Seerr scans
 

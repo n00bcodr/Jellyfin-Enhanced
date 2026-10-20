@@ -32,13 +32,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// request like this goes to (its GB estimate), when its library is in memory. <c>Rules</c> (phase 4b, Jellyfin Enhanced
     /// handling with household rules on): what the household's fixed conditions say about this request for this person
     /// (null: they don't apply). <c>Pool</c> (group quotas on): the shared pool the person's requests draw on now.
+    /// <c>VisibilityUnknown</c> (4f round 7): <c>Visible</c> is false only because a title nobody has yet hasn't had its rating
+    /// verified for the person's parental limits (not read yet, or the lookup failed lately), while its libraries are open to
+    /// them: evidence still to prepare, not a refusal.
     /// </summary>
     public sealed record RequestPolicyFacts(Guid UserId, string Role, bool CanCreate, bool CanApprove, bool Can4k,
         bool Visible, string Revision, string Backend, string InstanceId, string ConnectionGeneration,
         int? Limit, int WindowDays, double GbLimit, string ParentalSignature,
         string? Refusal = null, string? SeerrSource = null, int? SeerrUser = null, long SeerrPermissions = 0, QuotaProjection? BackendQuota = null,
         RequestDiskFacts? Disk = null, bool SeerrWholeSeries = false, bool SeerrUnlinked = false, RequestSizeHint? Size = null,
-        HouseholdRuleVerdict? Rules = null, GroupPoolBinding? Pool = null);
+        HouseholdRuleVerdict? Rules = null, GroupPoolBinding? Pool = null, bool VisibilityUnknown = false);
     /// <summary>
     /// The drive a request would land on is below the low-disk threshold (refusal <c>low_disk</c>): which instance,
     /// the folder measured (the folder named, the title's own folder, or the default root folder), and the drive's
@@ -279,6 +282,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var (instance, instanceId, generation) = Target(input, key);
             var binding = _backend.Binding(userId, input);
             var visible = false;
+            var unknown = false;
             SeerrParentalFilter.AbsentSignature? signature = null;
             if (viewer != null)
             {
@@ -295,7 +299,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (viewer.HasParentalLimit)
                     {
                         var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
+                        var open = visible;
                         visible &= _parental.MaySeeAbsent(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), out signature);
+                        unknown = open && !visible && _parental.AbsentVerdict(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N")) == null;
                     }
                 }
             }
@@ -333,7 +339,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 Math.Max(0, settings.QuotaGb ?? defaults.QuotaGb ?? config.ArrRequestQuotaGb), JsonSerializer.Serialize(signature),
                 refusal, binding.Source, binding.UserId, binding.Permissions, binding.Quota, disk, seerrMode && binding.SeerrWholeSeries, seerrMode && binding.SeerrUnlinked,
                 size, Rules(config, role, key, input, size),
-                HouseholdFlags.Pools(config) ? GroupQuotaPolicy.For(GroupQuotaPolicy.Parse(config.ArrGroupQuotaPools), userId, role, windowDays) : null);
+                HouseholdFlags.Pools(config) ? GroupQuotaPolicy.For(GroupQuotaPolicy.Parse(config.ArrGroupQuotaPools), userId, role, windowDays) : null,
+                unknown);
         }
         /// <summary>
         /// What the household's fixed conditions say about this request for a person of <paramref name="role"/> (memory

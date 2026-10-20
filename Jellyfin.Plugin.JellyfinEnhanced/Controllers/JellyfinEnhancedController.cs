@@ -4105,6 +4105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4c3a: list pages (each person may still hide them).
                 ArrListPlaylistUiEnabled = Services.Acquire.Lists.ListFlags.PlaylistUi(config),
                 ArrListCollectionUiEnabled = Services.Acquire.Lists.ListFlags.CollectionUi(config),
+                // Phase 4f: the Ready playlist and native Ready messages in effect (parents included; each person opts in).
+                ArrReadyPlaylistEnabled = Services.Acquire.Ready.ReadyFlags.Playlist(config),
+                ArrReadyMessagesEnabled = Services.Acquire.Ready.ReadyFlags.Messages(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
