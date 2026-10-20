@@ -11,7 +11,6 @@
     const MediaStatus = JE.seerrStatus.MEDIA;
     const logPrefix = '🪼 Jellyfin Enhanced: Seerr UI:';
     const escapeHtml = JE.escapeHtml;
-    const icons = internal.icons; // requires ui-icons.js to be loaded first
     // The Collection modal opens for the newest opening only: an older, slower details read is dropped (D46S2-R6).
     const collectionOpening = JE.latestIntent();
 
@@ -23,8 +22,10 @@
      * @param {boolean} [is4k] - The 4K request.
      * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
      *   node or press it is opened from. The modal is in its scope.
+     * @param {HTMLElement|null} [origin] - Where it was opened (a window, a card): its answer publishes there and to the
+     *   cards that follow the title (D46S2-R8-2); without one, only the form says what happened.
      */
-    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, owner) {
+    ui.showMovieRequestModal = async function(tmdbId, title, searchResultItem, is4k = false, owner, origin = null) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
         const { requestMedia, fetchAdvancedRequestData, fetchUserQuota } = JE.jellyseerrAPI;
 
@@ -51,17 +52,14 @@
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
                 const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
+                // What the answer changes outside the form goes through the publication of where it was opened, for
+                // this title, media type and edition only (D46S2-R8-2): a 4K request never labels the standard Request.
+                const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'movie', is4k } });
 
                 try {
-                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: submitted.bound() });
+                    const response = await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: submitted.bound() });
                     if (!submitted.current()) return;
-                    // Manually update the original button on the card
-                    const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
-                    if (originalButton) {
-                        originalButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
-                        originalButton.classList.remove('jellyseerr-button-request');
-                        originalButton.classList.add('jellyseerr-button-pending');
-                    }
+                    publication.emit('jellyseerr-media-requested', { response });
                     closeFn();
                 } catch (error) {
                     await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'), submitted);
@@ -97,9 +95,10 @@
      * @param {number} collectionId - The TMDB collection IDisplayStatus.
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
-     * @param {{operation: Object|Node|Event}} options - The owner (required, D46S2-R6): the operation the modal is opened
-     *   for, JE.NATIVE, or the node or press it is opened from. Taken here, before the details are read, and the modal
-     *   opens in its scope only while it is current (D46S2-R5-4), and only for the newest opening (D46S2-R6).
+     * @param {{operation: Object|Node|Event, origin?: HTMLElement}} options - The owner (required, D46S2-R6): the operation
+     *   the modal is opened for, JE.NATIVE, or the node or press it is opened from. Taken here, before the details are
+     *   read, and the modal opens in its scope only while it is current (D46S2-R5-4), and only for the newest opening
+     *   (D46S2-R6). `origin`: where it was opened; each movie's answer publishes there and to the cards that follow it.
      */
     ui.showCollectionRequestModal = async function(collectionId, collectionName, searchResultItem = null, options = {}) {
         const { create, createAdvancedOptionsHTML, populateAdvancedOptions } = JE.jellyseerrModal;
@@ -235,9 +234,11 @@
                     let otherFailures = 0;
                     let quotaHitError = null;
                     for (const tmdbId of selectedMovies) {
+                        const publication = JE.publication({ owner: submitted, surface: options?.origin || null, identity: { tmdbId, mediaType: 'movie' } });
                         try {
-                            await requestMedia(tmdbId, 'movie', settings, false, searchResultItem, null, { bound });
+                            const response = await requestMedia(tmdbId, 'movie', settings, false, searchResultItem, null, { bound });
                             successCount++;
+                            publication.emit('jellyseerr-media-requested', { response });
                         } catch (error) {
                             // The modal's operation ended (it closed with it): nothing more is sent or said.
                             if (error?.name === 'AbortError') return;

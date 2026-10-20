@@ -645,7 +645,7 @@
         const mediaType = entry.kind === 'tv' ? 'tv' : 'movie';
         if (JE.titleDetails?.show) {
             if (entry.tmdbId) JE.titleDetails.show(entry.tmdbId, mediaType);
-            else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType });
+            else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType, owner: JE.NATIVE });
             return;
         }
         if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType, undefined, JE.NATIVE);

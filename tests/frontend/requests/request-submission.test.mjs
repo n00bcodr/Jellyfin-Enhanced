@@ -19,7 +19,7 @@ function setup(t, { get = async () => ({}), post = async () => ({ id: 7 }), conf
   return { ...h, api: h.JE.jellyseerrAPI, calls, invalidated, usage, events, toasts, switchUser() { epoch++; onChange(); } };
 }
 
-for (const type of ['movie', 'tv']) test(`${type} request sends explicit settings without retry and broadcasts success`, async t => {
+for (const type of ['movie', 'tv']) test(`${type} request sends explicit settings without retry; its caller publishes the success`, async t => {
   const h = setup(t);
   const result = await h.api.requestMedia('42', type, { serverId: 2, profileId: 5 }, true, null, 88);
   assert.equal(result.id, 7);
@@ -28,8 +28,8 @@ for (const type of ['movie', 'tv']) test(`${type} request sends explicit setting
   }}]]);
   assert.ok(h.invalidated.includes(`jellyseerr:/${type}/42`));
   assert.ok(h.invalidated.includes('jellyseerr:/quota'));
-  assert.equal(h.events.length, type === 'tv' ? 2 : 1);
-  assert.deepEqual(h.events[0][1], { tmdbId: '42', mediaType: type, is4k: true });
+  // One publication path (D46S2-R8-2): the transport broadcasts nothing; each caller publishes through its surface.
+  assert.deepEqual(h.events, []);
   assert.deepEqual(h.usage, ['seerr.request_submitted']);
 });
 
@@ -50,7 +50,7 @@ for (const status of [403, 404, 429, 503]) test(`request ${status} fails without
 test('watchlist failure does not turn an accepted request into a retryable failure', async t => {
   const h = setup(t); h.api.addToWatchlist = async () => { throw new Error('unavailable'); };
   assert.equal((await h.api.requestMedia(42, 'movie')).id, 7);
-  assert.equal(h.calls.length, 1); assert.equal(h.events.length, 1);
+  assert.equal(h.calls.length, 1); assert.deepEqual(h.events, []);
 });
 
 test('advanced options require both administrator setting and current user permission', async t => {
@@ -93,8 +93,11 @@ test('status banners escape upstream HTML and reset on user switch', t => {
 
 function uiSetup(t, options) {
   const h = setup(t, options);
-  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-buttons.js']) h.load(`jellyseerr/${file}`);
-  h.button = h.document.createElement('button'); h.document.body.append(h.button);
+  // ui-results: the cards follow a request's publication (D46S2-R8-2), the requesting card's own control included.
+  h.JE.core.ui = { addTouchTapListener() {} };
+  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-buttons.js', 'ui/ui-results.js']) h.load(`jellyseerr/${file}`);
+  // As a card draws it (ui-cards): the button names its title.
+  h.button = h.document.createElement('button'); h.button.dataset.tmdbId = '42'; h.button.dataset.mediaType = 'movie'; h.document.body.append(h.button);
   h.item = { id: 42, mediaType: 'movie', title: 'Film' };
   h.configure = (active = true, user = true) => h.JE.jellyseerrUI.configureRequestButton(h.button, h.item, active, user);
   return h;

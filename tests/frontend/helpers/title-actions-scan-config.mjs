@@ -1,4 +1,4 @@
-import { scanTransport, scanOwners } from './bundle-scan.mjs';
+import { scanTransport, scanOwners, scanPublications } from './bundle-scan.mjs';
 
 // The whole-bundle scans' configuration (D46 slice 2 review rounds 6 and 7), shared by
 // features-title-actions-writes-scan.test.mjs: what is out of scope and why, the pinned forwarders, roots and counts.
@@ -136,6 +136,9 @@ export const OPENERS = [
   { name: 'captureSubmitted', arg: 0, callee: /(^|\.)captureSubmitted$/, label: 'owner capture' },
   { name: 'createSessionAction', arg: 0, prop: 'owner', optional: true, forbid: ['submitted'], callee: /(^|\.)createSessionAction$/, label: 'owned session action' },
   { name: 'removeDialog', arg: 5, callee: /(^|\.)removeDialog$/, label: 'Remove dialog' },
+  // r8 (D46S2-R8-1, R8-2): a title opened by key carries its owner to its fallback window; a publication is an owner too.
+  { name: 'openKey', arg: 1, prop: 'owner', unless: { modal: false }, callee: /(^|\.)titleDetails\.openKey$/, label: 'title by key (its fallback window)' },
+  { name: 'publication', arg: 0, prop: 'owner', callee: /^JE\.publication$/, label: 'publication of a completion' },
   // Host dialogs are openers (D46S2-R7-4).
   { name: 'openHostDialog', arg: 1, callee: /(^|\.)openHostDialog$/, label: 'host dialog (Dashboard.alert/confirm)' },
   { name: 'showQuotaErrorDialog', arg: 2, callee: /(^|\.)showQuotaErrorDialog$/, label: 'quota dialog' },
@@ -163,6 +166,7 @@ export const NATIVE_ROOTS = {
     queueAction: 'the Requests hub Activity tab\'s queue Remove (its own page)',
     confirmDataDialog: 'the Requests hub Activity tab\'s Remove-with-data confirmation (its own page)',
   },
+  'arr/calendar/calendar-page-actions.js': { openAbsent: 'the Calendar page opening a title that is not in the library (its own page; no title action presses it)' },
   'arr/hub/hub-discover.js': { open: 'the Requests hub\'s Discover card opening Seerr\'s window (its own page)' },
   'arr/hub/hub-page.js': { openEntry: 'a Requests hub entry opening Seerr\'s window (its own page)', manageEntry: 'a Requests hub entry opening the Manage drawer (its own page)' },
   'arr/requests/requests-page-render.js': { renderPage: 'the Requests page\'s Report (its own page)' },
@@ -171,7 +175,6 @@ export const NATIVE_ROOTS = {
   'enhanced/spoilerguard/settings-tab.js': { save: 'the Spoiler Guard settings tab\'s own save (settings)' },
   'jellyseerr/nativedetails/native-details.js': {
     show: 'the absent page falling back to Seerr\'s window as it renders (a navigation, no press)',
-    openKey: 'a shared or typed title link opening Seerr\'s window (a navigation, no press)',
     backThenModal: 'Back from an absent page reopening Seerr\'s window (a navigation, no press)',
     onView: 'an absent page view opening Seerr\'s window (a navigation, no press)',
   },
@@ -197,8 +200,8 @@ export const HOST_DIALOG_MODULES = {
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
   'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2,
-  'arr/actions/title-actions.js': 9, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 2,
-  'arr/ask/ask-seerr.js': 10, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 3, 'arr/hub/hub-page.js': 2,
+  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 2,
+  'arr/calendar/calendar-page-actions.js': 1, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 3, 'arr/hub/hub-page.js': 3,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
   'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 8,
@@ -207,13 +210,29 @@ export const OWNER_SITES = {
   'enhanced/spoilerguard/detail-button.js': 11, 'enhanced/spoilerguard/dialog.js': 3,
   'enhanced/spoilerguard/seerr-toggle.js': 4, 'enhanced/spoilerguard/settings-tab.js': 1,
   'enhanced/spoilerguard/state.js': 10, 'jellyseerr/api.js': 1, 'jellyseerr/hss-discovery-handler.js': 1,
-  'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 9,
+  'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 11,
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
-  'jellyseerr/moreinfo/more-info-modal-actions.js': 15, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
-  'jellyseerr/nativedetails/native-details.js': 8, 'jellyseerr/seerr-detail-link.js': 1,
-  'jellyseerr/ui/ui-buttons.js': 6, 'jellyseerr/ui/ui-cards.js': 15, 'jellyseerr/ui/ui-request-modals.js': 7,
-  'jellyseerr/ui/ui-season-modal.js': 4, 'jellyseerr/ui/ui-quota.js': 4,
+  'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
+  'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
+  'jellyseerr/ui/ui-buttons.js': 8, 'jellyseerr/ui/ui-cards.js': 22, 'jellyseerr/ui/ui-request-modals.js': 9,
+  'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,
 };
+
+/**
+ * Custom events (document, window or body) whose listeners change the DOM without a publication, each with the reason:
+ * none is a write's answer (D46S2-R8-2: those are completions and go through JE.publication).
+ */
+export const EVENT_LISTENERS = {
+  'jellyseerr-more-info-opened': 'a window opening: the action bar and the status pill mount into it while it is shown (no write\'s answer)',
+  'je-hidden-content-changed': 'the viewer\'s Hidden Content rules changed (a whole-document state with its own save): pages re-filter what they show',
+  'je:user-data-loaded': 'the signed-in viewer\'s settings loaded: pages draw with them',
+  'je-bookmarks-updated': 'the bookmarks library redraws after its own edits (no title action)',
+  'je-spoiler-policy-changed': 'the viewer\'s Spoiler Guard policy changed: pages redraw what they blur (the window reopens under its owner, D46S2-R6-1)',
+  'jellyseerr-manual-refresh': 'the viewer asked the search results to refresh: a read that redraws them',
+};
+
+/** Completion events: dispatched only by the publication (core/session-action.js), acted on only through JE.published. */
+export const PUBLICATIONS = { completion: /-requested$/, publisher: 'core/session-action.js', listeners: EVENT_LISTENERS };
 
 const CONFIG = { excludedModules: EXCLUDED_MODULES, excludedSites: EXCLUDED_SITES, forwarders: FORWARDERS };
 
@@ -221,7 +240,8 @@ const CONFIG = { excludedModules: EXCLUDED_MODULES, excludedSites: EXCLUDED_SITE
 export function scan(sources) {
   const transport = scanTransport(sources, CONFIG);
   const owners = scanOwners(sources, OPENERS, { nativeRoots: NATIVE_ROOTS, ownerRoots: OWNER_ROOTS, hostDialogs: HOST_DIALOG_MODULES });
-  const failures = [...transport.failures, ...owners.failures];
+  const publications = scanPublications(sources, PUBLICATIONS);
+  const failures = [...transport.failures, ...owners.failures, ...publications.failures];
   const count = (sites, expected, what) => {
     const counts = {};
     for (const site of sites) counts[site.file] = (counts[site.file] || 0) + 1;
@@ -237,5 +257,5 @@ export function scan(sources) {
     if (!owners.sites.some(site => site.file === file && site.fn === fn)) failures.push(`${file}: the pinned ${what} root ${key} is no longer a site`);
   }
   for (const file of Object.keys(HOST_DIALOG_MODULES)) if (!(file in sources)) failures.push(`${file}: a host-dialog module that does not exist`);
-  return { transport, owners, failures };
+  return { transport, owners, publications, failures };
 }

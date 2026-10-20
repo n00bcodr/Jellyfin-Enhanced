@@ -638,14 +638,16 @@
     /**
      * Opens the card's item in Jellyfin.
      * @param {Object} state - The card's state
+     * @param {Object} owner - The press's owner (JE.ownerOf(event)): it reaches the window a title without a page
+     *   falls back to (D46S2-R8-1).
      */
-    function goToJellyfinItem(state) {
+    function goToJellyfinItem(state, owner) {
         // With native details on, Seerr's library id isn't taken on trust: the server names the copy
         // this viewer can open (or the title's native page when there is none).
         const item = state.item || {};
         const tmdbId = parseInt(item.id, 10);
         if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
-            JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+            JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType, owner });
             return;
         }
         try {
@@ -807,7 +809,7 @@
             if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
                 e.preventDefault();
                 e.stopPropagation();
-                JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+                JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType, owner: JE.ownerOf(e) });
             }
             return;
         }
@@ -816,7 +818,7 @@
         if (item.mediaType === 'collection') {
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
             return;
         }
 
@@ -885,9 +887,9 @@
         e.stopPropagation();
 
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
         } else if (item.mediaType === 'collection') {
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
         } else if (nativeDetailsOn() || (state.useMoreInfoModal && JE.jellyseerrMoreInfo)) {
             const tmdbId = parseInt(item.id);
             const mediaType = item.mediaType;
@@ -919,7 +921,7 @@
             if (state.linksAvailableToJellyfin) {
                 e.preventDefault();
                 e.stopPropagation();
-                goToJellyfinItem(state);
+                goToJellyfinItem(state, JE.ownerOf(e));
                 return;
             } else if (!state.overview) {
                 e.preventDefault();
@@ -939,7 +941,7 @@
             const followsTap = state.tapNavigatedAt > 0
                 && performance.now() - state.tapNavigatedAt < TAP_CLICK_FOLLOW_MS;
             state.tapNavigatedAt = 0;
-            if (!followsTap) goToJellyfinItem(state);
+            if (!followsTap) goToJellyfinItem(state, JE.ownerOf(e));
         } else if (state.posterOpensModal || (nativeDetailsOn() && state.item.mediaType !== 'collection')) {
             e.preventDefault();
             e.stopPropagation();
@@ -969,7 +971,7 @@
             const item = state.item;
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item, { operation: e });
+            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
             return;
         }
         if (inCard(card, target, '.jellyseerr-overview')) {
@@ -995,7 +997,7 @@
         const state = hit.state;
         e.preventDefault();
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
         } else if (e.key === 'Enter' && nativeDetailsOn() && state.item.mediaType !== 'collection' && parseInt(state.item.id, 10) > 0) {
             // Enter opens the title like a poster click; Space still shows the overview (Request).
             openAbsentTitle(parseInt(state.item.id, 10), state.item.mediaType, e);
@@ -1054,7 +1056,7 @@
         }
 
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
             // Its synthetic click still reaches onPosterClick; it must not navigate again.
             state.tapNavigatedAt = performance.now();
             return;

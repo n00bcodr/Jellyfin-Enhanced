@@ -141,7 +141,8 @@
             if (!action.current()) return false;
             // Opening navigates, so the route changes: report the opening itself, not the generation after it.
             if (actual && JE.titleDetails.openItem) { JE.titleDetails.openItem(actual); return true; }
-            return await JE.titleDetails.openKey(c.key, { current: action.current }) === true;
+            // The link's operation reaches whatever opens it, the fallback window included (D46S2-R8-1).
+            return await JE.titleDetails.openKey(c.key, { owner: action }) === true;
         } catch (_) { return false; }
     }
 

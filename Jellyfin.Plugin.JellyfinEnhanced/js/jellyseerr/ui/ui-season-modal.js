@@ -23,8 +23,10 @@
      * @param {boolean} [is4k] - The 4K request.
      * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
      *   node or press it is opened from.
+     * @param {HTMLElement|null} [origin] - Where it was opened (a window, a card): its answer publishes there and to the
+     *   cards that follow the title (D46S2-R8-2); without one, only the form says what happened.
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, owner) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, owner, origin = null) {
         if (mediaType !== 'tv') return;
         // The modal opens, and its request goes out, only while its owner is current, and only for the newest opening.
         const submitted = JE.captureSubmitted(owner);
@@ -136,6 +138,9 @@
                 // The press's owner (D46S2-R7-1): the operation the form is open for. Its requests carry it; what their
                 // answers publish (toasts, events, the card) appears only while it is current.
                 const submitted = JE.captureSubmitted(press);
+                // What the answer changes outside the form goes through the publication of where it was opened, for this
+                // series and edition only (D46S2-R8-2).
+                const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'tv', is4k } });
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -197,12 +202,8 @@
                         if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
-                    // Notify any listening modals that TV was requested
-                    document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
-                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
-
-                    // Update original card button to pending state
-                    internal.markCardRequested(tmdbId, 'tv', is4k);
+                    // Where it was opened (the window re-reads its seasons) and the cards that follow the series.
+                    publication.emit('jellyseerr-media-requested');
 
                     closeFn();
                     setTimeout(() => {

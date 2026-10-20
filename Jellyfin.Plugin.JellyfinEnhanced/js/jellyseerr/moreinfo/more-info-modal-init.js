@@ -76,7 +76,7 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
  * state clears in `finally` whatever happens to the answer, once no other Refresh of it is still reading (D46S2-R7-6).
  */
 async function refreshModalData(data, mediaType, modal, refreshBtn) {
-    const newest = modal._jeReads(JE.ownerOf(modal));
+    const newest = JE.surfaceIntent(modal, JE.ownerOf(modal));
     const shown = () => state.currentModal === modal && !modal._isClosing && newest();
     refreshBtn._jeRefreshing = (refreshBtn._jeRefreshing || 0) + 1;
     try {
@@ -137,8 +137,8 @@ function showModal(data, mediaType, scope, submitted) {
     // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
     // the Collection and request modals); once the operation ends, it takes no more input and closes.
     modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted.owner);
-    // The window's reads (Refresh, a TV request's refresh) render only for the newest one while its owner is current.
-    modal._jeReads = JE.latestIntent();
+    // The window's reads (Refresh, a TV request's refresh) and the writes answering into it render only for its newest
+    // intent while their owner is current (JE.surfaceIntent, JE.publication).
 
     // Add event listeners
     modal.addEventListener('click', (e) => {
@@ -178,7 +178,7 @@ function showModal(data, mediaType, scope, submitted) {
             if (collectionId && collectionName) {
                 // The press's owner (D46S2-R7-1), taken before its details are read: a title action's operation that
                 // pressed it, else the window's.
-                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName, null, { operation: JE.ownerOf(e) });
+                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName, null, { operation: JE.ownerOf(e), origin: modal });
             }
         });
     }
@@ -201,36 +201,40 @@ function showModal(data, mediaType, scope, submitted) {
         internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
     }
 
-    // Listen for TV season requests to update status
-    if (mediaType === 'tv') {
-        const handleTvRequest = async (e) => {
-            if (!e.detail?.tmdbId || String(e.detail.tmdbId) !== String(data.id)) return;
-            const newest = modal._jeReads(JE.ownerOf(modal));
-            const shown = () => state.currentModal === modal && !modal._isClosing && newest();
-
-            try {
-                // Refresh details to pull latest status/progress
-                const fresh = await internal.fetchMediaDetails(data.id, 'tv');
-                if (!shown()) return;
-                if (fresh?.mediaInfo) {
-                    data.mediaInfo = fresh.mediaInfo;
-                } else {
-                    // Fallback: mark requested
-                    const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
-                    mediaInfo.status = mediaInfo.status || 2;
-                }
-            } catch (_) {
-                if (!shown()) return;
+    // Completions published into this window (D46S2-R8-2): its own requests and the forms opened from it publish here,
+    // only while the window, their owner and their intent are current. A movie's answer is drawn as it is (only the
+    // edition it was for); a series re-reads its seasons' state from Seerr.
+    const handleRequested = async (e) => {
+        if (!JE.published(e, modal)) return;
+        const { is4k, response } = e.detail;
+        if (mediaType === 'movie') {
+            internal.applyRequested(data, is4k, response);
+            internal.renderActions(data, mediaType);
+            return;
+        }
+        const newest = JE.surfaceIntent(modal, JE.ownerOf(modal));
+        const shown = () => state.currentModal === modal && !modal._isClosing && newest();
+        try {
+            // Refresh details to pull latest status/progress
+            const fresh = await internal.fetchMediaDetails(data.id, 'tv');
+            if (!shown()) return;
+            if (fresh?.mediaInfo) {
+                data.mediaInfo = fresh.mediaInfo;
+            } else {
+                // Fallback: mark requested
                 const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
                 mediaInfo.status = mediaInfo.status || 2;
             }
-
-            internal.renderActions(data, mediaType);
-            internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
-        };
-        document.addEventListener('jellyseerr-tv-requested', handleTvRequest);
-        modal._cleanupTvListener = () => document.removeEventListener('jellyseerr-tv-requested', handleTvRequest);
-    }
+        } catch (_) {
+            if (!shown()) return;
+            const mediaInfo = data.mediaInfo || (data.mediaInfo = {});
+            mediaInfo.status = mediaInfo.status || 2;
+        }
+        internal.renderActions(data, mediaType);
+        internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
+    };
+    document.addEventListener('jellyseerr-media-requested', handleRequested);
+    modal._cleanupRequestListener = () => document.removeEventListener('jellyseerr-media-requested', handleRequested);
 
     // Let other surfaces add to the modal (Requests & downloads: the status pill).
     document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType, scope } }));
@@ -249,8 +253,8 @@ function closeCurrentModal() {
         state.currentModal._releaseScope?.();
 
         // Clean up TV request listener if exists
-        if (state.currentModal._cleanupTvListener) {
-            state.currentModal._cleanupTvListener();
+        if (state.currentModal._cleanupRequestListener) {
+            state.currentModal._cleanupRequestListener();
         }
         // Clean up Escape key listener if exists
         if (state.currentModal._cleanupEscapeListener) {

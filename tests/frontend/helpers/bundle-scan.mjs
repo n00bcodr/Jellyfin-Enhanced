@@ -108,6 +108,7 @@ export const HANDLER_KEYS = { onClick: 0, onclick: 0, onSave: 3, run: 1 };
 
 function frames(ast) {
   const all = [];
+  const extractions = [];
   const top = { node: ast, name: '(module)', params: [], consts: new Map(), mutated: new Set(), parent: null };
   all.push(top);
   const visits = [];
@@ -135,11 +136,25 @@ function frames(ast) {
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) inner.consts.set(node.id.name, { init: node.init, kind: parentNode?.kind });
     // Every function a name is given in this frame (block-scoped twins included), for listeners added by name.
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && FUNCTION.has(node.init?.type)) (inner.functions ||= new Map()).set(node.id.name, [...(inner.functions?.get(node.id.name) || []), node.init]);
-    // `const { requestMedia, fetchUserQuota: quota } = JE.jellyseerrAPI`: each local name stands for the member it takes.
-    if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern' && node.init) {
-      const from = pathOf(node.init);
-      for (const p of node.id.properties) if (p.type === 'ObjectProperty' && p.value.type === 'Identifier' && from) inner.consts.set(p.value.name, { destructured: from + '.' + keyName(p), kind: parentNode?.kind });
+    // Binding patterns (D46S2-R8-3), recursively: `const { core: { api: { plugin: send = x } }, ...rest } = JE`: each local
+    // name stands for the member path it takes (a default only replaces an undefined member; a rest stands for the
+    // object itself). What has no constant path (a computed key that is not a constant, an array element), or is bound
+    // by an assignment or a let/var, is an extraction the transport scan checks against the namespaces it leads from.
+    if (node.type === 'VariableDeclarator' && ['ObjectPattern', 'ArrayPattern'].includes(node.id.type)) {
+      let init = node.init;
+      while (init?.type === 'LogicalExpression') init = init.left;
+      bindPattern(node.id, init ? pathOf(init, inner) : null, inner, parentNode?.kind, extractions, parentNode?.kind !== 'const' ? 'a ' + parentNode?.kind + ' binding' : null);
     }
+    if (node.type === 'AssignmentExpression' && ['ObjectPattern', 'ArrayPattern'].includes(node.left.type)) {
+      let right = node.right;
+      while (right?.type === 'LogicalExpression') right = right.left;
+      bindPattern(node.left, pathOf(right, inner), inner, 'assign', extractions, 'a destructuring assignment');
+    }
+    // An IIFE's destructured parameter (`(function ({ core }) { … })(window.JellyfinEnhanced)`) takes from its argument.
+    if (FUNCTION.has(node.type) && inner.iife) node.params.forEach((param, i) => {
+      if (!['ObjectPattern', 'ArrayPattern'].includes(param.type) && !(param.type === 'AssignmentPattern' && ['ObjectPattern', 'ArrayPattern'].includes(param.left.type))) return;
+      bindPattern(param.type === 'AssignmentPattern' ? param.left : param, pathOf(inner.iife[i]), inner, 'param', extractions, null);
+    });
     if (node.type === 'AssignmentExpression') {
       const target = node.left.type === 'Identifier' ? node.left.name : MEMBER.has(node.left.type) ? rootName(node.left) : null;
       if (target) inner.mutated.add(target);
@@ -164,7 +179,36 @@ function frames(ast) {
       break;
     }
   }
-  return { all, visits, parents };
+  return { all, visits, parents, extractions };
+}
+
+/**
+ * Binds every name of a binding pattern taken from `from` (a path, or null when unknown): {destructured: path} where the
+ * path is constant; an extraction {node, frame, from, why} where it is not (or where `why` already says it can't be).
+ */
+function bindPattern(pattern, from, frame, kind, extractions, why) {
+  if (!pattern) return;
+  if (pattern.type === 'AssignmentPattern') { bindPattern(pattern.left, from, frame, kind, extractions, why); return; }
+  if (pattern.type === 'Identifier') {
+    BINDINGS.add(pattern);
+    frame.consts.set(pattern.name, from && !why ? { destructured: from, kind: kind === 'param' ? 'const' : kind } : { kind: kind === 'param' ? 'let' : kind, extracted: true });
+    if (from && why) extractions.push({ node: pattern, frame, from, why });
+    return;
+  }
+  if (pattern.type === 'RestElement') { bindPattern(pattern.argument, from, frame, kind, extractions, why); return; }
+  if (pattern.type === 'ObjectPattern') {
+    for (const p of pattern.properties) {
+      if (p.type === 'RestElement') { bindPattern(p.argument, from, frame, kind, extractions, why); continue; }
+      const key = p.computed ? constString(p.key, frame) : keyName(p);
+      if (key == null && from) extractions.push({ node: p, frame, from, why: why || 'a computed key that is not a constant' });
+      bindPattern(p.value, from && key != null ? from + '.' + key : null, frame, kind, extractions, key == null ? why || 'a computed key that is not a constant' : why);
+    }
+    return;
+  }
+  if (pattern.type === 'ArrayPattern') {
+    if (from) extractions.push({ node: pattern, frame, from, why: why || 'an array element' });
+    for (const element of pattern.elements) bindPattern(element, null, frame, kind, extractions, why);
+  }
 }
 
 /** The nearest handler frame enclosing `frame` (itself included), or null. */
@@ -230,6 +274,9 @@ function resolvePath(path, frame, depth = 0) {
 
 // The transport values a module may hold only as a const alias (anything else lets a call escape the scan).
 const TRANSPORT_VALUES = new Set(['JE.core.api', 'JE.core', 'ApiClient', 'fetch', 'navigator.sendBeacon']);
+// The namespaces that lead to a transport root (D46S2-R8-3): held only as an IIFE's parameter or a const alias (or
+// destructured by one); anything else (an argument, a let, a property, a return) hands the transport out unseen.
+const NAMESPACE_VALUES = new Set(['JE']);
 const TRANSPORT_METHOD = /^(JE\.core\.api\.(plugin|pluginResponse|fetch|ajax|jf)|ApiClient\.[A-Za-z]+|fetch|navigator\.sendBeacon)$/;
 
 /**
@@ -246,6 +293,8 @@ function escapes(node, parents) {
   if (parent?.type === 'LogicalExpression' && parent.left === child && initialiser(parents.get(parent))) return false;
   if (MEMBER.has(parent?.type) && parent.object === child) return false;
   if (CALL.has(parent?.type) && parent.callee === child) return false;
+  // `(function (JE) { … })(window.JellyfinEnhanced)`: the IIFE's parameter is resolved to it.
+  if (CALL.has(parent?.type) && FUNCTION.has(parent.callee?.type) && parent.arguments.includes(child)) return false;
   if (parent?.type === 'UnaryExpression' && ['typeof', '!'].includes(parent.operator)) return false;
   if (parent?.type === 'BinaryExpression' && ['==', '!=', '===', '!=='].includes(parent.operator)) return false;
   while (parent?.type === 'LogicalExpression') {
@@ -254,14 +303,59 @@ function escapes(node, parents) {
   }
   if ((parent?.type === 'IfStatement' || parent?.type === 'ConditionalExpression' || parent?.type === 'WhileStatement') && parent.test === child) return false;
   if (parent?.type === 'UnaryExpression' && parent.operator === '!') return false;
-  if (parent?.type === 'VariableDeclarator' && parent.init === child && parents.get(parent)?.kind === 'const' &&
-      (parent.id.type === 'Identifier' || (parent.id.type === 'ObjectPattern' && parent.id.properties.every(p => p.type === 'ObjectProperty' && !p.computed && p.value.type === 'Identifier')))) return false;
+  // A const alias, or a const binding pattern (its names are resolved, or fail as extractions, D46S2-R8-3).
+  if (parent?.type === 'VariableDeclarator' && parent.init === child && parents.get(parent)?.kind === 'const') return false;
   return true;
 }
 
+const NAMESPACE_NAMES = new Set(['JE', 'JellyfinEnhanced']);
+/**
+ * True when the JE namespace (`node`, already not a member's object, a callee, a test or a const alias) escapes the
+ * scan (D46S2-R8-3). It stays seen where the scan resolves it: an assignment defining it or publishing it under its own
+ * name (window.JE = JE), an IIFE's
+ * argument (`(function (JE) { … })(window.JellyfinEnhanced || (window.JellyfinEnhanced = {}))`), a declaration of a
+ * binding named JE, an argument whose parameter is named JE (a same-file function's, or a callback's that a same-file
+ * function is called with), and a return whose every same-file call binds a name JE. Anything else hands it out unseen.
+ */
+function namespaceEscapes(node, parents, visits) {
+  let child = node; let parent = parents.get(node);
+  while (parent?.type === 'LogicalExpression') { child = parent; parent = parents.get(parent); }
+  // Defining it, or publishing it under its own name (window.JE = JE): the scan resolves both names.
+  if (parent?.type === 'AssignmentExpression' && (parent.left === child || NAMESPACE_NAMES.has(normal(pathOf(parent.left))))) return false;
+  if (CALL.has(parent?.type) && FUNCTION.has(parent.callee?.type) && parent.arguments.includes(child)) return false;
+  if (parent?.type === 'VariableDeclarator' && parent.init === child && NAMESPACE_NAMES.has(parent.id?.name)) return false;
+  const functions = name => visits.filter(([n]) => (n.type === 'FunctionDeclaration' && n.id?.name === name) ||
+    (n.type === 'VariableDeclarator' && n.id?.name === name && FUNCTION.has(n.init?.type))).map(([n]) => n.type === 'VariableDeclarator' ? n.init : n);
+  const paramNamed = (fn, index) => fn?.params?.[index]?.type === 'Identifier' && NAMESPACE_NAMES.has(fn.params[index].name);
+  if (CALL.has(parent?.type) && parent.callee?.type === 'Identifier' && parent.arguments.includes(child)) {
+    const index = parent.arguments.indexOf(child);
+    const own = functions(parent.callee.name);
+    if (own.length && own.every(fn => paramNamed(fn, index))) return false;
+    // A callback parameter: every same-file call of its function passes a function whose parameter is named JE.
+    for (const [n] of visits) {
+      if (!FUNCTION.has(n.type) || !n.params.some(q => q.type === 'Identifier' && q.name === parent.callee.name) || !(n.start <= parent.start && parent.end <= n.end)) continue;
+      const at = n.params.findIndex(q => q.type === 'Identifier' && q.name === parent.callee.name);
+      const name = n.id?.name || (parents.get(n)?.type === 'VariableDeclarator' ? parents.get(n).id.name : null);
+      const calls = name ? visits.filter(([c]) => CALL.has(c.type) && c.callee?.type === 'Identifier' && c.callee.name === name).map(([c]) => c.arguments[at]) : [];
+      if (calls.length && calls.every(fn => FUNCTION.has(fn?.type) && paramNamed(fn, index))) return false;
+    }
+  }
+  if (parent?.type === 'ReturnStatement') {
+    let fn = parents.get(parent);
+    while (fn && !FUNCTION.has(fn.type)) fn = parents.get(fn);
+    const name = fn?.id?.name;
+    const calls = name ? visits.filter(([c]) => CALL.has(c.type) && c.callee?.type === 'Identifier' && c.callee.name === name) : [];
+    if (calls.length && calls.every(([c]) => parents.get(c)?.type === 'VariableDeclarator' && NAMESPACE_NAMES.has(parents.get(c).id?.name))) return false;
+  }
+  return true;
+}
+
+// Identifiers a binding pattern declares (not references).
+const BINDINGS = new WeakSet();
 /** True when an identifier node is a reference (not a declaration, a parameter, a property key or a non-computed member). */
 function reference(node, parent) {
   if (!parent) return true;
+  if (BINDINGS.has(node)) return false;
   if (MEMBER.has(parent.type) && parent.property === node && !parent.computed) return false;
   if ((parent.type === 'ObjectProperty' || parent.type === 'ObjectMethod') && parent.key === node && !parent.computed) return false;
   if (parent.type === 'VariableDeclarator' && parent.id === node) return false;
@@ -413,6 +507,11 @@ export function scanTransport(sources, config) {
     const writes = [...o.methods].filter(m => WRITE.has(m));
     return record({ ...base, kind: writes.length ? 'write' : 'unmodelled', detail: writes.length ? writes.join('|') + ' without bound' : 'method ' + [...o.methods].join('|') });
   }
+  // Extractions (D46S2-R8-3): a binding pattern without a constant path, from anything leading to a transport root.
+  for (const [file, { extractions }] of modules) for (const { node, frame, from, why } of extractions) {
+    const source = resolvePath(from, frame);
+    if (reaches(source) || TRANSPORT_VALUES.has(source)) record({ file, line: node.loc.start.line, fn: named(frame).name, entry: source, kind: 'unmodelled', detail: `an unresolvable extraction from a namespace leading to a transport root (${why})` });
+  }
   // Pass 1: the entry points.
   for (const [file, { visits, parents }] of modules) {
     for (const [node, frame, parent] of visits) {
@@ -431,6 +530,12 @@ export function scanTransport(sources, config) {
       // A transport value (the api, the client, fetch) held anywhere but in a const alias escapes the scan.
       if ((MEMBER.has(node.type) || (node.type === 'Identifier' && reference(node, parent))) && TRANSPORT_VALUES.has(resolvePath(pathOf(node, frame), frame)) && escapes(node, parents)) {
         unmodelled('a transport value that escapes (not a const alias, member, call or test)');
+        continue;
+      }
+      if ((MEMBER.has(node.type) || (node.type === 'Identifier' && reference(node, parent))) && !(MEMBER.has(parent?.type) && parent.object === node) &&
+          NAMESPACE_VALUES.has(resolvePath(pathOf(node, frame), frame)) && escapes(node, parents) && namespaceEscapes(node, parents, visits) &&
+          !config.namespaceSites?.[file]?.[named(frame).name]) {
+        unmodelled('a namespace leading to a transport root that escapes (not an IIFE parameter, a const alias, member or test)');
         continue;
       }
       // XMLHttpRequest and sendBeacon: any reference at all is a site (nothing can bind them).
@@ -545,8 +650,15 @@ function aliasPath(path, frame, depth = 0) {
  * its `.operation`/`.owner`, a const of either, or JE.ownerOf/JE.requireOwner of one), else null.
  */
 const OWNER_OF = /^JE\.(ownerOf|requireOwner|captureSubmitted)$/;
+/** The `owner` a JE.publication({ owner, … }) call is taken for (a publication stands for its owner, D46S2-R8-2), else null. */
+function publicationOwner(value) {
+  if (!CALL.has(value?.type) || normal(pathOf(value.callee)) !== 'JE.publication' || value.arguments[0]?.type !== 'ObjectExpression') return null;
+  const p = value.arguments[0].properties.find(q => q.type === 'ObjectProperty' && keyName(q) === 'owner');
+  return p ? (p.shorthand ? { type: 'Identifier', name: 'owner', start: p.start, end: p.end } : p.value) : null;
+}
 function ownerParam(value, frame, depth = 0) {
   if (!value || depth > 6) return null;
+  if (publicationOwner(value)) return ownerParam(publicationOwner(value), frame, depth + 1);
   // JE.ownerOf(x), JE.requireOwner(x) and a capture JE.captureSubmitted(x) (or its owner) stand for x's owner.
   if (CALL.has(value.type) && OWNER_OF.test(normal(pathOf(value.callee)) || '')) return ownerParam(value.arguments[0], frame, depth + 1);
   if (value.type === 'Identifier') {
@@ -567,6 +679,7 @@ function ownerParam(value, frame, depth = 0) {
 function nativeValue(value, frame, depth = 0) {
   if (!value || depth > 4) return false;
   if (normal(pathOf(value)) === 'JE.NATIVE') return true;
+  if (publicationOwner(value)) return nativeValue(publicationOwner(value), frame, depth + 1);
   if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' && nativeValue(b.init, b.frame, depth + 1); }
   return false;
 }
@@ -576,6 +689,7 @@ function ownerOfCall(value, frame, depth = 0) {
   if (!value || depth > 4) return null;
   if (CALL.has(value.type) && /^JE\.(ownerOf|requireOwner)$/.test(normal(pathOf(value.callee)) || '')) return value;
   if (CALL.has(value.type) && normal(pathOf(value.callee)) === 'JE.captureSubmitted') return ownerOfCall(value.arguments[0], frame, depth + 1);
+  if (publicationOwner(value)) return ownerOfCall(publicationOwner(value), frame, depth + 1);
   if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' ? ownerOfCall(b.init, b.frame, depth + 1) : null; }
   if (MEMBER.has(value.type) && value.property?.name === 'owner' && value.object?.type === 'Identifier') { const b = lookup(frame, value.object.name); return b?.kind === 'const' ? ownerOfCall(b.init, b.frame, depth + 1) : null; }
   return null;
@@ -583,6 +697,111 @@ function ownerOfCall(value, frame, depth = 0) {
 
 /** A pinned root's reason: `roots[file][fn]` or `roots[file]['fn: value text']`. */
 const pinned = (roots, file, fn, text) => roots?.[file]?.[`${fn}: ${text}`] || roots?.[file]?.[fn] || null;
+
+/** Calls that capture an owner into a const (an operation, a capture, a publication, a session action for an owner). */
+const CAPTURES = /(^|\.)(generation|captureSubmitted|ownerOf|requireOwner|publication)$/;
+/** Members of a parameter that only an owner has (an operation's current(), a capture's owner/operation/bound). */
+const OWNER_MEMBERS = new Set(['current', 'owner', 'operation', 'bound']);
+
+/**
+ * D46S2-R8-1 (owners flow through every hand-over): a pinned JE.NATIVE is a genuine root only where no caller-owned
+ * operation exists. It fails when the function it is in holds an owner, an enclosing function holds one that the inner
+ * functions reference (a captured owner), or a function that reaches it through calls does: bare calls in its file and
+ * calls of the path it is exported under (`JE.titleDetails = Object.freeze({ show, … })`, `api.open = function …`,
+ * `internal.x = x`), followed through named callers; a callback (an anonymous function the host calls) is where the
+ * chain starts. Holding an owner: a parameter used as one (its current/owner/operation/bound, or passed where an owner
+ * goes), or a const captured from one (generation(), JE.captureSubmitted/ownerOf/requireOwner/publication,
+ * createSessionAction({ owner })).
+ */
+function nativeReach(modules, natives) {
+  const failures = [];
+  if (!natives.length) return failures;
+  const holding = new Map(); // frame → Map(name → why)
+  const hold = (frame, name, why) => {
+    if (!frame || frame.name === '(module)') return;
+    if (!holding.has(frame)) holding.set(frame, new Map());
+    if (!holding.get(frame).has(name)) holding.get(frame).set(name, why);
+  };
+  const exportsOf = new Map(); // normal path → 'file::name'
+  const calls = []; // {file, frame, bare, dotted}
+  const references = new Map(); // file → [[identifier node, frame]]
+  for (const [file, { visits, parents }] of modules) {
+    const refs = [];
+    references.set(file, refs);
+    for (const [node, frame, parent] of visits) {
+      if (node.type === 'Identifier' && reference(node, parent)) refs.push([node, frame]);
+      if (MEMBER.has(node.type) && !node.computed && OWNER_MEMBERS.has(node.property?.name) && node.object?.type === 'Identifier') {
+        const b = lookup(frame, node.object.name);
+        if (b?.param) hold(b.frame, node.object.name, `its parameter ${node.object.name}.${node.property.name}`);
+      }
+      if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && CALL.has(node.init?.type)) {
+        const callee = normal(pathOf(node.init.callee)) || '';
+        const options = node.init.arguments[0];
+        if (CAPTURES.test(callee) || (/(^|\.)createSessionAction$/.test(callee) && options?.type === 'ObjectExpression' && options.properties.some(q => keyName(q) === 'owner')))
+          hold(frame, node.id.name, `${node.id.name} = ${callee}(…)`);
+      }
+      if (CALL.has(node.type) && node.type !== 'NewExpression') {
+        // An owner handed on from a parameter (JE.ownerOf(e), { owner: options.owner }, a publication's owner).
+        const ownerCall = OWNER_OF.test(normal(pathOf(node.callee)) || '') || !!publicationOwner(node);
+        for (const a of node.arguments) {
+          const from = ownerCall ? ownerParam(a, frame) : a?.type === 'ObjectExpression'
+            ? a.properties.filter(q => q.type === 'ObjectProperty' && ['owner', 'operation'].includes(keyName(q))).map(q => ownerParam(q.value, frame)).find(Boolean) : null;
+          if (from) hold(from.frame, from.frame.params[from.index], `its parameter ${from.frame.params[from.index]} (an owner)`);
+        }
+        const callee = node.callee;
+        calls.push({ file, frame, bare: callee.type === 'Identifier' ? callee.name : null, dotted: MEMBER.has(callee.type) ? normal(aliasPath(pathOf(callee), frame)) : null });
+      }
+      // Exported names: `X.name = function …`, `X.name = name`, `X = Object.freeze({ name, … })`, `Object.assign(X, { name, … })`.
+      if (node.type === 'AssignmentExpression' && MEMBER.has(node.left.type)) {
+        const target = normal(aliasPath(pathOf(node.left), frame));
+        if (target && FUNCTION.has(node.right.type)) exportsOf.set(target, `${file}::${node.right.id?.name || node.left.property?.name}`);
+        if (target && node.right.type === 'Identifier') exportsOf.set(target, `${file}::${node.right.name}`);
+      }
+      const objectOf = n => n?.type === 'ObjectExpression' ? n : CALL.has(n?.type) && normal(pathOf(n.callee)) === 'Object.freeze' ? n.arguments[0] : null;
+      const exported = (target, object) => { if (target) for (const q of object?.properties || []) if (q.type === 'ObjectProperty' && q.value?.type === 'Identifier') exportsOf.set(`${target}.${keyName(q)}`, `${file}::${q.value.name}`); };
+      if (node.type === 'AssignmentExpression' && MEMBER.has(node.left.type)) exported(normal(aliasPath(pathOf(node.left), frame)), objectOf(node.right));
+      if (CALL.has(node.type) && normal(pathOf(node.callee)) === 'Object.assign') exported(normal(aliasPath(pathOf(node.arguments[0]), frame)), objectOf(node.arguments[1]));
+    }
+  }
+  /** The frame on `frame`'s chain that holds an owner it can use: itself, or an enclosing one whose owner the inner code references. */
+  const held = (file, frame) => {
+    if (holding.has(frame)) return [frame, [...holding.get(frame).values()][0]];
+    for (let g = frame.parent; g; g = g.parent) {
+      if (!holding.has(g)) continue;
+      const names = holding.get(g);
+      const used = references.get(file).find(([n, f]) => n.start >= frame.node.start && n.end <= frame.node.end && names.has(n.name) && lookup(f, n.name)?.frame === g);
+      if (used) return [g, `${names.get(used[0].name)}, captured`];
+    }
+    return null;
+  };
+  for (const { file, line, name, frame } of natives) {
+    const where = held(file, frame);
+    if (where) { failures.push(`${file}:${line} ${name}(JE.NATIVE) is in reach of ${where[0].name || 'a function'}, which holds an owner (${where[1]})`); continue; }
+    const seen = new Set();
+    let frontier = [[file, named(frame).name]];
+    let found = null;
+    for (let depth = 0; depth < 6 && frontier.length && !found; depth++) {
+      const next = [];
+      for (const [f, fn] of frontier) {
+        const key = `${f}::${fn}`;
+        if (!fn || fn === '(module)' || seen.has(key)) continue;
+        seen.add(key);
+        const paths = new Set([...exportsOf].filter(([, v]) => v === key).map(([k]) => k));
+        for (const call of calls) {
+          if (!((call.bare === fn && call.file === f) || (call.dotted && paths.has(call.dotted)))) continue;
+          const caller = held(call.file, call.frame);
+          if (caller) { found = `${call.file} ${caller[0].name || 'a function'}, which holds an owner (${caller[1]})`; break; }
+          // A callback the host calls (anonymous, not an IIFE) starts the chain; a named function is followed to its callers.
+          if (call.frame.name && !call.frame.iife) next.push([call.file, call.frame.name]);
+        }
+        if (found) break;
+      }
+      frontier = next;
+    }
+    if (found) failures.push(`${file}:${line} ${name}(JE.NATIVE) in ${named(frame).name} is reached from ${found}`);
+  }
+  return failures;
+}
 
 /**
  * The owner scan. `openers`: [{name, arg, prop?, callee: RegExp, file?, forbid?: string[], optional?: boolean}]: a call
@@ -597,6 +816,7 @@ export function scanOwners(sources, openers, config = {}) {
   // modules whose host dialogs the bar cannot reach.
   const sites = []; const failures = [];
   const takers = new Map();
+  const natives = [];
   const add = spec => { const list = takers.get(spec.name) || []; if (!list.some(x => x.file === spec.file && x.arg === spec.arg && String(x.callee) === String(spec.callee))) { list.push(spec); takers.set(spec.name, list); return true; } return false; };
   openers.forEach(add);
   const modules = Object.entries(sources).map(([file, text]) => [file, frames(parsed(text))]);
@@ -625,6 +845,9 @@ export function scanOwners(sources, openers, config = {}) {
           sites.push({ ...site, owner: 'inferred' }); fail(`${file}:${line} ${name}({ ${spec.forbid.join(', ')} }) infers its owner`); continue;
         }
         if (spec.optional && (!arg || (arg.type === 'ObjectExpression' && !arg.properties.some(q => keyName(q) === spec.prop)))) continue;
+        // `unless`: literal options under which the call opens nothing (openKey's { modal: false }).
+        if (spec.unless && arg?.type === 'ObjectExpression' && Object.entries(spec.unless).every(([k, v]) =>
+          arg.properties.some(q => q.type === 'ObjectProperty' && keyName(q) === k && q.value?.type === 'BooleanLiteral' && q.value.value === v))) continue;
         let value = arg;
         const derive = (from, how) => {
           const owner = from.frame.name;
@@ -670,6 +893,7 @@ export function scanOwners(sources, openers, config = {}) {
         if (nativeValue(value, frame)) {
           sites.push({ ...site, owner: 'JE.NATIVE' });
           if (!pinned(config.nativeRoots, file, fn, text)) fail(`${file}:${line} ${name}(JE.NATIVE) outside a pinned native root (${fn})`);
+          else natives.push({ file, line, name, frame });
           continue;
         }
         const from = ownerParam(value, frame);
@@ -700,6 +924,7 @@ export function scanOwners(sources, openers, config = {}) {
     }
     if (!grew) break;
   }
+  failures.push(...nativeReach(modules, natives));
   // Host dialogs are openers (D46S2-R7-4): only JE.openHostDialog(() => …, owner) opens one.
   for (const [file, { visits }] of modules) {
     if (config.hostDialogs?.[file]) continue;
@@ -721,4 +946,136 @@ export function scanOwners(sources, openers, config = {}) {
 /** The source text of a node (one line). */
 function sourceText(text, node) {
   return node?.start != null ? text.slice(node.start, node.end).replace(/\s+/g, ' ').slice(0, 80) : '?';
+}
+
+// D46S2-R8-2 (one publication path): what a completion changes in the UI goes through the publication of the surface it
+// started in (JE.publication), whose events carry it; a listener acts only where JE.published(event, node) holds.
+const MUTATING_PROPS = new Set(['innerHTML', 'outerHTML', 'textContent', 'innerText', 'disabled', 'className', 'hidden', 'value', 'checked', 'title', 'src', 'href']);
+const MUTATING_CALLS = new Set(['appendChild', 'append', 'prepend', 'insertBefore', 'insertAdjacentHTML', 'insertAdjacentElement', 'insertAdjacentText',
+  'replaceWith', 'replaceChildren', 'removeChild', 'remove', 'setAttribute', 'removeAttribute', 'toggleAttribute', 'before', 'after']);
+const GLOBAL_TARGETS = new Set(['document', 'window', 'document.body', 'document.documentElement']);
+// Calls that only read the DOM (a completion listener may make them before its JE.published test).
+const DOM_QUERIES = new Set(['querySelector', 'querySelectorAll', 'closest', 'matches', 'contains', 'getAttribute', 'hasAttribute', 'getBoundingClientRect']);
+
+/** True when a node changes the DOM directly (a mutating property, style/dataset, classList, a mutating method). */
+function domMutation(node) {
+  if (node.type === 'AssignmentExpression' && MEMBER.has(node.left.type)) {
+    if (MUTATING_PROPS.has(node.left.property?.name)) return true;
+    if (MEMBER.has(node.left.object?.type) && ['style', 'dataset'].includes(node.left.object.property?.name)) return true;
+  }
+  if (CALL.has(node.type) && MEMBER.has(node.callee?.type)) {
+    const method = node.callee.property?.name;
+    if (MEMBER.has(node.callee.object?.type) && node.callee.object.property?.name === 'classList') return true;
+    if (MUTATING_CALLS.has(method)) return true;
+  }
+  return false;
+}
+
+/**
+ * The publication scan. `config`: {completion: RegExp (completion event types), publisher: the one module that may
+ * dispatch them, listeners: {type: reason} (custom events whose listeners may change the DOM without a publication)}.
+ * Fails: a completion event dispatched anywhere but the publisher (or an event of a type that is not a constant); a
+ * listener of a completion event that changes the DOM (itself or through same-file functions it calls) without first
+ * testing JE.published(event, node); a listener of any other custom event (document, window or body; a type with '-' or
+ * ':') that changes the DOM, unless its type is listed with a reason. Returns {sites, failures}.
+ */
+export function scanPublications(sources, config) {
+  const sites = []; const failures = [];
+  for (const [file, text] of Object.entries(sources)) {
+    const { visits, parents } = frames(parsed(text));
+    const line = n => n.loc.start.line;
+    // Functions by name in this module (declarations and const/let function values), for listeners added by name and calls.
+    const named = new Map();
+    for (const [node] of visits) {
+      if (node.type === 'FunctionDeclaration' && node.id) named.set(node.id.name, [...(named.get(node.id.name) || []), node]);
+      if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && FUNCTION.has(node.init?.type)) named.set(node.id.name, [...(named.get(node.id.name) || []), node.init]);
+    }
+    const inside = (n, fn) => n.start >= fn.start && n.end <= fn.end;
+    /** The first DOM change a function makes (source position), directly or through same-file functions it calls. */
+    const firstChange = (fn, seen = new Set()) => {
+      if (seen.has(fn)) return null;
+      seen.add(fn);
+      let first = null;
+      for (const [node] of visits) {
+        if (!inside(node, fn)) continue;
+        let at = null;
+        if (domMutation(node)) at = node.start;
+        else if (CALL.has(node.type) && node.callee?.type === 'Identifier' && named.has(node.callee.name) && named.get(node.callee.name).some(f => firstChange(f, seen) != null)) at = node.start;
+        if (at != null && (first == null || at < first)) first = at;
+      }
+      return first;
+    };
+    /**
+     * The first effect of a completion listener (source position): a DOM change, or any call but a DOM query, the
+     * JE.published test itself and a type check (what another module's function does is not seen, so it counts).
+     */
+    const firstEffect = fn => {
+      let first = firstChange(fn);
+      for (const [node] of visits) {
+        if (!inside(node, fn) || !CALL.has(node.type) || node === fn) continue;
+        const callee = normal(pathOf(node.callee)) || '';
+        if (callee === 'JE.published' || DOM_QUERIES.has(node.callee?.property?.name) || /^(String|Number|Array\.isArray|Boolean)$/.test(callee)) continue;
+        if (first == null || node.start < first) first = node.start;
+      }
+      return first;
+    };
+    /** The first JE.published(…) a function tests (in an if, a condition or a logical expression), else null. */
+    const firstGuard = fn => {
+      let first = null;
+      for (const [node] of visits) {
+        if (!inside(node, fn) || !CALL.has(node.type) || normal(pathOf(node.callee)) !== 'JE.published') continue;
+        let tested = false;
+        for (let p = parents.get(node), c = node; p && !tested; c = p, p = parents.get(p)) {
+          if ((p.type === 'IfStatement' || p.type === 'ConditionalExpression') && p.test === c) tested = true;
+          else if (p.type === 'LogicalExpression' || (p.type === 'UnaryExpression' && p.operator === '!')) continue;
+          else break;
+        }
+        if (tested && (first == null || node.start < first)) first = node.start;
+      }
+      return first;
+    };
+    // Listener functions of completion events (their effects follow a JE.published test).
+    const completionListeners = [];
+    for (const [node, frame] of visits) {
+      // Dispatching a completion event: only the publication does.
+      if (node.type === 'NewExpression' && ['CustomEvent', 'Event'].includes(normal(pathOf(node.callee)))) {
+        const type = constString(node.arguments[0], frame);
+        if (type == null && file !== config.publisher) { failures.push(`${file}:${line(node)} an event of a type that is not a constant (it could be a completion)`); continue; }
+        if (type != null && config.completion.test(type) && file !== config.publisher) failures.push(`${file}:${line(node)} dispatches the completion event ${type} outside the publication (JE.publication)`);
+        continue;
+      }
+      if (!CALL.has(node.type) || !MEMBER.has(node.callee?.type) || node.callee.property?.name !== 'addEventListener') continue;
+      const type = constString(node.arguments[0], frame);
+      const target = normal(aliasPath(pathOf(node.callee.object), frame));
+      const completion = type != null && config.completion.test(type);
+      const custom = type != null && /[-:]/.test(type);
+      if (!completion && !(custom && GLOBAL_TARGETS.has(target))) continue;
+      const handler = node.arguments[1];
+      const fns = FUNCTION.has(handler?.type) ? [handler] : handler?.type === 'Identifier' ? named.get(handler.name) || [] : [];
+      if (!fns.length) { failures.push(`${file}:${line(node)} a ${type} listener the scan cannot read`); continue; }
+      for (const fn of fns) {
+        const change = completion ? firstEffect(fn) : firstChange(fn);
+        const site = { file, line: line(node), type, changes: change != null };
+        sites.push(site);
+        if (completion) completionListeners.push(fn);
+        if (change == null) continue;
+        if (completion) {
+          const guard = firstGuard(fn);
+          if (guard == null || guard > change) failures.push(`${file}:${line(node)} a ${type} listener acts before its publication is tested (no JE.published test first)`);
+          else site.guarded = true;
+        } else if (!config.listeners?.[type]) failures.push(`${file}:${line(node)} a ${type} listener changes the DOM: a completion goes through JE.publication; any other custom event is listed with its reason`);
+      }
+    }
+    // Controls selected by title id across the document (the r7 cards' sync, the advanced form's "original button"):
+    // only inside a completion listener, where each one is tested with JE.published.
+    for (const [node] of visits) {
+      if (!CALL.has(node.type) || !['querySelector', 'querySelectorAll'].includes(node.callee?.property?.name)) continue;
+      if (!GLOBAL_TARGETS.has(normal(pathOf(node.callee.object)))) continue;
+      const selector = node.arguments[0];
+      const text = selector?.type === 'StringLiteral' ? selector.value : selector?.type === 'TemplateLiteral' ? selector.quasis.map(q => q.value.cooked).join('') : '';
+      if (!/data-tmdb-id/.test(text) || completionListeners.some(fn => inside(node, fn))) continue;
+      failures.push(`${file}:${line(node)} selects controls by title id across the document outside a completion's listener (one publication path)`);
+    }
+  }
+  return { sites, failures };
 }

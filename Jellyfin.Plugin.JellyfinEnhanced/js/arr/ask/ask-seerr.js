@@ -67,6 +67,9 @@
         const variant = options?.variant === '4k' ? '4k' : 'standard';
         // The owner (required, D46S2-R6): the operation the Seerr control was pressed for, else where it was pressed.
         const operation = options?.owner;
+        // The opener shows the outcome through the publication of where it was pressed, taken before the sheet opens
+        // (D46S2-R8-2): only while it is still there, its owner current and no newer intent of it has started.
+        const publication = opener ? JE.publication({ owner: operation, surface: opener, identity: { tmdbId: title.tmdbId, mediaType: title.kind === 'movie' ? 'movie' : 'tv', is4k: variant === '4k' } }) : null;
         let result = null;
         try {
             result = title.kind === 'movie' && variant === 'standard'
@@ -77,7 +80,7 @@
             JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
-        if (result && (result.ok || result.state === 'unknown') && opener?.isConnected && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
+        if (result && (result.ok || result.state === 'unknown') && publication?.current() && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
             if (title.kind !== 'movie') {
                 // A season or an episode asked for leaves the rest to ask for: the button stays and reopens the sheet.
                 opener.textContent = JE.arrAsk.tr('arr_discover_request_more');
@@ -85,7 +88,7 @@
             } else if (variant === 'standard') {
                 // (A 4K ask leaves the standard button as it is; the sheet said what happened.)
                 const said = JE.arrAsk.describe(result, await JE.arrAsk.me(), null);
-                if (said.chip) {
+                if (said.chip && publication.current()) {
                     opener.disabled = true;
                     opener.textContent = said.chip;
                     opener.classList.add('je-ask-seerr-asked');

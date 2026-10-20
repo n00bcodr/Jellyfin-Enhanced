@@ -9,6 +9,8 @@
     // first in this group.
     const internal = JE.internals.moreInfoModal;
     const DisplayStatus = JE.seerrStatus.DISPLAY;
+    // The window a control is in: the forms it opens publish their answer there (D46S2-R8-2).
+    const windowOf = node => node?.closest?.('.je-more-info-modal') || null;
 
 /**
  * Render request/4K actions and download progress inside the modal. Every handler takes its owner from its press
@@ -46,13 +48,14 @@ function buildTvActions(data, show4kOption = false) {
         arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
         arrowButton.title = JE.t('jellyseerr_btn_request_4k') || 'Request in 4K';
         arrowButton.dataset.tmdbId = data.id;
+        arrowButton.dataset.mediaType = 'tv';
         arrowButton.dataset.toggle4k = 'true';
 
         mainButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(mainButton));
             }
         });
 
@@ -108,7 +111,7 @@ function buildTvActions(data, show4kOption = false) {
                     const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner, windowOf(arrowButton));
                     }
                 });
             }
@@ -142,7 +145,7 @@ function buildTvActions(data, show4kOption = false) {
 
         // TV always shows season selection modal
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(requestButton));
         }
     });
 
@@ -159,7 +162,7 @@ function buildSingleTv4kButton(data) {
         e.preventDefault();
         e.stopPropagation();
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, JE.ownerOf(e));
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, JE.ownerOf(e), windowOf(button));
         }
     });
     return button;
@@ -185,7 +188,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(mainButton));
             }
         });
 
@@ -237,7 +240,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
                     const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner, windowOf(arrowButton));
                     }
                 });
             }
@@ -271,7 +274,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 
         // Show season selection modal for partially available shows
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(requestButton));
         }
     });
 

@@ -183,6 +183,8 @@
     const isMovie = event.type === "Movie";
     const scoped = !isMovie && !preferSeries && Number.isInteger(event.seasonNumber) && Number.isInteger(event.episodeNumber);
     return JE.titleDetails.openKey(key, {
+      // The Calendar page is a page of its own: no title action presses it.
+      owner: JE.NATIVE,
       mediaType: isMovie ? "movie" : "tv",
       tmdbId: Number(event.tmdbId) > 0 ? Number(event.tmdbId) : undefined,
       season: scoped ? event.seasonNumber : undefined,

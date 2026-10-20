@@ -226,6 +226,7 @@ test('R7-4: the quota dialog is open when its operation ends → it closes', asy
   await press(h, 'request'); await delivered();
   moreInfo(h).querySelector('.jellyseerr-request-button').click(); await delivered();
   assert.equal(h.alerts.length, 1, 'the dialog opened');
+  await delivered(); // the host adds its container a moment after the call
   assert.ok(h.document.querySelector('.dialogContainer'));
   remount(h); h.a.scan(); await delivered();
   assert.equal(h.document.querySelector('.dialogContainer'), null, 'the dialog closed with its operation');

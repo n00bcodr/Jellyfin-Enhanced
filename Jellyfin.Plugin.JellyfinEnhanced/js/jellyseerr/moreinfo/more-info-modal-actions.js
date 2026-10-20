@@ -13,41 +13,44 @@
     const escapeHtml = JE.escapeHtml;
     const DisplayStatus = JE.seerrStatus.DISPLAY;
 
+/** The window a control is in (the surface its writes publish into). */
+const windowOf = node => node?.closest?.('.je-more-info-modal') || null;
+
 /**
  * Sends the window's movie request (standard or 4K) for `owner`, the press's (JE.ownerOf(event), D46S2-R7-1): a title
- * action pressing a control for its operation, else the window's own. What the answer publishes (the window's chips and
- * re-render, the quota dialog, an error) appears only while the window it was pressed in is shown, `owner` is current and
- * this is the window's newest intent (R7-3); `ui.idle` (the control's busy state) runs in `finally` unless the answer
- * replaced or labelled the control (R7-6).
+ * action pressing a control for its operation, else the window's own. Everything its answer changes goes through the
+ * publication of `origin` (the window it was pressed in, D46S2-R8-2) taken before the await: the window's chips and
+ * re-render and the cards that follow the title (the completion event), the quota dialog (the publication is its owner,
+ * R8-6) and an error label, only while that window is shown, `owner` is current and this is the window's newest intent;
+ * `ui.idle` (the control's busy state) runs in `finally` unless the answer labelled the control (R7-6).
  * @param {Object} data Seerr details.
  * @param {boolean} is4k The 4K request.
  * @param {Object} owner The press's owner.
+ * @param {HTMLElement|null} origin The window it was pressed in.
  * @param {{busy?: Function, idle?: Function, failed?: (message: string) => void, done?: Function}} [ui] The control's states.
  * @returns {Promise<void>}
  */
-async function sendMovieRequest(data, is4k, owner, ui = {}) {
+async function sendMovieRequest(data, is4k, owner, origin, ui = {}) {
     const submitted = JE.captureSubmitted(owner);
     if (!submitted.owner) return;
-    const modal = state.currentModal;
-    const newest = modal?._jeReads ? modal._jeReads(submitted) : () => false;
-    const shown = () => !!modal && state.currentModal === modal && !modal._isClosing && newest();
+    const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId: data.id, mediaType: 'movie', is4k } });
     let settled = false;
     ui.busy?.();
     try {
         const response = await JE.jellyseerrAPI.requestMedia(data.id, 'movie', is4k ? { is4k: true } : {}, false, data, null, { bound: submitted.bound() });
-        if (!shown()) return;
+        if (!publication.current()) return;
         settled = true;
         ui.done?.();
-        mountRequestedChip(data, 'movie', is4k, response);
+        publication.emit('jellyseerr-media-requested', { response });
     } catch (error) {
         // Its owner ended before the send (nothing was sent), or the answer has nowhere to go: nothing to say.
-        if (error?.name === 'AbortError' || !submitted.current()) return;
-        // Quota errors get a themed dialog (owned by the press: it opens and stays only while that is current).
+        if (error?.name === 'AbortError' || !publication.current()) return;
+        // Quota errors get a themed dialog, a publication of this window like any other answer (D46S2-R8-6).
         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
-            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', submitted);
+            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
             return;
         }
-        if (!shown() || !ui.failed) return;
+        if (!ui.failed) return;
         settled = true;
         ui.failed(error?.responseJSON?.message || JE.t('jellyseerr_btn_error'));
     } finally {
@@ -76,10 +79,10 @@ function buildSingle4kButton(data) {
         e.stopPropagation();
         const owner = JE.ownerOf(e);
         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner);
+            window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner, windowOf(button));
             return;
         }
-        await sendMovieRequest(data, true, owner, buttonStates(button, JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'));
+        await sendMovieRequest(data, true, owner, windowOf(button), buttonStates(button, JE.t('jellyseerr_btn_request_4k') || 'Request in 4K'));
     });
     return button;
 }
@@ -110,6 +113,7 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
         arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
         arrowButton.title = 'Request in 4K';
         arrowButton.dataset.tmdbId = data.id;
+        arrowButton.dataset.mediaType = 'movie';
         arrowButton.dataset.toggle4k = 'true';
 
         mainButton.addEventListener('click', async (e) => {
@@ -118,10 +122,10 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             // The press is the owner (D46S2-R7-1): the action bar's operation when the bar pressed it, else the window's.
             const owner = JE.ownerOf(e);
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, owner);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, owner, windowOf(mainButton));
                 return;
             }
-            await sendMovieRequest(data, false, owner, buttonStates(mainButton, JE.t('jellyseerr_btn_request')));
+            await sendMovieRequest(data, false, owner, windowOf(mainButton), buttonStates(mainButton, JE.t('jellyseerr_btn_request')));
         });
 
     // 4K dropdown
@@ -173,13 +177,14 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
                 ev.preventDefault();
                 ev.stopPropagation();
                 const owner = JE.ownerOf(ev);
+                const origin = windowOf(arrowButton);
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                     close4k();
-                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner);
+                    window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner, origin);
                     return;
                 }
                 // Restore option to idle on a refusal (a quota error gets its themed dialog first).
-                await sendMovieRequest(data, true, owner, {
+                await sendMovieRequest(data, true, owner, origin, {
                     busy: () => { option.disabled = true; option.textContent = JE.t('jellyseerr_btn_requesting'); },
                     idle: () => { option.disabled = false; option.textContent = 'Request in 4K'; },
                     failed: message => { option.disabled = false; option.textContent = message; },
@@ -214,10 +219,10 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
             e.stopPropagation();
             const owner = JE.ownerOf(e);
             if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, owner);
+                window.JellyfinEnhanced?.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, false, owner, windowOf(requestButton));
                 return;
             }
-            await sendMovieRequest(data, false, owner, buttonStates(requestButton, JE.t('jellyseerr_btn_request')));
+            await sendMovieRequest(data, false, owner, windowOf(requestButton), buttonStates(requestButton, JE.t('jellyseerr_btn_request')));
         });
         container.appendChild(requestButton);
     }
@@ -227,40 +232,32 @@ function buildMovieActions(data, actionMount, chipMount, show4kOption) {
 /**
  * The window's 4K movie request, as its 4K option makes it (the advanced form when that is on), for the action bar's
  * More sheet (D46S2-R6, Q-D46S2FIX5-1): `owner` is the sheet entry's submitted operation (D46S2-R7-1), so the request,
- * and the form it opens, are that operation's even in a window opened natively.
+ * and the form it opens, are that operation's even in a window opened natively; `origin` is the window (D46S2-R8-2).
  * @param {Object} data Seerr details.
  * @param {Object} owner The submitted operation.
+ * @param {HTMLElement} origin The window.
  * @returns {Promise<void>}
  */
-async function requestMovie4k(data, owner) {
+async function requestMovie4k(data, owner, origin) {
     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-        JE.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner);
+        JE.jellyseerrUI?.showMovieRequestModal?.(data.id, data.title || data.name, data, true, owner, origin);
         return;
     }
-    await sendMovieRequest(data, true, owner, { failed: message => JE.toast?.(escapeHtml(message), 4000) });
+    await sendMovieRequest(data, true, owner, origin, { failed: message => JE.toast?.(escapeHtml(message), 4000) });
 }
 
-function mountRequestedChip(data, mediaType, is4k, response = null) {
+/**
+ * Records a movie request's answer in the window's details (only the edition it was for): Seerr's status from the
+ * answer, else requested. The window's completion listener calls it for its own publications (D46S2-R8-2).
+ * @param {Object} data Seerr details.
+ * @param {boolean} is4k The 4K edition.
+ * @param {Object|null} response Seerr's answer.
+ * @returns {void}
+ */
+function applyRequested(data, is4k, response) {
     const mediaInfo = data.mediaInfo = data.mediaInfo || {};
-    if (mediaType === 'movie') {
-        if (is4k) {
-            mediaInfo.status4k = response?.media?.status4k || 3;
-        } else {
-            mediaInfo.status = response?.media?.status || 3;
-        }
-    } else {
-        if (is4k) {
-            mediaInfo.status4k = response?.media?.status4k || 3;
-        } else {
-            mediaInfo.status = response?.media?.status || 3;
-        }
-    }
-
-    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
-        detail: { tmdbId: data.id, mediaType, is4k: !!is4k }
-    }));
-
-    renderActions(data, mediaType);
+    if (is4k) mediaInfo.status4k = response?.media?.status4k || 3;
+    else mediaInfo.status = response?.media?.status || 3;
 }
 
 // Token guards against stale chip insertion when the user navigates between items.
@@ -548,7 +545,7 @@ function drawActions(data, mediaType) {
 
         const canRequestNormal = JE.seerrStatus.isRequestable(effectiveMovieStatus);
         const canRequest4k = JE.seerrStatus.isRequestable(effectiveMovieStatus4k);
-        if (show4k && canRequest4k) modal.jeRequest4k = owner => requestMovie4k(data, owner);
+        if (show4k && canRequest4k) modal.jeRequest4k = owner => requestMovie4k(data, owner, modal);
 
         if (!canRequestNormal) {
             if (show4k && canRequest4k && actionMount) {
@@ -605,7 +602,7 @@ function drawActions(data, mediaType) {
 
         const canRequestNormal = JE.seerrStatus.isRequestable(effectiveStatus);
         const canRequest4k = JE.seerrStatus.isRequestable(effectiveStatus4k);
-        if (show4kTv && canRequest4k) modal.jeRequest4k = owner => JE.jellyseerrUI?.showSeasonSelectionModal?.(data.id, 'tv', data.title || data.name, data, true, owner);
+        if (show4kTv && canRequest4k) modal.jeRequest4k = owner => JE.jellyseerrUI?.showSeasonSelectionModal?.(data.id, 'tv', data.title || data.name, data, true, owner, modal);
         if (canRequestNormal) {
             const actions = internal.buildTvActions(data, show4kTv);
             if (actions && actionMount) actionMount.appendChild(actions);
@@ -648,7 +645,7 @@ function drawActions(data, mediaType) {
 }
     internal.buildSingle4kButton = buildSingle4kButton;
     internal.buildMovieActions = buildMovieActions;
-    internal.mountRequestedChip = mountRequestedChip;
+    internal.applyRequested = applyRequested;
     internal.maybeRenderMoreInfoQuotaChip = maybeRenderMoreInfoQuotaChip;
     internal.renderActions = renderActions;
     internal.reconcilePaused = reconcilePaused;

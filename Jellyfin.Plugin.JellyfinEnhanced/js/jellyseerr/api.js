@@ -152,24 +152,6 @@
     }
 
     /**
-     * Broadcast successful request events so all UI surfaces can update immediately.
-     * @param {number|string} tmdbId
-     * @param {'movie'|'tv'} mediaType
-     * @param {boolean} is4k
-     */
-    function emitMediaRequested(tmdbId, mediaType, is4k = false) {
-        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
-            detail: { tmdbId: String(tmdbId), mediaType: String(mediaType || '').toLowerCase(), is4k: !!is4k }
-        }));
-
-        if (String(mediaType || '').toLowerCase() === 'tv') {
-            document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', {
-                detail: { tmdbId: String(tmdbId), mediaType: 'tv' }
-            }));
-        }
-    }
-
-    /**
      * Checks if the Seerr server is active and if the current user is linked.
      * Caches the result to avoid repeated API calls.
      * @returns {Promise<{active: boolean, userFound: boolean, cancelled?: boolean}>} `cancelled` when the read was
@@ -717,7 +699,6 @@
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, mediaType);
-            emitMediaRequested(tmdbId, mediaType, is4k);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
@@ -771,7 +752,6 @@
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, 'tv');
-            emitMediaRequested(tmdbId, 'tv', is4k);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, 'tv');

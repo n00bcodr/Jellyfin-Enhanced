@@ -20,33 +20,25 @@
     let pendingRepositionObserver = null;
     let pendingRepositionTimeout = null;
 
-    // Keep card buttons in sync when a request is made from other surfaces (e.g., more info modal)
-    function markCardRequested(tmdbId, mediaType, is4k = false) {
-        const button = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
-        if (!button) return;
-
-        const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
-        const setPending = (target) => {
-            target.innerHTML = `${icons.requested}<span>${requestedLabel}</span>`;
-            target.classList.remove('jellyseerr-button-request');
-            if (!target.classList.contains('jellyseerr-button-pending')) {
-                target.classList.add('jellyseerr-button-pending');
-            }
-            target.disabled = true;
-        };
-
-        if (button.classList.contains('jellyseerr-split-main')) {
-            setPending(button);
-            const arrow = button.parentElement?.querySelector('.jellyseerr-split-arrow');
-            if (arrow && is4k) {
-                arrow.classList.add('jellyseerr-4k-pending');
-                arrow.disabled = true;
-            }
-        } else {
-            setPending(button);
+    /**
+     * Shows a card's control as requested: its standard Request (and the card's badge), or its 4K arrow.
+     * @param {HTMLElement} node A card's request button or 4K arrow.
+     */
+    function markCardRequested(node) {
+        if (JE.identityOf(node)?.edition === '4k') {
+            node.classList.add('jellyseerr-4k-pending');
+            node.disabled = true;
+            return;
         }
+        const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
+        node.innerHTML = `${icons.requested}<span>${requestedLabel}</span>`;
+        node.classList.remove('jellyseerr-button-request');
+        if (!node.classList.contains('jellyseerr-button-pending')) {
+            node.classList.add('jellyseerr-button-pending');
+        }
+        node.disabled = true;
 
-        const card = button.closest('.jellyseerr-card');
+        const card = node.closest('.jellyseerr-card');
         const badge = card?.querySelector('.jellyseerr-status-badge');
         if (badge) {
             badge.innerHTML = icons.requested;
@@ -55,10 +47,14 @@
         }
     }
 
+    // Cards follow a request made anywhere (a card, a form, the More Info window) through the one publication path
+    // (D46S2-R8-2): only the controls its publication reaches (its title, media type and edition, while it is current
+    // where it was made). A window draws its own controls from its own publications.
     document.addEventListener('jellyseerr-media-requested', (e) => {
-        const { tmdbId, mediaType, is4k } = e.detail || {};
-        if (!tmdbId || !mediaType) return;
-        markCardRequested(String(tmdbId), mediaType, is4k);
+        for (const node of document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]')) {
+            if (node.closest('.je-more-info-modal') || !JE.published(e, node)) continue;
+            markCardRequested(node);
+        }
     });
 
     // ================================
@@ -482,7 +478,6 @@
             }
         });
     };
-    internal.markCardRequested = markCardRequested;
     internal.analyzeSeasonStatuses = analyzeSeasonStatuses;
     internal.createJellyseerrSection = createJellyseerrSection;
 

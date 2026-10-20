@@ -54,7 +54,7 @@ test('receiver authenticates and resolves under their own public title projectio
   assert.equal(calls[0], '/title-actions/tv/603?season=2&episode=4');
   assert.ok(calls.some(c => typeof c === 'string' && c.includes('/season/2')));
   assert.equal(calls.at(-1)[0], 'tv:tmdb:603:s2:e4');
-  assert.equal(calls.at(-1)[1].current(), true, 'the key lookup carries the receive generation');
+  assert.equal(calls.at(-1)[1].owner.current(), true, 'the key lookup carries the receive generation as its owner');
 });
 
 test('revoked receiver access never navigates', async t => {

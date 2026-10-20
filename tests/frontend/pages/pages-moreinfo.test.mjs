@@ -20,9 +20,12 @@ test('more-info late ratings do not replace ratings of a newer item',async t=>{
   await h.P.open(1,'movie',undefined,h.JE.NATIVE);await h.P.open(2,'movie',undefined,h.JE.NATIVE);old.resolve({label:'old'});await nextTurn();
   assert.equal(h.state.currentModal.querySelector('[data-mount="ratings"]').textContent,'new');
 });
+// A series request published into the window (D46S2-R8-2): the window's own publication of it.
+const requested=(h,modal=h.state.currentModal)=>h.JE.publication({owner:h.JE.NATIVE,surface:modal,identity:{tmdbId:1,mediaType:'tv'}}).emit('jellyseerr-media-requested');
 test('more-info close removes TV request listeners and navigation dismisses modal',async t=>{
   let detailCalls=0;const h=setup(t,{details:async id=>{detailCalls++;return {id};}});await h.P.open(1,'tv',undefined,h.JE.NATIVE);
-  const request=()=>h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));
+  // A completion that would reach any node: only a listener still registered could act on it.
+  const request=()=>h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-media-requested',{detail:{tmdbId:'1',mediaType:'tv',publication:{reaches:()=>true}}}));
   // Control: while open, a request event refreshes the details.
   request();await nextTurn();assert.equal(detailCalls,2);
   const count=h.actions.length;
@@ -49,14 +52,14 @@ test('more-info stale refresh cannot update replacement modal actions',async t=>
 });
 for(const outcome of ['completion','failure'])test(`more-info stale TV request ${outcome} cannot render into replacement`,async t=>{
   const pending=deferred();let firstCalls=0;const h=setup(t,{details:id=>id===1&&firstCalls++>0?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'tv',undefined,h.JE.NATIVE);h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await h.P.open(2,'movie',undefined,h.JE.NATIVE);
+  await h.P.open(1,'tv',undefined,h.JE.NATIVE);requested(h);await h.P.open(2,'movie',undefined,h.JE.NATIVE);
   if(outcome==='completion')pending.resolve({id:1,mediaInfo:{status:2}});else pending.reject(Error('offline'));
   await nextTurn();assert.deepEqual(h.actions,[1,2]);
 });
 test('more-info failed TV request refresh still marks the open modal requested',async t=>{
   let calls=0;const rendered=[];const h=setup(t,{details:async id=>{if(++calls>1)throw Error('offline');return {id};}});
   h.internal.renderActions=data=>rendered.push(data.mediaInfo?.status);
-  await h.P.open(1,'tv',undefined,h.JE.NATIVE);h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested',{detail:{tmdbId:1}}));await nextTurn();
+  await h.P.open(1,'tv',undefined,h.JE.NATIVE);requested(h);await nextTurn();
   assert.deepEqual(rendered,[undefined,2]);
 });
 test('more-info Request owners retain exact scope through refresh without contaminating cached metadata',async t=>{

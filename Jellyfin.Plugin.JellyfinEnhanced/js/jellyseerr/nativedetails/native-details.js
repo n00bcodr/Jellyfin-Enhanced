@@ -315,21 +315,23 @@
     }
 
     /**
-     * Opens a title known by provider key (Requests hub, notifications, calendar): a library copy the
+     * Opens a title known by provider key (Requests hub, notifications, calendar, a shared link): a library copy the
      * viewer can open first (the season or episode when named), else the native page, else the modal.
      * @param {string} key Title key such as movie:tmdb:603 or tv:tvdb:81189 (season/episode suffixes allowed).
-     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, current?: function(): boolean}} [options] Scope and fallback identity (modal: false, no modal fallback; current: the caller's owner is still current).
+     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, owner?: Object}} [options]
+     *   Scope and fallback identity (modal: false, no modal fallback). `owner` (required unless modal is false,
+     *   D46S2-R8-1): whoever opens the title (a shared link's operation, a press); every step stops once it ends, and
+     *   the fallback window is its own, so it opens only while the owner is current after its details are read too.
      * @returns {Promise<boolean>} True when something opened.
      */
     async function openKey(key, options = {}) {
-        const action = JE.createSessionAction();
+        const action = options.modal === false ? JE.createSessionAction() : JE.createSessionAction({ owner: options.owner });
         const child = /:s(\d+)(?::e(\d+))?$/.exec(String(key || ''));
         options = { ...options, ...(child ? { season: Number(child[1]), ...(child[2] != null ? { episode: Number(child[2]) } : {}) } : {}) };
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
         if (available() && key) {
             const answer = await resolve({ key, season: options.season, episode: options.episode });
-            // A caller-owned route/mount generation (a shared link) stops here as well.
-            if (!action.current() || options.current?.() === false) return false;
+            if (!action.current()) return false;
             if (answer?.itemId && /^[0-9a-f-]{32,36}$/i.test(answer.itemId)) {
                 go(answer.itemId);
                 return true;
@@ -339,8 +341,8 @@
                 return true;
             }
         }
-        if (options.modal === false) return false;
-        return action.current() && options.current?.() !== false && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, JE.NATIVE);
+        if (options.modal === false || !action.owner) return false;
+        return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, action.owner);
     }
 
     // ------------------------------------------------------------------ page adapter
@@ -1177,7 +1179,7 @@
             e.stopPropagation();
             const btn = /** @type {HTMLElement} */ (e.currentTarget);
             const id = parseInt(btn.dataset.collectionId || '', 10);
-            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '', null, { operation: e });
+            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '', null, { operation: e, origin: btn });
         });
         const host = page.querySelector('.detailPagePrimaryContent .detailSection') || page.querySelector('.detailPageContent');
         if (!host || state.aborted || current !== state) return;

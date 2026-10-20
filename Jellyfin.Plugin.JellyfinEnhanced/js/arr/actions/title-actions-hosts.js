@@ -379,6 +379,9 @@
     /** Adds the provider's adapted controls; every continuation stops once the row's generation is stale. */
     function setupRow(state) {
         const { row, root, c, action } = state;
+        // Subscribed before the setup reads the title's status (D46S2-R8-5): a change landing between that read and the
+        // Request it decides is reconciled once the Request exists. Only where the setup can add one (JE mode).
+        if (c.absent && JE.arrAsk?.enabled?.() && JE.arrStatus?.enabled?.()) followStatus(state);
         (async () => {
             try { if (!await A.admit(c, action) && c.absent) return []; }
             // A cancelled admission ends the setup; a refused one leaves a library row its native controls.
@@ -412,10 +415,12 @@
                 } else A.bindPress(node, action);
                 ours.add(node);
                 // The JE-mode Request is reconciled with the title's status on every pass (reconcileRequest).
-                if (entry.id === 'request' && 'askable' in entry) { state.request = { node, askable: entry.askable }; followStatus(state); continue; }
+                if (entry.id === 'request' && 'askable' in entry) { state.request = { node, askable: entry.askable }; if (state.statusChanged) state.refreshStatus?.(); continue; }
                 state.owned.add(node); row.append(node);
                 if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(node, c.tmdbId, c.type, action.current);
             }
+            // No adapted Request to keep current: the subscription goes.
+            if (!state.request) { state.unsubscribe?.(); state.unsubscribe = null; }
             paintRow(state);
         }).catch(() => {});
     }
@@ -423,20 +428,24 @@
     /**
      * Keeps the row's Request on the newest status (D46S2-R7-5): every change of the title (the change feed, or an ask
      * or cancel here, which refresh it) re-reads its status for the row's generation; only the newest read decides,
-     * and a read that fails keeps what the row shows.
+     * and a read that fails keeps what the row shows. Subscribed before the row's setup reads the status (D46S2-R8-5):
+     * a change that arrives before the setup has made the Request is remembered and re-read once it exists.
      */
     function followStatus(state) {
         const { c, action } = state;
-        if (!JE.arrStatus?.subscribe || !JE.arrStatus.fetchKey) return;
+        if (!c?.titleKey || !JE.arrStatus?.subscribe || !JE.arrStatus.fetchKey) return;
         const reads = JE.latestIntent();
-        state.unsubscribe = JE.arrStatus.subscribe([c.titleKey], async () => {
+        state.refreshStatus = async () => {
             if (!action.current()) return;
+            if (!state.request) { state.statusChanged = true; return; }
+            state.statusChanged = false;
             const newest = reads(action);
             const status = await JE.arrStatus.fetchKey(c.titleKey).catch(() => null);
-            if (!status || !newest() || rows.get(state.row) !== state) return;
+            if (!status || !newest() || rows.get(state.row) !== state || !state.request) return;
             state.request.askable = JE.internals?.arrAskSheet?.askable?.(status.items?.[0]) !== false;
             paintRow(state);
-        });
+        };
+        state.unsubscribe = JE.arrStatus.subscribe([c.titleKey], state.refreshStatus);
     }
 
     /** Removes only this row's owned UI and restores original controls. */

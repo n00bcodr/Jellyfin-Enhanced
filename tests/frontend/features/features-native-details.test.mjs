@@ -899,12 +899,12 @@ test('the navigator: native page, scoped pages, the modal as fallback, provider 
   assert.equal(h.shown[0], `/details?id=${h.td.syntheticId('episode', 83867, 1, 3)}&serverId=${SERVER}`);
   assert.equal(h.td.open(83867, 'tv', { season: 2 }), true);
   assert.equal(h.shown[1], `/details?id=${h.td.syntheticId('season', 83867, 2)}&serverId=${SERVER}`);
-  assert.equal(await h.td.openKey('movie:tmdb:45745'), true);
+  assert.equal(await h.td.openKey('movie:tmdb:45745', { owner: h.JE.NATIVE }), true);
   assert.equal(h.shown[2], `/details?id=0123456789abcdef0123456789abcdef&serverId=${SERVER}`);
-  assert.equal(await h.td.openKey('tv:tvdb:393189', { season: 1 }), true);
+  assert.equal(await h.td.openKey('tv:tvdb:393189', { season: 1, owner: h.JE.NATIVE }), true);
   assert.ok(h.resolved.at(-1).includes('season=1'));
   // A forged answer is never followed; the modal opens once instead when the TMDB id is known.
-  assert.equal(await h.td.openKey('movie:tmdb:438631'), true);
+  assert.equal(await h.td.openKey('movie:tmdb:438631', { owner: h.JE.NATIVE }), true);
   assert.deepEqual(h.modal, [[438631, 'movie']]);
   assert.equal(await h.td.openKey('tv:tvdb:5', { modal: false }), false);
   assert.equal(h.shown.length, 4);
@@ -912,7 +912,7 @@ test('the navigator: native page, scoped pages, the modal as fallback, provider 
   const off = setup(t, { cap: null });
   assert.equal(off.td.show(693134, 'movie'), true);
   assert.deepEqual(off.modal, [[693134, 'movie']]);
-  assert.equal(await off.td.openKey('tv:tvdb:393189'), false);
+  assert.equal(await off.td.openKey('tv:tvdb:393189', { owner: off.JE.NATIVE }), false);
   assert.deepEqual(off.resolved, []);
 });
 

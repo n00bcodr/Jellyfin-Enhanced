@@ -154,8 +154,9 @@
      * Opens a host dialog (jellyfin-web's Dashboard.alert or confirm) for `owner` (required, D46S2-R7-4), an opener like
      * every other: nothing opens unless the owner is current, and the dialog it opened for an operation is dismissed once
      * that operation ends, at the next lifecycle step ({@link JE.endScopes}). The host returns no handle (12.2's alert
-     * returns nothing) and may add its container a moment later, so the containers added to the body after `open()`
-     * are the dialog's. Returns the host's result, or null when nothing opened.
+     * returns nothing) and adds its container a moment later, so the containers added to the body within 5 s of `open()`
+     * are the dialog's; one that attaches after its operation ended is dismissed as it arrives (D46S2-R8-4: the effect
+     * stays owned until it has landed). Returns the host's result, or null when nothing opened.
      */
     JE.openHostDialog = function (open, owner) {
         const resolved = JE.requireOwner(owner, 'openHostDialog');
@@ -163,23 +164,98 @@
         const operation = operationOf(resolved);
         if (!operation) return open();
         const mine = new Set();
-        const observer = new MutationObserver(records => {
-            for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1 && node.matches(HOST_DIALOG)) mine.add(node);
+        let ended = false;
+        const arrived = records => {
+            for (const record of records) for (const node of record.addedNodes) {
+                if (node.nodeType !== 1 || !node.matches(HOST_DIALOG)) continue;
+                mine.add(node);
+                if (ended || operation.current() === false) dismissHostDialog(node);
+            }
             if (mine.size) observer.disconnect();
-        });
+        };
+        const observer = new MutationObserver(arrived);
         observer.observe(document.body, { childList: true });
         setTimeout(() => observer.disconnect(), 5000);
         let surfaces = scopes.get(operation);
         if (!surfaces) scopes.set(operation, surfaces = new Set());
         const release = () => { surfaces.delete(entry); if (!surfaces.size && scopes.get(operation) === surfaces) scopes.delete(operation); };
-        const entry = { close: () => { release(); observer.disconnect(); mine.forEach(dismissHostDialog); } };
+        // Ended before its dialog arrived: the observer stays (up to its 5 s) and dismisses it on arrival.
+        const entry = { close: () => { ended = true; release(); mine.forEach(dismissHostDialog); } };
         surfaces.add(entry);
         const result = open();
-        for (const record of observer.takeRecords()) for (const node of record.addedNodes) if (node.nodeType === 1 && node.matches(HOST_DIALOG)) mine.add(node);
-        if (mine.size) observer.disconnect();
+        arrived(observer.takeRecords());
         if (operation.current() === false) queueMicrotask(entry.close);
         return result;
     };
+
+    // One publication path (D46S2-R8-2): each surface's intents (its reads, and the writes that answer into it).
+    const intents = new WeakMap();
+    /**
+     * Starts an intent of `surface` (a window, a card, a form's opener) and returns its check: true while no later intent
+     * of the same surface has started and `owner` (when given) is current ({@link JE.latestIntent} per surface).
+     */
+    JE.surfaceIntent = function (surface, owner) {
+        let next = intents.get(surface);
+        if (!next) intents.set(surface, next = JE.latestIntent());
+        return next(owner);
+    };
+
+    // Nodes naming a title, and the surfaces that draw what they show from their own reads (they take only their own
+    // publications; a card elsewhere follows any publication of its title).
+    const NAMED = '[data-tmdb-id][data-media-type]';
+    const SELF_DRAWN = '.je-more-info-modal';
+    /**
+     * The title a node shows: {tmdbId, mediaType, edition}. A control (a button) shows one edition (data-je-edition,
+     * a 4K toggle, arrow or popup item: '4k'; else 'standard'); a surface (a window, a card) shows both (null). What the
+     * node does not name comes from the nearest ancestor that names a title; null when there is none.
+     */
+    function identityOf(node) {
+        if (!node || node.nodeType !== 1) return null;
+        const named = node.matches(NAMED) ? node : node.closest(NAMED);
+        const tmdbId = node.dataset.tmdbId || named?.dataset.tmdbId;
+        const mediaType = node.dataset.mediaType || named?.dataset.mediaType;
+        if (!tmdbId || !mediaType) return null;
+        const edition = !node.matches('button, [role="button"]') ? null
+            : node.dataset.jeEdition === '4k' || node.dataset.toggle4k === 'true' || node.matches('.jellyseerr-split-arrow, .je-4k-popup-item') ? '4k' : 'standard';
+        return { tmdbId: String(tmdbId), mediaType: String(mediaType).toLowerCase(), edition };
+    }
+    JE.identityOf = identityOf;
+
+    /**
+     * The publication of a completion (D46S2-R8-2, R8-6), taken before the write's await: what its answer changes in the
+     * UI (chips, labels, the cards that follow the title, a refusal's dialog, the completion event) goes through here and
+     * nowhere else. `owner` (required): the press's; `surface`: the window, card or form opener the write started in,
+     * shown while connected and not closing; its newest intent starts here (a later read or write of the same surface
+     * supersedes it); `identity`: {tmdbId, mediaType, is4k} (title, media type and edition).
+     * `current()` holds while all four do, so a publication is an owner too: a dialog opened for it opens only while it
+     * holds and closes with it. `reaches(node)`: current, and `node` shows this title and media type (a control: this
+     * edition) inside the surface, or outside every window (a card following the title elsewhere).
+     * `emit(type, detail)`: dispatches the completion event carrying the publication; its listeners change UI only where
+     * {@link JE.published} holds. Returns whether it was current.
+     */
+    JE.publication = function ({ owner, surface, identity }) {
+        const resolved = JE.requireOwner(owner, 'publication');
+        const id = identity ? { tmdbId: String(identity.tmdbId), mediaType: String(identity.mediaType || '').toLowerCase(), edition: identity.is4k ? '4k' : 'standard' } : null;
+        const newest = surface && resolved ? JE.surfaceIntent(surface, resolved) : () => false;
+        const current = () => !!resolved && !!surface && surface.isConnected === true && !surface._isClosing && newest();
+        const self = {
+            owner: resolved, surface, identity: id, current,
+            reaches(node) {
+                if (!id || !node || !current()) return false;
+                const shows = identityOf(node);
+                if (!shows || shows.tmdbId !== id.tmdbId || shows.mediaType !== id.mediaType || (shows.edition && shows.edition !== id.edition)) return false;
+                return node === surface || surface.contains(node) || !node.closest(SELF_DRAWN);
+            },
+            emit(type, detail = {}) {
+                if (!id || !current()) return false;
+                document.dispatchEvent(new CustomEvent(type, { detail: { ...detail, tmdbId: id.tmdbId, mediaType: id.mediaType, is4k: id.edition === '4k', publication: self } }));
+                return true;
+            },
+        };
+        return self;
+    };
+    /** True when a completion event's publication may change `node` ({@link JE.publication}); an event without one changes nothing. */
+    JE.published = (event, node) => event?.detail?.publication?.reaches?.(node) === true;
 
     /**
      * Publication for the newest intent of one surface (D46S2-R6 shape 3): each call starts an intent and returns its

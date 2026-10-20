@@ -1100,20 +1100,25 @@
                         || searchResultItem?.originalTitle
                         || (mediaType === 'tv' ? 'this show' : 'this movie');
 
+                    // The answer publishes into this card only (and the cards that follow the title), as its 4K edition
+                    // (D46S2-R8-2); a refusal's dialog is that publication's too (R8-6).
+                    const publication = JE.publication({ owner, surface: card || item, identity: { tmdbId, mediaType: 'movie', is4k: true } });
                     try {
                         if (mediaType === 'tv') {
                             if (popup) popup.remove();
-                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner);
+                            showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner, card);
                             return;
                         }
 
                         if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                             // Close popup and show advanced modal
                             if (popup) popup.remove();
-                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner);
+                            showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner, card);
                         } else {
                             const response = await requestMedia(tmdbId, 'movie', {}, true, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // true for 4K, pass searchResultItem for override rules
                             console.debug(`${logPrefix} Seerr 4K request response:`, response);
+                            if (!publication.current()) return;
+                            publication.emit('jellyseerr-media-requested', { response });
                             if (searchResultItem) {
                                 if (!searchResultItem.mediaInfo) searchResultItem.mediaInfo = {};
                                 searchResultItem.mediaInfo.status4k = 3;
@@ -1130,8 +1135,9 @@
                     } catch (error) {
                         // Quota errors get a themed dialog with usage + reset info.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
-                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', owner);
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
                         } else {
+                            if (!publication.current()) return;
                             let errorMessage = 'Failed to request 4K version';
                             if (error.status === 404) {
                                 errorMessage = 'User not found';
@@ -1163,32 +1169,36 @@
                 || searchResultItem?.originalTitle
                 || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
 
+            const origin = card || button;
             if (mediaType === 'collection' && collectionId) {
-                showCollectionRequestModal(collectionId, titleText, searchResultItem, { operation: owner });
+                showCollectionRequestModal(collectionId, titleText, searchResultItem, { operation: owner, origin });
                 return;
             }
 
             if (mediaType === 'tv') {
-                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, owner);
+                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, owner, origin);
                 return;
             }
 
             if (mediaType === 'movie') {
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, owner);
+                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, owner, origin);
                 } else {
+                    // The answer publishes into this card (and the cards that follow the title) through its
+                    // publication (D46S2-R8-2); a refusal's dialog is that publication's too (R8-6).
+                    const publication = JE.publication({ owner, surface: origin, identity: { tmdbId, mediaType, is4k: false } });
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // Pass searchResultItem for override rules
-                        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
-                        button.classList.remove('jellyseerr-button-request');
-                        button.classList.add('jellyseerr-button-pending');
+                        const response = await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // Pass searchResultItem for override rules
+                        if (!publication.current()) return;
+                        publication.emit('jellyseerr-media-requested', { response });
                     } catch (error) {
+                        if (!publication.current()) return;
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
-                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', owner);
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', publication);
                             button.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                             return;
                         }
