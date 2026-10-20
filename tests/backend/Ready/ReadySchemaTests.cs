@@ -6,9 +6,10 @@ using Microsoft.Data.Sqlite;
 namespace JE.Tests;
 
 /// <summary>
-/// acquire.db schema step 8 and the Ready ensure (D47): a fresh database, schema 7 (with step 6, or its older empty step 6), a database
-/// that reached 8 without the tables, a partial earlier ensure, two starts, a restore (the renewal policy, including a stop
-/// before the restore's listeners run), repeated restores, an unknown newer schema, and a deleted person's rows.
+/// acquire.db schema step 8 and the Ready ensure (D47): a fresh database, schema 7 (with step 6, or its older empty step 6), schema 8
+/// with the older empty step 6, the exact text of every applied step, a database that reached 8 without the tables, a partial earlier
+/// ensure, two starts, a restore (the renewal policy, including a stop before the restore's listeners run), repeated restores, an
+/// unknown newer schema, and a deleted person's rows.
 /// </summary>
 public class ReadySchemaTests
 {
@@ -86,6 +87,58 @@ public class ReadySchemaTests
         Assert.Equal(1L, Scalar(path, "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"));
         // The pre-migration copy was taken (an existing database is copied before any migration).
         Assert.NotEmpty(Directory.EnumerateFiles(core.Root, "seven.db.pre-v7.*"));
+    }
+
+    // Every applied step keeps its exact text: databases at 8 already ran them (step 8 is the Ready step installations have, D65).
+    [Theory]
+    [InlineData(1, "965bc9e1504801c8ed72f23a8cc862c48d88c96b8dadb544fd945f3a2b017034")]
+    [InlineData(2, "af48ec3c0a78ceea1416f7c20963f386f598c0f06c63e0dbaed36399af253039")]
+    [InlineData(3, "643e4e5dc917269db67b94509b5db3aff5142a2be6999e60282bbcc9fcf9b7e2")]
+    [InlineData(4, "fd1e3b131253fe28f63db1193d22b770ace34cdeab3871c3f7e62c7ebf599264")]
+    [InlineData(5, "51b31e0b41ea3eea4fcc5b862b85f29988fda45576a30352a459e6c6609380fb")]
+    [InlineData(6, "3ac2e037dc5c3a6062dc4a1c198b079f7f1bf58f64024ab9b83a3218ffe27532")]
+    [InlineData(7, "7462be3a769ed2708373510dc3f98bd4b5322ce59fc6b58770cb4c5665364c8c")]
+    [InlineData(8, "26ed4c0fdf52d1ae75a09b40ddb3b776f7e8a6422310916a876640be2409841f")]
+    public void AnAppliedStepKeepsItsExactText(int step, string sha256)
+    {
+        var text = AcquireDatabase.Migrations[step - 1].Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Equal(sha256, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant());
+    }
+
+    // Schema 8 as a build with the older empty step 6 left it: the Ready tables and rows in place, no content-arrival history.
+    // It opens as it is (no migration, so no copy), keeps every row, and gains the arrival history.
+    [Fact]
+    public void ASchemaEightDatabaseWithTheOlderEmptyStepSixOpensAsItIs()
+    {
+        using var core = new CoreFixture();
+        var path = Path.Combine(core.Root, "eight.db");
+        var (emma, playlist) = (Guid.NewGuid(), Guid.NewGuid());
+        Exec(path, string.Join("\n", AcquireDatabase.Migrations.Select((sql, i) => i == 5 ? string.Empty : sql)) + @"
+INSERT INTO meta(key,value) VALUES('ready_schema','1');
+INSERT INTO ready_playlists(server_id,user_id,opted_in,opt_in_epoch,state,playlist_id,nonce,playlist_created,revision,updated_at)
+  VALUES('" + Server + "','" + emma.ToString("N") + "',1,4,'active','" + playlist.ToString("N") + @"','abc',42,7,5);
+INSERT INTO acquisition_arrivals VALUES('m|movie:tmdb:603|std',42,'old');
+PRAGMA user_version=8;");
+        Assert.Equal(0L, Scalar(path, "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"));
+        var row = "SELECT opted_in||'|'||opt_in_epoch||'|'||state||'|'||playlist_id||'|'||nonce||'|'||playlist_created||'|'||revision FROM ready_playlists";
+        var before = Scalar(path, row);
+        for (var start = 0; start < 2; start++)
+        {
+            using var db = new AcquireDatabase(path);
+            Assert.True(db.Available, db.UnavailableReason);
+            Assert.Equal(8, db.Version);
+            var binding = new ReadyPlaylistStore(db).Binding(Server, emma)!;
+            Assert.True(binding.OptedIn);
+            Assert.Equal(ReadyState.Active, binding.State);
+            Assert.Equal(playlist, binding.PlaylistId);
+            Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(42).UtcDateTime, new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home.HomeArrivals(db, null, null, () => true).FirstAt("movie:tmdb:603|4k"));
+        }
+
+        Assert.Equal(before, Scalar(path, row));
+        Assert.Equal(All, Objects(path));
+        Assert.Equal(1L, Scalar(path, "SELECT COUNT(*) FROM sqlite_master WHERE name='home_arrivals'"));
+        Assert.Equal(8L, Scalar(path, "PRAGMA user_version"));
+        Assert.Empty(Directory.EnumerateFiles(core.Root, "eight.db.pre-v*"));
     }
 
     [Fact]
