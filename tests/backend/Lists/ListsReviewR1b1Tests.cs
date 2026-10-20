@@ -47,7 +47,7 @@ public class ListsReviewR1b1Tests
 
         // A season still airing (a dated future episode) isn't finished either.
         var season = Ph("{\"kind\":\"season\",\"tmdbId\":900,\"seasonNumber\":2,\"title\":\"Show S2\"}");
-        var details = Json("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"episodes\":[" + Episode(2, 1, Past) + "," + Episode(2, 2, Future) + "]}");
+        var details = Json(ListsHarness.RealSeason("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"episodes\":[" + Episode(2, 1, Past) + "," + Episode(2, 2, Future) + "]}", 900));
         var airing = Json(Show(900, "Returning Series", inProduction: false, last: Episode(2, 1, Past), next: Episode(2, 2, Future)));
         ListMetadataService.Apply(season, ListMetadataService.FromTv(season, airing, details, Today, Today));
         Assert.True(season.InProduction);
@@ -177,7 +177,7 @@ public class ListsReviewR1b1Tests
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":905,\"seasonNumber\":2,\"title\":\"Show\",\"releaseDate\":\"2025-08-01\",\"episodes\":[{\"s\":2,\"e\":1,\"airDate\":\"2025-08-01\"},{\"s\":2,\"e\":2}]}");
 
         // TMDB took E01's date away: the release date is no longer that stale date but the season premiere (C4).
-        var undated = Json("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"posterPath\":null,\"episodes\":[" + Episode(2, 1, null) + "," + Episode(2, 2, null) + "]}");
+        var undated = Json(ListsHarness.RealSeason("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"posterPath\":null,\"episodes\":[" + Episode(2, 1, null) + "," + Episode(2, 2, null) + "]}", 905));
         var meta = ListMetadataService.FromTv(episodes, tv, undated, Today, Today);
         Assert.Equal("2021-01-01", meta.ReleaseDate);
         ListMetadataService.Apply(episodes, meta);
@@ -186,7 +186,7 @@ public class ListsReviewR1b1Tests
 
         // A season read that doesn't list E01 keeps its stored date (Apply keeps it too); a failed read does as well.
         episodes.Episodes[0].AirDate = "2025-08-01";
-        var without = Json("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"posterPath\":null,\"episodes\":[" + Episode(2, 2, null) + "]}");
+        var without = Json(ListsHarness.RealSeason("{\"seasonNumber\":2,\"airDate\":\"2021-01-01\",\"posterPath\":null,\"episodes\":[" + Episode(2, 2, null) + "]}", 905));
         Assert.Equal("2025-08-01", ListMetadataService.FromTv(episodes, tv, without, Today, Today).ReleaseDate);
         Assert.Equal("2025-08-01", ListMetadataService.FromTv(episodes, tv, null, Today, Today).ReleaseDate);
     }

@@ -60,7 +60,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
             ("external_ids.imdb_id", "imdb", 'M'), ("external_ids.tvdb_id", "id", 'M'), ("seasons[0].season_number", "count", 'M'),
             ("seasons[0].episode_count", "count", 'P'), ("seasons[0].air_date", "date", 'P'),
         },
-        ["tmdb season"] = new[] { ("episodes[0].episode_number", "count", 'M'), ("episodes[0].season_number", "count", 'P'), ("episodes[0].air_date", "date", 'P') },
+        ["tmdb season"] = new[] { ("episodes[0].episode_number", "count", 'M'), ("episodes[0].season_number", "count", 'M'), ("episodes[0].air_date", "date", 'P') }, // r10: an episode season that isn't the one asked for (or isn't one) is another season's
         ["tmdb episode find"] = new[]
         {
             ("tv_episode_results[0].show_id", "id", 'M'), ("tv_episode_results[0].season_number", "count", 'M'),
@@ -417,7 +417,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
     }
 
     [Theory]
-    [InlineData("404", "404", "not_found")]
+    [InlineData("404", "404", "upstream_error")] // review round 10: Seerr's 404 is its unknown-route answer, never an absence
     [InlineData("404", "500", "upstream_error")] // review round 9 (4c2-R9-7): Seerr's 500 is an error, never "no such collection"
     [InlineData("404", "503", "upstream_error")]
     [InlineData("404", "refused", "upstream_error")]

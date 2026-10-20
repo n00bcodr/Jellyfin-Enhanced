@@ -119,12 +119,13 @@ public class ListsImportLookupTests
         await f.Lookup.GetDetailsAsync("tv", 110492, f.Context, CancellationToken.None);
         Assert.Equal(2, f.Calls.Count(c => c.EndsWith("/tv/110492", StringComparison.Ordinal))); // failure not cached, success cached
 
-        // Seerr's season 500 also stands for a TMDB failure: retried, not a missing season (a 404 is).
+        // Seerr's season 500 also stands for a TMDB failure: retried, not a missing season. Review round 10 (ProviderAbsence): so
+        // is its 404 (Seerr's unknown-route answer); no Seerr answer is a missing season.
         Assert.Equal(LookupStatus.Transient, (await f.Lookup.GetSeasonAsync(110492, 9, f.Context, CancellationToken.None)).Status);
-        Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetSeasonAsync(110492, 7, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(LookupStatus.Transient, (await f.Lookup.GetSeasonAsync(110492, 7, f.Context, CancellationToken.None)).Status);
         var season = await f.Lookup.GetSeasonAsync(110492, 1, f.Context, CancellationToken.None);
         Assert.Equal(("A Whole New Whirled", "2022-01-13"), (season.Value![0].Title, season.Value[0].AirDate));
-        Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetDetailsAsync("movie", 5, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(LookupStatus.Transient, (await f.Lookup.GetDetailsAsync("movie", 5, f.Context, CancellationToken.None)).Status); // review round 10: Seerr's 404 proves nothing
         Assert.Equal(LookupStatus.NotFound, (await f.Lookup.GetDetailsAsync("person", 5, f.Context, CancellationToken.None)).Status);
     }
 
@@ -213,23 +214,25 @@ public class ListsImportLookupTests
         Assert.Single(f.Calls, c => c.Contains("queued", StringComparison.Ordinal));
     }
 
-    [Fact] // review round 5 (4c2-R5-4): a definitive "not found" is reused with its status, and never waits for the limiter
-    public async Task ANotFoundIsReusedWithItsStatusWithoutTheLimiterWhileAnErrorIsAskedAgain()
+    // Review round 5 (4c2-R5-4): a definitive answer is reused with its status, and never waits for the limiter. Review round 10
+    // (ProviderAbsence): no Seerr answer is "not found" any more, so the definitive answer here is a whole one.
+    [Fact]
+    public async Task ADefinitiveAnswerIsReusedWithItsStatusWithoutTheLimiterWhileAnErrorIsAskedAgain()
     {
         using var f = new Fixture();
         f.Reply = request => Task.FromResult(request.RequestUri!.AbsolutePath == "/api/v1/movie/7"
-            ? IntegrationTransport.Response("{\"message\":\"nope\"}", 404)
+            ? IntegrationTransport.Response("{\"id\":7,\"title\":\"Seven\",\"imdbId\":null,\"externalIds\":{\"imdbId\":null}}")
             : IntegrationTransport.Response("{\"message\":\"Unable to retrieve movie.\"}", 500));
         var limiter = new MetadataCallLimiter(1, TimeSpan.Zero, TimeProvider.System);
         var lookup = new SeerrImportLookup(f.Transport, limiter, f.Plugin.Core.Logger);
 
-        Assert.Equal(LookupStatus.NotFound, (await lookup.GetDetailsAsync("movie", 7, f.Context, CancellationToken.None)).Status);
+        Assert.Equal(LookupStatus.Ok, (await lookup.GetDetailsAsync("movie", 7, f.Context, CancellationToken.None)).Status);
         Assert.Equal(LookupStatus.Transient, (await lookup.GetDetailsAsync("movie", 8, f.Context, CancellationToken.None)).Status);
         using (await limiter.AcquireAsync("someone else", false, CancellationToken.None))
         {
             var again = lookup.GetDetailsAsync("movie", 7, f.Context, CancellationToken.None);
-            Assert.True(await Task.WhenAny(again, Task.Delay(TimeSpan.FromSeconds(5))) == again, "a remembered NotFound waited for the limiter");
-            Assert.Equal(LookupStatus.NotFound, (await again).Status);
+            Assert.True(await Task.WhenAny(again, Task.Delay(TimeSpan.FromSeconds(5))) == again, "a remembered answer waited for the limiter");
+            Assert.Equal(LookupStatus.Ok, (await again).Status);
         }
 
         Assert.Equal(LookupStatus.Transient, (await lookup.GetDetailsAsync("movie", 8, f.Context, CancellationToken.None)).Status);

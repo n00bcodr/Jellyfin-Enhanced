@@ -41,7 +41,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // Valid answers in TMDB's names; Seerr's are the same in camelCase (Camel).
     internal const string MovieBody = "{\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false,\"status\":\"Released\",\"imdb_id\":\"tt0770828\",\"external_ids\":{\"imdb_id\":\"tt0770828\"}}";
     internal const string ShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"original_name\":\"Arrow\",\"first_air_date\":\"2012-10-10\",\"poster_path\":\"/a.jpg\",\"overview\":\"Oliver.\",\"popularity\":20.5,\"vote_count\":5000,\"status\":\"Ended\",\"in_production\":false,\"external_ids\":{\"imdb_id\":\"tt2193021\",\"tvdb_id\":257655},\"seasons\":[{\"season_number\":1,\"episode_count\":23,\"air_date\":\"2012-10-10\",\"name\":\"Season 1\"},{\"season_number\":2,\"episode_count\":23,\"air_date\":\"2013-10-09\",\"name\":\"Season 2\"}]}";
-    internal const string SeasonBody = "{\"id\":3,\"season_number\":1,\"air_date\":\"2012-10-10\",\"episodes\":[{\"episode_number\":1,\"season_number\":1,\"name\":\"Pilot\",\"air_date\":\"2012-10-10\"},{\"episode_number\":2,\"season_number\":1,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
+    internal const string SeasonBody = "{\"id\":3,\"season_number\":1,\"air_date\":\"2012-10-10\",\"episodes\":[{\"episode_number\":1,\"season_number\":1,\"show_id\":1412,\"name\":\"Pilot\",\"air_date\":\"2012-10-10\"},{\"episode_number\":2,\"season_number\":1,\"show_id\":1412,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
     private const string EpisodeFindBody = "{\"movie_results\":[],\"tv_results\":[],\"tv_episode_results\":[{\"show_id\":1412,\"season_number\":1,\"episode_number\":2,\"name\":\"Honor Thy Father\",\"air_date\":\"2012-10-17\"}]}";
     internal const string MultiBody = "{\"page\":1,\"results\":[{\"media_type\":\"movie\",\"id\":49521,\"title\":\"Man of Steel\",\"original_title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"poster_path\":\"/p.jpg\",\"overview\":\"Krypton.\",\"popularity\":10.5,\"vote_count\":100,\"adult\":false},{\"media_type\":\"tv\",\"id\":1412,\"name\":\"Arrow\",\"first_air_date\":\"2012-10-10\"}],\"total_results\":2}";
     private const string FindBody = "{\"movie_results\":[{\"id\":49521,\"title\":\"Man of Steel\",\"release_date\":\"2013-06-12\",\"adult\":false}],\"tv_results\":[{\"id\":1412,\"name\":\"Arrow\"}],\"tv_episode_results\":[]}";
@@ -49,7 +49,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // Placeholder metadata (Seerr's names; JE mode reads TMDB's, Snake).
     internal const string MetaMovieBody = "{\"id\":10,\"title\":\"Inception\",\"releaseDate\":\"2010-07-16\",\"posterPath\":\"/i.jpg\",\"overview\":\"Dreams.\",\"imdbId\":\"tt1375666\",\"externalIds\":{\"imdbId\":\"tt1375666\"}}";
     internal const string MetaShowBody = "{\"id\":1412,\"name\":\"Arrow\",\"firstAirDate\":\"2012-10-10\",\"posterPath\":\"/a.jpg\",\"overview\":\"Oliver.\",\"status\":\"Returning Series\",\"inProduction\":true,\"externalIds\":{\"imdbId\":\"tt2193021\",\"tvdbId\":257655},\"seasons\":[{\"seasonNumber\":1,\"episodeCount\":3,\"airDate\":\"2012-10-10\"}],\"lastEpisodeToAir\":{\"seasonNumber\":1,\"episodeNumber\":3,\"airDate\":\"2012-10-24\"}}";
-    internal const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"}]}";
+    internal const string MetaSeasonBody = "{\"id\":3,\"seasonNumber\":1,\"airDate\":\"2012-10-10\",\"posterPath\":\"/s1.jpg\",\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Pilot\",\"airDate\":\"2012-10-10\"},{\"episodeNumber\":2,\"seasonNumber\":1,\"showId\":1412,\"name\":\"Honor\",\"airDate\":\"2012-10-17\"}]}";
 
     // THE ORACLE: each kind's declared contract restated per field as the verdict of (missing, null, wrong type, empty):
     // V valid (definitive: used and kept), P partial (used, never kept, never proof of an absence), M malformed (transient,
@@ -76,7 +76,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     private static readonly (string Path, string Verdicts)[] SeasonFields =
     {
-        ("episodes", "MMMV"), ("episodes[0].episode_number", "MMMV"), ("episodes[0].season_number", "VVPM"), // r9: season 0 isn't the season asked for
+        ("episodes", "MMMV"), ("episodes[0].episode_number", "MMMV"), ("episodes[0].season_number", "VVMM"), // r9: season 0 isn't the season asked for; r10: nor is a value that isn't one
         ("episodes[0].name", "VVPV"), ("episodes[0].air_date", "VVPV"),
     };
 
@@ -88,7 +88,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     private static readonly (string Path, string Verdicts)[] MultiFields =
     {
-        ("results", "MMMV"), ("results[0].media_type", "PPPP"), ("results[0].id", "PPPP"), ("results[0].title", "PPPP"),
+        ("results", "MMMM"), ("results[0].media_type", "PPPP"), ("results[0].id", "PPPP"), ("results[0].title", "PPPP"), // r10: an empty page whose total says 2 is no "no titles"
         ("results[0].original_title", "VVPV"), ("results[0].release_date", "VVPV"), ("results[0].poster_path", "VVPV"),
         ("results[0].overview", "VVPV"), ("results[0].popularity", "VVPV"), ("results[0].vote_count", "VVPV"), ("results[0].adult", "VVP-"),
     };
@@ -117,7 +117,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // A season answer that isn't Valid is used like a failed season read: it never sets the expected episodes.
     private static readonly (string Path, string Verdicts)[] MetaSeasonFields =
     {
-        ("episodes", "MMMV"), ("episodes[0].episodeNumber", "MMMV"), ("episodes[0].seasonNumber", "VVPM"), // r9: season 0 isn't the season asked for
+        ("episodes", "MMMV"), ("episodes[0].episodeNumber", "MMMV"), ("episodes[0].seasonNumber", "VVMM"), // r9: season 0 isn't the season asked for; r10: nor is a value that isn't one
         ("episodes[0].name", "VVPV"), ("episodes[0].airDate", "PVMV"), ("airDate", "PVMV"), ("posterPath", "PVMV"),
     };
 
@@ -140,7 +140,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
         new("seerr details movie", Camel(MovieBody), Camel(MovieFields), (w, b) => LookupAsync(w, SeerrA + "movie/49521", b, () => StatusOf(w.SeerrLookup.GetDetailsAsync("movie", 49521, w.Context, None)))),
         new("seerr details tv", Camel(ShowBody), Camel(ShowFields), (w, b) => LookupAsync(w, SeerrA + "tv/1412", b, () => StatusOf(w.SeerrLookup.GetDetailsAsync("tv", 1412, w.Context, None)))),
         new("seerr season", Camel(SeasonBody), Camel(SeasonFields), (w, b) => LookupAsync(w, SeerrA + "tv/1412/season/1", b, () => StatusOf(w.SeerrLookup.GetSeasonAsync(1412, 1, w.Context, None)))),
-        new("seerr search", Camel(MultiBody), Camel(MultiFields).Select(f => f.Path == "results" ? (f.Path, "MMMU") : f).ToArray(), (w, b) => LookupAsync(w, SeerrA + "search", b, () => StatusOf(w.SeerrLookup.SearchAsync("Man of Steel", w.Context, None)))),
+        new("seerr search", Camel(MultiBody), Camel(MultiFields), (w, b) => LookupAsync(w, SeerrA + "search", b, () => StatusOf(w.SeerrLookup.SearchAsync("Man of Steel", w.Context, None)))),
         new("seerr metadata movie", MetaMovieBody, MetaMovieFields, (w, b) => SeerrMetadataAsync(w, "movie/10", b, Prefilled(PlaceholderKinds.Movie))),
         new("seerr metadata series", MetaShowBody, MetaShowFields, (w, b) => SeerrMetadataAsync(w, "tv/1412", b, Prefilled(PlaceholderKinds.Series))),
         new("seerr metadata season", MetaSeasonBody, MetaSeasonFields, (w, b) => SeerrMetadataAsync(w, "tv/1412/season/1", b, Prefilled(PlaceholderKinds.Season))),

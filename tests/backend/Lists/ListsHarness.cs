@@ -184,12 +184,49 @@ internal sealed class ListsHarness : IDisposable
         Plugin.Dispose();
     }
 
+    /// <summary>
+    /// A season answer as Seerr and TMDB really give it (seen live, review round 10): the season names its number and every
+    /// episode its show (<c>showId</c>; TMDB's <c>show_id</c>), and it always lists its episodes. Fixtures that leave them out
+    /// get them here.
+    /// </summary>
+    internal static string RealSeason(string json, int show, int? season = null, bool snake = false)
+    {
+        var root = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        var number = snake ? "season_number" : "seasonNumber";
+        if (season is int s && !root.ContainsKey(number))
+        {
+            root[number] = s;
+        }
+
+        root.TryAdd("episodes", new System.Text.Json.Nodes.JsonArray()); // a season answer always lists its episodes
+        if (root["episodes"] is System.Text.Json.Nodes.JsonArray episodes)
+        {
+            foreach (var episode in episodes.OfType<System.Text.Json.Nodes.JsonObject>())
+            {
+                if (!episode.ContainsKey(snake ? "show_id" : "showId"))
+                {
+                    episode[snake ? "show_id" : "showId"] = show;
+                }
+            }
+        }
+
+        return root.ToJsonString();
+    }
+
     private HttpResponseMessage DefaultReply(HttpRequestMessage request)
     {
         var path = request.RequestUri!.AbsolutePath;
         if (request.RequestUri.Host == "api.themoviedb.org")
         {
-            return Tmdb.TryGetValue(path, out var body) ? IntegrationTransport.Response(body) : IntegrationTransport.Response("{\"status_code\":34}", 404);
+            if (!Tmdb.TryGetValue(path, out var body))
+            {
+                return IntegrationTransport.Response("{\"status_code\":34}", 404);
+            }
+
+            var seasonPath = System.Text.RegularExpressions.Regex.Match(path, "^/3/tv/([0-9]+)/season/([0-9]+)$");
+            return IntegrationTransport.Response(seasonPath.Success
+                ? RealSeason(body, int.Parse(seasonPath.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(seasonPath.Groups[2].Value, CultureInfo.InvariantCulture), snake: true)
+                : body);
         }
 
         if (path is "/api/v1/media" or "/api/v1/request")
@@ -208,7 +245,7 @@ internal sealed class ListsHarness : IDisposable
             if (parts.Length == 3 && parts[1] == "season" && int.TryParse(parts[0], out var showId) && int.TryParse(parts[2], out var number)
                 && SeasonDetails.TryGetValue((showId, number), out var season))
             {
-                return IntegrationTransport.Response(season);
+                return IntegrationTransport.Response(RealSeason(season, showId, number));
             }
 
             return IntegrationTransport.Response("{\"message\":\"Unable to retrieve series.\"}", 500);

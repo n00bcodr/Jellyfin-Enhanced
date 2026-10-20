@@ -180,8 +180,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         public bool RowsSound => Malformed == 0 && Repeated == 0 && !Drifted;
 
         /// <summary>
-        /// Pages whose paging facts broke the request or their domain (review round 9, 4c2-R9-5): a negative page count or total,
-        /// another page than the one asked for (or one past the page count), a total below the rows read, or no page for a total.
+        /// Pages whose paging facts broke their domain (review round 9, 4c2-R9-5): a negative page count or total, a page past
+        /// the page count, a total below the rows read, or no page for a total; and (review round 10) answers that weren't bound
+        /// to their request: another page than the one asked for, or no echo of the page, list or universe asked for
+        /// (<see cref="Violation"/>, from the contract's binder).
         /// </summary>
         public int Violations { get; private set; }
 
@@ -217,9 +219,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="hasNext">IMDb <c>hasNextPage</c>.</param>
         /// <param name="cursor">IMDb <c>endCursor</c> (a cursor read before is drift).</param>
         /// <param name="errors">Errors next to the data.</param>
-        /// <param name="asked">The page number asked for (offset pages), when the answer reports its own (<paramref name="answered"/>).</param>
-        /// <param name="answered">The page number the answer reports.</param>
-        public void Page(int? pageCount = null, int? itemCount = null, bool? hasNext = null, string? cursor = null, bool errors = false, int? asked = null, int? answered = null)
+        /// <param name="answered">The page number the answer reports (whether it is the page asked for is the binder's: <see cref="Violation"/>).</param>
+        public void Page(int? pageCount = null, int? itemCount = null, bool? hasNext = null, string? cursor = null, bool errors = false, int? answered = null)
         {
             if (cursor != null && !_cursors.Add(cursor))
             {
@@ -229,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             // Review round 9 (D53 domain rules, 4c2-R9-5): a page's paging facts are checked against the request and their domain
             // before any completeness rule trusts them (a negative page count once made page 1 the "last" one).
             if (pageCount < 0 || itemCount < 0 || itemCount < Rows || (itemCount > 0 && pageCount == 0)
-                || (asked is int page && answered is int reported && (reported != page || (pageCount > 0 && reported > pageCount))))
+                || (answered is int reported && pageCount > 0 && reported > pageCount))
             {
                 Violations++;
             }
@@ -237,6 +238,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             _pages.Add(new SourcePage(_pageRows, pageCount, itemCount, hasNext, cursor != null, errors));
             _pageRows = 0;
         }
+
+        /// <summary>Reports an answer of the read that wasn't bound to its request (review round 10: ResponseContract.Bind).</summary>
+        public void Violation() => Violations++;
 
         /// <summary>Reports why the loop stopped.</summary>
         /// <param name="end">The reason.</param>

@@ -109,23 +109,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Members">Object members or list rows.</param>
     /// <param name="Rows">What an unreadable row does (lists).</param>
     /// <param name="Fact">The identity fact an <see cref="FieldRole.Identity"/> field is a source of ("imdb", "tvdb").</param>
-    /// <param name="Echo">The request fact this field must equal when the request names it (review round 9): another value is
-    /// an answer to another request (another title, season or show), so the row or answer is Malformed.</param>
     /// <param name="Unique">Lists: the member names that key a row (two usable rows with the same key make the answer
     /// Malformed); an empty key means the list holds at most one row (more is ambiguous: Malformed).</param>
     internal sealed record FieldRule(string Name, FieldType Type, FieldRole Role, bool Nullable = true, ResourceSchema? Members = null, RowFailure Rows = RowFailure.Malformed, string? Fact = null,
-        RequestFact Echo = RequestFact.None, IReadOnlyList<string>? Unique = null);
+        IReadOnlyList<string>? Unique = null);
 
-    /// <summary>A fact of the request an answer must echo (review round 9, D53: an answer is checked against the request that produced it).</summary>
+    /// <summary>
+    /// A typed fact of a request (review round 10, D53 "derived request bindings"): every contract declares, for EVERY fact,
+    /// the answer field that must echo it or a named reason why none can (<see cref="FactBinding"/>).
+    /// </summary>
     internal enum RequestFact
     {
-        /// <summary>Not a request fact.</summary>
-        None,
+        /// <summary>The resource kind asked for: the contract's own name (one contract per route).</summary>
+        Kind,
 
-        /// <summary>The TMDB id asked for (details, a <c>tmdb:N</c> title, a collection).</summary>
+        /// <summary>The TMDB id asked for (details, a <c>tmdb:N</c> title, a collection, an MDBList title).</summary>
         Id,
 
-        /// <summary>The media type asked for (<c>movie</c> or <c>tv</c>).</summary>
+        /// <summary>The media type asked for (<c>movie</c> or <c>tv</c>; MDBList's <c>movie</c> or <c>show</c>).</summary>
         MediaType,
 
         /// <summary>The season asked for.</summary>
@@ -136,16 +137,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>The page asked for.</summary>
         Page,
+
+        /// <summary>The list asked for (a TMDB list id, an IMDb <c>ls</c> id).</summary>
+        ListId,
+
+        /// <summary>The Chronolists universe asked for (its address, e.g. <c>mcu</c>).</summary>
+        Universe,
+
+        /// <summary>The TMDB id of an explicit-id search (<c>tmdb:N</c>).</summary>
+        SearchTmdbId,
+
+        /// <summary>The external id of an explicit-id search or find (<c>imdb:tt…</c>, <c>tvdb:N</c>).</summary>
+        SearchExternalId,
+
+        /// <summary>The set of TMDB ids a batch asked for.</summary>
+        IdSet,
     }
 
     /// <summary>
-    /// What an answer was asked for (review round 9, D53 "contracts take the request"): the identity (TMDB id, media type), the
-    /// season (and its show) and the page the request named. A field declared to echo one of these must equal it; an answer
-    /// that doesn't is another resource's, so it is Malformed: never used, kept, proof of an absence, or allowed to clear a
-    /// stored value.
+    /// What an answer was asked for (review rounds 9 and 10, D53): the request's typed facts. A fact the request names is checked
+    /// by the contract's binding of it (<see cref="FactBinding"/>); a fact it doesn't name isn't asked about.
     /// </summary>
     /// <param name="Id">The TMDB id asked for.</param>
-    /// <param name="MediaType">"movie" or "tv".</param>
+    /// <param name="MediaType">"movie" or "tv" (MDBList: "movie" or "show").</param>
     /// <param name="Season">The season number asked for.</param>
     /// <param name="Show">The show's TMDB id a season was asked of.</param>
     /// <param name="Page">The page asked for.</param>
@@ -154,18 +168,109 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>A request that names nothing (a row read on its own).</summary>
         public static readonly AnswerRequest None = new();
 
+        /// <summary>The resource kind asked for (the contract's name), or null.</summary>
+        public string? Kind { get; init; }
+
+        /// <summary>The list asked for, or null.</summary>
+        public string? ListId { get; init; }
+
+        /// <summary>The Chronolists universe asked for, or null.</summary>
+        public string? Universe { get; init; }
+
+        /// <summary>The TMDB id of an explicit-id search, or null.</summary>
+        public int? SearchTmdbId { get; init; }
+
+        /// <summary>The external id of an explicit-id search or find, or null.</summary>
+        public string? SearchExternalId { get; init; }
+
+        /// <summary>The TMDB ids a batch asked for, or null.</summary>
+        public IReadOnlyCollection<int>? Ids { get; init; }
+
         /// <summary>The value of a request fact, or null when the request doesn't name it.</summary>
         /// <param name="fact">The fact.</param>
         /// <returns>The value.</returns>
         public object? Of(RequestFact fact) => fact switch
         {
+            RequestFact.Kind => Kind,
             RequestFact.Id => Id,
             RequestFact.MediaType => MediaType,
             RequestFact.Season => Season,
             RequestFact.Show => Show,
             RequestFact.Page => Page,
+            RequestFact.ListId => ListId,
+            RequestFact.Universe => Universe,
+            RequestFact.SearchTmdbId => SearchTmdbId,
+            RequestFact.SearchExternalId => SearchExternalId,
+            RequestFact.IdSet => Ids,
             _ => null,
         };
+    }
+
+    /// <summary>How a contract binds one request fact (review round 10).</summary>
+    internal enum BindingKind
+    {
+        /// <summary>
+        /// Answer fields echo it: each REQUIRED path must be there with the value asked for (missing: the answer is UNBOUND,
+        /// never definitive, never kept, never clearing); every optional path that is there must agree. Another value is an
+        /// answer to another request.
+        /// </summary>
+        Echo,
+
+        /// <summary>The contract IS the fact (one contract per route): a request naming another kind is refused (Malformed).</summary>
+        Route,
+
+        /// <summary>No answer field can echo it (the reason says why); the fact is never checked.</summary>
+        NotApplicable,
+    }
+
+    /// <summary>One answer path a binding reads: <c>a.b</c> walks objects, <c>rows[].x</c> is every row of the list.</summary>
+    /// <param name="Path">The path (provider names; Seerr's are camelCase).</param>
+    /// <param name="Required">The answer must carry it (for a row path: every row there is).</param>
+    internal sealed record EchoPath(string Path, bool Required);
+
+    /// <summary>A contract's binding of one request fact (review round 10, D53 "derived request bindings").</summary>
+    /// <param name="Kind">How it is bound.</param>
+    /// <param name="Paths">The answer paths that echo it (<see cref="BindingKind.Echo"/>).</param>
+    /// <param name="Reason">Why it is bound without a required echo (optional paths only, a route, or none at all).</param>
+    /// <param name="OnMismatch">What another value makes the answer: Malformed (another resource's answer), or Partial for a
+    /// page (rows of the same list or search, but not the page asked for: used, never kept).</param>
+    internal sealed record FactBinding(BindingKind Kind, IReadOnlyList<EchoPath> Paths, string? Reason, ResponseVerdict OnMismatch = ResponseVerdict.Malformed)
+    {
+        /// <summary>Required echo paths.</summary>
+        /// <param name="paths">Paths.</param>
+        /// <returns>The binding.</returns>
+        public static FactBinding Echo(params string[] paths) => new(BindingKind.Echo, paths.Select(p => new EchoPath(p, true)).ToList(), null);
+
+        /// <summary>One required echo path, and optional ones that must agree when they are there.</summary>
+        /// <param name="required">The required path.</param>
+        /// <param name="optional">Optional paths.</param>
+        /// <returns>The binding.</returns>
+        public static FactBinding EchoAnd(string required, params string[] optional) =>
+            new(BindingKind.Echo, new[] { new EchoPath(required, true) }.Concat(optional.Select(p => new EchoPath(p, false))).ToList(), null);
+
+        /// <summary>Optional echo paths only: the reason says what binds the fact when none is there.</summary>
+        /// <param name="reason">Reason.</param>
+        /// <param name="paths">Paths.</param>
+        /// <returns>The binding.</returns>
+        public static FactBinding WhenPresent(string reason, params string[] paths) => new(BindingKind.Echo, paths.Select(p => new EchoPath(p, false)).ToList(), reason);
+
+        /// <summary>The contract is the fact.</summary>
+        /// <param name="reason">Reason.</param>
+        /// <returns>The binding.</returns>
+        public static FactBinding Route(string reason) => new(BindingKind.Route, Array.Empty<EchoPath>(), reason);
+
+        /// <summary>No answer field can echo it.</summary>
+        /// <param name="reason">Reason.</param>
+        /// <returns>The binding.</returns>
+        public static FactBinding NotApplicable(string reason) => new(BindingKind.NotApplicable, Array.Empty<EchoPath>(), reason);
+
+        /// <summary>The same binding; another value makes the answer Partial (a page of the same list or search).</summary>
+        /// <returns>The binding.</returns>
+        public FactBinding PartialOnMismatch() => this with { OnMismatch = ResponseVerdict.Partial };
+
+        /// <summary>The same binding in Seerr's names (camelCase).</summary>
+        /// <returns>The binding.</returns>
+        public FactBinding Camel() => this with { Paths = Paths.Select(p => p with { Path = string.Join('.', p.Path.Split('.').Select(ResponseContract.CamelName)) }).ToList() };
     }
 
     /// <summary>
@@ -198,7 +303,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Fields">Declared fields (undeclared fields are ignored).</param>
     /// <param name="Facts">Identity facts the answer must establish to be Valid (each Known or Absent).</param>
     /// <param name="Paging">The page's paging fields, when the answer is a page.</param>
-    internal sealed record ResourceSchema(string Name, IReadOnlyList<FieldRule> Fields, IReadOnlyList<string>? Facts = null, PagingRule? Paging = null)
+    /// <param name="Bindings">The binding of every request fact (review round 10): every contract of <see cref="ResponseContract.All"/> declares all of them.</param>
+    internal sealed record ResourceSchema(string Name, IReadOnlyList<FieldRule> Fields, IReadOnlyList<string>? Facts = null, PagingRule? Paging = null,
+        IReadOnlyDictionary<RequestFact, FactBinding>? Bindings = null)
     {
         /// <summary>The same schema in Seerr's names (camelCase), e.g. <c>external_ids.imdb_id</c> → <c>externalIds.imdbId</c>.</summary>
         /// <param name="name">The camelCase schema's name.</param>
@@ -207,14 +314,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             name,
             Fields.Select(f => f with { Name = ResponseContract.CamelName(f.Name), Members = f.Members?.Camel(f.Members.Name), Unique = f.Unique?.Select(ResponseContract.CamelName).ToList() }).ToList(),
             Facts,
-            Paging == null ? null : new PagingRule(ResponseContract.CamelName(Paging.Page), ResponseContract.CamelName(Paging.Pages), ResponseContract.CamelName(Paging.Total), ResponseContract.CamelName(Paging.Rows)));
+            Paging == null ? null : new PagingRule(ResponseContract.CamelName(Paging.Page), ResponseContract.CamelName(Paging.Pages), ResponseContract.CamelName(Paging.Total), ResponseContract.CamelName(Paging.Rows)),
+            Bindings?.ToDictionary(b => b.Key, b => b.Value.Camel()));
 
         /// <summary>This schema with more fields (another resource built on it).</summary>
         /// <param name="name">The new schema's name.</param>
         /// <param name="fields">Fields added.</param>
         /// <param name="facts">Identity facts.</param>
+        /// <param name="bindings">Bindings that differ from this schema's.</param>
         /// <returns>The schema.</returns>
-        public ResourceSchema With(string name, IEnumerable<FieldRule> fields, IReadOnlyList<string>? facts = null) => new(name, Fields.Concat(fields).ToList(), facts ?? Facts, Paging);
+        public ResourceSchema With(string name, IEnumerable<FieldRule> fields, IReadOnlyList<string>? facts = null, IReadOnlyDictionary<RequestFact, FactBinding>? bindings = null)
+        {
+            var merged = new Dictionary<RequestFact, FactBinding>(Bindings ?? new Dictionary<RequestFact, FactBinding>());
+            foreach (var binding in bindings ?? new Dictionary<RequestFact, FactBinding>())
+            {
+                merged[binding.Key] = binding.Value;
+            }
+
+            return new(name, Fields.Concat(fields).ToList(), facts ?? Facts, Paging, merged);
+        }
 
         /// <summary>Validates an answer (or one row) on its own, against no request.</summary>
         /// <param name="element">The answer.</param>
@@ -243,8 +361,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>The verdict.</summary>
         public ResponseVerdict Verdict { get; private set; } = ResponseVerdict.Valid;
 
-        /// <summary>Why the verdict isn't Valid (a bounded diagnostic: the field path), or null.</summary>
+        /// <summary>Why the verdict isn't Valid, or null: a fixed code and DECLARED field paths only (review round 10, 4c2-R10-6), never a provider's value or member name.</summary>
         public string? Reason { get; private set; }
+
+        /// <summary>
+        /// A request fact the request named had no echo where the contract requires one (review round 10): the answer may be
+        /// another request's, so it is never definitive (Partial: never kept, never proof of an absence, never clearing).
+        /// </summary>
+        public bool Unbound { get; private set; }
+
+        /// <summary>Marks the answer unbound (the binder only).</summary>
+        /// <param name="reason">The fixed code and declared path.</param>
+        public void Unbind(string reason)
+        {
+            Unbound = true;
+            Lower(ResponseVerdict.Partial, reason);
+        }
 
         /// <summary>The state of an identity fact (Unknown when no source declared it).</summary>
         /// <param name="fact">Fact name.</param>
@@ -368,10 +500,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             Unusable,
         }
 
-        private static FieldRule Required(string name, FieldType type, ResourceSchema? rows = null, RowFailure failure = RowFailure.Malformed, RequestFact echo = RequestFact.None, string[]? unique = null) =>
-            new(name, type, FieldRole.Required, false, rows, failure, Echo: echo, Unique: unique);
+        private static FieldRule Required(string name, FieldType type, ResourceSchema? rows = null, RowFailure failure = RowFailure.Malformed, string[]? unique = null) =>
+            new(name, type, FieldRole.Required, false, rows, failure, Unique: unique);
 
-        private static FieldRule Display(string name, FieldType type, RequestFact echo = RequestFact.None) => new(name, type, FieldRole.Display, Echo: echo);
+        private static FieldRule Display(string name, FieldType type) => new(name, type, FieldRole.Display);
 
         private static FieldRule Fact(string name, FieldType type, bool nullable = true, ResourceSchema? rows = null, string[]? unique = null) => new(name, type, FieldRole.Fact, nullable, rows, Unique: unique);
 
@@ -379,23 +511,92 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static FieldRule Container(string name, bool nullable, params FieldRule[] members) => new(name, FieldType.Object, FieldRole.Container, nullable, new ResourceSchema(name, members));
 
+        // ── Request bindings (review round 10, D53 "derived request bindings"): EVERY contract binds EVERY request fact, by
+        // position (Bound), so a fact can't be left out; ContractBindingsTests enumerates every (contract × fact) pair. ──
+
+        private const string MediaByRoute = "TMDB's and Seerr's details carry no media type: the route (movie/ or tv/) binds it, with the type's required name field (title, name); a declared media_type must agree";
+
+        private const string MediaOfMetadata = "Seerr's and TMDB's details carry no top-level media type: the route (movie/ or tv/) binds it; a declared mediaType, or Seerr's mediaInfo.mediaType when Seerr has the title, must agree";
+
+        private const string SeasonOwnId = "a season's own id is the season's TMDB id (Breaking Bad S1: 3572), never a title's: the season and its show bind the answer";
+
+        private const string CursorPages = "cursor pages: no page number (the cursor and total rules of review round 3 apply)";
+
+        private static readonly FactBinding KindRoute = FactBinding.Route("one contract per route: a request names the kind it was sent for, and an answer read by another kind's contract is refused");
+
+        private static readonly FactBinding NoId = FactBinding.NotApplicable("not a title read: no TMDB title id is asked for");
+
+        private static readonly FactBinding NoMedia = FactBinding.NotApplicable("not a title read: no media type is asked for (rows declare their own)");
+
+        private static readonly FactBinding NoSeason = FactBinding.NotApplicable("not a season read: no season is asked for");
+
+        private static readonly FactBinding NoShow = FactBinding.NotApplicable("not a season read: no show is asked for");
+
+        private static readonly FactBinding NoPage = FactBinding.NotApplicable("one answer, not a page");
+
+        private static readonly FactBinding NoList = FactBinding.NotApplicable("not a list read: no list is asked for");
+
+        private static readonly FactBinding NoUniverse = FactBinding.NotApplicable("not a Chronolists read");
+
+        private static readonly FactBinding NoSearch = FactBinding.NotApplicable("not an explicit-id search");
+
+        private static readonly FactBinding NoExternal = FactBinding.NotApplicable("not keyed by an external (IMDb, TVDB) id");
+
+        private static readonly FactBinding NoIdSet = FactBinding.NotApplicable("one resource per request, not a batch");
+
+        // The bindings of a contract, one per request fact, by position: none can be left out.
+        private static Dictionary<RequestFact, FactBinding> Bound(
+            FactBinding kind, FactBinding id, FactBinding mediaType, FactBinding season, FactBinding show, FactBinding page, FactBinding listId,
+            FactBinding universe, FactBinding searchTmdbId, FactBinding searchExternalId, FactBinding idSet) => new()
+        {
+            [RequestFact.Kind] = kind,
+            [RequestFact.Id] = id,
+            [RequestFact.MediaType] = mediaType,
+            [RequestFact.Season] = season,
+            [RequestFact.Show] = show,
+            [RequestFact.Page] = page,
+            [RequestFact.ListId] = listId,
+            [RequestFact.Universe] = universe,
+            [RequestFact.SearchTmdbId] = searchTmdbId,
+            [RequestFact.SearchExternalId] = searchExternalId,
+            [RequestFact.IdSet] = idSet,
+        };
+
+        // A title row or details (movie or show): the id asked for; a declared media type agrees.
+        private static Dictionary<RequestFact, FactBinding> TitleBindings() =>
+            Bound(KindRoute, FactBinding.Echo("id"), FactBinding.WhenPresent(MediaByRoute, "media_type"), NoSeason, NoShow, NoPage, NoList, NoUniverse, NoSearch, NoExternal, NoIdSet);
+
+        // A season (import lookups, posters' TMDB names): its own number, every episode's show.
+        private static Dictionary<RequestFact, FactBinding> SeasonBindings(FactBinding id) =>
+            Bound(KindRoute, id, FactBinding.NotApplicable("a season is always a show's"), FactBinding.EchoAnd("season_number", "episodes[].season_number"),
+                FactBinding.Echo("episodes[].show_id"), NoPage, NoList, NoUniverse, NoSearch, NoExternal, NoIdSet);
+
+        // Placeholder metadata of a title (Seerr's names).
+        private static Dictionary<RequestFact, FactBinding> MetadataTitleBindings() =>
+            Bound(KindRoute, FactBinding.Echo("id"), FactBinding.WhenPresent(MediaOfMetadata, "mediaType", "mediaInfo.mediaType"), NoSeason, NoShow, NoPage, NoList, NoUniverse, NoSearch, NoExternal, NoIdSet);
+
+        // A chart page (TMDB's trending and charts; Seerr's camelCase of them).
+        private static Dictionary<RequestFact, FactBinding> ChartPageBindings() =>
+            Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow, FactBinding.Echo("page").PartialOnMismatch(),
+                FactBinding.NotApplicable("a chart is named by its route (trending/movie/week, movie/top_rated, discover/…/upcoming): its answer names no chart"), NoUniverse, NoSearch, NoExternal, NoIdSet);
+
         // ── Import lookups (TMDB's names; Seerr's are the camelCase of the same) ──
 
         /// <summary>A movie row of a search or find answer (also the title part of movie details).</summary>
         public static readonly ResourceSchema TmdbMovieRow = new("tmdb movie row", new[]
         {
-            Required("id", FieldType.Id, echo: RequestFact.Id), Display("media_type", FieldType.Text, RequestFact.MediaType), Required("title", FieldType.Text), Display("original_title", FieldType.Text),
+            Required("id", FieldType.Id), Display("media_type", FieldType.Text), Required("title", FieldType.Text), Display("original_title", FieldType.Text),
             Display("release_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
-        });
+        }, Bindings: TitleBindings());
 
         /// <summary>A show row of a search or find answer (also the title part of TV details).</summary>
         public static readonly ResourceSchema TmdbTvRow = new("tmdb tv row", new[]
         {
-            Required("id", FieldType.Id, echo: RequestFact.Id), Display("media_type", FieldType.Text, RequestFact.MediaType), Required("name", FieldType.Text), Display("original_name", FieldType.Text),
+            Required("id", FieldType.Id), Display("media_type", FieldType.Text), Required("name", FieldType.Text), Display("original_name", FieldType.Text),
             Display("first_air_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
-        });
+        }, Bindings: TitleBindings());
 
         private static readonly ResourceSchema TmdbSeasonRow = new("tmdb season row", new[]
         {
@@ -406,7 +607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         // them, are the request's.
         private static readonly ResourceSchema TmdbEpisodeRow = new("tmdb episode row", new[]
         {
-            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count, RequestFact.Season), Display("show_id", FieldType.Id, RequestFact.Show),
+            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count), Display("show_id", FieldType.Id),
             Display("name", FieldType.Text), Display("air_date", FieldType.Date),
         });
 
@@ -435,28 +636,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }, new[] { "imdb", "tvdb" });
 
         /// <summary>
-        /// A TMDB season: its episode list (an episode row JE can't read makes it Malformed), each episode of the season (and
-        /// show) asked for and listed once (review round 9: membership and uniqueness); its own season number is the request's.
+        /// A TMDB season: its episode list (an episode row JE can't read makes it Malformed), each episode listed once (review
+        /// round 9). Review round 10 (bindings): its own <c>season_number</c> is the season asked for and every episode's
+        /// <c>show_id</c> the show asked for (both required: TMDB's and Seerr's real seasons carry them); an episode's own
+        /// season number, when there, agrees.
         /// </summary>
         public static readonly ResourceSchema TmdbSeason = new("tmdb season", new[]
         {
-            Required("episodes", FieldType.List, TmdbEpisodeRow, unique: new[] { "episode_number" }), Display("season_number", FieldType.Count, RequestFact.Season),
-        });
+            Required("episodes", FieldType.List, TmdbEpisodeRow, unique: new[] { "episode_number" }), Display("season_number", FieldType.Count),
+        }, Bindings: SeasonBindings(FactBinding.NotApplicable(SeasonOwnId)));
 
         /// <summary>
         /// TMDB's <c>find</c> for an IMDb EPISODE id: its episode results (a row JE can't read beside a usable one: Partial).
         /// One IMDb episode id names one episode (review round 9: two rows are ambiguous, Malformed).
         /// </summary>
-        public static readonly ResourceSchema TmdbEpisodeFind = new("tmdb episode find", new[] { Required("tv_episode_results", FieldType.List, TmdbEpisodeFindRow, RowFailure.Partial, unique: Array.Empty<string>()) });
+        public static readonly ResourceSchema TmdbEpisodeFind = new("tmdb episode find", new[] { Required("tv_episode_results", FieldType.List, TmdbEpisodeFindRow, RowFailure.Partial, unique: Array.Empty<string>()) },
+            Bindings: Bound(KindRoute, NoId, NoMedia, FactBinding.NotApplicable("found, not asked: the IMDb episode id names the episode"), FactBinding.NotApplicable("found, not asked: the IMDb episode id names the show"),
+                NoPage, NoList, NoUniverse, NoSearch, FactBinding.NotApplicable("TMDB's find is keyed by the IMDb episode id and its episode rows carry none: one episode per id (a second row is ambiguous)"), NoIdSet));
 
         /// <summary>TMDB's <c>find</c> for a title's IMDb or TVDB id: both result lists (rows read by the lookup).</summary>
-        public static readonly ResourceSchema TmdbFind = new("tmdb find", new[] { Required("movie_results", FieldType.List), Required("tv_results", FieldType.List) });
+        public static readonly ResourceSchema TmdbFind = new("tmdb find", new[] { Required("movie_results", FieldType.List), Required("tv_results", FieldType.List) },
+            Bindings: Bound(KindRoute, NoId, FactBinding.NotApplicable("each result list is of one type (movie_results, tv_results): its rows are typed by the list"), NoSeason, NoShow, NoPage, NoList, NoUniverse, NoSearch,
+                FactBinding.NotApplicable("TMDB's find is keyed by the IMDb or TVDB id and its rows carry neither"), NoIdSet));
 
         /// <summary>A TMDB search answer: its result list (rows read by the lookup) and its paging fields (review round 9: domain rules).</summary>
         public static readonly ResourceSchema TmdbSearch = new("tmdb search", new[]
         {
             Required("results", FieldType.List), Display("page", FieldType.Count), Display("total_pages", FieldType.Count), Display("total_results", FieldType.Count),
-        }, Paging: new PagingRule("page", "total_pages", "total_results", "results"));
+        }, Paging: new PagingRule("page", "total_pages", "total_results", "results"),
+            Bindings: Bound(KindRoute, NoId, FactBinding.NotApplicable("a search mixes types: each row declares its own and is read by the row contracts"), NoSeason, NoShow,
+                FactBinding.Echo("page").PartialOnMismatch(), NoList, NoUniverse, FactBinding.Echo("results[].id"),
+                FactBinding.NotApplicable("search rows carry no external id: an imdb:/tvdb: search is answered with the titles TMDB's find names for it"), NoIdSet));
 
         /// <summary>Seerr's movie row (camelCase).</summary>
         public static readonly ResourceSchema SeerrMovieRow = TmdbMovieRow.Camel("seerr movie row");
@@ -484,10 +694,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataMovie = new("metadata movie", new[]
         {
-            Required("id", FieldType.Id, echo: RequestFact.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+            Required("id", FieldType.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Identity("imdbId", FieldType.Imdb, "imdb"),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb")),
-        }, new[] { "imdb" });
+        }, new[] { "imdb" }, Bindings: MetadataTitleBindings());
 
         private static readonly ResourceSchema MetadataEpisodeRef = new("metadata episode", new[]
         {
@@ -501,7 +711,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataShow = new("metadata show", new[]
         {
-            Required("id", FieldType.Id, echo: RequestFact.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+            Required("id", FieldType.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Fact("status", FieldType.Text), Display("inProduction", FieldType.Bool),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb"), Identity("tvdbId", FieldType.Id, "tvdb")),
             Fact("seasons", FieldType.List, nullable: false, rows: new ResourceSchema("metadata season row", new[]
@@ -510,7 +720,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }), unique: new[] { "seasonNumber" }),
             new FieldRule("lastEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
             new FieldRule("nextEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
-        }, new[] { "imdb", "tvdb" });
+        }, new[] { "imdb", "tvdb" }, Bindings: MetadataTitleBindings());
 
         /// <summary>
         /// A season's placeholder metadata: its episodes (with their air dates), air date and poster. Review round 9 (4c2-R9-2):
@@ -520,11 +730,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             Required("episodes", FieldType.List, new ResourceSchema("metadata episode row", new[]
             {
-                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count, RequestFact.Season), Display("showId", FieldType.Id, RequestFact.Show),
+                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count), Display("showId", FieldType.Id),
                 Display("name", FieldType.Text), Fact("airDate", FieldType.Date),
             }), unique: new[] { "episodeNumber" }),
-            Display("seasonNumber", FieldType.Count, RequestFact.Season), Fact("airDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
-        });
+            Display("seasonNumber", FieldType.Count), Fact("airDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+        }, Bindings: SeasonBindings(FactBinding.NotApplicable(SeasonOwnId)).ToDictionary(b => b.Key, b => b.Value.Camel()));
 
         /// <summary>
         /// A TMDB poster read (a title's or a season's details): <c>poster_path</c> is the answer (null: no poster); the title's
@@ -532,8 +742,91 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema TmdbPoster = new("tmdb poster", new[]
         {
-            Fact("poster_path", FieldType.Poster), Display("id", FieldType.Id, RequestFact.Id), Display("season_number", FieldType.Count, RequestFact.Season),
-        });
+            Fact("poster_path", FieldType.Poster), Display("id", FieldType.Id), Display("season_number", FieldType.Count),
+        }, Bindings: Bound(KindRoute, FactBinding.Echo("id"), FactBinding.NotApplicable("the route (movie/, tv/) binds it; TMDB's details carry no media type"),
+            FactBinding.Echo("season_number"), FactBinding.Echo("episodes[].show_id"), NoPage, NoList, NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        // ── List sources and MDBList records (review round 10): their rows are read by the source fetcher's row readers and
+        // MdblistService.CheckRecord; these contracts bind each answer to its request (one binder for every contract). ──
+
+        /// <summary>A TMDB list page (<c>list/{id}?page=N</c>): its <c>id</c> is the list asked for and its <c>page</c> the page.</summary>
+        public static readonly ResourceSchema TmdbListPage = new("tmdb list page", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute,
+            FactBinding.NotApplicable("a list is asked for by its list id (ListId), not a title id"), NoMedia, NoSeason, NoShow, FactBinding.Echo("page").PartialOnMismatch(),
+            FactBinding.Echo("id"), NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>A TMDB chart or trending page: its <c>page</c> is the page asked for.</summary>
+        public static readonly ResourceSchema TmdbChartPage = new("tmdb chart page", Array.Empty<FieldRule>(), Bindings: ChartPageBindings());
+
+        /// <summary>A TMDB collection (<c>collection/{id}</c>): its <c>id</c> is the collection asked for.</summary>
+        public static readonly ResourceSchema TmdbCollection = new("tmdb collection", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, FactBinding.Echo("id"),
+            FactBinding.NotApplicable("a collection's parts are movies"), NoSeason, NoShow, NoPage, FactBinding.NotApplicable("a collection is asked for by its TMDB id (Id)"), NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>Seerr's collection (<c>/api/v1/collection/{id}</c>).</summary>
+        public static readonly ResourceSchema SeerrCollection = TmdbCollection.Camel("seerr collection");
+
+        /// <summary>Seerr's trending and upcoming pages.</summary>
+        public static readonly ResourceSchema SeerrChartPage = TmdbChartPage.Camel("seerr chart page");
+
+        /// <summary>
+        /// A Trakt page, as its pagination headers say (<c>X-Pagination-Page</c> read as <c>page</c>; Trakt's body is a bare
+        /// array of rows).
+        /// </summary>
+        public static readonly ResourceSchema TraktPage = new("trakt page", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow,
+            FactBinding.Echo("page").PartialOnMismatch(),
+            FactBinding.NotApplicable("Trakt's list-items answer is a bare array of rows without a list field: the route (users/<user>/lists/<list>, lists/<id>) binds it"),
+            NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>An IMDb list page (GraphQL <c>data</c>): <c>list.id</c> is the list asked for.</summary>
+        public static readonly ResourceSchema ImdbListPage = new("imdb list page", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow,
+            FactBinding.NotApplicable(CursorPages), FactBinding.Echo("list.id"), NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>An IMDb watchlist page (GraphQL <c>data</c>).</summary>
+        public static readonly ResourceSchema ImdbWatchlistPage = new("imdb watchlist page", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow,
+            FactBinding.NotApplicable(CursorPages),
+            FactBinding.NotApplicable("IMDb's predefinedList is keyed by its userId argument and names no user in its answer (a p. profile is first resolved to that userId)"),
+            NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>An IMDb chart page (GraphQL <c>data</c>).</summary>
+        public static readonly ResourceSchema ImdbChartPage = new("imdb chart page", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow,
+            FactBinding.NotApplicable(CursorPages), FactBinding.NotApplicable("chartTitles is keyed by its chartType argument and names no chart in its answer"),
+            NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>An MDBList list answer (the public JSON or the API's items).</summary>
+        public static readonly ResourceSchema MdblistList = new("mdblist list", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId, NoMedia, NoSeason, NoShow,
+            FactBinding.NotApplicable("one answer (the API's next page is never followed: more only means incomplete)"),
+            FactBinding.NotApplicable("MDBList's list answer is the list's rows only (public JSON and API items), without a list field: the route binds it"),
+            NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>
+        /// A Chronolists watch-order page (its <c>__NEXT_DATA__</c> JSON): <c>props.pageProps.universe.id</c> is the universe asked
+        /// for (the address's), and Next's <c>query.universe</c>, when there, agrees.
+        /// </summary>
+        public static readonly ResourceSchema ChronolistsUniverse = new("chronolists universe", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, NoId,
+            FactBinding.NotApplicable("entries declare their own type (tv, movie)"), NoSeason, NoShow, FactBinding.NotApplicable("one page"),
+            FactBinding.NotApplicable("Chronolists names its watch order by its universe (Universe)"),
+            FactBinding.EchoAnd("props.pageProps.universe.id", "query.universe"), NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>An MDBList title's record (<c>/tmdb/{type}/{id}</c>): <c>ids.tmdb</c> is the title and <c>type</c> the type asked for.</summary>
+        public static readonly ResourceSchema MdblistRecord = new("mdblist record", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute, FactBinding.Echo("ids.tmdb"),
+            FactBinding.Echo("type"), NoSeason, NoShow, NoPage, NoList, NoUniverse, NoSearch, NoExternal, NoIdSet));
+
+        /// <summary>One row of an MDBList media batch: <c>ids.tmdb</c> is one of the ids asked for (each once: the batch's own rule) and <c>type</c> the type asked for.</summary>
+        public static readonly ResourceSchema MdblistBatchRow = new("mdblist batch row", Array.Empty<FieldRule>(), Bindings: Bound(KindRoute,
+            FactBinding.NotApplicable("a batch asks for a set of ids (IdSet), each row one of them"), FactBinding.Echo("type"), NoSeason, NoShow, NoPage, NoList, NoUniverse, NoSearch, NoExternal,
+            FactBinding.Echo("ids.tmdb")));
+
+        /// <summary>
+        /// Every contract of a provider answer the list subsystem reads (review round 10): each binds every request fact
+        /// (ContractBindingsTests enumerates the pairs; a contract a reader validates against must be listed here).
+        /// </summary>
+        public static IReadOnlyList<ResourceSchema> All => new[]
+        {
+            TmdbMovieRow, TmdbTvRow, TmdbMovieDetails, TmdbTvDetails, TmdbSeason, TmdbEpisodeFind, TmdbFind, TmdbSearch,
+            SeerrMovieRow, SeerrTvRow, SeerrMovieDetails, SeerrTvDetails, SeerrSeason, SeerrSearch,
+            MetadataMovie, MetadataShow, MetadataSeason, TmdbPoster,
+            TmdbListPage, TmdbChartPage, TmdbCollection, SeerrCollection, SeerrChartPage, TraktPage, ImdbListPage, ImdbWatchlistPage, ImdbChartPage, MdblistList, ChronolistsUniverse,
+            MdblistRecord, MdblistBatchRow,
+        };
 
         /// <summary>
         /// Validates <paramref name="element"/> against <paramref name="schema"/> and the request that produced it (review round
@@ -555,7 +848,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return read;
             }
 
-            ReadFields(schema, element, read, read, string.Empty, request);
+            ReadFields(schema, element, read, read, string.Empty);
             foreach (var fact in schema.Facts ?? Array.Empty<string>())
             {
                 if (read.Fact(fact) == FactState.Unknown)
@@ -566,28 +859,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (schema.Paging is { } paging)
             {
-                CheckPaging(paging, element, read, request);
+                CheckPaging(paging, element, read);
             }
 
+            Bind(schema, request, element, read);
             return read;
         }
 
-        // A page's domain rules (review round 9, 4c2-R9-5): non-negative counts (a negative one was already unusable: Partial),
-        // the page asked for, a total of at least the page's rows, and a page count of at least 1 when there is a total.
-        private static void CheckPaging(PagingRule paging, JsonElement element, ContractRead read, AnswerRequest request)
+        // A page's domain rules (review round 9, 4c2-R9-5; the page asked for is the binder's, review round 10): non-negative
+        // counts (a negative one was already unusable: Partial), a total of at least the page's rows, a page count of at least 1
+        // when there is a total. Review round 10 (4c2-R10-5, occupancy): a page within the page count holds rows when the total
+        // says there are some, and an empty page is "no titles" only when its total says 0 (missing: not affirmed).
+        private static void CheckPaging(PagingRule paging, JsonElement element, ContractRead read)
         {
             var page = read.Int(paging.Page);
             var pages = read.Int(paging.Pages);
             var total = read.Int(paging.Total);
             var rows = element.TryGetProperty(paging.Rows, out var list) && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
-            if (request.Page is int asked && page is int answered && answered != asked)
-            {
-                read.Lower(ResponseVerdict.Partial, paging.Page + " (not the page asked for)");
-            }
-
             if ((total is int t && t < rows) || (total is > 0 && pages is 0))
             {
-                read.Lower(ResponseVerdict.Partial, paging.Total + " (inconsistent with the rows)");
+                read.Lower(ResponseVerdict.Partial, "paging:" + paging.Total + " (inconsistent with the rows)");
+            }
+
+            if (rows == 0 && total is > 0 && !(page is int p && pages is int last && p > last))
+            {
+                read.Lower(ResponseVerdict.Partial, "paging:" + paging.Rows + " (empty, the total says otherwise)");
+            }
+
+            if (rows == 0 && total == null)
+            {
+                read.Lower(ResponseVerdict.Partial, "paging:" + paging.Total + " (an empty page without its total)");
             }
         }
 
@@ -608,7 +909,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // Each declared field: its verdict and identity facts go to `read` (the whole answer's), its typed value to `into` (the
         // object it belongs to: the answer, a container's members, a row).
-        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, ContractRead into, string prefix, AnswerRequest request)
+        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, ContractRead into, string prefix)
         {
             foreach (var field in schema.Fields)
             {
@@ -644,14 +945,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         continue;
                 }
 
-                // Review round 9 (4c2-R9-1/2): a field that echoes a request fact must be the one asked for; another id, media
-                // type, season or show is another resource's answer.
-                if (field.Echo != RequestFact.None && request.Of(field.Echo) is { } asked && !Echoes(asked, parsed))
-                {
-                    read.Lower(ResponseVerdict.Malformed, path + " (not the one asked for)");
-                    continue;
-                }
-
                 if (field.Fact != null)
                 {
                     read.Note(field.Fact, FactState.Known);
@@ -662,14 +955,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var members = new ContractRead();
                     if (field.Members != null)
                     {
-                        ReadFields(field.Members, value, read, members, path + ".", request);
+                        ReadFields(field.Members, value, read, members, path + ".");
                     }
 
                     into.Set(field.Name, FieldType.Object, members);
                 }
                 else if (field.Type == FieldType.List)
                 {
-                    into.Set(field.Name, FieldType.List, field.Members != null ? ReadRows(field, value, read, path, request) : Array.Empty<ContractRead>());
+                    into.Set(field.Name, FieldType.List, field.Members != null ? ReadRows(field, value, read, path) : Array.Empty<ContractRead>());
                 }
                 else
                 {
@@ -680,7 +973,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // A list's rows: a row JE can't read (not an object, a required field missing or bad) is what the list declares;
         // a row's unknown fact or unreadable display field makes the answer Partial. Returns the usable rows, in order.
-        private static IReadOnlyList<ContractRead> ReadRows(FieldRule field, JsonElement list, ContractRead read, string path, AnswerRequest request)
+        private static IReadOnlyList<ContractRead> ReadRows(FieldRule field, JsonElement list, ContractRead read, string path)
         {
             var usable = new List<ContractRead>();
             var unreadable = 0;
@@ -693,7 +986,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 else
                 {
-                    ReadFields(field.Members!, row, rowRead, rowRead, path + "[].", request);
+                    ReadFields(field.Members!, row, rowRead, rowRead, path + "[].");
                 }
 
                 if (rowRead.Verdict == ResponseVerdict.Malformed)
@@ -734,13 +1027,136 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return usable;
         }
 
-        // A typed value equals the request's fact (ids and numbers by value, text exactly).
-        private static bool Echoes(object asked, object? parsed) => asked switch
+        /// <summary>
+        /// Checks an answer against the request's facts by the contract's bindings (review round 10, D53 "derived request
+        /// bindings"; the one binder of every contract). For each fact the request names: a <see cref="BindingKind.Route"/>
+        /// fact is the contract itself (a request of another kind: Malformed); an <see cref="BindingKind.Echo"/> fact must be
+        /// echoed by every required path (missing or null, on the answer or on any row of a row path: UNBOUND, so Partial:
+        /// never definitive, never kept, never clearing) and agreed with by every path that is there (another value: the
+        /// binding's mismatch verdict). A row path binds the rows there are (a list without rows has none to check).
+        /// Diagnostics are fixed codes and the declared path only (4c2-R10-6).
+        /// </summary>
+        /// <param name="schema">The contract.</param>
+        /// <param name="request">What was asked for.</param>
+        /// <param name="element">The answer.</param>
+        /// <param name="read">The read to lower.</param>
+        public static void Bind(ResourceSchema schema, AnswerRequest request, JsonElement element, ContractRead read)
         {
-            int number => parsed is int value && value == number,
-            string text => parsed is string value && string.Equals(value, text, StringComparison.Ordinal),
-            _ => false,
+            foreach (var (fact, binding) in schema.Bindings ?? new Dictionary<RequestFact, FactBinding>())
+            {
+                if (request.Of(fact) is not { } asked)
+                {
+                    continue;
+                }
+
+                if (binding.Kind == BindingKind.Route)
+                {
+                    if (fact == RequestFact.Kind && !string.Equals(asked as string, schema.Name, StringComparison.Ordinal))
+                    {
+                        read.Lower(ResponseVerdict.Malformed, "binding:kind (another kind's contract)");
+                    }
+
+                    continue;
+                }
+
+                if (binding.Kind != BindingKind.Echo)
+                {
+                    continue;
+                }
+
+                foreach (var path in binding.Paths)
+                {
+                    // A row path binds the rows there are: a list without rows has none to carry the echo (its emptiness is
+                    // the paging rules' and ProviderAbsence's to judge), a missing list reaches one missing value.
+                    foreach (var leaf in Leaves(element, path.Path))
+                    {
+                        if (leaf is not JsonElement value || value.ValueKind == JsonValueKind.Null)
+                        {
+                            if (path.Required)
+                            {
+                                read.Unbind("unbound:" + path.Path + " (no echo of the " + FactCode(fact) + " asked for)");
+                            }
+                        }
+                        else if (!EchoValue(asked, value))
+                        {
+                            read.Lower(binding.OnMismatch, "binding:" + path.Path + " (not the " + FactCode(fact) + " asked for)");
+                        }
+                    }
+                }
+            }
+        }
+
+        // The fixed name of a fact in diagnostics.
+        private static string FactCode(RequestFact fact) => fact switch
+        {
+            RequestFact.MediaType => "media type",
+            RequestFact.ListId => "list",
+            RequestFact.SearchTmdbId => "search id",
+            RequestFact.SearchExternalId => "external id",
+            RequestFact.IdSet => "ids",
+            _ => fact.ToString().ToLowerInvariant(),
         };
+
+        // The values at a path: one per object reached (null where the last member is missing); a row path (`rows[]`) reaches
+        // every row of the list; a missing or mistyped container on the way reaches one missing value; a list without rows
+        // reaches none.
+        private static List<JsonElement?> Leaves(JsonElement element, string path)
+        {
+            var current = new List<JsonElement?> { element };
+            foreach (var segment in path.Split('.'))
+            {
+                var rows = segment.EndsWith("[]", StringComparison.Ordinal);
+                var name = rows ? segment[..^2] : segment;
+                var next = new List<JsonElement?>();
+                foreach (var node in current)
+                {
+                    if (node is not JsonElement value || value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(name, out var member))
+                    {
+                        next.Add(null);
+                    }
+                    else if (!rows)
+                    {
+                        next.Add(member);
+                    }
+                    else if (member.ValueKind == JsonValueKind.Array)
+                    {
+                        next.AddRange(member.EnumerateArray().Select(row => (JsonElement?)row));
+                    }
+                    else
+                    {
+                        next.Add(null);
+                    }
+                }
+
+                current = next;
+            }
+
+            return current;
+        }
+
+        // An answer value equals the fact asked for: by canonical text (a whole number's digits, a string as it is; MDBList's
+        // ids may be either), and for an id set, by membership.
+        private static bool EchoValue(object asked, JsonElement value)
+        {
+            var text = value.ValueKind switch
+            {
+                JsonValueKind.Number when value.TryGetInt64(out var number) => number.ToString(CultureInfo.InvariantCulture),
+                JsonValueKind.String => value.GetString(),
+                _ => null,
+            };
+            if (text == null)
+            {
+                return false;
+            }
+
+            return asked switch
+            {
+                IReadOnlyCollection<int> set => set.Any(id => string.Equals(id.ToString(CultureInfo.InvariantCulture), text, StringComparison.Ordinal)),
+                int number => string.Equals(number.ToString(CultureInfo.InvariantCulture), text, StringComparison.Ordinal),
+                string expected => string.Equals(expected, text, StringComparison.Ordinal),
+                _ => false,
+            };
+        }
 
         private static void Missing(FieldRule field, ContractRead read, string path)
         {

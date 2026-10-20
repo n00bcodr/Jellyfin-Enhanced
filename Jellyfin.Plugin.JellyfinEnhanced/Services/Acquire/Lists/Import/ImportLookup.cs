@@ -316,11 +316,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return new LookupResult<IReadOnlyList<TitleHit>>(LookupStatus.Ok, Array.Empty<TitleHit>());
             }
 
+            var asked = SearchRequest(normalized);
             var answer = await GetAsync(
                 "search|" + normalized,
                 "/api/v1/search?query=" + Uri.EscapeDataString(normalized) + "&page=1",
                 context,
-                ParseSearch,
+                json => ParseSearch(json, asked),
                 cancellationToken).ConfigureAwait(false);
             return answer.Result<IReadOnlyList<TitleHit>>();
         }
@@ -551,10 +552,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                         return new ServerAnswer<LookupAnswer>(ServerState.Valid, answer);
                     }
 
-                    // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown season, but
-                    // also a TMDB 429 or timeout). Seasons are only looked up when the show's details list them, so a 500
-                    // there is retried (transient, never cached), not taken as a missing season.
-                    if (status == 404)
+                    // Seerr's routes answer EVERY failure with 500 ("Unable to retrieve season.": an unknown season, but also a
+                    // TMDB 429 or timeout), so a 500 is retried (transient, never cached), never a missing title or season.
+                    // Review round 10 (ProviderAbsence.Seerr): no Seerr answer is an absence; a 404 is Seerr's unknown-route
+                    // answer (a wrong address or a proxy), so it is that server's failure too.
+                    if (ProviderAbsence.Seerr(status))
                     {
                         return new ServerAnswer<LookupAnswer>(ServerState.NotFound);
                     }
@@ -657,11 +659,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // contracts): titles found beside a row JE can't read are used but not kept; only such rows and nothing found is no
         // proof of "no titles" (transient); a valid empty answer is never kept either (Seerr answers a TMDB error as no
         // results, Q-4C2AFIX5-1).
-        private static LookupAnswer ParseSearch(string json)
+        // Review round 10 (4c2-R10-2): an explicit-id search is bound to its id (every row of a tmdb:N answer is that id: Seerr
+        // answers the movie, the show and the person of it); an imdb:/tvdb: search names its external id (its rows carry none).
+        private static LookupAnswer ParseSearch(string json, AnswerRequest asked)
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var page = ResponseContract.SeerrSearch.Validate(new AnswerRequest(Page: 1), root);
+            var page = ResponseContract.SeerrSearch.Validate(asked, root);
             if (page.Verdict == ResponseVerdict.Malformed)
             {
                 return LookupAnswer.Transient;
@@ -684,7 +688,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
             }
 
-            if (hits.Count == 0 && unusable > 0)
+            // Review round 10 (4c2-R10-5): nothing found is "no titles" only from a Valid answer (a row unread, an empty page whose
+            // total says otherwise, or an unbound page proves nothing).
+            if (hits.Count == 0 && (unusable > 0 || verdict != ResponseVerdict.Valid))
             {
                 return LookupAnswer.Transient;
             }
@@ -742,6 +748,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             verdict = read.Verdict;
             hit = verdict == ResponseVerdict.Malformed ? null : TypedTitles.Hit(read, type, camel: true);
             return hit == null ? RowRead.Unusable : RowRead.Hit;
+        }
+
+        // What a search asks for (review round 10): page 1, and an explicit-id search's id.
+        private static AnswerRequest SearchRequest(string normalized)
+        {
+            var asked = new AnswerRequest(Page: 1);
+            if (normalized.StartsWith("tmdb:", StringComparison.Ordinal))
+            {
+                return int.TryParse(normalized.AsSpan(5), NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? asked with { SearchTmdbId = id } : asked;
+            }
+
+            return normalized.StartsWith("imdb:", StringComparison.Ordinal) || normalized.StartsWith("tvdb:", StringComparison.Ordinal) ? asked with { SearchExternalId = normalized[5..] } : asked;
         }
 
         // The address list every Seerr-backed read of the lists area takes (review round 8, 4c2-R8-4).

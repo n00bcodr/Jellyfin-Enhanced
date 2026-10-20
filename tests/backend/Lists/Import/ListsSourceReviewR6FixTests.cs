@@ -193,7 +193,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
             }),
             "year" => ("Man of Steel year:2013", new()
             {
-                [Tmdb + "search/movie"] = (shape switch
+                [Tmdb + "search/movie"] = (Paged(shape switch
                 {
                     "valid empty" or "mixed" => "{\"results\":[]}",
                     "dropped rows" => "{\"results\":[{\"id\":1,\"title\":\"Adult\",\"adult\":true}]}",
@@ -202,12 +202,12 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
                     "wrong type" => "{\"results\":{}}",
                     "unusable row" => "{\"results\":[{\"id\":5}]}",
                     _ => "{\"results\":[" + ManOfSteel + "]}",
-                }, 200),
-                [Tmdb + "search/tv"] = shape == "mixed" ? ("{}", 200) : ("{\"results\":[]}", 200),
+                }), 200),
+                [Tmdb + "search/tv"] = shape == "mixed" ? ("{}", 200) : (Paged("{\"results\":[]}"), 200),
             }),
             _ => ("Man of Steel", new()
             {
-                [Tmdb + "search/multi"] = (shape switch
+                [Tmdb + "search/multi"] = (Paged(shape switch
                 {
                     "valid empty" => "{\"results\":[]}",
                     "dropped rows" => "{\"results\":[{\"media_type\":\"person\",\"id\":3,\"name\":\"Henry Cavill\"},{\"media_type\":\"movie\",\"id\":4,\"title\":\"Adult\",\"adult\":true}]}",
@@ -217,9 +217,24 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
                     "unusable row" => "{\"results\":[{\"id\":5,\"title\":\"No type\"}]}",
                     "mixed" => "{\"results\":[{\"media_type\":\"person\",\"id\":3,\"name\":\"Henry Cavill\"},{\"media_type\":\"movie\",\"id\":6}]}",
                     _ => "{\"results\":[{\"media_type\":\"movie\",\"id\":49521,\"title\":\"Man of Steel\",\"release_date\":\"2013-06-12\"}]}",
-                }, 200),
+                }), 200),
             }),
         };
+    }
+
+    // A search page as TMDB and Seerr really answer it (review round 10: the page asked for and its counts; an empty page is
+    // "no titles" only with a total of 0).
+    internal static string Paged(string body, bool camel = false)
+    {
+        if (System.Text.Json.Nodes.JsonNode.Parse(body) is not System.Text.Json.Nodes.JsonObject page || page["results"] is not System.Text.Json.Nodes.JsonArray rows)
+        {
+            return body;
+        }
+
+        page.TryAdd("page", 1);
+        page.TryAdd(camel ? "totalPages" : "total_pages", 1);
+        page.TryAdd(camel ? "totalResults" : "total_results", rows.Count);
+        return page.ToJsonString();
     }
 
     public static IEnumerable<object[]> SearchCells() =>
@@ -294,7 +309,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
         w.Answer("seerr-a.test/api/v1/search", "{\"results\":[{\"mediaType\":\"movie\",\"id\":5},{\"id\":6,\"title\":\"No type\"}]}");
         Assert.Equal(LookupStatus.Transient, (await w.SeerrLookup.SearchAsync("Man of Steel", w.Context, None)).Status);
 
-        w.Answer("seerr-a.test/api/v1/search", "{\"results\":[{\"mediaType\":\"person\",\"id\":3,\"name\":\"Henry Cavill\"}]}"); // control: valid
+        w.Answer("seerr-a.test/api/v1/search", Paged("{\"results\":[{\"mediaType\":\"person\",\"id\":3,\"name\":\"Henry Cavill\"}]}", camel: true)); // control: valid
         var valid = await w.SeerrLookup.SearchAsync("Man of Steel", w.Context, None);
         Assert.Equal(LookupStatus.Ok, valid.Status);
         Assert.Empty(valid.Value!);
@@ -323,7 +338,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
         };
         var at = (tmdb ? Tmdb : "seerr-a.test/api/v1/") + (kind == "season" ? "tv/1412/season/1" : "tv/1412");
         var ids = tmdb ? ",\"external_ids\":{\"imdb_id\":null,\"tvdb_id\":null}" : ",\"externalIds\":{\"imdbId\":null,\"tvdbId\":null}";
-        w.Answer(at, kind == "season" ? "{\"episodes\":[" + rows + "]}" : "{\"id\":1412,\"name\":\"Arrow\"" + ids + ",\"seasons\":[" + rows + "]}");
+        w.Answer(at, kind == "season" ? ListsHarness.RealSeason("{\"episodes\":[" + rows + "]}", 1412, 1, snake: tmdb) : "{\"id\":1412,\"name\":\"Arrow\"" + ids + ",\"seasons\":[" + rows + "]}");
 
         async Task<(LookupStatus Status, int? Count)> Read()
         {
@@ -367,7 +382,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
     {
         using var w = new World();
         var path = kind == "details" ? "api/v1/tv/1412" : "api/v1/tv/1412/season/1";
-        var valid = kind == "details" ? "{\"id\":1412,\"name\":\"Arrow\",\"externalIds\":{\"imdbId\":null,\"tvdbId\":null},\"seasons\":[]}" : "{\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1}]}";
+        var valid = kind == "details" ? "{\"id\":1412,\"name\":\"Arrow\",\"externalIds\":{\"imdbId\":null,\"tvdbId\":null},\"seasons\":[]}" : "{\"seasonNumber\":1,\"episodes\":[{\"episodeNumber\":1,\"seasonNumber\":1,\"showId\":1412}]}";
         void Serve(string host, string outcome) => w.Answer(host + "/" + path, outcome switch
         {
             "valid" => valid,
@@ -391,7 +406,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
 
         var expected = pair switch
         {
-            "404 404" => LookupStatus.NotFound,
+            // Review round 10 (ProviderAbsence): Seerr's 404 is its unknown-route answer, never a proof: "404 404" is transient.
             "unreadable valid" or "404 valid" => LookupStatus.Ok,
             _ => LookupStatus.Transient,
         };

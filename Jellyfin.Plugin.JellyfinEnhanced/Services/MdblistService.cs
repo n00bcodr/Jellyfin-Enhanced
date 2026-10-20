@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using MediaBrowser.Common.Configuration;
+using Contracts = Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -731,14 +732,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // and listed once: otherwise an id missing from it proves nothing (a row of another type or a repeated id stands
                 // where an asked title should be), so the batch fails and the chunk is retried next run. A row whose identity
                 // is sound but whose record isn't whole is that title's failed lookup: never confirmed, never a miss.
-                var asked = new HashSet<string>(tmdbIds.Select(id => id.Trim()), StringComparer.Ordinal);
+                var asked = new Contracts.AnswerRequest(MediaType: mdblistType)
+                {
+                    Ids = tmdbIds.Select(id => int.TryParse(id.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0).Where(id => id > 0).ToHashSet(),
+                };
                 var result = new Dictionary<string, MdblistCacheEntry>();
                 foreach (var itemEl in root.EnumerateArray())
                 {
-                    var record = CheckRecord(itemEl, mdblistType);
-                    if (record.Identity is not { } tmdbIdStr || !asked.Contains(tmdbIdStr) || result.ContainsKey(tmdbIdStr))
+                    var record = CheckRecord(itemEl, Contracts.ResponseContract.MdblistBatchRow, asked);
+                    if (record.Identity is not { } tmdbIdStr || result.ContainsKey(tmdbIdStr))
                     {
-                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row that isn't one of the {mdblistType}s asked for, once ({record.Reason ?? "unasked or repeated id"}); the batch is retried");
+                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row that isn't one of the {mdblistType}s asked for, once ({record.Reason ?? "identity:repeated"}); the batch is retried");
                         return null;
                     }
 
@@ -826,44 +830,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// THE record contract of an MDBList media answer (review round 9, D53 "MDBList records are whole"; single title and
-        /// batch rows alike), against the type asked for. Identity: an object whose <c>ids.tmdb</c> is a positive TMDB id
-        /// (<see cref="BatchRowTmdbId"/>) and whose declared <c>type</c> is the one asked for ("movie" or "show"). Body: the
-        /// <c>ratings</c> resource is a list (an explicit empty one is valid) of objects, each with a source name, and a value,
-        /// score (both 0–100), vote count (a whole number ≥ 0), link (text or a number) and Rotten Tomatoes flag (0 or 1) that
-        /// are each missing, null or within that domain; the top-level <c>score</c> is missing, null or 0–100; every
-        /// <c>ids</c> member is text, a number or null. MDBList's legitimate nulls stay valid.
+        /// batch rows alike). Identity (review round 10: the one binder, <see cref="Contracts.ResponseContract.Bind"/>, by the
+        /// record's contract, <c>MdblistRecord</c> or <c>MdblistBatchRow</c>): an object whose <c>ids.tmdb</c> is a positive TMDB
+        /// id (<see cref="BatchRowTmdbId"/>) that is the id asked for (or one of the ids a batch asked for) and whose declared
+        /// <c>type</c> is the one asked for ("movie" or "show"). Body: the <c>ratings</c> resource is a list (an explicit empty one
+        /// is valid) of objects, each with a source name, and a value, score (both 0–100), vote count (a whole number ≥ 0), link
+        /// (text or a number) and Rotten Tomatoes flag (0 or 1) that are each missing, null or within that domain; the top-level
+        /// <c>score</c> is missing, null or 0–100; every <c>ids</c> member is text, a number or null. MDBList's legitimate nulls
+        /// stay valid. Review round 10 (4c2-R10-6): the reason is a fixed code and a declared path, never a member name or a
+        /// value of the answer (callers log it).
         /// </summary>
         /// <param name="row">The record.</param>
-        /// <param name="mdblistType">The type asked for ("movie" or "show").</param>
+        /// <param name="contract">The record's contract (a single title's or a batch row's).</param>
+        /// <param name="asked">What was asked for (the id or ids, and the type).</param>
         /// <returns>The TMDB id when the identity is sound (else null), and why the record isn't whole (null: whole).</returns>
-        internal static (string? Identity, string? Reason) CheckRecord(JsonElement row, string mdblistType)
+        internal static (string? Identity, string? Reason) CheckRecord(JsonElement row, Contracts.ResourceSchema contract, Contracts.AnswerRequest asked)
         {
             if (BatchRowTmdbId(row) is not { } tmdb)
             {
-                return (null, "no usable ids.tmdb");
+                return (null, "identity:ids.tmdb (no usable id)");
             }
 
-            if (!row.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || !string.Equals(type.GetString(), mdblistType, StringComparison.Ordinal))
+            var bound = contract.Validate(asked, row);
+            if (bound.Verdict != Contracts.ResponseVerdict.Valid)
             {
-                return (null, "not a " + mdblistType);
+                return (null, bound.Reason); // the binder's code and declared path
             }
 
             foreach (var id in row.GetProperty("ids").EnumerateObject())
             {
                 if (id.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.Null))
                 {
-                    return (tmdb, "ids." + id.Name);
+                    return (tmdb, "domain:ids.* (a member that isn't text, a number or null)");
                 }
             }
 
             if (!InDomain(row, "score", 0, 100, whole: false))
             {
-                return (tmdb, "score");
+                return (tmdb, "domain:score");
             }
 
             if (!row.TryGetProperty("ratings", out var ratings) || ratings.ValueKind != JsonValueKind.Array)
             {
-                return (tmdb, "ratings");
+                return (tmdb, "shape:ratings (not a list)");
             }
 
             foreach (var rating in ratings.EnumerateArray())
@@ -871,18 +880,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (rating.ValueKind != JsonValueKind.Object || !rating.TryGetProperty("source", out var source) || source.ValueKind != JsonValueKind.String
                     || string.IsNullOrWhiteSpace(source.GetString()))
                 {
-                    return (tmdb, "ratings[].source");
+                    return (tmdb, "shape:ratings[].source");
                 }
 
                 if (!InDomain(rating, "value", 0, 100, whole: false) || !InDomain(rating, "score", 0, 100, whole: false)
                     || !InDomain(rating, "votes", 0, int.MaxValue, whole: true) || !InDomain(rating, "fresh", 0, 1, whole: true))
                 {
-                    return (tmdb, "ratings[" + source.GetString() + "] value");
+                    return (tmdb, "domain:ratings[].value|score|votes|fresh");
                 }
 
                 if (rating.TryGetProperty("url", out var url) && url.ValueKind is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.Null))
                 {
-                    return (tmdb, "ratings[].url");
+                    return (tmdb, "shape:ratings[].url");
                 }
             }
 
@@ -905,8 +914,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var root = doc.RootElement;
 
-            // MDBList returns {"response": false, "error": "..."} when there's no match for this id.
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("response", out var respEl) && respEl.ValueKind == JsonValueKind.False)
+            // MDBList returns {"response": false, "error": "..."} when there's no match for this id. Review round 10 (absence is a
+            // positive fact, ProviderAbsence.MdblistRatings): only that whole shape is a confirmed miss.
+            if (Contracts.ProviderAbsence.MdblistRatings(root))
             {
                 return new MdblistCacheEntry { Found = false, Confirmed = true, FetchedAtUnixMs = fetchedAtUnixMs };
             }
@@ -915,10 +925,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // by the record contract (CheckRecord: the title and type asked for, the ratings resource whole and within its
             // domain); anything else (`{}`, no ids, another title or type, no ratings list, a rating that isn't one) is a
             // failed lookup, retried after the short RetryTtl, never 7 days of "found".
-            var record = CheckRecord(root, mediaType == "tv" ? "show" : "movie");
-            if (record.Identity is not { } answered || !string.Equals(answered, tmdbId.Trim(), StringComparison.Ordinal) || record.Reason != null)
+            var asked = new Contracts.AnswerRequest(int.TryParse(tmdbId.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0, mediaType == "tv" ? "show" : "movie");
+            var record = CheckRecord(root, Contracts.ResponseContract.MdblistRecord, asked);
+            if (record.Identity is null || record.Reason != null)
             {
-                _logger.Warning($"[MDBList] Ratings answer for {mediaType}:{tmdbId} wasn't that title's whole record ({record.Reason ?? "another title"}); retried later");
+                _logger.Warning($"[MDBList] Ratings answer for {mediaType}:{tmdbId} wasn't that title's whole record ({record.Reason}); retried later");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = fetchedAtUnixMs };
             }
 

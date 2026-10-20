@@ -81,7 +81,8 @@ public class ListsImportReviewR2FixTests
                 }
 
                 var key = request.RequestUri!.GetLeftPart(UriPartial.Path);
-                return Task.FromResult(Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404));
+                var response = Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404);
+                return Task.FromResult(RealShapes ? RealProviders.Shape(request, response) : response);
             });
             Factory = new NamedFactory(clients ?? (name => Transport.CreateClient(name)));
             ImportTestFlags.AllOn(Plugin.Plugin.Configuration);
@@ -91,6 +92,9 @@ public class ListsImportReviewR2FixTests
         }
 
         public Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration Config => Plugin.Plugin.Configuration;
+
+        /// <summary>Answers in the providers' real shape (RealProviders); off for a test that removes an echo on purpose.</summary>
+        public bool RealShapes { get; set; } = true;
 
         public int Sent(string pathStart) => Requests.Count(r => r.RequestUri!.GetLeftPart(UriPartial.Path).StartsWith(pathStart, StringComparison.Ordinal));
 

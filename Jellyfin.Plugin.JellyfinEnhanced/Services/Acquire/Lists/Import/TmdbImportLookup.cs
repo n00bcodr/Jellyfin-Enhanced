@@ -252,8 +252,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // One answer's rows, kept by the response cache only when the answer is Valid.
             public LookupAnswer Leg => new(LookupStatus.Ok, this, Verdict);
 
-            // The search's answer: nothing found and a row unread is no proof of "no titles".
-            public LookupAnswer Answer => _hits.Count == 0 && _unusable > 0 ? LookupAnswer.Transient : LookupAnswer.Ok(_hits, Verdict);
+            // The search's answer: nothing found is "no titles" only from a Valid answer (review round 10, 4c2-R10-5: absence is a
+            // positive fact; a row unread, or an empty page whose total says otherwise, proves nothing).
+            public LookupAnswer Answer => _hits.Count == 0 && Verdict != ResponseVerdict.Valid ? LookupAnswer.Transient : LookupAnswer.Ok(_hits, Verdict);
 
             // A title's own answer (tmdb:N): the title asked for (review round 9: another id is a row JE can't read), a
             // deliberate drop, or a row that can't be read.
@@ -525,7 +526,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
             }
 
-            if (response.StatusCode == 404)
+            // Review round 10 (ProviderAbsence.Tmdb): "no such id" only from TMDB's own 404 (its error object), never a proxy's.
+            if (ProviderAbsence.Tmdb(response.StatusCode, response.Content))
             {
                 return LookupAnswer.NotFound;
             }

@@ -337,9 +337,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return WithNotice(Done(source, MdblistApiProvider, null, items, items.Count, SourceCompleteness.MdblistApi(read, MdblistMore(api), MaxItems), read), "mdblist_api");
             }
 
-            if (api.Status is 401 or 403 or 404)
+            // Review round 10 (absence is a positive fact, ProviderAbsence): 404, or 403 ("Permission denied"), with MDBList's error
+            // object is "not found"; a 401 is a refused key, and anything else a failure.
+            if (ProviderAbsence.MdblistApi(api.Status, api.Body))
             {
-                return SourceFetchResult.Fail(source, "not_found", "MDBList didn't return this list, even with the API key.");
+                return SourceFetchResult.Fail(source, "not_found", "MDBList didn't return this list, even with the API key (it may be private, or not exist).");
+            }
+
+            if (api.Status == 401)
+            {
+                throw new SourceHttpException("upstream_error", "MDBList refused the MDBList API key saved in Jellyfin Enhanced.");
             }
 
             throw Upstream(api, "MDBList");
@@ -538,8 +545,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
 
                     using var doc = JsonDocument.Parse(json);
-                    CollectionAsked(doc.RootElement, id);
                     var read = new SourceRead();
+                    Bind(ResponseContract.TmdbCollection, new AnswerRequest(Id: Number(id)), doc.RootElement, read);
                     var parts = ListArray(doc.RootElement, "parts").Select(p => read.Row(TmdbRow(p, "movie", "release_date"))).OfType<SourceItem>().ToList();
                     var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
                     return Done(source, "tmdb", Str(doc.RootElement, "name"), ordered, ordered.Count, SourceCompleteness.Whole(read), read);
@@ -566,6 +573,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                             }
 
                             using var doc = JsonDocument.Parse(json);
+                            // Review round 10 (4c2-R10-1): the page is the list asked for (its `id`) and the page asked for.
+                            Bind(ResponseContract.TmdbListPage, new AnswerRequest(Page: page) { ListId = id }, doc.RootElement, read);
                             title ??= Str(doc.RootElement, "name");
                             var itemCount = Int(doc.RootElement, "item_count");
                             var pages = Int(doc.RootElement, "total_pages");
@@ -582,7 +591,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                                 }
                             }
 
-                            read.Page(pages, itemCount, asked: page, answered: Int(doc.RootElement, "page"));
+                            read.Page(pages, itemCount, answered: Int(doc.RootElement, "page"));
 
                             if (pages is int last && last >= 0 && page >= last)
                             {
@@ -637,10 +646,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         var json = await TmdbGetAsync(path, "?page=" + page.ToString(CultureInfo.InvariantCulture), key, options, cancellationToken).ConfigureAwait(false)
                             ?? throw new SourceHttpException("upstream_error", "TMDB didn't return the chart.");
                         using var doc = JsonDocument.Parse(json);
+                        Bind(ResponseContract.TmdbChartPage, new AnswerRequest(Page: page), doc.RootElement, read);
                         var rows = ListArray(doc.RootElement, "results").ToList();
                         var pages = Int(doc.RootElement, "total_pages");
                         items.AddRange(rows.Select(p => read.Row(TmdbRow(p, defaultType, null))).OfType<SourceItem>().ToList());
-                        read.Page(pages, Int(doc.RootElement, "total_results"), asked: page, answered: Int(doc.RootElement, "page"));
+                        read.Page(pages, Int(doc.RootElement, "total_results"), answered: Int(doc.RootElement, "page"));
                         if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                         {
                             break;
@@ -689,9 +699,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return response.Body;
             }
 
+            // Review round 10 (ProviderAbsence): "not found" only from TMDB's own 404 (its error object); a proxy's 404 is a failure.
+            if (ProviderAbsence.Tmdb(response.Status, response.Body))
+            {
+                return null;
+            }
+
             return response.Status switch
             {
-                404 => null,
                 401 => throw new SourceHttpException("tmdb_key_invalid", "TMDB refused the API key configured in Jellyfin Enhanced."),
                 429 => throw new SourceHttpException("rate_limited", "TMDB is rate limiting; try again shortly.", response.RetryAfter ?? 10),
                 _ => throw new SourceHttpException("upstream_error", "TMDB returned an error."),
@@ -702,9 +717,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // multi-server read (SeerrFallback, review round 9, 4c2-R9-7). Each address's read is whole on its own (a chart's pages
         // all from one server, never a mix); each of its requests passes the gate (its own admission and turn at the shared
         // metadata limiter). A complete read is used; a partial or truncated one is kept as the fallback (never cached) while
-        // the next address is asked; an answer JE can't read (or another collection's), an error, a timeout or a 5xx (Seerr's
-        // collection route answers 500 for EVERY failure behind it) proves nothing; "not found" only when EVERY address
-        // answered 404. A refusal of JE's own (the read budget, the switch or Seerr's setup changed meanwhile) stops at once.
+        // the next address is asked; an answer JE can't read (or another collection's, or another page's), an error, a timeout
+        // or a 5xx (Seerr's collection route answers 500 for EVERY failure behind it, a missing collection included) proves
+        // nothing. Review round 10 (ProviderAbsence): no Seerr answer is "not found" (a 404 is Seerr's unknown-route answer).
+        // A refusal of JE's own (the read budget, the switch or Seerr's setup changed meanwhile) stops at once.
         private async Task<SourceFetchResult> TmdbViaSeerrAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             if (!SeerrConfigured(out var urls, out var seerrKey))
@@ -717,8 +733,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 try
                 {
                     var result = await TmdbViaSeerrAtAsync(source, baseUrl, seerrKey, options, cancellationToken).ConfigureAwait(false);
-                    return result == null ? new ServerAnswer<SourceFetchResult>(ServerState.NotFound)
-                        : SourceSnapshots.Classify(result, null).State == SnapshotState.Complete ? new ServerAnswer<SourceFetchResult>(ServerState.Valid, result)
+                    return SourceSnapshots.Classify(result, null).State == SnapshotState.Complete ? new ServerAnswer<SourceFetchResult>(ServerState.Valid, result)
                         : new ServerAnswer<SourceFetchResult>(ServerState.Partial, result);
                 }
                 catch (SourceHttpException ex) when (ex.Code is not (SourceFailures.ReadBudgetExhausted or SourceFailures.ProviderDisabled))
@@ -736,25 +751,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             return read.State switch
             {
                 FallbackState.Valid or FallbackState.Partial => read.Value!,
-                FallbackState.NotFound => SourceFetchResult.Fail(source, "not_found", "Seerr couldn't find this TMDB collection."),
                 _ => throw (read.FirstError as SourceHttpException ?? new SourceHttpException("upstream_error", "Seerr returned an error.")),
             };
         }
 
-        // One Seerr address's read of a TMDB collection or chart; null when that Seerr has no such collection.
-        private async Task<SourceFetchResult?> TmdbViaSeerrAtAsync(ParsedSourceUrl source, string baseUrl, string seerrKey, SourceFetchOptions options, CancellationToken cancellationToken)
+        // One Seerr address's read of a TMDB collection or chart.
+        private async Task<SourceFetchResult> TmdbViaSeerrAtAsync(ParsedSourceUrl source, string baseUrl, string seerrKey, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             if (source.Shape == "collection")
             {
                 var json = await SeerrGetAsync(baseUrl, seerrKey, "/api/v1/collection/" + source.Part("id"), options, cancellationToken).ConfigureAwait(false);
-                if (json == null)
-                {
-                    return null;
-                }
-
                 using var doc = JsonDocument.Parse(json);
-                CollectionAsked(doc.RootElement, source.Part("id"));
                 var whole = new SourceRead();
+                Bind(ResponseContract.SeerrCollection, new AnswerRequest(Id: Number(source.Part("id"))), doc.RootElement, whole);
                 var parts = ListArray(doc.RootElement, "parts").Select(p => whole.Row(SeerrRow(p, "movie"))).OfType<SourceItem>().ToList();
                 return Done(source, "seerr", Str(doc.RootElement, "name"), parts, parts.Count, SourceCompleteness.Whole(whole), whole);
             }
@@ -767,13 +776,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             var items = new List<SourceItem>();
             for (var page = 1; ; page++)
             {
-                var json = await SeerrGetAsync(baseUrl, seerrKey, path + (path.EndsWith('?') ? string.Empty : "&") + "page=" + page.ToString(CultureInfo.InvariantCulture), options, cancellationToken).ConfigureAwait(false)
-                    ?? throw new SourceHttpException("upstream_error", "Seerr didn't return the chart.");
+                var json = await SeerrGetAsync(baseUrl, seerrKey, path + (path.EndsWith('?') ? string.Empty : "&") + "page=" + page.ToString(CultureInfo.InvariantCulture), options, cancellationToken).ConfigureAwait(false);
                 using var doc = JsonDocument.Parse(json);
+                Bind(ResponseContract.SeerrChartPage, new AnswerRequest(Page: page), doc.RootElement, read);
                 var rows = ListArray(doc.RootElement, "results").ToList();
                 var pages = Int(doc.RootElement, "totalPages");
                 items.AddRange(rows.Select(p => read.Row(SeerrRow(p, defaultType))).OfType<SourceItem>().ToList());
-                read.Page(pages, Int(doc.RootElement, "totalResults"), asked: page, answered: Int(doc.RootElement, "page"));
+                read.Page(pages, Int(doc.RootElement, "totalResults"), answered: Int(doc.RootElement, "page"));
                 if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                 {
                     break;
@@ -785,9 +794,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         }
 
         // A Seerr fallback read, through the gate (the TMDB switch and Seerr's setup re-checked, admission charged) over
-        // Seerr's own transport. Null only when Seerr affirmatively has no such resource (404); a 500 (Seerr's answer to every
-        // failure behind it, an unknown id included) is an error, never an absence (review round 9, 4c2-R9-7).
-        private async Task<string?> SeerrGetAsync(string baseUrl, string apiKey, string path, SourceFetchOptions options, CancellationToken cancellationToken)
+        // Seerr's own transport. A 500 (Seerr's answer to every failure behind it, an unknown id included) is an error, never an
+        // absence (review round 9, 4c2-R9-7); so is a 404, Seerr's unknown-route answer (review round 10, ProviderAbsence).
+        private async Task<string> SeerrGetAsync(string baseUrl, string apiKey, string path, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             var response = await SendAsync(new Transmission(SeerrProvider, baseUrl + path) { Credential = apiKey, SeerrBase = baseUrl }, options, cancellationToken).ConfigureAwait(false);
             if (response.Status == 200 && response.Body != null)
@@ -797,22 +806,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             return response.Status switch
             {
-                404 => null,
+                404 => throw new SourceHttpException("upstream_error", "Seerr didn't recognise this address (404): check Seerr's address in Jellyfin Enhanced's settings."),
                 500 => throw new SourceHttpException("upstream_error", "Seerr couldn't read this from TMDB: the id may not exist, or TMDB failed behind Seerr. Try again later."),
                 429 => throw new SourceHttpException("rate_limited", "Seerr is rate limiting; try again shortly.", response.RetryAfter ?? 10),
                 _ => throw new SourceHttpException("upstream_error", "Seerr returned an error."),
             };
         }
 
-        // A collection answer is the collection asked for (review round 9: its id; another collection's, or none, is an answer
-        // JE can't use).
-        private static void CollectionAsked(JsonElement answer, string id)
+        // An answer bound to its request by its contract (review round 10, D53 "derived request bindings": ResponseContract.Bind,
+        // the one binder): another resource's answer (another list, collection or universe) is an answer JE can't use
+        // (upstream_error; through Seerr, the next address); an answer without its echo, or of another page, makes the read
+        // partial (never complete, never kept).
+        private static void Bind(ResourceSchema contract, AnswerRequest request, JsonElement answer, SourceRead read)
         {
-            if (Int(answer, "id") is not int answered || !string.Equals(answered.ToString(CultureInfo.InvariantCulture), id, StringComparison.Ordinal))
+            var bound = contract.Validate(request, answer);
+            if (bound.Verdict == ResponseVerdict.Malformed)
             {
-                throw new InvalidDataException("the answer isn't the collection asked for");
+                throw new InvalidDataException("the answer isn't the one asked for");
+            }
+
+            if (bound.Verdict != ResponseVerdict.Valid)
+            {
+                read.Violation();
             }
         }
+
+        // A validated id part (digits) as a number, or null.
+        private static int? Number(string text) => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : null;
 
         // The one deliberately unsupported type of TMDB, Seerr, Trakt and MDBList rows.
         private static readonly HashSet<string> PersonOnly = new(StringComparer.Ordinal) { "person" };
@@ -1011,7 +1031,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     int? pageCount = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : null;
                     int? reported = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : null;
                     int? answeredPage = response.Headers.TryGetValue("X-Pagination-Page", out var pageText) && int.TryParse(pageText, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : null;
-                    read.Page(pageCount, reported, asked: unpaged ? null : page, answered: answeredPage);
+                    // Review round 10: Trakt's page is bound by its pagination header (the body is a bare array of rows).
+                    using (var paging = JsonDocument.Parse(answeredPage is int echoed ? "{\"page\":" + echoed.ToString(CultureInfo.InvariantCulture) + "}" : "{}"))
+                    {
+                        Bind(ResponseContract.TraktPage, new AnswerRequest(Page: unpaged ? null : page), paging.RootElement, read);
+                    }
+
+                    read.Page(pageCount, reported, answered: answeredPage);
                     drift.Total(reported);
                     total = reported ?? items.Count;
                     if (unpaged)
@@ -1167,7 +1193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     connectionPath = new[] { "chartTitles" };
                     break;
                 case "list":
-                    query = "query($id:ID!,$first:Int!,$after:ID){list(id:$id){name{originalText} items(first:$first,after:$after){total edges{node{item{... on Title{" + titleFields + "}}}} pageInfo{hasNextPage endCursor}}}}";
+                    query = "query($id:ID!,$first:Int!,$after:ID){list(id:$id){id name{originalText} items(first:$first,after:$after){total edges{node{item{... on Title{" + titleFields + "}}}} pageInfo{hasNextPage endCursor}}}}";
                     variables["id"] = source.Part("id");
                     connectionPath = new[] { "list", "items" };
                     break;
@@ -1175,11 +1201,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     var user = source.Part("user");
                     if (user.StartsWith("p.", StringComparison.Ordinal))
                     {
-                        var (profile, _) = await ImdbQueryAsync("query($p:ID!){userProfile(input:{profileId:$p}){userId}}", new Dictionary<string, object?> { ["p"] = user }, options, cancellationToken).ConfigureAwait(false);
+                        var (profile, _) = await ImdbQueryAsync("query($p:ID!){userProfile(input:{profileId:$p}){userId}}", new Dictionary<string, object?> { ["p"] = user }, "userProfile", options, cancellationToken).ConfigureAwait(false);
                         user = profile.TryGetProperty("userProfile", out var up) && up.ValueKind == JsonValueKind.Object ? Str(up, "userId") ?? string.Empty : string.Empty;
                         if (!Regex.IsMatch(user, "^ur[0-9]{5,12}$"))
                         {
-                            return SourceFetchResult.Fail(source, "not_found", "IMDb didn't find this watchlist (only public watchlists can be imported).");
+                            // Review round 10 (4c2-R10-7): the profile was answered (an absence would have been IMDb's own
+                            // error), but not with a user id JE can read.
+                            throw new SourceHttpException("upstream_error", "IMDb answered this profile in a way JE can't read (its unofficial API may have changed). Try the MDBList mirror instead.");
                         }
                     }
 
@@ -1192,13 +1220,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             // Every page reports into the read (its edges, total, hasNextPage, cursor, GraphQL errors);
             // SourceCompleteness.Cursor decides whether the whole list was read. A chart's titles are of its one type.
             var context = source.Shape == "chart" ? (ImdbCharts[source.Part("chart")].Contains("_TV_", StringComparison.Ordinal) ? "tvSeries" : "movie") : null;
+            var (contract, asked) = source.Shape switch
+            {
+                "list" => (ResponseContract.ImdbListPage, new AnswerRequest { ListId = source.Part("id") }),
+                "chart" => (ResponseContract.ImdbChartPage, AnswerRequest.None),
+                _ => (ResponseContract.ImdbWatchlistPage, AnswerRequest.None),
+            };
             var read = new SourceRead();
             var items = new List<SourceItem>();
             string? title = null;
             var total = 0;
             for (var page = 0; ; page++)
             {
-                var (data, errors) = await ImdbQueryAsync(query, variables, options, cancellationToken).ConfigureAwait(false);
+                var (data, errors) = await ImdbQueryAsync(query, variables, connectionPath[0], options, cancellationToken).ConfigureAwait(false);
+                Bind(contract, asked, data, read); // review round 10 (4c2-R10-1): the list asked for
                 if (source.Shape == "list" && data.TryGetProperty("list", out var list) && list.ValueKind == JsonValueKind.Object
                     && list.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.Object)
                 {
@@ -1210,7 +1245,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 {
                     if (!connection.TryGetProperty(segment, out connection) || connection.ValueKind != JsonValueKind.Object)
                     {
-                        return SourceFetchResult.Fail(source, "not_found", "IMDb didn't return this list (private or missing).");
+                        // Review round 10 (4c2-R10-7): IMDb's affirmative absence was thrown by ImdbQueryAsync; anything else
+                        // without the list (an internal error with data.list null, data {}) is a failure, never "missing".
+                        throw new SourceHttpException("upstream_error", "IMDb's unofficial API didn't return this list (it answered with an error; it may have changed). Try again later, or the MDBList mirror.");
                     }
                 }
 
@@ -1291,8 +1328,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
-        // Returns the data and whether GraphQL reported errors next to it (a partial answer: nulled items are missing).
-        private async Task<(JsonElement Data, bool Partial)> ImdbQueryAsync(string query, Dictionary<string, object?> variables, SourceFetchOptions options, CancellationToken cancellationToken)
+        // Returns the data and whether GraphQL reported errors next to it (a partial answer: nulled items are missing). Review
+        // round 10 (4c2-R10-7, ProviderAbsence.Imdb): "not found" only when the queried root is null AND IMDb's error on that
+        // root says RESOURCE_NOT_FOUND, NOT_FOUND or FORBIDDEN; any other error code (INTERNAL_SERVER_ERROR, …) is a failure.
+        private async Task<(JsonElement Data, bool Partial)> ImdbQueryAsync(string query, Dictionary<string, object?> variables, string root, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             var body = JsonSerializer.Serialize(new Dictionary<string, object?> { ["query"] = query, ["variables"] = variables });
             var headers = new Dictionary<string, string>(StringComparer.Ordinal) { ["x-imdb-client-name"] = "jellyfin-enhanced" };
@@ -1303,19 +1342,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }
 
             using var doc = JsonDocument.Parse(response.Body);
-            var root = doc.RootElement;
-            var partial = false;
-            if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+            var answer = doc.RootElement;
+            if (ProviderAbsence.Imdb(answer, root))
             {
-                partial = true;
-                var code = errors[0].TryGetProperty("extensions", out var ext) ? Str(ext, "code") : null;
-                if (code is "FORBIDDEN" or "RESOURCE_NOT_FOUND" or "NOT_FOUND")
-                {
-                    throw new SourceHttpException("not_found", "IMDb didn't return this list (private or missing).");
-                }
+                throw new SourceHttpException("not_found", "IMDb didn't return this list (private or missing).");
             }
 
-            if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            var partial = answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0;
+            if (answer.ValueKind != JsonValueKind.Object || !answer.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
             {
                 throw new SourceHttpException("upstream_error", "IMDb's unofficial API returned an error; it may have changed. Try the MDBList mirror instead.");
             }
@@ -1429,11 +1463,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 throw Upstream(response, "Chronolists");
             }
 
-            if (!ChronolistsPage.TryRead(response.Body, out var list, out var error))
+            if (!ChronolistsPage.TryRead(response.Body, source.Part("slug"), out var list, out var error))
             {
                 if (error == ChronolistsPage.NotAWatchOrder)
                 {
                     return SourceFetchResult.Fail(source, "not_found", "This Chronolists page isn't a watch order.");
+                }
+
+                if (error == ChronolistsPage.AnotherUniverse)
+                {
+                    // Review round 10 (4c2-R10-1): another universe's page is an answer JE can't use, never this watch order.
+                    throw new SourceHttpException("upstream_error", "Chronolists answered with another watch order than the one at this address. Nothing was changed; try again later.");
                 }
 
                 _logger.Warning($"[Lists] {source.CanonicalUrl} no longer has the watch-order data JE reads, or too many of its entries can't be read; Chronolists may have changed its pages.");
@@ -1450,6 +1490,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             foreach (var item in list.Items)
             {
                 read.Row(SourceRow.Of(item));
+            }
+
+            if (list.Unbound)
+            {
+                read.Violation(); // the page doesn't name its universe: never complete
             }
 
             var verdict = SourceCompleteness.Chronolists(list, read);
@@ -1595,7 +1640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     throw new SourceHttpException(SourceFailures.Redirected, "The list site answered with a redirect, which Jellyfin Enhanced doesn't follow.");
                 }
 
-                var text = status == 200 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null;
+                var text = status == 200 || status is >= 400 and < 500 ? await ReadBoundedAsync(response, timeout.Token).ConfigureAwait(false) : null; // a 4xx body: its absence signal (review round 10)
                 return new HttpResult(status, text, RetryAfterOf(response), HeadersOf(response));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

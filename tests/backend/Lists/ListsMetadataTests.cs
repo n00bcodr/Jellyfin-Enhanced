@@ -27,7 +27,7 @@ public class ListsMetadataTests
 
     private const string Season2 =
         "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"posterPath\":\"/s2.jpg\",\"episodes\":[" +
-        "{\"episodeNumber\":1,\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}]}";
+        "{\"episodeNumber\":1,\"seasonNumber\":2,\"showId\":110492,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}]}";
 
     [Fact]
     public void TvMetadataGivesReleaseDatesExpectedEpisodesAndProductionStatePerKind()
@@ -164,8 +164,8 @@ public class ListsMetadataTests
     {
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":110492,\"seasonNumber\":2,\"title\":\"Peacemaker\",\"episodes\":[{\"s\":2,\"e\":1,\"airDate\":\"2025-08-01\",\"title\":\"Mine\"},{\"s\":2,\"e\":2,\"airDate\":\"2026-10-10\"}]}");
         var season = "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"posterPath\":null,\"episodes\":[" +
-            "{\"episodeNumber\":1,\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}," +
-            "{\"episodeNumber\":2,\"seasonNumber\":2,\"airDate\":null,\"name\":\"Ep 2\"}]}";
+            "{\"episodeNumber\":1,\"seasonNumber\":2,\"showId\":110492,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}," +
+            "{\"episodeNumber\":2,\"seasonNumber\":2,\"showId\":110492,\"airDate\":null,\"name\":\"Ep 2\"}]}";
         var meta = ListMetadataService.FromTv(episodes, Json(Peacemaker), Json(season), Today, Today);
         Assert.True(ListMetadataService.Apply(episodes, meta));
         Assert.Equal(("Mine", "2025-08-21"), (episodes.Episodes[0].Title, episodes.Episodes[0].AirDate)); // moved: corrected; title kept

@@ -301,6 +301,7 @@ public class ListsSourceReviewR3FixTests
         HttpResponseMessage TraktAnswer(string[] rows)
         {
             var response = Json("[" + Join(rows) + "]");
+            response.Headers.Add("X-Pagination-Page", "1");
             response.Headers.Add("X-Pagination-Page-Count", "1");
             response.Headers.Add("X-Pagination-Item-Count", rows.Length.ToString(CultureInfo.InvariantCulture));
             return response;
@@ -334,12 +335,12 @@ public class ListsSourceReviewR3FixTests
         {
             // Twenty more movies, so one unreadable entry stays under the share that means "the page format changed".
             var all = rows.Concat(Enumerable.Range(500, 20).Select(ChronoMovie));
-            var page = "<html><body><script id=\"__NEXT_DATA__\" type=\"application/json\">{\"props\":{\"pageProps\":{\"universe\":{\"id\":\"t\",\"name\":\"U\",\"list\":{\"l\":["
+            var page = "<html><body><script id=\"__NEXT_DATA__\" type=\"application/json\">{\"props\":{\"pageProps\":{\"universe\":{\"id\":\"mcu\",\"name\":\"U\",\"list\":{\"l\":["
                 + string.Join(',', all) + "],\"m\":{}}}}},\"page\":\"/[universe]\"}</script></body></html>";
             return IntegrationTransport.Response(page, 200, "text/html");
         }
 
-        yield return new("tmdb list", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"name\":\"L\",\"total_pages\":1,\"item_count\":" + rows.Length + ",\"items\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/list/7", null); },
+        yield return new("tmdb list", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"id\":7,\"name\":\"L\",\"page\":1,\"total_pages\":1,\"item_count\":" + rows.Length + ",\"items\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/list/7", null); },
             TmdbRowOf, "{\"media_type\":\"movie\",\"title\":\"No id\"}", TmdbAdult,
             Explicit: TmdbPerson, Excludes: true, Unknown: TmdbUnknown, Untyped: TmdbUntyped, Declare: TmdbDeclared);
         yield return new("tmdb trending", (net, rows) => { Key(net).Routes["https://api.themoviedb.org/3/trending/all/week"] = _ => Json("{\"page\":1,\"total_pages\":1,\"total_results\":" + rows.Length + ",\"results\":[" + Join(rows) + "]}"); return ("https://www.themoviedb.org/trending/all/week", null); },
@@ -377,7 +378,7 @@ public class ListsSourceReviewR3FixTests
             Untyped: id => "{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}", Infers: true,
             Changed: id => "{\"revenue\":1,\"show\":{\"title\":\"S" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}",
             Declare: (id, raw) => "{\"revenue\":1,\"type\":" + raw + ",\"movie\":{\"title\":\"M" + id + "\",\"year\":2001,\"ids\":{\"tmdb\":" + id + "}}}");
-        yield return new("imdb list", (net, rows) => { net.Routes["https://api.graphql.imdb.com/"] = _ => Json("{\"data\":{\"list\":{\"name\":{\"originalText\":\"L\"},\"items\":{\"total\":" + rows.Length + ",\"edges\":[" + Join(rows) + "],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}}"); return ("https://www.imdb.com/list/ls000000302/", null); },
+        yield return new("imdb list", (net, rows) => { net.Routes["https://api.graphql.imdb.com/"] = _ => Json("{\"data\":{\"list\":{\"id\":\"ls000000302\",\"name\":{\"originalText\":\"L\"},\"items\":{\"total\":" + rows.Length + ",\"edges\":[" + Join(rows) + "],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}}"); return ("https://www.imdb.com/list/ls000000302/", null); },
             ImdbRowOf, "{\"node\":{\"item\":{\"id\":\"nm0000001\",\"titleType\":{\"id\":\"movie\"},\"titleText\":{\"text\":\"Bad id\"}}}}", n => ImdbTyped(n, "videoGame"),
             Explicit: n => ImdbTyped(n, "videoGame"), Excludes: true, Unknown: n => ImdbTyped(n, "radioSeries"), Untyped: ImdbUntyped, Declare: ImdbDeclared);
         yield return new("imdb chart", (net, rows) => { net.Routes["https://api.graphql.imdb.com/"] = _ => Json("{\"data\":{\"chartTitles\":{\"total\":" + rows.Length + ",\"edges\":[" + Join(rows) + "],\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}}}"); return ("https://www.imdb.com/chart/top/", null); },

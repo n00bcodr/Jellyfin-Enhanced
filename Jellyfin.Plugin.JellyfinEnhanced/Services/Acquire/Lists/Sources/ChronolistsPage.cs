@@ -14,7 +14,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// <param name="Total">Entries on the page.</param>
     /// <param name="Unusable">Entries that couldn't be read (unknown type, missing ids): the keyless items.</param>
     /// <param name="Truncated">The page has more than <see cref="ChronolistsPage.MaxItems"/> entries.</param>
-    public sealed record ChronolistsList(string? Title, IReadOnlyList<SourceItem> Items, int Total, int Unusable, bool Truncated);
+    public sealed record ChronolistsList(string? Title, IReadOnlyList<SourceItem> Items, int Total, int Unusable, bool Truncated)
+    {
+        /// <summary>The page doesn't name the universe asked for (review round 10): never a complete read.</summary>
+        public bool Unbound { get; init; }
+    }
 
     /// <summary>
     /// Reads a chronolists.com watch-order page. The site has no API: each universe page is a Next.js page whose
@@ -42,6 +46,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>Error: the page exists but isn't a watch order (e.g. /help).</summary>
         public const string NotAWatchOrder = "not_found";
 
+        /// <summary>Error: the page is another universe's watch order than the one asked for (review round 10, 4c2-R10-1).</summary>
+        public const string AnotherUniverse = "another_universe";
+
         /// <summary>Entry cap per page (the largest universes have about 1450 entries).</summary>
         public const int MaxItems = 5000;
 
@@ -58,12 +65,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
         private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-        /// <summary>Reads a page.</summary>
+        /// <summary>Reads a page without a universe to bind it to (fixtures).</summary>
         /// <param name="html">The page HTML.</param>
         /// <param name="list">The entries.</param>
-        /// <param name="error">Error code (<see cref="FormatChanged"/> or <see cref="NotAWatchOrder"/>) when the page can't be read.</param>
+        /// <param name="error">Error code when the page can't be read.</param>
         /// <returns>Whether the page held a watch order.</returns>
-        public static bool TryRead(string html, out ChronolistsList? list, out string? error)
+        public static bool TryRead(string html, out ChronolistsList? list, out string? error) => TryRead(html, null, out list, out error);
+
+        /// <summary>
+        /// Reads a page. Review round 10 (4c2-R10-1, <see cref="ResponseContract.ChronolistsUniverse"/>): the page is the watch order
+        /// of the universe asked for (<c>props.pageProps.universe.id</c> = the address's universe; Next's <c>query.universe</c>, when
+        /// there, agrees): another universe's page is <see cref="AnotherUniverse"/>, and a page that doesn't name one is read but
+        /// never complete (<see cref="ChronolistsList.Unbound"/>).
+        /// </summary>
+        /// <param name="html">The page HTML.</param>
+        /// <param name="asked">The universe asked for (the address's slug), or null.</param>
+        /// <param name="list">The entries.</param>
+        /// <param name="error">Error code (<see cref="FormatChanged"/>, <see cref="NotAWatchOrder"/> or <see cref="AnotherUniverse"/>) when the page can't be read.</param>
+        /// <returns>Whether the page held a watch order.</returns>
+        public static bool TryRead(string html, string? asked, out ChronolistsList? list, out string? error)
         {
             list = null;
             error = FormatChanged;
@@ -96,6 +116,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     // Another kind of page (help, about…) is a wrong address; the watch-order page without its data is a change.
                     var page = root.TryGetProperty("page", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
                     error = page != null && page != "/[universe]" ? NotAWatchOrder : FormatChanged;
+                    return false;
+                }
+
+                var bound = ResponseContract.ChronolistsUniverse.Validate(new AnswerRequest { Universe = asked }, root);
+                if (bound.Verdict == ResponseVerdict.Malformed)
+                {
+                    error = AnotherUniverse;
                     return false;
                 }
 
@@ -162,7 +189,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
 
                 error = null;
-                list = new ChronolistsList(Text(universe, "name", ListRules.MaxTitle), items, total, unusable, total > items.Count);
+                list = new ChronolistsList(Text(universe, "name", ListRules.MaxTitle), items, total, unusable, total > items.Count) { Unbound = bound.Verdict != ResponseVerdict.Valid };
                 return true;
             }
         }

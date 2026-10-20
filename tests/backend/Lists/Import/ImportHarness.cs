@@ -134,3 +134,78 @@ internal static class ImportFixtures
 
     public static string Read(string name, [CallerFilePath] string caller = "") => File.ReadAllText(Path(name, caller));
 }
+
+/// <summary>
+/// Fake provider answers in the providers' real shape (review round 10, seen live 2026-10-20), for fixtures written before the
+/// answers were bound to their requests: a TMDB list page carries its list's <c>id</c> and its <c>page</c>; a Trakt page its
+/// <c>X-Pagination-Page</c>; an IMDb list its <c>id</c>; TMDB's own 404 its error object (a Net's "nothing routed here" reply).
+/// What a fixture sets is never changed.
+/// </summary>
+internal static class RealProviders
+{
+    private static readonly System.Text.RegularExpressions.Regex TmdbList = new("^/3/list/([0-9]+)$");
+
+    public static HttpResponseMessage Shape(HttpRequestMessage request, HttpResponseMessage response)
+    {
+        var uri = request.RequestUri!;
+        var status = (int)response.StatusCode;
+        if (response.Content is not ByteArrayContent)
+        {
+            return response; // a streamed fixture (a body over the size cap) is never read here
+        }
+        if (uri.Host == "api.themoviedb.org" && status == 404 && Body(response) == "{\"message\":\"not found\"}")
+        {
+            return IntegrationTransport.Response("{\"success\":false,\"status_code\":34,\"status_message\":\"The resource you requested could not be found.\"}", 404);
+        }
+
+        if (status != 200)
+        {
+            return response;
+        }
+
+        if (uri.Host == "api.themoviedb.org" && TmdbList.Match(uri.AbsolutePath) is { Success: true } list
+            && System.Text.Json.Nodes.JsonNode.Parse(Body(response)) is System.Text.Json.Nodes.JsonObject page)
+        {
+            page.TryAdd("id", int.Parse(list.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+            if (int.TryParse(System.Web.HttpUtility.ParseQueryString(uri.Query)["page"], out var number))
+            {
+                page.TryAdd("page", number);
+            }
+
+            return With(response, page.ToJsonString());
+        }
+
+        if (uri.Host == "api.trakt.tv" && !response.Headers.Contains("X-Pagination-Page") && response.Headers.Contains("X-Pagination-Page-Count")
+            && System.Web.HttpUtility.ParseQueryString(uri.Query)["page"] is { } traktPage)
+        {
+            response.Headers.Add("X-Pagination-Page", traktPage);
+            return response;
+        }
+
+        if (uri.Host == "api.graphql.imdb.com" && request.Content != null)
+        {
+            var asked = System.Text.Json.Nodes.JsonNode.Parse(request.Content.ReadAsStringAsync().GetAwaiter().GetResult())?["variables"]?["id"]?.GetValue<string>();
+            if (asked != null && System.Text.Json.Nodes.JsonNode.Parse(Body(response)) is System.Text.Json.Nodes.JsonObject answer
+                && answer["data"]?["list"] is System.Text.Json.Nodes.JsonObject imdbList && !imdbList.ContainsKey("id"))
+            {
+                imdbList["id"] = asked;
+                return With(response, answer.ToJsonString());
+            }
+        }
+
+        return response;
+    }
+
+    private static string Body(HttpResponseMessage response) => response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+    private static HttpResponseMessage With(HttpResponseMessage response, string json)
+    {
+        var shaped = IntegrationTransport.Response(json, (int)response.StatusCode);
+        foreach (var header in response.Headers)
+        {
+            shaped.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        return shaped;
+    }
+}

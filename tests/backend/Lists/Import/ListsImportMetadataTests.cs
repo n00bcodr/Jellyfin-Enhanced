@@ -35,7 +35,7 @@ public class ListsImportMetadataTests
                 }
 
                 var key = request.RequestUri!.GetLeftPart(UriPartial.Path);
-                return Task.FromResult(Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"status_code\":34}", 404));
+                return Task.FromResult(RealProviders.Shape(request, Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"status_code\":34}", 404)));
             });
             Tmdb = new TmdbResponseCache(Transport, TimeProvider.System);
             Lookup = new TmdbImportLookup(Tmdb, new MetadataCallLimiter(4, TimeSpan.Zero, TimeProvider.System), Plugin.Core.Logger);
@@ -61,7 +61,7 @@ public class ListsImportMetadataTests
         + "\"last_episode_to_air\":{\"season_number\":2,\"episode_number\":8,\"air_date\":\"2025-10-09\"},\"next_episode_to_air\":null,\"poster_path\":\"/hE3LRZAY84fG19a18pzpkZERjTE.jpg\",\"overview\":\"The continuing story.\","
         + "\"seasons\":[{\"season_number\":0,\"episode_count\":3,\"air_date\":\"2022-11-21\",\"name\":\"Specials\"},{\"season_number\":1,\"episode_count\":8,\"air_date\":\"2022-01-13\",\"name\":\"Season 1\"},{\"season_number\":2,\"episode_count\":8,\"air_date\":\"2025-08-21\",\"name\":\"Season 2\"}]}";
 
-    private const string PeacemakerS2 = "{\"air_date\":\"2025-08-21\",\"poster_path\":\"/s2.jpg\",\"episodes\":[" + "{\"episode_number\":1,\"season_number\":2,\"name\":\"The Ties That Grind\",\"air_date\":\"2025-08-21\"},{\"episode_number\":2,\"season_number\":2,\"name\":\"A Man Is Only as Good as His Bird\",\"air_date\":\"2025-08-28\"}]}";
+    private const string PeacemakerS2 = "{\"season_number\":2,\"air_date\":\"2025-08-21\",\"poster_path\":\"/s2.jpg\",\"episodes\":[" + "{\"episode_number\":1,\"season_number\":2,\"show_id\":110492,\"name\":\"The Ties That Grind\",\"air_date\":\"2025-08-21\"},{\"episode_number\":2,\"season_number\":2,\"show_id\":110492,\"name\":\"A Man Is Only as Good as His Bird\",\"air_date\":\"2025-08-28\"}]}";
 
     [Fact]
     public async Task SearchesAreTmdbsMultiSearchWithAdultTitlesAndPeopleDropped()

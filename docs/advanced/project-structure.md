@@ -443,8 +443,11 @@ Directory names avoid hyphens (`settingspanel`, not `settings-panel`). Embedded-
   writes and the final create projection sharing deletion's lifecycle lock);
   `ListStatusSource.cs` the shared status for entries; `ListMetadata.cs` the metadata source behind
   `IListMetadataSource`; `ResponseContract.cs` the declared contract of every provider answer the lists read (title
-  details, searches, finds, seasons, placeholder metadata: Valid, Partial or Malformed, read once into typed values and
-  checked against the request: the id, media type, season, show and page asked for, unique rows, paging domain);
+  details, searches, finds, seasons, placeholder metadata, list-source pages, MDBList records: Valid, Partial or Malformed,
+  read once into typed values and bound to the request by one table that declares, for every contract and every request
+  fact, the answer field that must echo it or why none can; an answer without its echo is never definitive);
+  `ProviderAbsence.cs` the one place that decides when a provider's answer proves something doesn't exist (its documented
+  status and body only: TMDB's own 404, IMDb's not-found error on the queried list; never a Seerr answer);
   `SeerrAddresses.cs` the Seerr address list every Seerr read of the lists tries in order; `SeerrFallback.cs` the one
   fallback table of those reads (a whole answer is used, a partial one is the fallback, "not found" only from every address); `ListSourceOwnership.cs` linked-source ownership on swap-in; `ExperimentalListImporter.cs` the
   one-time importer of the experimental lists; `ListFlags.cs` the switches and per-person preferences. Routes in

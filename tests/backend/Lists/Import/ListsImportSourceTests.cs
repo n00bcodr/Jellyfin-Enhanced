@@ -98,7 +98,7 @@ public class ListsImportSourceTests
                 }
 
                 var key = request.RequestUri!.GetLeftPart(UriPartial.Path);
-                return Task.FromResult(Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404));
+                return Task.FromResult(RealProviders.Shape(request, Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404)));
             });
             Tmdb = new TmdbResponseCache(Transport, TimeProvider.System);
             // Import, From URL and every provider on, except the two opt-ins (IMDb, the MDBList API) a server starts without.
@@ -297,7 +297,7 @@ public class ListsImportSourceTests
                     + "\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null}}},\"extensions\":{\"disclaimer\":\"...\"}}");
             }
 
-            return Json("{\"errors\":[{\"message\":\"Permission denied\",\"extensions\":{\"code\":\"FORBIDDEN\"}}],\"data\":{\"list\":null}}");
+            return Json("{\"errors\":[{\"message\":\"Permission denied\",\"path\":[\"list\"],\"extensions\":{\"code\":\"FORBIDDEN\"}}],\"data\":{\"list\":null}}"); // IMDb's real error names its path
         };
         var chart = await net.Fetch("https://www.imdb.com/chart/toptv/");
         Assert.True(chart.Ok);

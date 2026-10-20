@@ -52,7 +52,7 @@ public class ListsImportChronolistsTests
     // A page with the given list JSON (l, m) in the chronolists shape.
     private static string Page(string list, string page = "/[universe]", string name = "Test Universe") =>
         "<html><head><script src=\"/x.js\"></script></head><body><script id=\"__NEXT_DATA__\" type=\"application/json\">"
-        + "{\"props\":{\"pageProps\":{\"universe\":{\"id\":\"t\",\"name\":\"" + name + "\",\"list\":" + list + "}}},\"page\":\"" + page + "\"}"
+        + "{\"props\":{\"pageProps\":{\"universe\":{\"id\":\"dctv\",\"name\":\"" + name + "\",\"list\":" + list + "}}},\"page\":\"" + page + "\"}"
         + "</script></body></html>";
 
     private static string Ep(int sid, object s, object e, string date = "2020-01-01", string? name = null) =>

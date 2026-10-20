@@ -321,7 +321,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
             catch (Exception ex)
             {
-                _logger.Warning($"[Lists] Library lookup for \"{scope.Title}\" failed: {ex.Message}");
+                _logger.Warning($"[Lists] Library lookup for {scope.Kind} {scope.TmdbId} failed: {ex.Message}");
                 return ScopeResolution.None;
             }
         }

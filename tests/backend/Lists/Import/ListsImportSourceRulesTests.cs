@@ -38,7 +38,7 @@ public class ListsImportSourceRulesTests
                 }
 
                 var key = request.RequestUri!.GetLeftPart(UriPartial.Path);
-                return Task.FromResult(Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404));
+                return Task.FromResult(RealProviders.Shape(request, Routes.TryGetValue(key, out var route) ? route(request) : IntegrationTransport.Response("{\"message\":\"not found\"}", 404)));
             });
             Tmdb = new TmdbResponseCache(Transport, TimeProvider.System);
             ImportTestFlags.AllOn(Plugin.Plugin.Configuration);

@@ -339,7 +339,7 @@ public class ListsSourceReviewR9FixTests(ITestOutputHelper output)
         {
             case "tmdb list":
                 net.Config.TMDB_API_KEY = "tmdb-key";
-                net.Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"name\":\"L\",\"page\":" + page + ",\"total_pages\":" + pages + ",\"item_count\":" + total + ",\"items\":[" + rows + "]}");
+                net.Routes["https://api.themoviedb.org/3/list/7"] = _ => Json("{\"id\":7,\"name\":\"L\",\"page\":" + page + ",\"total_pages\":" + pages + ",\"item_count\":" + total + ",\"items\":[" + rows + "]}");
                 url = "https://www.themoviedb.org/list/7";
                 break;
             case "tmdb trending":
@@ -446,7 +446,8 @@ public class ListsSourceReviewR9FixTests(ITestOutputHelper output)
 
     // THE ORACLE of the fallback table, restated here (never the production table): per server Valid → use and stop;
     // Partial → the fallback; Malformed, 5xx, timeout → next; 404 → next. Outcome: the first Valid; else the first Partial;
-    // else "not found" only when every server said 404; else unavailable.
+    // else unavailable. Review round 10 (absence is a positive fact): Seerr's 404 is its unknown-route answer, never an
+    // absence, so no Seerr read is "not found" (a 404 is that server's failure).
     private enum Server { Valid, Partial, Malformed, Unavailable, NotFound }
 
     private enum Outcome { Valid, Partial, NotFound, Unavailable }
@@ -456,8 +457,7 @@ public class ListsSourceReviewR9FixTests(ITestOutputHelper output)
         "valid" => Server.Valid,
         "partial" => Server.Partial,
         "malformed" => Server.Malformed,
-        "404" => Server.NotFound,
-        _ => Server.Unavailable,
+        _ => Server.Unavailable, // a 404 too (review round 10)
     };
 
     private static Outcome Expect(Server[] asked) =>
@@ -601,7 +601,7 @@ public class ListsSourceReviewR9FixTests(ITestOutputHelper output)
     [InlineData("500", "404", "unavailable")]
     [InlineData("404", "500", "unavailable")]
     [InlineData("500", "500", "unavailable")]
-    [InlineData("404", "404", "not_found")]
+    [InlineData("404", "404", "unavailable")] // review round 10: Seerr's 404 is its unknown-route answer
     public async Task ASeerrListReadAsksEveryServerAndNeverTakesA500ForNotFound(string a, string b, string outcome)
     {
         using var net = new Net();

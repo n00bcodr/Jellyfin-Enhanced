@@ -181,11 +181,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, new AnswerRequest(placeholder.TmdbId, "movie"), maxAge, cancellationToken)).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, new AnswerRequest(placeholder.TmdbId, "movie") { Kind = ResponseContract.MetadataMovie.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
                 return movie?.Read == null ? null : FromMovie(movie.Read, movie.FetchedAtUtc);
             }
 
-            var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, new AnswerRequest(placeholder.TmdbId, "tv"), maxAge, cancellationToken)).ConfigureAwait(false);
+            var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, new AnswerRequest(placeholder.TmdbId, "tv") { Kind = ResponseContract.MetadataShow.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
             if (tv?.Read == null)
             {
                 return null;
@@ -194,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CacheEntry? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId), maxAge, cancellationToken)).ConfigureAwait(false);
+                season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId) { Kind = ResponseContract.MetadataSeason.Name }, maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
             return FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
@@ -681,8 +681,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     _unreachableUntil.TryRemove(scope, out _);
                     switch ((int)response.StatusCode)
                     {
-                        case 404:
+                        case 404 when ProviderAbsence.Seerr(404):
                             return new ServerAnswer<CacheEntry>(ServerState.NotFound);
+                        case 404:
+                            // Review round 10 (ProviderAbsence.Seerr): Seerr's unknown-route answer (a wrong address or a proxy),
+                            // never "no such title": that server's failure.
+                            only500 = false;
+                            return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                         case >= 500:
                             only500 &= (int)response.StatusCode == 500;
                             return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
@@ -790,7 +795,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                var season = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number), apiKey, cancellationToken)).ConfigureAwait(false);
+                var season = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId), apiKey, cancellationToken)).ConfigureAwait(false);
                 if (season.Poster != null)
                 {
                     return (season.Poster, true);
@@ -833,15 +838,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 using var response = await ListContinuation.Await(() => client.GetAsync(url, cts.Token)).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return (null, false, response.StatusCode == System.Net.HttpStatusCode.NotFound);
+                    // Review round 10 (ProviderAbsence.Tmdb): "no such title or season" only from TMDB's own 404 (its error
+                    // object); a proxy's 404 is a failed read (a season's would let the show's poster stand in).
+                    var error = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                        ? await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false)
+                        : null;
+                    return (null, false, ProviderAbsence.Tmdb((int)response.StatusCode, error));
                 }
 
                 var body = await ListContinuation.Await(() => response.Content.ReadAsStringAsync(cts.Token)).ConfigureAwait(false);
                 using var document = JsonDocument.Parse(body);
                 // Review rounds 6 and 7 (ResponseContract.TmdbPoster): "no poster" needs TMDB's answer to say so (poster_path
                 // there, a path or null); an answer that isn't Valid is a failed read, never remembered (a season's would let
-                // the show's poster stand in).
-                var read = ResponseContract.TmdbPoster.Validate(asked, document.RootElement); // the title or season asked for (review round 9)
+                // the show's poster stand in). Review round 10 (4c2-R10-4): bound to the title (`id`) or the season
+                // (`season_number`, every episode's `show_id`) asked for: an answer without that identity is unbound, not "no poster".
+                var read = ResponseContract.TmdbPoster.Validate(asked, document.RootElement);
                 if (read.Verdict != ResponseVerdict.Valid)
                 {
                     _logger.Debug($"[Lists] TMDB poster {apiPath} answered something JE can't read ({read.Reason})");

@@ -659,6 +659,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ProviderAbsence.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ResponseContract.cs",
       "category": "Services"
     },
@@ -10370,7 +10374,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 597,
+    "files": 598,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,

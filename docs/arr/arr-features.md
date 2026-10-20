@@ -1454,10 +1454,18 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   only until another address answers in full; an error, a timeout or an answer for something else moves on to the next
   address; and a list only counts as "not found" when every address says so. Seerr answers every failure behind it (an
   id TMDB doesn't know included) with the same error, so that is shown as "Seerr couldn't read this", never as "not found".
-- **Answers to another question.** Every answer is checked against what was asked: details for another title, a season
-  holding another season's episodes (or the same episode twice), or a search row of a media type Jellyfin Enhanced
-  doesn't know is never used, remembered, or allowed to clear anything an entry already has. With more than one Seerr
-  address, the next one is asked instead.
+- **Answers to another question.** Every answer is checked against what was asked: details for another title or media
+  type, a season holding another season's episodes (or the same episode twice, or another show's), a TMDB or IMDb list
+  page of another list, a Chronolists page of another watch order, a search by id that answers another id, a poster read
+  that doesn't name the title or season asked for, or a search row of a media type Jellyfin Enhanced doesn't know is
+  never used, remembered, or allowed to clear anything an entry already has. An answer that doesn't say what it is (a
+  list page without its id, a season without its number) is used at most as partial, never remembered. With more than
+  one Seerr address, the next one is asked instead.
+- **"Not found" only when the site says so.** A list is "not found" (or a title "doesn't exist") only from the site's own
+  answer for that: TMDB's not-found reply, IMDb's not-found or private error for that list, MDBList's or Trakt's own
+  status. A proxy's error page, an IMDb internal error, an empty answer or any Seerr error is shown as "couldn't read",
+  so nothing is treated as missing because a site had a bad moment. An empty search result counts as "no titles" only
+  when the site says its total is 0.
 - **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
   number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
   it and the answer isn't remembered. An MDBList ratings answer counts only when it is the title's whole record: the

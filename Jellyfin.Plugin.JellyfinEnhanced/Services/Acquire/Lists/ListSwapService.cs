@@ -563,7 +563,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
                 if (outcome.Result.Inserted > 0 || outcome.Result.Retired > 0)
                 {
-                    _logger.Info($"[Lists] List \"{list.Name}\": {outcome.Result.Inserted} item(s) swapped in, {outcome.Result.Retired} placeholder(s) completed.");
+                    _logger.Info($"[Lists] List {list.Id:N}: {outcome.Result.Inserted} item(s) swapped in, {outcome.Result.Retired} placeholder(s) completed.");
                 }
 
                 return outcome.Result;
@@ -676,7 +676,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         _pendingMatches.TryRemove(MatchKey(context.ListIdN, placeholderId), out _);
                         if (_ownerlessLogged.TryAdd(context.ListIdN, 0))
                         {
-                            _logger.Info($"[Lists] Playlist \"{list.Name}\" has no owner any more; its placeholders can't be swapped in.");
+                            _logger.Info($"[Lists] Playlist {context.ListIdN} has no owner any more; its placeholders can't be swapped in.");
                         }
 
                         continue;
@@ -831,7 +831,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (landed.Count < run.Count)
                 {
                     // Jellyfin rejected some (e.g. the owner lost access meanwhile): leave them for a later pass.
-                    _logger.Debug($"[Lists] {run.Count - landed.Count} episode(s) of \"{placeholder.Title}\" were not added to list {context.ListIdN}.");
+                    _logger.Debug($"[Lists] {run.Count - landed.Count} episode(s) of entry {placeholder.Id} were not added to list {context.ListIdN}.");
                 }
 
                 arriving.RemoveAll(e => run.Contains(e));
@@ -1348,7 +1348,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 current.TryGetValue(new EpisodeCoord(f.S, f.E), out var now) && !string.Equals(now, f.ItemId, StringComparison.Ordinal) && Gone(f.ItemId));
             if (removed > 0)
             {
-                _logger.Debug($"[Lists] {removed} filled episode(s) of \"{placeholder.Title}\" in list {context.ListIdN} were replaced in the library.");
+                _logger.Debug($"[Lists] {removed} filled episode(s) of entry {placeholder.Id} in list {context.ListIdN} were replaced in the library.");
                 context.Dirty = true;
             }
         }
@@ -1494,7 +1494,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     continue;
                 }
 
-                _logger.Info($"[Lists] Completed an interrupted swap-in of \"{placeholder.Title}\" in list {context.ListIdN}.");
+                _logger.Info($"[Lists] Completed an interrupted swap-in of entry {placeholder.Id} in list {context.ListIdN}.");
                 var container = placeholder.Kind == PlaceholderKinds.Movie
                     || (placeholder.Kind == PlaceholderKinds.Series && landed.All(id => _host.GetItem(id)?.Kind == BaseItemKind.Series));
                 RecordEvent(context, placeholder, landed, complete: container);
@@ -1783,7 +1783,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
                 {
-                    _logger.Debug($"[Lists] Metadata for \"{p.Title}\" failed: {UpstreamDiagnostics.Code(ex)}");
+                    _logger.Debug($"[Lists] Metadata for entry {p.Id} failed: {UpstreamDiagnostics.Code(ex)}");
                 }
             })).ConfigureAwait(false);
             foreach (var pair in fetched)
@@ -1815,7 +1815,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
                 {
-                    _logger.Debug($"[Lists] TMDB poster for \"{p.Title}\" failed: {UpstreamDiagnostics.Code(ex)}");
+                    _logger.Debug($"[Lists] TMDB poster for entry {p.Id} failed: {UpstreamDiagnostics.Code(ex)}");
                 }
             })).ConfigureAwait(false);
             foreach (var pair in fetched)
