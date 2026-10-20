@@ -132,7 +132,10 @@
                     refreshModalInterval = null;
                 }
             },
-            onSave: async (modalEl, requestBtn, closeFn) => {
+            onSave: async (modalEl, requestBtn, closeFn, press) => {
+                // The press's owner (D46S2-R7-1): the operation the form is open for. Its requests carry it; what their
+                // answers publish (toasts, events, the card) appears only while it is current.
+                const submitted = JE.captureSubmitted(press);
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -176,7 +179,8 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
+                        if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -185,11 +189,12 @@
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId, { bound: submitted.bound() });
                         }
 
+                        if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
                     // Notify any listening modals that TV was requested
@@ -213,7 +218,7 @@
                     const resetLabel = is4k
                         ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
                         : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
-                    await internal.handleRequestError(error, 'tv', requestBtn, resetLabel);
+                    await internal.handleRequestError(error, 'tv', requestBtn, resetLabel, submitted);
                 }
             }
         });

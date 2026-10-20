@@ -141,6 +141,46 @@
         }
     };
 
+    // jellyfin-web's dialogs (Dashboard.alert, Dashboard.confirm): each opens in its own container on the body.
+    const HOST_DIALOG = '.dialogContainer';
+    /** Dismisses a host dialog the way its viewer would: its first button, else the container goes. */
+    function dismissHostDialog(node) {
+        if (!node.isConnected) return;
+        const button = node.querySelector('.btnOption, .formDialogFooterItem, button');
+        if (button) button.click(); else node.remove();
+    }
+
+    /**
+     * Opens a host dialog (jellyfin-web's Dashboard.alert or confirm) for `owner` (required, D46S2-R7-4), an opener like
+     * every other: nothing opens unless the owner is current, and the dialog it opened for an operation is dismissed once
+     * that operation ends, at the next lifecycle step ({@link JE.endScopes}). The host returns no handle (12.2's alert
+     * returns nothing) and may add its container a moment later, so the containers added to the body after `open()`
+     * are the dialog's. Returns the host's result, or null when nothing opened.
+     */
+    JE.openHostDialog = function (open, owner) {
+        const resolved = JE.requireOwner(owner, 'openHostDialog');
+        if (!resolved || resolved.current() === false) return null;
+        const operation = operationOf(resolved);
+        if (!operation) return open();
+        const mine = new Set();
+        const observer = new MutationObserver(records => {
+            for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1 && node.matches(HOST_DIALOG)) mine.add(node);
+            if (mine.size) observer.disconnect();
+        });
+        observer.observe(document.body, { childList: true });
+        setTimeout(() => observer.disconnect(), 5000);
+        let surfaces = scopes.get(operation);
+        if (!surfaces) scopes.set(operation, surfaces = new Set());
+        const release = () => { surfaces.delete(entry); if (!surfaces.size && scopes.get(operation) === surfaces) scopes.delete(operation); };
+        const entry = { close: () => { release(); observer.disconnect(); mine.forEach(dismissHostDialog); } };
+        surfaces.add(entry);
+        const result = open();
+        for (const record of observer.takeRecords()) for (const node of record.addedNodes) if (node.nodeType === 1 && node.matches(HOST_DIALOG)) mine.add(node);
+        if (mine.size) observer.disconnect();
+        if (operation.current() === false) queueMicrotask(entry.close);
+        return result;
+    };
+
     /**
      * Publication for the newest intent of one surface (D46S2-R6 shape 3): each call starts an intent and returns its
      * check, true only while no later intent of the same surface has started and `owner` (when given) is current. A

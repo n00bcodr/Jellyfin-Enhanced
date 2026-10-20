@@ -11,7 +11,8 @@
     const DisplayStatus = JE.seerrStatus.DISPLAY;
 
 /**
- * Render request/4K actions and download progress inside the modal.
+ * Render request/4K actions and download progress inside the modal. Every handler takes its owner from its press
+ * (JE.ownerOf(event), D46S2-R7-1): a title action pressing a control for its operation, else the window's.
  */
 function buildTvActions(data, show4kOption = false) {
     const mediaInfo = data.mediaInfo || {};
@@ -51,7 +52,7 @@ function buildTvActions(data, show4kOption = false) {
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, mainButton);
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
             }
         });
 
@@ -103,18 +104,20 @@ function buildTvActions(data, show4kOption = false) {
                 option.addEventListener('click', async (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
+                    // The press's owner, taken before the popup closes (the popup is its arrow press's).
+                    const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, option);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner);
                     }
                 });
             }
 
             menu.appendChild(option);
             document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
-            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
+            // Portaled to the body, outside the window: registered in the scope of the press's operation (a title action's,
+            // else the window's), so it closes, and its option sends nothing, once that operation ends (D46S2-R5-3, R7-1).
+            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, JE.ownerOf(e));
             const rect = arrowButton.getBoundingClientRect();
             menu.style.position = 'fixed';
             menu.style.left = `${rect.left}px`;
@@ -139,7 +142,7 @@ function buildTvActions(data, show4kOption = false) {
 
         // TV always shows season selection modal
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, requestButton);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
         }
     });
 
@@ -156,7 +159,7 @@ function buildSingleTv4kButton(data) {
         e.preventDefault();
         e.stopPropagation();
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, button);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, JE.ownerOf(e));
         }
     });
     return button;
@@ -182,7 +185,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, mainButton);
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
             }
         });
 
@@ -230,18 +233,20 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
                 option.addEventListener('click', async (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
+                    // The press's owner, taken before the popup closes (the popup is its arrow press's).
+                    const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, option);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner);
                     }
                 });
             }
 
             menu.appendChild(option);
             document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
-            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
+            // Portaled to the body, outside the window: registered in the scope of the press's operation (a title action's,
+            // else the window's), so it closes, and its option sends nothing, once that operation ends (D46S2-R5-3, R7-1).
+            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, JE.ownerOf(e));
             const rect = arrowButton.getBoundingClientRect();
             menu.style.position = 'fixed';
             menu.style.left = `${rect.left}px`;
@@ -266,7 +271,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 
         // Show season selection modal for partially available shows
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, requestButton);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e));
         }
     });
 

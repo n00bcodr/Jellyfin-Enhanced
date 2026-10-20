@@ -293,7 +293,7 @@ test('report modal rejects delayed submit after a live user switch', async t => 
   h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.JE.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
-  await options.onSave(modal, h.document.createElement('button'), () => {});
+  await options.onSave(modal, h.document.createElement('button'), () => {}, { type: 'click', target: modal });
   assert.equal(sends, 0);
 });
 

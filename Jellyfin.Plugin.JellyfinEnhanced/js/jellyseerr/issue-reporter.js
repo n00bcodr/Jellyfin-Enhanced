@@ -181,7 +181,9 @@
             buttonText: JE.t('jellyseerr_report_issue_submit'),
             operation: submitted.owner,
             onClose: () => releaseAction?.(),
-            onSave: async (modalEl, button, closeModal) => {
+            onSave: async (modalEl, button, closeModal, press) => {
+                // The report is the press's owner's (D46S2-R7-1): the operation the form is open for.
+                const reporter = JE.captureSubmitted(press);
                 if (!action.current()) return;
                 const issueType = modalEl.querySelector('input[name="issue-type"]:checked')?.value;
                 const message = modalEl.querySelector('#issue-message').value;
@@ -209,7 +211,7 @@
                     button.textContent = JE.t('jellyseerr_report_issue_submitting');
 
                     // Pass only the contents of the description box to the API
-                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, submitted.owner);
+                    const result = await JE.jellyseerrAPI.reportIssue(tmdbId, mediaType, issueType, message, problemSeason, problemEpisode, reporter.owner);
 
                     if (!action.current()) return;
                     if (result) {

@@ -10,6 +10,12 @@ import { jsRoot } from './harness.mjs';
 // calls become sites); a write passes only with `bound`; anything else is "unmodelled" and fails.
 // Shape 1 (explicit ownership): every call of an owner-taking function (an opener or an owned write) passes its owner
 // argument; an owner taken from the enclosing function's parameter makes that function's callers sites too.
+// Review round 7: inside a HANDLER (a listener, an on* property, a modal's onSave, a title action's run) the owner is
+// its PRESS argument, nothing else (a node, a closure value, an enclosing function's parameter fail); JE.NATIVE and an
+// owner taken from a node outside a handler only at pinned roots; host dialogs (Dashboard.alert/confirm, alert,
+// confirm, prompt) only through JE.openHostDialog. The transport scan fails closed on what it cannot resolve: a
+// computed member on a transport root that is not a constant, a transport method through call/apply/bind, and a
+// transport value escaping into anything but a const alias.
 
 // @babel/parser ships with the istanbul-lib-instrument devDependency; resolve it through that package.
 const { parse } = createRequire(createRequire(import.meta.url).resolve('istanbul-lib-instrument'))('@babel/parser');
@@ -39,14 +45,41 @@ const MEMBER = new Set(['MemberExpression', 'OptionalMemberExpression']);
 const keyName = p => p?.key?.name ?? p?.key?.value;
 const isUndefined = n => !n || (n.type === 'Identifier' && n.name === 'undefined') || n.type === 'NullLiteral' || (n.type === 'UnaryExpression' && n.operator === 'void');
 
-/** The dotted path of an expression (`window.ApiClient.ajax`), or null when it isn't a plain path. */
-function pathOf(node) {
+/**
+ * The dotted path of an expression (`window.ApiClient.ajax`), or null when it isn't a plain path. A computed member
+ * counts when its key is a constant (`api['plug' + 'in']`, a const of one; resolved through `frame` when given).
+ */
+function pathOf(node, frame) {
   if (!node) return null;
   if (node.type === 'Identifier') return node.name;
   if (node.type === 'ThisExpression') return 'this';
-  if (MEMBER.has(node.type) && !node.computed) { const object = pathOf(node.object); return object && node.property?.name ? object + '.' + node.property.name : null; }
-  if (MEMBER.has(node.type) && node.computed && node.property.type === 'StringLiteral') { const object = pathOf(node.object); return object ? object + '.' + node.property.value : null; }
-  if (CALL.has(node.type)) { const callee = pathOf(node.callee); return callee ? callee + '()' : null; }
+  if (MEMBER.has(node.type) && !node.computed) { const object = pathOf(node.object, frame); return object && node.property?.name ? object + '.' + node.property.name : null; }
+  if (MEMBER.has(node.type) && node.computed) { const key = constString(node.property, frame); const object = key != null && pathOf(node.object, frame); return object ? object + '.' + key : null; }
+  if (CALL.has(node.type)) { const callee = pathOf(node.callee, frame); return callee ? callee + '()' : null; }
+  return null;
+}
+
+/** The string a constant expression always is (a literal, 'plug' + 'in', a template of constants, a const of one), else null. */
+function constString(node, frame, depth = 0) {
+  if (!node || depth > 6) return null;
+  if (node.type === 'StringLiteral') return node.value;
+  if (node.type === 'NumericLiteral') return String(node.value);
+  if (node.type === 'TemplateLiteral') {
+    let out = '';
+    for (let i = 0; i < node.quasis.length; i++) {
+      out += node.quasis[i].value.cooked;
+      if (i < node.expressions.length) { const part = constString(node.expressions[i], frame, depth + 1); if (part == null) return null; out += part; }
+    }
+    return out;
+  }
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    const a = constString(node.left, frame, depth + 1); const b = a != null ? constString(node.right, frame, depth + 1) : null;
+    return b != null ? a + b : null;
+  }
+  if (node.type === 'Identifier' && frame) {
+    const b = lookup(frame, node.name);
+    if (b?.kind === 'const' && b.init && !b.frame.mutated.has(node.name)) return constString(b.init, b.frame, depth + 1);
+  }
   return null;
 }
 
@@ -67,20 +100,41 @@ function paramNames(fn) {
  * Walks every node with its enclosing function chain. Each function frame: {node, name, params, consts: name → init,
  * mutated: Set of names assigned or member-assigned in it, parent}.
  */
+/**
+ * Handlers by the object key they are passed under, with the index of their press argument: a click handler's event,
+ * a Seerr modal's onSave(modal, button, close, press), a title action entry's run(opener, submitted).
+ */
+export const HANDLER_KEYS = { onClick: 0, onclick: 0, onSave: 3, run: 1 };
+
 function frames(ast) {
   const all = [];
   const top = { node: ast, name: '(module)', params: [], consts: new Map(), mutated: new Set(), parent: null };
   all.push(top);
   const visits = [];
+  // A handler's function node → the index of its press argument (see HANDLER_KEYS; listeners and on* properties: 0).
+  const pressOf = new WeakMap();
+  const listened = [];
+  const parents = new WeakMap();
   (function walk(node, frame, parentNode, nameHint) {
     if (!node || typeof node !== 'object') return;
+    if (parentNode) parents.set(node, parentNode);
     let inner = frame;
     if (FUNCTION.has(node.type)) {
       const name = node.id?.name || (node.key ? keyName(node) : null) || nameHint || null;
-      inner = { node, name, params: paramNames(node), defaults: node.params.map(p => p.type === 'AssignmentPattern'), consts: new Map(), mutated: new Set(), parent: frame };
+      inner = { node, name, params: paramNames(node), defaults: node.params.map(p => p.type === 'AssignmentPattern'), consts: new Map(), mutated: new Set(), parent: frame, press: pressOf.get(node) ?? null,
+        // `(function (JE) { … })(window.JellyfinEnhanced)`: what each parameter is called with.
+        iife: CALL.has(parentNode?.type) && parentNode.callee === node ? parentNode.arguments : null };
       all.push(inner);
     }
+    if (CALL.has(node.type) && MEMBER.has(node.callee?.type) && node.callee.property?.name === 'addEventListener') {
+      const handler = node.arguments[1];
+      if (FUNCTION.has(handler?.type)) pressOf.set(handler, 0); else if (handler?.type === 'Identifier') listened.push([handler.name, inner]);
+    }
+    if (node.type === 'AssignmentExpression' && MEMBER.has(node.left.type) && /^on[a-z]+$/.test(node.left.property?.name || '') && FUNCTION.has(node.right.type)) pressOf.set(node.right, 0);
+    if (node.type === 'ObjectProperty' && FUNCTION.has(node.value?.type) && Object.hasOwn(HANDLER_KEYS, keyName(node))) pressOf.set(node.value, HANDLER_KEYS[keyName(node)]);
     if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.init) inner.consts.set(node.id.name, { init: node.init, kind: parentNode?.kind });
+    // Every function a name is given in this frame (block-scoped twins included), for listeners added by name.
+    if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && FUNCTION.has(node.init?.type)) (inner.functions ||= new Map()).set(node.id.name, [...(inner.functions?.get(node.id.name) || []), node.init]);
     // `const { requestMedia, fetchUserQuota: quota } = JE.jellyseerrAPI`: each local name stands for the member it takes.
     if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern' && node.init) {
       const from = pathOf(node.init);
@@ -101,7 +155,28 @@ function frames(ast) {
       if (Array.isArray(value)) value.forEach(v => walk(v, inner, node, hint)); else walk(value, inner, node, hint);
     }
   })(ast, top, null, null);
-  return { all, visits };
+  // A listener added by name (`const onClick = e => …; node.addEventListener('click', onClick)`) is a handler too.
+  for (const [name, frame] of listened) {
+    for (let f = frame; f; f = f.parent) {
+      const inits = f.functions?.get(name);
+      if (!inits) { if (f.params.includes(name) || f.consts.has(name)) break; continue; }
+      for (const init of inits) { const fn = all.find(x => x.node === init); if (fn && fn.press == null) fn.press = 0; }
+      break;
+    }
+  }
+  return { all, visits, parents };
+}
+
+/** The nearest handler frame enclosing `frame` (itself included), or null. */
+function handlerOf(frame) {
+  for (let f = frame; f; f = f.parent) if (f.press != null) return f;
+  return null;
+}
+
+/** True when `inner` is `outer` or nested in it. */
+function within(inner, outer) {
+  for (let f = inner; f; f = f.parent) if (f === outer) return true;
+  return false;
 }
 
 /** The identifier an expression starts from (`a` in a.b.c). */
@@ -126,19 +201,72 @@ function transportRoot(path) {
   return TRANSPORT_ROOTS.find(root => p === root || p?.startsWith(root + '.')) || null;
 }
 
+/** True when a normal path is, or leads to, a transport root (`JE`, `JE.core`, `window`, `JE.core.api.plugin`…). */
+function reaches(path) {
+  if (!path) return false;
+  if (['window', 'globalThis', 'self', 'navigator', 'ConnectionManager'].includes(path)) return true;
+  return TRANSPORT_ROOTS.some(root => root === path || root.startsWith(path + '.') || path.startsWith(root + '.'));
+}
+
 /** Resolves a callee path through const aliases (`const ac = window.ApiClient; ac.ajax`) to a normal path. */
 function resolvePath(path, frame, depth = 0) {
   if (!path || depth > 5) return normal(path);
   const [head, ...rest] = path.split('.');
   if (['window', 'globalThis', 'self', 'JE', 'JellyfinEnhanced', 'ApiClient', 'fetch', 'navigator', 'XMLHttpRequest', 'ConnectionManager'].includes(head)) return normal(path);
   const binding = lookup(frame, head);
+  // A parameter an IIFE is called with a path for (`(function (J) { … })(window.JellyfinEnhanced)`) is that path.
+  const called = binding?.param ? binding.frame.iife?.[binding.index] : null;
+  if (called) { const target = pathOf(called); return target && reaches(normal(target)) ? resolvePath([target, ...rest].join('.'), binding.frame.parent, depth + 1) : normal(path); }
   if (!binding || binding.param) return normal(path);
+  // `const { plugin } = JE.core.api`: the local name is that member.
+  if (binding.destructured) return resolvePath([binding.destructured, ...rest].join('.'), binding.frame, depth + 1);
   let init = binding.init;
   // `window.ApiClient || ConnectionManager.currentApiClient()` and `JE.core?.api`: the first operand names it.
   while (init?.type === 'LogicalExpression') init = init.left;
-  const target = pathOf(init);
-  if (!target || !transportRoot(resolvePath(target, binding.frame, depth + 1))) return normal(path);
+  const target = pathOf(init, binding.frame);
+  if (!target || !reaches(resolvePath(target, binding.frame, depth + 1))) return normal(path);
   return resolvePath([target, ...rest].join('.'), binding.frame, depth + 1);
+}
+
+// The transport values a module may hold only as a const alias (anything else lets a call escape the scan).
+const TRANSPORT_VALUES = new Set(['JE.core.api', 'JE.core', 'ApiClient', 'fetch', 'navigator.sendBeacon']);
+const TRANSPORT_METHOD = /^(JE\.core\.api\.(plugin|pluginResponse|fetch|ajax|jf)|ApiClient\.[A-Za-z]+|fetch|navigator\.sendBeacon)$/;
+
+/**
+ * True when a transport value (`node`) escapes: used as anything but a member's object, a call's callee, a const alias
+ * (directly or as the first operand of `||`/`??` in one, or destructured by one), or a test (`typeof`, `!`, `&&`, a
+ * comparison, a condition).
+ */
+function escapes(node, parents) {
+  let child = node; let parent = parents.get(node);
+  // A namespace initialiser `JE.core = JE.core || {}`: its target and its own first operand.
+  const initialiser = a => a?.type === 'AssignmentExpression' && a.operator === '=' && a.right.type === 'LogicalExpression' && ['||', '??'].includes(a.right.operator) &&
+    normal(pathOf(a.left)) === normal(pathOf(a.right.left)) && a.right.right.type === 'ObjectExpression' && !a.right.right.properties.length;
+  if (initialiser(parent) && parent.left === child) return false;
+  if (parent?.type === 'LogicalExpression' && parent.left === child && initialiser(parents.get(parent))) return false;
+  if (MEMBER.has(parent?.type) && parent.object === child) return false;
+  if (CALL.has(parent?.type) && parent.callee === child) return false;
+  if (parent?.type === 'UnaryExpression' && ['typeof', '!'].includes(parent.operator)) return false;
+  if (parent?.type === 'BinaryExpression' && ['==', '!=', '===', '!=='].includes(parent.operator)) return false;
+  while (parent?.type === 'LogicalExpression') {
+    if (parent.operator === '&&' && parent.left === child) return false;
+    child = parent; parent = parents.get(parent);
+  }
+  if ((parent?.type === 'IfStatement' || parent?.type === 'ConditionalExpression' || parent?.type === 'WhileStatement') && parent.test === child) return false;
+  if (parent?.type === 'UnaryExpression' && parent.operator === '!') return false;
+  if (parent?.type === 'VariableDeclarator' && parent.init === child && parents.get(parent)?.kind === 'const' &&
+      (parent.id.type === 'Identifier' || (parent.id.type === 'ObjectPattern' && parent.id.properties.every(p => p.type === 'ObjectProperty' && !p.computed && p.value.type === 'Identifier')))) return false;
+  return true;
+}
+
+/** True when an identifier node is a reference (not a declaration, a parameter, a property key or a non-computed member). */
+function reference(node, parent) {
+  if (!parent) return true;
+  if (MEMBER.has(parent.type) && parent.property === node && !parent.computed) return false;
+  if ((parent.type === 'ObjectProperty' || parent.type === 'ObjectMethod') && parent.key === node && !parent.computed) return false;
+  if (parent.type === 'VariableDeclarator' && parent.id === node) return false;
+  if (FUNCTION.has(parent.type) && (parent.params.includes(node) || parent.id === node)) return false;
+  return !['LabeledStatement', 'BreakStatement', 'ContinueStatement', 'CatchClause', 'ImportSpecifier'].includes(parent.type);
 }
 
 const WRITE = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
@@ -286,8 +414,25 @@ export function scanTransport(sources, config) {
     return record({ ...base, kind: writes.length ? 'write' : 'unmodelled', detail: writes.length ? writes.join('|') + ' without bound' : 'method ' + [...o.methods].join('|') });
   }
   // Pass 1: the entry points.
-  for (const [file, { visits }] of modules) {
+  for (const [file, { visits, parents }] of modules) {
     for (const [node, frame, parent] of visits) {
+      const unmodelled = detail => record({ file, line: node.loc.start.line, fn: named(frame).name, entry: sourceText(sources[file], node), kind: 'unmodelled', detail });
+      // Fail closed on what the scan cannot resolve (D46S2-R7-2). A computed member of a transport root (or of anything
+      // leading to one: JE, JE.core, window…) must be a constant key; `api[name]` could be any entry point.
+      if (MEMBER.has(node.type) && node.computed && constString(node.property, frame) == null && reaches(resolvePath(pathOf(node.object, frame), frame))) {
+        unmodelled('a computed member of a transport root (not a constant)');
+        continue;
+      }
+      // A transport method through call/apply/bind takes its options where the scan does not look.
+      if (MEMBER.has(node.type) && ['call', 'apply', 'bind'].includes(node.computed ? constString(node.property, frame) : node.property?.name)) {
+        const target = resolvePath(pathOf(node.object, frame), frame);
+        if (target && TRANSPORT_METHOD.test(target) && !CLIENT_ACCESSORS.has(target.split('.').pop())) { unmodelled('a transport method through call/apply/bind'); continue; }
+      }
+      // A transport value (the api, the client, fetch) held anywhere but in a const alias escapes the scan.
+      if ((MEMBER.has(node.type) || (node.type === 'Identifier' && reference(node, parent))) && TRANSPORT_VALUES.has(resolvePath(pathOf(node, frame), frame)) && escapes(node, parents)) {
+        unmodelled('a transport value that escapes (not a const alias, member, call or test)');
+        continue;
+      }
       // XMLHttpRequest and sendBeacon: any reference at all is a site (nothing can bind them).
       if (node.type === 'Identifier' && node.name === 'XMLHttpRequest' && !(MEMBER.has(parent?.type) && parent.property === node && !parent.computed)) {
         record({ file, line: node.loc.start.line, fn: named(frame).name, entry: 'XMLHttpRequest', kind: 'unmodelled', detail: 'XMLHttpRequest cannot carry a binding' });
@@ -300,7 +445,7 @@ export function scanTransport(sources, config) {
       if (!CALL.has(node.type) || node.type === 'NewExpression') {
         // A transport method taken as a value (`const f = ApiClient.ajax`, `.then(JE.core.api.plugin)`) escapes the scan.
         if (MEMBER.has(node.type) && !(CALL.has(parent?.type) && parent.callee === node) && !(MEMBER.has(parent?.type) && parent.object === node)) {
-          const target = resolvePath(pathOf(node), frame);
+          const target = resolvePath(pathOf(node, frame), frame);
           const m = target?.match(/^(JE\.core\.api|ApiClient)\.([A-Za-z]+)$/);
           if (m && (m[1] === 'ApiClient' ? !CLIENT_ACCESSORS.has(m[2]) && !/^get[A-Z]/.test(m[2]) : m[2] in API_TRANSPORT)
             && !(parent?.type === 'UnaryExpression' && ['typeof', '!'].includes(parent.operator)) && !(parent?.type === 'IfStatement' || parent?.type === 'ConditionalExpression' && parent.test === node || parent?.type === 'LogicalExpression' && parent.left === node && parent.operator === '&&'))
@@ -308,7 +453,7 @@ export function scanTransport(sources, config) {
         }
         continue;
       }
-      const target = resolvePath(pathOf(node.callee), frame);
+      const target = resolvePath(pathOf(node.callee, frame), frame);
       if (!target) continue;
       if (target === 'fetch') { classify(file, node, frame, 'fetch', node.arguments[1], ['method']); continue; }
       let m = target.match(/^JE\.core\.api\.([A-Za-z]+)$/);
@@ -399,9 +544,11 @@ function aliasPath(path, frame, depth = 0) {
  * The parameter an owner value comes from: {frame, index, prop} when it is an enclosing named function's parameter (or
  * its `.operation`/`.owner`, a const of either, or JE.ownerOf/JE.requireOwner of one), else null.
  */
+const OWNER_OF = /^JE\.(ownerOf|requireOwner|captureSubmitted)$/;
 function ownerParam(value, frame, depth = 0) {
-  if (!value || depth > 4) return null;
-  if (CALL.has(value.type) && /^JE\.(ownerOf|requireOwner)$/.test(normal(pathOf(value.callee)) || '')) return ownerParam(value.arguments[0], frame, depth + 1);
+  if (!value || depth > 6) return null;
+  // JE.ownerOf(x), JE.requireOwner(x) and a capture JE.captureSubmitted(x) (or its owner) stand for x's owner.
+  if (CALL.has(value.type) && OWNER_OF.test(normal(pathOf(value.callee)) || '')) return ownerParam(value.arguments[0], frame, depth + 1);
   if (value.type === 'Identifier') {
     const b = lookup(frame, value.name);
     if (b?.param) return b.frame.params[b.index] && !b.frame.defaults?.[b.index] ? { frame: b.frame, index: b.index } : null;
@@ -411,9 +558,31 @@ function ownerParam(value, frame, depth = 0) {
   if (MEMBER.has(value.type) && ['operation', 'owner'].includes(value.property?.name) && value.object?.type === 'Identifier') {
     const b = lookup(frame, value.object.name);
     if (b?.param && !b.frame.defaults?.[b.index]) return { frame: b.frame, index: b.index, prop: value.property.name };
+    if (b?.kind === 'const' && CALL.has(b.init?.type) && OWNER_OF.test(normal(pathOf(b.init.callee)) || '')) return ownerParam(b.init, b.frame, depth + 1);
   }
   return null;
 }
+
+/** True when an owner value is JE.NATIVE (directly or through a const). */
+function nativeValue(value, frame, depth = 0) {
+  if (!value || depth > 4) return false;
+  if (normal(pathOf(value)) === 'JE.NATIVE') return true;
+  if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' && nativeValue(b.init, b.frame, depth + 1); }
+  return false;
+}
+
+/** The argument of the JE.ownerOf / JE.requireOwner call an owner value is taken from (directly or through a const), else null. */
+function ownerOfCall(value, frame, depth = 0) {
+  if (!value || depth > 4) return null;
+  if (CALL.has(value.type) && /^JE\.(ownerOf|requireOwner)$/.test(normal(pathOf(value.callee)) || '')) return value;
+  if (CALL.has(value.type) && normal(pathOf(value.callee)) === 'JE.captureSubmitted') return ownerOfCall(value.arguments[0], frame, depth + 1);
+  if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' ? ownerOfCall(b.init, b.frame, depth + 1) : null; }
+  if (MEMBER.has(value.type) && value.property?.name === 'owner' && value.object?.type === 'Identifier') { const b = lookup(frame, value.object.name); return b?.kind === 'const' ? ownerOfCall(b.init, b.frame, depth + 1) : null; }
+  return null;
+}
+
+/** A pinned root's reason: `roots[file][fn]` or `roots[file]['fn: value text']`. */
+const pinned = (roots, file, fn, text) => roots?.[file]?.[`${fn}: ${text}`] || roots?.[file]?.[fn] || null;
 
 /**
  * The owner scan. `openers`: [{name, arg, prop?, callee: RegExp, file?, forbid?: string[], optional?: boolean}]: a call
@@ -423,6 +592,9 @@ function ownerParam(value, frame, depth = 0) {
  * calls become sites); a parameter with a default (an explicit native fallback) does not. Returns {sites, failures, takers}.
  */
 export function scanOwners(sources, openers, config = {}) {
+  // config.nativeRoots / config.ownerRoots: {file: {fn | 'fn: value text': reason}}: where JE.NATIVE, and an owner taken
+  // from a node (JE.ownerOf of anything but a press or a parameter), are genuine roots. config.hostDialogs: {file: reason},
+  // modules whose host dialogs the bar cannot reach.
   const sites = []; const failures = [];
   const takers = new Map();
   const add = spec => { const list = takers.get(spec.name) || []; if (!list.some(x => x.file === spec.file && x.arg === spec.arg && String(x.callee) === String(spec.callee))) { list.push(spec); takers.set(spec.name, list); return true; } return false; };
@@ -493,12 +665,55 @@ export function scanOwners(sources, openers, config = {}) {
         if (value?.forwarded) { derive(value.forwarded, 'forwarded'); continue; }
         if (value?.opaque) { sites.push({ ...site, owner: 'unmodelled' }); fail(`${file}:${line} ${name}(…) passes its owner in options the scan cannot read`); continue; }
         if (!value || isUndefined(value)) { sites.push({ ...site, owner: 'missing' }); fail(`${file}:${line} ${name}(…) without an owner`); continue; }
+        const text = sourceText(sources[file], value);
+        // JE.NATIVE only at a pinned native root (D46S2-R7-1: a handler the bar can press never names itself native).
+        if (nativeValue(value, frame)) {
+          sites.push({ ...site, owner: 'JE.NATIVE' });
+          if (!pinned(config.nativeRoots, file, fn, text)) fail(`${file}:${line} ${name}(JE.NATIVE) outside a pinned native root (${fn})`);
+          continue;
+        }
         const from = ownerParam(value, frame);
+        // Inside a handler the owner is its press (D46S2-R7-1): its press argument, or an inner function's parameter
+        // (that function's callers are sites); a node, a closure value or an enclosing function's parameter fail.
+        const handler = handlerOf(frame);
+        if (handler) {
+          if (from && from.frame === handler && from.index === handler.press) { sites.push({ ...site, owner: 'the press' }); continue; }
+          if (from && from.frame !== handler && within(from.frame, handler)) { derive(from, 'from a parameter'); continue; }
+          if (!pinned(config.ownerRoots, file, fn, text)) {
+            sites.push({ ...site, owner: 'not the press' });
+            fail(`${file}:${line} ${name}(…) in a handler takes its owner from ${from ? (from.frame === handler ? 'argument ' + from.index : 'an enclosing function\'s parameter') : text}, not its press`);
+            continue;
+          }
+        }
+        // Outside a handler an owner taken from a node (JE.ownerOf of anything but a parameter) is a pinned root only.
+        const taken = ownerOfCall(value, frame);
+        const argument = taken?.arguments[0];
+        const fromParameter = argument && (argument.type === 'Identifier' || MEMBER.has(argument.type)) && lookup(frame, rootName(argument) || '')?.param;
+        if (taken && !fromParameter && !ownerParam(argument, frame) && !pinned(config.ownerRoots, file, fn, text)) {
+          sites.push({ ...site, owner: 'from a node' });
+          fail(`${file}:${line} ${name}(…) takes its owner from a node (${text}) outside a pinned root`);
+          continue;
+        }
         if (from) { derive(from, 'from a parameter'); continue; }
-        sites.push({ ...site, owner: sourceText(sources[file], value) });
+        sites.push({ ...site, owner: text });
       }
     }
     if (!grew) break;
+  }
+  // Host dialogs are openers (D46S2-R7-4): only JE.openHostDialog(() => …, owner) opens one.
+  for (const [file, { visits }] of modules) {
+    if (config.hostDialogs?.[file]) continue;
+    for (const [node, frame] of visits) {
+      if (!CALL.has(node.type)) continue;
+      const callee = normal(pathOf(node.callee));
+      if (!/^(Dashboard\.(alert|confirm)|alert|confirm|prompt)$/.test(callee || '')) continue;
+      let inside = false;
+      for (let f = frame; f && !inside; f = f.parent) {
+        const parentCall = visits.find(([n]) => CALL.has(n.type) && n.arguments?.[0] === f.node);
+        if (parentCall && normal(pathOf(parentCall[0].callee)) === 'JE.openHostDialog') inside = true;
+      }
+      if (!inside) failures.push(`${file}:${node.loc.start.line} ${callee}(…) opens a host dialog outside JE.openHostDialog`);
+    }
   }
   return { sites, failures, takers };
 }

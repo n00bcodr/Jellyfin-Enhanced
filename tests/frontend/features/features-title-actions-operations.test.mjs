@@ -39,7 +39,9 @@ function setup(t, { html, extra = {}, url = 'http://jellyfin.test/web/index.html
         modalElement.querySelector('input[name="issue-type"]').checked = true;
         const modal = { options, modalElement, closed: false };
         modals.push(modal);
-        return { modalElement, show() { document().body.append(modalElement); }, close() { modal.closed = true; modalElement.remove(); } };
+        const close = () => { modal.closed = true; modalElement.remove(); };
+        // As the real modal shell: registered for the owner it is opened for, so a press inside it is that owner's.
+        return { modalElement, show() { document().body.append(modalElement); h.JE.openSurface(modalElement, close, options.operation); }, close };
       } },
       ...extra,
     },
@@ -121,7 +123,7 @@ const ACTIONS = {
   guard: { finish: async h => { h.confirms.at(-1)?.resolve(true); await settle(); }, done: h => h.writes.some(w => w[1] === 'guard-off'), none: h => !h.writes.some(w => w[1] === 'guard-off') },
   hide: { finish: async h => { h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide')?.click(); await settle(); },
     done: h => h.writes.some(w => w[1] === 'hide'), none: h => !h.writes.some(w => w[1] === 'hide') },
-  report: { finish: async h => { const m = h.modals.at(-1); if (m) await m.options.onSave(m.modalElement, h.document.createElement('button'), () => {}); await settle(); },
+  report: { finish: async h => { const m = h.modals.at(-1); if (m) { const button = h.document.createElement('button'); m.modalElement.append(button); await m.options.onSave(m.modalElement, button, () => {}, { type: 'click', target: button }); } await settle(); },
     done: h => h.writes.some(w => w[1] === 'report'), none: h => !h.writes.some(w => w[1] === 'report') },
 };
 

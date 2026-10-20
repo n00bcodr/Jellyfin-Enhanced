@@ -18,12 +18,15 @@ export const SHOW = { id: 1399, name: 'Game of Thrones', mediaInfo: { id: 78, st
 
 export function setup(t, { asks = true, seerr4k = true, card = false, advanced = false, stage = 'notHere' } = {}) {
   let user = 'user-a';
-  const requests = []; const gates = []; const toasts = []; const feeds = [];
+  const requests = []; const gates = []; const toasts = []; const feeds = []; const overrides = []; const alerts = [];
   async function answer(method, path, body) {
     requests.push([user, method, path, body]);
     const index = gates.findIndex(g => g.method === method && path.startsWith(g.prefix));
     // A held request answers with the value it is released with (when given), else as below.
     if (index >= 0) { const [gate] = gates.splice(index, 1); const value = await gate.d.promise; if (value !== undefined) return [200, value]; }
+    // An answer set for the test (`respond`): [status, body], or a function of the request returning one.
+    const override = overrides.find(o => o.method === method && path.startsWith(o.prefix));
+    if (override) { const value = typeof override.value === 'function' ? override.value(path, body) : override.value; if (value) return value; }
     if (path.startsWith('/title-actions/')) return [200, { allowed: true, itemId: null }];
     if (path.startsWith('/acquire/status')) return [200, { items: [{ key: 'movie:tmdb:603', stage, admin: { instances: [] } }] }];
     if (path.startsWith('/jellyseerr/user-status')) return [200, { active: true, userFound: true, canReportIssues: true, canRequestAdvanced: advanced }];
@@ -69,6 +72,16 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
     },
   });
   h.allowConsoleError(/./);
+  // jellyfin-web's Dashboard.alert as 12.2's behaves (checked live): it returns nothing, its dialog's container joins the
+  // body a moment later, and the dialog's button (.btnOption) closes it.
+  h.window.Dashboard = { alert(options) {
+    alerts.push(options);
+    const container = h.document.createElement('div'); container.className = 'dialogContainer';
+    container.innerHTML = '<div class="dialog" role="dialog"><h2 class="formDialogHeaderTitle"></h2><div class="text"></div><button type="button" class="btnOption" data-id="ok">Got It</button></div>';
+    container.querySelector('.text').textContent = options?.message || '';
+    container.querySelector('.btnOption').addEventListener('click', () => container.remove());
+    setTimeout(() => h.document.body.append(container), 0);
+  } };
   t.after(() => { h.JE.titleActions?.dispose?.(); h.JE.arrManage?.close?.(); h.JE.arrAskSheet?.close?.(); h.JE.jellyseerrMoreInfo?.close?.(); h.close(); });
   // Production order: navigation, session, session-action (after session: it registers its user-change handler), the transport.
   for (const m of ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/lifecycle.js', 'core/api-client.js']) h.load(m);
@@ -93,6 +106,12 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
     sent: (method, prefix) => requests.filter(r => r[1] === method && r[2].startsWith(prefix)),
     /** Another user signs in (the session module notices at once, as its auth hook does). */
     switchUser() { user = 'user-b'; h.JE.session.checkNow('test'); },
+    /** The server's status stage for the title from now on (the next status read answers it). */
+    setStage(value) { stage = value; },
+    /** Answers `method` requests under `prefix` with [status, body] (or a function of (path, body) returning one) from now on. */
+    respond(method, prefix, value) { overrides.unshift({ method, prefix, value }); },
+    /** jellyfin-web's Dashboard.alert, as a dialog in the document that its OK button closes; `alerts` records each call. */
+    alerts,
     async leave(hash = '#/movies') { h.window.location.hash = hash; await delivered(); },
     async back() { h.window.location.hash = '#/details?id=x'; await delivered(); },
     /** The browser puts the page in the back/forward cache (pagehide persisted) and later restores it (pageshow). */

@@ -109,9 +109,16 @@
         return chip;
     }
 
-    // Show a themed dialog with quota numbers + reset hint after a quota error.
-    async function showQuotaErrorDialog(error, mediaType) {
+    /**
+     * Shows a themed dialog with quota numbers + reset hint after a quota error. A host dialog is an opener (D46S2-R7-4):
+     * `owner` (required) is the press's owner the refused request belonged to; the dialog opens only while it is still
+     * current after the quota read, and closes with it.
+     */
+    async function showQuotaErrorDialog(error, mediaType, owner) {
+        const submitted = JE.captureSubmitted(owner);
+        if (!submitted.owner) return;
         const quota = await JE.jellyseerrAPI?.fetchUserQuota?.({ skipCache: true });
+        if (!submitted.current()) return;
         const upstreamMessage = error?.responseJSON?.message || '';
         const lines = [];
         if (upstreamMessage) lines.push(upstreamMessage);
@@ -142,7 +149,7 @@
         // Themes / forks can monkey-patch Dashboard with broken stubs; fall back to toast.
         if (typeof window.Dashboard?.alert === 'function') {
             try {
-                window.Dashboard.alert({ title, message });
+                JE.openHostDialog(() => window.Dashboard.alert({ title, message }), submitted.owner);
                 return;
             } catch (err) {
                 console.warn(`${logPrefix} Dashboard.alert threw, falling back to toast:`, err);
@@ -151,9 +158,13 @@
         JE.toast(escapeHtml(`${title}: ${lines.join(' — ')}`), 8000);
     }
 
-    async function handleRequestError(error, mediaType, requestBtn, resetLabel) {
-        if (isQuotaError(error)) {
-            await showQuotaErrorDialog(error, mediaType);
+    /** A refused request's answer for `owner` (required: its press's owner): said only while that is current. */
+    async function handleRequestError(error, mediaType, requestBtn, resetLabel, owner) {
+        const submitted = JE.captureSubmitted(owner);
+        if (error?.name === 'AbortError' || !submitted.current()) {
+            // Its owner ended (nothing was sent, or the answer has nowhere to go): nothing to say.
+        } else if (isQuotaError(error)) {
+            await showQuotaErrorDialog(error, mediaType, submitted);
         } else {
             const upstream = error?.responseJSON?.message;
             JE.toast(upstream ? escapeHtml(upstream) : JE.t('jellyseerr_modal_toast_request_fail'), 4000);

@@ -35,7 +35,10 @@
             bodyHtml,
             backdropPath: searchResultItem?.backdropPath,
             operation: owner,
-            onSave: async (modalEl, requestBtn, closeFn) => {
+            onSave: async (modalEl, requestBtn, closeFn, press) => {
+                // The press's owner (D46S2-R7-1): the operation the form is open for, rechecked before the send and
+                // before anything the answer publishes.
+                const submitted = JE.captureSubmitted(press);
                 const serverSelect = modalEl.querySelector('#movie-server');
                 const qualitySelect = modalEl.querySelector('#movie-quality');
                 const folderSelect = modalEl.querySelector('#movie-folder');
@@ -50,8 +53,8 @@
                 const settings = { serverId: parseInt(serverSelect.value), profileId: parseInt(qualitySelect.value), rootFolder: folderSelect.value, tags: [] };
 
                 try {
-                    // The operation the modal was opened for (if any): its scope holds the modal.
-                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: JE.captureSubmitted(modalEl).bound() });
+                    await requestMedia(tmdbId, 'movie', settings, is4k, searchResultItem, null, { bound: submitted.bound() });
+                    if (!submitted.current()) return;
                     // Manually update the original button on the card
                     const originalButton = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
                     if (originalButton) {
@@ -61,7 +64,7 @@
                     }
                     closeFn();
                 } catch (error) {
-                    await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'));
+                    await internal.handleRequestError(error, 'movie', requestBtn, JE.t('jellyseerr_modal_request'), submitted);
                 }
             }
         });
@@ -195,9 +198,11 @@
             backdropPath: collectionDetails.backdrop_path || collectionDetails.backdropPath,
             buttonText: JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies',
             operation: submitted.owner,
-            onSave: async (modalEl, requestBtn, closeFn) => {
-                // Every request of the loop is the modal's operation's (if any), checked by the transport before each send.
-                const bound = JE.captureSubmitted(modalEl).bound();
+            onSave: async (modalEl, requestBtn, closeFn, press) => {
+                // Every request of the loop is the press's owner's (D46S2-R7-1): the operation the form is open for,
+                // checked by the transport before each send and before what the answers publish.
+                const submitted = JE.captureSubmitted(press);
+                const bound = submitted.bound();
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting') || 'Requesting'}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -246,6 +251,7 @@
                         }
                     }
 
+                    if (!submitted.current()) return;
                     const requestedLabel = JE.t('jellyseerr_toast_collection_requested') || 'Requested';
                     const moviesLabel = JE.t('jellyseerr_toast_movies') || 'movies';
                     const total = selectedMovies.length;
@@ -255,7 +261,7 @@
                     }
                     JE.toast(toastText, 4000);
                     if (quotaHitError) {
-                        await ui.showQuotaErrorDialog(quotaHitError, 'movie');
+                        await ui.showQuotaErrorDialog(quotaHitError, 'movie', submitted);
                     }
                     closeFn();
 
@@ -270,7 +276,7 @@
                         }
                     }, 1000);
                 } catch (error) {
-                    JE.toast(JE.t('jellyseerr_modal_toast_request_fail') || 'Request failed', 4000);
+                    if (submitted.current()) JE.toast(JE.t('jellyseerr_modal_toast_request_fail') || 'Request failed', 4000);
                     requestBtn.disabled = false;
                     requestBtn.textContent = JE.t('jellyseerr_modal_request_selected_movies') || 'Request Selected Movies';
                 }

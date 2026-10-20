@@ -72,11 +72,13 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
 }
 
 /**
- * Refresh modal data and update displays
+ * Refresh modal data and update displays. The answer renders only for the window's newest intent; the button's busy
+ * state clears in `finally` whatever happens to the answer, once no other Refresh of it is still reading (D46S2-R7-6).
  */
 async function refreshModalData(data, mediaType, modal, refreshBtn) {
     const newest = modal._jeReads(JE.ownerOf(modal));
     const shown = () => state.currentModal === modal && !modal._isClosing && newest();
+    refreshBtn._jeRefreshing = (refreshBtn._jeRefreshing || 0) + 1;
     try {
         // Show loading state on button
         refreshBtn.classList.add('loading');
@@ -87,8 +89,6 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         if (!shown()) return;
         if (!freshData) {
             internal.showError('jellyseerr_modal_refresh_failed');
-            refreshBtn.classList.remove('loading');
-            refreshBtn.disabled = false;
             return;
         }
 
@@ -100,16 +100,15 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         if (mediaType === 'tv') {
             internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
         }
-
-        refreshBtn.classList.remove('loading');
-        refreshBtn.disabled = false;
-
     } catch (error) {
         if (!shown()) return;
         if (!internal.isExplained?.(error)) console.error('Error refreshing modal data:', error);
         internal.showError(internal.errorKey ? internal.errorKey(error, 'jellyseerr_modal_refresh_failed') : 'jellyseerr_modal_refresh_failed');
-        refreshBtn.classList.remove('loading');
-        refreshBtn.disabled = false;
+    } finally {
+        if (--refreshBtn._jeRefreshing === 0) {
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+        }
     }
 }
 
@@ -177,8 +176,9 @@ function showModal(data, mediaType, scope, submitted) {
             const collectionId = parseInt(collectionBtn.dataset.collectionId, 10);
             const collectionName = collectionBtn.dataset.collectionName;
             if (collectionId && collectionName) {
-                // A nested owner: the modal is the window's operation's (if any), taken before its details are read.
-                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName, null, { operation: collectionBtn });
+                // The press's owner (D46S2-R7-1), taken before its details are read: a title action's operation that
+                // pressed it, else the window's.
+                JE.jellyseerrUI.showCollectionRequestModal(collectionId, collectionName, null, { operation: JE.ownerOf(e) });
             }
         });
     }

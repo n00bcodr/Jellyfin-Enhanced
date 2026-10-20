@@ -246,7 +246,9 @@
             if (!action.current()) return [];
             // Not while the title is already asked for, on its way or here: the page's own request control shows no
             // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
-            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
+            // A row (`options.reconcile`) gets it either way, marked `askable`: it follows the newest status (D46S2-R7-5).
+            const askable = JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false;
+            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && (askable || options.reconcile)) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), askable,
                 run: (opener, submitted) => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
                     initialSeason: c.season, initialEpisode: c.episode }, { opener, operation: submitted }) });
         } else if (c.absent && !JE.arrAsk?.enabled?.() && JE.pluginConfig?.JellyseerrEnabled && JE.jellyseerrMoreInfo?.open && !root?.matches?.('.je-more-info-modal')) {
@@ -255,9 +257,10 @@
             out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), run: (_opener, submitted) => JE.jellyseerrMoreInfo.open(c.tmdbId, c.type, { season: c.season, episode: c.episode }, submitted) });
         }
         // The window's 4K request (Q-D46S2FIX5-1 (b)): its compact row hides Seerr's 4K split, so its More sheet offers
-        // it while Seerr 4K is on. It is the window's own request: owned by the window's owner, as its 4K option is.
-        const request4k = root?.matches?.('.je-more-info-modal') ? root.jeRequest4k : null;
-        if (typeof request4k === 'function') out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: () => request4k(root) });
+        // it while Seerr 4K is on. Like every entry it belongs to the operation the press submitted (D46S2-R7-1), also in a
+        // window opened natively.
+        if (root?.matches?.('.je-more-info-modal') && typeof root.jeRequest4k === 'function')
+            out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: (_opener, submitted) => root.jeRequest4k(submitted) });
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
                 const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;

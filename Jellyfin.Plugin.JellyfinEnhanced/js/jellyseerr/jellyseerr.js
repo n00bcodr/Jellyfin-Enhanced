@@ -1074,11 +1074,12 @@
 
         // Main click handler for request buttons and 4K popup items
         document.body.addEventListener('click', async function(event) {
+            // The press's owner (D46S2-R7-1), taken before anything it pressed goes or changes: what it opens and sends
+            // is that owner's (a Seerr card's press is native).
+            const owner = JE.ownerOf(event);
             // Handle 4K popup item clicks
             if (event.target.closest('.jellyseerr-4k-popup-item')) {
                 const item = event.target.closest('.jellyseerr-4k-popup-item');
-                // Taken before the popup goes: where the item was pressed (a Seerr card's popup is native).
-                const owner = JE.ownerOf(item);
                 const action = item.dataset.action;
                 const tmdbId = item.dataset.tmdbId;
                 const mediaType = String(item.dataset.mediaType || 'movie').toLowerCase();
@@ -1129,7 +1130,7 @@
                     } catch (error) {
                         // Quota errors get a themed dialog with usage + reset info.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
-                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', owner);
                         } else {
                             let errorMessage = 'Failed to request 4K version';
                             if (error.status === 404) {
@@ -1163,23 +1164,23 @@
                 || (mediaType === 'movie' ? 'this movie' : mediaType === 'collection' ? 'this collection' : 'this show');
 
             if (mediaType === 'collection' && collectionId) {
-                showCollectionRequestModal(collectionId, titleText, searchResultItem, { operation: button });
+                showCollectionRequestModal(collectionId, titleText, searchResultItem, { operation: owner });
                 return;
             }
 
             if (mediaType === 'tv') {
-                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, button);
+                showSeasonSelectionModal(tmdbId, mediaType, titleText, searchResultItem, false, owner);
                 return;
             }
 
             if (mediaType === 'movie') {
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, button);
+                    showMovieRequestModal(tmdbId, titleText, searchResultItem, false, owner);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(button).bound() }); // Pass searchResultItem for override rules
+                        await requestMedia(tmdbId, mediaType, {}, false, searchResultItem, null, { bound: JE.captureSubmitted(owner).bound() }); // Pass searchResultItem for override rules
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${JE.jellyseerrUI.icons.requested}`;
                         button.classList.remove('jellyseerr-button-request');
                         button.classList.add('jellyseerr-button-pending');
@@ -1187,7 +1188,7 @@
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.
                         if (JE.jellyseerrUI?.isQuotaError?.(error)) {
-                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie');
+                            await JE.jellyseerrUI.showQuotaErrorDialog(error, 'movie', owner);
                             button.innerHTML = `${JE.jellyseerrUI.icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                             return;
                         }

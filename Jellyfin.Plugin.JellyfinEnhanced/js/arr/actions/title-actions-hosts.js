@@ -207,10 +207,23 @@
         else badge?.remove();
     }
 
+    /**
+     * The adapted Request follows the newest status of the title on every pass (D46S2-R7-5): in the row while the title
+     * can be asked for and no native request control is there, out of it while it is asked for, on its way or here.
+     */
+    function reconcileRequest(state) {
+        const request = state.request;
+        if (!request) return;
+        const want = request.askable && !originals(state.row).some(n => !n.dataset.jeActionKind && classify(n, state.c) === 'primary');
+        if (want && request.node.parentElement !== state.row) { state.row.append(request.node); state.owned.add(request.node); }
+        else if (!want && request.node.parentElement) { request.node.remove(); state.owned.delete(request.node); }
+    }
+
     /** Reconciles a row. Native controls stay connected for their owners, hidden only in compact layout. */
     function paintRow(state) {
         const row = state.row;
         if (!row.isConnected) { rows.delete(row); return; }
+        reconcileRequest(state);
         // A host copy of an adapter node has neither listener nor owner: it gives way to the live node.
         const copies = [...row.querySelectorAll('.je-actions-adapted')].filter(n => !state.owned.has(n));
         if (copies.length) {
@@ -371,7 +384,7 @@
             // A cancelled admission ends the setup; a refused one leaves a library row its native controls.
             catch (error) { if (A.cancelled(error) || c.absent) return []; }
             if (!action.current()) return [];
-            return A.entries(c, { action, root, surface: 'details' });
+            return A.entries(c, { action, root, surface: 'details', reconcile: true });
         })().then(entries => {
             if (!action.current()) return;
             for (const entry of entries) {
@@ -397,15 +410,39 @@
                         A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
                     };
                 } else A.bindPress(node, action);
-                ours.add(node); state.owned.add(node); row.append(node);
+                ours.add(node);
+                // The JE-mode Request is reconciled with the title's status on every pass (reconcileRequest).
+                if (entry.id === 'request' && 'askable' in entry) { state.request = { node, askable: entry.askable }; followStatus(state); continue; }
+                state.owned.add(node); row.append(node);
                 if (entry.id === 'report' && entry.control) JE.jellyseerrIssueReporter?.applyIssueIndicator?.(node, c.tmdbId, c.type, action.current);
             }
             paintRow(state);
         }).catch(() => {});
     }
 
+    /**
+     * Keeps the row's Request on the newest status (D46S2-R7-5): every change of the title (the change feed, or an ask
+     * or cancel here, which refresh it) re-reads its status for the row's generation; only the newest read decides,
+     * and a read that fails keeps what the row shows.
+     */
+    function followStatus(state) {
+        const { c, action } = state;
+        if (!JE.arrStatus?.subscribe || !JE.arrStatus.fetchKey) return;
+        const reads = JE.latestIntent();
+        state.unsubscribe = JE.arrStatus.subscribe([c.titleKey], async () => {
+            if (!action.current()) return;
+            const newest = reads(action);
+            const status = await JE.arrStatus.fetchKey(c.titleKey).catch(() => null);
+            if (!status || !newest() || rows.get(state.row) !== state) return;
+            state.request.askable = JE.internals?.arrAskSheet?.askable?.(status.items?.[0]) !== false;
+            paintRow(state);
+        });
+    }
+
     /** Removes only this row's owned UI and restores original controls. */
     function disposeRow(state) {
+        state.unsubscribe?.(); state.unsubscribe = null;
+        state.request?.node.remove(); state.request = null;
         state.row.classList.remove('je-actions-compact');
         state.row.parentElement?.classList.remove('je-actions-ribbon');
         state.externalSources.forEach(node => node.classList.remove('je-actions-external-original'));

@@ -215,14 +215,16 @@
             if (!mainButtonDisabled) {
                 const requestHandler = async (e) => {
                     e.stopPropagation();
+                    // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
+                    const submitted = JE.captureSubmitted(e);
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
+                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, submitted.owner);
                     } else {
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(mainButton).bound() });
-                            if (requestHandlers.get(mainButton) !== requestHandler) return;
+                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
+                            if (requestHandlers.get(mainButton) !== requestHandler || !submitted.current()) return;
                             if (!item.mediaInfo) item.mediaInfo = {};
                             item.mediaInfo.status = 3;
                             mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
@@ -233,7 +235,7 @@
                             mainButton.disabled = false;
                             // Quota errors get a themed dialog; restore button to idle.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
-                                await ui.showQuotaErrorDialog(error, 'movie');
+                                await ui.showQuotaErrorDialog(error, 'movie', submitted);
                                 if (requestHandlers.get(mainButton) !== requestHandler) return;
                                 mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                                 return;
@@ -287,14 +289,16 @@
             const requestHandler = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
+                const submitted = JE.captureSubmitted(e);
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
+                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, submitted.owner);
                 } else {
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(button).bound() });
-                        if (requestHandlers.get(button) !== requestHandler) return;
+                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
+                        if (requestHandlers.get(button) !== requestHandler || !submitted.current()) return;
                         if (!item.mediaInfo) item.mediaInfo = {};
                         item.mediaInfo.status = 3;
                         button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
@@ -305,7 +309,7 @@
                         button.disabled = false;
                         // Quota errors get a themed dialog; restore button to idle.
                         if (ui.isQuotaError && ui.isQuotaError(error)) {
-                            await ui.showQuotaErrorDialog(error, 'movie');
+                            await ui.showQuotaErrorDialog(error, 'movie', submitted);
                             if (requestHandlers.get(button) !== requestHandler) return;
                             button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
                             return;

@@ -262,7 +262,7 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
     h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
   await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.JE.NATIVE);
   const requestBtn = h.document.createElement('button');
-  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}) };
+  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}, { type: 'click', target: modal.el }) };
 }
 const seasonCheckbox = (h, number) => h.el.querySelector(`.jellyseerr-season-checkbox[data-season-number="${number}"]`);
 const tvSeasons = [{ seasonNumber: 0, name: 'Specials', episodeCount: 2, airDate: '2020-01-01' }, { seasonNumber: 1, name: '<img src=x onerror=evil()>', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, episodeCount: 3, airDate: '2021-01-01' }];
@@ -325,7 +325,7 @@ function requestModals(t, options) {
     create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); current = { el, o }; return { modalElement: el, show() {} }; } };
   h.requestBtn = h.document.createElement('button');
   h.modal = () => current.el;
-  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {});
+  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {}, { type: 'click', target: current.el });
   return h;
 }
 

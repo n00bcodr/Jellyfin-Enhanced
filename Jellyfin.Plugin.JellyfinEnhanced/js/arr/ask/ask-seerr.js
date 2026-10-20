@@ -264,9 +264,11 @@
             backdropPath: details.backdropPath || details.backdrop_path,
             buttonText: JE.arrAsk.tr('jellyseerr_modal_request_selected_movies'),
             operation: submitted.owner,
-            onSave: async (modalEl, button, closeFn) => {
-                // Each ask of the loop is the picker's operation's (if any), checked by the transport before each send.
-                const bound = JE.captureSubmitted(modalEl).bound();
+            onSave: async (modalEl, button, closeFn, press) => {
+                // Each ask of the loop is the press's owner's (D46S2-R7-1): the picker's operation, checked by the
+                // transport before each send and before the summary is said.
+                const submitted = JE.captureSubmitted(press);
+                const bound = submitted.bound();
                 const ids = [...modalEl.querySelectorAll('.jellyseerr-collection-checkbox:checked:not(:disabled)')]
                     .map(cb => Number.parseInt(cb.dataset.tmdbId, 10)).filter(n => Number.isInteger(n) && n > 0);
                 if (!ids.length) {
@@ -291,6 +293,7 @@
                     if (result?.stale) return;
                     results.push(result || { ok: false, state: 'failed' });
                 }
+                if (!submitted.current()) return;
                 const line = JE.internals?.arrAskCollection?.summarize?.(results, caps);
                 if (line) JE.arrAsk.toast(line);
                 closeFn();

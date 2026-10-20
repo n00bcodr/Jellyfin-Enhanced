@@ -42,7 +42,8 @@
      * @param {string} options.bodyHtml - The HTML content for the modal body.
      * @param {string} options.backdropPath - TMDB backdrop image path (e.g., '/abc123.jpg').
      * @param {string} options.backdropUrl - Full backdrop image URL (alternative to backdropPath).
-     * @param {function} options.onSave - The callback function to execute when the primary button is clicked.
+     * @param {function} options.onSave - The callback function to execute when the primary button is clicked:
+     *   (modalElement, primaryButton, close, press), `press` the click, whose owner (JE.ownerOf) its work takes.
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
      * @param {object} options.operation - The owner (required, D46S2-R6): the operation a title action submitted,
@@ -212,8 +213,10 @@
         cancelBtn.addEventListener('click', () => history.back());
         modalElement.addEventListener('click', (e) => { if (e.target === modalElement) history.back(); });
 
-        // Event listener for the primary action button; the writes onSave starts carry the operation.
-        primaryBtn.addEventListener('click', () => submitted.current() ? onSave(modalElement, primaryBtn, close) : close());
+        // Event listener for the primary action button. onSave gets the press (D46S2-R7-1): what it sends and opens is the
+        // press's owner's (JE.captureSubmitted(press)), which is the modal's operation, or the operation a title action
+        // pressed it for.
+        primaryBtn.addEventListener('click', (e) => submitted.current() ? onSave(modalElement, primaryBtn, close, e) : close());
 
         return { modalElement, show, close };
     };
