@@ -576,7 +576,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         && !pluginConfig.SpoilerNextEpisodeStripImage
                         && userState.Prefs?.UseAdvancedCategories != false)
                     {
-                        var boundary = _nextUnwatched.GetBoundary(effectiveUserId, seriesId);
+                        var boundary = _nextUnwatched.GetBoundary(effectiveUserId, seriesId, jUser);
                         var category = SpoilerNextUnwatchedService.Categorize(
                             boundary, episode.Id, episode.ParentIndexNumber, episode.IndexNumber);
                         if (category == SpoilerEpisodeCategory.NextEpisode)

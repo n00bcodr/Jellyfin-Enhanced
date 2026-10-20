@@ -404,7 +404,7 @@ Neither setting requires poster Rating Tags or Age Rating Tags. Poster scope swi
 
 ## Server-Side Tag Cache
 
-The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. A change to a user's library access, parental rating or tag rules applies to their next page load; on 10.11 too, where Jellyfin saves a policy without telling plugins.
+The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. A change to a user's library or channel access, parental rating, schedule or tag rules applies to their next page load; on 10.11 too, where Jellyfin saves a policy without telling plugins.
 
 **How to use:**
 

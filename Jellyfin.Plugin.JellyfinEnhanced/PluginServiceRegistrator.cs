@@ -160,6 +160,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // JellyfinUserActions), and moved by its user events.
             serviceCollection.AddSingleton<Services.Acquire.Automation.JellyfinUserChangeBracket>();
             serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Automation.JellyfinUserChangeBracket>());
+            // Core (user-change caches): whom an action of unknown person (a sign-in by name) turned out to be about, so JE's
+            // user caches read again only that person's entries (Helpers.UserAuthority).
+            serviceCollection.AddSingleton<Helpers.UserChangeAttribution>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Helpers.UserChangeAttribution>());
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();

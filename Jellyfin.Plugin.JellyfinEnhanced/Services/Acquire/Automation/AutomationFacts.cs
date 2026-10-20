@@ -141,6 +141,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         /// <param name="user">The person.</param>
         public static long Sample(Guid user) => FactVersion.Combine(Versions.Sample(user.ToString("N")), Everyone.Sample());
 
+        /// <summary>
+        /// The person's own version alone: their brackets, JE's own changes to them and Jellyfin's events about them. For
+        /// JE's user caches (Helpers.UserAuthority), which learn whom a change of unknown person was about once it has run
+        /// (Helpers.UserChangeAttribution) instead of treating it as a change to everyone.
+        /// </summary>
+        /// <param name="user">The person.</param>
+        public static long SampleOwn(Guid user) => Versions.Sample(user.ToString("N"));
+
         /// <summary>Makes a change to the person's Jellyfin user inside their version's bracket.</summary>
         /// <param name="user">The person.</param>
         /// <param name="change">The change (it has completed when its task has).</param>

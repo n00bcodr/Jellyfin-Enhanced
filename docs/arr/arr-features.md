@@ -1595,14 +1595,22 @@ covered afterwards only when Jellyfin announces it, and Jellyfin doesn't announc
   directly), it doesn't move the version, so a check that was already deciding when it landed can use the facts it read
   before. Checks that start afterwards read the new facts.
 
-A change written straight into Jellyfin's database, bypassing Jellyfin, isn't covered.
+A change written straight into Jellyfin's database, bypassing Jellyfin, isn't covered by the check (the caches below
+see it on their next read).
 
-Jellyfin Enhanced's own caches of what a user may see don't wait for an announcement. The tag cache's per-user filter
-and native details' artwork grants follow the user as each request reads them, so a parental, tag or library change
-applies to the next request however it was made. Review authors (hidden or disabled), poster tags and Spoiler Guard's
-next episode follow the person's version: the next request after a bracketed or announced change. A save by other code
-that moves nothing reaches them when their entry expires (15 seconds for review authors, 30 seconds for poster tags,
-5 minutes for Spoiler Guard's next episode, which only ever hides more while stale).
+Jellyfin Enhanced's own caches of what a user may see don't wait for an announcement. What they compare is every
+property of the user, its permissions and its preferences that decides access (libraries, channels, Live TV, parental
+limits, tags, schedules, the role, disabled and hidden), worked out from a classification of Jellyfin's own user types
+that the tests check against the 12.2 and 10.11.11 servers, so a property a newer Jellyfin adds counts until it is
+classified. The tag cache's per-user filter, native details' artwork grants and Spoiler Guard's next episode follow the
+user as each request reads them and the person's version, so any access change applies to the next request however it
+was made, a save by other code and a change written straight into the database included. Review authors (hidden or
+disabled) and poster tags hold the user itself and follow the person's version: the next request after a bracketed or
+announced change. Someone else signing in doesn't count as a change to them: once a sign-in by name (or a new user)
+has run, only the person it was about is read again; only when that can't be told is every cached review author or
+poster user read again once. A save by other code that moves nothing reaches review authors and
+poster tags when their entry expires (15 seconds and 30 seconds); until then a review by an author who was just hidden
+or disabled can still be counted.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

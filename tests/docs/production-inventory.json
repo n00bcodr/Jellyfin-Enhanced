@@ -299,6 +299,14 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserAuthorityFields.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserChangeAttribution.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserHelper.cs",
       "category": "Helpers"
     },
@@ -10883,7 +10891,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 629,
+    "files": 631,
     "routes": 292,
     "configuration_properties": 638,
     "storage_references": 93,

@@ -65,7 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly IJellyfinLibraryAccess _libraries;
         private readonly IRequestPolicy? _requests;
         private readonly NativeDetailsLibrary? _physical;
-        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At, string Authority)> _revisions = new();
+        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At, string Authority, Helpers.UserAuthority.Stamp Stamp)> _revisions = new();
         private readonly ConcurrentDictionary<Guid, long> _epochs;
         private readonly string? _epochFile;
         private readonly object _epochWrite = new();
@@ -482,7 +482,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
-        /// The viewer's policy revision: parental limit and tag rules, library access, the feature
+        /// The viewer's policy revision: parental limit and tag rules, library access, every other
+        /// access-deciding fact of the viewer (<see cref="Helpers.UserAuthority.Fingerprint"/>), the feature
         /// switch, Seerr configuration, the request mode, the viewer's import block and their session
         /// epoch (<see cref="Revoke"/>) with the epochs' generation. Artwork grants
         /// carry it; any change ends the grants minted before. (Seerr linkage and per-title request
@@ -492,14 +493,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>An opaque revision string.</returns>
         public string Revision(User viewer)
         {
-            // The memo is keyed by the viewer as just read too: a parental or library change made a moment ago (10.11
-            // saves it with no event) ends the grants on the next request, not when the memo expires.
+            // The memo is keyed by the viewer as just read (every access-deciding fact, Helpers.UserAuthorityFields)
+            // and the person's own Jellyfin user version: a change made a moment ago (10.11 saves a policy with no
+            // event) ends the grants on the next request, not when the memo expires.
             var authority = Helpers.UserAuthority.Fingerprint(viewer);
             if (_revisions.TryGetValue(viewer.Id, out var hit) && DateTime.UtcNow - hit.At < RevisionTtl
-                && string.Equals(hit.Authority, authority, StringComparison.Ordinal))
+                && string.Equals(hit.Authority, authority, StringComparison.Ordinal)
+                && Helpers.UserAuthority.OwnUnchanged(viewer.Id, hit.Stamp))
             {
                 return hit.Revision;
             }
+
+            var stamp = Helpers.UserAuthority.Take(viewer.Id);
 
             var config = JellyfinEnhanced.Instance?.Configuration;
             var text = JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(viewer))
@@ -511,10 +516,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 + "|" + (config != null && SeerrConfigured(config))
                 + "|" + (config != null && JeMode(config)) + "|" + (config != null && RequestsOn(config))
                 + "|" + (config != null && ImportBlocked(config, viewer))
-                + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture);
+                + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture)
+                // Any other access-deciding change ends the grants too.
+                + "|" + authority;
             var revision = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).Substring(0, 16);
             if (_revisions.Count > 1000) _revisions.Clear();
-            _revisions[viewer.Id] = (revision, DateTime.UtcNow, authority);
+            _revisions[viewer.Id] = (revision, DateTime.UtcNow, authority, stamp);
             return revision;
         }
 

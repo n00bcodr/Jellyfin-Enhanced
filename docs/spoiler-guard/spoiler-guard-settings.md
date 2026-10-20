@@ -384,7 +384,7 @@ Users can uncheck **Advanced per-category reveals** in personal settings to rest
 
     Classification requires a positive season number and a present episode number. Missing boundary/numbering or lookup failures give no reveal. Other seasons and specials retain normal policy. Search hints and card score overlays retain separate, stricter rules.
 
-    Watched-data events normally evict the boundary immediately. Library changes can wait for the five-minute cache lifetime.
+    The boundary is recomputed on the next request after a watched-state change, an episode added, removed or updated, or a change to the viewer's library, channel or parental access (however it was made). Only a change Jellyfin doesn't report (an episode edited straight in its database) waits for the five-minute cache lifetime, and meanwhile an episode can get the reveal of its old category.
 
     | Setting | Internal property |
     |---|---|

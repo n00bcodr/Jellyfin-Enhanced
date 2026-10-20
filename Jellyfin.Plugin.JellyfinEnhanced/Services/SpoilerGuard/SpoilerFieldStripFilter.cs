@@ -772,7 +772,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
-                var jUser = _userManager.GetUserById(userId);
+                // Read once per request (a database query per lookup on both versions), not once per item.
+                var jUser = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById).User;
                 // Both branches return false, but for DIFFERENT reasons.
                 // When user/item are gone, "treat as unwatched → strip
                 // applies" is the safe default (we'd rather strip a
@@ -807,7 +808,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
-                var jUser = _userManager.GetUserById(userId);
+                // Read once per request (a database query per lookup on both versions), not once per item.
+                var jUser = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById).User;
                 if (jUser == null) return null;
                 var item = _libraryManager.GetItemById(itemId);
                 if (item == null) return null;
@@ -835,7 +837,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
-                var jUser = _userManager.GetUserById(userId);
+                // Read once per request (a database query per lookup on both versions), not once per item.
+                var jUser = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById).User;
                 if (jUser == null) return false;
                 var seasonItem = _libraryManager.GetItemById(seasonId)
                     as MediaBrowser.Controller.Entities.TV.Season;

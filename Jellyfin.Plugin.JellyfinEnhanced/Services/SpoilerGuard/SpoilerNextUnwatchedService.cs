@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
@@ -34,28 +35,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     ///
     /// The strip filter consumes this as an amortized in-memory lookup; a cache
     /// miss costs one series-scoped Limit=1 library query (the same bounded shape
-    /// as TagCacheService.GetFirstEpisode). Watched-state changes evict the
-    /// affected key via IUserDataManager.UserDataSaved, and a change to the
-    /// user's Jellyfin user version (their library access or parental limits
-    /// decide which episodes the query sees) misses the cached boundary; library
-    /// mutations are covered by the TTL alone — a stale boundary can only mis-categorize the
-    /// episode the user is about to watch between reveal tiers, never bypass a
-    /// base strip, so a bounded staleness window is acceptable.
+    /// as TagCacheService.GetFirstEpisode). A cached boundary is used only while
+    /// everything that decides it is unchanged, because a stale one is not safe:
+    /// it can give an episode the reveal of the category it no longer has (a
+    /// later episode keeps "next episode" and shows its title after an earlier
+    /// one became visible). So each slot is keyed by
+    /// <list type="bullet">
+    /// <item><description>the viewer as this request read them
+    /// (<see cref="Helpers.UserAuthority.Fingerprint"/>: library, channel and
+    /// parental access decide which episodes the query sees), so a change made
+    /// with no event and no bracket still recomputes before the next reveal;</description></item>
+    /// <item><description>the viewer's own Jellyfin user version;</description></item>
+    /// <item><description>the series' library version, moved by Jellyfin's item
+    /// added / removed / updated events for the series, its seasons and
+    /// episodes (an episode added, deleted, renumbered or re-rated);</description></item>
+    /// <item><description>the watched state: IUserDataManager.UserDataSaved
+    /// evicts the key.</description></item>
+    /// </list>
+    /// The TTL bounds only what none of those see (a change written straight
+    /// into Jellyfin's database).
     /// </summary>
     public sealed class SpoilerNextUnwatchedService : IDisposable
     {
         /// <summary>The next-unwatched episode's identity and position.</summary>
         public readonly record struct NextUnwatchedBoundary(Guid EpisodeId, int SeasonNumber, int EpisodeNumber);
 
-        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, long UserStamp);
+        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, string Authority, Helpers.UserAuthority.Stamp UserStamp, long SeriesVersion);
 
         // Boundary cache keyed (userId, seriesId). Worst case is
         // f(users × guarded series) but hard-capped at MaxCacheEntries slots of
-        // ~80 bytes (two Guids + a nullable record struct + expiry + user
-        // version) ≈ 160 KiB — bounded independent of library size. Overflow clears the whole map
+        // ~100 bytes plus the viewer's fingerprint string (shared by the
+        // viewer's slots of one request) — bounded independent of library
+        // size. Overflow clears the whole map
         // (recompute is one bounded query per active key); TTL keeps entries
         // from outliving library changes.
         private readonly ConcurrentDictionary<(Guid UserId, Guid SeriesId), CacheSlot> _cache = new();
+
+        // Per-series library version (item added / removed / updated events of
+        // the series, its seasons and episodes). Bounded by the number of series
+        // touched; past MaxSeriesVersions it starts over under a new epoch, so
+        // every slot misses once.
+        private readonly ConcurrentDictionary<Guid, long> _seriesVersions = new();
+        private long _seriesEpoch;
+        internal const int MaxSeriesVersions = 100_000;
 
         internal const int MaxCacheEntries = 2048;
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
@@ -83,6 +105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userDataManager = userDataManager;
             _logger = logger;
             _userDataManager.UserDataSaved += OnUserDataSaved;
+            _libraryManager.ItemAdded += OnLibraryChanged;
+            _libraryManager.ItemRemoved += OnLibraryChanged;
+            _libraryManager.ItemUpdated += OnLibraryChanged;
         }
 
         // This service is a Singleton subscribed to
@@ -98,6 +123,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 _userDataManager.UserDataSaved -= OnUserDataSaved;
+                _libraryManager.ItemAdded -= OnLibraryChanged;
+                _libraryManager.ItemRemoved -= OnLibraryChanged;
+                _libraryManager.ItemUpdated -= OnLibraryChanged;
             }
             catch (Exception ex)
             {
@@ -111,27 +139,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// full strip) when the series has no unwatched regular episode or on any
         /// resolution failure — fail-closed toward the base behavior.
         /// </summary>
-        public NextUnwatchedBoundary? GetBoundary(Guid userId, Guid seriesId)
+        /// <param name="userId">The viewer.</param>
+        /// <param name="seriesId">The guarded series.</param>
+        /// <param name="viewer">The viewer as this request already read them, if it did; else they are read once per
+        /// request (<see cref="Helpers.UserAuthority.ReadOncePerRequest"/>).</param>
+        public NextUnwatchedBoundary? GetBoundary(Guid userId, Guid seriesId, JUser? viewer = null)
         {
             if (userId == Guid.Empty || seriesId == Guid.Empty) return null;
 
-            // The per-item cost on the strip path is this dictionary hit; the
-            // bounded query below runs once per (user, series) per TTL window /
-            // watched-state change, amortizing to O(1) per item.
+            // The per-item cost on the strip path is this dictionary hit plus
+            // the viewer's fingerprint (one read of the viewer per request); the
+            // bounded query below runs once per (user, series) while nothing that
+            // decides the boundary changes, amortizing to O(1) per item.
+            var user = viewer ?? Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById).User;
+            var authority = user == null ? string.Empty : Helpers.UserAuthority.Fingerprint(user);
             var now = ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks;
             var key = (userId, seriesId);
             if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now
-                && Helpers.UserAuthority.Unchanged(userId, slot.UserStamp))
+                && string.Equals(slot.Authority, authority, StringComparison.Ordinal)
+                && Helpers.UserAuthority.OwnUnchanged(userId, slot.UserStamp)
+                && slot.SeriesVersion == SeriesVersion(seriesId))
             {
                 return slot.Boundary;
             }
 
-            // Sampled before the query, so a policy change landing during it is never served later.
-            var userStamp = Helpers.UserAuthority.Version(userId);
+            // Taken before the query, so a change landing during it is never served later.
+            var userStamp = Helpers.UserAuthority.Take(userId);
+            var seriesVersion = SeriesVersion(seriesId);
 
             var boundary = BoundaryComputerForTest != null
                 ? BoundaryComputerForTest(userId, seriesId)
-                : ComputeBoundary(userId, seriesId);
+                : ComputeBoundary(user, seriesId);
 
             if (_cache.Count >= MaxCacheEntries)
             {
@@ -141,9 +179,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _cache.Clear();
             }
 
-            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, userStamp);
+            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, authority, userStamp, seriesVersion);
             return boundary;
         }
+
+        // The series' library version: its epoch and its own count.
+        private long SeriesVersion(Guid seriesId)
+            => (Interlocked.Read(ref _seriesEpoch) << 40) + _seriesVersions.GetValueOrDefault(seriesId);
 
         /// <summary>
         /// Pure categorization of an episode DTO against a boundary. Validation
@@ -171,11 +213,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 : SpoilerEpisodeCategory.Other;
         }
 
-        private NextUnwatchedBoundary? ComputeBoundary(Guid userId, Guid seriesId)
+        private NextUnwatchedBoundary? ComputeBoundary(JUser? user, Guid seriesId)
         {
             try
             {
-                var user = _userManager.GetUserById(userId);
                 if (user == null) return null;
 
                 // Series-scoped, Limit=1, sorted server-side — the same bounded
@@ -220,6 +261,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return null;
             }
+        }
+
+        // An episode, season or the series itself added, removed or updated
+        // (numbering, rating, a new file): the series' boundaries are computed
+        // again. O(1); runs inline on Jellyfin's event thread.
+        private void OnLibraryChanged(object? sender, ItemChangeEventArgs e)
+        {
+            var seriesId = e?.Item switch
+            {
+                Episode episode => episode.SeriesId,
+                Season season => season.SeriesId,
+                Series series => series.Id,
+                _ => Guid.Empty,
+            };
+            if (seriesId == Guid.Empty) return;
+            if (_seriesVersions.Count >= MaxSeriesVersions)
+            {
+                _seriesVersions.Clear();
+                Interlocked.Increment(ref _seriesEpoch);
+            }
+
+            _seriesVersions.AddOrUpdate(seriesId, 1, (_, v) => v + 1);
         }
 
         // Fires on every user-data save (playback ticks included). O(1)

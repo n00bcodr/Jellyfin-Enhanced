@@ -32,3 +32,14 @@ JE_CHROMIUM_PATH=/usr/bin/chromium python3 tests/host/run.py --target all --brow
 ```
 
 This loads the unmodified Jellyfin web application and JE assets, signs in through the real login form as regular and administrator users, waits for authenticated JE bootstrap, opens the Enhanced panel with its keyboard shortcut, changes Auto Pause through the checkbox, and reloads to verify server persistence. Uncaught page errors fail the journey. Third-party browser requests are blocked; host API and asset responses are not mocked. Browser dependencies are required when `--browser` is specified; failures are never silently skipped. Artifacts include a browser result file and failure screenshots. Session credentials are passed over stdin, and traces/HAR/storage snapshots are intentionally not recorded because they contain authentication tokens. These checks cover Chromium desktop only; mocked component browser tests remain a separate suite.
+
+## Host user types
+
+`tests/fixtures/host-users/user-fields-<version>.tsv` lists every property of Jellyfin's user, permission, preference, access-schedule, user policy and user configuration types, and every `PermissionKind` and `PreferenceKind` member, as the pinned 12.2 and 10.11.11 servers have them (`tests/backend/Support/jellyfin-api.json`). `Helpers/UserAuthorityFields.cs` classifies each one as deciding access or not; the access fingerprint JE's user caches compare is derived from that classification, and `UserAuthorityFieldsTests` fails on a listed property nobody classified and on a classified name neither host has. Regenerate the lists from the pinned images (for a new Jellyfin release, update the pins first):
+
+```sh
+python3 tests/backend/jellyfin_api.py --target all
+for t in jf12 jf10; do
+  JE_USER_FIELDS_WRITE=$PWD/tests/fixtures/host-users dotnet test tests/backend/JE.Tests.csproj -c Release -p:JellyfinTarget=$t --filter "FullyQualifiedName~TheCheckedInListIsThePinnedHostsOwn"
+done
+```

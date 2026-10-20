@@ -17,23 +17,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     // The users are only read: library access and parental rating
     // (GetItemById<BaseItem>(id, user)), the admin flag, and the
     // hidden/disabled flags that decide review visibility. Each entry keeps
-    // the user's Jellyfin user version as sampled before the lookup
-    // (UserAuthority.Version) and is served only while that is unchanged, so
-    // a policy change applies to the next request: the version moves on the
-    // Jellyfin user actions JE brackets (the Dashboard's policy save, which
-    // 10.11 makes without an event), on JE's own user changes (maintenance
-    // mode) and on Jellyfin's user events. The TTL only bounds a change made
-    // by other code with no event (another plugin's direct save). Jellyfin's
-    // image endpoints are anonymous anyway; this only decides whose tag data
-    // is drawn. Null results are cached too (Jellyfin never reuses a user
-    // id), so a deleted review author is not looked up again on every poster.
+    // the user's Jellyfin user version as stamped before the lookup
+    // (UserAuthority.Take) and is served only while UserAuthority.Unchanged,
+    // so a policy change applies to the next request: the version moves on the
+    // Jellyfin user actions JE brackets for the person (the Dashboard's policy
+    // save, which 10.11 makes without an event), on JE's own changes to them
+    // (maintenance mode) and on Jellyfin's events about them. A change whose
+    // person isn't known before it runs (sign-in by name) counts, once it has
+    // run, only for the person it turned out to be about
+    // (UserChangeAttribution). A miss reads the user once per request
+    // (UserAuthority.ReadOncePerRequest), never sharing a read with another
+    // request. The TTL only bounds a change made by other code with no event
+    // (another plugin's direct save). Jellyfin's image endpoints are anonymous
+    // anyway; this only decides whose tag data is drawn. Null results are
+    // cached too (Jellyfin never reuses a user id), so a deleted review author
+    // is not looked up again on every poster.
     public sealed class PosterTagUserCache
     {
         private const int MaxEntries = 4096;
         private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
 
         private readonly IUserManager _userManager;
-        private readonly ConcurrentDictionary<Guid, (JUser? User, DateTime At, long Stamp)> _cache = new();
+        private readonly ConcurrentDictionary<Guid, (JUser? User, DateTime At, UserAuthority.Stamp Stamp)> _cache = new();
 
         public PosterTagUserCache(IUserManager userManager)
         {
@@ -51,9 +56,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return hit.User;
             }
 
-            // Sampled before the read, so a change landing during it is never served later.
-            var stamp = UserAuthority.Version(userId);
-            var user = _userManager.GetUserById(userId);
+            // Stamped before the read, so a change landing during it is never served later.
+            var (user, stamp) = UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
             if (_cache.Count >= MaxEntries) _cache.Clear();
             _cache[userId] = (user, now, stamp);
             return user;

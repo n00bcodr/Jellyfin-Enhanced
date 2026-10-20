@@ -343,7 +343,7 @@ Your admin can reveal selected information for your next unwatched episode and t
 
     Advanced mode can relax titles, descriptions, and ratings in supported episode metadata. Unchecking **Next episode: keep image hidden** can also reveal the next episode's Primary/Thumb image. Search hints and card score overlays retain their separate, stricter policies. Chapter/trickplay protection still follows its own rules.
 
-    Watched-data events normally evict the boundary cache immediately. Library changes can wait for its five-minute lifetime.
+    The boundary is computed again on the next request after any change that decides it: a watched-state change, an episode added, removed or updated (renumbered or re-rated), or a change to your library, channel or parental access, however it was made. A stale boundary isn't safe (a later episode could keep the next-episode reveal and show its title after an earlier one became visible), so the five-minute cache lifetime only bounds what Jellyfin doesn't report (an episode changed straight in its database).
 
 ## Multi-client support
 

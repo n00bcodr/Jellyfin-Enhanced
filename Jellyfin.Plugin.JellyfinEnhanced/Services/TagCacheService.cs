@@ -308,12 +308,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private sealed class UserAccess
         {
-            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation, string authority)
+            public UserAccess(HashSet<string> ids, DateTime cachedAt, long generation, string authority, Helpers.UserAuthority.Stamp stamp)
             {
                 Ids = ids;
                 CachedAt = cachedAt;
                 Generation = generation;
                 Authority = authority;
+                Stamp = stamp;
             }
 
             public HashSet<string> Ids { get; }
@@ -326,6 +327,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             /// used for a request whose user, as it just read them, has the same.
             /// </summary>
             public string Authority { get; }
+
+            /// <summary>
+            /// The user's Jellyfin user version when the set was computed
+            /// (<see cref="Helpers.UserAuthority.Take"/>): the set is only used
+            /// while the person's own part hasn't moved (a bracketed change to
+            /// them, JE's own, an event, their own sign-in). Someone else's
+            /// sign-in doesn't touch it, and a change whose person couldn't be
+            /// told shows in the fingerprint of the user as this request read
+            /// them if it was about them.
+            /// </summary>
+            public Helpers.UserAuthority.Stamp Stamp { get; }
 
             /// <summary>
             /// Memo of the <c>accessRevision</c> this set yields for one cache
@@ -1651,9 +1663,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// The user's accessible-id set, from <see cref="_userAccessCache"/> while
-        /// its entry is current (same access generation, within the TTL, and
-        /// computed for the authority <paramref name="user"/> has now), else
-        /// computed with one GetItemIds query and cached.
+        /// its entry is current (same access generation, within the TTL, computed
+        /// for the authority <paramref name="user"/> has now, and the person's
+        /// own Jellyfin user version unchanged since), else computed with one
+        /// GetItemIds query and cached.
         /// </summary>
         /// <param name="user">The user, as the request just read them (Jellyfin's lookup reads its database on both versions).</param>
         private UserAccess ResolveUserAccess(JUser user)
@@ -1662,17 +1675,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Keyed by the user's policy as read for this request, not only by
             // the user events: 10.11 saves a policy with no event, and both
             // versions save UpdateUserAsync with none, so an event-only key kept
-            // the old set for the TTL after a parental, tag or library change.
+            // the old set for the TTL after a parental, tag, channel or library
+            // change. The fingerprint is derived from the classification of every
+            // user property (Helpers.UserAuthorityFields); the person's version is
+            // checked as well.
             var authority = Helpers.UserAuthority.Fingerprint(user);
 
             if (_userAccessCache.TryGetValue(userKey, out var cached)
                 && cached.Generation == Interlocked.Read(ref _userAccessGeneration)
                 && DateTime.UtcNow - cached.CachedAt < UserAccessCacheTtl
-                && string.Equals(cached.Authority, authority, StringComparison.Ordinal))
+                && string.Equals(cached.Authority, authority, StringComparison.Ordinal)
+                && Helpers.UserAuthority.OwnUnchanged(user.Id, cached.Stamp))
             {
                 return cached;
             }
 
+            // Taken before the query; the set is computed from this user object,
+            // whose fingerprint is stored with it, so a change landing after the
+            // request read the user shows as a different fingerprint next time.
+            var stamp = Helpers.UserAuthority.Take(user.Id);
             var accessGeneration = Interlocked.Read(ref _userAccessGeneration);
             var accessibleIds = _libraryManager.GetItemIds(new InternalItemsQuery(user)
             {
@@ -1683,7 +1704,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 new HashSet<string>(accessibleIds.Select(id => id.ToString("N").ToLowerInvariant())),
                 DateTime.UtcNow,
                 accessGeneration,
-                authority);
+                authority,
+                stamp);
 
             // Store under _publishLock with the released flag re-checked:
             // the live check in CaptureGeneration is check-then-act, and a

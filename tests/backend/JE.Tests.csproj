@@ -49,5 +49,7 @@
     <None Include="Api/ArrRoutes.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- The Jellyfin releases whose Jellyfin.Api.dll the coverage tests read (fetched by jellyfin_api.py). -->
     <None Include="Support/jellyfin-api.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The pinned hosts' user types, classified in Helpers/UserAuthorityFields.cs (tests/host/README.md). -->
+    <None Include="../fixtures/host-users/*.tsv" Link="fixtures/host-users/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
