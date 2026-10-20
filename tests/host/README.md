@@ -42,7 +42,15 @@ id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin ./host-1
 dotnet run --project tests/host/endpoint-registry -- ./host-12.2 > endpoints.tsv
 ```
 
-The checked-in results are `tests/fixtures/host-endpoints/jellyfin-<version>.tsv`. The backend tests read them: every title-carrying endpoint must be classified in `Services/PrivacySurfaceRegistry.cs`, and the generated privacy model (`PrivacySurfaceModelTests`) covers each one. Regenerate them for a new Jellyfin release.
+The checked-in results are `tests/fixtures/host-endpoints/jellyfin-<version>.tsv`. With `--fields` it lists instead every public property (with whether it has a public setter) of every DTO type JE's privacy walker touches in those answers; the checked-in results are `tests/fixtures/host-endpoints/dto-fields-<version>.tsv`, and every property must be classified in `Services/PrivacyFieldClassification.cs`. The backend tests read them: every title-carrying endpoint must be classified in `Services/PrivacySurfaceRegistry.cs`, and the generated privacy model (`PrivacySurfaceModelTests`) covers each one. Regenerate them for a new Jellyfin release.
 
 The privacy model's fixtures are the hosts' real answers: `tests/fixtures/host-shapes/<version>/` holds one response per endpoint family captured from owned 12.2 and 10.11.11 labs with no privacy rule set (sessions with another account playing, theme songs and videos as Audio/Video extras with their envelope's `OwnerId`, local trailers and featurettes, a Live TV channel with its `CurrentProgram`, a session playing that channel over REST and the dashboard's WebSocket (`Session.WebSocket.*`), a timer with its programme and a series timer), only the round's own fixture titles kept (folders and names anonymized), plus `manifest.json` (each item's role, extra owners and the request path). `PrivacyHostShapeModelTests` deserializes them into the host's own types (12.2 for the jf12 build, 10.11.11 for jf10); recapture them when a Jellyfin release changes a response shape.
 
+## Host web client fixtures
+
+`tests/host/web-bundle/extract.mjs` copies, from an official image's jellyfin-web, the remote-control (now playing) page and its template, the remote session player and the now-playing names helper into `tests/fixtures/host-web/<version>/` (with each source file's name and SHA-256 in `manifest.json`). `tests/frontend/regressions/host-web-now-playing.test.mjs` runs those real functions on the sessions JE's privacy projection delivers (`tests/fixtures/host-web/projected/<version>.json`, which `PrivacyReviewRound18Tests` keeps current; set `JE_HOST_WEB_PROJECTED` to a directory to rewrite them). Regenerate for a new Jellyfin release:
+
+```sh
+id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin/jellyfin-web ./web-12.2 && docker rm "$id"
+node tests/host/web-bundle/extract.mjs ./web-12.2 tests/fixtures/host-web/12.2 jellyfin/jellyfin:12.2
+```

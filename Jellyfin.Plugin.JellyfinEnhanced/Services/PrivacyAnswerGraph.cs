@@ -14,7 +14,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 /// at ANY depth by the host's own declared types, cached per type: a session's NowPlayingItem / NowViewingItem / queue
 /// items, a channel's CurrentProgram (on a listed item or on a session's now-playing channel), a timer's ProgramInfo, a
 /// sign-in's session, the items of an envelope. The answer's own listed items are walked in place; every other member is
-/// handed to the visitor, which returns its replacement (itself, a private copy, a stub, or null to remove it) and walks
+/// handed to the visitor, which returns its replacement (itself, a private copy, a stub, or null to remove it; which
+/// members keep a stub comes from <see cref="PrivacyFieldClassification"/>) and walks
 /// that replacement's own members. A collection whose member changes is replaced by a private copy (the host may share
 /// it); a member that cannot be replaced throws, so the caller withholds instead of delivering it.
 /// </summary>
@@ -25,9 +26,6 @@ internal static class PrivacyAnswerGraph
 
     /// <summary>Deeper than any host answer (sign-in → session → now-playing channel → its programme is 3).</summary>
     private const int MaxDepth = 16;
-
-    /// <summary>A member a session's controls hang on: a hidden one leaves a title-less stub, not a gap.</summary>
-    private static readonly HashSet<string> Controls = new(StringComparer.Ordinal) { "NowPlayingItem", "NowPlayingQueueFullItems" };
 
     private sealed record Member(PropertyInfo Property, bool Dto, bool Sequence, bool KeepsControls);
 
@@ -112,7 +110,9 @@ internal static class PrivacyAnswerGraph
     private static Member[] Members(Type type) => _members.GetOrAdd(type, t => t
         .GetProperties(BindingFlags.Public | BindingFlags.Instance)
         .Where(p => p.GetMethod is { IsPublic: true } && p.GetIndexParameters().Length == 0 && Reaches(p.PropertyType))
-        .Select(p => new Member(p, typeof(BaseItemDto).IsAssignableFrom(p.PropertyType), Element(p.PropertyType) != null, Controls.Contains(p.Name)))
+        // A member a session's controls hang on (host-required in the one field classification: a session's NowPlayingItem,
+        // 10.11's NowPlayingQueueFullItems): a hidden one leaves a stub, not a gap. Any other title member is title-bearing.
+        .Select(p => new Member(p, typeof(BaseItemDto).IsAssignableFrom(p.PropertyType), Element(p.PropertyType) != null, PrivacyFieldClassification.KeepsControls(p)))
         .ToArray());
 
     private static bool Reaches(Type type, HashSet<Type> visiting)

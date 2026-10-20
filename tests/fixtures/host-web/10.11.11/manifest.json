@@ -1,0 +1,23 @@
+{
+ "image": "jellyfin/jellyfin:10.11.11",
+ "sources": {
+  "playback-queue.chunk.js": {
+   "file": "playback-queue.a40731a18dacfe6aae6b.chunk.js",
+   "sha256": "e1eef0173ba49b5400b6ddb226c93e7768bedd495a20abef6dd91b1b56f8bc3b"
+  },
+  "playback-queue-index-html.chunk.js": {
+   "file": "playback-queue-index-html.44a444c26179cbc1ee51.chunk.js",
+   "sha256": "14a50b531918a923f995db521ad2882896a864dbba9f736f38c73cb601739884"
+  },
+  "sessionPlayer-plugin.chunk.js": {
+   "file": "sessionPlayer-plugin.b0fb6e5a7eb9fb4d93e5.chunk.js",
+   "sha256": "bbd47a1dfae1450be7f96d8178a64e45de868fa21371d9e2ac7dd8ea1307e86c"
+  },
+  "now-playing-names.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 50921,
+   "export": "Y",
+   "sha256": "4559476942dd7ae6ba9627d56a2fcdae10c31972105b2fb4d324f0655570a1da"
+  }
+ }
+}

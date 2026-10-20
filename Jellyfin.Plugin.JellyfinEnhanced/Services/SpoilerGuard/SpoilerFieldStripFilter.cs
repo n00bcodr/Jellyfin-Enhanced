@@ -925,9 +925,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (!_resolver.InSpoilerScope(userState, identity)) continue;
                     if (ResolvePlayedServerSide(userId, hint.Id)) continue;
 
-                    if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles) && hint.IndexNumber.HasValue && hint.ParentIndexNumber.HasValue)
+                    if (ShouldStrip(cfg.SpoilerReplaceTitle, userState.Prefs?.ReplaceEpisodeTitles))
                     {
-                        hint.Name = $"Season {hint.ParentIndexNumber.Value}, Episode {hint.IndexNumber.Value}";
+                        // Unconditional: whatever numbering the hint has (none is still protected).
+                        hint.Name = NeutralNames.Episode(hint.ParentIndexNumber, hint.IndexNumber);
                     }
                     else if (ShouldStrip(cfg.SpoilerStripOverview, userState.Prefs?.HideEpisodeDescriptions))
                     {
@@ -1227,26 +1228,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // Title replacement — "The Death of X" → "Season 2, Episode 6"
-            // for Episodes; for Seasons, replace with "Season N" only when
-            // IndexNumber is set. On by default (admins can relax it) — the
-            // trade-off is that some clients use Name in navigation tooltips,
-            // breadcrumbs, and "now playing" overlays where the synthesized
-            // title can look jarring.
+            // for Episodes, "Season N" for Seasons. Unconditional: the neutral
+            // name falls back to whatever numbering the library has ("Season 2,
+            // Episode", "Episode 6", "Episode", "Season"; NeutralNames), and every
+            // name field of the protected item goes with it (the title-bearing
+            // name fields of PrivacyFieldClassification: SortName, ForcedSortName,
+            // OriginalTitle, EpisodeTitle, and an episode's SeasonName, which a
+            // season's own strip also replaces). On by default (admins can relax
+            // it) — the trade-off is that some clients use Name in navigation
+            // tooltips, breadcrumbs, and "now playing" overlays where the
+            // synthesized title can look jarring.
             if (replaceTitle)
             {
-                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode
-                    && item.IndexNumber.HasValue
-                    && item.ParentIndexNumber.HasValue)
+                if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Episode)
                 {
-                    item.Name = $"Season {item.ParentIndexNumber.Value}, Episode {item.IndexNumber.Value}";
+                    item.Name = NeutralNames.Episode(item.ParentIndexNumber, item.IndexNumber);
                     item.SortName = null;
+                    item.ForcedSortName = null;
                     item.OriginalTitle = null;
+                    item.EpisodeTitle = null;
+                    if (item.SeasonName != null) item.SeasonName = NeutralNames.Season(item.ParentIndexNumber);
                 }
-                else if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season
-                    && item.IndexNumber.HasValue)
+                else if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Season)
                 {
-                    item.Name = $"Season {item.IndexNumber.Value}";
+                    item.Name = NeutralNames.Season(item.IndexNumber);
                     item.SortName = null;
+                    item.ForcedSortName = null;
                     item.OriginalTitle = null;
                 }
                 // Movie titles intentionally NOT rewritten — the movie
