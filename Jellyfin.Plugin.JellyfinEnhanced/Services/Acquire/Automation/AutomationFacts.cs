@@ -170,7 +170,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             if (context.ActionDescriptor is not ControllerActionDescriptor { MethodInfo: { } method } action) return next();
-            switch (JellyfinUserActions.KeyOf(method, action.ControllerTypeInfo.Name, context.HttpContext.Request.Method))
+            switch (JellyfinUserActions.KeyOf(method, action.ControllerTypeInfo, context.HttpContext.Request.Method))
             {
                 case JellyfinUserKey.None:
                     return next();

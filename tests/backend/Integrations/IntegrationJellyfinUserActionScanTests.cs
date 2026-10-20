@@ -67,6 +67,17 @@ namespace JE.Tests
             Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), "read in " + timer.Elapsed);
         }
 
+        // Round 19: the classifier reads the complete ancestry of Jellyfin's types (the bases and interfaces they have in .NET
+        // and in Jellyfin's libraries) from the metadata of the assemblies next to them, as in a running Jellyfin (the pinned
+        // copy holds the image's whole /jellyfin: tests/backend/jellyfin_api.py). Every step is read: no type of Jellyfin's
+        // falls back to the fail-closed reading (a possible fill of any slot, a possible delegate).
+        [Fact]
+        public void JellyfinsAncestryIsReadWhole()
+        {
+            using var api = JellyfinApiAssembly.Load();
+            Assert.Empty(JellyfinUserActions.AncestryGaps(api.Path));
+        }
+
         // Round 10: a reviewed person-scoped member (JellyfinUserActions.PersonScoped) is held to what it was reviewed for:
         // in Jellyfin's own code, GetSession's calls reach only LogSessionActivity's save of that user (its activity date
         // moved, then the user saved whole). Anything more (another change, a sign-in, an unresolved call other than a callback,
@@ -78,8 +89,16 @@ namespace JE.Tests
             var reached = JellyfinUserActions.ReachedFrom(api.Path, "RequestHelpers.GetSession");
             Assert.Equal(new[] { "IUserManager.UpdateUserAsync", "User.set_LastActivityDate" }, reached.Where(r => !r.StartsWith("callback ", StringComparison.Ordinal)));
             // Round 11: the plugin event handlers its session code can raise (unresolved callbacks) bracket that same person,
-            // as the review does; nothing else.
-            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.StartsWith("callback delegate ", r, StringComparison.Ordinal));
+            // as the review does; nothing else. Round 17 (a delegate invoked is judged by where it came from): on 12.2 also
+            // the provider-id validator ProviderIdsExtensions.IsValidProviderId runs, taken from a dictionary by TryGetValue
+            // (the reading doesn't follow a collection's values). Reviewed (12.2 MediaBrowser.Model, decompiled): the
+            // dictionary is private, static and read-only, filled only by its initializer with the IMDb regex, positive-number
+            // and GUID checks. A callback, so the same person.
+            // Round 21 (open-world inputs): also the callbacks a public helper on its way may be handed from outside the code
+            // read (the reading doesn't tell one call of a method from another). All callbacks: the same person.
+            Assert.All(reached.Where(r => r.StartsWith("callback ", StringComparison.Ordinal)), r => Assert.True(
+                r.StartsWith("callback delegate ", StringComparison.Ordinal) || r == "callback Func<String,Boolean> of unknown origin in ProviderIdsExtensions.IsValidProviderId"
+                || r.EndsWith(" from outside the code read", StringComparison.Ordinal), r));
             Assert.Equal(new[] { "RequestHelpers.GetSession" }, JellyfinUserActions.PersonScoped.Keys);
         }
 
