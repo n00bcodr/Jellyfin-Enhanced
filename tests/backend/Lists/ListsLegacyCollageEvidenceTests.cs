@@ -90,7 +90,9 @@ public class ListsLegacyCollageEvidenceTests : IDisposable
 
     private void Write(string dir, BaseItem list, string json) => File.WriteAllText(Path.Combine(dir, list.Id.ToString("N") + ".json"), json);
 
+    // Every file but JE's own record of library tiles built from a collage (its only write).
     private Dictionary<string, (string, DateTime)> Snapshot() => Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories)
+        .Where(f => Path.GetFileName(f) != LegacyCollageWithhold.TileStateFileName)
         .ToDictionary(f => f, f => (Sha(File.ReadAllBytes(f)), File.GetLastWriteTimeUtc(f)));
 
     // ── marker reading ─────────────────────────────────────────────
@@ -308,5 +310,7 @@ public class ListsLegacyCollageEvidenceTests : IDisposable
         }
 
         Assert.Equal(before, Snapshot());
+        // The record sits next to the importer's marker copies, outside both marker folders.
+        Assert.True(File.Exists(Path.Combine(Path.GetDirectoryName(_copied)!, LegacyCollageWithhold.TileStateFileName)));
     }
 }

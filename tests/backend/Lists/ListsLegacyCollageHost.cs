@@ -1,5 +1,7 @@
 #pragma warning disable ASPDEPR004, ASPDEPR008 // TestServer over WebHostBuilder, as the other MVC harnesses here.
+using System.Collections.Concurrent;
 using System.Net;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Security.Claims;
@@ -8,6 +10,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller;
@@ -16,12 +19,15 @@ using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Playlists;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Querying;
 using MediaBrowser.Model.Search;
+using MediaBrowser.Model.Session;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -284,11 +290,13 @@ public static class LegacyCollageHostEntry
         finally
         {
             try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+            try { Directory.Delete(root + "-sticky", recursive: true); } catch (IOException) { }
         }
     }
 
     private static string RunIn(string root, string release)
     {
+        var sticky = Sticky(root + "-sticky");
         var scenario = Build(root);
         var before = Snapshot(root);
         var users = new { Viewer = Guid.NewGuid(), Admin = Guid.NewGuid() };
@@ -369,8 +377,13 @@ public static class LegacyCollageHostEntry
         Answer("lazy", "/JeLegacyShapes/Lazy", users.Viewer);
         Answer("recommendations", "/JeLegacyShapes/Recommendations", users.Viewer);
         Answer("search", "/Search/Hints?searchTerm=list", users.Viewer);
+        // JE's own answers in their own shapes (activity feed rows, active streams).
+        Answer("je:activity", "/JellyfinEnhanced/activity", users.Viewer);
+        Answer("je:sessions", "/JellyfinEnhanced/active-streams/sessions", users.Admin);
         report["answers"] = answers;
+        report["socket"] = Socket(server, scenario, users.Viewer);
         report["filesUnchanged"] = Same(before, Snapshot(root));
+        report["sticky"] = sticky;
         report["filters"] = new JsonArray(server.Services.GetRequiredService<IOptions<MvcOptions>>().Value.Filters
             .Select(f => (JsonNode?)(((f as ServiceFilterAttribute)?.ServiceType ?? f.GetType()).Name + "@" + ((f as IOrderedFilter)?.Order ?? 0))).ToArray());
         return report.ToJsonString();
@@ -450,31 +463,44 @@ public static class LegacyCollageHostEntry
         var paths = Paths(root);
         var library = Library(scenario);
         BaseItem.LibraryManager = library;
+        var sockets = new LegacySocketHost(scenario);
         var inert = new List<Type>();
-        // Host services nobody configured: an inert proxy each, found by resolving the registered filter chain.
+        // Host services nobody configured: an inert proxy each, found by resolving the registered filter chain, the
+        // controllers and the host's WebSocket manager with its listeners.
         for (var round = 0; ; round++)
         {
             var services = new ServiceCollection();
-            Configure(services, scenario, paths, library, inert, controllers, api);
-            using var provider = services.BuildServiceProvider();
-            var missing = Missing(provider, controllers);
-            if (missing == null) break;
-            if (round > 200 || inert.Contains(missing) || !missing.IsInterface) throw new InvalidOperationException("Can't stand in for " + missing.FullName);
-            inert.Add(missing);
+            Configure(services, scenario, paths, library, inert, controllers, api, sockets);
+            var provider = services.BuildServiceProvider();
+            try
+            {
+                var missing = Missing(provider, controllers);
+                if (missing == null) break;
+                if (round > 200 || inert.Contains(missing) || !missing.IsInterface) throw new InvalidOperationException("Can't stand in for " + missing.FullName);
+                inert.Add(missing);
+            }
+            finally
+            {
+                provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
         }
 
+        var middleware = api.GetType("Jellyfin.Api.Middleware.WebSocketHandlerMiddleware", true)!;
         return new TestServer(new WebHostBuilder()
-            .ConfigureServices(services => Configure(services, scenario, paths, library, inert, controllers, api))
+            .ConfigureServices(services => Configure(services, scenario, paths, library, inert, controllers, api, sockets))
             .Configure(app =>
             {
+                // The host's order: WebSockets, routing, authentication, authorization, its WebSocket handler, endpoints.
+                app.UseWebSockets();
                 app.UseRouting();
                 app.UseAuthentication();
                 app.UseAuthorization();
+                app.UseMiddleware(middleware);
                 app.UseEndpoints(e => e.MapControllers());
             }));
     }
 
-    private static void Configure(IServiceCollection services, LegacyCollageScenario scenario, IServerApplicationPaths paths, ILibraryManager library, List<Type> inert, Type[] controllers, Assembly api)
+    private static void Configure(IServiceCollection services, LegacyCollageScenario scenario, IServerApplicationPaths paths, ILibraryManager library, List<Type> inert, Type[] controllers, Assembly api, LegacySocketHost sockets)
     {
         services.AddLogging();
         services.AddRouting();
@@ -495,11 +521,23 @@ public static class LegacyCollageHostEntry
         foreach (var type in inert) services.AddSingleton(type, LegacyHostFake.Of(type));
         services.AddSingleton(LegacyHostFake.Of<IServerApplicationHost>());
 
-        // The plugin's own registrations, minus what would start running on its own (startup filters, hosted workers).
+        // The host's WebSocket services as CoreAppHost registers them: its manager and every listener the release has,
+        // before the plugin's registrations (ApplicationHost.Init registers the host's services, then the plugins').
+        services.AddSingleton(sockets);
+        services.AddSingleton(typeof(IWebSocketManager), LegacySocketHost.HostType("Emby.Server.Implementations", "Emby.Server.Implementations.HttpServer.WebSocketManager"));
+        foreach (var listener in LegacySocketHost.ListenerTypes()) services.AddSingleton(typeof(IWebSocketListener), listener);
+        services.AddSingleton(LegacyHostFake.Of<IAuthService>((m, a) => m.Name == "Authenticate"
+            ? new AuthorizationInfo { IsAuthenticated = true, IsApiKey = true, Token = "socket", Client = "test", DeviceId = "socket-test", Device = "test", Version = "1" }
+            : LegacyHostFake.Unhandled));
+        services.AddSingleton(sockets.SessionManager);
+
+        // The plugin's own registrations on the same collection, as the host makes them, minus what would start running on
+        // its own (startup filters, hosted workers).
         var plugin = new Jellyfin.Plugin.JellyfinEnhanced.PluginServiceRegistrator();
-        var pluginServices = new ServiceCollection();
-        plugin.RegisterServices(pluginServices, LegacyHostFake.Of<IServerApplicationHost>());
-        foreach (var descriptor in pluginServices.Where(d => d.ServiceType != typeof(IHostedService) && d.ServiceType != typeof(IStartupFilter))) services.Add(descriptor);
+        var count = services.Count;
+        plugin.RegisterServices(services, LegacyHostFake.Of<IServerApplicationHost>());
+        for (var i = services.Count - 1; i >= count; i--)
+            if (services[i].ServiceType == typeof(IHostedService) || services[i].ServiceType == typeof(IStartupFilter)) services.RemoveAt(i);
 
         var mvc = services.AddControllers().ConfigureApplicationPartManager(parts =>
         {
@@ -521,7 +559,8 @@ public static class LegacyCollageHostEntry
     private static Type? Missing(IServiceProvider provider, Type[] controllers)
     {
         var needed = provider.GetRequiredService<IOptions<MvcOptions>>().Value.Filters.OfType<ServiceFilterAttribute>().Select(f => f.ServiceType)
-            .Concat(controllers.SelectMany(c => c.GetConstructors().Single().GetParameters().Select(p => p.ParameterType)).Where(t => t != typeof(LegacyCollageScenario)));
+            .Concat(controllers.SelectMany(c => c.GetConstructors().Single().GetParameters().Select(p => p.ParameterType)).Where(t => t != typeof(LegacyCollageScenario)))
+            .Append(typeof(IWebSocketManager));
         foreach (var service in needed)
         {
             try
@@ -596,9 +635,276 @@ public static class LegacyCollageHostEntry
 
     private static string Sha(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
+    // Every image and every JSON file under JE's folder but JE's own record of library tiles it has seen built from a
+    // collage (its only write).
     private static Dictionary<string, (string Sha, DateTime Mtime)> Snapshot(string root) => Directory.EnumerateFiles(Path.Combine(root, "metadata"), "*", SearchOption.AllDirectories)
-        .Concat(Directory.EnumerateFiles(Path.Combine(root, "plugins", "configurations", "Jellyfin.Plugin.JellyfinEnhanced"), "*.json", SearchOption.AllDirectories))
+        .Concat(Directory.EnumerateFiles(Path.Combine(root, "plugins", "configurations", "Jellyfin.Plugin.JellyfinEnhanced"), "*.json", SearchOption.AllDirectories)
+            .Where(f => !string.Equals(Path.GetFileName(f), TileStateFile, StringComparison.Ordinal)))
         .ToDictionary(f => f, f => (Sha(File.ReadAllBytes(f)), File.GetLastWriteTimeUtc(f)), StringComparer.Ordinal);
+
+    /// <summary>The name of JE's record of contaminated library tiles (lists/).</summary>
+    public const string TileStateFile = "legacy-collage-tiles.json";
+
+    // ── WebSocket ────────────────────────────────────────────────────────
+
+    private static readonly Regex ImageProperty = new("image|blurhash|thumb|backdrop|logo|banner|screenshot|disc|artitem", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // A client on the host's real WebSocket endpoint: the release's WebSocketHandlerMiddleware, WebSocketManager,
+    // WebSocketConnection, every listener it has and its WebSocketController, behind whatever the plugin registered.
+    private static JsonObject Socket(TestServer server, LegacyCollageScenario scenario, Guid viewer)
+    {
+        var host = server.Services.GetRequiredService<LegacySocketHost>();
+        var report = new JsonObject
+        {
+            ["listeners"] = new JsonArray(LegacySocketHost.ListenerTypes().Select(t => (JsonNode?)t.FullName).ToArray()),
+            ["registered"] = new JsonArray(server.Services.GetServices<IWebSocketListener>().Select(l => (JsonNode?)l.GetType().FullName).ToArray()),
+            ["messages"] = MessageTypes(),
+        };
+        var client = server.CreateWebSocketClient();
+        client.ConfigureRequest = r => r.Headers["X-Test-User"] = viewer.ToString("N");
+        var uri = new UriBuilder(server.BaseAddress) { Scheme = "ws", Path = "/socket" }.Uri;
+        using var socket = client.ConnectAsync(uri, CancellationToken.None).GetAwaiter().GetResult();
+        var frames = new ConcurrentQueue<string>();
+        var reading = Task.Run(async () =>
+        {
+            var buffer = new byte[1 << 16];
+            using var message = new MemoryStream();
+            while (socket.State == WebSocketState.Open)
+            {
+                WebSocketReceiveResult result;
+                // The test server disposes its end once the socket closes.
+                try { result = await socket.ReceiveAsync(buffer, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException) { return; }
+                if (result.MessageType == WebSocketMessageType.Close) return;
+                message.Write(buffer, 0, result.Count);
+                if (!result.EndOfMessage) continue;
+                frames.Enqueue(Encoding.UTF8.GetString(message.ToArray()));
+                message.SetLength(0);
+            }
+        });
+
+        static bool Until(Func<bool> done, Action? poke = null)
+        {
+            var end = Environment.TickCount64 + 20000;
+            while (!done())
+            {
+                if (Environment.TickCount64 > end) return false;
+                poke?.Invoke();
+                Thread.Sleep(200);
+            }
+
+            return true;
+        }
+
+        void Send(string text) => socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, CancellationToken.None).GetAwaiter().GetResult();
+
+        report["connected"] = Until(() => host.Session.SessionControllers.Count > 0);
+        // A dashboard (or any client) subscribes to session updates; the host sends them on session events.
+        Send("{\"MessageType\":\"SessionsStart\",\"Data\":\"0,1500\"}");
+        report["sessionsSent"] = Until(
+            () => frames.Any(f => f.Contains("\"MessageType\":\"Sessions\"", StringComparison.Ordinal)),
+            () => host.Raise("SessionStarted", new SessionEventArgs { SessionInfo = host.Session }));
+
+        // Session-controller messages (what SessionManager sends for playback, SyncPlay, library and user-data changes):
+        // every message type whose payload can carry an item DTO, and a bare DTO array (SendMessage<T> takes any payload).
+        var sent = new JsonObject();
+        if (host.Session.SessionControllers.Count > 0)
+        {
+            var controller = host.Session.SessionControllers[0];
+            report["socketType"] = SocketType(controller);
+            var payloads = DtoMessageTypes().Select(m => (m.Message.Name, m.Payload, (SessionMessageType?)MessageTypeOf(m.Message)))
+                .Append(("BaseItemDto[]", typeof(BaseItemDto[]), SessionMessageType.UserDataChanged));
+            foreach (var (name, payload, type) in payloads)
+            {
+                var id = Guid.NewGuid();
+                var data = Payload(payload, scenario, scenario.Names["legacy"]);
+                var task = (Task)typeof(ISessionController).GetMethod(nameof(ISessionController.SendMessage))!.MakeGenericMethod(payload)
+                    .Invoke(controller, new object?[] { type ?? SessionMessageType.UserDataChanged, id, data, CancellationToken.None })!;
+                task.GetAwaiter().GetResult();
+                sent[id.ToString("N")] = name;
+            }
+        }
+
+        report["sent"] = sent;
+        report["allReceived"] = Until(() => sent.All(p => frames.Any(f => f.Contains(p.Key, StringComparison.Ordinal) || f.Contains(Guid.Parse(p.Key).ToString("D"), StringComparison.Ordinal))));
+        try { socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None).Wait(5000); } catch (Exception ex) when (ex is WebSocketException or AggregateException or ObjectDisposedException) { }
+        try { reading.Wait(5000); } catch (AggregateException) { }
+        report["frames"] = new JsonArray(frames.Select(f => (JsonNode?)f).ToArray());
+        return report;
+    }
+
+    // The type of the socket the host's WebSocketConnection writes to (every listener writes through that connection).
+    private static string? SocketType(ISessionController controller)
+    {
+        var sockets = controller.GetType().GetField("_sockets", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(controller) as System.Collections.IEnumerable;
+        var connection = sockets?.Cast<object>().FirstOrDefault();
+        return connection?.GetType().GetField("_socket", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(connection)?.GetType().FullName;
+    }
+
+    private static SessionMessageType? MessageTypeOf(Type message)
+        => message.GetProperty("MessageType")?.GetValue(System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(message)) as SessionMessageType?;
+
+    // The release's outbound WebSocket message types and their payloads.
+    private static IEnumerable<(Type Message, Type Payload)> OutboundMessages()
+    {
+        var controller = typeof(IWebSocketListener).Assembly;
+        foreach (var type in controller.GetTypes().Where(t => t.IsClass && !t.IsAbstract && t.Namespace == "MediaBrowser.Controller.Net.WebSocketMessages.Outbound").OrderBy(t => t.Name, StringComparer.Ordinal))
+        {
+            Type? payload = null;
+            for (var b = type.BaseType; b != null && payload == null; b = b.BaseType)
+                if (b.IsGenericType && b.GetGenericTypeDefinition().Name == "OutboundWebSocketMessage`1") payload = b.GetGenericArguments()[0];
+            yield return (type, payload ?? typeof(void));
+        }
+    }
+
+    private static IEnumerable<(Type Message, Type Payload)> DtoMessageTypes() => OutboundMessages().Where(m => m.Payload != typeof(void) && Carries(m.Payload, typeof(BaseItemDto), new HashSet<Type>()));
+
+    // Every message type, its payload, and every property in the payload's graph that names an image.
+    private static JsonArray MessageTypes()
+    {
+        var array = new JsonArray();
+        foreach (var (message, payload) in OutboundMessages())
+        {
+            var props = new SortedSet<string>(StringComparer.Ordinal);
+            if (payload != typeof(void)) ImageProperties(payload, props, new HashSet<Type>());
+            array.Add(new JsonObject
+            {
+                ["name"] = message.Name,
+                ["payload"] = payload == typeof(void) ? null : payload.ToString(),
+                ["carriesDto"] = payload != typeof(void) && Carries(payload, typeof(BaseItemDto), new HashSet<Type>()),
+                ["imageProperties"] = new JsonArray(props.Select(p => (JsonNode?)p).ToArray()),
+            });
+        }
+
+        return array;
+    }
+
+    private static bool HostType(Type t) => t.Namespace?.StartsWith("MediaBrowser", StringComparison.Ordinal) == true || t.Namespace?.StartsWith("Jellyfin", StringComparison.Ordinal) == true;
+
+    private static IEnumerable<Type> Inner(Type t)
+    {
+        if (t.IsArray) return new[] { t.GetElementType()! };
+        var inner = new List<Type>();
+        if (t.IsGenericType) inner.AddRange(t.GetGenericArguments());
+        if (HostType(t) && !t.IsEnum) inner.AddRange(t.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0).Select(p => p.PropertyType));
+        return inner;
+    }
+
+    private static bool Carries(Type t, Type wanted, HashSet<Type> seen)
+        => t == wanted || (seen.Add(t) && Inner(t).Any(i => Carries(i, wanted, seen)));
+
+    private static void ImageProperties(Type t, SortedSet<string> found, HashSet<Type> seen)
+    {
+        if (!seen.Add(t)) return;
+        if (HostType(t) && !t.IsEnum)
+            foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0 && ImageProperty.IsMatch(p.Name)))
+                found.Add(t.Name + "." + p.Name);
+        foreach (var i in Inner(t)) ImageProperties(i, found, seen);
+    }
+
+    // A payload holding the list's DTO wherever one can sit (sequences hold it and a served control).
+    private static object? Payload(Type t, LegacyCollageScenario scenario, Guid list, int depth = 0)
+    {
+        if (t == typeof(BaseItemDto)) return scenario.Dto(list);
+        if (depth > 6 || !Carries(t, typeof(BaseItemDto), new HashSet<Type>())) return t.IsValueType ? Activator.CreateInstance(t) : null;
+        var element = t.IsArray ? t.GetElementType()! : t.IsGenericType && t.GetGenericArguments().Length == 1 ? t.GetGenericArguments()[0] : null;
+        if (element != null && (t.IsArray || t.IsInterface || t.GetGenericTypeDefinition() == typeof(List<>)))
+        {
+            var items = Array.CreateInstance(element, 2);
+            items.SetValue(Payload(element, scenario, list, depth + 1), 0);
+            items.SetValue(Payload(element, scenario, scenario.Names["unrelated"], depth + 1), 1);
+            if (t.IsArray || t.IsInterface) return items;
+            var made = (System.Collections.IList)Activator.CreateInstance(t)!;
+            foreach (var item in items) made.Add(item);
+            return made;
+        }
+
+        var instance = t.GetConstructor(Type.EmptyTypes) is { } constructor ? constructor.Invoke(null) : System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(t);
+        foreach (var property in t.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.CanWrite && p.GetIndexParameters().Length == 0 && Carries(p.PropertyType, typeof(BaseItemDto), new HashSet<Type>())))
+            property.SetValue(instance, Payload(property.PropertyType, scenario, list, depth + 1));
+        return instance;
+    }
+
+    // ── Library tiles across a list's replacement and a restart ──────────
+
+    // A playlist whose Primary is the collage and the playlists library tile the host composed while it was. The owner
+    // sets an image on the list, the server restarts, then the host regenerates the tile: the tile must stay withheld until
+    // that regeneration (the old tile file still holds the collage's pixels), through the real ImageController.
+    private static JsonObject Sticky(string root)
+    {
+        var pluginDir = Path.Combine(root, "plugins", "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
+        var copied = Path.Combine(pluginDir, "lists", "legacy-collages");
+        Directory.CreateDirectory(copied);
+        var items = new Dictionary<Guid, BaseItem>();
+        var names = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        T Add<T>(string name, T item, ImageType type, byte seed) where T : BaseItem
+        {
+            item.Id = Guid.NewGuid();
+            item.Name = name + " list";
+            var path = Path.Combine(root, "metadata", item.Id.ToString("N"), type.ToString().ToLowerInvariant() + ".jpg");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, Image(seed));
+            File.SetLastWriteTimeUtc(path, new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            item.ImageInfos = new[] { new ItemImageInfo { Path = path, Type = type, DateModified = File.GetLastWriteTimeUtc(path), Width = 600, Height = 600, BlurHash = Blur } };
+            items[item.Id] = item;
+            names[name] = item.Id;
+            return item;
+        }
+
+        var solo = Add("solo", new Playlist(), ImageType.Primary, 40);
+        File.WriteAllText(Path.Combine(copied, solo.Id.ToString("N") + ".json"), JsonSerializer.Serialize(new { listId = solo.Id.ToString("N"), sha256 = Sha(Image(40)) }));
+        var library = Add("playlistslibrary", new CollectionFolder { CollectionType = CollectionType.playlists }, ImageType.Primary, 41);
+        var scenario = new LegacyCollageScenario { Root = root, Items = items, Names = names };
+        var viewer = Guid.NewGuid();
+        var report = new JsonObject();
+
+        void Rewrite(BaseItem item, byte seed, DateTime written)
+        {
+            var image = item.ImageInfos[0];
+            File.WriteAllBytes(image.Path, Image(seed));
+            File.SetLastWriteTimeUtc(image.Path, written);
+            image.DateModified = written;
+        }
+
+        void Phase(TestServer server, string phase)
+        {
+            using var client = server.CreateClient();
+            int Status(string path)
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, path);
+                request.Headers.Add("X-Test-User", viewer.ToString("N"));
+                return (int)client.SendAsync(request).GetAwaiter().GetResult().StatusCode;
+            }
+
+            var dto = new HttpRequestMessage(HttpMethod.Get, "/JeLegacyShapes/Item/" + library.Id.ToString("N"));
+            dto.Headers.Add("X-Test-User", viewer.ToString("N"));
+            report[phase] = new JsonObject
+            {
+                ["list"] = Status("/Items/" + solo.Id.ToString("N") + "/Images/Primary"),
+                ["tile"] = Status("/Items/" + library.Id.ToString("N") + "/Images/Primary"),
+                ["tileTagged"] = Status("/Items/" + library.Id.ToString("N") + "/Images/Primary?tag=" + LegacyCollageScenario.Tag(library, library.ImageInfos[0])),
+                ["dto"] = client.SendAsync(dto).GetAwaiter().GetResult().Content.ReadAsStringAsync().GetAwaiter().GetResult(),
+            };
+        }
+
+        using (var server = Server(scenario, root))
+        {
+            Phase(server, "collage");
+            // The owner sets an image on the list: the host writes a new file.
+            Rewrite(solo, 42, DateTime.UtcNow);
+            Phase(server, "listReplaced");
+        }
+
+        using (var server = Server(scenario, root))
+        {
+            Phase(server, "restarted");
+            // The host regenerates the library tile from the lists as they are now.
+            Rewrite(library, 43, DateTime.UtcNow.AddMinutes(5));
+            Phase(server, "regenerated");
+        }
+
+        return report;
+    }
 
     private static bool Same(Dictionary<string, (string Sha, DateTime Mtime)> a, Dictionary<string, (string Sha, DateTime Mtime)> b)
         => a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var v) && v == p.Value);
@@ -621,6 +927,83 @@ public static class LegacyCollageHostEntry
             var parts = value.ToString().Split(':');
             var claims = new List<Claim> { new("Jellyfin-UserId", parts[0]), new(ClaimTypes.Name, "user"), new(ClaimTypes.Role, parts.Length > 1 ? "Administrator" : "User") };
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), "test")));
+        }
+    }
+}
+
+/// <summary>The host side of the scenario's WebSocket: one session (a viewer looking at the legacy list) and the session
+/// manager events the release's listeners subscribe to.</summary>
+internal sealed class LegacySocketHost
+{
+    private readonly ConcurrentDictionary<string, List<Delegate>> _events = new(StringComparer.Ordinal);
+
+    public LegacySocketHost(LegacyCollageScenario scenario)
+    {
+        Scenario = scenario;
+        SessionManager = LegacyHostFake.Of<ISessionManager>(Answer);
+        Session = new SessionInfo(SessionManager, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
+        {
+            Id = "socket-session", Client = "test", DeviceId = "socket-test", DeviceName = "test", ApplicationVersion = "1",
+        };
+    }
+
+    public LegacyCollageScenario Scenario { get; }
+
+    public ISessionManager SessionManager { get; }
+
+    public SessionInfo Session { get; }
+
+    /// <summary>A type of the release's server assemblies (the host's load context).</summary>
+    public static Type HostType(string assembly, string type)
+        => AssemblyLoadContext.GetLoadContext(typeof(LegacySocketHost).Assembly)!.LoadFromAssemblyName(new AssemblyName(assembly)).GetType(type, true)!;
+
+    /// <summary>Every WebSocket listener the release has (its server and API assemblies).</summary>
+    public static IReadOnlyList<Type> ListenerTypes() => new[] { "Emby.Server.Implementations", "Jellyfin.Api", "Jellyfin.Server.Implementations", "Jellyfin.LiveTv" }
+        .Select(a => AssemblyLoadContext.GetLoadContext(typeof(LegacySocketHost).Assembly)!.LoadFromAssemblyName(new AssemblyName(a)))
+        .SelectMany(a =>
+        {
+            try { return a.GetTypes(); }
+            catch (ReflectionTypeLoadException e) { return e.Types.OfType<Type>().ToArray(); }
+        })
+        .Where(t => t.IsClass && !t.IsAbstract && typeof(IWebSocketListener).IsAssignableFrom(t))
+        .OrderBy(t => t.FullName, StringComparer.Ordinal).ToList();
+
+    public void Raise(string name, EventArgs args)
+    {
+        if (!_events.TryGetValue(name, out var handlers)) return;
+        Delegate[] copy;
+        lock (handlers) copy = handlers.ToArray();
+        foreach (var handler in copy) handler.DynamicInvoke(null, args);
+    }
+
+    // What SessionManager.ToSessionInfoDto gives for this session: the viewer is looking at the legacy list; an unrelated
+    // list is the served control (10.11 also sends the play queue's items).
+    public SessionInfoDto SessionDto()
+    {
+        var dto = new SessionInfoDto { Id = Session.Id, Client = "test", DeviceId = "socket-test", DeviceName = "test", NowViewingItem = Scenario.Dto(Scenario.Names["legacy"]), NowPlayingItem = Scenario.Dto(Scenario.Names["unrelated"]) };
+        typeof(SessionInfoDto).GetProperty("NowPlayingQueueFullItems")?.SetValue(dto, new[] { Scenario.Dto(Scenario.Names["pending"]), Scenario.Dto(Scenario.Names["custom"]) });
+        return dto;
+    }
+
+    private object? Answer(MethodInfo method, object?[] args)
+    {
+        switch (method.Name)
+        {
+            case "get_Sessions":
+                return new[] { Session };
+            case "LogSessionActivity":
+                return Session;
+            case "ToSessionInfoDto":
+                return SessionDto();
+            case var add when add.StartsWith("add_", StringComparison.Ordinal) && args.Length == 1 && args[0] is Delegate handler:
+                var list = _events.GetOrAdd(add[4..], _ => new List<Delegate>());
+                lock (list) list.Add(handler);
+                return LegacyHostFake.Unhandled;
+            case var remove when remove.StartsWith("remove_", StringComparison.Ordinal) && args.Length == 1 && args[0] is Delegate gone:
+                if (_events.TryGetValue(remove[7..], out var current)) lock (current) current.Remove(gone);
+                return LegacyHostFake.Unhandled;
+            default:
+                return LegacyHostFake.Unhandled;
         }
     }
 }

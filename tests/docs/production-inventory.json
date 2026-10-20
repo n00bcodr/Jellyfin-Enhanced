@@ -619,6 +619,18 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageSockets.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageTiles.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageWithhold.cs",
       "category": "Services"
     },
@@ -10459,7 +10471,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs"
     },
     {
-      "literal": "*.json",
+      "literal": "legacy-collage-tiles.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageWithhold.cs"
     },
     {
@@ -10891,7 +10903,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 630,
+    "files": 633,
     "routes": 292,
     "configuration_properties": 638,
     "storage_references": 94,

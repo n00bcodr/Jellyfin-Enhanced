@@ -141,6 +141,21 @@ public class ListsStoreTests
     }
 
     [Fact]
+    public void AnIdWithANewlineAfterItIsInvalidEverywhere()
+    {
+        using var fixture = new CoreFixture();
+        var store = new ListStore(fixture.Paths.Object, fixture.Logger);
+        Assert.False(ListStore.IsValidListId(List1 + "\n"));
+        Assert.False(ListStore.IsValidRequestId("abc\n"));
+        Assert.True(ListRules.IsValidPosterPath("/a_b-1.jpg"));
+        Assert.False(ListRules.IsValidPosterPath("/a_b-1.jpg\n"));
+        Assert.Throws<ArgumentException>(() => store.Load(List1 + "\n"));
+        Directory.CreateDirectory(Dir(fixture));
+        File.WriteAllText(Path.Combine(Dir(fixture), List1 + "\n.json"), "{}");
+        Assert.DoesNotContain(store.EnumerateListIds(), id => id.StartsWith(List1, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void TheCapIsEnforcedOnSave()
     {
         using var fixture = new CoreFixture();

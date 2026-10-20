@@ -123,8 +123,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private static readonly TimeSpan UnavailableTtl = TimeSpan.FromMinutes(5);
         private static readonly TimeSpan UnreachableBackoff = TimeSpan.FromMinutes(1);
         private const int MaxCacheEntries = 4000;
-        private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex ImdbRegex = new(@"^tt[0-9]{5,10}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex PosterRegex = new(@"^/[A-Za-z0-9_-]+\.(jpg|png)\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly Logger _logger;

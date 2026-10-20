@@ -187,4 +187,205 @@ public class ListsLegacyCollageHostTests
 
         foreach (var name in new[] { "custom", "unrelated", "unrelatedset" }) Assert.Equal(200, answers["preview:" + name]!["status"]!.GetValue<int>());
     }
+
+    // ── every delivery path: WebSocket, JE's own answers (COLLAGE-R1-2) ──
+
+    private static readonly string[] WithheldAnywhere = Withheld.Concat(new[] { "playlistslibrary", "playlistsview" }).ToArray();
+
+    // Every JSON object naming an item (Id) in the frame or answer, with the item's scenario name.
+    private static IEnumerable<(string Name, JsonObject Item)> Named(JsonNode? node, IReadOnlyDictionary<string, string> names)
+    {
+        switch (node)
+        {
+            case JsonObject o:
+                if (o["Id"] is JsonValue id && id.TryGetValue<string>(out var raw) && names.TryGetValue(raw.Replace("-", string.Empty, StringComparison.Ordinal), out var name)) yield return (name, o);
+                foreach (var child in o.Select(p => p.Value).ToList())
+                    foreach (var found in Named(child, names)) yield return found;
+                break;
+            case JsonArray a:
+                foreach (var child in a.ToList())
+                    foreach (var found in Named(child, names)) yield return found;
+                break;
+        }
+    }
+
+    private static Dictionary<string, string> Names(JsonObject run) => run["names"]!.AsObject().ToDictionary(p => p.Value!.GetValue<string>(), p => p.Key);
+
+    private static bool HasOwnImage(JsonObject item, string type)
+        => item["ImageTags"]?.AsObject().ContainsKey(type) == true || item["ImageBlurHashes"]?.AsObject().ContainsKey(type) == true
+            || (type == "Primary" && (item["PrimaryImageAspectRatio"] != null || item["PrimaryImageTag"] != null || item["HasPrimaryImage"]?.GetValue<bool>() == true))
+            || (type == "Thumb" && item["HasThumbImage"]?.GetValue<bool>() == true);
+
+    private static List<string> Leaks(IEnumerable<JsonNode?> nodes, IReadOnlyDictionary<string, string> names, out HashSet<string> servedSeen)
+    {
+        var leaks = new List<string>();
+        servedSeen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            foreach (var (name, item) in Named(node, names))
+            {
+                if (WithheldAnywhere.Contains(name))
+                {
+                    foreach (var type in new[] { "Primary", "Thumb" })
+                        if (HasOwnImage(item, type)) leaks.Add(name + " " + type + ": " + item.ToJsonString());
+                }
+                else if (HasOwnImage(item, "Primary"))
+                {
+                    servedSeen.Add(name);
+                }
+            }
+        }
+
+        return leaks;
+    }
+
+    private static List<JsonNode?> Frames(JsonObject run) => run["socket"]!["frames"]!.AsArray().Select(f => JsonNode.Parse(f!.GetValue<string>())).ToList();
+
+    [Fact]
+    public void SessionUpdatesOverTheHostsRealWebSocketCarryNoWithheldImageAndKeepEveryOther()
+    {
+        var run = LegacyCollageHost.Run();
+        var socket = run["socket"]!.AsObject();
+        Assert.True(socket["connected"]!.GetValue<bool>(), "the host's session listener made no controller");
+        Assert.True(socket["sessionsSent"]!.GetValue<bool>(), "the host's SessionInfoWebSocketListener sent no Sessions message");
+        var frames = Frames(run);
+        var sessions = frames.Where(f => f?["MessageType"]?.GetValue<string>() == "Sessions").ToList();
+        Assert.NotEmpty(sessions);
+        var names = Names(run);
+        // The viewer is looking at the legacy list (NowViewingItem); the playing item is a served control.
+        Assert.Contains(sessions, f => Named(f, names).Any(n => n.Name == "legacy"));
+        var leaks = Leaks(sessions, names, out var served);
+        Assert.True(leaks.Count == 0, string.Join("\n", leaks.Take(6)));
+        Assert.Contains("unrelated", served);
+    }
+
+    [Fact]
+    public void EverySessionMessageThatCanCarryAnItemArrivesWithoutAWithheldImage()
+    {
+        var run = LegacyCollageHost.Run();
+        var socket = run["socket"]!.AsObject();
+        var sent = socket["sent"]!.AsObject();
+        Assert.Contains(sent, p => p.Value!.GetValue<string>() == "SessionsMessage");
+        Assert.Contains(sent, p => p.Value!.GetValue<string>() == "BaseItemDto[]");
+        Assert.True(socket["allReceived"]!.GetValue<bool>(), "a message the host's WebSocketController sent never arrived");
+        var names = Names(run);
+        var frames = Frames(run).Where(f => f?["MessageId"]?.GetValue<string>() is { } id && sent.ContainsKey(id.Replace("-", string.Empty, StringComparison.Ordinal))).ToList();
+        Assert.Equal(sent.Count, frames.Count);
+        var leaks = Leaks(frames, names, out var served);
+        Assert.True(leaks.Count == 0, string.Join("\n", leaks.Take(6)));
+        Assert.Contains("unrelated", served);
+    }
+
+    // Image-naming properties in the release's WebSocket payloads and why each is (or needs no) projection.
+    private static readonly Dictionary<string, string> PayloadImageProperties = new(StringComparer.Ordinal)
+    {
+        ["BaseItemDto.ImageTags"] = "projected",
+        ["BaseItemDto.ImageBlurHashes"] = "projected",
+        ["BaseItemDto.PrimaryImageAspectRatio"] = "projected",
+        ["BaseItemDto.ParentPrimaryImageItemId"] = "projected",
+        ["BaseItemDto.ParentPrimaryImageTag"] = "projected",
+        ["BaseItemDto.ParentThumbItemId"] = "projected",
+        ["BaseItemDto.ParentThumbImageTag"] = "projected",
+        // Image types no collage was drawn into and no library tile is composed as.
+        ["BaseItemDto.BackdropImageTags"] = "Backdrop",
+        ["BaseItemDto.ParentBackdropImageTags"] = "Backdrop",
+        ["BaseItemDto.ParentBackdropItemId"] = "Backdrop",
+        ["BaseItemDto.ParentArtImageTag"] = "Art",
+        ["BaseItemDto.ParentArtItemId"] = "Art",
+        ["BaseItemDto.ParentLogoImageTag"] = "Logo",
+        ["BaseItemDto.ParentLogoItemId"] = "Logo",
+        ["BaseItemDto.ScreenshotImageTags"] = "Screenshot",
+        ["BaseItemDto.ImageOrientation"] = "no image content",
+        // Images of items that are never a list or a library tile.
+        ["BaseItemDto.AlbumPrimaryImageTag"] = "album",
+        ["BaseItemDto.ChannelPrimaryImageTag"] = "channel",
+        ["BaseItemDto.SeriesPrimaryImageTag"] = "series",
+        ["BaseItemDto.SeriesThumbImageTag"] = "series",
+        ["BaseItemPerson.HasPrimaryImage"] = "person",
+        ["BaseItemPerson.ImageBlurHashes"] = "person",
+        ["BaseItemPerson.PrimaryImageTag"] = "person",
+        ["ChapterInfo.ImageDateModified"] = "chapter",
+        ["ChapterInfo.ImagePath"] = "chapter",
+        ["ChapterInfo.ImageTag"] = "chapter",
+        ["TrickplayInfoDto.ThumbnailCount"] = "trickplay",
+        ["PackageInfo.ImageUrl"] = "plugin",
+        ["PluginInfo.HasImage"] = "plugin",
+        ["ActivityLogEntry.UserPrimaryImageTag"] = "user",
+        ["SessionInfoDto.UserPrimaryImageTag"] = "user",
+        ["UserDto.PrimaryImageAspectRatio"] = "user",
+        ["UserDto.PrimaryImageTag"] = "user",
+    };
+
+    [Fact]
+    public void EveryWebSocketListenerAndMessageTypeOfTheReleaseGoesThroughTheProjection()
+    {
+        var run = LegacyCollageHost.Run();
+        var socket = run["socket"]!.AsObject();
+        var listeners = socket["listeners"]!.AsArray().Select(l => l!.GetValue<string>()).ToList();
+        // A listener a Jellyfin update adds fails here until the harness runs it too.
+        Assert.Equal(new[]
+        {
+            "Emby.Server.Implementations.Session.SessionWebSocketListener",
+            "Jellyfin.Api.WebSocketListeners.ActivityLogWebSocketListener",
+            "Jellyfin.Api.WebSocketListeners.ScheduledTasksWebSocketListener",
+            "Jellyfin.Api.WebSocketListeners.SessionInfoWebSocketListener",
+        }, listeners.OrderBy(l => l, StringComparer.Ordinal));
+        Assert.Equal(listeners.OrderBy(l => l), socket["registered"]!.AsArray().Select(l => l!.GetValue<string>()).OrderBy(l => l));
+        // Every listener writes through the one connection the host's WebSocketManager made over the accepted socket:
+        // that socket is the plugin's projection.
+        Assert.StartsWith("Jellyfin.Plugin.JellyfinEnhanced.", socket["socketType"]?.GetValue<string>() ?? "(none)");
+
+        var messages = socket["messages"]!.AsArray().Select(m => m!.AsObject()).ToList();
+        Assert.InRange(messages.Count, 20, 60);
+        var unknown = messages.SelectMany(m => m["imageProperties"]!.AsArray().Select(p => m["name"] + ": " + p!.GetValue<string>()))
+            .Where(p => !PayloadImageProperties.ContainsKey(p.Split(": ")[1])).ToList();
+        Assert.True(unknown.Count == 0, "image properties no rule covers: " + string.Join(", ", unknown));
+        var sent = socket["sent"]!.AsObject().Select(p => p.Value!.GetValue<string>()).ToHashSet();
+        foreach (var message in messages.Where(m => m["carriesDto"]!.GetValue<bool>()))
+            Assert.Contains(message["name"]!.GetValue<string>(), sent);
+    }
+
+    [Fact]
+    public void JesOwnAnswersCarryNoWithheldImageAndKeepEveryOther()
+    {
+        var run = LegacyCollageHost.Run();
+        var answers = run["answers"]!.AsObject();
+        var names = Names(run);
+        foreach (var key in new[] { "je:activity", "je:sessions" })
+        {
+            Assert.Equal(200, answers[key]!["status"]!.GetValue<int>());
+            var body = JsonNode.Parse(S(answers[key]!.AsObject(), "body"));
+            Assert.Equal(names.Count, Named(body, names).Count());
+            var leaks = Leaks(new[] { body }, names, out var served);
+            Assert.True(leaks.Count == 0, key + ": " + string.Join("\n", leaks.Take(6)));
+            Assert.Contains("unrelated", served);
+            Assert.Contains("custom", served);
+        }
+    }
+
+    // ── contamination is sticky (COLLAGE-R1-1) ───────────────────────────
+
+    [Fact]
+    public void ATileBuiltFromACollageStaysWithheldAfterTheListIsReplacedAndARestartUntilTheHostRegeneratesIt()
+    {
+        var sticky = LegacyCollageHost.Run()["sticky"]!.AsObject();
+        int Status(string phase, string key) => sticky[phase]![key]!.GetValue<int>();
+        bool TileTagged(string phase) => JsonNode.Parse(sticky[phase]!["dto"]!.GetValue<string>())!["ImageTags"]?.AsObject().ContainsKey("Primary") == true;
+
+        Assert.Equal(404, Status("collage", "list"));
+        Assert.Equal(404, Status("collage", "tile"));
+        Assert.False(TileTagged("collage"));
+        foreach (var phase in new[] { "listReplaced", "restarted" })
+        {
+            Assert.Equal(200, Status(phase, "list"));
+            Assert.True(Status(phase, "tile") == 404, phase + ": the tile built from the collage was served");
+            Assert.Equal(404, Status(phase, "tileTagged"));
+            Assert.False(TileTagged(phase), phase);
+        }
+
+        Assert.Equal(200, Status("regenerated", "list"));
+        Assert.Equal(200, Status("regenerated", "tile"));
+        Assert.Equal(200, Status("regenerated", "tileTagged"));
+        Assert.True(TileTagged("regenerated"));
+    }
 }

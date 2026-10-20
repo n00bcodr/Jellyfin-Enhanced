@@ -455,7 +455,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();
 #endif
 
-            // Collages closed PR #936 drew into lists' native images are withheld everywhere (both versions, ahead of every image filter).
+            // Collages closed PR #936 drew into lists' native images are withheld everywhere: MVC answers (both versions, ahead of
+            // every image filter) and WebSocket messages (the host's WebSocket manager, registered before this, is wrapped).
             Services.Acquire.Lists.LegacyCollageWithholdFilter.Register(serviceCollection);
 
             serviceCollection.Configure<MvcOptions>(o =>
