@@ -212,7 +212,7 @@
             if (typeof JE.titleDetails?.openKey === 'function') {
                 JE.titleDetails.openKey(ph.titleKey, options).catch?.(() => {});
             } else if (Number(ph.tmdbId) > 0 && typeof JE.jellyseerrMoreInfo?.open === 'function') {
-                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType);
+                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType, undefined, JE.NATIVE);
             }
         }, 'open');
     }

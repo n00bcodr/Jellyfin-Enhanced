@@ -159,6 +159,9 @@
             lp.gate.paint(rule, () => {
                 sheet = JE.arrAskSheet.open(title, {
                     opener,
+                    // A list page is a native entry point (D46S2-R6: the sheet takes its owner explicitly); the list
+                    // ticket ends the sheet when the page moves on.
+                    operation: JE.NATIVE,
                     listTicket: rule,
                     variant: fourK ? '4k' : 'standard',
                     fixed: {

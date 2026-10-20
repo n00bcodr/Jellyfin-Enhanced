@@ -1395,7 +1395,7 @@ test('r3 S2: the spy sees delayed list-sheet writes with no list stack frame (pl
   } });
   const gate = h.JE.internals.arrListPages.gate;
   const ticket = gate.issue(LIST, () => true, gate.policy(() => false, false));
-  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
+  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { operation: h.JE.NATIVE, listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
   await h.settle();
   const writes = h.spy.take();
   assert.ok(writes.some(w => /ask-sheet\.js/.test(w.frame) && w.scope === 'none'), JSON.stringify(writes.slice(0, 2)));
