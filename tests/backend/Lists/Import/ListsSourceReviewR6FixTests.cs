@@ -758,7 +758,7 @@ public class ListsSourceReviewR6FixTests(ITestOutputHelper output)
         var attempts = 0;
         net.Routes["http://seerr.test/api/v1/collection/10"] = _ => Interlocked.Increment(ref attempts) == 1
             ? Limited(1)
-            : Json("{\"name\":\"C\",\"parts\":[{\"id\":1,\"mediaType\":\"movie\",\"title\":\"M1\",\"releaseDate\":\"2001-01-01\"}]}");
+            : Json("{\"id\":10,\"name\":\"C\",\"parts\":[{\"id\":1,\"mediaType\":\"movie\",\"title\":\"M1\",\"releaseDate\":\"2001-01-01\"}]}");
 
         var result = await net.Fetch("https://www.themoviedb.org/collection/10");
 

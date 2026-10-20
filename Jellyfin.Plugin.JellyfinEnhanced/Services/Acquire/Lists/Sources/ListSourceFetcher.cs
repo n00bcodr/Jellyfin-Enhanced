@@ -538,6 +538,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     }
 
                     using var doc = JsonDocument.Parse(json);
+                    CollectionAsked(doc.RootElement, id);
                     var read = new SourceRead();
                     var parts = ListArray(doc.RootElement, "parts").Select(p => read.Row(TmdbRow(p, "movie", "release_date"))).OfType<SourceItem>().ToList();
                     var ordered = parts.OrderBy(p => p.Year ?? int.MaxValue).ToList();
@@ -581,18 +582,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                                 }
                             }
 
-                            read.Page(pages, itemCount);
+                            read.Page(pages, itemCount, asked: page, answered: Int(doc.RootElement, "page"));
 
-                            if (pages is int last && page >= last)
+                            if (pages is int last && last >= 0 && page >= last)
                             {
                                 drift.End();
                                 read.Stop(SourceReadEnd.Last);
                                 break;
                             }
 
-                            if (pages == null || rows.Count == 0)
+                            if (pages is not >= 0 || rows.Count == 0)
                             {
-                                break; // no page count, or an empty page before the last one: stalled
+                                break; // no page count (or a negative one: review round 9), or an empty page before the last one: stalled
                             }
 
                             if (items.Count >= MaxItems)
@@ -639,7 +640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                         var rows = ListArray(doc.RootElement, "results").ToList();
                         var pages = Int(doc.RootElement, "total_pages");
                         items.AddRange(rows.Select(p => read.Row(TmdbRow(p, defaultType, null))).OfType<SourceItem>().ToList());
-                        read.Page(pages, Int(doc.RootElement, "total_results"));
+                        read.Page(pages, Int(doc.RootElement, "total_results"), asked: page, answered: Int(doc.RootElement, "page"));
                         if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                         {
                             break;
@@ -656,15 +657,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         // their first pages (the window).
         private static bool ChartPageEnd(SourceRead read, int page, int? pages, int rows, int items)
         {
-            if (pages is int last && page >= last)
+            if (pages is int last && last >= 0 && page >= last)
             {
                 read.Stop(SourceReadEnd.Last);
                 return true;
             }
 
-            if (pages == null || rows == 0)
+            if (pages is not >= 0 || rows == 0)
             {
-                return true; // no page count, or an empty page before the last one: stalled
+                return true; // no page count (or a negative one: review round 9), or an empty page before the last one: stalled
             }
 
             if (page >= ChartPages || items >= MaxChartItems)
@@ -697,13 +698,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             };
         }
 
-        // The Seerr fallback (review round 8, 4c2-R8-4): every configured address in order, as every Seerr-backed read of the
-        // lists area takes them (docs: "first successful connection used"). Each address's read is whole on its own (a chart's
-        // pages all from one server, never a mix); each of its requests passes the gate (its own admission and turn at the
-        // shared metadata limiter). An address that fails (an error, a timeout, a redirect, an answer without its list) or
-        // doesn't have the collection hands over to the next; "not found" only when EVERY address said so; otherwise the
-        // first failure is the answer. A refusal of JE's own (the read budget, the switch or Seerr's setup changed meanwhile)
-        // stops at once.
+        // The Seerr fallback: every configured address in order (review round 8, 4c2-R8-4), by THE fallback table of every
+        // multi-server read (SeerrFallback, review round 9, 4c2-R9-7). Each address's read is whole on its own (a chart's pages
+        // all from one server, never a mix); each of its requests passes the gate (its own admission and turn at the shared
+        // metadata limiter). A complete read is used; a partial or truncated one is kept as the fallback (never cached) while
+        // the next address is asked; an answer JE can't read (or another collection's), an error, a timeout or a 5xx (Seerr's
+        // collection route answers 500 for EVERY failure behind it) proves nothing; "not found" only when EVERY address
+        // answered 404. A refusal of JE's own (the read budget, the switch or Seerr's setup changed meanwhile) stops at once.
         private async Task<SourceFetchResult> TmdbViaSeerrAsync(ParsedSourceUrl source, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             if (!SeerrConfigured(out var urls, out var seerrKey))
@@ -711,32 +712,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 return SourceFetchResult.Fail(source, "tmdb_key_required", "TMDB lists need the TMDB API key or Seerr in Jellyfin Enhanced's settings.");
             }
 
-            SourceHttpException? failure = null;
-            foreach (var baseUrl in urls)
+            var read = await SeerrFallback.ReadAsync<SourceFetchResult>(urls, async (baseUrl, _) =>
             {
                 try
                 {
                     var result = await TmdbViaSeerrAtAsync(source, baseUrl, seerrKey, options, cancellationToken).ConfigureAwait(false);
-                    if (result != null)
-                    {
-                        return result;
-                    }
+                    return result == null ? new ServerAnswer<SourceFetchResult>(ServerState.NotFound)
+                        : SourceSnapshots.Classify(result, null).State == SnapshotState.Complete ? new ServerAnswer<SourceFetchResult>(ServerState.Valid, result)
+                        : new ServerAnswer<SourceFetchResult>(ServerState.Partial, result);
                 }
                 catch (SourceHttpException ex) when (ex.Code is not (SourceFailures.ReadBudgetExhausted or SourceFailures.ProviderDisabled))
                 {
                     _logger.Debug($"[Lists] Seerr list read failed on one address: {ex.Code}");
-                    failure ??= ex;
+                    return new ServerAnswer<SourceFetchResult>(ServerState.Unavailable, Error: ex);
                 }
                 catch (Exception ex) when (ex is JsonException or InvalidDataException or FormatException)
                 {
                     _logger.Debug($"[Lists] Seerr list read on one address was unreadable: {UpstreamDiagnostics.Code(ex)}");
-                    failure ??= new SourceHttpException("upstream_error", "Seerr returned something JE can't read.");
+                    return new ServerAnswer<SourceFetchResult>(ServerState.Malformed, Error: new SourceHttpException("upstream_error", "Seerr returned something JE can't read."));
                 }
-            }
+            }).ConfigureAwait(false);
 
-            return failure == null
-                ? SourceFetchResult.Fail(source, "not_found", "Seerr couldn't find this TMDB collection.")
-                : throw failure;
+            return read.State switch
+            {
+                FallbackState.Valid or FallbackState.Partial => read.Value!,
+                FallbackState.NotFound => SourceFetchResult.Fail(source, "not_found", "Seerr couldn't find this TMDB collection."),
+                _ => throw (read.FirstError as SourceHttpException ?? new SourceHttpException("upstream_error", "Seerr returned an error.")),
+            };
         }
 
         // One Seerr address's read of a TMDB collection or chart; null when that Seerr has no such collection.
@@ -751,6 +753,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 }
 
                 using var doc = JsonDocument.Parse(json);
+                CollectionAsked(doc.RootElement, source.Part("id"));
                 var whole = new SourceRead();
                 var parts = ListArray(doc.RootElement, "parts").Select(p => whole.Row(SeerrRow(p, "movie"))).OfType<SourceItem>().ToList();
                 return Done(source, "seerr", Str(doc.RootElement, "name"), parts, parts.Count, SourceCompleteness.Whole(whole), whole);
@@ -770,7 +773,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 var rows = ListArray(doc.RootElement, "results").ToList();
                 var pages = Int(doc.RootElement, "totalPages");
                 items.AddRange(rows.Select(p => read.Row(SeerrRow(p, defaultType))).OfType<SourceItem>().ToList());
-                read.Page(pages, Int(doc.RootElement, "totalResults"));
+                read.Page(pages, Int(doc.RootElement, "totalResults"), asked: page, answered: Int(doc.RootElement, "page"));
                 if (ChartPageEnd(read, page, pages, rows.Count, items.Count))
                 {
                     break;
@@ -782,7 +785,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         }
 
         // A Seerr fallback read, through the gate (the TMDB switch and Seerr's setup re-checked, admission charged) over
-        // Seerr's own transport. Null when Seerr has no such title (404, or the 500 Seerr answers for an unknown TMDB id).
+        // Seerr's own transport. Null only when Seerr affirmatively has no such resource (404); a 500 (Seerr's answer to every
+        // failure behind it, an unknown id included) is an error, never an absence (review round 9, 4c2-R9-7).
         private async Task<string?> SeerrGetAsync(string baseUrl, string apiKey, string path, SourceFetchOptions options, CancellationToken cancellationToken)
         {
             var response = await SendAsync(new Transmission(SeerrProvider, baseUrl + path) { Credential = apiKey, SeerrBase = baseUrl }, options, cancellationToken).ConfigureAwait(false);
@@ -793,10 +797,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             return response.Status switch
             {
-                404 or 500 => null,
+                404 => null,
+                500 => throw new SourceHttpException("upstream_error", "Seerr couldn't read this from TMDB: the id may not exist, or TMDB failed behind Seerr. Try again later."),
                 429 => throw new SourceHttpException("rate_limited", "Seerr is rate limiting; try again shortly.", response.RetryAfter ?? 10),
                 _ => throw new SourceHttpException("upstream_error", "Seerr returned an error."),
             };
+        }
+
+        // A collection answer is the collection asked for (review round 9: its id; another collection's, or none, is an answer
+        // JE can't use).
+        private static void CollectionAsked(JsonElement answer, string id)
+        {
+            if (Int(answer, "id") is not int answered || !string.Equals(answered.ToString(CultureInfo.InvariantCulture), id, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("the answer isn't the collection asked for");
+            }
         }
 
         // The one deliberately unsupported type of TMDB, Seerr, Trakt and MDBList rows.
@@ -995,7 +1010,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                     lastRow = pageLast ?? lastRow;
                     int? pageCount = response.Headers.TryGetValue("X-Pagination-Page-Count", out var countText) && int.TryParse(countText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : null;
                     int? reported = response.Headers.TryGetValue("X-Pagination-Item-Count", out var itemText) && int.TryParse(itemText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemCount) ? itemCount : null;
-                    read.Page(pageCount, reported);
+                    int? answeredPage = response.Headers.TryGetValue("X-Pagination-Page", out var pageText) && int.TryParse(pageText, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : null;
+                    read.Page(pageCount, reported, asked: unpaged ? null : page, answered: answeredPage);
                     drift.Total(reported);
                     total = reported ?? items.Count;
                     if (unpaged)

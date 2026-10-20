@@ -262,7 +262,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
         using var net = new Net();
         net.Config.TMDB_API_KEY = "tmdb-key";
         var parts = string.Join(',', Enumerable.Range(1, ListSourceFetcher.MaxItems + 1).Select(i => "{\"id\":" + i + ",\"media_type\":\"movie\",\"title\":\"M" + i + "\"}"));
-        net.Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + parts + "]}");
+        net.Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"id\":10,\"name\":\"C\",\"parts\":[" + parts + "]}");
         var first = await net.Fetch("https://www.themoviedb.org/collection/10", Cached(null));
         Assert.True(first.Ok && first.Truncated, "arranged: more than the cap");
         var sent = net.Requests.Count;
@@ -302,7 +302,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
     public async Task AnMdblistBatchRowWithAPositiveTmdbIdIsUsed(string tmdb, string key)
     {
         using var net = MdblistApiNet(() => 900);
-        net.Routes["https://api.mdblist.com/tmdb/movie/"] = _ => Json("[{\"ids\":{\"tmdb\":42},\"ratings\":[]},{\"ids\":{\"tmdb\":" + tmdb + "},\"ratings\":[]}]");
+        net.Routes["https://api.mdblist.com/tmdb/movie/"] = _ => Json("[{\"type\":\"movie\",\"ids\":{\"tmdb\":42},\"ratings\":[]},{\"type\":\"movie\",\"ids\":{\"tmdb\":" + tmdb + "},\"ratings\":[]}]");
         var batch = await net.Quota.GetMediaBatchAsync("movie", new[] { "42", "43", "44" }, None);
         Assert.NotNull(batch);
         Assert.Equal(new[] { "42", key }, batch!.Keys.OrderBy(k => k, StringComparer.Ordinal));
@@ -320,7 +320,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
     [InlineData("{\"ids\":{\"tmdb\":\"broken-id\"},\"ratings\":[]}", false)]
     [InlineData("[]", false)]
     [InlineData("{\"response\":false,\"error\":\"Not found\"}", true)]
-    [InlineData("{\"ids\":{\"tmdb\":42,\"imdb\":\"tt0000042\"},\"ratings\":[]}", true)]
+    [InlineData("{\"type\":\"movie\",\"ids\":{\"tmdb\":42,\"imdb\":\"tt0000042\"},\"ratings\":[]}", true)]
     public async Task AnMdblistRatingsAnswerIsKeptOnlyWhenItIsTheTitlesOwn(string answer, bool kept)
     {
         using var net = MdblistApiNet(() => 900);
@@ -373,7 +373,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
         return net;
     }
 
-    private static string Parts(params int[] ids) => "{\"name\":\"C\",\"parts\":[" + string.Join(',', ids.Select(i => "{\"id\":" + i + ",\"mediaType\":\"movie\",\"title\":\"M" + i + "\",\"releaseDate\":\"2001-01-01\"}")) + "]}";
+    private static string Parts(params int[] ids) => "{\"id\":10,\"name\":\"C\",\"parts\":[" + string.Join(',', ids.Select(i => "{\"id\":" + i + ",\"mediaType\":\"movie\",\"title\":\"M" + i + "\",\"releaseDate\":\"2001-01-01\"}")) + "]}";
 
     private static string TrendingPage(int page, int pages, params int[] ids) =>
         "{\"page\":" + page + ",\"totalPages\":" + pages + ",\"totalResults\":" + (pages * ids.Length) + ",\"results\":["
@@ -418,7 +418,7 @@ public class ListsSourceReviewR8FixTests(ITestOutputHelper output)
 
     [Theory]
     [InlineData("404", "404", "not_found")]
-    [InlineData("404", "500", "not_found")]
+    [InlineData("404", "500", "upstream_error")] // review round 9 (4c2-R9-7): Seerr's 500 is an error, never "no such collection"
     [InlineData("404", "503", "upstream_error")]
     [InlineData("404", "refused", "upstream_error")]
     [InlineData("503", "404", "upstream_error")]

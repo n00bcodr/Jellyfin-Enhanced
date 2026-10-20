@@ -91,7 +91,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var id = tmdbId.ToString(CultureInfo.InvariantCulture);
             var answer = await CachedAsync("details|" + mediaType + "|" + id, context, call =>
-                call.GetAsync(mediaType + "/" + id, "?append_to_response=external_ids", root => ParseDetails(root, mediaType)), cancellationToken).ConfigureAwait(false);
+                call.GetAsync(mediaType + "/" + id, "?append_to_response=external_ids", root => ParseDetails(root, mediaType, tmdbId)), cancellationToken).ConfigureAwait(false);
             return answer.Result<TitleDetails>();
         }
 
@@ -105,7 +105,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
             var path = "tv/" + tvTmdbId.ToString(CultureInfo.InvariantCulture) + "/season/" + season.ToString(CultureInfo.InvariantCulture);
             var answer = await CachedAsync("season|" + path, context, call =>
-                call.GetAsync(path, string.Empty, root => ParseSeason(root, season)), cancellationToken).ConfigureAwait(false);
+                call.GetAsync(path, string.Empty, root => ParseSeason(root, tvTmdbId, season)), cancellationToken).ConfigureAwait(false);
             return answer.Result<IReadOnlyList<EpisodeFacts>>();
         }
 
@@ -166,7 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 // with its own turn at the limiter (4c2-R6-4). A 404 is that type's proven "no such id".
                 foreach (var type in new[] { "movie", "tv" })
                 {
-                    var leg = await call.GetAsync(type + "/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, root => HitRows.Of(root, type)).ConfigureAwait(false);
+                    var leg = await call.GetAsync(type + "/" + id.ToString(CultureInfo.InvariantCulture), string.Empty, root => HitRows.Of(root, type, new AnswerRequest(id, type))).ConfigureAwait(false);
                     if (leg.Status == LookupStatus.Transient)
                     {
                         return LookupAnswer.Transient;
@@ -255,24 +255,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             // The search's answer: nothing found and a row unread is no proof of "no titles".
             public LookupAnswer Answer => _hits.Count == 0 && _unusable > 0 ? LookupAnswer.Transient : LookupAnswer.Ok(_hits, Verdict);
 
-            // A title's own answer (tmdb:N): the title, a deliberate drop, or a row that can't be read.
-            public static LookupAnswer Of(JsonElement root, string type)
+            // A title's own answer (tmdb:N): the title asked for (review round 9: another id is a row JE can't read), a
+            // deliberate drop, or a row that can't be read.
+            public static LookupAnswer Of(JsonElement root, string type, AnswerRequest request)
             {
                 var rows = new HitRows();
-                rows.Add(root, type);
+                rows.Add(root, type, request);
                 return rows.Leg;
             }
 
-            // A search answer: its `results` must be a list (ResponseContract.TmdbSearch, else Transient); `type` null
-            // reads each row's media_type.
+            // A search answer: its `results` must be a list (ResponseContract.TmdbSearch, else Transient) and its paging
+            // fields within their domain (review round 9: else Partial); `type` null reads each row's media_type.
             public static LookupAnswer Results(JsonElement root, string? type)
             {
-                if (ResponseContract.TmdbSearch.Read(root).Verdict == ResponseVerdict.Malformed)
+                var page = ResponseContract.TmdbSearch.Validate(new AnswerRequest(Page: 1), root);
+                if (page.Verdict == ResponseVerdict.Malformed)
                 {
                     return LookupAnswer.Transient;
                 }
 
-                var rows = new HitRows();
+                var rows = new HitRows { _rows = page.Verdict };
                 rows.Read(root.GetProperty("results"), type);
                 return rows.Leg;
             }
@@ -281,7 +283,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 foreach (var row in array.EnumerateArray())
                 {
-                    Add(row, type ?? MediaType(row));
+                    Add(row, type ?? MediaType(row), AnswerRequest.None);
                 }
             }
 
@@ -295,9 +297,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 }
             }
 
-            private void Add(JsonElement row, string? type)
+            private void Add(JsonElement row, string? type, AnswerRequest request)
             {
-                switch (ReadRow(row, type, out var hit, out var verdict))
+                switch (ReadRow(row, type, request, out var hit, out var verdict))
                 {
                     case RowRead.Hit:
                         _hits.Add(hit!);
@@ -374,23 +376,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // Malformed is transient (a season row JE can't read too: a season missing from the list would be taken as "no such
         // season"); Partial details (an external id or the season list unknown, or a field JE can't use: review round 8) are
         // used, never kept, and never prove an id absent or a season missing (4c2-R7-1/2). Typed values only (review round 8).
-        private static LookupAnswer ParseDetails(JsonElement root, string mediaType)
+        // Review round 9 (4c2-R9-1): the details of the title asked for (its id), else Malformed.
+        private static LookupAnswer ParseDetails(JsonElement root, string mediaType, int tmdbId)
         {
-            var read = (mediaType == "movie" ? ResponseContract.TmdbMovieDetails : ResponseContract.TmdbTvDetails).Read(root);
+            var read = (mediaType == "movie" ? ResponseContract.TmdbMovieDetails : ResponseContract.TmdbTvDetails).Validate(new AnswerRequest(tmdbId, mediaType), root);
             return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : TypedTitles.Details(read, mediaType, camel: false);
         }
 
         // A season by its contract (ResponseContract.TmdbSeason): an episode row JE can't read makes it Malformed (an
         // episode missing from the list would be taken as "no such episode").
-        private static LookupAnswer ParseSeason(JsonElement root, int season)
+        // Review round 9 (4c2-R9-2): every episode of the season (and show) asked for, each listed once.
+        private static LookupAnswer ParseSeason(JsonElement root, int show, int season)
         {
-            var read = ResponseContract.TmdbSeason.Read(root);
+            var read = ResponseContract.TmdbSeason.Validate(new AnswerRequest(Season: season, Show: show), root);
             return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : LookupAnswer.Ok(TypedTitles.Episodes(read, season, camel: false), read.Verdict);
         }
 
         // One row of a search or find answer: a title, a deliberate drop (an adult title, a person or another kind that
         // isn't a title), or a row that can't be read (not an object, no type, or not a title row by its contract).
-        private static RowRead ReadRow(JsonElement element, string? mediaType, out TitleHit? hit, out ResponseVerdict verdict)
+        // Review round 9 (4c2-R9-6): the declared type by a closed allowlist (an unknown one is a row JE can't read, never a
+        // deliberate drop), and a title's own answer is the one asked for.
+        private static RowRead ReadRow(JsonElement element, string? mediaType, AnswerRequest request, out TitleHit? hit, out ResponseVerdict verdict)
         {
             hit = null;
             verdict = ResponseVerdict.Valid;
@@ -399,12 +405,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return RowRead.Unusable;
             }
 
-            if (mediaType is not ("movie" or "tv") || (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True))
+            if (TitleTypes.Classify(mediaType, TitleTypes.TmdbExcluded) is { } unkeyed)
+            {
+                return unkeyed;
+            }
+
+            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
             {
                 return RowRead.Dropped;
             }
 
-            var read = (mediaType == "movie" ? ResponseContract.TmdbMovieRow : ResponseContract.TmdbTvRow).Read(element);
+            var read = (mediaType == "movie" ? ResponseContract.TmdbMovieRow : ResponseContract.TmdbTvRow).Validate(request, element);
             verdict = read.Verdict;
             hit = verdict == ResponseVerdict.Malformed ? null : TypedTitles.Hit(read, mediaType, camel: false);
             return hit == null ? RowRead.Unusable : RowRead.Hit;

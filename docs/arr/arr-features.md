@@ -1448,12 +1448,23 @@ server can read a pasted list, a CSV file or a list URL and match each line to a
   type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
   Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
   Only a complete read is kept for the next few minutes (so preview, apply and link read the list once); a partial or
-  cut-off one is read again, so a list fixed at the source shows up at once. Through Seerr, each configured Seerr address
-  is tried in turn: a list only counts as "not found" when every address says so.
+  cut-off one is read again, so a list fixed at the source shows up at once. A page's counts must make sense too: a
+  negative page count or total, a different page than the one asked for, or a total below the rows read makes the read
+  partial. Through Seerr, each configured Seerr address is tried in turn: a whole answer is used; a partial one is kept
+  only until another address answers in full; an error, a timeout or an answer for something else moves on to the next
+  address; and a list only counts as "not found" when every address says so. Seerr answers every failure behind it (an
+  id TMDB doesn't know included) with the same error, so that is shown as "Seerr couldn't read this", never as "not found".
+- **Answers to another question.** Every answer is checked against what was asked: details for another title, a season
+  holding another season's episodes (or the same episode twice), or a search row of a media type Jellyfin Enhanced
+  doesn't know is never used, remembered, or allowed to clear anything an entry already has. With more than one Seerr
+  address, the next one is asked instead.
 - **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
   number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
-  it and the answer isn't remembered. An MDBList ratings answer that isn't the title's own (no TMDB id, another title,
-  an id like "broken-id") is a failed lookup that is retried, never "no ratings" for days.
+  it and the answer isn't remembered. An MDBList ratings answer counts only when it is the title's whole record: the
+  title and type asked for, and its ratings list with values in range (an empty list or a rating without a value is
+  fine). Anything else (no TMDB id, another title or type, a missing ratings list, a score of 999) is a failed lookup
+  that is retried, never "no ratings" for days, and it never clears ratings already stored. A scheduled batch is used
+  only when every row is one of the titles asked for, of the type asked for, once.
 - **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
   for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
   its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so

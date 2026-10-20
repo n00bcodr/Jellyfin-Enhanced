@@ -282,7 +282,7 @@ public class ListsImportReviewR2FixTests
         yield return new("mdblist api", "error answer", net => Api(net, "{\"error\":\"Invalid API key\"}"));
 
         // Collections (one answer): the parts array.
-        yield return new("tmdb collection", Explicit, net => { Key(net).Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"name\":\"C\",\"parts\":[" + Rows(TmdbRow, 1, 3) + "]}"); return ("https://www.themoviedb.org/collection/10", null); });
+        yield return new("tmdb collection", Explicit, net => { Key(net).Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"id\":10,\"name\":\"C\",\"parts\":[" + Rows(TmdbRow, 1, 3) + "]}"); return ("https://www.themoviedb.org/collection/10", null); });
         yield return new("tmdb collection", "error answer (no parts)", net => { Key(net).Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"status_message\":\"nope\"}"); return ("https://www.themoviedb.org/collection/10", null); });
     }
 

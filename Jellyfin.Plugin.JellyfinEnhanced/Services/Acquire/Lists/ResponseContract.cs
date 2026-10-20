@@ -109,7 +109,76 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Members">Object members or list rows.</param>
     /// <param name="Rows">What an unreadable row does (lists).</param>
     /// <param name="Fact">The identity fact an <see cref="FieldRole.Identity"/> field is a source of ("imdb", "tvdb").</param>
-    internal sealed record FieldRule(string Name, FieldType Type, FieldRole Role, bool Nullable = true, ResourceSchema? Members = null, RowFailure Rows = RowFailure.Malformed, string? Fact = null);
+    /// <param name="Echo">The request fact this field must equal when the request names it (review round 9): another value is
+    /// an answer to another request (another title, season or show), so the row or answer is Malformed.</param>
+    /// <param name="Unique">Lists: the member names that key a row (two usable rows with the same key make the answer
+    /// Malformed); an empty key means the list holds at most one row (more is ambiguous: Malformed).</param>
+    internal sealed record FieldRule(string Name, FieldType Type, FieldRole Role, bool Nullable = true, ResourceSchema? Members = null, RowFailure Rows = RowFailure.Malformed, string? Fact = null,
+        RequestFact Echo = RequestFact.None, IReadOnlyList<string>? Unique = null);
+
+    /// <summary>A fact of the request an answer must echo (review round 9, D53: an answer is checked against the request that produced it).</summary>
+    internal enum RequestFact
+    {
+        /// <summary>Not a request fact.</summary>
+        None,
+
+        /// <summary>The TMDB id asked for (details, a <c>tmdb:N</c> title, a collection).</summary>
+        Id,
+
+        /// <summary>The media type asked for (<c>movie</c> or <c>tv</c>).</summary>
+        MediaType,
+
+        /// <summary>The season asked for.</summary>
+        Season,
+
+        /// <summary>The show a season was asked of.</summary>
+        Show,
+
+        /// <summary>The page asked for.</summary>
+        Page,
+    }
+
+    /// <summary>
+    /// What an answer was asked for (review round 9, D53 "contracts take the request"): the identity (TMDB id, media type), the
+    /// season (and its show) and the page the request named. A field declared to echo one of these must equal it; an answer
+    /// that doesn't is another resource's, so it is Malformed: never used, kept, proof of an absence, or allowed to clear a
+    /// stored value.
+    /// </summary>
+    /// <param name="Id">The TMDB id asked for.</param>
+    /// <param name="MediaType">"movie" or "tv".</param>
+    /// <param name="Season">The season number asked for.</param>
+    /// <param name="Show">The show's TMDB id a season was asked of.</param>
+    /// <param name="Page">The page asked for.</param>
+    internal sealed record AnswerRequest(int? Id = null, string? MediaType = null, int? Season = null, int? Show = null, int? Page = null)
+    {
+        /// <summary>A request that names nothing (a row read on its own).</summary>
+        public static readonly AnswerRequest None = new();
+
+        /// <summary>The value of a request fact, or null when the request doesn't name it.</summary>
+        /// <param name="fact">The fact.</param>
+        /// <returns>The value.</returns>
+        public object? Of(RequestFact fact) => fact switch
+        {
+            RequestFact.Id => Id,
+            RequestFact.MediaType => MediaType,
+            RequestFact.Season => Season,
+            RequestFact.Show => Show,
+            RequestFact.Page => Page,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// A page's paging fields (review round 9, D53 domain rules): the page number (echoes the page asked for), the page count
+    /// and the total are non-negative, and consistent with the rows: a total of at least the page's rows, and a page count of
+    /// at least 1 when there is a total. A violation makes the answer Partial (its rows are still titles, but it is never
+    /// kept and never proves "no titles").
+    /// </summary>
+    /// <param name="Page">The page number's field.</param>
+    /// <param name="Pages">The page count's field.</param>
+    /// <param name="Total">The total's field.</param>
+    /// <param name="Rows">The rows' list field.</param>
+    internal sealed record PagingRule(string Page, string Pages, string Total, string Rows);
 
     /// <summary>The state of one identity fact of an answer.</summary>
     internal enum FactState
@@ -128,24 +197,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <param name="Name">Resource kind (diagnostics, tests).</param>
     /// <param name="Fields">Declared fields (undeclared fields are ignored).</param>
     /// <param name="Facts">Identity facts the answer must establish to be Valid (each Known or Absent).</param>
-    internal sealed record ResourceSchema(string Name, IReadOnlyList<FieldRule> Fields, IReadOnlyList<string>? Facts = null)
+    /// <param name="Paging">The page's paging fields, when the answer is a page.</param>
+    internal sealed record ResourceSchema(string Name, IReadOnlyList<FieldRule> Fields, IReadOnlyList<string>? Facts = null, PagingRule? Paging = null)
     {
         /// <summary>The same schema in Seerr's names (camelCase), e.g. <c>external_ids.imdb_id</c> → <c>externalIds.imdbId</c>.</summary>
         /// <param name="name">The camelCase schema's name.</param>
         /// <returns>The schema.</returns>
-        public ResourceSchema Camel(string name) => new(name, Fields.Select(f => f with { Name = ResponseContract.CamelName(f.Name), Members = f.Members?.Camel(f.Members.Name) }).ToList(), Facts);
+        public ResourceSchema Camel(string name) => new(
+            name,
+            Fields.Select(f => f with { Name = ResponseContract.CamelName(f.Name), Members = f.Members?.Camel(f.Members.Name), Unique = f.Unique?.Select(ResponseContract.CamelName).ToList() }).ToList(),
+            Facts,
+            Paging == null ? null : new PagingRule(ResponseContract.CamelName(Paging.Page), ResponseContract.CamelName(Paging.Pages), ResponseContract.CamelName(Paging.Total), ResponseContract.CamelName(Paging.Rows)));
 
         /// <summary>This schema with more fields (another resource built on it).</summary>
         /// <param name="name">The new schema's name.</param>
         /// <param name="fields">Fields added.</param>
         /// <param name="facts">Identity facts.</param>
         /// <returns>The schema.</returns>
-        public ResourceSchema With(string name, IEnumerable<FieldRule> fields, IReadOnlyList<string>? facts = null) => new(name, Fields.Concat(fields).ToList(), facts ?? Facts);
+        public ResourceSchema With(string name, IEnumerable<FieldRule> fields, IReadOnlyList<string>? facts = null) => new(name, Fields.Concat(fields).ToList(), facts ?? Facts, Paging);
 
-        /// <summary>Validates an answer (or one row) against this schema.</summary>
+        /// <summary>Validates an answer (or one row) on its own, against no request.</summary>
         /// <param name="element">The answer.</param>
         /// <returns>The verdict and the identity facts.</returns>
-        public ContractRead Read(JsonElement element) => ResponseContract.Read(this, element);
+        public ContractRead Read(JsonElement element) => ResponseContract.Validate(this, AnswerRequest.None, element);
+
+        /// <summary>Validates an answer against this schema AND the request that produced it (review round 9).</summary>
+        /// <param name="request">What was asked for.</param>
+        /// <param name="element">The answer.</param>
+        /// <returns>The verdict and the identity facts.</returns>
+        public ContractRead Validate(AnswerRequest request, JsonElement element) => ResponseContract.Validate(this, request, element);
     }
 
     /// <summary>
@@ -228,6 +308,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>The rows.</returns>
         public IReadOnlyList<ContractRead> Rows(string name) => Value<IReadOnlyList<ContractRead>>(name, FieldType.List) ?? Array.Empty<ContractRead>();
 
+        /// <summary>A scalar field's typed value as text (a row's key), or null.</summary>
+        /// <param name="name">Field name.</param>
+        /// <returns>The value.</returns>
+        public string? KeyOf(string name) => _values.TryGetValue(name, out var v) && v.Type is not (FieldType.Object or FieldType.List)
+            ? Convert.ToString(v.Value, CultureInfo.InvariantCulture)
+            : null;
+
         /// <summary>Records a field's typed value (the validator only).</summary>
         /// <param name="name">Field name.</param>
         /// <param name="type">Its type.</param>
@@ -281,11 +368,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             Unusable,
         }
 
-        private static FieldRule Required(string name, FieldType type, ResourceSchema? rows = null, RowFailure failure = RowFailure.Malformed) => new(name, type, FieldRole.Required, false, rows, failure);
+        private static FieldRule Required(string name, FieldType type, ResourceSchema? rows = null, RowFailure failure = RowFailure.Malformed, RequestFact echo = RequestFact.None, string[]? unique = null) =>
+            new(name, type, FieldRole.Required, false, rows, failure, Echo: echo, Unique: unique);
 
-        private static FieldRule Display(string name, FieldType type) => new(name, type, FieldRole.Display);
+        private static FieldRule Display(string name, FieldType type, RequestFact echo = RequestFact.None) => new(name, type, FieldRole.Display, Echo: echo);
 
-        private static FieldRule Fact(string name, FieldType type, bool nullable = true, ResourceSchema? rows = null) => new(name, type, FieldRole.Fact, nullable, rows);
+        private static FieldRule Fact(string name, FieldType type, bool nullable = true, ResourceSchema? rows = null, string[]? unique = null) => new(name, type, FieldRole.Fact, nullable, rows, Unique: unique);
 
         private static FieldRule Identity(string name, FieldType type, string fact) => new(name, type, FieldRole.Identity, true, Fact: fact);
 
@@ -296,7 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>A movie row of a search or find answer (also the title part of movie details).</summary>
         public static readonly ResourceSchema TmdbMovieRow = new("tmdb movie row", new[]
         {
-            Required("id", FieldType.Id), Required("title", FieldType.Text), Display("original_title", FieldType.Text),
+            Required("id", FieldType.Id, echo: RequestFact.Id), Display("media_type", FieldType.Text, RequestFact.MediaType), Required("title", FieldType.Text), Display("original_title", FieldType.Text),
             Display("release_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
         });
@@ -304,7 +392,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>A show row of a search or find answer (also the title part of TV details).</summary>
         public static readonly ResourceSchema TmdbTvRow = new("tmdb tv row", new[]
         {
-            Required("id", FieldType.Id), Required("name", FieldType.Text), Display("original_name", FieldType.Text),
+            Required("id", FieldType.Id, echo: RequestFact.Id), Display("media_type", FieldType.Text, RequestFact.MediaType), Required("name", FieldType.Text), Display("original_name", FieldType.Text),
             Display("first_air_date", FieldType.Date), Display("poster_path", FieldType.Poster), Display("overview", FieldType.Text),
             Display("popularity", FieldType.Number), Display("vote_count", FieldType.Count), Display("adult", FieldType.Bool),
         });
@@ -314,9 +402,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             Required("season_number", FieldType.Count), Display("episode_count", FieldType.Count), Display("air_date", FieldType.Date), Display("name", FieldType.Text),
         });
 
+        // An episode of the season asked for (review round 9, 4c2-R9-2: membership): its own season and show, where it names
+        // them, are the request's.
         private static readonly ResourceSchema TmdbEpisodeRow = new("tmdb episode row", new[]
         {
-            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count), Display("name", FieldType.Text), Display("air_date", FieldType.Date),
+            Required("episode_number", FieldType.Count), Display("season_number", FieldType.Count, RequestFact.Season), Display("show_id", FieldType.Id, RequestFact.Show),
+            Display("name", FieldType.Text), Display("air_date", FieldType.Date),
         });
 
         private static readonly ResourceSchema TmdbEpisodeFindRow = new("tmdb episode find row", new[]
@@ -340,20 +431,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             Display("status", FieldType.Text), Display("in_production", FieldType.Bool),
             Container("external_ids", false, Identity("imdb_id", FieldType.Imdb, "imdb"), Identity("tvdb_id", FieldType.Id, "tvdb")),
-            Fact("seasons", FieldType.List, nullable: false, rows: TmdbSeasonRow),
+            Fact("seasons", FieldType.List, nullable: false, rows: TmdbSeasonRow, unique: new[] { "season_number" }),
         }, new[] { "imdb", "tvdb" });
 
-        /// <summary>A TMDB season: its episode list (an episode row JE can't read makes it Malformed).</summary>
-        public static readonly ResourceSchema TmdbSeason = new("tmdb season", new[] { Required("episodes", FieldType.List, TmdbEpisodeRow) });
+        /// <summary>
+        /// A TMDB season: its episode list (an episode row JE can't read makes it Malformed), each episode of the season (and
+        /// show) asked for and listed once (review round 9: membership and uniqueness); its own season number is the request's.
+        /// </summary>
+        public static readonly ResourceSchema TmdbSeason = new("tmdb season", new[]
+        {
+            Required("episodes", FieldType.List, TmdbEpisodeRow, unique: new[] { "episode_number" }), Display("season_number", FieldType.Count, RequestFact.Season),
+        });
 
-        /// <summary>TMDB's <c>find</c> for an IMDb EPISODE id: its episode results (a row JE can't read beside a usable one: Partial).</summary>
-        public static readonly ResourceSchema TmdbEpisodeFind = new("tmdb episode find", new[] { Required("tv_episode_results", FieldType.List, TmdbEpisodeFindRow, RowFailure.Partial) });
+        /// <summary>
+        /// TMDB's <c>find</c> for an IMDb EPISODE id: its episode results (a row JE can't read beside a usable one: Partial).
+        /// One IMDb episode id names one episode (review round 9: two rows are ambiguous, Malformed).
+        /// </summary>
+        public static readonly ResourceSchema TmdbEpisodeFind = new("tmdb episode find", new[] { Required("tv_episode_results", FieldType.List, TmdbEpisodeFindRow, RowFailure.Partial, unique: Array.Empty<string>()) });
 
         /// <summary>TMDB's <c>find</c> for a title's IMDb or TVDB id: both result lists (rows read by the lookup).</summary>
         public static readonly ResourceSchema TmdbFind = new("tmdb find", new[] { Required("movie_results", FieldType.List), Required("tv_results", FieldType.List) });
 
-        /// <summary>A TMDB search answer: its result list (rows read by the lookup).</summary>
-        public static readonly ResourceSchema TmdbSearch = new("tmdb search", new[] { Required("results", FieldType.List) });
+        /// <summary>A TMDB search answer: its result list (rows read by the lookup) and its paging fields (review round 9: domain rules).</summary>
+        public static readonly ResourceSchema TmdbSearch = new("tmdb search", new[]
+        {
+            Required("results", FieldType.List), Display("page", FieldType.Count), Display("total_pages", FieldType.Count), Display("total_results", FieldType.Count),
+        }, Paging: new PagingRule("page", "total_pages", "total_results", "results"));
 
         /// <summary>Seerr's movie row (camelCase).</summary>
         public static readonly ResourceSchema SeerrMovieRow = TmdbMovieRow.Camel("seerr movie row");
@@ -381,7 +484,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataMovie = new("metadata movie", new[]
         {
-            Required("id", FieldType.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+            Required("id", FieldType.Id, echo: RequestFact.Id), Display("title", FieldType.Text), Fact("releaseDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Identity("imdbId", FieldType.Imdb, "imdb"),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb")),
         }, new[] { "imdb" });
@@ -398,35 +501,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// </summary>
         public static readonly ResourceSchema MetadataShow = new("metadata show", new[]
         {
-            Required("id", FieldType.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+            Required("id", FieldType.Id, echo: RequestFact.Id), Display("name", FieldType.Text), Fact("firstAirDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
             Display("overview", FieldType.Text), Fact("status", FieldType.Text), Display("inProduction", FieldType.Bool),
             Container("externalIds", false, Identity("imdbId", FieldType.Imdb, "imdb"), Identity("tvdbId", FieldType.Id, "tvdb")),
             Fact("seasons", FieldType.List, nullable: false, rows: new ResourceSchema("metadata season row", new[]
             {
                 Required("seasonNumber", FieldType.Count), Fact("episodeCount", FieldType.Count, nullable: false), Fact("airDate", FieldType.Date),
-            })),
+            }), unique: new[] { "seasonNumber" }),
             new FieldRule("lastEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
             new FieldRule("nextEpisodeToAir", FieldType.Object, FieldRole.Container, true, MetadataEpisodeRef),
         }, new[] { "imdb", "tvdb" });
 
-        /// <summary>A season's placeholder metadata: its episodes (with their air dates), air date and poster.</summary>
+        /// <summary>
+        /// A season's placeholder metadata: its episodes (with their air dates), air date and poster. Review round 9 (4c2-R9-2):
+        /// the season (and its episodes, and their show) is the one asked for, and each episode is listed once.
+        /// </summary>
         public static readonly ResourceSchema MetadataSeason = new("metadata season", new[]
         {
             Required("episodes", FieldType.List, new ResourceSchema("metadata episode row", new[]
             {
-                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count), Display("name", FieldType.Text), Fact("airDate", FieldType.Date),
-            })),
-            Fact("airDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
+                Required("episodeNumber", FieldType.Count), Display("seasonNumber", FieldType.Count, RequestFact.Season), Display("showId", FieldType.Id, RequestFact.Show),
+                Display("name", FieldType.Text), Fact("airDate", FieldType.Date),
+            }), unique: new[] { "episodeNumber" }),
+            Display("seasonNumber", FieldType.Count, RequestFact.Season), Fact("airDate", FieldType.Date), Fact("posterPath", FieldType.Poster),
         });
 
-        /// <summary>A TMDB poster read (a title's or a season's details): <c>poster_path</c> is the answer (null: no poster).</summary>
-        public static readonly ResourceSchema TmdbPoster = new("tmdb poster", new[] { Fact("poster_path", FieldType.Poster) });
+        /// <summary>
+        /// A TMDB poster read (a title's or a season's details): <c>poster_path</c> is the answer (null: no poster); the title's
+        /// id or the season's number is the one asked for (review round 9).
+        /// </summary>
+        public static readonly ResourceSchema TmdbPoster = new("tmdb poster", new[]
+        {
+            Fact("poster_path", FieldType.Poster), Display("id", FieldType.Id, RequestFact.Id), Display("season_number", FieldType.Count, RequestFact.Season),
+        });
 
-        /// <summary>Validates <paramref name="element"/> against <paramref name="schema"/>.</summary>
+        /// <summary>
+        /// Validates <paramref name="element"/> against <paramref name="schema"/> and the request that produced it (review round
+        /// 9, D53): every declared field by its type and role (rounds 7–8), then the request's facts (a field that echoes the
+        /// id, media type, season, show or page asked for must equal it: Malformed), uniqueness (a list's row key listed twice,
+        /// or a single-answer list with more than one row: Malformed) and the page's domain rules (<see cref="PagingRule"/>:
+        /// Partial).
+        /// </summary>
         /// <param name="schema">The schema.</param>
+        /// <param name="request">What was asked for.</param>
         /// <param name="element">The answer.</param>
         /// <returns>The verdict and identity facts.</returns>
-        public static ContractRead Read(ResourceSchema schema, JsonElement element)
+        public static ContractRead Validate(ResourceSchema schema, AnswerRequest request, JsonElement element)
         {
             var read = new ContractRead();
             if (element.ValueKind != JsonValueKind.Object)
@@ -435,7 +555,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return read;
             }
 
-            ReadFields(schema, element, read, read, string.Empty);
+            ReadFields(schema, element, read, read, string.Empty, request);
             foreach (var fact in schema.Facts ?? Array.Empty<string>())
             {
                 if (read.Fact(fact) == FactState.Unknown)
@@ -444,7 +564,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
+            if (schema.Paging is { } paging)
+            {
+                CheckPaging(paging, element, read, request);
+            }
+
             return read;
+        }
+
+        // A page's domain rules (review round 9, 4c2-R9-5): non-negative counts (a negative one was already unusable: Partial),
+        // the page asked for, a total of at least the page's rows, and a page count of at least 1 when there is a total.
+        private static void CheckPaging(PagingRule paging, JsonElement element, ContractRead read, AnswerRequest request)
+        {
+            var page = read.Int(paging.Page);
+            var pages = read.Int(paging.Pages);
+            var total = read.Int(paging.Total);
+            var rows = element.TryGetProperty(paging.Rows, out var list) && list.ValueKind == JsonValueKind.Array ? list.GetArrayLength() : 0;
+            if (request.Page is int asked && page is int answered && answered != asked)
+            {
+                read.Lower(ResponseVerdict.Partial, paging.Page + " (not the page asked for)");
+            }
+
+            if ((total is int t && t < rows) || (total is > 0 && pages is 0))
+            {
+                read.Lower(ResponseVerdict.Partial, paging.Total + " (inconsistent with the rows)");
+            }
         }
 
         /// <summary>The worse of two verdicts.</summary>
@@ -464,7 +608,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // Each declared field: its verdict and identity facts go to `read` (the whole answer's), its typed value to `into` (the
         // object it belongs to: the answer, a container's members, a row).
-        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, ContractRead into, string prefix)
+        private static void ReadFields(ResourceSchema schema, JsonElement element, ContractRead read, ContractRead into, string prefix, AnswerRequest request)
         {
             foreach (var field in schema.Fields)
             {
@@ -500,6 +644,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         continue;
                 }
 
+                // Review round 9 (4c2-R9-1/2): a field that echoes a request fact must be the one asked for; another id, media
+                // type, season or show is another resource's answer.
+                if (field.Echo != RequestFact.None && request.Of(field.Echo) is { } asked && !Echoes(asked, parsed))
+                {
+                    read.Lower(ResponseVerdict.Malformed, path + " (not the one asked for)");
+                    continue;
+                }
+
                 if (field.Fact != null)
                 {
                     read.Note(field.Fact, FactState.Known);
@@ -510,14 +662,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     var members = new ContractRead();
                     if (field.Members != null)
                     {
-                        ReadFields(field.Members, value, read, members, path + ".");
+                        ReadFields(field.Members, value, read, members, path + ".", request);
                     }
 
                     into.Set(field.Name, FieldType.Object, members);
                 }
                 else if (field.Type == FieldType.List)
                 {
-                    into.Set(field.Name, FieldType.List, field.Members != null ? ReadRows(field, value, read, path) : Array.Empty<ContractRead>());
+                    into.Set(field.Name, FieldType.List, field.Members != null ? ReadRows(field, value, read, path, request) : Array.Empty<ContractRead>());
                 }
                 else
                 {
@@ -528,7 +680,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // A list's rows: a row JE can't read (not an object, a required field missing or bad) is what the list declares;
         // a row's unknown fact or unreadable display field makes the answer Partial. Returns the usable rows, in order.
-        private static IReadOnlyList<ContractRead> ReadRows(FieldRule field, JsonElement list, ContractRead read, string path)
+        private static IReadOnlyList<ContractRead> ReadRows(FieldRule field, JsonElement list, ContractRead read, string path, AnswerRequest request)
         {
             var usable = new List<ContractRead>();
             var unreadable = 0;
@@ -541,7 +693,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 else
                 {
-                    ReadFields(field.Members!, row, rowRead, rowRead, path + "[].");
+                    ReadFields(field.Members!, row, rowRead, rowRead, path + "[].", request);
                 }
 
                 if (rowRead.Verdict == ResponseVerdict.Malformed)
@@ -568,8 +720,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 read.Lower(ResponseVerdict.Malformed, path);
             }
 
+            // Review round 9 (uniqueness): a row key listed twice (an episode, a season) or, for a list of one answer, a
+            // second row: the list doesn't say which one is meant.
+            if (field.Unique is { } unique)
+            {
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                if (unique.Count == 0 ? usable.Count > 1 : usable.Any(r => !keys.Add(string.Join('|', unique.Select(n => r.KeyOf(n) ?? "?")))))
+                {
+                    read.Lower(ResponseVerdict.Malformed, path + " (a row listed twice)");
+                }
+            }
+
             return usable;
         }
+
+        // A typed value equals the request's fact (ids and numbers by value, text exactly).
+        private static bool Echoes(object asked, object? parsed) => asked switch
+        {
+            int number => parsed is int value && value == number,
+            string text => parsed is string value && string.Equals(value, text, StringComparison.Ordinal),
+            _ => false,
+        };
 
         private static void Missing(FieldRule field, ContractRead read, string path)
         {

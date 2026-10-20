@@ -667,6 +667,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/SeerrFallback.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Sources/ChronolistsPage.cs",
       "category": "Services"
     },
@@ -10366,7 +10370,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 596,
+    "files": 597,
     "routes": 272,
     "configuration_properties": 615,
     "storage_references": 87,

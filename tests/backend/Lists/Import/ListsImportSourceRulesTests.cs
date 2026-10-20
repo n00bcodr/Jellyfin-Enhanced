@@ -201,8 +201,8 @@ public class ListsImportSourceRulesTests
     {
         using var net = new Net();
         var config = net.Plugin.Plugin.Configuration;
-        net.Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"name\":\"Star Wars Collection\",\"parts\":[{\"id\":11,\"title\":\"Star Wars\",\"release_date\":\"1977-05-25\"}]}");
-        net.Routes["http://seerr.test/api/v1/collection/10"] = _ => Json("{\"name\":\"Star Wars Collection\",\"parts\":[{\"id\":11,\"mediaType\":\"movie\",\"title\":\"Star Wars\",\"releaseDate\":\"1977-05-25\"}]}");
+        net.Routes["https://api.themoviedb.org/3/collection/10"] = _ => Json("{\"id\":10,\"name\":\"Star Wars Collection\",\"parts\":[{\"id\":11,\"title\":\"Star Wars\",\"release_date\":\"1977-05-25\"}]}");
+        net.Routes["http://seerr.test/api/v1/collection/10"] = _ => Json("{\"id\":10,\"name\":\"Star Wars Collection\",\"parts\":[{\"id\":11,\"mediaType\":\"movie\",\"title\":\"Star Wars\",\"releaseDate\":\"1977-05-25\"}]}");
         config.JellyseerrEnabled = true;
         config.JellyseerrUrls = "http://seerr.test";
         config.JellyseerrApiKey = "seerr-key";
@@ -238,7 +238,7 @@ public class ListsImportSourceRulesTests
         using var net = new Net();
         var config = net.Plugin.Plugin.Configuration;
         config.TMDB_API_KEY = "aaaaaaaa";
-        net.Routes["https://api.themoviedb.org/3/collection/10"] = request => Json("{\"name\":\"" + (request.RequestUri!.Query.Contains("aaaaaaaa", StringComparison.Ordinal) ? "A" : "B") + "\",\"parts\":[{\"id\":11,\"title\":\"Star Wars\"}]}");
+        net.Routes["https://api.themoviedb.org/3/collection/10"] = request => Json("{\"id\":10,\"name\":\"" + (request.RequestUri!.Query.Contains("aaaaaaaa", StringComparison.Ordinal) ? "A" : "B") + "\",\"parts\":[{\"id\":11,\"title\":\"Star Wars\"}]}");
 
         var first = await net.Fetch("https://www.themoviedb.org/collection/10", new SourceFetchOptions());
         config.TMDB_API_KEY = "bbbbbbbb"; // same length, another key

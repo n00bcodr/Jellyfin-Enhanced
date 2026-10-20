@@ -76,7 +76,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
 
     private static readonly (string Path, string Verdicts)[] SeasonFields =
     {
-        ("episodes", "MMMV"), ("episodes[0].episode_number", "MMMV"), ("episodes[0].season_number", "VVPV"),
+        ("episodes", "MMMV"), ("episodes[0].episode_number", "MMMV"), ("episodes[0].season_number", "VVPM"), // r9: season 0 isn't the season asked for
         ("episodes[0].name", "VVPV"), ("episodes[0].air_date", "VVPV"),
     };
 
@@ -117,7 +117,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     // A season answer that isn't Valid is used like a failed season read: it never sets the expected episodes.
     private static readonly (string Path, string Verdicts)[] MetaSeasonFields =
     {
-        ("episodes", "MMMV"), ("episodes[0].episodeNumber", "MMMV"), ("episodes[0].seasonNumber", "VVPV"),
+        ("episodes", "MMMV"), ("episodes[0].episodeNumber", "MMMV"), ("episodes[0].seasonNumber", "VVPM"), // r9: season 0 isn't the season asked for
         ("episodes[0].name", "VVPV"), ("episodes[0].airDate", "PVMV"), ("airDate", "PVMV"), ("posterPath", "PVMV"),
     };
 
@@ -1006,7 +1006,7 @@ public class ListsSourceReviewR7FixTests(ITestOutputHelper output)
     [InlineData("[{\"ids\":{\"tmdb\":42},\"ratings\":[]},{\"ratings\":[]}]", false)]
     [InlineData("[{\"ids\":{\"tmdb\":42},\"ratings\":[]},\"x\"]", false)]
     [InlineData("[]", true)]
-    [InlineData("[{\"ids\":{\"tmdb\":42},\"ratings\":[]}]", true)]
+    [InlineData("[{\"type\":\"movie\",\"ids\":{\"tmdb\":42},\"ratings\":[]}]", true)]
     public async Task AWrongShapedMdblistBatchIsAFailureNeverAConfirmedNoMatch(string answer, bool read)
     {
         using var net = MdblistApiNet(() => 900);

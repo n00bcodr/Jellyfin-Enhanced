@@ -179,6 +179,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>Every row read is one distinct usable key or a counted exclusion, and nothing came back twice.</summary>
         public bool RowsSound => Malformed == 0 && Repeated == 0 && !Drifted;
 
+        /// <summary>
+        /// Pages whose paging facts broke the request or their domain (review round 9, 4c2-R9-5): a negative page count or total,
+        /// another page than the one asked for (or one past the page count), a total below the rows read, or no page for a total.
+        /// </summary>
+        public int Violations { get; private set; }
+
+        /// <summary>The rows are sound and every page's paging facts are within their domain and the request.</summary>
+        public bool Sound => RowsSound && Violations == 0;
+
         /// <summary>Reports a row as its parser read it.</summary>
         /// <param name="row">The row.</param>
         /// <returns>The entry it gives the list (null: none).</returns>
@@ -208,11 +217,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="hasNext">IMDb <c>hasNextPage</c>.</param>
         /// <param name="cursor">IMDb <c>endCursor</c> (a cursor read before is drift).</param>
         /// <param name="errors">Errors next to the data.</param>
-        public void Page(int? pageCount = null, int? itemCount = null, bool? hasNext = null, string? cursor = null, bool errors = false)
+        /// <param name="asked">The page number asked for (offset pages), when the answer reports its own (<paramref name="answered"/>).</param>
+        /// <param name="answered">The page number the answer reports.</param>
+        public void Page(int? pageCount = null, int? itemCount = null, bool? hasNext = null, string? cursor = null, bool errors = false, int? asked = null, int? answered = null)
         {
             if (cursor != null && !_cursors.Add(cursor))
             {
                 Drifted = true;
+            }
+
+            // Review round 9 (D53 domain rules, 4c2-R9-5): a page's paging facts are checked against the request and their domain
+            // before any completeness rule trusts them (a negative page count once made page 1 the "last" one).
+            if (pageCount < 0 || itemCount < 0 || itemCount < Rows || (itemCount > 0 && pageCount == 0)
+                || (asked is int page && answered is int reported && (reported != page || (pageCount > 0 && reported > pageCount))))
+            {
+                Violations++;
             }
 
             _pages.Add(new SourcePage(_pageRows, pageCount, itemCount, hasNext, cursor != null, errors));
@@ -244,6 +263,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
     /// snapshot represents (<see cref="SourceRead.Represented"/>, never the transport's row count) equal to the total the
     /// source announced where it announces one. Anything less is partial (nothing may be removed on it) or truncated (JE
     /// stopped on purpose); an answer without the list it should carry is a typed failure before it gets here.
+    /// Every rule below also needs every page's paging facts within their domain and the request (<see cref="SourceRead.Sound"/>,
+    /// review round 9): no negative page count or total, the page asked for, a total of at least the rows read.
     /// <list type="bullet">
     /// <item><b>Offset lists</b> (TMDB lists; Trakt lists and watchlists), <see cref="OffsetList"/>: every page reports the
     /// page count and the list's total, the same on every page; the loop ended on the page count's last page; no page is
@@ -281,7 +302,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var pageCount = Same(pages, p => p.PageCount);
             var total = Same(pages, p => p.ItemCount);
-            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.RowsSound && !pages.Any(p => p.Errors);
+            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.Sound && !pages.Any(p => p.Errors);
             return read.End switch
             {
                 SourceReadEnd.Last => new SourceVerdict(!(sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && read.Represented == total), false),
@@ -303,7 +324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var pageCount = Same(pages, p => p.PageCount);
             var total = Same(pages, p => p.ItemCount);
-            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.RowsSound && !pages.Any(p => p.Errors);
+            var sound = pageCount is int && total is int && NoEmptyPage(pages, total) && read.Sound && !pages.Any(p => p.Errors);
             var complete = read.End switch
             {
                 SourceReadEnd.Last => sound && pages.Count == System.Math.Max(pageCount!.Value, 1) && read.Represented == total,
@@ -326,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
 
             var total = Same(pages, p => p.ItemCount);
             var sound = total is int
-                && read.RowsSound
+                && read.Sound
                 && pages.All(p => p.HasNext is bool && !p.Errors)
                 && pages.Where(p => p.HasNext == true).All(p => p.HasCursor && p.Rows > 0);
             return read.End switch
@@ -340,7 +361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <summary>A one-answer source (collections, Trakt's box office): the answer's array, every row of it sound.</summary>
         /// <param name="read">The read (its one answer's rows).</param>
         /// <returns>The verdict.</returns>
-        public static SourceVerdict Whole(SourceRead read) => new(!read.RowsSound, false);
+        public static SourceVerdict Whole(SourceRead read) => new(!read.Sound, false);
 
         /// <summary>MDBList's public JSON (one answer).</summary>
         /// <param name="read">The read (its one answer's rows).</param>
@@ -348,14 +369,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="cap">JE's entry cap.</param>
         /// <returns>The verdict.</returns>
         public static SourceVerdict MdblistPublic(SourceRead read, bool moreAnnounced, int cap) =>
-            new(!read.RowsSound, moreAnnounced || read.Rows >= cap);
+            new(!read.Sound, moreAnnounced || read.Rows >= cap);
 
         /// <summary>The MDBList API's one page.</summary>
         /// <param name="read">The read (its one page's rows).</param>
         /// <param name="hasMore">The page's own answer to "more follow" (null: it didn't say).</param>
         /// <param name="limit">The limit asked for.</param>
         /// <returns>The verdict.</returns>
-        public static SourceVerdict MdblistApi(SourceRead read, bool? hasMore, int limit) => new(!read.RowsSound, hasMore switch
+        public static SourceVerdict MdblistApi(SourceRead read, bool? hasMore, int limit) => new(!read.Sound, hasMore switch
         {
             true => true,
             false when read.Rows <= limit => false,
@@ -368,7 +389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
         /// <param name="read">The read (the page's entries).</param>
         /// <returns>The verdict.</returns>
         public static SourceVerdict Chronolists(ChronolistsList list, SourceRead read) =>
-            new(list.Unusable > 0 || !read.RowsSound, list.Truncated || list.Total > list.Items.Count);
+            new(list.Unusable > 0 || !read.Sound, list.Truncated || list.Total > list.Items.Count);
 
         // The value every page reported (null when a page didn't report it, or two pages disagree).
         private static int? Same(IReadOnlyList<SourcePage> pages, System.Func<SourcePage, int?> value)

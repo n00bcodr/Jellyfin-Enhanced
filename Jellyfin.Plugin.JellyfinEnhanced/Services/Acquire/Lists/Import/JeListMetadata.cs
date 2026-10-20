@@ -61,11 +61,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var fetchedAt = DateTime.UtcNow;
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, fresh, cancellationToken)).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => GetAsync("movie/" + id, "?append_to_response=external_ids", ResponseContract.MetadataMovie, new AnswerRequest(placeholder.TmdbId, "movie"), fresh, cancellationToken)).ConfigureAwait(false);
                 return movie == null ? null : ListMetadataService.FromMovie(movie, fetchedAt);
             }
 
-            var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", ResponseContract.MetadataShow, fresh, cancellationToken)).ConfigureAwait(false);
+            var tv = await ListContinuation.Await(() => GetAsync("tv/" + id, "?append_to_response=external_ids", ResponseContract.MetadataShow, new AnswerRequest(placeholder.TmdbId, "tv"), fresh, cancellationToken)).ConfigureAwait(false);
             if (tv == null)
             {
                 return null;
@@ -76,16 +76,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             {
                 // A season read that fails leaves season null: FromTv then marks the answer partial (it never shrinks the
                 // expected set from the show's details alone).
-                season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, ResponseContract.MetadataSeason, fresh, cancellationToken)).ConfigureAwait(false);
+                season = await ListContinuation.Await(() => GetAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), string.Empty, ResponseContract.MetadataSeason, new AnswerRequest(Season: number, Show: placeholder.TmdbId), fresh, cancellationToken)).ConfigureAwait(false);
             }
 
             return ListMetadataService.FromTv(placeholder, tv, season, fetchedAt, todayUtc);
         }
 
-        // One TMDB resource in Seerr's field names (camelCase) as `schema` reads it (its verdict and typed values), or null (not
-        // found, an error, a Malformed answer). An answer that isn't Valid is dropped from TMDB's response cache (asked again
+        // One TMDB resource in Seerr's field names (camelCase) as `schema` reads it against the request (its verdict and typed
+        // values), or null (not found, an error, a Malformed answer: another title's or season's included). An answer that isn't Valid is dropped from TMDB's response cache (asked again
         // next time).
-        private async Task<ContractRead?> GetAsync(string path, string query, ResourceSchema schema, bool fresh, CancellationToken cancellationToken)
+        private async Task<ContractRead?> GetAsync(string path, string query, ResourceSchema schema, AnswerRequest asked, bool fresh, CancellationToken cancellationToken)
         {
             try
             {
@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
 
                 using var doc = JsonDocument.Parse(response.Content);
                 var root = doc.RootElement.ValueKind == JsonValueKind.Object ? Camelize(doc.RootElement) : doc.RootElement;
-                var read = schema.Read(root);
+                var read = schema.Validate(asked, root); // the title, show or season asked for (review round 9)
                 if (read.Verdict != ResponseVerdict.Valid)
                 {
                     _tmdb.Forget(path, query, Key);

@@ -181,11 +181,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => GetAsync("/api/v1/movie/" + id, new AnswerRequest(placeholder.TmdbId, "movie"), maxAge, cancellationToken)).ConfigureAwait(false);
                 return movie?.Read == null ? null : FromMovie(movie.Read, movie.FetchedAtUtc);
             }
 
-            var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, maxAge, cancellationToken)).ConfigureAwait(false);
+            var tv = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id, new AnswerRequest(placeholder.TmdbId, "tv"), maxAge, cancellationToken)).ConfigureAwait(false);
             if (tv?.Read == null)
             {
                 return null;
@@ -194,7 +194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             CacheEntry? season = null;
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), maxAge, cancellationToken)).ConfigureAwait(false);
+                season = await ListContinuation.Await(() => GetAsync("/api/v1/tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number, Show: placeholder.TmdbId), maxAge, cancellationToken)).ConfigureAwait(false);
             }
 
             return FromTv(placeholder, tv.Read, season?.Read, tv.FetchedAtUtc < (season?.FetchedAtUtc ?? DateTime.MaxValue) ? tv.FetchedAtUtc : season!.FetchedAtUtc, todayUtc);
@@ -303,13 +303,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             Partial = movie.Verdict != ResponseVerdict.Valid,
         };
 
-        /// <summary>Movie details JSON, read by their contract first.</summary>
+        /// <summary>Movie details JSON, read by their contract first (against the entry's title: review round 9).</summary>
         /// <param name="movie">JSON.</param>
         /// <param name="fetchedAtUtc">Fetch time.</param>
+        /// <param name="tmdbId">The title asked for (null: any).</param>
         /// <returns>Metadata.</returns>
-        internal static PlaceholderMetadata FromMovie(JsonElement movie, DateTime fetchedAtUtc) => FromMovie(ResponseContract.MetadataMovie.Read(movie), fetchedAtUtc);
+        internal static PlaceholderMetadata FromMovie(JsonElement movie, DateTime fetchedAtUtc, int? tmdbId = null) =>
+            FromMovie(ResponseContract.MetadataMovie.Validate(new AnswerRequest(tmdbId, "movie"), movie), fetchedAtUtc);
 
-        /// <summary>TV details JSON (and season JSON), read by their contracts first.</summary>
+        /// <summary>TV details JSON (and season JSON), read by their contracts first (against the entry's show and season).</summary>
         /// <param name="placeholder">Placeholder.</param>
         /// <param name="tv">TV details JSON.</param>
         /// <param name="season">Season details JSON, or null.</param>
@@ -317,7 +319,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <param name="todayUtc">Today (UTC).</param>
         /// <returns>Metadata.</returns>
         internal static PlaceholderMetadata FromTv(Placeholder placeholder, JsonElement tv, JsonElement? season, DateTime fetchedAtUtc, DateTime todayUtc) =>
-            FromTv(placeholder, ResponseContract.MetadataShow.Read(tv), season is JsonElement s ? ResponseContract.MetadataSeason.Read(s) : null, fetchedAtUtc, todayUtc);
+            FromTv(
+                placeholder,
+                ResponseContract.MetadataShow.Validate(new AnswerRequest(placeholder.TmdbId, "tv"), tv),
+                season is JsonElement s ? ResponseContract.MetadataSeason.Validate(new AnswerRequest(Season: placeholder.SeasonNumber, Show: placeholder.TmdbId), s) : null,
+                fetchedAtUtc,
+                todayUtc);
 
         /// <summary>
         /// TV details (and season details for season/episodes kinds) as their contracts read them
@@ -543,7 +550,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             p.ReleaseDate, p.Year, p.PosterPath, p.PosterUnverified, p.Overview, p.ImdbId, p.TvdbId, p.Expected, p.InProduction, p.EpisodeTotal, p.Episodes,
         });
 
-        private async Task<CacheEntry?> GetAsync(string apiPath, TimeSpan maxAge, CancellationToken cancellationToken)
+        private async Task<CacheEntry?> GetAsync(string apiPath, AnswerRequest asked, TimeSpan maxAge, CancellationToken cancellationToken)
         {
             if (!TryGetSeerrConfig(out var urls, out var apiKey))
             {
@@ -610,7 +617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 try
                 {
-                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, scope, fetch.Cancellation.Token).ConfigureAwait(false);
+                    var fetched = await FetchFromSeerrAsync(urls, apiKey, apiPath, asked, scope, fetch.Cancellation.Token).ConfigureAwait(false);
                     if (fetched != null && fetched.Verdict == ResponseVerdict.Valid)
                     {
                         if (_cache.Count >= MaxCacheEntries)
@@ -646,21 +653,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
         }
 
-        // Every configured server in order until one gives a Valid answer by the resource's contract (review rounds 6 and
-        // 7, as in the import lookup): "not found" only when EVERY server answered 404 (a stale address, or a proxy without
-        // Seerr's route, answers 404 too); a 500 (Seerr's "Unable to retrieve …", for unknown ids but also when TMDB failed
-        // behind it) is remembered only briefly, and only when no server failed otherwise; an error or a Malformed answer
-        // (`{}` included: 4c2-R7-3) from any of them is never remembered and the next server is asked; a Partial answer is
-        // used (never kept) only when no later server answers in full. Each request takes its own Seerr slot.
-        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, string scope, CancellationToken cancellationToken)
+        // Every configured server in order by THE fallback table (SeerrFallback, review round 9): a Valid answer by the
+        // resource's contract AND the request (the title, show or season asked for: 4c2-R9-1/2) is used; a Partial one is
+        // used (never kept) only when no later server answers in full; a Malformed answer (`{}` included: 4c2-R7-3; another
+        // title's or season's), an error, a timeout or a 5xx is no proof of anything and the next server is asked; "not
+        // found" only when EVERY server answered 404 (a stale address, or a proxy without Seerr's route, answers 404 too).
+        // When nothing better came of it, a read whose only failures were Seerr's 500 ("Unable to retrieve …", for unknown
+        // ids but also when TMDB failed behind it) is remembered as unknown for a few minutes (never as an absence), and a
+        // read no server answered at all pauses reads for a minute. Each request takes its own Seerr slot.
+        private async Task<CacheEntry?> FetchFromSeerrAsync(string[] urls, string apiKey, string apiPath, AnswerRequest asked, string scope, CancellationToken cancellationToken)
         {
             var answered = false;
-            var notFound = 0;
-            var unavailable = false;
-            var failed = false;
-            CacheEntry? partial = null;
+            var only500 = true;
             var schema = SchemaOf(apiPath);
-            foreach (var baseUrl in urls)
+            var read = await SeerrFallback.ReadAsync<CacheEntry>(urls, async (baseUrl, index) =>
             {
                 await _concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
@@ -673,43 +679,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
                     answered = true;
                     _unreachableUntil.TryRemove(scope, out _);
-                    if ((int)response.StatusCode == 404)
+                    switch ((int)response.StatusCode)
                     {
-                        notFound++;
-                        continue;
-                    }
-
-                    if ((int)response.StatusCode == 500)
-                    {
-                        unavailable = true;
-                        continue;
+                        case 404:
+                            return new ServerAnswer<CacheEntry>(ServerState.NotFound);
+                        case >= 500:
+                            only500 &= (int)response.StatusCode == 500;
+                            return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     }
 
                     var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, cts.Token).ConfigureAwait(false);
                     if (error != null || json == null)
                     {
-                        failed = true;
+                        only500 = false;
                         _logger.Debug($"[Lists] Seerr details {apiPath} failed: {error?.Code}");
-                        continue;
+                        return new ServerAnswer<CacheEntry>(ServerState.Unavailable);
                     }
 
                     using var document = JsonDocument.Parse(json);
-                    var read = schema.Read(document.RootElement);
-                    if (read.Verdict == ResponseVerdict.Malformed)
+                    var answer = schema.Validate(asked, document.RootElement);
+                    if (answer.Verdict == ResponseVerdict.Malformed)
                     {
-                        failed = true;
-                        _logger.Debug($"[Lists] Seerr details {apiPath} answered something JE can't read ({read.Reason})");
-                        continue;
+                        only500 = false;
+                        _logger.Debug($"[Lists] Seerr details {apiPath} answered something JE can't read ({answer.Reason})");
+                        return new ServerAnswer<CacheEntry>(ServerState.Malformed);
                     }
 
-                    var entry = new CacheEntry(read, DateTime.UtcNow, null) { Verdict = read.Verdict };
-                    if (read.Verdict == ResponseVerdict.Valid)
+                    var entry = new CacheEntry(answer, DateTime.UtcNow, null) { Verdict = answer.Verdict };
+                    if (answer.Verdict != ResponseVerdict.Valid)
                     {
-                        return entry;
+                        _logger.Debug($"[Lists] Seerr details {apiPath} answered in part ({answer.Reason}); asking the next server");
+                        return new ServerAnswer<CacheEntry>(ServerState.Partial, entry);
                     }
 
-                    partial ??= entry; // used (never kept) only if no later server answers in full
-                    _logger.Debug($"[Lists] Seerr details {apiPath} answered in part ({read.Reason}); asking the next server");
+                    return new ServerAnswer<CacheEntry>(ServerState.Valid, entry);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -717,19 +720,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
-                    failed = true;
+                    only500 = false;
                     answered |= ex is JsonException;
                     _logger.Debug($"[Lists] Seerr details {apiPath} failed: {UpstreamDiagnostics.Code(ex)}");
+                    return new ServerAnswer<CacheEntry>(ex is JsonException ? ServerState.Malformed : ServerState.Unavailable);
                 }
                 finally
                 {
                     _concurrency.Release();
                 }
-            }
+            }).ConfigureAwait(false);
 
-            if (partial != null)
+            switch (read.State)
             {
-                return partial;
+                case FallbackState.Valid or FallbackState.Partial:
+                    return read.Value;
+                case FallbackState.NotFound:
+                    return new CacheEntry(null, DateTime.UtcNow, NotFoundTtl);
             }
 
             if (!answered)
@@ -738,12 +745,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 _logger.Debug($"[Lists] Seerr didn't answer; metadata reads pause for {UnreachableBackoff.TotalSeconds:0} s.");
             }
 
-            if (notFound == urls.Length)
-            {
-                return new CacheEntry(null, DateTime.UtcNow, NotFoundTtl);
-            }
-
-            return unavailable && !failed ? new CacheEntry(null, DateTime.UtcNow, UnavailableTtl) : null;
+            // Unknown (never an absence): only Seerr's own 500s, beside 404s, are remembered briefly; anything else is asked again.
+            return answered && only500 && read.Servers.Contains(ServerState.Unavailable) ? new CacheEntry(null, DateTime.UtcNow, UnavailableTtl) : null;
         }
 
         /// <summary>True when JE has a TMDB API key (the parental filter then reads ratings from TMDB, Seerr or not).</summary>
@@ -781,13 +784,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             var id = placeholder.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
             if (placeholder.Kind == PlaceholderKinds.Movie)
             {
-                var movie = await ListContinuation.Await(() => TmdbPosterAsync("movie/" + id, apiKey, cancellationToken)).ConfigureAwait(false);
+                var movie = await ListContinuation.Await(() => TmdbPosterAsync("movie/" + id, new AnswerRequest(placeholder.TmdbId), apiKey, cancellationToken)).ConfigureAwait(false);
                 return (movie.Poster, movie.Answered);
             }
 
             if (placeholder.Kind is PlaceholderKinds.Season or PlaceholderKinds.Episodes && placeholder.SeasonNumber is int number)
             {
-                var season = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), apiKey, cancellationToken)).ConfigureAwait(false);
+                var season = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id + "/season/" + number.ToString(CultureInfo.InvariantCulture), new AnswerRequest(Season: number), apiKey, cancellationToken)).ConfigureAwait(false);
                 if (season.Poster != null)
                 {
                     return (season.Poster, true);
@@ -799,7 +802,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            var show = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id, apiKey, cancellationToken)).ConfigureAwait(false);
+            var show = await ListContinuation.Await(() => TmdbPosterAsync("tv/" + id, new AnswerRequest(placeholder.TmdbId), apiKey, cancellationToken)).ConfigureAwait(false);
             return (show.Poster, show.Answered);
         }
 
@@ -810,7 +813,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             : ResponseContract.MetadataShow;
 
         // NotFound: TMDB answered 404 (no such title or season), as opposed to a failure that may pass.
-        private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, string apiKey, CancellationToken cancellationToken)
+        private async Task<(string? Poster, bool Answered, bool NotFound)> TmdbPosterAsync(string apiPath, AnswerRequest asked, string apiKey, CancellationToken cancellationToken)
         {
             var key = "tmdb|" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)), 0, 8) + "|" + apiPath;
             if (_tmdbPosters.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAtUtc < CacheTtl)
@@ -838,7 +841,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 // Review rounds 6 and 7 (ResponseContract.TmdbPoster): "no poster" needs TMDB's answer to say so (poster_path
                 // there, a path or null); an answer that isn't Valid is a failed read, never remembered (a season's would let
                 // the show's poster stand in).
-                var read = ResponseContract.TmdbPoster.Read(document.RootElement);
+                var read = ResponseContract.TmdbPoster.Validate(asked, document.RootElement); // the title or season asked for (review round 9)
                 if (read.Verdict != ResponseVerdict.Valid)
                 {
                     _logger.Debug($"[Lists] TMDB poster {apiPath} answered something JE can't read ({read.Reason})");

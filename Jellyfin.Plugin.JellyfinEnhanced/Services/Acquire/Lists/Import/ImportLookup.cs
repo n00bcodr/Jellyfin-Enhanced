@@ -97,6 +97,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         Unusable,
     }
 
+    /// <summary>
+    /// The closed allowlists of a search row's declared media type (review round 9, D53; 4c2-R9-6): a title type is read
+    /// ("movie", "tv"); a deliberately unsupported type, named here, is a valid row left out; any other type is a row JE can't
+    /// read (the answer is not whole: never kept, never "no titles").
+    /// </summary>
+    internal static class TitleTypes
+    {
+        /// <summary>TMDB's search/multi: people are left out (it returns movies, shows and people only).</summary>
+        public static readonly IReadOnlySet<string> TmdbExcluded = new HashSet<string>(StringComparer.Ordinal) { "person" };
+
+        /// <summary>Seerr's search: people and collections are left out.</summary>
+        public static readonly IReadOnlySet<string> SeerrExcluded = new HashSet<string>(StringComparer.Ordinal) { "person", "collection" };
+
+        /// <summary>The class of a row by its declared type: null for a title type (read it), else Dropped or Unusable.</summary>
+        /// <param name="type">The declared type.</param>
+        /// <param name="excluded">The provider's named exclusions.</param>
+        /// <returns>Null, or the row's class.</returns>
+        public static RowRead? Classify(string type, IReadOnlySet<string> excluded) =>
+            type is "movie" or "tv" ? null : excluded.Contains(type) ? RowRead.Dropped : RowRead.Unusable;
+    }
+
     /// <summary>A sanitized TMDB title as Seerr returns it in search results and details.</summary>
     /// <param name="MediaType">"movie" or "tv".</param>
     /// <param name="TmdbId">TMDB id.</param>
@@ -317,7 +338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "details|" + mediaType + "|" + id,
                 "/api/v1/" + mediaType + "/" + id,
                 context,
-                json => ParseDetails(json, mediaType),
+                json => ParseDetails(json, mediaType, tmdbId),
                 cancellationToken).ConfigureAwait(false);
             return answer.Result<TitleDetails>();
         }
@@ -335,7 +356,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 "season|" + path,
                 path,
                 context,
-                json => ParseSeason(json, season),
+                json => ParseSeason(json, tvTmdbId, season),
                 cancellationToken).ConfigureAwait(false);
             return answer.Result<IReadOnlyList<EpisodeFacts>>();
         }
@@ -446,104 +467,108 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             shared.Result.TrySetResult(answer);
         }
 
-        // Every configured server in order until one gives a Valid answer (review rounds 6 and 7). Each request takes its
-        // own turn at the limiter and is counted (4c2-R6-4); the turn is held until that request has ended (its own
-        // timeout), whoever still waits for it. The first turn is queued like the shared lookup (cancelled once every
-        // waiter is gone: an aborted request or the /resolve deadline); once admitted the lookup runs to the end regardless
-        // (its result serves later joiners and the cache). A Malformed answer is a failure (the next server is asked); a
-        // Partial one is used only when no later server gives a Valid one (4c2-R7-3). Not found only when EVERY server
-        // answered 404 (4c2-R6-2): a server that failed, timed out or answered something unreadable proves nothing.
+        // Every configured server in order by THE fallback table (SeerrFallback, review round 9): a Valid answer is used; a
+        // Partial one is the fallback while later servers are asked (4c2-R7-3); a Malformed one (another title's or season's
+        // answer included: 4c2-R9-1/2), a failure, a timeout or a 5xx is no proof of anything; "not found" only when EVERY
+        // server answered 404 (4c2-R6-2). Each request takes its own turn at the limiter and is counted (4c2-R6-4); the turn
+        // is held until that request has ended (its own timeout), whoever still waits for it. The first turn is queued like
+        // the shared lookup (cancelled once every waiter is gone: an aborted request or the /resolve deadline); once admitted
+        // the lookup runs to the end regardless (its result serves later joiners and the cache).
         private async Task<LookupAnswer> FetchAsync(string[] urls, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
         {
-            var notFound = 0;
-            LookupAnswer? partial = null;
-            for (var i = 0; i < urls.Length; i++)
+            FallbackResult<LookupAnswer> read;
+            try
             {
-                IDisposable lease;
-                if (i == 0)
-                {
-                    try
-                    {
-                        lease = await _limiter.AcquireAsync(context.Owner, context.Background, shared.Abandoned).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        return LookupAnswer.Transient;
-                    }
-
-                    if (!shared.TryAdmit())
-                    {
-                        lease.Dispose();
-                        return LookupAnswer.Transient;
-                    }
-                }
-                else
-                {
-                    lease = await _limiter.AcquireAsync(context.Owner, context.Background, CancellationToken.None).ConfigureAwait(false);
-                }
-
-                using (lease)
-                {
-                    context.CountCall();
-                    var url = urls[i] + apiPath;
-                    try
-                    {
-                        using var timeout = new CancellationTokenSource(CallTimeout);
-                        var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
-                        using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
-                        using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
-                        var status = (int)response.StatusCode;
-                        var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
-                        if (json != null)
-                        {
-                            LookupAnswer answer;
-                            try
-                            {
-                                answer = parse(json);
-                            }
-                            catch (JsonException)
-                            {
-                                answer = LookupAnswer.Transient;
-                            }
-
-                            if (answer.Status != LookupStatus.Transient && answer.Verdict == ResponseVerdict.Valid)
-                            {
-                                return answer;
-                            }
-
-                            if (answer.Status != LookupStatus.Transient)
-                            {
-                                partial ??= answer; // used only if no later server answers in full
-                                _logger.Debug($"[Lists] Seerr lookup {apiPath} answered in part; asking the next server");
-                            }
-                            else
-                            {
-                                _logger.Debug($"[Lists] Seerr lookup {apiPath} answered something JE can't read");
-                            }
-
-                            continue;
-                        }
-
-                        // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown
-                        // season, but also a TMDB 429 or timeout). Seasons are only looked up when the show's details list
-                        // them, so a 500 there is retried (transient, never cached), not taken as a missing season.
-                        if (status == 404)
-                        {
-                            notFound++;
-                            continue;
-                        }
-
-                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
-                    }
-                    catch (Exception ex) when (ex is not OutOfMemoryException)
-                    {
-                        // Any failure of this server (also a handler's own exception) is that server's: the next is asked.
-                        _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {UpstreamDiagnostics.Code(ex)}");
-                    }
-                }
+                read = await SeerrFallback.ReadAsync<LookupAnswer>(urls, (baseUrl, i) => ReadAtAsync(baseUrl, i, apiKey, apiPath, context, parse, shared)).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return LookupAnswer.Transient; // every waiter left while the first request was still queued
             }
 
-            return partial ?? (notFound == urls.Length ? LookupAnswer.NotFound : LookupAnswer.Transient);
+            return read.State switch
+            {
+                FallbackState.Valid or FallbackState.Partial => read.Value,
+                FallbackState.NotFound => LookupAnswer.NotFound,
+                _ => LookupAnswer.Transient,
+            };
+        }
+
+        // One server's answer as the fallback table reads it.
+        private async Task<ServerAnswer<LookupAnswer>> ReadAtAsync(string baseUrl, int index, string apiKey, string apiPath, ImportCallContext context, Func<string, LookupAnswer> parse, SharedLookup shared)
+        {
+            IDisposable lease;
+            if (index == 0)
+            {
+                lease = await _limiter.AcquireAsync(context.Owner, context.Background, shared.Abandoned).ConfigureAwait(false);
+                if (!shared.TryAdmit())
+                {
+                    lease.Dispose();
+                    throw new OperationCanceledException();
+                }
+            }
+            else
+            {
+                lease = await _limiter.AcquireAsync(context.Owner, context.Background, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            using (lease)
+            {
+                context.CountCall();
+                var url = baseUrl + apiPath;
+                try
+                {
+                    using var timeout = new CancellationTokenSource(CallTimeout);
+                    var client = SeerrHttpHelper.CreateClient(_httpClientFactory);
+                    using var request = SeerrHttpHelper.BuildRequest(HttpMethod.Get, url, apiKey);
+                    using var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
+                    var status = (int)response.StatusCode;
+                    var (json, error) = await SeerrHttpHelper.ReadResponseAsync(response, url, timeout.Token).ConfigureAwait(false);
+                    if (json != null)
+                    {
+                        LookupAnswer answer;
+                        try
+                        {
+                            answer = parse(json);
+                        }
+                        catch (JsonException)
+                        {
+                            answer = LookupAnswer.Transient;
+                        }
+
+                        if (answer.Status == LookupStatus.Transient)
+                        {
+                            _logger.Debug($"[Lists] Seerr lookup {apiPath} answered something JE can't read");
+                            return new ServerAnswer<LookupAnswer>(ServerState.Malformed);
+                        }
+
+                        if (answer.Verdict != ResponseVerdict.Valid)
+                        {
+                            _logger.Debug($"[Lists] Seerr lookup {apiPath} answered in part; asking the next server");
+                            return new ServerAnswer<LookupAnswer>(ServerState.Partial, answer);
+                        }
+
+                        return new ServerAnswer<LookupAnswer>(ServerState.Valid, answer);
+                    }
+
+                    // Seerr's season route answers EVERY failure with 500 "Unable to retrieve season." (an unknown season, but
+                    // also a TMDB 429 or timeout). Seasons are only looked up when the show's details list them, so a 500
+                    // there is retried (transient, never cached), not taken as a missing season.
+                    if (status == 404)
+                    {
+                        return new ServerAnswer<LookupAnswer>(ServerState.NotFound);
+                    }
+
+                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {error?.Code} {status}");
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // Any failure of this server (also a handler's own exception) is that server's: the next is asked.
+                    _logger.Debug($"[Lists] Seerr lookup {apiPath} failed: {UpstreamDiagnostics.Code(ex)}");
+                }
+
+                return new ServerAnswer<LookupAnswer>(ServerState.Unavailable);
+            }
         }
 
         // One in-flight lookup shared by every caller asking for the same key, with a waiter count so that a lookup
@@ -636,14 +661,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (ResponseContract.SeerrSearch.Read(root).Verdict == ResponseVerdict.Malformed)
+            var page = ResponseContract.SeerrSearch.Validate(new AnswerRequest(Page: 1), root);
+            if (page.Verdict == ResponseVerdict.Malformed)
             {
                 return LookupAnswer.Transient;
             }
 
             var hits = new List<TitleHit>();
             var unusable = 0;
-            var verdict = ResponseVerdict.Valid;
+            var verdict = page.Verdict; // the page's own domain rules (review round 9)
             foreach (var result in root.GetProperty("results").EnumerateArray())
             {
                 switch (ReadRow(result, out var hit, out var rowVerdict))
@@ -669,19 +695,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         // Seerr's movie or TV details by their contract (ResponseContract.SeerrMovieDetails / SeerrTvDetails): Malformed is
         // transient; Partial details (an id or the season list unknown, or a field JE can't use: review round 8) are used,
         // never kept, and never prove an id absent or a season missing (review round 7, 4c2-R7-1/2). Typed values only.
-        private static LookupAnswer ParseDetails(string json, string mediaType)
+        // Review round 9 (4c2-R9-1): the details are those of the title asked for (its id), else Malformed (the next server).
+        private static LookupAnswer ParseDetails(string json, string mediaType, int tmdbId)
         {
             using var doc = JsonDocument.Parse(json);
-            var read = (mediaType == "movie" ? ResponseContract.SeerrMovieDetails : ResponseContract.SeerrTvDetails).Read(doc.RootElement);
+            var read = (mediaType == "movie" ? ResponseContract.SeerrMovieDetails : ResponseContract.SeerrTvDetails).Validate(new AnswerRequest(tmdbId, mediaType), doc.RootElement);
             return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : TypedTitles.Details(read, mediaType, camel: true);
         }
 
         // A season by its contract (ResponseContract.SeerrSeason): an episode row JE can't read makes it Malformed (an
         // episode missing from the list would be taken as "no such episode"); a row's unreadable display field, Partial.
-        private static LookupAnswer ParseSeason(string json, int season)
+        // Review round 9 (4c2-R9-2): every episode of the season (and show) asked for, each listed once.
+        private static LookupAnswer ParseSeason(string json, int show, int season)
         {
             using var doc = JsonDocument.Parse(json);
-            var read = ResponseContract.SeerrSeason.Read(doc.RootElement);
+            var read = ResponseContract.SeerrSeason.Validate(new AnswerRequest(Season: season, Show: show), doc.RootElement);
             return read.Verdict == ResponseVerdict.Malformed ? LookupAnswer.Transient : LookupAnswer.Ok(TypedTitles.Episodes(read, season, camel: true), read.Verdict);
         }
 
@@ -699,7 +727,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
                 return RowRead.Unusable;
             }
 
-            if (type is not ("movie" or "tv") || (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True))
+            // Review round 9 (4c2-R9-6): a closed allowlist; an unknown type is a row JE can't read, never a deliberate drop.
+            if (TitleTypes.Classify(type, TitleTypes.SeerrExcluded) is { } unkeyed)
+            {
+                return unkeyed;
+            }
+
+            if (element.TryGetProperty("adult", out var adult) && adult.ValueKind == JsonValueKind.True)
             {
                 return RowRead.Dropped;
             }

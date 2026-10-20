@@ -53,6 +53,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private readonly ConcurrentDictionary<string, MdblistCacheEntry> _cache = new();
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _inFlight = new();
+        // Review round 9: a failed lookup of a title that has a stored entry keeps that entry (never clears it) and isn't
+        // asked again before this time (the RetryTtl a failed entry would otherwise carry).
+        private readonly ConcurrentDictionary<string, DateTime> _retryUntil = new();
         private readonly object _saveLock = new();
         private volatile bool _dirty;
         private long _firstDirtyTicks;
@@ -106,7 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var key = CacheKey(mediaType, tmdbId);
 
-            if (_cache.TryGetValue(key, out var cached) && !IsExpired(cached))
+            if (_cache.TryGetValue(key, out var cached) && (!IsExpired(cached) || RetryLater(key)))
             {
                 return cached;
             }
@@ -115,12 +118,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (_cache.TryGetValue(key, out cached) && !IsExpired(cached))
+                if (_cache.TryGetValue(key, out cached) && (!IsExpired(cached) || RetryLater(key)))
                 {
                     return cached;
                 }
 
                 var fetched = await FetchFromMdblistAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                if (!fetched.Confirmed && cached != null)
+                {
+                    // Review round 9: a failed lookup (an error, or an answer that isn't the title's whole record) never
+                    // clears what is stored; it is asked again after the retry time.
+                    _retryUntil[key] = DateTime.UtcNow + RetryTtl;
+                    return cached;
+                }
+
+                _retryUntil.TryRemove(key, out _);
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
                 return fetched;
@@ -134,6 +146,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
         }
+
+        private bool RetryLater(string key) => _retryUntil.TryGetValue(key, out var until) && DateTime.UtcNow < until;
 
         private static bool IsExpired(MdblistCacheEntry entry)
         {
@@ -712,20 +726,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return null;
                 }
 
+                // Review round 9 (4c2-R9-3/4): every row is read by the record contract against the request. The batch (and so
+                // its confirmed misses) is admitted only when every row is one of the titles asked for, of the type asked for,
+                // and listed once: otherwise an id missing from it proves nothing (a row of another type or a repeated id stands
+                // where an asked title should be), so the batch fails and the chunk is retried next run. A row whose identity
+                // is sound but whose record isn't whole is that title's failed lookup: never confirmed, never a miss.
+                var asked = new HashSet<string>(tmdbIds.Select(id => id.Trim()), StringComparer.Ordinal);
                 var result = new Dictionary<string, MdblistCacheEntry>();
                 foreach (var itemEl in root.EnumerateArray())
                 {
-                    // The array item's own top-level "id" is an internal
-                    // MDBList id, not the tmdb id we requested by. Match
-                    // results back to our request via ids.tmdb instead, read
-                    // by the batch row contract (review round 8, 4c2-R8-3).
-                    var tmdbIdStr = BatchRowTmdbId(itemEl);
-                    if (tmdbIdStr == null)
+                    var record = CheckRecord(itemEl, mdblistType);
+                    if (record.Identity is not { } tmdbIdStr || !asked.Contains(tmdbIdStr) || result.ContainsKey(tmdbIdStr))
                     {
-                        // A row JE can't read may be any of the ids asked about: an id missing from this answer proves
-                        // nothing, so the batch is a failure (retried next run), not a list of confirmed misses.
-                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row without a usable TMDB id; the batch is retried");
+                        _logger.Warning($"[MDBList] Media batch response for {mediaType} had a row that isn't one of the {mdblistType}s asked for, once ({record.Reason ?? "unasked or repeated id"}); the batch is retried");
                         return null;
+                    }
+
+                    if (record.Reason != null)
+                    {
+                        _logger.Warning($"[MDBList] Media batch record for {mediaType}:{tmdbIdStr} isn't whole ({record.Reason}); that title is retried later");
+                        result[tmdbIdStr] = new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
+                        continue;
                     }
 
                     result[tmdbIdStr] = ParseMediaItem(itemEl, now);
@@ -758,9 +779,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var tmdbId in attemptedTmdbIds)
             {
                 var key = CacheKey(mediaType, tmdbId);
-                _cache[key] = results != null && results.TryGetValue(tmdbId, out var entry)
-                    ? entry
+                var entry = results != null && results.TryGetValue(tmdbId, out var answered)
+                    ? answered
                     : new MdblistCacheEntry { Found = false, Confirmed = true, FetchedAtUnixMs = now };
+                if (!entry.Confirmed && _cache.ContainsKey(key))
+                {
+                    continue; // review round 9: a title's failed record never clears what is stored
+                }
+
+                _cache[key] = entry;
             }
 
             ScheduleDebouncedSave();
@@ -797,6 +824,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id > 0 ? id.ToString(CultureInfo.InvariantCulture) : null;
         }
 
+        /// <summary>
+        /// THE record contract of an MDBList media answer (review round 9, D53 "MDBList records are whole"; single title and
+        /// batch rows alike), against the type asked for. Identity: an object whose <c>ids.tmdb</c> is a positive TMDB id
+        /// (<see cref="BatchRowTmdbId"/>) and whose declared <c>type</c> is the one asked for ("movie" or "show"). Body: the
+        /// <c>ratings</c> resource is a list (an explicit empty one is valid) of objects, each with a source name, and a value,
+        /// score (both 0–100), vote count (a whole number ≥ 0), link (text or a number) and Rotten Tomatoes flag (0 or 1) that
+        /// are each missing, null or within that domain; the top-level <c>score</c> is missing, null or 0–100; every
+        /// <c>ids</c> member is text, a number or null. MDBList's legitimate nulls stay valid.
+        /// </summary>
+        /// <param name="row">The record.</param>
+        /// <param name="mdblistType">The type asked for ("movie" or "show").</param>
+        /// <returns>The TMDB id when the identity is sound (else null), and why the record isn't whole (null: whole).</returns>
+        internal static (string? Identity, string? Reason) CheckRecord(JsonElement row, string mdblistType)
+        {
+            if (BatchRowTmdbId(row) is not { } tmdb)
+            {
+                return (null, "no usable ids.tmdb");
+            }
+
+            if (!row.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || !string.Equals(type.GetString(), mdblistType, StringComparison.Ordinal))
+            {
+                return (null, "not a " + mdblistType);
+            }
+
+            foreach (var id in row.GetProperty("ids").EnumerateObject())
+            {
+                if (id.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.Null))
+                {
+                    return (tmdb, "ids." + id.Name);
+                }
+            }
+
+            if (!InDomain(row, "score", 0, 100, whole: false))
+            {
+                return (tmdb, "score");
+            }
+
+            if (!row.TryGetProperty("ratings", out var ratings) || ratings.ValueKind != JsonValueKind.Array)
+            {
+                return (tmdb, "ratings");
+            }
+
+            foreach (var rating in ratings.EnumerateArray())
+            {
+                if (rating.ValueKind != JsonValueKind.Object || !rating.TryGetProperty("source", out var source) || source.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(source.GetString()))
+                {
+                    return (tmdb, "ratings[].source");
+                }
+
+                if (!InDomain(rating, "value", 0, 100, whole: false) || !InDomain(rating, "score", 0, 100, whole: false)
+                    || !InDomain(rating, "votes", 0, int.MaxValue, whole: true) || !InDomain(rating, "fresh", 0, 1, whole: true))
+                {
+                    return (tmdb, "ratings[" + source.GetString() + "] value");
+                }
+
+                if (rating.TryGetProperty("url", out var url) && url.ValueKind is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.Null))
+                {
+                    return (tmdb, "ratings[].url");
+                }
+            }
+
+            return (tmdb, null);
+        }
+
+        // A field that is missing, null, or a number within [min, max] (a whole one when asked).
+        private static bool InDomain(JsonElement element, string name, double min, double max, bool whole)
+        {
+            if (!element.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null)
+            {
+                return true;
+            }
+
+            return value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) && double.IsFinite(number) && number >= min && number <= max
+                && (!whole || (number == Math.Floor(number) && value.TryGetInt32(out _)));
+        }
+
         private MdblistCacheEntry ParseResponse(JsonDocument doc, long fetchedAtUnixMs, string mediaType, string tmdbId)
         {
             var root = doc.RootElement;
@@ -807,12 +911,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return new MdblistCacheEntry { Found = false, Confirmed = true, FetchedAtUnixMs = fetchedAtUnixMs };
             }
 
-            // Review round 8 (D53: only a complete answer is kept): the answer is the title's when it passes the batch row
-            // contract AND is the title asked about; anything else (`{}`, no ids, another title) is a failed lookup, retried
-            // after the short RetryTtl, never 7 days of "found, no ratings".
-            if (BatchRowTmdbId(root) is not { } answered || !string.Equals(answered, tmdbId.Trim(), StringComparison.Ordinal))
+            // Review rounds 8 and 9 (D53: only a whole answer to the request is kept): the answer is the title's whole record
+            // by the record contract (CheckRecord: the title and type asked for, the ratings resource whole and within its
+            // domain); anything else (`{}`, no ids, another title or type, no ratings list, a rating that isn't one) is a
+            // failed lookup, retried after the short RetryTtl, never 7 days of "found".
+            var record = CheckRecord(root, mediaType == "tv" ? "show" : "movie");
+            if (record.Identity is not { } answered || !string.Equals(answered, tmdbId.Trim(), StringComparison.Ordinal) || record.Reason != null)
             {
-                _logger.Warning($"[MDBList] Ratings answer for {mediaType}:{tmdbId} wasn't that title's; retried later");
+                _logger.Warning($"[MDBList] Ratings answer for {mediaType}:{tmdbId} wasn't that title's whole record ({record.Reason ?? "another title"}); retried later");
                 return new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = fetchedAtUnixMs };
             }
 
