@@ -262,22 +262,47 @@
         return { persisted: copyDocument(read ? record[fileName] : undefined), readOk: read };
     };
 
+    /**
+     * The one way a document becomes what this session holds as persisted. Every change source goes through it (a read, a
+     * save's answer, another route's write this page acknowledges, a boot read), and so does every queued operation's
+     * revision step (queueOperation): the revision moves on with each, so a read that began before any of them is not
+     * taken over it (readUserSettings, noteSettingsRead).
+     * @param {object} state Document state.
+     * @param {object} document The document as held from now on.
+     * @param {boolean} [readOk=true] Whether it is the server's document (false: a boot read could not read it).
+     */
+    const takeDocument = (state, document, readOk = true) => {
+        state.persisted = document;
+        state.readOk = readOk;
+        state.revision++;
+    };
+
     /** Get the active session's sole state for a file. Object replacement is just a new view. */
     const settingsDocument = fileName => {
         const now = currentIdentity();
         if (identity !== now) { clearDocuments(); identity = now; }
         let state = documents.get(fileName);
         if (state && state.userConfig !== JE.userConfig && !state.pending.length) {
-            // A new userConfig object in the same session (the boot read replacing its placeholder): it holds the document now.
-            Object.assign(state, bootDocument(fileName), { userConfig: JE.userConfig });
-            state.shown = copyDocument(state.persisted);
+            // A new userConfig object in the same session (the boot read replacing its placeholder). Its document is taken
+            // only if nothing newer was: when only boot reads gave this state its document. Otherwise (a read, an answer or
+            // an acknowledged write since) the boot read may have begun before it, so the store keeps what it holds and
+            // the new object shows that.
+            state.userConfig = JE.userConfig;
+            if (state.revision === state.bootRevision) {
+                const { persisted, readOk } = bootDocument(fileName);
+                takeDocument(state, persisted, readOk);
+                state.bootRevision = state.revision;
+                state.shown = copyDocument(state.persisted);
+            } else {
+                publishDocument(state, state.persisted, 'settled');
+            }
         }
         if (!state) {
             // readOk: whether this session holds the document as the server last handed it out (the boot read or a later
             // read). Until then nothing is written to it: a read comes first.
             const { persisted, readOk } = bootDocument(fileName);
             state = { fileName, identity, userConfig: JE.userConfig, persisted, shown: copyDocument(persisted), pending: [], readOk,
-                recovery: undefined, revision: 0, readRevision: 0, chain: Promise.resolve(), observers: new Map(),
+                recovery: undefined, revision: 0, bootRevision: 0, readRevision: 0, chain: Promise.resolve(), observers: new Map(),
                 effectWarnings: new Set(), mirroredLanguage: undefined };
             documents.set(fileName, state);
         }
@@ -548,26 +573,37 @@
             url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${fileName}?_=${Date.now()}`), dataType: 'json' });
         if (!isActiveDocument(state)) return false;
         const previousPersisted = state.persisted;
+        // Taken only if nothing changed the document since this read began (no operation queued or answered, no write
+        // acknowledged, no other read taken) and no newer read began: otherwise it may hold less than this page does.
         if (response && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision) {
-            state.persisted = holdDocument(fileName, response);
-            state.readOk = true;
+            takeDocument(state, holdDocument(fileName, response));
         }
         publishDocument(state, previousPersisted, 'read');
         return true;
     };
 
     /**
+     * The document's revision now: a caller that reads a per-user document outside readUserSettings takes it before its
+     * request and reports the answer with it (noteSettingsRead).
+     * @param {string} fileName Per-user document.
+     * @returns {number}
+     */
+    JE.internals.userDocumentRevision = fileName => settingsDocument(fileName).revision;
+
+    /**
      * A per-user document read outside readUserSettings is reported here: it becomes the store's document (no write waits
-     * for another read of it). Ignored while operations on it are pending.
+     * for another read of it). Ignored while operations on it are pending, and when the document changed since the read
+     * began (the revision the caller took before its request, userDocumentRevision, has moved on).
      * @param {string} fileName Settings document that was read.
      * @param {object} document The document as read.
+     * @param {number} revision userDocumentRevision(fileName) as it was when the read began.
      */
-    JE.internals.noteSettingsRead = (fileName, document) => {
+    JE.internals.noteSettingsRead = (fileName, document, revision) => {
         const state = settingsDocument(fileName);
-        if (state.pending.length || !document || typeof document !== 'object') return;
-        state.persisted = holdDocument(fileName, document);
-        state.readOk = true;
-        publishDocument(state, state.persisted, 'read');
+        if (state.pending.length || !document || typeof document !== 'object' || revision !== state.revision) return;
+        const previousPersisted = state.persisted;
+        takeDocument(state, holdDocument(fileName, document));
+        publishDocument(state, previousPersisted, 'read');
     };
 
     /**
@@ -580,7 +616,8 @@
         const state = settingsDocument(fileName);
         if (!state.readOk || !kindOf(fileName)) return;
         const previousPersisted = state.persisted;
-        state.persisted = applyOperation(fileName, previousPersisted, copyDocument(operation));
+        // A change source like a save's answer: the revision moves on, so a read that began before it is not taken.
+        takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)));
         publishDocument(state, previousPersisted, 'saved');
     };
 
@@ -675,7 +712,7 @@
                 const index = state.pending.indexOf(entry);
                 if (index !== -1) state.pending.splice(index, 1);
                 const previousPersisted = state.persisted;
-                if (succeeded) state.persisted = persistedAfter(state, entry, previousPersisted);
+                if (succeeded) takeDocument(state, persistedAfter(state, entry, previousPersisted));
                 publishDocument(state, previousPersisted, succeeded ? 'saved' : 'failed', entry);
             }
         } catch (error) {

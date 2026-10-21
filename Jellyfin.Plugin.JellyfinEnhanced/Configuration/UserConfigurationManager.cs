@@ -286,12 +286,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// them whoever saves (<see cref="KeepPersonalConsents"/>), the display language is a supported tag or Auto
         /// (<see cref="LanguageTags.Sanitize"/>), and the file is written when anything differs.
         /// </summary>
-        /// <returns>Whether the file was written, and what changed ("Name: old → new").</returns>
-        public (bool Saved, IReadOnlyList<string> Changes) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings)
+        /// <remarks>
+        /// Fenced like every whole-document write (<see cref="ReplaceUserDocument{T}"/>): written only when
+        /// <paramref name="expectedRevision"/> is the stored document's revision, or without one when nothing can be lost
+        /// (no settings stored yet, or the same settings).
+        /// </remarks>
+        /// <returns>The outcome, what changed ("Name: old → new") and the stored settings' revision afterwards.</returns>
+        public (DocumentWrite Outcome, IReadOnlyList<string> Changes, string Revision) SaveUserSettings(string userId, JellyfinEnhancedUserSettings settings, string? expectedRevision = null)
         {
             lock (UserSettingsLock(userId))
             {
+                var exists = UserConfigurationExists(userId, SettingsFileName);
                 var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
+                var current = DocumentRevision(existing);
                 KeepPersonalConsents(settings, existing);
                 // A display language JE stores is a tag of a shipped bundle, else Auto: never "undefined", "null", a malformed
                 // value or a language without a bundle the client would mirror into Jellyfin's shared language key (dashcrash
@@ -302,7 +309,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var newJson = System.Text.Json.JsonSerializer.Serialize(settings);
                 if (existingJson == newJson)
                 {
-                    return (false, Array.Empty<string>());
+                    return (DocumentWrite.Unchanged, Array.Empty<string>(), current);
+                }
+
+                if (expectedRevision == null ? exists : !SameRevision(expectedRevision, current))
+                {
+                    return (DocumentWrite.Conflict, Array.Empty<string>(), current);
                 }
 
                 var changes = new List<string>();
@@ -317,7 +329,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 SaveUserConfiguration(userId, SettingsFileName, settings);
-                return (true, changes);
+                return (DocumentWrite.Saved, changes, DocumentRevision(GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName)));
             }
         }
 
@@ -647,6 +659,69 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     SaveUserConfiguration(userId, fileName, config);
                 }
                 return changed;
+            }
+        }
+
+        /// <summary>
+        /// The revision of a per-user document: a hash of the document as read (its typed form). The read routes hand it out
+        /// (ETag) and a whole-document write sends it back (If-Match), so the server can tell whether the document it holds
+        /// is still the one the writer read.
+        /// </summary>
+        public static string DocumentRevision(object? document)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(document, document?.GetType() ?? typeof(object));
+            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json));
+            return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// A revision a writer sent (an If-Match value: quoted or not, weak or not) is the given one. "*" and an empty value
+        /// name no revision.
+        /// </summary>
+        public static bool SameRevision(string? sent, string current)
+        {
+            var value = (sent ?? string.Empty).Trim();
+            if (value.StartsWith("W/", StringComparison.Ordinal)) value = value.Substring(2);
+            value = value.Trim().Trim('"');
+            return value.Length > 0 && value != "*" && string.Equals(value, current, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>The outcome of a whole-document write (<see cref="ReplaceUserDocument{T}"/>).</summary>
+        public enum DocumentWrite
+        {
+            /// <summary>The document was written.</summary>
+            Saved,
+
+            /// <summary>The document sent is the one stored: nothing to write.</summary>
+            Unchanged,
+
+            /// <summary>Not written: the stored document isn't the one the writer read (or it sent no revision).</summary>
+            Conflict,
+        }
+
+        /// <summary>
+        /// The one gate of a write that replaces a per-user document whole. Under the file's lock, the document is written only
+        /// when the writer sent the revision of the document stored now (<paramref name="expectedRevision"/>), so a writer that
+        /// read an older document (another tab or device changed it since) can't put that back. A write without a revision
+        /// goes ahead only where it can't lose anything: no document is stored yet, or it is the document stored. Otherwise
+        /// nothing is written (<see cref="DocumentWrite.Conflict"/>). <paramref name="prepare"/> applies the route's own rules
+        /// to the document sent, given the stored one, before the comparison.
+        /// </summary>
+        /// <returns>The outcome, the stored document's revision afterwards and the document stored afterwards.</returns>
+        public (DocumentWrite Outcome, string Revision, T Stored) ReplaceUserDocument<T>(string userId, string fileName, T document, string? expectedRevision, Action<T, T>? prepare = null) where T : class, new()
+        {
+            lock (GetUserFileLock(userId, fileName))
+            {
+                var exists = UserConfigurationExists(userId, fileName);
+                // Strict: a corrupt stored document is never replaced (it is backed up and the caller is told).
+                var stored = GetUserConfigurationStrict<T>(userId, fileName);
+                var current = DocumentRevision(stored);
+                prepare?.Invoke(document, stored);
+                if (DocumentRevision(document) == current) return (DocumentWrite.Unchanged, current, stored);
+                if (expectedRevision == null ? exists : !SameRevision(expectedRevision, current)) return (DocumentWrite.Conflict, current, stored);
+                SaveUserConfiguration(userId, fileName, document);
+                var saved = GetUserConfigurationStrict<T>(userId, fileName);
+                return (DocumentWrite.Saved, DocumentRevision(saved), saved);
             }
         }
 

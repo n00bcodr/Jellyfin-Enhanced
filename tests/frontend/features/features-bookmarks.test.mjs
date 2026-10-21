@@ -329,8 +329,9 @@ test('a repeated delete of the same bookmark reports nothing to delete rather th
   assert.equal(saves.calls.length,1);
   // Cleanup counts a record that vanished before its delete (b, removed while gone-2 was
   // checked) as neither removed nor an error.
-  // Removed elsewhere: a read of another tab's removal reaches the store (the one source).
-  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')h.JE.internals.noteSettingsRead('bookmark.json',{bookmarks:{c:{itemId:'gone-2'}}});throw new Error('404');};
+  // Removed elsewhere: a read of another tab's removal reaches the store (the one source). It reports the revision it began
+  // with (round 9: a read that began before a later change is not taken).
+  h.window.ApiClient.getItem=async(user,id)=>{if(id==='gone-2')h.JE.internals.noteSettingsRead('bookmark.json',{bookmarks:{c:{itemId:'gone-2'}}},h.JE.internals.userDocumentRevision('bookmark.json'));throw new Error('404');};
   const cleanup=h.api.cleanupOrphaned();
   (await saves.next(2)).resolve();
   assert.deepEqual(plain(await cleanup),{cleaned:1,errors:0});

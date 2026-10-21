@@ -17,6 +17,12 @@
     const tmdbToJellyfin = new Map();
 
     let userPrefs = {};
+    // The override saves not answered yet, in order (each a { Set } of preferences), the chain they go out on (one at a
+    // time, so a change made back while one is out reaches the server after it), and the preferences' revision: every
+    // change source (a save queued or answered) moves it on, so a state read that began before one doesn't take its Prefs.
+    let pendingPrefs = [];
+    let prefsChain = Promise.resolve();
+    let prefsRevision = 0;
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -38,6 +44,7 @@
         // The page-load bootstrap carries this user's state (same body as the
         // endpoint); it is handed out once, so later loads ask the server.
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
+        const readRevision = prefsRevision;
         statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
             .then(function stateRead(data) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
@@ -51,7 +58,8 @@
                 Object.keys(value.Movies || {}).forEach(key => enabledMovies.add(internal.normalizeId(key)));
                 Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
                 Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
-                userPrefs = value.Prefs || {};
+                // The Prefs only if no override save was queued or answered since this read began (it may hold less).
+                if (readRevision === prefsRevision && !pendingPrefs.length) userPrefs = value.Prefs || {};
                 loaded = true;
                 loadOk = true;
                 // If tag renderers already ran fail-closed while this request was
@@ -233,24 +241,43 @@
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
+    /** The preferences as the server will hold them once the override saves still out are answered. */
+    function expectedPrefs() {
+        return Object.assign({}, userPrefs, ...pendingPrefs);
+    }
+
     // userPrefs is the preferences as the server last handed them out (the state read, or a save's answer). A save sends
-    // only the preferences that differ from it, and the server applies them to what it holds then, so a preference another
-    // tab or device changed meanwhile stays.
+    // only the preferences that differ from what the server will hold once the saves still out are answered (userPrefs +
+    // those saves), one save at a time, and the server applies them to what it holds then, so a preference another tab or
+    // device changed meanwhile stays, and a preference changed back while its save is out is sent too.
     internal.setUserPrefs = function(next) {
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const expected = expectedPrefs();
         const set = {};
         for (const [key, value] of Object.entries(next || {})) {
-            if (JSON.stringify(value) !== JSON.stringify(userPrefs[key])) set[key] = value;
+            if (JSON.stringify(value) !== JSON.stringify(expected[key])) set[key] = value;
         }
         if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
-        return request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true })
+        // Sent at once when no other save is out, else after the last one is answered.
+        const idle = pendingPrefs.length === 0;
+        pendingPrefs.push(set);
+        prefsRevision++;
+        const queue = pendingPrefs;
+        const settled = () => { const i = queue.indexOf(set); if (i !== -1) queue.splice(i, 1); };
+        const send = () => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true });
+        const save = idle ? new Promise(resolve => resolve(send())) : prefsChain.then(send);
+        prefsChain = save.catch(() => {});
+        return save
             .then(function acknowledged(response) {
+                settled();
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
+                prefsRevision++;
                 notifyPolicyChanged();
                 return Object.assign({}, userPrefs);
             })
             .catch(function(err) {
+                settled();
                 console.error(`${logPrefix} setUserPrefs failed:`, err);
                 throw err;
             });
@@ -270,5 +297,9 @@
         enabledPendingTmdb.clear();
         tmdbToJellyfin.clear();
         userPrefs = {};
+        // The previous person's saves are not this person's: their answers are dropped (epoch), and nothing waits on them.
+        pendingPrefs = [];
+        prefsChain = Promise.resolve();
+        prefsRevision++;
     });
 })(window.JellyfinEnhanced);

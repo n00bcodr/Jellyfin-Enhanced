@@ -169,7 +169,7 @@ Use add/remove for individual bookmarks. Use the document routes to read or repl
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | GET | `user-settings/{userId}/bookmark.json` | Own/admin | No body → bookmark document; missing/unreadable file gives `{"Bookmarks":{}}`. |
-| POST | `user-settings/{userId}/bookmark.json` | Own/admin | Complete document → `{"success":true,"file":"bookmark.json"}`. |
+| POST | `user-settings/{userId}/bookmark.json` | Own/admin | Complete document, with the GET's `ETag` in `If-Match` (see [Revisions](#per-user-settings-files)) → `{"success":true,"file":"bookmark.json"}`; stale → `409 revision_conflict`. |
 | POST | `user-settings/{userId}/bookmark.json/add` | Own/admin | One entry, excluding timestamps → `{"success":true,"id":"Bm_…"}`. |
 | DELETE | `user-settings/{userId}/bookmark.json/{bookmarkId}` | Own/admin | Bookmark dictionary key → `{"success":true,"removed":true}`. |
 
@@ -368,6 +368,8 @@ Use these routes to read or replace a user's saved preferences and state. They p
 
 All use own/admin authorization. GETs are `no-store`; POST replaces the complete document and normally returns `{"success":true,"file":"<filename>"}`. These routes are not an arbitrary file service.
 
+**Revisions.** Every GET of a document answers its revision in the `ETag` header. A POST that replaces a document whole must send that revision back in `If-Match`: the server replaces the document only while it is still that revision (checked under the document's lock), so a client that read an older document (another tab, device or client changed it since) can't put it back. A POST without `If-Match` goes ahead only where nothing can be lost: no document is stored yet, or it sends the document as stored. Otherwise nothing is written and the answer is `409 {"success":false,"code":"revision_conflict","file":"…","revision":"<current>","message":"…"}` (the current revision also in `ETag`): read the document again and make the change to what it holds now. A successful POST answers the new revision in `ETag`. To change part of a document, use its PATCH route (no revision needed: only what it names changes).
+
 | Method | Path | Document |
 |---|---|---|
 | GET | `user-settings/{userId}/settings.json` | Enhanced settings |
@@ -403,8 +405,12 @@ It maintains pending-promotion registrations. Its GET is lenient and can return 
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
   "$JE_URL/user-settings/$USER_ID/settings.json"
 
+# Replace Elsewhere preferences whole: send the ETag the GET answered.
+REV=$(curl -s -D - -o /dev/null -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+  "$JE_URL/user-settings/$USER_ID/elsewhere.json" | awk -F': ' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
 curl -X POST "$JE_URL/user-settings/$USER_ID/elsewhere.json" \
   -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+  -H "If-Match: $REV" \
   -H 'Content-Type: application/json' \
   --data '{"Region":"US","Regions":["US"],"Services":[],"SeasonProviders":true}'
 ```
@@ -913,7 +919,7 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 |---|---|---|---|
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
-| POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
+| POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB, with the GET's `ETag` in `If-Match` (see [Revisions](#per-user-settings-files)) → `{success:true,prefs:<submitted preferences>}`; a stale or missing revision where preferences are stored → `409 revision_conflict`. |
 | PATCH | `spoiler-blur/user-prefs` | Caller | `{"Set":{"HideTags":false}}`: only the named preferences change, under the file lock (another tab's or device's choice stays) → `{success:true,prefs:<stored preferences>}`. The web client uses only this route. |
 
 The four dictionaries default to `{}` and use case-insensitive keys. Library keys are N-format GUIDs. Pending keys are `movie:<tmdbId>` or `tv:<tmdbId>`.
@@ -957,9 +963,9 @@ Preference write failures return `503` for corruption or `500` for other failure
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/spoiler-blur/series"
-curl -X POST "$JE_URL/spoiler-blur/user-prefs" \
+curl -X PATCH "$JE_URL/spoiler-blur/user-prefs" \
   -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
-  -H 'Content-Type: application/json' --data '{"HideReviews":false}'
+  -H 'Content-Type: application/json' --data '{"Set":{"HideReviews":false}}'
 ```
 
 ### Enable, disable, and pending protection

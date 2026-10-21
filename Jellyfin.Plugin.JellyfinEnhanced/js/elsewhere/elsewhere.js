@@ -322,6 +322,14 @@
             // changed against it, so a setting changed in another tab or device meanwhile stays. It moves on only when a save
             // of the dialog is answered; after a failed one the person's choice still differs and the next save sends it.
             const dialogShown = { Region: userRegion, Regions: userRegions.slice(), Services: userServices.slice(), SeasonProviders: userSeasonProviders };
+            // The dialog's saves not answered yet, in order: what the server will hold once they are is what a save compares
+            // with (a choice changed back while one is out is sent too, after it).
+            const inFlight = [];
+            /** A setting as the server will hold it once the dialog's saves still out are answered. */
+            function expected(key) {
+                for (let i = inFlight.length - 1; i >= 0; i--) if (Object.hasOwn(inFlight[i], key)) return inFlight[i][key];
+                return dialogShown[key];
+            }
             /** A save of the dialog was answered: what it sent is what the dialog shows as saved. */
             function acknowledged(sent) {
                 for (const key of Object.keys(sent)) dialogShown[key] = JSON.parse(JSON.stringify(sent[key]));
@@ -459,11 +467,14 @@
                 };
                 const set = {};
                 for (const key of Object.keys(elsewhereSettings)) {
-                    if (JSON.stringify(elsewhereSettings[key]) !== JSON.stringify(dialogShown[key])) set[key] = elsewhereSettings[key];
+                    if (JSON.stringify(elsewhereSettings[key]) !== JSON.stringify(expected(key))) set[key] = elsewhereSettings[key];
                 }
                 if (!Object.keys(set).length) return;
+                const sent = JSON.parse(JSON.stringify(set));
+                inFlight.push(sent);
+                const settled = () => { const i = inFlight.indexOf(sent); if (i !== -1) inFlight.splice(i, 1); };
                 JE.patchUserSettings('elsewhere.json', { set }, { throwOnError: true })
-                    .then(() => acknowledged(set), () => { /* the store logs it and shows the stored values again */ });
+                    .then(() => { settled(); acknowledged(sent); }, () => { settled(); /* the store logs it and shows the stored values again */ });
             };
 
             // Close on backdrop click

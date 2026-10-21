@@ -5010,7 +5010,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null) return authorizationResult;
 
-            return Ok(_userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+            var triggers = _userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json");
+            AnswerRevision(UserConfigurationManager.DocumentRevision(triggers));
+            return Ok(triggers);
         }
 
         [HttpPost("user-settings/{userId}/ddd-triggers.json")]
@@ -5023,7 +5025,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "ddd-triggers.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "ddd-triggers.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 return Ok(new { success = true, file = "ddd-triggers.json" });
             }
             catch (Exception ex)
@@ -5220,6 +5223,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new FileStreamResult(stream, contentType);
         }
 
+        // ---- Whole-document writes of per-user documents (the POST routes kept for older pages and API clients) ----
+        // Every read route hands out the document's revision (ETag) and every whole-document write sends back the one it read
+        // (If-Match): the document is replaced only while it is still that revision, under its file lock
+        // (UserConfigurationManager.ReplaceUserDocument). A write without one goes ahead only where nothing can be lost;
+        // otherwise nothing is written and the writer is told (409 revision_conflict, with the current revision).
+
+        /// <summary>The revision the writer read (If-Match), or null when it sent none.</summary>
+        private string? RequestedRevision()
+        {
+            var value = Request?.Headers.IfMatch.ToString();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+
+        /// <summary>Hands out a per-user document's revision with the answer (ETag).</summary>
+        private void AnswerRevision(string revision)
+        {
+            if (Response != null) Response.Headers.ETag = "\"" + revision + "\"";
+        }
+
+        /// <summary>A whole-document write refused because the stored document isn't the one the writer read.</summary>
+        private IActionResult RevisionConflict(string fileName, string revision)
+        {
+            AnswerRevision(revision);
+            return StatusCode(409, new
+            {
+                success = false,
+                code = "revision_conflict",
+                file = fileName,
+                revision,
+                message = $"{fileName} has changed since it was read, so it was not replaced. Read it again and make the change to what it holds now.",
+            });
+        }
+
+        /// <summary>
+        /// Replaces a per-user document whole through the revision gate. Null when it is stored (or already was); otherwise
+        /// the answer (no document, or a conflict).
+        /// </summary>
+        private IActionResult? FencedReplace<T>(string authorizedUserId, string fileName, T? document, out UserConfigurationManager.DocumentWrite outcome, Action<T, T>? prepare = null) where T : class, new()
+        {
+            outcome = UserConfigurationManager.DocumentWrite.Unchanged;
+            if (document == null) return BadRequest(new { success = false, message = $"A {fileName} document is required." });
+            var (written, revision, _) = _userConfigurationManager.ReplaceUserDocument(authorizedUserId, fileName, document, RequestedRevision(), prepare);
+            outcome = written;
+            if (written == UserConfigurationManager.DocumentWrite.Conflict)
+            {
+                _logger.Info($"Refused a stale {fileName} for {ResolveUserDisplay(authorizedUserId)} (its revision isn't the stored one).");
+                return RevisionConflict(fileName, revision);
+            }
+
+            AnswerRevision(revision);
+            return null;
+        }
+
         private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
         {
             authorizedUserId = string.Empty;
@@ -5409,7 +5465,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserSettingsDocument(authorizedUserId));
+            var settings = LoadUserSettings(authorizedUserId);
+            // The revision of the settings as stored (before the read's own presentation below).
+            AnswerRevision(UserConfigurationManager.DocumentRevision(settings));
+            return Ok(SettingsDocument(settings));
         }
 
         /// <summary>
@@ -5417,7 +5476,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// with the caller's IsAdmin flag applied. Shared by the settings.json
         /// endpoint and /bootstrap so both return exactly the same shape.
         /// </summary>
-        private object LoadUserSettingsDocument(string authorizedUserId)
+        private object LoadUserSettingsDocument(string authorizedUserId) => SettingsDocument(LoadUserSettings(authorizedUserId));
+
+        /// <summary>The user's settings.json as stored (seeding defaults on first access).</summary>
+        private JellyfinEnhancedUserSettings LoadUserSettings(string authorizedUserId)
         {
             // Populate defaults from plugin configuration if missing
             if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
@@ -5436,7 +5498,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            return SettingsDocument(_userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json"));
+            return _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
         }
 
         /// <summary>A settings.json document as the settings routes hand it out (gated display language, the caller's IsAdmin).</summary>
@@ -5473,6 +5535,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
+            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
             return Ok(userConfig);
         }
 
@@ -5488,6 +5551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json");
+            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
             return Ok(userConfig);
         }
 
@@ -5507,8 +5571,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4: the person's consents are their own and change only through the consent operation below. This
                 // save replaces the whole file (the person's own or an administrator's) and keeps every consent as stored.
                 // Read, kept, compared and saved under the person's settings lock.
-                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration);
-                if (saved && changes.Count > 0)
+                if (userConfiguration == null) return BadRequest(new { success = false, message = "A settings.json document is required." });
+                // Replaced only as a change of the revision the writer read (If-Match), like every whole-document write.
+                var (outcome, changes, revision) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, RequestedRevision());
+                if (outcome == UserConfigurationManager.DocumentWrite.Conflict)
+                {
+                    _logger.Info($"Refused a stale settings.json for {ResolveUserDisplay(authorizedUserId)} (its revision isn't the stored one).");
+                    return RevisionConflict("settings.json", revision);
+                }
+
+                AnswerRevision(revision);
+                if (outcome == UserConfigurationManager.DocumentWrite.Saved && changes.Count > 0)
                 {
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
@@ -5772,7 +5845,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "shortcuts.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
@@ -5796,6 +5870,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json");
+            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
             return Ok(userConfig);
         }
 
@@ -5812,7 +5887,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "bookmark.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "bookmark.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved enhanced bookmarks for {ResolveUserDisplay(authorizedUserId)} to bookmark.json");
                 return Ok(new { success = true, file = "bookmark.json" });
             }
@@ -5940,7 +6016,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "elsewhere.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "elsewhere.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved user elsewhere settings for {ResolveUserDisplay(authorizedUserId)} to elsewhere.json");
                 return Ok(new { success = true, file = "elsewhere.json" });
             }
@@ -5963,7 +6040,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            var hidden = LoadUserHiddenContentDocument(authorizedUserId);
+            AnswerRevision(UserConfigurationManager.DocumentRevision(hidden));
+            return Ok(hidden);
         }
 
         /// <summary>
@@ -6040,28 +6119,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                try
                 {
-                    // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
-                    try
-                    {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
-                            authorizedUserId, "hidden-content.json");
-                    }
-                    catch (Exception strictEx) when (strictEx is InvalidDataException
-                                                  || strictEx is Newtonsoft.Json.JsonException)
-                    {
-                        _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
-                        return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
-                    }
-                    catch (IOException ioEx)
-                    {
-                        _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
-                        return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
-                    }
-
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                    // Under the file lock: a strict read first (a corrupt existing file 503s + backs up instead of being
+                    // overwritten), then the revision gate (an older tab's document never replaces a newer one).
+                    var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome);
+                    if (refused != null) return refused;
+                    if (outcome == UserConfigurationManager.DocumentWrite.Unchanged) return Ok(new { success = true, file = "hidden-content.json" });
                 }
+                catch (Exception strictEx) when (strictEx is InvalidDataException
+                                              || strictEx is Newtonsoft.Json.JsonException)
+                {
+                    _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                    return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                    return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+                }
+
                 Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json" });
@@ -6181,6 +6258,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // backups and corruption reporting.
             var state = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
                 authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
+            AnswerRevision(UserConfigurationManager.DocumentRevision(state));
             return Ok(state);
         }
 
@@ -6239,28 +6317,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                try
                 {
-                    // Pre-write strict read so a corrupt existing file 503s + backs up
-                    // instead of being silently overwritten (same as hidden-content).
-                    try
-                    {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
-                            authorizedUserId, fileName);
-                    }
-                    catch (Exception strictEx) when (strictEx is InvalidDataException
-                                                  || strictEx is Newtonsoft.Json.JsonException)
-                    {
-                        _logger.Warning($"{fileName} corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
-                        return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
-                    }
-                    catch (IOException ioEx)
-                    {
-                        _logger.Warning($"{fileName} temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
-                        return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
-                    }
-
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, fileName, userConfiguration);
+                    // Under the file lock: a strict read first (a corrupt existing file 503s + backs up instead of being
+                    // silently overwritten, as for hidden-content), then the revision gate (an older tab's document never
+                    // replaces a newer one).
+                    var refused = FencedReplace(authorizedUserId, fileName, userConfiguration, out _);
+                    if (refused != null) return refused;
+                }
+                catch (Exception strictEx) when (strictEx is InvalidDataException
+                                              || strictEx is Newtonsoft.Json.JsonException)
+                {
+                    _logger.Warning($"{fileName} corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                    return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.Warning($"{fileName} temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                    return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
                 }
 
                 // Reconcile the promoter's fast-path gate with the new PendingTmdb
@@ -6813,13 +6887,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
             {
-                return Ok(new SpoilerBlurUserPrefs());
+                var none = new SpoilerBlurUserPrefs();
+                AnswerRevision(UserConfigurationManager.DocumentRevision(none));
+                return Ok(none);
             }
             try
             {
                 var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                     userKey, fileName);
-                return Ok(state.Prefs ?? new SpoilerBlurUserPrefs());
+                var prefs = state.Prefs ?? new SpoilerBlurUserPrefs();
+                AnswerRevision(UserConfigurationManager.DocumentRevision(prefs));
+                return Ok(prefs);
             }
             catch (InvalidDataException strictEx)
             {
@@ -6897,10 +6975,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
+                // The preferences are replaced whole only as a change of the revision the writer read (If-Match), under the
+                // file lock; without one only where nothing can be lost (no file yet, or the same preferences).
+                var expected = RequestedRevision();
+                var outcome = UserConfigurationManager.DocumentWrite.Unchanged;
+                var revision = string.Empty;
                 _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
                     userKey, fileName, state =>
                 {
-                    state.Prefs = new SpoilerBlurUserPrefs
+                    var current = UserConfigurationManager.DocumentRevision(state.Prefs ?? new SpoilerBlurUserPrefs());
+                    var next = new SpoilerBlurUserPrefs
                     {
                         HideSeriesDescriptions = body.HideSeriesDescriptions,
                         HideEpisodeDescriptions = body.HideEpisodeDescriptions,
@@ -6916,8 +7000,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
+                    revision = current;
+                    if (UserConfigurationManager.DocumentRevision(next) == current) return 0;
+                    if (expected == null
+                        ? _userConfigurationManager.UserConfigurationExists(userKey, fileName)
+                        : !UserConfigurationManager.SameRevision(expected, current))
+                    {
+                        outcome = UserConfigurationManager.DocumentWrite.Conflict;
+                        return 0;
+                    }
+
+                    state.Prefs = next;
+                    outcome = UserConfigurationManager.DocumentWrite.Saved;
+                    revision = UserConfigurationManager.DocumentRevision(next);
                     return 1;
                 });
+                if (outcome == UserConfigurationManager.DocumentWrite.Conflict)
+                {
+                    _logger.Info($"Refused stale Spoiler Guard preferences for {ResolveUserDisplay(userKey)} (their revision isn't the stored one).");
+                    return RevisionConflict("spoiler-blur/user-prefs", revision);
+                }
+
+                AnswerRevision(revision);
                 return Ok(new { success = true, prefs = body });
             }
             catch (InvalidDataException strictEx)

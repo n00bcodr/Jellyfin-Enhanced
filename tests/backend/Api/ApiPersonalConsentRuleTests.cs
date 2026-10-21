@@ -57,9 +57,9 @@ public class ApiPersonalConsentRuleTests
         foreach (var c in Consents) Set(sent, c, before[c] == null ? true : before[c] == true ? false : null);
         var answer = writer switch
         {
-            "self-save" => Controller(f, person, admin: false).SaveUserSettingsSettings(person.ToString("N"), sent),
-            "admin-own-save" => Controller(f, person, admin: true).SaveUserSettingsSettings(person.ToString("N"), sent),
-            "admin-save" => Controller(f, Guid.NewGuid(), admin: true).SaveUserSettingsSettings(person.ToString("N"), sent),
+            "self-save" => Controller(f, person, admin: false).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), sent),
+            "admin-own-save" => Controller(f, person, admin: true).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), sent),
+            "admin-save" => Controller(f, Guid.NewGuid(), admin: true).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), sent),
             _ => Controller(f, Guid.NewGuid(), admin: true).ResetAllUsersSettings(),
         };
 

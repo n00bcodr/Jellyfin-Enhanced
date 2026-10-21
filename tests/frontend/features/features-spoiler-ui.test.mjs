@@ -130,5 +130,6 @@ test('spoiler settings seek-preview row reflects and saves the per-user opt-out'
   box.checked = true;
   box.dispatchEvent(new h.window.Event('change'));
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.deepEqual(saved, [{ HideTrickplay: null, HideReviews: null }]);
+  // Only the override changed here is sent (stage 1 fix round 9): the others are as the server holds them.
+  assert.deepEqual(JSON.parse(JSON.stringify(saved)), [{ HideTrickplay: null }]);
 });

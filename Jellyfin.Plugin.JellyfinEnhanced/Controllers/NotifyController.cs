@@ -256,29 +256,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
             if (request.QuietFrom != null && !QuietHours.TryTime(request.QuietFrom, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.QuietTo != null && !QuietHours.TryTime(request.QuietTo, out _)) return BadRequest(new { code = "invalid_time" });
             if (request.TimeZone != null && (request.TimeZone.Length > 64 || request.TimeZone.Any(ch => !(char.IsLetterOrDigit(ch) || ch is '/' or '_' or '-' or '+')))) return BadRequest(new { code = "invalid_time_zone" });
-            if (request.Email == true && string.IsNullOrEmpty(prefs.EmailAddress)) return BadRequest(new { code = "email_not_verified" });
-            if (request.Ntfy == true && !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) return BadRequest(new { code = "ntfy_topic_missing" });
-            prefs.Toasts = request.Toasts ?? prefs.Toasts;
-            prefs.Ready = request.Ready ?? prefs.Ready;
-            prefs.Episodes = request.Episodes ?? prefs.Episodes;
-            prefs.Declined = request.Declined ?? prefs.Declined;
-            prefs.Approved = request.Approved ?? prefs.Approved;
-            prefs.AdminAlerts = request.AdminAlerts ?? prefs.AdminAlerts;
-            prefs.AutoFollowRequests = request.AutoFollowRequests ?? prefs.AutoFollowRequests;
-            prefs.Ntfy = request.Ntfy ?? prefs.Ntfy;
-            prefs.Email = request.Email ?? prefs.Email;
-            prefs.HideTitles = request.HideTitles ?? prefs.HideTitles;
-            prefs.QuietHours = request.QuietHours ?? prefs.QuietHours;
-            prefs.QuietFrom = request.QuietFrom ?? prefs.QuietFrom;
-            prefs.QuietTo = request.QuietTo ?? prefs.QuietTo;
-            if (request.TimeZone != null) prefs.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
-            if (request.UtcOffsetMinutes.HasValue) prefs.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
-            Store.SavePrefs(user, prefs, Now());
-            return Ok(PrefsBody(user));
+            IActionResult? refused = null;
+            // Only the fields sent change, applied to the preferences stored at that moment (under the user's lock).
+            Store.UpdatePrefs(user, prefs =>
+            {
+                if (request.Email == true && string.IsNullOrEmpty(prefs.EmailAddress)) { refused = BadRequest(new { code = "email_not_verified" }); return false; }
+                if (request.Ntfy == true && !NotifyEndpoints.IsTopic(prefs.NtfyTopic)) { refused = BadRequest(new { code = "ntfy_topic_missing" }); return false; }
+                prefs.Toasts = request.Toasts ?? prefs.Toasts;
+                prefs.Ready = request.Ready ?? prefs.Ready;
+                prefs.Episodes = request.Episodes ?? prefs.Episodes;
+                prefs.Declined = request.Declined ?? prefs.Declined;
+                prefs.Approved = request.Approved ?? prefs.Approved;
+                prefs.AdminAlerts = request.AdminAlerts ?? prefs.AdminAlerts;
+                prefs.AutoFollowRequests = request.AutoFollowRequests ?? prefs.AutoFollowRequests;
+                prefs.Ntfy = request.Ntfy ?? prefs.Ntfy;
+                prefs.Email = request.Email ?? prefs.Email;
+                prefs.HideTitles = request.HideTitles ?? prefs.HideTitles;
+                prefs.QuietHours = request.QuietHours ?? prefs.QuietHours;
+                prefs.QuietFrom = request.QuietFrom ?? prefs.QuietFrom;
+                prefs.QuietTo = request.QuietTo ?? prefs.QuietTo;
+                if (request.TimeZone != null) prefs.TimeZone = request.TimeZone.Length == 0 ? null : request.TimeZone;
+                if (request.UtcOffsetMinutes.HasValue) prefs.UtcOffsetMinutes = Math.Clamp(request.UtcOffsetMinutes.Value, -14 * 60, 14 * 60);
+                return true;
+            }, Now());
+            return refused ?? Ok(PrefsBody(user));
         }
 
         /// <summary>Sets (or makes up, or clears) the caller's ntfy topic on the administrator's server.</summary>
@@ -290,24 +294,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Gate() is { } denied) return denied;
             if (request == null) return BadRequest(new { code = "invalid_request" });
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            if (request.Generate)
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            Store.UpdatePrefs(user, prefs =>
             {
-                prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            }
-            else if (string.IsNullOrEmpty(request.Topic))
-            {
-                prefs.NtfyTopic = null;
-                prefs.Ntfy = false;
-            }
-            else
-            {
-                if (!NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
-                prefs.NtfyTopic = request.Topic;
-            }
-            prefs.NtfyTopicByAdmin = false;
-            if (prefs.NtfyTopic != null && request.Generate) prefs.Ntfy = true;
-            Store.SavePrefs(user, prefs, Now());
+                if (request.Generate)
+                {
+                    prefs.NtfyTopic = NotifyEndpoints.NewTopic();
+                }
+                else if (string.IsNullOrEmpty(request.Topic))
+                {
+                    prefs.NtfyTopic = null;
+                    prefs.Ntfy = false;
+                }
+                else
+                {
+                    prefs.NtfyTopic = request.Topic;
+                }
+                prefs.NtfyTopicByAdmin = false;
+                if (prefs.NtfyTopic != null && request.Generate) prefs.Ntfy = true;
+                return true;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -359,10 +365,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "wrong_code" });
             }
             Store.ClearEmailCode(user);
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = address;
-            prefs.Email = true;
-            Store.SavePrefs(user, prefs, now);
+            Store.UpdatePrefs(user, prefs =>
+            {
+                prefs.EmailAddress = address;
+                prefs.Email = true;
+                return true;
+            }, now);
             return Ok(PrefsBody(user));
         }
 
@@ -373,10 +381,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             if (Gate() is { } denied) return denied;
             var user = UserId()!.Value;
-            var prefs = Store.Prefs(user);
-            prefs.EmailAddress = null;
-            prefs.Email = false;
-            Store.SavePrefs(user, prefs, Now());
+            Store.UpdatePrefs(user, prefs =>
+            {
+                prefs.EmailAddress = null;
+                prefs.Email = false;
+                return true;
+            }, Now());
             return Ok(PrefsBody(user));
         }
 
@@ -520,14 +530,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!Store.Available) return StatusCode(503, new { code = "database_unavailable" });
             if (!Guid.TryParse(userId, out var target) || !_users.Exists(target)) return NotFound(new { code = "user_not_found" });
             if (request == null) return BadRequest(new { code = "invalid_request" });
-            var prefs = Store.Prefs(target);
-            if (request.Generate) prefs.NtfyTopic = NotifyEndpoints.NewTopic();
-            else if (string.IsNullOrEmpty(request.Topic)) prefs.NtfyTopic = null;
-            else if (NotifyEndpoints.IsTopic(request.Topic)) prefs.NtfyTopic = request.Topic;
-            else return BadRequest(new { code = "invalid_topic" });
-            prefs.NtfyTopicByAdmin = prefs.NtfyTopic != null;
-            prefs.Ntfy = prefs.NtfyTopic != null;
-            Store.SavePrefs(target, prefs, Now());
+            if (!request.Generate && !string.IsNullOrEmpty(request.Topic) && !NotifyEndpoints.IsTopic(request.Topic)) return BadRequest(new { code = "invalid_topic" });
+            var prefs = Store.UpdatePrefs(target, stored =>
+            {
+                if (request.Generate) stored.NtfyTopic = NotifyEndpoints.NewTopic();
+                else if (string.IsNullOrEmpty(request.Topic)) stored.NtfyTopic = null;
+                else stored.NtfyTopic = request.Topic;
+                stored.NtfyTopicByAdmin = stored.NtfyTopic != null;
+                stored.Ntfy = stored.NtfyTopic != null;
+                return true;
+            }, Now());
             return Ok(new { id = NotifyValues.Id(target), topic = prefs.NtfyTopic, ntfy = prefs.Ntfy });
         }
 

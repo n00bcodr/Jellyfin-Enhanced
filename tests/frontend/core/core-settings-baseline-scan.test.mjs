@@ -67,6 +67,8 @@ function baselineViolations(source, rules) {
         || (ancestors.at(-2)?.type === 'AssignmentExpression' && memberPath(ancestors.at(-2).left) === 'state'))) { target = `state.${node.key.name}`; value = node.value; }
     // What the store takes as a document's boot read: the object bootDocument hands back.
     else if (node.type === 'ObjectProperty' && node.key.name === 'persisted' && enclosingName(ancestors).name === 'bootDocument') { target = 'boot.persisted'; value = node.value; }
+    // Round 9: a document handed to the store's one taking helper.
+    else if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'takeDocument') { target = 'takeDocument()'; value = node.arguments[1]; }
     else return;
     for (const rule of rules) {
       if (!rule.target(target)) continue;
@@ -119,6 +121,14 @@ const STORE_RULES = [{
   allowed: {
     // The boot read's record (plugin.js), never the page's object as modules changed it.
     settingsDocument: fromBootRecord,
+    // Round 9: the one helper every change source takes a document through (it moves the revision on); what each caller
+    // hands it is checked below (takeDocument calls) and by core-settings-revision-scan.
+    takeDocument: ok
+  }
+}, {
+  target: path => path === 'takeDocument()',
+  allowed: {
+    settingsDocument: fromBootRecord,
     readUserSettings: insideIf(test => JSON.stringify(test).includes('"response"')),
     noteSettingsRead: ok,
     acknowledgeUserDocumentChange: ok,
@@ -167,7 +177,7 @@ const PLANTS = [
   ['store: a whole-document caller\'s object as the baseline', 'enhanced/config.js', STORE_RULES,
     "const before = fileName === 'settings.json' ? resolveSettings(state.shown) : state.shown;", 'state.persisted = copyDocument(settings);'],
   ['store: an answer applied before its success', 'enhanced/config.js', STORE_RULES,
-    'const previousPersisted = state.persisted;\n                if (succeeded)', 'state.persisted = persistedAfter(state, entry, previousPersisted);'],
+    'const previousPersisted = state.persisted;\n                if (succeeded)', 'takeDocument(state, persistedAfter(state, entry, previousPersisted));'],
   ['store: the page\'s object as the boot document (the R8-1 shape)', 'enhanced/config.js', STORE_RULES,
     'const bootDocument = fileName => {', 'const own = JE.userConfig?.[kindOf(fileName)?.view]; if (own) return { persisted: copyDocument(own), readOk: true };'],
   ['store: the page\'s object written into a document\'s state', 'enhanced/config.js', STORE_RULES,

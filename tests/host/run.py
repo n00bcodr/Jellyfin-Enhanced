@@ -340,8 +340,16 @@ def run(target, artifacts, browser=False):
             setting_key = next(key for key in saved if key.lower() == "autopauseenabled")
             restricted_route = f"{prefix}/user-settings/{restricted['User']['Id']}/settings.json"
             restricted_before = host.request(restricted_route, token=restricted["AccessToken"])
+            whole = dict(saved)
+            whole[setting_key] = not saved[setting_key]
+            # A whole document sent without the revision it was read at is refused once one is stored (409
+            # revision_conflict), so an older tab can't put back what changed since; a change is an operation.
+            host.check("whole save without its revision refused",
+                       lambda: host.request(route, "POST", whole, regular["AccessToken"], expected=409))
             saved[setting_key] = not saved[setting_key]
-            host.check("save own preferences", lambda: host.request(route, "POST", saved, regular["AccessToken"]))
+            field = setting_key[0].upper() + setting_key[1:]
+            host.check("save own preferences",
+                       lambda: host.request(route, "PATCH", {"Set": {field: saved[setting_key]}}, regular["AccessToken"]))
             def persisted():
                 actual = host.request(route, token=regular["AccessToken"])
                 assert actual[setting_key] == saved[setting_key]

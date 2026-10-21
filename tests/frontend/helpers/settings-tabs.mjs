@@ -18,7 +18,20 @@ const canonicalId = id => String(id || '').replace(/-/g, '').toLowerCase();
  * `spoilerPrefs`: the person's Spoiler Guard preferences (spoilerblur.json Prefs).
  */
 export function settingsServer(documents) {
-  const server = { documents: structuredClone(documents), writes: [], failGets: new Set(), failWrites: new Set(), spoilerPrefs: {} };
+  const server = { documents: structuredClone(documents), writes: [], failGets: new Set(), failWrites: new Set(), spoilerPrefs: {}, holds: [] };
+  /**
+   * Holds the next request of `type` (GET, PATCH, POST) to `file` ('spoiler-prefs', 'spoiler-state' for Spoiler Guard)
+   * until `release()`: the server reads or applies it only then, so it answers what it holds at that moment.
+   */
+  server.hold = (file, type) => {
+    let release;
+    let arrived;
+    const gate = { file, type, released: new Promise(r => { release = r; }), reached: new Promise(r => { arrived = r; }) };
+    gate.arrived = arrived;
+    gate.release = () => release();
+    server.holds.push(gate);
+    return gate;
+  };
   server.apply = (file, type, body) => {
     const key = FILES[file];
     const doc = server.documents[key] || (server.documents[key] = {});
@@ -79,6 +92,18 @@ export function settingsServer(documents) {
 /** The server's route for one browser tab (undefined: not a per-user document route). */
 export function route(server, request) {
   const path = new URL(request.url).pathname;
+  const target = path.endsWith('/spoiler-blur/user-prefs') ? 'spoiler-prefs' : /\/user-settings\/user-a\/(.+)$/.exec(path)?.[1];
+  const type = request.type || 'GET';
+  const held = target ? server.holds.findIndex(gate => gate.file === target && gate.type === type) : -1;
+  if (held >= 0) {
+    const [gate] = server.holds.splice(held, 1);
+    gate.arrived(request);
+    // A held read is taken when it reaches the server and answered late; a held write is applied when released.
+    if (type !== 'GET') return gate.released.then(() => route(server, request));
+    let answer, error;
+    try { answer = route(server, request); } catch (e) { error = e; }
+    return gate.released.then(() => { if (error) throw error; return answer; });
+  }
   if (path.endsWith('/spoiler-blur/user-prefs')) {
     server.writes.push({ file: 'spoiler-prefs', type: request.type, body: JSON.parse(request.data) });
     if (server.failWrites.has('spoiler-prefs')) throw Object.assign(new Error('write failed'), { status: 500 });

@@ -116,7 +116,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return result;
         });
 
-        /// <summary>Stores a user's preferences.</summary>
+        // Every change of a user's preferences is read, made and stored under the user's lock (UpdatePrefs): two at once (a
+        // switch and a topic, an e-mail verified meanwhile) each keep what the other stored.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, object> PrefsLocks = new();
+
+        /// <summary>
+        /// Changes a user's preferences as one step: reads them, applies <paramref name="change"/> and stores them when it
+        /// returns true, all under the user's lock.
+        /// </summary>
+        /// <returns>The preferences as stored afterwards.</returns>
+        public NotifyPrefs UpdatePrefs(Guid userId, Func<NotifyPrefs, bool> change, DateTimeOffset now)
+        {
+            lock (PrefsLocks.GetOrAdd(userId, _ => new object()))
+            {
+                var prefs = Prefs(userId);
+                if (change(prefs)) SavePrefs(userId, prefs, now);
+                return prefs;
+            }
+        }
+
+        /// <summary>Stores a user's preferences (whole: a change goes through <see cref="UpdatePrefs"/>).</summary>
         public void SavePrefs(Guid userId, NotifyPrefs prefs, DateTimeOffset now) => Write((c, t) => Exec(
             c, t,
             "INSERT INTO notify_prefs(user_id,json,updated_at) VALUES($u,$j,$n) ON CONFLICT(user_id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
