@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred,jsonResponse} from '../helpers/harness.mjs';
+import {hiddenContentStore} from '../helpers/hidden-store.mjs';
 const tick=()=>new Promise(r=>setImmediate(r));
 /** Polls a bounded number of macrotasks; core retry sleeps run as zero-delay timers here. */
 async function until(predicate,label='condition'){for(let i=0;i<400;i++){if(predicate())return;await tick();}assert.fail(`timed out waiting for ${label}`);}
@@ -23,7 +24,7 @@ function sgSetup(t){
    if(method==='GET')return gets==='up'?jsonResponse(server):jsonResponse({error:'unavailable'},503);
    if(writes!==200)return jsonResponse({error:'unavailable'},writes);
    const id=decodeURIComponent(url.split('/').pop().split('?')[0]);
-   if(url.includes('/user-prefs'))server.Prefs=JSON.parse(o.body);
+   if(url.includes('/user-prefs')){const b=JSON.parse(o.body);if(method==='PATCH')Object.assign(server.Prefs,b.Set||{});else server.Prefs=b;}
    else if(url.includes('/pending/')){
     const type=url.split('/pending/')[1].split('/')[0],key=`${type}:${id}`;
     if(method==='DELETE'){delete server.PendingTmdb[key];delete server.ProviderTitles[`${type}:tmdb:${id}`];server[type==='movie'?'Movies':'Series']={};}
@@ -54,7 +55,7 @@ function filterSetup(t,items,reply){
   JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},userConfig:{hiddenContent:{items,settings:{showButtonLibrary:true}}},
    session:{getEpoch:()=>1,isCurrent:()=>true,onUserChange(){},userScopedKey:k=>k}}});
  t.after(()=>h.close());h.load('enhanced/hiddencontent/hidden-content-data.js');
- const api=h.JE.internals.hiddenContent;Object.assign(api,{refreshNativeCardVisibility(){},restoreNativeCardsForIds(){},debouncedSave(){}});api.resetFromUserConfig();
+ const api=h.JE.internals.hiddenContent;Object.assign(api,{refreshNativeCardVisibility(){},persist:hiddenContentStore(h).persist});api.resetFromUserConfig();
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  const settle=async()=>{for(let i=0;i<4;i++){await tick();await new Promise(r=>h.window.requestAnimationFrame(r));}};
  const later=ms=>{const now=h.window.Date.now;h.window.Date.now=()=>now()+ms;};

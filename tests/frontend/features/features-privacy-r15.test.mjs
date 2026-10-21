@@ -5,6 +5,7 @@ import test, {describe} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHarness} from '../helpers/harness.mjs';
+import {hiddenContentStore} from '../helpers/hidden-store.mjs';
 
 const MARK='data-je-hidden-checked';
 const tick=()=>new Promise(r=>setImmediate(r));
@@ -36,7 +37,7 @@ function rig(t,{rules,node,settings={}}){
    settings:{showHideConfirmation:false,showButtonLibrary:true,...settings}}}}});
  t.after(()=>h.close());
  for(const m of ['core/navigation.js','core/session.js','core/session-action.js','enhanced/hiddencontent/hidden-content-data.js'])h.load(m);
- const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
+ const api=h.JE.internals.hiddenContent;api.persist=hiddenContentStore(h).persist;api.resetFromUserConfig();
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  api.debouncedSave=()=>{};
  h.document.body.innerHTML=NODES[node];

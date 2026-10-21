@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
+import { hiddenContentStore } from '../helpers/hidden-store.mjs';
 
 // D46 slice 2 r6 (play prep finding PLAYR18-F1): More sheet → Hide on a LIBRARY movie, series or episode. The details
 // page's Hide button reads the item first, then asks; before r6 its confirmation resolved its operation after that await
@@ -30,7 +31,9 @@ function setup(t, kind) {
   h.JE.core.api.plugin = async () => ({ allowed: true, itemId: null });
   h.load('enhanced/hiddencontent/hidden-content-data.js');
   const api = h.JE.internals.hiddenContent;
-  Object.assign(api, { refreshNativeCardVisibility() {}, restoreNativeCardsForIds() {}, debouncedSave() { writes.push({ save: true }); }, showUndoToast() {} });
+  // A hide is saved through the settings store (the joined tree's persist: one PATCH of the person's document).
+  const store = hiddenContentStore(h, () => writes.push({ save: true }));
+  Object.assign(api, { refreshNativeCardVisibility() {}, persist: store.persist, showUndoToast() {} });
   api.resetFromUserConfig();
   h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
   h.JE.hiddenContent = { ...api, confirmAndHide: api.confirmAndHide, hideItem: api.hideItem, unhideItem: api.unhideItem };

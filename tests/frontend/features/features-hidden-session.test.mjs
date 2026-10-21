@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness, deferred} from '../helpers/harness.mjs';
+import {hiddenContentStore} from '../helpers/hidden-store.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const click = {preventDefault(){}, stopPropagation(){}};
@@ -13,7 +14,7 @@ function setup(t, items = {}) {
   t.after(()=>h.close());
   h.load('enhanced/hiddencontent/hidden-content-data.js');
   const api = h.JE.internals.hiddenContent;
-  Object.assign(api,{refreshNativeCardVisibility(){},restoreNativeCardsForIds(){},debouncedSave(){writes.push({bulk:true});}});
+  Object.assign(api,{refreshNativeCardVisibility(){},persist:hiddenContentStore(h,()=>writes.push({bulk:true})).persist});
   api.resetFromUserConfig();
   h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
   return {...h,get NATIVE(){return h.NATIVE;},api,writes,setIdentityWithoutEvent(){user='viewer-b';},switchUser(mode='both'){
@@ -157,14 +158,24 @@ for(const kind of ['Movie','Series']) test(`ID-only ${kind} cards recognize prov
   h.api.addLibraryHideButtons();await tick();assert.equal(reads.length,1,'repaints settle');
 });
 
-test('a deferred save rejects a changed identity even before the session detector runs',async t=>{
-  const h=setup(t),timers=[];
-  h.window.setTimeout=(fn,ms)=>{timers.push({fn,ms});return timers.length;};
-  h.load('enhanced/hiddencontent/hidden-content-save.js');
+// Ported (the join replaced D46's 500 ms debounced save with the settings store's session-bound PATCH queue): a change
+// queued before the signed-in person changes, without the change's event, is never sent as anyone.
+test('a queued save rejects a changed identity even before the session detector runs',async t=>{
+  const h=setup(t);
+  // The real save path: hidden-content-save.js's persist through the settings store (config.js) and its queue.
+  h.load('core/mutation-queue.js');h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-save.js');
   h.api.hideItem({itemId:'copy',name:'Private title'});
   h.setIdentityWithoutEvent();
-  const save=timers.find(timer=>timer.ms===500);assert.ok(save);await save.fn();await tick();
-  assert.equal(h.writes.length,0);
+  for(let i=0;i<20;i++)await tick();
+  assert.equal(h.writes.filter(o=>o.type!=='GET').length,0);
+});
+
+test('control: the same queued save goes out while the person is unchanged',async t=>{
+  const h=setup(t);
+  h.load('core/mutation-queue.js');h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-save.js');
+  h.api.hideItem({itemId:'copy',name:'Private title'});
+  for(let i=0;i<20;i++)await tick();
+  assert.equal(h.writes.filter(o=>o.type==='PATCH').length,1);
 });
 
 for(const kind of ['Movie','Series']) test(`cached ${kind} cards filter by provider without a Hide control`,async t=>{

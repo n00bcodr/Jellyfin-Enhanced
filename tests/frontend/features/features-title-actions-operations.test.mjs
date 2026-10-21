@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, deferred } from '../helpers/harness.mjs';
+import {hiddenContentStore} from '../helpers/hidden-store.mjs';
 
 // D46 slice 2 review round 2: two owners. The OFFER (the sheet or row that showed a choice) decides whether a
 // press counts; dismissing it first cancels. The OPERATION a person submitted is owned by the session, the route
@@ -52,7 +53,7 @@ function setup(t, { html, extra = {}, url = 'http://jellyfin.test/web/index.html
   // The real owners: Hide (data + its confirmation), the Spoiler Guard toggle and its dialog, Report.
   h.load('enhanced/hiddencontent/hidden-content-data.js');
   const hidden = h.JE.internals.hiddenContent;
-  Object.assign(hidden, { refreshNativeCardVisibility() {}, restoreNativeCardsForIds() {}, debouncedSave() {} });
+  Object.assign(hidden, { refreshNativeCardVisibility() {}, persist: hiddenContentStore(h).persist });
   hidden.resetFromUserConfig();
   h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
   h.JE.hiddenContent = hidden;

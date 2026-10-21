@@ -3,6 +3,7 @@
 import test, {describe} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness} from '../helpers/harness.mjs';
+import {hiddenContentStore} from '../helpers/hidden-store.mjs';
 
 const MARK='data-je-hidden-checked';
 const tick=()=>new Promise(r=>setImmediate(r));
@@ -39,7 +40,8 @@ function rig(t,{rules,type,tmdb,failFirst},{rows=false}={}){
   JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},userConfig:{hiddenContent:{items:structuredClone(rules),settings:{}}}}});
  t.after(()=>h.close());
  for(const m of ['core/navigation.js','core/session.js','core/session-action.js','enhanced/hiddencontent/hidden-content-data.js'])h.load(m);
- const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
+ // Saves leave through the settings store (the joined tree's persist), which publishes the person's document.
+ const api=h.JE.internals.hiddenContent;api.persist=hiddenContentStore(h).persist;api.resetFromUserConfig();
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  api.debouncedSave=()=>{};
  h.JE.helpers={onViewPage:h.JE.core.navigation.onViewPage};api.setupNativeObserver();
