@@ -11528,7 +11528,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }).ToList();
 
                     var enrichedRequests = await Task.WhenAll(enrichmentTasks);
-                    var hiddenRequests = Services.HiddenContentPolicy.Load(_userConfigurationManager, requestViewer!.Id, HttpContext, _libraryManager);
+                    // The caller's own rules, by the id the request carries (a caller Jellyfin doesn't resolve has no
+                    // document: nothing hidden, never a failed list).
+                    var hiddenRequests = Services.HiddenContentPolicy.Load(_userConfigurationManager, requestViewerId, HttpContext, _libraryManager);
                     enrichedRequests = enrichedRequests.Where(r => !hiddenRequests.IsHidden(
                         Services.HiddenContentPolicy.TitleIdentity(r.type, r.tmdbId.ToString()), r.jellyfinMediaId, null, "requests")).ToArray();
 
