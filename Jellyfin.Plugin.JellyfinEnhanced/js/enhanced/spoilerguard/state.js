@@ -27,6 +27,15 @@
     let stale = false;
     // Changes made from this tab (each bumps it): a read that ran across one doesn't replace what it changed.
     let localEdits = 0;
+    // The read of the state running now (null when none is).
+    let reading = null;
+    // How many reads a change of the whole preferences waits for at most before it gives up (see whenCurrent).
+    const CURRENT_READS = 3;
+
+    /** @returns {number} The sign-in's session epoch now. */
+    function sessionEpoch() {
+        return JE.session ? JE.session.getEpoch() : 0;
+    }
 
     /** @returns {string|null} The document revision known now. */
     function knownRevision() {
@@ -127,6 +136,9 @@
                 }
             });
         statePromise = promise;
+        reading = promise;
+        const settled = () => { if (reading === promise) reading = null; };
+        promise.then(settled, settled);
         return promise;
     };
 
@@ -147,6 +159,40 @@
             return Promise.resolve();
         }
         return statePromise || internal.loadState();
+    };
+
+    /**
+     * The state as of the document known to be current, for a change that sends a whole object read from it (the
+     * preferences): waits for a read running now, and reads again while a newer document is known, a few reads at
+     * most. Throws when the current state can't be read or the sign-in changed meanwhile (nothing is saved then).
+     * @returns {Promise<void>}
+     */
+    internal.whenCurrent = async function() {
+        const epoch = sessionEpoch();
+        for (let attempt = 0; attempt < CURRENT_READS; attempt++) {
+            if (reading) await reading;
+            else if (!loaded || stale || knownRevision() !== loadedRevision) await internal.loadState();
+            if (JE.session && !JE.session.isCurrent(epoch)) throw new Error('The sign-in changed before the save');
+            if (loaded && loadOk && !stale && !reading && knownRevision() === loadedRevision) return;
+        }
+        throw new Error('The current Spoiler Guard state could not be read');
+    };
+
+    /**
+     * Changes one preference: waits for the current document (whenCurrent), puts this one change on its preferences
+     * and saves them, for the sign-in it was asked under only. Preferences another tab or device changed stay theirs.
+     * @param {string} key The preference.
+     * @param {any} value Its new value.
+     * @returns {Promise<any>} The preferences as saved.
+     */
+    internal.updateUserPref = async function(key, value) {
+        const epoch = sessionEpoch();
+        await internal.whenCurrent();
+        if (!loadOk) throw new Error('Spoiler Guard state not loaded; refusing to overwrite preferences.');
+        if (JE.session && !JE.session.isCurrent(epoch)) throw new Error('The sign-in changed before the save');
+        const prefs = internal.getUserPrefs();
+        prefs[key] = value;
+        return internal.setUserPrefs(prefs);
     };
 
     internal.isStateLoaded = function() { return loaded; };
@@ -325,6 +371,7 @@
     // user's state instead of serving the previous user's.
     JE.session?.onUserChange('spoilerguard-state', () => {
         statePromise = null;
+        reading = null;
         loaded = false;
         loadOk = false;
         loadedRevision = null;

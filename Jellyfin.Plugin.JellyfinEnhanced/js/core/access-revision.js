@@ -18,8 +18,14 @@
 // mirror reads it again (another tab or device saved it). The first revision a person's tab sees is the
 // baseline (nothing is announced for it). A user switch starts over (session.js resets per-user caches).
 //
-// Public surface: JE.core.revision { access(), document(name), current(), noteResponse(response),
-// noteRevision(text), probe(reason) }.
+// Observations are ordered: a read takes an observation (begin(): the sign-in's session epoch and a number that only
+// grows) BEFORE it is sent, and its answer's revision is taken only while that sign-in is current and nothing asked for
+// later has been taken yet. An answer asked for before a newer one, or before a sign-in, is superseded: it can't roll
+// the tab back (the digests are opaque, so they are never compared for order). A revision handed in without an
+// observation (the tests, a value known to be current) is taken as observed now.
+//
+// Public surface: JE.core.revision { access(), document(name), current(), begin(), isCurrent(observation),
+// accessOf(response), noteResponse(response, observation), noteRevision(text, observation?), probe(reason) }.
 (function(JE) {
     'use strict';
 
@@ -40,6 +46,33 @@
     let lastProbeAt = 0;
     // A probe that started before a user switch says nothing about the new person.
     let probeEpoch = 0;
+    // Observations handed out (begin) and the newest one whose revision was taken.
+    let issued = 0;
+    let taken = 0;
+
+    /** @typedef {{epoch: number, order: number}} Observation */
+
+    /** @returns {number} The sign-in's session epoch now. */
+    const sessionEpoch = () => (JE.session ? JE.session.getEpoch() : 0);
+
+    /**
+     * An observation for a read about to be sent: take it BEFORE the request goes out (each retry takes its own).
+     * @returns {Observation}
+     */
+    function begin() {
+        return { epoch: sessionEpoch(), order: ++issued };
+    }
+
+    /**
+     * Whether an answer to a read that took this observation may still be taken: the same sign-in, and nothing asked
+     * for after it has been taken already.
+     * @param {Observation|null|undefined} observation
+     * @returns {boolean}
+     */
+    function isCurrent(observation) {
+        if (!observation || typeof observation.order !== 'number') return false;
+        return observation.epoch === sessionEpoch() && observation.order > taken;
+    }
 
     /**
      * Parse `a=…;hc=…;sg=…`.
@@ -74,13 +107,18 @@
     }
 
     /**
-     * Take a revision the server sent (a header value or the bootstrap's Revision). Moves are announced.
+     * Take a revision the server sent (a header value or the bootstrap's Revision), observed by `observation` (taken
+     * before its read was sent; none: observed now). A superseded one is refused. Moves are announced.
      * @param {string|null|undefined} text
-     * @returns {boolean} True when it was a revision.
+     * @param {Observation} [observation]
+     * @returns {boolean} True when it was a revision and was taken.
      */
-    function noteRevision(text) {
+    function noteRevision(text, observation) {
         const parsed = parse(text || '');
         if (!parsed) return false;
+        const seen = observation === undefined ? begin() : observation;
+        if (!isCurrent(seen)) return false;
+        taken = seen.order;
         for (const [name, revision] of Object.entries(parsed.documents)) {
             const before = documents[name];
             if (before === revision) continue;
@@ -96,14 +134,31 @@
     }
 
     /**
-     * Take the revision an answer of JE's API carried (any Response-like object with headers.get).
+     * Take the revision an answer of JE's API carried (any Response-like object with headers.get), observed by the
+     * observation its read took before it was sent (begin()). An answer without one is never taken.
      * @param {any} response
+     * @param {Observation|null|undefined} observation
+     * @returns {boolean} True when its revision was taken.
      */
-    function noteResponse(response) {
+    function noteResponse(response, observation) {
         try {
             const value = response?.headers?.get?.(HEADER);
-            if (value) noteRevision(value);
+            if (value && observation) return noteRevision(value, observation);
         } catch (_) { /* a response without readable headers carries nothing */ }
+        return false;
+    }
+
+    /**
+     * The access part of the revision an answer carried (what it was worked out for), or null when it carries none.
+     * @param {any} response
+     * @returns {string|null}
+     */
+    function accessOf(response) {
+        try {
+            return parse(response?.headers?.get?.(HEADER) || '')?.access ?? null;
+        } catch (_) {
+            return null;
+        }
     }
 
     /**
@@ -119,19 +174,20 @@
         const now = Date.now();
         if (!force && now - lastProbeAt < PROBE_GAP_MS) return Promise.resolve(access);
         lastProbeAt = now;
-        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const epoch = sessionEpoch();
         probeEpoch = epoch;
+        const observation = begin();
         probing = (async () => {
             try {
                 const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/revision'), {
                     headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
                     cache: 'no-store'
                 });
-                if (JE.session && !JE.session.isCurrent(epoch)) return access;
+                if (!isCurrent(observation)) return access;
                 if (!response.ok) return access;
-                noteResponse(response);
+                if (noteResponse(response, observation)) return access;
                 const body = await response.json().catch(() => null);
-                if (body && typeof body.revision === 'string' && (!JE.session || JE.session.isCurrent(epoch))) noteRevision(body.revision);
+                if (body && typeof body.revision === 'string') noteRevision(body.revision, observation);
             } catch (err) {
                 console.debug(`${logPrefix} probe (${reason || 'asked'}) failed:`, err);
             } finally {
@@ -147,6 +203,8 @@
         for (const name of Object.keys(documents)) documents[name] = null;
         probing = null;
         lastProbeAt = 0;
+        // Every observation of the previous sign-in is superseded (its epoch moved); the order goes on growing.
+        taken = issued;
     });
 
     // Every navigation, and the tab coming back into view: kept answers follow a change made meanwhile.
@@ -175,6 +233,9 @@
         document: (name) => documents[name] ?? null,
         /** @returns {{access: string|null, documents: Record<string, string|null>}} */
         current: () => ({ access, documents: { ...documents } }),
+        begin,
+        isCurrent,
+        accessOf,
         noteResponse,
         noteRevision,
         probe

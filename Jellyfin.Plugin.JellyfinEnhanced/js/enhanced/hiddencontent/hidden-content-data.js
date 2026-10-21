@@ -29,8 +29,19 @@
     let loadedRevision = null;
     // A newer revision was seen while the rules couldn't be read again (a save of this tab pending, a read running).
     let revisionPending = false;
-    /** @type {Promise<boolean>|null} */
+    // The read again running now and the sign-in it belongs to: a read of the previous person is never joined, and its
+    // completion can't take (or retry) anything of the next one.
+    /** @type {{epoch: number, promise: Promise<boolean>}|null} */
     let revalidating = null;
+    // A read again that failed is retried after a pause that grows, a few times at most (then on the next page or the
+    // next revision); never at once, so an unreachable server isn't asked in a loop.
+    const RELOAD_RETRY_MS = [2000, 8000, 30000];
+    let retryTimer = null;
+    let retryAttempt = 0;
+    // The rules as last read from the server (or saved from this tab), as JSON: what this tab's changes are made on. A
+    // save made while a newer document is known reads it first and puts this tab's changes on it (see prepareSave).
+    /** @type {string|null} */
+    let baseJson = null;
 
     // ============================================================
     // Internal helpers
@@ -60,6 +71,7 @@
     function getHiddenData() {
         if (!hiddenData) {
             hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+            baseJson = JSON.stringify(hiddenData);
         }
         return hiddenData;
     }
@@ -167,6 +179,7 @@
             JE.userConfig = JE.userConfig || {};
             JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
             hiddenData = JE.userConfig.hiddenContent;
+            baseJson = JSON.stringify(hiddenData);
             rebuildSets();
             emitChange();
             return true;
@@ -490,68 +503,204 @@
      */
     function resetFromUserConfig() {
         hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+        baseJson = JSON.stringify(hiddenData);
         // The page-load documents were read under the bootstrap's revision (the core holds it from then).
-        loadedRevision = JE.core?.revision?.document?.('hidden-content') ?? null;
+        loadedRevision = knownRevision();
         revisionPending = false;
         rebuildSets();
+    }
+
+    /** @returns {string|null} The rules' document revision known now (core/access-revision.js). */
+    function knownRevision() {
+        return JE.core?.revision?.document?.('hidden-content') ?? null;
+    }
+
+    /** @returns {number} The sign-in's session epoch now. */
+    function sessionEpoch() {
+        return JE.session ? JE.session.getEpoch() : 0;
+    }
+
+    /** @param {number} epoch @returns {boolean} The sign-in that epoch belongs to is the current one. */
+    function isCurrentEpoch(epoch) {
+        return !JE.session || JE.session.isCurrent(epoch);
+    }
+
+    /** Ends a waiting retry of a failed read. */
+    function cancelRetry() {
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
+    }
+
+    /**
+     * A read again failed: try once more after a pause (longer each time, a few times at most) while this sign-in is
+     * current and the rules known are still newer than the ones read.
+     * @param {number} epoch
+     */
+    function scheduleRetry(epoch) {
+        cancelRetry();
+        if (retryAttempt >= RELOAD_RETRY_MS.length) {
+            console.warn('🪼 Jellyfin Enhanced: Hidden Content rules could not be read again; trying on the next page');
+            return;
+        }
+        retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (isCurrentEpoch(epoch) && hiddenData && knownRevision() !== loadedRevision) revalidate();
+        }, RELOAD_RETRY_MS[retryAttempt++]);
+    }
+
+    /**
+     * Puts rules read from the server in place: only what changed is hidden or shown again (nothing is cleared first).
+     * @param {any} next The rules as read.
+     * @returns {boolean} True when anything changed.
+     */
+    function installRead(next) {
+        baseJson = JSON.stringify(next);
+        if (JSON.stringify(next) === JSON.stringify(hiddenData)) return false;
+        const shownBefore = new Set(hiddenIdSet);
+        JE.userConfig = JE.userConfig || {};
+        JE.userConfig.hiddenContent = next;
+        hiddenData = next;
+        rebuildSets();
+        emitChange();
+        const shownAgain = new Set([...shownBefore].filter(id => !hiddenIdSet.has(id)));
+        if (shownAgain.size) restoreNativeCardsForIds(shownAgain);
+        refreshNativeCardVisibility();
+        return true;
+    }
+
+    /**
+     * Reads the person's rules from the server.
+     * @returns {Promise<any>} The rules (camelCase), or null with nobody signed in.
+     */
+    async function readRules() {
+        const userId = ApiClient.getCurrentUserId();
+        if (!userId) return null;
+        const fresh = await ApiClient.ajax({
+            type: 'GET',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+            dataType: 'json'
+        });
+        return (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
     }
 
     /**
      * The rules' document moved on the server (another tab or device saved them): read them again and bring this tab
      * in line in place: only what changed is hidden or shown again, nothing is cleared first. Not while a save of this
-     * tab is pending (its own change is not overwritten; the next revision after it reads again), and a change made here
-     * while the read runs keeps the read from being taken (read again later).
+     * tab is pending (that save reads the current document first and keeps both: see prepareSave; the next revision
+     * after it reads again), and a change made here while the read runs keeps the read from being taken (read again
+     * later). The read belongs to the sign-in that started it; a failed one is retried with a growing pause.
      * @returns {Promise<boolean>} True when the rules are the server's as of a known revision.
      */
     function revalidate() {
-        if (revalidating) { revisionPending = true; return revalidating; }
+        const epoch = sessionEpoch();
+        if (revalidating && revalidating.epoch === epoch) { revisionPending = true; return revalidating.promise; }
         if (internal.hasPendingSave?.()) { revisionPending = true; return Promise.resolve(false); }
+        cancelRetry();
         revisionPending = false;
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         // Taken before the read: the rules as read are at least this new.
-        const revision = JE.core?.revision?.document?.('hidden-content') ?? null;
+        const revision = knownRevision();
         const before = getHiddenData();
-        revalidating = (async () => {
+        /** @type {{epoch: number, promise: Promise<boolean>}} */
+        const owner = { epoch, promise: Promise.resolve(false) };
+        owner.promise = (async () => {
+            let failed = false;
             try {
-                const userId = ApiClient.getCurrentUserId();
-                if (!userId) return false;
-                const fresh = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
-                    dataType: 'json'
-                });
-                if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+                const next = await readRules();
+                if (!isCurrentEpoch(epoch) || next === null) return false;
+                retryAttempt = 0;
                 // Changed here meanwhile, or a save started: this tab's change wins; read again after it.
                 if (hiddenData !== before || internal.hasPendingSave?.()) { revisionPending = true; return false; }
-                const next = (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
-                const after = JE.core?.revision?.document?.('hidden-content') ?? null;
+                const after = knownRevision();
                 loadedRevision = after === revision ? revision : null;
                 if (after !== revision) revisionPending = true;
-                if (JSON.stringify(next) === JSON.stringify(before)) return true;
-                const shownBefore = new Set(hiddenIdSet);
-                JE.userConfig = JE.userConfig || {};
-                JE.userConfig.hiddenContent = next;
-                hiddenData = next;
-                rebuildSets();
-                emitChange();
-                const shownAgain = new Set([...shownBefore].filter(id => !hiddenIdSet.has(id)));
-                if (shownAgain.size) restoreNativeCardsForIds(shownAgain);
-                refreshNativeCardVisibility();
+                installRead(next);
                 return true;
             } catch (e) {
+                if (!isCurrentEpoch(epoch)) return false;
                 console.warn('🪼 Jellyfin Enhanced: Failed to read hidden-content again after a revision', e);
-                revisionPending = true;
+                failed = true;
                 return false;
             } finally {
-                revalidating = null;
-                if (revisionPending && (JE.core?.revision?.document?.('hidden-content') ?? null) !== loadedRevision) {
-                    revisionPending = false;
-                    // A newer revision came while this ran: once more (each run is caused by a real move).
-                    setTimeout(() => { if (!JE.session || JE.session.isCurrent(requestEpoch)) revalidate(); }, 0);
+                if (revalidating === owner) revalidating = null;
+                if (isCurrentEpoch(epoch)) {
+                    if (failed) {
+                        scheduleRetry(epoch);
+                    } else if (revisionPending && knownRevision() !== loadedRevision) {
+                        revisionPending = false;
+                        // A newer revision came while this ran: once more (each run is caused by a real move).
+                        setTimeout(() => { if (isCurrentEpoch(epoch)) revalidate(); }, 0);
+                    }
                 }
             }
         })();
-        return revalidating;
+        revalidating = owner;
+        return owner.promise;
+    }
+
+    /**
+     * Before a save of the whole document: when a newer document than the one this tab's rules were read from is known
+     * (another tab or device saved meanwhile), read it and put this tab's changes on it, so the save keeps both. Each
+     * item and setting this tab changed since its last read is taken from here, everything else from the server.
+     * Throws when the current document can't be read (the save then waits for its retry; nothing is overwritten) or the
+     * sign-in changed while it was read.
+     * @returns {Promise<void>}
+     */
+    async function prepareSave() {
+        const revision = knownRevision();
+        if (!hiddenData || revision === null || revision === loadedRevision) return;
+        const epoch = sessionEpoch();
+        const next = await readRules();
+        if (!isCurrentEpoch(epoch) || next === null) throw new Error('The sign-in changed before the save');
+        const base = baseJson ? JSON.parse(baseJson) : { items: {}, settings: {} };
+        const merged = mergeOnto(base, getHiddenData(), next);
+        // The document known is in: nothing more to read for it once this save is done.
+        if (knownRevision() === revision) { loadedRevision = revision; revisionPending = false; }
+        baseJson = JSON.stringify(next);
+        const shownBefore = new Set(hiddenIdSet);
+        JE.userConfig = JE.userConfig || {};
+        JE.userConfig.hiddenContent = merged;
+        hiddenData = merged;
+        rebuildSets();
+        emitChange();
+        const shownAgain = new Set([...shownBefore].filter(id => !hiddenIdSet.has(id)));
+        if (shownAgain.size) restoreNativeCardsForIds(shownAgain);
+        refreshNativeCardVisibility();
+    }
+
+    /**
+     * Three-way merge of the rules: what this tab changed since `base` (an item hidden, shown again or edited; a setting)
+     * is put on `server`; everything else is the server's.
+     * @param {any} base The rules this tab's changes were made on.
+     * @param {any} local The rules in this tab now.
+     * @param {any} server The rules on the server now.
+     * @returns {any} The rules to save.
+     */
+    function mergeOnto(base, local, server) {
+        const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        /** @param {any} b @param {any} l @param {any} r */
+        const mergeMap = (b, l, r) => {
+            const out = { ...(r || {}) };
+            for (const key of new Set([...Object.keys(b || {}), ...Object.keys(l || {})])) {
+                const mine = (l || {})[key];
+                if (same((b || {})[key], mine)) continue;
+                if (mine === undefined) delete out[key];
+                else out[key] = mine;
+            }
+            return out;
+        };
+        const merged = { ...(server || {}) };
+        for (const key of new Set([...Object.keys(base || {}), ...Object.keys(local || {})])) {
+            if (key === 'items' || key === 'settings') continue;
+            if (!same((base || {})[key], (local || {})[key])) merged[key] = (local || {})[key];
+        }
+        merged.items = mergeMap(base?.items, local?.items, server?.items);
+        merged.settings = mergeMap(base?.settings, local?.settings, server?.settings);
+        return merged;
+    }
+
+    /** This tab's save went through: the server holds what it sent (the base of the next changes). @param {string} sent */
+    function savedAs(sent) {
+        baseJson = sent;
     }
 
     document.addEventListener('je-document-revision', (e) => {
@@ -559,17 +708,33 @@
         if (detail.document !== 'hidden-content' || detail.revision === loadedRevision) return;
         // Nothing read yet: the first read takes the current rules anyway.
         if (!hiddenData) return;
+        // A real move: a read now, and a fresh set of retries if it fails.
+        retryAttempt = 0;
         revalidate();
     });
+
+    // A page shown after reads that failed (or gave up): the rules known to be newer are read again now.
+    try {
+        JE.core?.navigation?.onNavigate?.(() => {
+            if (!hiddenData || retryTimer || revalidating || knownRevision() === loadedRevision || knownRevision() === null) return;
+            retryAttempt = 0;
+            revalidate();
+        });
+    } catch (_) { /* no navigation module: the next revision reads again */ }
 
     // Hidden-content data is per-user. Clear the local mirror the moment the
     // identity changes (don't read JE.userConfig here — reset handlers run in
     // registration order and the globals may not be wiped yet), then rebuild
     // from the incoming user's config once the re-bootstrap has loaded it.
+    // The previous person's read and its retry end with them.
     JE.session?.onUserChange('hidden-content-data', () => {
         hiddenData = null;
+        baseJson = null;
         loadedRevision = null;
         revisionPending = false;
+        revalidating = null;
+        cancelRetry();
+        retryAttempt = 0;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
     });
@@ -604,6 +769,8 @@
         unhideAll,
         resetFromUserConfig,
         revalidate,
+        prepareSave,
+        savedAs,
         /** @returns {boolean} A newer revision of the rules is waiting to be read (after this tab's pending save). */
         hasRevisionPending: () => revisionPending,
     });

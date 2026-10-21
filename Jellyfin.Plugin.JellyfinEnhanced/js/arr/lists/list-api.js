@@ -93,6 +93,7 @@
         const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
         if (options?.body) headers['Content-Type'] = 'application/json';
         if (options?.etag) headers['If-None-Match'] = options.etag;
+        const observation = JE.core?.revision?.begin?.();
         const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists${path}`), {
             method,
             headers,
@@ -101,7 +102,7 @@
             cache: 'no-store'
         });
         // The answer carries the person's revisions (core/access-revision.js).
-        JE.core?.revision?.noteResponse(response);
+        JE.core?.revision?.noteResponse(response, observation);
         if (!rule.current()) throw STALE;
 
         let body = null;

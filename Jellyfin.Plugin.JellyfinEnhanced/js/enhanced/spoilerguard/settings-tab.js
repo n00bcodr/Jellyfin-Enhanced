@@ -91,10 +91,9 @@
             try {
                 await internal.whenLoaded();
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
-                const prefs = internal.getUserPrefs();
                 const key = changed.dataset.pref;
-                prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
-                await internal.setUserPrefs(prefs);
+                // Saved on the preferences as of the current document (another device's change meanwhile is kept).
+                await internal.updateUserPref(key, key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false));
             } catch (e) {
                 console.error(`${logPrefix} preference save failed:`, e);
                 changed.checked = previousChecked;

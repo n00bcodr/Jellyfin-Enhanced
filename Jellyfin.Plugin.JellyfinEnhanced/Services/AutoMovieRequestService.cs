@@ -36,8 +36,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Track which movies have already been requested to avoid duplicates (with timestamps for expiry)
         private readonly Dictionary<string, Dictionary<string, DateTime>> _requestedMovies = new();
         private readonly object _movieCacheLock = new();
-        private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
-        private readonly object _userIdCacheLock = new();
+        // The person's Seerr account, read under their Seerr account authority (one lookup for both automatic requests).
+        private readonly Helpers.Jellyseerr.SeerrAccountLookup _accounts = new("[Auto-Movie-Request]");
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -76,17 +76,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 .Select(url => url.Trim().TrimEnd('/'))
                 .Where(url => !string.IsNullOrWhiteSpace(url))
                 .ToArray();
-        }
-
-        private static string NormalizeUserId(string userId)
-        {
-            return userId.Replace("-", string.Empty).ToLowerInvariant();
-        }
-
-        private static TimeSpan GetJellyseerrUserIdCacheTtl()
-        {
-            var minutes = JellyfinEnhanced.Instance?.Configuration?.JellyseerrUserIdCacheTtlMinutes ?? 30;
-            return TimeSpan.FromMinutes(Math.Max(1, minutes));
         }
 
         // Checks a movie to determine if the next movie in collection should be requested.
@@ -724,19 +713,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // sent). Neither: it failed.
         private async Task<(bool Sent, string? Stopped)> RequestMovie(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings = null)
         {
+            // The account stopped being the person's (or Seerr was repointed) before the POST: once more, as theirs now.
+            var (sent, stopped, superseded) = await RequestMovieOnce(tmdbId, jellyfinUserId, qualitySettings);
+            if (superseded) (sent, stopped, superseded) = await RequestMovieOnce(tmdbId, jellyfinUserId, qualitySettings);
+            return (sent, stopped);
+        }
+
+        private async Task<(bool Sent, string? Stopped, bool Superseded)> RequestMovieOnce(string tmdbId, string jellyfinUserId, QualityProfileSettings? qualitySettings)
+        {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("[Auto-Movie-Request] Jellyseerr configuration is missing");
-                return (false, null);
+                return (false, null, false);
             }
 
-            // Get Jellyseerr user ID
-            var jellyseerrUserId = await GetJellyseerrUserId(jellyfinUserId);
+            // Get Jellyseerr user ID (and the authority it is the person's under)
+            var (jellyseerrUserId, authority) = await _accounts.ReadAsync(_httpClientFactory, _logger, jellyfinUserId);
             if (string.IsNullOrEmpty(jellyseerrUserId))
             {
                 _logger.Warning($"[Auto-Movie-Request] Could not find Jellyseerr user for Jellyfin user {jellyfinUserId}");
-                return (false, null);
+                return (false, null, false);
             }
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
@@ -768,14 +765,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     var jsonContent = JsonSerializer.Serialize(requestBody);
 
+                    // Sent as the person's account only while it is still theirs at the Seerr configured now (checked before
+                    // the key and the gate: both read the configuration's secrets).
+                    if (!Helpers.Jellyseerr.SeerrAccountLookup.IsCurrent(authority)) return (false, null, true);
+
                     // The key is read before the gate (reading it can log through a callback), so only building the
                     // request runs between the gate's answer and the POST.
                     var apiKey = config.GetJellyseerrApiKey();
                     // Read live right before each POST (the next Seerr URL included).
                     if (DirectStop() is { } stop)
                     {
-                        return (false, stop);
+                        return (false, stop, false);
                     }
+
 
                     using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
                         HttpMethod.Post, requestUri, apiKey, jellyseerrUserId, jsonContent);
@@ -784,14 +786,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     if (error == null)
                     {
-                        return (true, null);
+                        return (true, null, false);
                     }
                     _logger.Warning($"[Auto-Movie-Request] Jellyseerr request failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
                 }
                 catch (AutomationTransportRefusedException refused)
                 {
                     // Refused by the transport's own check, the last one before the POST is handed on: nothing went out.
-                    return (false, refused.Hold.Reason);
+                    return (false, refused.Hold.Reason, false);
                 }
                 catch (Exception ex)
                 {
@@ -799,89 +801,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return (false, null);
+            return (false, null, false);
         }
 
-        // Gets the Jellyseerr user ID for a Jellyfin user
+        // Gets the Jellyseerr user ID for a Jellyfin user (the Seerr configured now, under the person's account authority).
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
-        {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
-            {
-                return null;
-            }
-
-            var normalizedJellyfinUserId = NormalizeUserId(jellyfinUserId);
-
-            lock (_userIdCacheLock)
-            {
-                if (_jellyseerrUserIdCache.TryGetValue(normalizedJellyfinUserId, out var cached) &&
-                    DateTime.UtcNow - cached.CachedAt < GetJellyseerrUserIdCacheTtl())
-                {
-                    return cached.JellyseerrUserId;
-                }
-            }
-
-            var urls = GetConfiguredUrls(config.JellyseerrUrls);
-            var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
-            // The id lives from when its read began.
-            var readAt = DateTime.UtcNow;
-
-            foreach (var url in urls)
-            {
-                try
-                {
-                    var requestUri = $"{url.Trim().TrimEnd('/')}/api/v1/user?take=1000";
-                    using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
-                        HttpMethod.Get, requestUri, config.GetJellyseerrApiKey());
-                    using var response = await httpClient.SendAsync(request);
-                    var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUri);
-
-                    if (error == null && content != null)
-                    {
-                        var usersResponse = JsonSerializer.Deserialize<JsonElement>(content);
-
-                        if (usersResponse.TryGetProperty("results", out var usersArray))
-                        {
-                            foreach (var userElement in usersArray.EnumerateArray())
-                            {
-                                if (userElement.TryGetProperty("jellyfinUserId", out var jfUserId) &&
-                                    userElement.TryGetProperty("id", out var id))
-                                {
-                                    var jellyseerrJfUserId = jfUserId.GetString();
-                                    if (!string.IsNullOrEmpty(jellyseerrJfUserId))
-                                    {
-                                        // Normalize both IDs for comparison (remove dashes)
-                                        var normalizedJellyseerrId = jellyseerrJfUserId.Replace("-", "").ToLowerInvariant();
-
-                                        if (normalizedJellyseerrId == normalizedJellyfinUserId)
-                                        {
-                                            var jellyseerrUserId = id.GetInt32().ToString();
-                                            lock (_userIdCacheLock)
-                                            {
-                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, readAt);
-                                            }
-                                            return jellyseerrUserId;
-                                        }
-                                    }
-                                }
-                            }
-                            _logger.Warning($"[Auto-Movie-Request] No Jellyseerr user found for Jellyfin user {jellyfinUserId}");
-                        }
-                    }
-                    else if (error != null)
-                    {
-                        _logger.Warning($"[Auto-Movie-Request] Failed to fetch users from Jellyseerr: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay} — {error.Message}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error($"[Auto-Movie-Request] Exception while trying to get Jellyseerr user ID from {url}: {ex.Message}");
-                }
-            }
-
-            return null;
-        }
+            => (await _accounts.ReadAsync(_httpClientFactory, _logger, jellyfinUserId).ConfigureAwait(false)).Id;
 
         // Clears the request cache (useful for testing or resetting)
         public void ClearRequestCache()

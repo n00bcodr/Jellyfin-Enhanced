@@ -65,6 +65,8 @@
         const method = options?.method || 'GET';
         const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
         if (options?.body) headers['Content-Type'] = 'application/json';
+        // Taken before the request: its answer's revisions are taken only while nothing newer was (core/access-revision.js).
+        const observation = JE.core?.revision?.begin?.();
         const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
             method,
             headers,
@@ -73,7 +75,7 @@
             cache: 'no-store'
         });
         // The answer carries the person's revisions (core/access-revision.js).
-        JE.core?.revision?.noteResponse(response);
+        JE.core?.revision?.noteResponse(response, observation);
         let body = null;
         try {
             const text = await response.text();

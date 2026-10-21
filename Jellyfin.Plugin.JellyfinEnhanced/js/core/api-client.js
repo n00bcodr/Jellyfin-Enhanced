@@ -229,9 +229,11 @@
             }
 
             try {
+                // Each attempt is its own observation, taken before it is sent (core/access-revision.js).
+                const observation = JE.core?.revision?.begin?.();
                 const response = await fetch(url, options);
                 // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
-                JE.core?.revision?.noteResponse(response);
+                JE.core?.revision?.noteResponse(response, observation);
 
                 if (response.ok) {
                     if (metrics.enabled) {
@@ -825,6 +827,10 @@
         } = options;
 
         const isGet = method.toUpperCase() === 'GET';
+        // The sign-in and the access revision this call was made under (before any queue): it is sent only for that
+        // sign-in, and it shares a read only with calls made under the same access (never one started before a move).
+        const callEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const flight = `${callEpoch}|${JE.core?.revision?.access?.() ?? ''}|`;
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -838,6 +844,8 @@
         }
 
         const fetchFn = async () => {
+            // Queued across a sign-in: never sent with the next person's credentials for the previous one's call.
+            if (JE.session && !JE.session.isCurrent(callEpoch)) throw createAbortError();
             /** @type {Record<string, string>} */
             const requestHeaders = {
                 ...(auth ? authHeaders() : { 'Accept': 'application/json' }),
@@ -884,11 +892,11 @@
                 init.signal = signal;
             }
 
-            // Identity epoch at request start: a response that finishes after
+            // Identity epoch of the call: a response that finishes after
             // a user switch must not repopulate the (already flushed) cache —
             // cache keys carry no user id, so a late write would hand user
             // A's response to user B.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const requestEpoch = callEpoch;
 
             try {
                 const response = await fetchWithRetry(
@@ -924,14 +932,14 @@
             }
             return fetchFn();
         }, limit);
-        if (isGet && cacheKey) return deduplicatedFetch(cacheKey, limitedFetch, signal, limit);
+        if (isGet && cacheKey) return deduplicatedFetch(flight + cacheKey, limitedFetch, signal, limit);
 
         // Plain GETs share concurrent identical requests too, even without a cacheKey
         // (nothing is cached). Skipped when a caller customises the headers, since the
         // response could then differ for the same URL. Each caller gets its own copy so
         // one mutating its result cannot affect the others.
         if (isGet && auth && Object.keys(headers).length === 0) {
-            return deduplicatedFetch(`GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
+            return deduplicatedFetch(`${flight}GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
         }
         return limitedFetch();
     }

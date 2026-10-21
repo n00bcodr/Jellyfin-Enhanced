@@ -376,9 +376,10 @@
             const cacheKey = `${cachePrefix}:${path}`;
             // Every row is filtered for the viewer's current policy (the native feeds and Seerr's rows
             // alike: library access, parental limits, their Seerr account). A page of Seerr's rows is kept
-            // under the access revision it was asked under (keptPages) and used again only while that
-            // revision holds; the server's native feeds are never kept. Identical reads in flight share
-            // one request.
+            // under the access revision it was worked out for (keptPages) and used again only while that
+            // revision holds; the server's native feeds are never kept. Identical reads share one request
+            // only when asked for under the same sign-in and access: a call made after the access moved
+            // never joins a read started before.
             const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
 
             // Identity epoch at request start. Cache keys carry no user id and the
@@ -390,45 +391,60 @@
             const hit = keep ? keptPage(cacheKey, requestEpoch) : null;
             if (hit) return hit;
 
-            const fetchFn = async () => {
-                // Taken before the read: the page is kept under it only if it still holds when the page is in.
-                const revision = accessRevision();
-                const startedAt = Date.now();
-                const response = await JE.requestManager.fetchWithRetry(url, {
-                    method: 'GET',
-                    headers: {
-                        'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
-                        // Jellyfin 12 authenticates from the Authorization header; the
-                        // legacy X-Emby-Token is kept for 10.11 back-compat.
-                        'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
-                        'X-Emby-Token': ApiClient.accessToken(),
-                        'Accept': 'application/json'
-                    },
+            /**
+             * One read under the access known when it was asked for. Its answer is kept and handed out only when the
+             * access it was worked out for (its own header, else the one asked under) is still the one known: an answer
+             * for an access the person no longer has is never kept or drawn.
+             * @param {string|null} revision
+             * @returns {Promise<{data: any, current: boolean}>}
+             */
+            const read = (revision) => {
+                const fetchFn = async () => {
+                    const startedAt = Date.now();
+                    const response = await JE.requestManager.fetchWithRetry(url, {
+                        method: 'GET',
+                        headers: {
+                            'X-Jellyfin-User-Id': ApiClient.getCurrentUserId(),
+                            // Jellyfin 12 authenticates from the Authorization header; the
+                            // legacy X-Emby-Token is kept for 10.11 back-compat.
+                            'Authorization': 'MediaBrowser Token="' + ApiClient.accessToken() + '"',
+                            'X-Emby-Token': ApiClient.accessToken(),
+                            'Accept': 'application/json'
+                        },
+                        signal
+                    });
+                    const data = await response.json();
+                    if (!stillCurrent()) {
+                        throw new DOMException('User changed during request', 'AbortError');
+                    }
+                    const workedOutFor = JE.core?.revision?.accessOf?.(response) ?? revision;
+                    const current = workedOutFor === accessRevision();
+                    if (keep && current) {
+                        if (keptPages.size >= KEPT_PAGES_MAX) keptPages.delete(keptPages.keys().next().value);
+                        keptPages.set(cacheKey, { data, revision: workedOutFor, epoch: requestEpoch, at: startedAt });
+                    }
+                    return { data, current };
+                };
+                // Dedup outside the pool (only the unique fetch holds a slot), and look at the kept
+                // pages again once a slot is taken: a prefetch that finished while this queued is used.
+                return JE.requestManager.deduplicatedFetch(`${requestEpoch}|${revision ?? ''}|${cacheKey}`, () =>
+                    JE.requestManager.withConcurrencyLimit(() => {
+                        if (!stillCurrent()) {
+                            return Promise.reject(new DOMException('User changed during request', 'AbortError'));
+                        }
+                        const late = keep ? keptPage(cacheKey, requestEpoch) : null;
+                        return late ? Promise.resolve({ data: late, current: true }) : fetchFn();
+                    }),
                     signal
-                });
-                const data = await response.json();
-                if (!stillCurrent()) {
-                    throw new DOMException('User changed during request', 'AbortError');
-                }
-                if (keep && accessRevision() === revision) {
-                    if (keptPages.size >= KEPT_PAGES_MAX) keptPages.delete(keptPages.keys().next().value);
-                    keptPages.set(cacheKey, { data, revision, epoch: requestEpoch, at: startedAt });
-                }
-                return data;
+                );
             };
 
-            // Dedup outside the pool (only the unique fetch holds a slot), and look at the kept
-            // pages again once a slot is taken: a prefetch that finished while this queued is used.
-            return JE.requestManager.deduplicatedFetch(cacheKey, () =>
-                JE.requestManager.withConcurrencyLimit(() => {
-                    if (!stillCurrent()) {
-                        return Promise.reject(new DOMException('User changed during request', 'AbortError'));
-                    }
-                    const late = keep ? keptPage(cacheKey, requestEpoch) : null;
-                    return late ? Promise.resolve(late) : fetchFn();
-                }),
-                signal
-            );
+            // The access moved while the read ran: read once more under the new one; moved again, nothing is drawn.
+            for (let attempt = 0; attempt < 2; attempt++) {
+                const { data, current } = await read(accessRevision());
+                if (current) return data;
+            }
+            throw new DOMException('The access moved during the request', 'AbortError');
         }
 
         // Fallback to ApiClient.ajax

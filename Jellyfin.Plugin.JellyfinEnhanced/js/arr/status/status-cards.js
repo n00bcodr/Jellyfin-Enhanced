@@ -175,12 +175,13 @@
         if (!withStatus && !withStamps) return;
         const ids = [...queued].filter(id => !inFlight.has(id));
         ids.forEach(id => queued.delete(id));
+        // Taken by this flush until answered (batches not sent yet included): a revision meanwhile asks for them again.
+        ids.forEach(id => inFlight.add(id));
         const current = JE.arrStatus.responseGuard();
         for (let i = 0; i < ids.length; i += BATCH) {
             if (!current()) return;
             const batch = ids.slice(i, i + BATCH);
             const versions = new Map(batch.map(id => [id, revisions.get(id) || 0]));
-            batch.forEach(id => inFlight.add(id));
             let data = null;
             let stampData = null;
             try {
@@ -567,16 +568,18 @@
      * and badge kept here was worked out for the old access. The same person is still signed in, so nothing is torn
      * down: every read running now is fenced (its answer is refused when it lands), every kept answer is dropped, and
      * the cards on the page are read again; each badge stays as it is until its new answer paints over it (an unchanged
-     * one isn't touched, one the new access hides is removed then).
+     * one isn't touched, one the new access hides is removed then). A card whose first read is still out is asked for
+     * again too (its answer is fenced, and it has nothing kept to be found by).
      * @returns {void}
      */
     function onAccessRevision() {
         if (!started) return;
         JE.arrStatus.invalidateResponses();
-        // Fenced above: their answers are refused, so their ids may be asked for again now.
+        // Fenced above: their answers are refused, so their ids are asked for again now.
+        const fenced = [...inFlight];
         inFlight.clear();
         const onPage = idsOnPage();
-        for (const id of new Set([...cache.keys(), ...stale.keys(), ...retryIds])) {
+        for (const id of new Set([...cache.keys(), ...stale.keys(), ...retryIds, ...fenced])) {
             forget(id);
             if (onPage.has(id)) queued.add(id);
         }

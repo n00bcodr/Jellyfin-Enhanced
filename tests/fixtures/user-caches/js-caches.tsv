@@ -64,6 +64,7 @@ enhanced/features-random-button.js	fallbackNotice	state	a notice shown once
 enhanced/helpers.js	avatarFetchPromises	uncached	avatar reads in flight only
 enhanced/helpers.js	avatarObjectUrlCache	shared	avatar images (the same for everyone)
 enhanced/helpers.js	itemCache	item	Jellyfin item lookups (Jellyfin's own answer, which it authorizes on every page that shows the item)
+enhanced/hiddencontent/hidden-content-data.js	baseJson	document	the person's Hidden Content rules as last read from the server (or saved from this tab): what this tab's changes are put on when a newer document is known; replaced by every read in place
 enhanced/hiddencontent/hidden-content-data.js	hiddenData	document	the person's own Hidden Content list, read again in place when its document revision moves (another tab or device saved it)
 enhanced/hiddencontent/hidden-content-data.js	loadedRevision	state	the document revision the rules were read under (compared with every revision seen; a move reads the rules again)
 enhanced/hiddencontent/hidden-content-data.js	revalidating	uncached	the read of the rules after a document revision, in flight only
@@ -105,6 +106,7 @@ enhanced/spoilerguard/state.js	enabledMovies	document	the person's own Spoiler G
 enhanced/spoilerguard/state.js	enabledPendingTmdb	document	the person's own pending Spoiler Guard entries: read again in place when the document revision moves
 enhanced/spoilerguard/state.js	enabledSeries	document	the person's own Spoiler Guard list (series), read again in place when its document revision moves (another tab or device saved it)
 enhanced/spoilerguard/state.js	loadedRevision	state	the document revision the state was read under (compared with every revision seen; a move reads the state again)
+enhanced/spoilerguard/state.js	reading	uncached	the read of the person's Spoiler Guard state running now, in flight only (a change of the whole preferences waits for it)
 enhanced/spoilerguard/state.js	statePromise	document	the read of the person's Spoiler Guard state (memoized): replaced when the document revision moves (another tab or device saved it) or a change of this tab ran across it
 enhanced/spoilerguard/state.js	tmdbToJellyfin	document	the Jellyfin ids of the person's own pending Spoiler Guard entries: read again in place when the document revision moves
 enhanced/spoilerguard/state.js	userPrefs	document	the person's own Spoiler Guard preferences: read again in place when the document revision moves

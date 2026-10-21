@@ -153,24 +153,32 @@
     // Saves in flight (a read of the rules after another tab's save waits for them: see hasPendingSave).
     let saving = 0;
 
+    // The whole document is sent: when a newer one than this tab read is known (another tab or device saved), it is read
+    // first and this tab's changes are put on it (internal.prepareSave), so neither side's change is lost; a document
+    // that can't be read fails the save (its retry tries again) rather than being overwritten. Sent only for the
+    // sign-in it was made under.
     async function directSaveHiddenContent() {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
-        const snapshot = JSON.stringify(getHiddenData());
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
         saving++;
         try {
+            await internal.prepareSave?.();
+            if (JE.session && !JE.session.isCurrent(epoch)) throw new Error('the sign-in changed before the save');
+            const snapshot = JSON.stringify(getHiddenData());
             await ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
                 data: snapshot,
                 contentType: 'application/json'
             });
+            internal.savedAs?.(snapshot);
+            return snapshot;
         } finally {
             saving--;
             // A newer revision of the rules waited for this save: read them now that nothing of this tab is pending.
             if (!hasPendingSave() && internal.hasRevisionPending?.()) setTimeout(() => internal.revalidate?.(), 0);
         }
-        return snapshot;
     }
 
     /** @returns {boolean} A change of this tab is waiting to be saved, being saved, or retried. */

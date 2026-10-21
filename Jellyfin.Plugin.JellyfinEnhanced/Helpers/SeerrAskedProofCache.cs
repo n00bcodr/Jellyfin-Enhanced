@@ -32,14 +32,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private const int MaxEntries = 2000;
 
         private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-        private readonly Func<DateTimeOffset> _now;
+        private readonly Func<long> _now;
         private readonly TimeSpan _wait;
         private long _generation;
 
-        /// <summary>Creates a cache with a clock and a wait (tests); <see cref="Shared"/> is the server's.</summary>
-        internal SeerrAskedProofCache(Func<DateTimeOffset>? now = null, TimeSpan? wait = null)
+        /// <summary>Creates a cache with a clock (ticks) and a wait (tests); <see cref="Shared"/> is the server's, on the
+        /// monotonic clock (<see cref="MonotonicClock"/>): a wall-clock step never lengthens or shortens an entry.</summary>
+        internal SeerrAskedProofCache(Func<long>? now = null, TimeSpan? wait = null)
         {
-            _now = now ?? (() => DateTimeOffset.UtcNow);
+            _now = now ?? MonotonicClock.Now;
             _wait = wait ?? TimeSpan.FromSeconds(2);
         }
 
@@ -67,9 +68,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             lock (entry)
             {
                 var now = _now();
-                if (entry.Value != null && now - entry.At < Fresh) return entry.Value;
-                stale = entry.Value != null && now - entry.At < MaxStale ? entry.Value : null;
-                if (entry.Inflight == null && !(entry.FailedAt is { } failed && now - failed < Fresh))
+                if (entry.Value != null && now - entry.At < Fresh.Ticks) return entry.Value;
+                stale = entry.Value != null && now - entry.At < MaxStale.Ticks ? entry.Value : null;
+                if (entry.Inflight == null && !(entry.FailedAt is { } failed && now - failed < Fresh.Ticks))
                     entry.Inflight = Run(entry, read);
                 pending = entry.Inflight;
             }
@@ -127,9 +128,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         {
             public IReadOnlySet<(int TmdbId, string MediaType)>? Value { get; set; }
 
-            public DateTimeOffset At { get; set; }
+            public long At { get; set; }
 
-            public DateTimeOffset? FailedAt { get; set; }
+            public long? FailedAt { get; set; }
 
             public Task<IReadOnlySet<(int TmdbId, string MediaType)>?>? Inflight { get; set; }
         }

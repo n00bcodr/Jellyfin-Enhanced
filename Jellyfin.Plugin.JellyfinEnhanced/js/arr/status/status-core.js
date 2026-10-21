@@ -161,12 +161,13 @@
             // request headers keep core's plain-GET dedup from handing that old answer to a new ticket.
             return await api.plugin(path, { headers: { Accept: 'application/json' }, priority: options?.priority, signal: options?.signal, skipRetry: true });
         }
+        const observation = JE.core?.revision?.begin?.();
         const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
             headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
             signal: options?.signal
         });
         // The answer carries the person's revisions (core/access-revision.js).
-        JE.core?.revision?.noteResponse(response);
+        JE.core?.revision?.noteResponse(response, observation);
         if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
         return await response.json();
     }

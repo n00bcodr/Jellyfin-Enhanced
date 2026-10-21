@@ -205,8 +205,9 @@
         const headers = Object.assign({}, JE.core && JE.core.api && JE.core.api.authHeaders ? JE.core.api.authHeaders() : {}, { 'Content-Type': 'application/json' });
         priming = (async () => {
             try {
+                const observation = JE.core?.revision?.begin?.();
                 const response = await fetch(ApiClient.getUrl(ROUTE), { method: 'POST', headers, body: '{}', cache: 'no-store' });
-                JE.core?.revision?.noteResponse(response);
+                JE.core?.revision?.noteResponse(response, observation);
                 if (!response.ok) return null;
                 const body = await response.json();
                 if (myIdentity !== identityEpoch || !body || typeof body.cursor !== 'number' || typeof body.epoch !== 'string') return null;
@@ -340,6 +341,8 @@
         const headers = Object.assign({}, JE.core && JE.core.api && JE.core.api.authHeaders ? JE.core.api.authHeaders() : {}, { 'Content-Type': 'application/json' });
         let response = null;
         let body = null;
+        // Taken before the request: a long wait's answer is as old as its start (a read asked for meanwhile supersedes it).
+        const observation = JE.core?.revision?.begin?.();
         try {
             response = await fetch(ApiClient.getUrl(ROUTE), {
                 method: 'POST',
@@ -349,7 +352,7 @@
                 cache: 'no-store'
             });
             // Every answer of the feed carries the person's revisions: a change reaches an idle page within one wait.
-            JE.core?.revision?.noteResponse(response);
+            JE.core?.revision?.noteResponse(response, observation);
             if (response.ok) body = await response.json();
         } catch (_) {
             response = null;

@@ -859,8 +859,14 @@ public class IntegrationRequestBackendsTests
         public PluginConfiguration Config => Arr.Config;
         public DateTimeOffset Now { get; set; } = new(2026, 10, 14, 12, 0, 0, TimeSpan.Zero);
 
+        // The backend counts its cache lifetimes on the monotonic clock: it moves with Now here (a test moving Now forward
+        // ages them; a wall-clock step in production doesn't).
+        private static readonly DateTimeOffset Origin = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        private readonly IDisposable _clock;
+
         public SeerrLab(long permissions = 32)
         {
+            _clock = Jellyfin.Plugin.JellyfinEnhanced.Helpers.MonotonicClock.Use(() => (Now - Origin).Ticks);
             Config.ArrRequestBackend = "seerr";
             Config.JellyseerrEnabled = true;
             Config.JellyseerrUrls = FakeSeerr.Url;
@@ -885,6 +891,7 @@ public class IntegrationRequestBackendsTests
             Model.Dispose();
             Seerr.Dispose();
             Arr.Dispose();
+            _clock.Dispose();
         }
     }
 
@@ -1267,6 +1274,9 @@ public class IntegrationRequestBackendsTests
     {
         using var lab = new SeerrLab();
         using var rig = new IntegrationRequestLedgerTests.Rig();
+        // The backend's cache lifetimes follow this test's clock (the rig's).
+        var started = rig.Now;
+        using var clock = Jellyfin.Plugin.JellyfinEnhanced.Helpers.MonotonicClock.Use(() => (rig.Now - started).Ticks);
         rig.Policy.Configuration.ArrRequestBackend = "seerr";
         var source = lab.Source;
         var woken = 0;
