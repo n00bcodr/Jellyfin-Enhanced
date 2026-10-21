@@ -46,6 +46,14 @@ public static partial class PrivacyValues
         catch (Exception) { return false; }
     }
 
+    /// <summary>The extra kind the host's naming rules give an item's file (an extras folder, an extra's suffix, a theme file); null for none.</summary>
+    internal static ExtraType? NamedExtraType(MediaBrowser.Controller.Entities.BaseItem item)
+    {
+        if (string.IsNullOrEmpty(item.Path)) return null;
+        try { return Emby.Naming.Video.ExtraRuleResolver.GetExtraInfo(item.Path, _naming).ExtraType; }
+        catch (Exception) { return null; }
+    }
+
     /// <summary>
     /// The folders that may hold the title owning an item the host's naming rules make an extra: the folder above its
     /// extras folder, and its own folder (an extra by its suffix or a theme file). Empty for anything else.

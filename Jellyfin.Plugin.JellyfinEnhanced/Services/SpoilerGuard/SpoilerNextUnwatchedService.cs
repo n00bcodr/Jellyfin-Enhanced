@@ -45,7 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The next-unwatched episode's identity and position.</summary>
         public readonly record struct NextUnwatchedBoundary(Guid EpisodeId, int SeasonNumber, int EpisodeNumber);
 
-        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks);
+        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, long ReadAt);
 
         // Boundary cache keyed (userId, seriesId). Worst case is
         // f(users × guarded series) but hard-capped at MaxCacheEntries slots of
@@ -118,11 +118,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // watched-state change, amortizing to O(1) per item.
             var now = ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks;
             var key = (userId, seriesId);
-            if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now)
+            // The boundary is the user's watched state over the series' episodes (and their numbering): recorded in the
+            // attempt's read-set, as of when it was computed.
+            var reads = PrivacyReadSet.Current;
+            reads?.Watched(userId, seriesId);
+            reads?.Library(seriesId);
+            reads?.ChildrenOf(seriesId);
+            // A remembered boundary holds while nothing it was read from changed (an episode added, moved, renumbered or
+            // removed, or the user's watched state in the series), not merely until its time runs out.
+            if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now && !PrivacyInputs.ScopeChangedSince(slot.ReadAt, userId, seriesId))
             {
+                reads?.Since(slot.ReadAt);
                 return slot.Boundary;
             }
 
+            var readAt = PrivacyInputs.Now;
             var boundary = BoundaryComputerForTest != null
                 ? BoundaryComputerForTest(userId, seriesId)
                 : ComputeBoundary(userId, seriesId);
@@ -135,7 +145,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _cache.Clear();
             }
 
-            _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks);
+            // A boundary read while its inputs changed is not remembered (the next ask reads it again).
+            if (PrivacyInputs.ScopeChangedSince(readAt, userId, seriesId)) _cache.TryRemove(key, out _);
+            else _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, readAt);
             return boundary;
         }
 

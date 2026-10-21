@@ -13,7 +13,10 @@ namespace JE.Tests;
 /// (a JE route the gate classifies; an action or resource filter that only produces object answers, which the always-run
 /// result filter projects at delivery). Every method that calls the gate makes no blocking call (a policy read, a library,
 /// user-data, user, media-source or session lookup, a wait, an await, a file read, or a plugin method reaching one) after
-/// its last gate call: the gate is the answer's last step (a rebuild re-reads at the top of its next attempt).
+/// its last gate call: the gate is the answer's last step (a rebuild re-reads at the top of its next attempt). The gate
+/// also guards the bytes: every emitter that reaches the gate reaches the response guard (its read-set checked before every
+/// write), and every result executor and middleware of the plugin that writes response bytes checks the guard itself or
+/// writes no protected answer (a reviewed exclusion with its reason).
 /// </summary>
 internal static class PrivacyDeliveryScan
 {
@@ -39,7 +42,37 @@ internal static class PrivacyDeliveryScan
     /// <summary>The gate a scan checks against (the plugin's, or a planted stand-in).</summary>
     [ThreadStatic] private static Type? _gate;
 
-    private static bool IsGate(MethodBase method) => (_gate ?? GateType) is { } gate && method.DeclaringType == gate && method.Name is "Deliver" or "DeliverAsync" or "Current";
+    /// <summary>The read-set type (its validation is the gate's check where an emitter runs its own attempts).</summary>
+    public static Type? ReadSetType => PrivacyOutputPathScan.Plugin.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyReadSet");
+
+    /// <summary>The response guard (resolved by name).</summary>
+    public static Type? GuardType => PrivacyOutputPathScan.Plugin.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyResponseGuard");
+
+    private static bool IsGate(MethodBase method) => _gate is { } standIn
+        ? method.DeclaringType == standIn && method.Name is "Deliver" or "DeliverAsync" or "Current" or "Valid"
+        : GateType is { } gate && method.DeclaringType == gate && method.Name is "Deliver" or "DeliverAsync"
+            || ReadSetType is { } reads && method.DeclaringType == reads && method.Name == "Valid";
+
+    /// <summary>The byte boundary's check: an answer's read-set installed on its response, or checked before a write.</summary>
+    private static bool GuardsBytes(MethodBase method)
+        => GuardType is { } guard && method.DeclaringType == guard && method.Name is "Install" or "Replace" or "Holds" or "Confirm" or "Bind"
+            || ReadSetType is { } reads && method.DeclaringType == reads && method.Name == "StillValid";
+
+    /// <summary>
+    /// Writers of response bytes that carry no protected answer, with the reason (reviewed exclusions; every other writer
+    /// must check the guard).
+    /// </summary>
+    public static readonly Dictionary<string, string> WriterExclusions = new(StringComparer.Ordinal)
+    {
+        ["Services.BrandingAssetStartupFilter.InvokeAsync"] = "the administrator's branding images (logos, banners); no title",
+        ["Services.ScriptInjectionStartupFilter.InvokeAsync"] = "the web client's index.html with the plugin's script tags; no title",
+    };
+
+    /// <summary>Emitters whose answer the host sends itself after the gate returns it (no plugin writer), with the reason.</summary>
+    public static readonly Dictionary<string, string> HostSent = new(StringComparer.Ordinal)
+    {
+        ["Services.PrivacySessionsWebSocketListener.GetDataToSendForConnection"] = "the host serializes and sends the projected sessions as the gate returns them",
+    };
 
     /// <summary>
     /// Emitters whose answer names no title, with the reason (reviewed exclusions; everything else must reach a gate).
@@ -182,6 +215,8 @@ internal static class PrivacyDeliveryScan
     /// <summary>Whether a method blocks: a host lookup, a wait, an await or a file read in it or in a plugin method it reaches.</summary>
     private static bool Blocks(MethodBase method, Assembly scanned)
     {
+        // The byte boundary's guard is the gate's own continuation (it reads no input; it re-checks the read-set).
+        if (GuardsBytes(method)) return false;
         if (BlocksDirectly(method)) return true;
         if (method.Module.Assembly != scanned && method.Module.Assembly != PrivacyOutputPathScan.Plugin) return false;
         lock (_blocks)
@@ -190,6 +225,37 @@ internal static class PrivacyDeliveryScan
         var blocks = Reach(method, scanned, m => IsGate(m) || m.DeclaringType == typeof(Jellyfin.Plugin.JellyfinEnhanced.Logger)).Any(BlocksDirectly);
         lock (_blocks) _blocks[(method, _gate)] = blocks;
         return blocks;
+    }
+
+    /// <summary>
+    /// The plugin's result executors (IActionResult.ExecuteResultAsync) and middleware (IStartupFilter pipelines'
+    /// InvokeAsync): where bytes leave after the actions and filters returned.
+    /// </summary>
+    public static List<MethodBase> Writers(Assembly assembly)
+    {
+        var writers = new List<MethodBase>();
+        foreach (var type in AllTypes(assembly).Where(t => t.IsClass && !t.IsAbstract))
+        {
+            if (typeof(Microsoft.AspNetCore.Mvc.IActionResult).IsAssignableFrom(type) && type.GetMethod("ExecuteResultAsync", Declared) is { } execute)
+                writers.Add(execute);
+            if (typeof(Microsoft.AspNetCore.Hosting.IStartupFilter).IsAssignableFrom(type))
+                writers.AddRange(type.GetMethods(Declared).Where(m => m.Name is "Invoke" or "InvokeAsync"));
+        }
+        return writers;
+    }
+
+    /// <summary>Whether a method (or a plugin method it reaches) writes response bytes.</summary>
+    private static bool WritesBytes(MethodBase writer, Assembly scanned)
+    {
+        foreach (var method in Reach(writer, scanned))
+            foreach (var body in Bodies(method))
+                foreach (var (_, member) in Referenced(body))
+                    if (member is MethodInfo { DeclaringType: { } owner } call
+                        && (owner == typeof(Microsoft.AspNetCore.Http.HttpResponse) && call.Name is "get_Body" or "get_BodyWriter"
+                            || owner == typeof(Microsoft.AspNetCore.Http.HttpResponseWritingExtensions)
+                            || typeof(Microsoft.AspNetCore.Mvc.IActionResult).IsAssignableFrom(owner) && call.Name == "ExecuteResultAsync" && owner.Assembly != PrivacyOutputPathScan.Plugin))
+                        return true;
+        return false;
     }
 
     /// <summary>The host's callbacks into the plugin that produce an HTTP or WebSocket answer.</summary>
@@ -217,7 +283,14 @@ internal static class PrivacyDeliveryScan
         public string Name => PrivacyOutputPathScan.Describe(Method);
     }
 
-    public sealed record Result(Type? Gate, List<Emitter> Emitters, List<string> LateSteps);
+    public sealed record Result(Type? Gate, List<Emitter> Emitters, List<string> LateSteps)
+    {
+        /// <summary>Gated emitters whose bytes no guard checks (must be none).</summary>
+        public List<string> Unguarded { get; init; } = new();
+
+        /// <summary>Every result executor and middleware that writes bytes, and how its bytes are guarded (null: not).</summary>
+        public List<(string Name, string? Guarded)> Writers { get; init; } = new();
+    }
 
     private static readonly MethodInfo? _route = typeof(TitlePresentationResultFilter).GetMethod("Route", BindingFlags.NonPublic | BindingFlags.Static);
 
@@ -283,6 +356,20 @@ internal static class PrivacyDeliveryScan
             emitters.Add(new Emitter(entry, covered));
         }
 
+        // The gate guards the bytes: a gated emitter reaches the response guard (or the host sends its answer itself).
+        var unguarded = new List<string>();
+        if (_gate == null && GuardType != null)
+            foreach (var emitter in emitters.Where(e => e.Covered == "gate"))
+                if (!HostSent.ContainsKey(emitter.Name) && !Reach(emitter.Method, scanned).Any(GuardsBytes)) unguarded.Add(emitter.Name);
+        var writers = new List<(string, string?)>();
+        if (_gate == null)
+            foreach (var writer in Writers(scanned))
+            {
+                if (!WritesBytes(writer, scanned)) continue;
+                var name = PrivacyOutputPathScan.Describe(writer);
+                writers.Add((name, Reach(writer, scanned).Any(GuardsBytes) ? "guard" : WriterExclusions.TryGetValue(name, out var why) ? "excluded: " + why : null));
+            }
+
         // The gate is the last step: no blocking call after the last gate call in any method that calls it.
         var late = new List<string>();
         if ((_gate ?? GateType) != null)
@@ -302,6 +389,6 @@ internal static class PrivacyDeliveryScan
                         if (Blocks(Normalize(callee), scanned)) late.Add(PrivacyOutputPathScan.Describe(method) + " calls " + callee.DeclaringType?.Name + "." + callee.Name + " after the gate");
                     }
                 }
-        return new Result(GateType, emitters, late);
+        return new Result(GateType, emitters, late) { Unguarded = unguarded, Writers = writers };
     }
 }

@@ -47,8 +47,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // automatically (self-invalidating) and two users with the same set share
         // safely. Short TTL bounds staleness from library edits.
         private static readonly TimeSpan CollectionScopeCacheTtl = TimeSpan.FromSeconds(30);
-        private static readonly ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt)> _collectionScopeCache
+        private static readonly ConcurrentDictionary<string, (Guid? CollectionId, DateTime CachedAt, long ReadAt)> _collectionScopeCache
             = new(StringComparer.Ordinal);
+
+        static SpoilerUserResolver()
+        {
+            // A collection's members changed: every memoized membership answer may be stale.
+            PrivacyInputs.CollectionChanged += _ => _collectionScopeCache.Clear();
+        }
 
         /// <summary>
         /// Drops the cross-request caches for a user so the next request re-reads
@@ -111,12 +117,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // redundant.
             var cacheKey = BuildCollectionScopeKey(userState, movieId);
             var now = DateTime.UtcNow;
+            // Membership is a verdict input: the guarded collections and the movie are recorded (the memo follows the
+            // collections' own changes, CollectionChanged).
+            if (PrivacyReadSet.Current is { } reads)
+            {
+                reads.Library(movieId);
+                foreach (var key in userState.Collections.Keys) if (Guid.TryParse(key, out var guid)) reads.Library(guid);
+            }
             if (cacheKey != null
                 && _collectionScopeCache.TryGetValue(cacheKey, out var hit)
                 && (now - hit.CachedAt) < CollectionScopeCacheTtl)
             {
+                PrivacyReadSet.Current?.Since(hit.ReadAt);
                 return hit.CollectionId;
             }
+            var readAt = PrivacyInputs.Now;
 
             Guid? result = null;
             try
@@ -136,9 +151,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return null; // don't cache a transient failure
             }
 
-            if (cacheKey != null)
+            // A walk that overlapped a collection change is not memoized (the change's event may already have run).
+            if (cacheKey != null && PrivacyInputs.LibraryChangesSince(readAt) is { } changed
+                && !userState.Collections.Keys.Any(k => Guid.TryParse(k, out var guid) && changed.Contains(guid)))
             {
-                _collectionScopeCache[cacheKey] = (result, now);
+                _collectionScopeCache[cacheKey] = (result, now, readAt);
                 // Opportunistic eviction, mirroring the season-watched cache in
                 // SpoilerBlurImageFilter: snapshot-free, only removes expired.
                 if (_collectionScopeCache.Count > 1024)
@@ -216,7 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
             if (!_providerTitles.TryGetValue(id, out var hit) || DateTime.UtcNow - hit.At > TimeSpan.FromSeconds(30))
             {
-                var item = _libraryManager.GetItemById(id);
+                var item = PrivacyReads.Item(_libraryManager, id);
                 hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow);
                 if (_providerTitles.Count >= 8192) _providerTitles.Clear();
                 _providerTitles[id] = hit;
@@ -277,6 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (httpContext.Items.TryGetValue(cacheKey, out var cached)
                 && cached is UserSpoilerBlur hit)
             {
+                _userConfigManager.RecordPolicyRead(userIdN, SpoilerBlurImageFilter.SpoilerBlurFileName, hit);
                 return hit;
             }
 
@@ -287,6 +305,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 && (now - entry.CachedAt) < UserStateCacheTtl)
             {
                 httpContext.Items[cacheKey] = entry.State;
+                _userConfigManager.RecordPolicyRead(userIdN, SpoilerBlurImageFilter.SpoilerBlurFileName, entry.State);
                 return entry.State;
             }
 

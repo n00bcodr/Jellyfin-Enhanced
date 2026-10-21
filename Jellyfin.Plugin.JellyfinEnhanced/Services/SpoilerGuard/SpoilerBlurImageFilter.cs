@@ -303,73 +303,82 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return next();
             }
 
-            // Plugin-level master switch. Saves the per-user file read on every image.
-            var pluginConfig = JellyfinEnhanced.Instance?.Configuration;
-            if (pluginConfig?.SpoilerBlurEnabled != true)
-            {
-                return next();
-            }
-            return RunImageFilterAsync(context, next, pluginConfig);
+            return RunImageFilterAsync(context, next);
         }
 
-        private async Task RunImageFilterAsync(
-            ActionExecutingContext context,
-            ActionExecutionDelegate next,
-            Configuration.PluginConfiguration pluginConfig)
+        private async Task RunImageFilterAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
             // The action runs once; every decision below works on its answer.
             ActionExecutedContext? executed = null;
-            async Task<ActionExecutedContext> Once() => executed ??= await next().ConfigureAwait(false);
-
-            // The one delivery gate: the image is decided under one verdict identity (the candidate viewers' Spoiler Guard
-            // state and the admin's image settings, the item's watched state and ownership) and leaves only when the gate,
-            // after the decision's last await (the action that loaded the image), finds it unchanged. A changed identity
-            // decides again on the loaded image (bounded); one that keeps changing gets the fallback image.
-            var candidates = _resolver.ResolveCandidateUserIds(context.HttpContext).Where(c => c != Guid.Empty).Distinct().ToList();
-            var viewer = candidates.Count == 1 ? candidates[0] : Guid.Empty;
-            Guid? itemId = TryGetItemId(context, out var id) ? id : null;
-            var owner = itemId is { } known && _libraryManager.GetItemById(known) is { } item ? PrivacyIdentities.ExtraOwner(_libraryManager, item) : Guid.Empty;
-            var inputs = PrivacyInputs.Now;
-            var revision = ImagePolicyRevision(context.HttpContext, candidates, pluginConfig);
-            string? next2 = null;
-            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            IActionResult? loaded = null;
+            async Task<ActionExecutedContext> Once()
             {
-                if (attempt > 0)
-                {
-                    // The identity changed: decide again on the loaded image under the state the gate read.
-                    inputs = PrivacyInputs.Now;
-                    revision = next2 ?? ImagePolicyRevision(context.HttpContext, candidates, pluginConfig);
-                }
-                if (await DecideAsync(context, Once, pluginConfig).ConfigureAwait(false) || executed == null) return;
-                if (PrivacyDelivery.Current(viewer, revision, inputs, () => next2 = ImagePolicyRevision(context.HttpContext, candidates, pluginConfig),
-                        judged => itemId == judged || judged == owner && owner != Guid.Empty))
-                    return;
+                if (executed != null) return executed;
+                executed = await next().ConfigureAwait(false);
+                loaded = executed.Result;
+                return executed;
             }
 
+            // The one delivery gate, on every branch (the master switch on or off when loading starts): each attempt decides
+            // under its own read-set (the admin's settings, every candidate viewer's Spoiler Guard state, the item's library
+            // facts and watched state), and the image leaves only when the gate, after the decision's last await (the action
+            // that loaded the image), finds that set unchanged. A changed input decides again on the loaded image; one whose
+            // loaded image a protected form already consumed, or whose inputs keep changing, gets the fallback image. The
+            // delivered set guards the bytes as they are written, and a 304 (no bytes) only while it holds.
+            var http = context.HttpContext;
+            // The candidate viewers are resolved only once Spoiler Guard is on (an image with the master switch off costs
+            // the settings check alone).
+            List<Guid>? candidates = null;
+            string? why = null;
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                if (attempt > 0) foreach (var candidate in candidates ?? []) PrivacyDelivery.Discard(http, candidate);
+                using var scope = PrivacyReadSet.Begin();
+                var pluginConfig = JellyfinEnhanced.Instance?.Configuration;
+                bool replaced;
+                if (pluginConfig?.SpoilerBlurEnabled != true)
+                {
+                    // Spoiler Guard is off as this attempt reads the settings: the image passes through (the settings are
+                    // in the read-set, so turning it on while the image loads decides again).
+                    await Once().ConfigureAwait(false);
+                    replaced = false;
+                }
+                else
+                {
+                    candidates ??= _resolver.ResolveCandidateUserIds(http).Where(c => c != Guid.Empty).Distinct().ToList();
+                    foreach (var candidate in candidates) _resolver.LoadUserStateFresh(http, candidate);
+                    replaced = await DecideAsync(context, Once, pluginConfig).ConfigureAwait(false);
+                }
+                if (executed == null || executed.Canceled || executed.Exception != null) return;
+                if (scope.Reads.Valid())
+                {
+                    // A 304 confirms the client's copy: only while the decision's inputs hold.
+                    if (executed.Result is StatusCodeResult { StatusCode: 304 } notModified)
+                        executed.Result = PrivacyResponseGuard.Confirm(http, notModified);
+                    PrivacyResponseGuard.Install(http, scope.Reads);
+                    return;
+                }
+                why = PrivacyReadSet.Withheld(scope.Reads);
+                // The loaded image became its protected form under inputs that changed: decided again on the loaded image
+                // (its bytes, kept when the protected form read them); without them, the fallback image.
+                if (replaced)
+                {
+                    var original = loaded is FileContentResult ? loaded : http.Items[LoadedImageKey] as IActionResult;
+                    if (original == null) break;
+                    executed.Result = original;
+                }
+            }
+
+            _logger.Warning($"Spoiler Guard: an image's verdict inputs kept changing ({why}); the fallback image was sent.");
             WithholdImage(executed);
         }
 
-        /// <summary>An image whose verdict identity kept changing: the fallback image, never cached.</summary>
+        /// <summary>An image whose verdict inputs changed under its protected form or kept changing: the fallback image, never cached.</summary>
         private void WithholdImage(ActionExecutedContext? executed)
         {
             if (executed is not { } answered || answered.HttpContext.Response.HasStarted) return;
             answered.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
             ApplyNoStoreToResponse(answered.HttpContext);
-        }
-
-        /// <summary>
-        /// The revision of what an image decision reads besides the item's own inputs: every candidate viewer's Spoiler Guard
-        /// state, read fresh (the request's memo is replaced, so the decision reads the same state), and the admin's image
-        /// settings.
-        /// </summary>
-        private string ImagePolicyRevision(Microsoft.AspNetCore.Http.HttpContext http, IReadOnlyList<Guid> candidates, Configuration.PluginConfiguration config)
-        {
-            var text = new System.Text.StringBuilder();
-            foreach (var candidate in candidates)
-                text.Append(candidate.ToString("N")).Append('=').Append(Newtonsoft.Json.JsonConvert.SerializeObject(_resolver.LoadUserStateFresh(http, candidate))).Append(';');
-            text.Append(config.SpoilerBlurEnabled).Append(config.SpoilerBlurArtwork).Append(config.SpoilerKeepMoviePosters).Append(config.SpoilerBlurMode)
-                .Append(config.SpoilerBlurIntensity).Append(config.SpoilerAdvancedMode).Append(config.SpoilerNextEpisodeStripImage);
-            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())));
         }
 
         /// <summary>
@@ -431,7 +440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // Read the item up front so we can pick the effective user by
             // spoiler scope (below) rather than by identity alone.
-            var item = _libraryManager.GetItemById(itemId);
+            var item = PrivacyReads.Item(_libraryManager, itemId);
             if (item == null)
             {
                 await next().ConfigureAwait(false);
@@ -496,7 +505,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     await next().ConfigureAwait(false);
                     return false;
                 }
-                var movieUd = _userDataManager.GetUserData(jUser, movie);
+                var movieUd = PrivacyReads.UserData(_userDataManager, jUser, movie, progress: true);
                 if (movieUd?.Played == true)
                 {
                     RegisterNoStoreOnStarting(context.HttpContext);
@@ -599,7 +608,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (item is Episode episode)
                 {
-                    var userData = _userDataManager.GetUserData(jUser, episode);
+                    var userData = PrivacyReads.UserData(_userDataManager, jUser, episode, progress: true);
                     if (userData?.Played == true)
                     {
                         // Pass-through, but force `no-store` so a watched
@@ -688,6 +697,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var cacheKey = BuildItemCacheKey(item, imageType, context, pluginConfig.SpoilerBlurIntensity)
                 + ":" + spoilerMode;
 
+            // The protected form is made from the image's bytes: the client's copy (an earlier, unprotected answer) is
+            // never revalidated, so the host answers with the bytes rather than a 304.
+            context.HttpContext.Request.Headers.Remove("If-None-Match");
+            context.HttpContext.Request.Headers.Remove("If-Modified-Since");
             var executed = await next().ConfigureAwait(false);
             if (executed.Canceled || executed.Exception != null) return true;
 
@@ -1008,6 +1021,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             public required bool AnyWatched { get; init; }
             public required DateTime ExpiresAt { get; init; }
+            /// <summary>The input tick the episodes' watched state was read at.</summary>
+            public long ReadAt { get; init; }
         }
 
         private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
@@ -1048,10 +1063,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var key = user.Id.ToString("N") + ":" + season.Id.ToString("N");
             var now = DateTime.UtcNow;
-            if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now)
+            // The user's watched state over the season's episodes, recorded as of when it was read.
+            PrivacyReads.WatchedIn(user.Id, season.Id);
+            if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now && !PrivacyInputs.ScopeChangedSince(hit.ReadAt, user.Id, season.Id))
             {
+                PrivacyReadSet.Current?.Since(hit.ReadAt);
                 return hit.AnyWatched;
             }
+            var readAt = PrivacyInputs.Now;
 
             bool anyWatched = false;
             bool determinationFailed = false;
@@ -1067,7 +1086,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     total++;
                     if (child is not Episode ep) continue;
-                    var ud = _userDataManager.GetUserData(user, ep);
+                    var ud = PrivacyReads.UserData(_userDataManager, user, ep);
                     if (ud != null) withUd++;
                     if (ud?.Played == true)
                     {
@@ -1108,6 +1127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     AnyWatched = anyWatched,
                     ExpiresAt = now + SeasonWatchedCacheTtl,
+                    ReadAt = readAt,
                 };
             }
 
@@ -1155,9 +1175,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, originalType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (originalBytes is { Length: > 0 }) KeepLoaded(executed, originalBytes, originalType);
             if (originalBytes == null || originalBytes.Length == 0)
             {
+                // A protected answer without bytes to transform never confirms the client's copy (a 304 would keep its
+                // earlier, unprotected pixels): it is replaced.
+                if (NotModified(executed.Result))
+                {
+                    executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+                    ApplyNoStoreToResponse(executed.HttpContext);
+                    return;
+                }
                 MaybeWarnShapeMismatch(executed.Result);
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;
@@ -1261,7 +1290,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 if (parentId == Guid.Empty) return null;
-                var parent = _libraryManager.GetItemById(parentId);
+                var parent = PrivacyReads.Item(_libraryManager, parentId);
                 if (parent == null) return null;
 
                 var imgInfo = parent.GetImageInfo(parentImageType, 0);
@@ -1306,9 +1335,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return;
             }
 
-            var (originalBytes, _) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            var (originalBytes, originalType) = await ExtractBytesAsync(executed.Result).ConfigureAwait(false);
+            if (originalBytes is { Length: > 0 }) KeepLoaded(executed, originalBytes, originalType);
             if (originalBytes == null || originalBytes.Length == 0)
             {
+                // A protected answer without bytes to transform never confirms the client's copy (a 304 would keep its
+                // earlier, unprotected pixels): it is replaced.
+                if (NotModified(executed.Result))
+                {
+                    executed.Result = new FileContentResult(_blurService.HardcodedFallbackJpeg, "image/jpeg");
+                    ApplyNoStoreToResponse(executed.HttpContext);
+                    return;
+                }
                 MaybeWarnShapeMismatch(executed.Result);
                 ApplyNoStoreToResponse(executed.HttpContext);
                 return;
@@ -1342,6 +1380,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (executed.HttpContext.Response.HasStarted) return;
             ApplyNoStoreHeadersDirect(executed.HttpContext, imageType);
         }
+
+        /// <summary>The loaded image's bytes, kept by a protected form that read a stream (a later decision starts from them).</summary>
+        private const string LoadedImageKey = "__JE_SPOILER_LOADED_IMAGE";
+
+        /// <summary>Keeps the loaded image's bytes for a decision made again (the stream they came from is consumed).</summary>
+        private static void KeepLoaded(ActionExecutedContext executed, byte[] bytes, string? contentType)
+        {
+            if (executed.Result is FileContentResult) return;
+            var kept = new FileContentResult(bytes, contentType ?? "image/jpeg");
+            if (executed.Result is FileResult file) { kept.LastModified = file.LastModified; kept.EntityTag = file.EntityTag; }
+            executed.HttpContext.Items[LoadedImageKey] = kept;
+        }
+
+        /// <summary>Whether an answer confirms the client's copy instead of carrying the image (a 304).</summary>
+        private static bool NotModified(IActionResult? result) => result is StatusCodeResult { StatusCode: 304 } or ObjectResult { StatusCode: 304 };
 
         private static async Task<(byte[]? Bytes, string? ContentType)> ExtractBytesAsync(IActionResult result)
         {

@@ -663,8 +663,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             return PrivacyDelivery.Deliver<IActionResult>(viewer.Id, () =>
             {
                 var final = _userConfig == null ? null : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library);
-                return new(ProjectArtwork(final?.Spoilers, owner, grant, size, pageKey, bytes), final?.Revision ?? "-", static _ => false);
-            }, () => _userConfig == null ? "-" : TitlePresentationGate.Read(_userConfig, _presentation, viewer.Id, _library).Revision) ?? new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
+                return ProjectArtwork(final?.Spoilers, owner, grant, size, pageKey, bytes);
+            }, context.HttpContext) ?? new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
         }
 
         /// <summary>One projection of an absent title's artwork under the viewer's Spoiler Guard presentation.</summary>

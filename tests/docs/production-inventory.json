@@ -1067,6 +1067,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyReadSet.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyResponseGuard.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySessionsWebSocketListener.cs",
       "category": "Services"
     },
@@ -9207,11 +9215,19 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "processed-watchlist-items.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
       "literal": "reviews.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
+      "literal": "spoilerblur.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
@@ -9714,10 +9730,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 547,
+    "files": 549,
     "routes": 257,
     "configuration_properties": 579,
-    "storage_references": 84,
+    "storage_references": 86,
     "scheduled_tasks": 14,
     "locales": 33
   }

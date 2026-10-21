@@ -369,7 +369,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case Jellyfin.Data.Enums.BaseItemKind.Episode:
                     return !(identity.Played ?? played ?? ResolvePlayedServerSide(userId, identity.ItemId));
                 case Jellyfin.Data.Enums.BaseItemKind.Season:
-                    var index = seasonIndex ?? (_libraryManager.GetItemById(identity.ItemId) as MediaBrowser.Controller.Entities.TV.Season)?.IndexNumber;
+                    var index = seasonIndex ?? (PrivacyReads.Item(_libraryManager, identity.ItemId) as MediaBrowser.Controller.Entities.TV.Season)?.IndexNumber;
                     // Seasons 0 and 1 are the viewer's entry point.
                     if (index.GetValueOrDefault(int.MaxValue) <= 1) return false;
                     return !(seasonWatched ?? HasWatchedAnyEpisodeInSeasonServerSide(userId, identity.ItemId));
@@ -390,8 +390,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (user == null) return;
             NativeResponseValue.Replace(result, dto =>
             {
-                if (dto.UserData == null || dto.Id == Guid.Empty || _libraryManager.GetItemById(dto.Id) is not { } item) return dto;
-                var now = _userDataManager.GetUserData(user, item);
+                if (dto.UserData == null || dto.Id == Guid.Empty || PrivacyReads.Item(_libraryManager, dto.Id) is not { } item) return dto;
+                var now = PrivacyReads.UserData(_userDataManager, user, item);
                 dto.UserData.Played = now?.Played == true;
                 dto.UserData.PlaybackPositionTicks = now?.PlaybackPositionTicks ?? 0;
                 dto.UserData.PlayCount = now?.PlayCount ?? 0;
@@ -541,7 +541,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // watched-state change. Episode has no
             // playback-position-affects-image (chapter rail belongs to the
             // movie path), so pass 0.
-            MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0);
+            MutateImageTagsForCacheBust(item, cfg, played, playbackPositionTicks: 0, played ? null : Category(item, userState, cfg, userId, seriesId.Value));
             if (played) return item;
 
             return ApplyStripping(item, userState, cfg, userId, ResolveCategoryReveal(item, userState, cfg, userId, seriesId.Value));
@@ -568,7 +568,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (season && item.IndexNumber.GetValueOrDefault(int.MaxValue) <= 1) return item;
             var protects = Protects(identity, userState, userId, played: item.UserData?.Played, seasonIndex: season ? item.IndexNumber : null, seasonWatched: season ? SeasonWatched(item) : null);
             // Mutate the image tags BEFORE the watched-skip so a client's image cache refetches when the state flips.
-            MutateImageTagsForCacheBust(item, cfg, !protects, kind == Jellyfin.Data.Enums.BaseItemKind.Movie ? item.UserData?.PlaybackPositionTicks ?? 0 : 0);
+            MutateImageTagsForCacheBust(item, cfg, !protects, kind == Jellyfin.Data.Enums.BaseItemKind.Movie ? item.UserData?.PlaybackPositionTicks ?? 0 : 0,
+                protects && kind == Jellyfin.Data.Enums.BaseItemKind.Episode ? Category(item, userState, cfg, userId, identity.SeriesId) : null);
             if (!protects) return item;
             return ApplyStripping(item, userState, cfg, userId,
                 kind == Jellyfin.Data.Enums.BaseItemKind.Episode ? ResolveCategoryReveal(item, userState, cfg, userId, identity.SeriesId) : default);
@@ -610,6 +611,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // uniform full strip), then boundary categorization. Every failure
         // path — no boundary, missing index numbers, specials — yields
         // CategoryReveal.None, i.e. the full strip.
+        /// <summary>An unwatched guarded episode's advanced category (an input of its image verdict); null without advanced mode.</summary>
+        private string? Category(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId, Guid seriesId)
+            => !cfg.SpoilerAdvancedMode || userState.Prefs?.UseAdvancedCategories == false || item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode ? null
+                : SpoilerNextUnwatchedService.Categorize(_nextUnwatched.GetBoundary(userId, seriesId), item.Id, item.ParentIndexNumber, item.IndexNumber).ToString();
+
         private CategoryReveal ResolveCategoryReveal(
             BaseItemDto item,
             UserSpoilerBlur userState,
@@ -653,9 +659,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // applies" is the safe default (we'd rather strip a
                 // non-existent ref than leak metadata).
                 if (jUser == null) return false;
-                var item = _libraryManager.GetItemById(itemId);
+                var item = PrivacyReads.Item(_libraryManager, itemId);
                 if (item == null) return false;
-                var ud = _userDataManager.GetUserData(jUser, item);
+                var ud = PrivacyReads.UserData(_userDataManager, jUser, item);
                 return ud?.Played == true;
             }
             catch (Exception ex)
@@ -684,9 +690,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var jUser = _userManager.GetUserById(userId);
                 if (jUser == null) return null;
-                var item = _libraryManager.GetItemById(itemId);
+                var item = PrivacyReads.Item(_libraryManager, itemId);
                 if (item == null) return null;
-                var ud = _userDataManager.GetUserData(jUser, item);
+                var ud = PrivacyReads.UserData(_userDataManager, jUser, item, progress: true);
                 if (ud == null) return null;
                 if (ud.Played) return long.MaxValue;
                 if (ud.PlaybackPositionTicks > 0) return ud.PlaybackPositionTicks;
@@ -712,13 +718,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var jUser = _userManager.GetUserById(userId);
                 if (jUser == null) return false;
-                var seasonItem = _libraryManager.GetItemById(seasonId)
+                var seasonItem = PrivacyReads.Item(_libraryManager, seasonId)
                     as MediaBrowser.Controller.Entities.TV.Season;
                 if (seasonItem == null) return false;
+                PrivacyReads.WatchedIn(jUser.Id, seasonId);
                 foreach (var ep in seasonItem.GetEpisodes(jUser, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
                 {
                     if (ep == null) continue;
-                    var ud = _userDataManager.GetUserData(jUser, ep);
+                    var ud = PrivacyReads.UserData(_userDataManager, jUser, ep);
                     if (ud?.Played == true) return true;
                 }
                 return false;
@@ -832,7 +839,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             BaseItemDto item,
             PluginConfiguration cfg,
             bool watched,
-            long playbackPositionTicks)
+            long playbackPositionTicks,
+            string? verdict = null)
         {
             if (item == null) return;
             var hasPrimaryTags = item.ImageTags != null && item.ImageTags.Count > 0;
@@ -846,23 +854,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Hash the inputs that affect blur OUTPUT bytes. Same shape
             // as the API's imageCacheToken so a client integrating with
             // the API ends up with the SAME URL as one that doesn't.
-            var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{cfg?.SpoilerKeepMoviePosters == true}|{playbackPositionTicks}";
+            // The token derives from the complete effective image verdict: the item's watched state and position, its
+            // advanced category (the next-episode boundary), and every privacy setting (strip, advanced and image reveals
+            // included), so any change of it changes the URL.
+            var inputs = $"{item.Id:N}|{cfg?.SpoilerBlurEnabled == true}|{watched}|{cfg?.SpoilerBlurMode ?? "blur"}|{cfg?.SpoilerBlurIntensity ?? 40}|{cfg?.SpoilerBlurArtwork == true}|{cfg?.SpoilerKeepMoviePosters == true}|{playbackPositionTicks}|{verdict}|{PrivacySettings.Revision(cfg)}";
             var token = ShortHash(inputs);
 
-            // Prefix the existing tag rather than replace it — preserves
+            // Prefix the host's tag rather than replace it — preserves
             // Jellyfin's own image-version semantics (tag changes when
-            // image bytes change). Final URL: ?tag={our-token}-{jellyfin-tag}
+            // image bytes change). Final URL: ?tag={our-token}-{jellyfin-tag}.
+            // A tag that already carries an earlier token (an answer projected
+            // again) gets the current one in its place.
             if (hasPrimaryTags)
             {
                 var keys = item.ImageTags!.Keys.ToArray();
-                foreach (var k in keys)
-                {
-                    var orig = item.ImageTags[k] ?? string.Empty;
-                    if (!orig.StartsWith("sb-", StringComparison.Ordinal))
-                    {
-                        item.ImageTags[k] = "sb-" + token + "-" + orig;
-                    }
-                }
+                foreach (var k in keys) item.ImageTags[k] = "sb-" + token + "-" + HostTag(item.ImageTags[k]);
             }
 
             // Bust the backdrop tags too, or a native client keeps requesting
@@ -871,14 +877,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (hasBackdropTags)
             {
                 for (var i = 0; i < item.BackdropImageTags!.Length; i++)
-                {
-                    var orig = item.BackdropImageTags[i] ?? string.Empty;
-                    if (!orig.StartsWith("sb-", StringComparison.Ordinal))
-                    {
-                        item.BackdropImageTags[i] = "sb-" + token + "-" + orig;
-                    }
-                }
+                    item.BackdropImageTags[i] = "sb-" + token + "-" + HostTag(item.BackdropImageTags[i]);
             }
+        }
+
+        /// <summary>The host's own image tag of a tag that may carry a token ("sb-" + 8 hex + "-").</summary>
+        private static string HostTag(string? tag)
+        {
+            var value = tag ?? string.Empty;
+            while (value.Length > 12 && value.StartsWith("sb-", StringComparison.Ordinal) && value[11] == '-'
+                && value.AsSpan(3, 8).IndexOfAnyExcept("0123456789abcdef") < 0) value = value[12..];
+            return value;
         }
 
         // 8-hex-char SHA1 prefix. Sub-microsecond per call; fine for

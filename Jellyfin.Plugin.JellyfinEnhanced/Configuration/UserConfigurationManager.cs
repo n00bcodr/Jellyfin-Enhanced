@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -42,6 +43,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
         public event Action? ReviewsChanged;
+
+        private static long _saveEpoch;
+
+        /// <summary>
+        /// Advances on every per-user file save: the byte boundary's check re-reads the policy files an answer read only
+        /// when a save happened since its last check.
+        /// </summary>
+        public static long SaveEpoch => Interlocked.Read(ref _saveEpoch);
+
+        /// <summary>The per-user files that are verdict inputs (a viewer's privacy policies), with their document types.</summary>
+        private static readonly System.Collections.Generic.Dictionary<string, Type> _privacyFiles = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["hidden-content.json"] = typeof(UserHiddenContent),
+            ["spoilerblur.json"] = typeof(UserSpoilerBlur),
+        };
+
+        /// <summary>A policy document's revision: a fingerprint of its content (the same for the file and a copy read from it).</summary>
+        public static string ContentRevision(object? document)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(document))));
+
+        /// <summary>
+        /// Records a read of a viewer's policy document (<paramref name="document"/> as the reader holds it, from the file or a
+        /// copy of it) in the current attempt's read-set: the gate re-reads the file and compares content.
+        /// </summary>
+        public void RecordPolicyRead(string userId, string fileName, object? document)
+        {
+            if (Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyReadSet.Current == null || !_privacyFiles.TryGetValue(fileName, out var type)) return;
+            RecordPolicyRevision(userId, fileName, ContentRevision(document ?? Activator.CreateInstance(type)));
+        }
+
+        /// <summary>As <see cref="RecordPolicyRead"/>, with the document's <see cref="ContentRevision"/> computed when it was read.</summary>
+        public void RecordPolicyRevision(string userId, string fileName, string revision)
+        {
+            if (Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyReadSet.Current is not { } reads || !_privacyFiles.TryGetValue(fileName, out var type)) return;
+            var user = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+            reads.Revision("file:" + user + ":" + fileName.ToLowerInvariant(), revision, () => ContentRevision(ReadForRevision(user, fileName, type)));
+        }
+
+        private object? ReadForRevision(string userId, string fileName, Type type)
+        {
+            var path = ResolveUserFile(userId, fileName);
+            if (!File.Exists(path)) return Activator.CreateInstance(type);
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return Activator.CreateInstance(type);
+            return JsonConvert.DeserializeObject(json, type, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }) ?? Activator.CreateInstance(type);
+        }
 
         public object GetUserFileLock(string userId, string fileName)
         {
@@ -86,7 +133,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             try
             {
                 var configPath = ResolveUserFile(userId, fileName);
-                return File.Exists(configPath);
+                var exists = File.Exists(configPath);
+                // A policy file that does not exist yet is read as its empty document.
+                if (!exists) RecordPolicyRead(userId, fileName, null);
+                return exists;
             }
             catch (Exception ex)
             {
@@ -128,6 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                         return new T();
                     }
 
+                    RecordPolicyRead(userId, fileName, settings);
                     return settings;
                 }
                 catch (Exception ex)
@@ -137,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
             }
 
+            RecordPolicyRead(userId, fileName, null);
             return new T();
         }
 
@@ -145,7 +197,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public T GetUserConfigurationStrict<T>(string userId, string fileName, bool quarantineCorrupt = true) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
-            if (!File.Exists(configPath)) return new T();
+            if (!File.Exists(configPath))
+            {
+                RecordPolicyRead(userId, fileName, null);
+                return new T();
+            }
 
             string json;
             try
@@ -186,6 +242,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     if (quarantineCorrupt) BackupCorruptFile(configPath);
                     throw new InvalidDataException($"'{fileName}' deserialized to null.");
                 }
+                RecordPolicyRead(userId, fileName, parsed);
                 return parsed;
             }
             catch (InvalidDataException)
@@ -241,6 +298,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                 File.WriteAllText(tempPath, jsonToSave);
                 File.Move(tempPath, configPath, overwrite: true);
+                Interlocked.Increment(ref _saveEpoch);
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
@@ -335,6 +393,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                     + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
                 File.Move(filePath, backupPath);
+                Interlocked.Increment(ref _saveEpoch);
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
             }
             catch (Exception ex)

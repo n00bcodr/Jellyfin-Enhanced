@@ -162,11 +162,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // rule every Spoiler Guard site uses: a movie by its id, a guarded collection or its TMDB key; a series, season
             // or episode by the owning series' id or key.
             var owned = kind is BaseItemKind.Season or BaseItemKind.Episode;
-            var owner = owned ? (Guid.TryParse(e.SeriesId, out var series) ? series : Guid.Empty) : id;
+            var (series, seriesKey) = owned ? EntrySeries(id, e) : (Guid.Empty, null);
+            var owner = owned ? series : id;
             if (owner == Guid.Empty) return null;
-            var identity = new PrivacyIdentity(id, kind, owner, HiddenContentPolicy.TitleIdentity(kind == BaseItemKind.Movie ? "movie" : "tv", owned ? e.SeriesTmdbId : e.TmdbId),
+            var identity = new PrivacyIdentity(id, kind, owner, owned ? seriesKey : HiddenContentPolicy.TitleIdentity(kind == BaseItemKind.Movie ? "movie" : "tv", e.TmdbId),
                 Array.Empty<Guid>(), null, owned ? BaseItemKind.Series : kind);
             return _spoilerResolver.InSpoilerScope(state, identity) ? e.Type : null;
+        }
+
+        /// <summary>
+        /// The series an episode's or season's entry belongs to NOW and that series' typed TMDB key: the entry's stored series,
+        /// unless the library has since reported the item under another one (a move the cached entry does not know yet),
+        /// whose key is then read from the library.
+        /// </summary>
+        public (Guid Series, string? Key) EntrySeries(Guid id, TagCacheEntry e)
+        {
+            var stored = Guid.TryParse(e.SeriesId, out var series) ? series : Guid.Empty;
+            if (PrivacyInputs.KnownSeries(_libraryManager, id) is not { } current || current == stored)
+                return (stored, HiddenContentPolicy.TitleIdentity("tv", e.SeriesTmdbId));
+            return (current, PrivacyIdentities.TitleKey(PrivacyReads.Item(_libraryManager, current)));
         }
 
         /// <summary>
@@ -179,7 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (state.Series.Count == 0 && state.Movies.Count == 0 && state.Collections.Count == 0 && state.ProviderTitles.Count == 0 && state.PendingTmdb.Count == 0) return false;
             // Any other kind may be an extra of a guarded title: its owner decides, as for tag data.
             if (!IsTitleKind(ownerType))
-                return _libraryManager.GetItemById(ownerId) is { } item && PrivacyIdentities.Of(_libraryManager, item) is { IsExtra: true } identity && _spoilerResolver.InSpoilerScope(state, identity);
+                return PrivacyReads.Item(_libraryManager, ownerId) is { } item && PrivacyIdentities.Of(_libraryManager, item) is { IsExtra: true } identity && _spoilerResolver.InSpoilerScope(state, identity);
             var probe = new TagCacheEntry { Type = ownerType, SeriesId = ownerSeriesIdN };
             return GetGuardedKind(state, ownerId.ToString("N"), probe) != null;
         }
@@ -306,7 +320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     playedCandidates.Add(cGuid);
                 }
                 else if (kind == "Season"
-                    && _libraryManager.GetItemById<BaseItem>(cGuid) is Season laterSeason
+                    && PrivacyReads.Item<BaseItem>(_libraryManager, cGuid) is Season laterSeason
                     && laterSeason.IndexNumber.GetValueOrDefault(int.MaxValue) > 1)
                 {
                     laterSeasons.Add(laterSeason);
@@ -379,7 +393,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (playedIds.Contains(entryGuid)) continue;
                     }
                     else if (isSeason
-                        && _libraryManager.GetItemById<BaseItem>(entryGuid) is Season seasonItem)
+                        && PrivacyReads.Item<BaseItem>(_libraryManager, entryGuid) is Season seasonItem)
                     {
                         var sNum = seasonItem.IndexNumber.GetValueOrDefault(int.MaxValue);
                         // S0/S1 posters always pass (their existence isn't a
@@ -436,7 +450,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 bool played;
                 try
                 {
-                    played = _userDataManager.GetUserData(user, item)?.Played == true;
+                    played = PrivacyReads.UserData(_userDataManager, user, item)?.Played == true;
                 }
                 catch (Exception ex)
                 {
@@ -448,7 +462,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (played) return entry;
             }
-            else if (kind == "Season" && _libraryManager.GetItemById<BaseItem>(item.Id) is Season season)
+            else if (kind == "Season" && PrivacyReads.Item<BaseItem>(_libraryManager, item.Id) is Season season)
             {
                 var sNum = season.IndexNumber.GetValueOrDefault(int.MaxValue);
                 if (sNum <= 1 || HasWatchedAnyEpisode(season, user, "postertags-season-probe:"))
@@ -511,10 +525,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
+                PrivacyReads.WatchedIn(user.Id, season.Id);
                 foreach (var ep in season.GetEpisodes(user, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
                 {
                     if (ep == null) continue;
-                    var ud = _userDataManager.GetUserData(user, ep);
+                    var ud = PrivacyReads.UserData(_userDataManager, user, ep);
                     if (ud?.Played == true) return true;
                 }
             }
@@ -541,6 +556,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var played = new HashSet<Guid>();
             if (candidateIds.Count == 0) return played;
+            PrivacyReads.WatchedOf(user.Id, candidateIds);
             try
             {
                 foreach (var id in _libraryManager.GetItemIds(new InternalItemsQuery(user)
@@ -575,6 +591,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var ids = new HashSet<Guid>();
                 var keys = new HashSet<string>(StringComparer.Ordinal);
+                PrivacyReads.WatchedAll(user.Id);
                 foreach (var item in _libraryManager.GetItemList(new InternalItemsQuery(user)
                 {
                     IncludeItemTypes = new[] { BaseItemKind.Episode },

@@ -8604,23 +8604,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var jsonOptions = TagCacheJsonOptions();
 
             // The one delivery gate: the whole body (items, review ratings) is
-            // built under one verdict identity (the user's Hidden Content and
-            // Spoiler Guard revisions, and the watched state and ownership of
-            // every entry it holds) and leaves (bytes or a 304) only when the
-            // gate, after the build's last wait, lookup and lock, finds that
-            // identity unchanged. A changed one builds again (bounded); one that
-            // keeps changing gets 503, never stale bytes.
-            var body = Services.PrivacyDelivery.Deliver(
-                user.Id,
-                () => BuildTagCacheBody(user, since, jsonOptions),
-                () => TagCachePolicyRevision(user));
+            // built under one read-set (every verdict input the build reads —
+            // the user's Hidden Content and Spoiler Guard documents, the privacy
+            // settings, the watched state and library facts of every entry it
+            // judged — with its revision) and is accepted only when the gate,
+            // after the build's last wait, lookup and lock, finds that set
+            // unchanged. A changed one builds again (bounded); one that keeps
+            // changing gets 503, never stale bytes. The body leaves later (its
+            // result writes it): that writer checks the set again before it
+            // starts (building again when it changed) and before every segment.
+            Func<(Services.TagCacheResponseBody, Services.PrivacyReadSet?)?> rebuild = () =>
+                Services.PrivacyDelivery.Deliver(user.Id, () => BuildTagCacheBody(user, since, jsonOptions), HttpContext, out var rebuilt) is { } fresh ? (fresh, rebuilt) : null;
+            var body = Services.PrivacyDelivery.Deliver(user.Id, () => BuildTagCacheBody(user, since, jsonOptions), HttpContext, out var reads);
             if (body == null)
             {
+                _logger.Warning($"Tag cache withheld (503): its verdict inputs kept changing ({Services.PrivacyReadSet.LastWithheld}).");
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return StatusCode(503);
             }
 
-            return RespondTagCache(body);
+            return RespondTagCache(body, reads, rebuild);
         }
 
         /// <summary>
@@ -8646,19 +8649,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 : null;
             hidden = Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id, null, _libraryManager);
             return hidden.Revision + "|" + Services.SpoilerTagStripPolicy.RevisionOf(spoiler);
-        }
-
-        /// <summary>
-        /// The same revision as <see cref="TagCachePolicies"/>, for the re-read before an answer leaves: the revision is the
-        /// rules' own, so Hidden Content's library binding (which only resolves the rules' item ids) is skipped.
-        /// </summary>
-        private string TagCachePolicyRevision(JUser user)
-        {
-            var cfg = JellyfinEnhanced.Instance?.Configuration;
-            var spoiler = Services.SpoilerTagDataStripper.IsConfigured(cfg)
-                ? Services.SpoilerTagDataStripper.CreatePolicy(cfg, LoadSpoilerStateForTagStrip(user.Id))
-                : null;
-            return Services.HiddenContentPolicy.Load(_userConfigurationManager, user.Id).Revision + "|" + Services.SpoilerTagStripPolicy.RevisionOf(spoiler);
         }
 
         private (TagCacheAnswer Answer, string Revision) ComposeTagCache(JUser user, long? since, JsonSerializerOptions jsonOptions)
@@ -8772,8 +8762,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         continue;
                     }
                     var kindName = entry?.Type;
-                    var titleKey = Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", kindName is "Episode" or "Season" ? entry?.SeriesTmdbId : entry?.TmdbId);
-                    if (hiddenPolicy.IsHidden(titleKey, key, entry?.SeriesId, "library")) items.Remove(key);
+                    // An episode or season is judged by the series it belongs to now (the library may have moved it since the entry was built).
+                    var (series, seriesKey) = entry != null && kindName is "Episode" or "Season" && Guid.TryParse(key, out var entryId)
+                        ? _spoilerTagDataStripper.EntrySeries(entryId, entry) : (Guid.Empty, null);
+                    var titleKey = kindName is "Episode" or "Season" ? seriesKey : Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", entry?.TmdbId);
+                    if (hiddenPolicy.IsHidden(titleKey, key, series != Guid.Empty ? series.ToString("N") : entry?.SeriesId, "library")) items.Remove(key);
                 }
                 // The client replaces its stored copy (rather than applying a delta) when the hiding rules change.
                 stripFingerprint = "h" + hiddenPolicy.Revision;
@@ -8795,12 +8788,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// the body around them. The entries the answer holds are the items it judged (their watched state and ownership
         /// are its inputs); the shared, unfiltered copy judged none.
         /// </summary>
-        private Services.DeliveryBuild<Services.TagCacheResponseBody> BuildTagCacheBody(JUser user, long? since, JsonSerializerOptions jsonOptions)
+        private Services.TagCacheResponseBody BuildTagCacheBody(JUser user, long? since, JsonSerializerOptions jsonOptions)
         {
-            var (answer, revision) = ComposeTagCache(user, since, jsonOptions);
-            var (keys, owners) = (answer.Keys, answer.Owners);
-            return new(ComposeTagCacheBody(answer, jsonOptions), revision,
-                keys == null ? static _ => false : id => keys.ContainsKey(id.ToString("N")) || owners?.Contains(id) == true);
+            var (answer, _) = ComposeTagCache(user, since, jsonOptions);
+            // The entries the answer holds were judged: their library facts are inputs (the shared, unfiltered copy judged none).
+            if (answer.Keys is { } keys && Services.PrivacyReadSet.Current is { } reads)
+            {
+                foreach (var key in keys.Keys) if (Guid.TryParse(key, out var id)) reads.Library(id);
+                if (answer.Owners != null) reads.Library(answer.Owners);
+            }
+            return ComposeTagCacheBody(answer, jsonOptions);
         }
 
         // The rest of the body — review ratings, filterRevision — for either
@@ -8848,22 +8845,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
         }
 
-        // ETag/304 for a body the delivery gate let through (nothing here waits or looks anything up).
-        private IActionResult RespondTagCache(Services.TagCacheResponseBody body)
+        // ETag/304 for a body the delivery gate let through, decided where the bytes
+        // leave: the result re-checks the body's read-set before it answers (a
+        // changed one builds the body again, ETag included) and before every
+        // segment it writes.
+        private IActionResult RespondTagCache(Services.TagCacheResponseBody body, Services.PrivacyReadSet? reads,
+            Func<(Services.TagCacheResponseBody Body, Services.PrivacyReadSet? Reads)?> rebuild)
         {
-            // no-cache (not no-store): the client may keep a copy to revalidate against,
-            // but must always revalidate. Freshness is unchanged, this only avoids
-            // re-sending an unchanged multi-MB body.
-            Response.Headers["Cache-Control"] = "private, no-cache";
-            Response.Headers["ETag"] = body.ETag;
-
-            if (Request.Headers.TryGetValue("If-None-Match", out var ifNoneMatch)
-                && ifNoneMatch.ToString().Contains(body.ETag, StringComparison.Ordinal))
-            {
-                return StatusCode(304);
-            }
-
-            return body.ToActionResult();
+            var ifNoneMatch = Request.Headers.TryGetValue("If-None-Match", out var header) ? header.ToString() : null;
+            return body.ToActionResult(reads, rebuild, ifNoneMatch);
         }
 
         // The JsonSerializerOptions of the formatter MVC runs for an
@@ -8997,11 +8987,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // identity that keeps changing gets 503).
             var results = Services.PrivacyDelivery.Deliver(user.Id, () =>
             {
-                var (projected, revision, judged) = ProjectTagData(user, ids, mediaSourceId);
-                return new Services.DeliveryBuild<List<object>>(projected, revision, judged.Contains);
-            }, () => TagCachePolicyRevision(user));
+                var (projected, _, judged) = ProjectTagData(user, ids, mediaSourceId);
+                Services.PrivacyReadSet.Current?.Library(judged);
+                return projected;
+            }, HttpContext);
             if (results == null)
             {
+                _logger.Warning($"Tag data withheld (503): its verdict inputs kept changing ({Services.PrivacyReadSet.LastWithheld}).");
                 Response.Headers["Cache-Control"] = "private, no-store";
                 return StatusCode(503);
             }

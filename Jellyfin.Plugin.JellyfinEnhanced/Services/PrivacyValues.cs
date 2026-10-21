@@ -158,6 +158,8 @@ public sealed class PrivacyValueHost
     public BaseItem? Item(Guid? id)
     {
         if (id is not { } key || key == Guid.Empty || Library == null) return null;
+        // An entity the projection reads is one of the answer's inputs (the attempt's read-set records it).
+        PrivacyReadSet.Current?.Library(key);
         if (_items.TryGetValue(key, out var known)) return known;
         BaseItem? item;
         try { item = Library.GetItemById(key) ?? Library.GetItemById<BaseItem>(key); }
@@ -170,7 +172,7 @@ public sealed class PrivacyValueHost
 
     /// <summary>
     /// The title-level item a protected item's vocabulary (genres, studios, people) is copied from: an episode's or season's
-    /// series, an extra's owner (that owner's series when it is an episode or season), else the item itself (a movie or a
+    /// series, an extra's owner by the one ownership rule (that owner's series when it is an episode or season), else the item itself (a movie or a
     /// series is its own title). Null when the library cannot resolve it.
     /// </summary>
     public BaseItem? Title(Guid id)
@@ -178,7 +180,8 @@ public sealed class PrivacyValueHost
         var item = Item(id);
         for (var hop = 0; hop < 2 && item != null; hop++)
         {
-            if (item.OwnerId != Guid.Empty) { item = Item(item.OwnerId); continue; }
+            // The one ownership rule (on 10.11 also the owner that lists the item in its extras).
+            if (PrivacyIdentities.ExtraOwner(Library, item) is var owner && owner != Guid.Empty) { item = Item(owner); continue; }
             if (item is MediaBrowser.Controller.Entities.TV.Episode episode) { item = Item(episode.SeriesId); continue; }
             if (item is MediaBrowser.Controller.Entities.TV.Season season) { item = Item(season.SeriesId); continue; }
             break;
@@ -687,7 +690,7 @@ public static partial class PrivacyValues
     private static bool IsExtra(Scope s, Context c) => !s.Synthetic && s.Host.Item(((BaseItemDto)c.Source).Id) is { } item && PrivacyIdentities.ExtraOwner(s.Host.Library, item) != Guid.Empty;
 
     /// <summary>An extra's constructed name: what kind of extra it is ("Trailer", "Theme video", "Behind the scenes").</summary>
-    internal static string ExtraLabel(BaseItem extra, BaseItemKind kind) => extra.ExtraType switch
+    internal static string ExtraLabel(BaseItem extra, BaseItemKind kind) => PrivacyIdentities.ExtraKind(extra) switch
     {
         ExtraType.Trailer => "Trailer",
         ExtraType.ThemeSong => "Theme song",

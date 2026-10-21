@@ -32,6 +32,12 @@ public sealed class HiddenContentPolicy
     /// <summary>Fingerprint of the effective rules and surface settings, without exposing private data.</summary>
     public string Revision { get; }
 
+    /// <summary>The input tick the rules' library ids were bound at (null: not bound).</summary>
+    private long? _boundAt;
+
+    /// <summary>The content revision of the document the policy was built from (what a reader of a cached policy records).</summary>
+    internal string DocumentRevision { get; }
+
     /// <summary>Stable base revision used to protect full-document replacements from newer rule writes.</summary>
     public static string RulesRevision(UserHiddenContent data)
         => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
@@ -46,6 +52,7 @@ public sealed class HiddenContentPolicy
             FilterNextUp = settings.FilterNextUp, FilterContinueWatching = settings.FilterContinueWatching };
         _master = master;
         _remove = remove;
+        DocumentRevision = UserConfigurationManager.ContentRevision(data ?? new UserHiddenContent());
         Revision = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
             RulesRevision(data ?? new()) + Newtonsoft.Json.JsonConvert.SerializeObject(_settings) + master + remove)));
         foreach (var pair in data?.Items ?? new())
@@ -73,15 +80,29 @@ public sealed class HiddenContentPolicy
     public static HiddenContentPolicy Load(UserConfigurationManager manager, Guid viewer, HttpContext? http = null, ILibraryManager? library = null)
     {
         var cacheKey = "__JE_TITLE_HIDES_" + viewer.ToString("N");
-        if (http?.Items.TryGetValue(cacheKey, out var cached) == true && cached is HiddenContentPolicy hit) return hit;
         var config = JellyfinEnhanced.Instance?.Configuration;
+        if (http?.Items.TryGetValue(cacheKey, out var cached) == true && cached is HiddenContentPolicy hit)
+        {
+            // The request's policy is the document read earlier: the current attempt records that document's revision.
+            if (hit._master || hit._remove) manager.RecordPolicyRevision(viewer.ToString("N"), "hidden-content.json", hit.DocumentRevision);
+            // ... and the library facts its rules were bound with, as of when they were read.
+            if (hit._boundAt is { } bound && PrivacyReadSet.Current is { } reads)
+            {
+                reads.Since(bound);
+                reads.Library(hit._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty));
+            }
+            return hit;
+        }
         if (config?.HiddenContentEnabled != true && config?.RemoveContinueWatchingEnabled != true) return Build(null, false);
         HiddenContentPolicy policy;
         lock (manager.GetUserFileLock(viewer.ToString("N"), "hidden-content.json"))
             policy = Build(manager.GetUserConfigurationStrict<UserHiddenContent>(viewer.ToString("N"), "hidden-content.json"),
                 config?.HiddenContentEnabled == true, config?.RemoveContinueWatchingEnabled == true);
         if (library != null && policy._titleItems.Count > 0)
+        {
+            policy._boundAt = PrivacyInputs.Now;
             policy.BindLibraryIds(library, policy._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty));
+        }
         if (http != null) http.Items[cacheKey] = policy;
         return policy;
     }
