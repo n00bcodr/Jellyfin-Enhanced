@@ -6311,8 +6311,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Under the file lock: a strict read first (a corrupt existing file 503s + backs up instead of being
                     // overwritten), then the revision gate (an older tab's document never replaces a newer one).
                     // Play edge (D46 rules): the stored document carries its rules revision for the rule routes' answers.
-                    userConfiguration.Revision = Services.HiddenContentPolicy.RulesRevision(userConfiguration);
-                    var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome);
+                    // Both sides are stamped before they are compared (the stored copy only in memory): a document saved
+                    // before the stamp existed, sent back as it is stored, is unchanged, not a write that needs If-Match.
+                    var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome, static (posted, stored) =>
+                    {
+                        posted.Revision = Services.HiddenContentPolicy.RulesRevision(posted);
+                        stored.Revision = Services.HiddenContentPolicy.RulesRevision(stored);
+                    });
                     if (refused != null) return refused;
                     if (outcome == UserConfigurationManager.DocumentWrite.Unchanged) return Ok(new { success = true, file = "hidden-content.json" });
                 }
