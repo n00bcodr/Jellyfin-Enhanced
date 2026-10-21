@@ -256,6 +256,33 @@ public class IntegrationEditionBoundTests
         Assert.Equal(0, rig.NotifyStore.DeliveryStats(rig.Arr.Now).Pending);
     }
 
+    // r21c: an alert whose title stays past the bound (a title with more copies than a lookup lists) is looked at again for a
+    // day, then ended unsent (before: re-armed every 15 minutes forever, the bell's in-app reads included).
+    [Fact]
+    public async Task AnAlertWhoseLookupsStayBoundEndsUnsentAfterADayInsteadOfWaitingForever()
+    {
+        using var l = new IntegrationEditionOrphanTests.Library();
+        using var rig = await IntegrationNotificationsTests.Started();
+        rig.Phones(rig.Emma);
+        const string bound = "movie:tmdb:693134";
+        Rows(l, PastTheCeiling, live: false, id: "693134");
+        rig.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == bound ? l.View.Copies(key, viewer, aliases) : null;
+        rig.View.Routed = l.View;
+        rig.NotifyStore.Add(rig.Emma.UserId, "ready|" + bound, NotifyKind.Ready, bound, null, new Dictionary<string, string> { ["title"] = "Dune: Part Two" },
+            new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);
+        for (var hour = 0; hour < 23; hour++)
+        {
+            await rig.Dispatcher.RunOnceAsync(default);
+            Assert.Equal(1, rig.NotifyStore.DeliveryStats(rig.Arr.Now).Pending);
+            rig.Arr.Now += TimeSpan.FromHours(1);
+        }
+
+        rig.Arr.Now += TimeSpan.FromHours(2); // past a day since it was queued, the lookups still bound
+        await rig.Dispatcher.RunOnceAsync(default);
+        Assert.Equal(0, rig.NotifyStore.DeliveryStats(rig.Arr.Now).Pending);
+        Assert.Empty(rig.Pushes);
+    }
+
     [Fact]
     public async Task AnAdministratorsAskAlertWhoseVisibilityCheckMeetsABoundReadWaitsThenGoesOut()
     {
