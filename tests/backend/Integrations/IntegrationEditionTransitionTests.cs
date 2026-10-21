@@ -74,6 +74,9 @@ public class IntegrationEditionTransitionTests
     public async Task ACalendarEpisodeIsAvailableOnlyWhenTheCallerHasAPlayableJellyfinItem(string jellyfin, bool available)
     {
         using var rig = new IntegrationCalendarAccessTests.CalendarRig();
+        // The same Jellyfin as the server's view (round 21: the calendar answers through the shared availability boundary).
+        var view = new FakeJellyfinView();
+        rig.View = view;
         rig.Tv.Calendar[0]["hasFile"] = true;
         if (jellyfin != "arr has the file, Jellyfin has no item")
         {
@@ -95,8 +98,17 @@ public class IntegrationEditionTransitionTests
             rig.Library.Setup(l => l.GetItemById<BaseItem>(episode.Id, It.IsAny<User>())).Returns(episode);
             rig.Library.Setup(l => l.GetItemById<BaseItem>(episode.Id)).Returns(episode);
             rig.Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem> { episode });
+            var show = TitleKey.Parse("tv:tvdb:501")!;
+            view.AddCopy(show, new JfCopy { ItemId = series.Id, Path = "/media/tv/Show A" });
+            view.AddItem(new JfItemRef { ItemId = episode.Id, Kind = "episode", Key = show.WithEpisode(1, 1), SeriesId = series.Id, Season = 1, Episode = 1, Path = episode.Path, Virtual = episode.IsVirtualItem });
+            view.AddEpisode(series.Id, new JfEpisode { ItemId = episode.Id, Season = 1, Episode = 1, Virtual = episode.IsVirtualItem });
+            if (episode.IsPlaceHolder) view.Placeholders.Add(episode.Id);
+            else if (!episode.IsVirtualItem) view.AddSource(episode.Id, 1920, 1080, episode.Path);
         }
-        foreach (var caller in new[] { TestCallers.Principal(rig.Member.Id, admin: false), TestCallers.Principal(rig.Callers.Register(Guid.NewGuid(), admin: true, "admin").Id, admin: true) })
+        var admin = rig.Callers.Register(Guid.NewGuid(), admin: true, "admin");
+        foreach (var (user, isAdmin) in new[] { (rig.Member, false), (admin, true) })
+            view.Users[user.Id] = new StatusViewer { UserId = user.Id, IsAdmin = isAdmin, PolicyRevision = "p", Handle = user };
+        foreach (var caller in new[] { TestCallers.Principal(rig.Member.Id, admin: false), TestCallers.Principal(admin.Id, admin: true) })
         {
             var row = Assert.Single(await rig.Events(caller), e => e.Title == "Show A");
             Assert.True(row.HasFile == available, $"{jellyfin}: hasFile={row.HasFile} item={row.ItemEpisodeId}");

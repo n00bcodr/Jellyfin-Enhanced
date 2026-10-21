@@ -142,6 +142,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             _copies = copies;
         }
 
+        /// <summary>
+        /// The predicate over a Jellyfin view as every surface uses it (D53, edition round 21: one availability rule): a title's
+        /// copies are the view's copies under the title's key and its aliases, as the viewer sees them.
+        /// </summary>
+        /// <param name="view">Jellyfin.</param>
+        /// <param name="config">Settings.</param>
+        /// <param name="aliases">The titles' other keys (null: the key alone).</param>
+        /// <returns>The predicate.</returns>
+        public static EditionAvailability Over(IArrJellyfinView view, Func<PluginConfiguration?> config, TitleAliases? aliases)
+            => new(view, config, (key, viewer) => view.Copies(key, viewer, aliases?.Of(key)).Display);
+
         /// <summary>True for 4K video dimensions (the same rule as the browser's Get 4K check).</summary>
         /// <param name="width">Width, or null when unknown.</param>
         /// <param name="height">Height, or null when unknown.</param>
@@ -188,15 +199,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public static bool Plays(JfItemRef item) => item.Playable;
 
         /// <summary>
-        /// <see cref="Edition.Any"/> for a Jellyfin item a route resolved for the caller itself (the calendar): a movie or episode
-        /// with a file Jellyfin plays, by the same rule the view reads every item with (never a missing item or a stub).
-        /// </summary>
-        /// <param name="item">The item as the caller opens it (null: they can't).</param>
-        /// <returns>True when it plays.</returns>
-        public static bool PlaysItem(MediaBrowser.Controller.Entities.BaseItem? item)
-            => item is MediaBrowser.Controller.Entities.Video video && ArrJellyfinView.Playable(video);
-
-        /// <summary>
         /// The qualifying sources of one movie or episode item the viewer opens (a page's own item, an item an alert names):
         /// every version of it (dimensions read), each only where they can open the item that plays it. None for an item they
         /// can't open, a placeholder or a missing item.
@@ -204,6 +206,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyList<EditionHit> Item(StatusViewer viewer, Guid itemId, Edition edition)
             => _view.Sources(itemId, viewer).Where(s => Qualifies(s, edition))
                 .Select(s => new EditionHit(itemId, s.ItemId, null, null, null, s)).ToList();
+
+        /// <summary>
+        /// What backs these movie or episode items, as Jellyfin holds it for anyone (the library context, whoever may open each
+        /// version): the facts an arrival compares to tell a changed source (a new version, path or quality: an upgrade in
+        /// place) from a version that only became visible to someone (D53, edition round 21). Movie items are read directly;
+        /// episode items through the series copies they are in.
+        /// </summary>
+        /// <param name="items">Movie items, or episode items of <paramref name="seriesCopies"/>.</param>
+        /// <param name="seriesCopies">For episode items: the series copies to read them in (null: movie items).</param>
+        public IReadOnlyList<JfSource> HeldSources(IReadOnlyCollection<Guid> items, IReadOnlyList<JfCopy>? seriesCopies = null)
+            => seriesCopies == null
+                ? items.SelectMany(item => _view.Sources(item, StatusViewer.Library)).ToList()
+                : seriesCopies.Select(c => c.ItemId).Distinct().SelectMany(series => _view.EpisodeSources(series, null, StatusViewer.Library))
+                    .Where(e => items.Contains(e.ItemId)).SelectMany(e => e.Sources).ToList();
 
         /// <summary>
         /// The copies among <paramref name="copies"/> (movie items, or series items for a series) in which the viewer has a
@@ -300,6 +316,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>True when the scope has a qualifying source (see <see cref="Scope"/>).</summary>
         public bool Available(StatusViewer viewer, TitleKey scope, Edition edition, Guid? pinned = null) => Scope(viewer, scope, edition, pinned).Count > 0;
+
+        /// <summary>
+        /// How many episodes of a season have a qualifying source, by the episodes their files cover (a combined E1–E2 file is
+        /// two; overlapping files count each episode once): the one count every episode total uses (D53, edition round 21).
+        /// </summary>
+        public long EpisodeCount(StatusViewer viewer, TitleKey series, int season, Edition edition, Guid? pinned = null)
+            => series.IsMovie ? 0 : Episodes(viewer, _copies(series.Title, viewer), edition, season, pinned).CountInSeason(season);
 
         /// <summary>True when every episode of an episode range has a qualifying source (see <see cref="Scope"/>).</summary>
         public bool AvailableRange(StatusViewer viewer, TitleKey series, int season, int first, int last, Edition edition, Guid? pinned = null)

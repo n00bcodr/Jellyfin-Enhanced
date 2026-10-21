@@ -327,6 +327,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public string? InstanceId { get; set; }
 
         /// <summary>
+        /// The copy's Sonarr for the server's own press check (whoever the viewer is; never serialized): where a household
+        /// Search under this binding runs (D53, edition round 21: the check resolves the command).
+        /// </summary>
+        internal string? Route { get; set; }
+
+        /// <summary>
         /// Where an ask of <see cref="Variant"/> lands, as an opaque token (D53, edition round 19: the server decides every press):
         /// the page sends it back with the press and the server refuses the press when it lands anywhere else now. Null when
         /// the ask reaches no copy (<see cref="Ask"/> false).

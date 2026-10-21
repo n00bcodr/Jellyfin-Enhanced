@@ -630,6 +630,9 @@ public class IntegrationCalendarAccessTests
         public User Kid { get; }
         public TitleAliases? Aliases { get; set; }
 
+        /// <summary>The Jellyfin view the route's availability answer reads (the server's own; tests set a fake one).</summary>
+        public IArrJellyfinView? View { get; set; }
+
         public CalendarRig()
         {
             Library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem>());
@@ -662,7 +665,7 @@ public class IntegrationCalendarAccessTests
 
         public JellyfinEnhancedController Controller(ClaimsPrincipal caller)
         {
-            var controller = ApiAssetTests.Controller(R.Arr.Plugin.Core, R.Arr.Transport, R.Store, R.Arr.Factory, Database, Callers.Users.Object, Library.Object, UserData.Object, R.Resolver, Aliases!);
+            var controller = ApiAssetTests.Controller(R.Arr.Plugin.Core, R.Arr.Transport, R.Store, R.Arr.Factory, Database, Callers.Users.Object, Library.Object, UserData.Object, R.Resolver, Aliases!, View!);
             controller.HttpContext.User = caller;
             controller.Request.QueryString = new QueryString("?start=2026-10-12&end=2026-10-31");
             return controller;

@@ -221,7 +221,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The read.</returns>
         internal Task<ArrSnapshotRead<ArrQueueSnapshot>> ReadQueueNowAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => StateFor(instance, out var notUsable) is { } state ? ReadNowAsync(state.Queue, cancellationToken) : Task.FromResult(new ArrSnapshotRead<ArrQueueSnapshot> { Error = notUsable });
+            => StateFor(instance, out var notUsable) is { } state
+                ? ReadNowAsync(state.Queue, cancellationToken, queue => !queue.Truncated)
+                : Task.FromResult(new ArrSnapshotRead<ArrQueueSnapshot> { Error = notUsable });
 
         /// <summary>The recent history as the arr has it now (see <see cref="ReadQueueNowAsync"/>).</summary>
         /// <param name="instance">The instance.</param>
@@ -246,7 +248,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 : ReadNowAsync(slot, cancellationToken);
         }
 
-        private async Task<ArrSnapshotRead<T>> ReadNowAsync<T>(ArrSnapshotSlot<T> slot, CancellationToken cancellationToken)
+        /// <summary>
+        /// A read made now (see <see cref="ReadQueueNowAsync"/>), answered by that read itself, never by the value held for
+        /// display (D53, edition round 21: only a COMPLETE fresh result validates): a read during which rows moved between pages
+        /// (kept behind a recent complete value, or published past it) or one <paramref name="complete"/> rejects (a queue
+        /// longer than JE reads) is an error: it can't prove what it may have missed.
+        /// </summary>
+        private async Task<ArrSnapshotRead<T>> ReadNowAsync<T>(ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, Func<T, bool>? complete = null)
             where T : class
         {
             var started = _now();
@@ -262,11 +270,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             {
                 return new ArrSnapshotRead<T> { Error = new ArrError(ArrErrorKind.Timeout, "The instance didn't answer in time.") };
             }
-            var peek = slot.Peek();
-            // Only an answer to a read made now is a fact about now (a failed read leaves the held value, which isn't).
-            if (peek.Value == null || peek.Error != null || slot.CheckedAt < started)
-                return new ArrSnapshotRead<T> { Error = peek.Error ?? new ArrError(ArrErrorKind.Internal, "The instance couldn't be read now.") };
-            return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt };
+            // Only a read made now answers (a failed or incomplete read leaves the held value, which says nothing about now).
+            if (slot.Answer is not { } answer || answer.StartedAt < started || answer.Value == null)
+                return new ArrSnapshotRead<T> { Error = slot.Answer?.Error ?? new ArrError(ArrErrorKind.Internal, "The instance couldn't be read now.") };
+            if (!answer.Complete || (complete != null && !complete(answer.Value)))
+                return new ArrSnapshotRead<T> { Error = new ArrError(ArrErrorKind.Internal, "The instance couldn't be read completely now.") };
+            return new ArrSnapshotRead<T> { Value = answer.Value, LoadedAt = answer.StartedAt };
         }
 
         /// <summary>Test seam: called after a read picked (or failed to pick) a series' episodes slot, before reading it.</summary>

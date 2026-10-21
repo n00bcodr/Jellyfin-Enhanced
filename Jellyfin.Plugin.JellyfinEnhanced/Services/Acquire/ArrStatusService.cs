@@ -216,7 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The arr reads for one Jellyfin item's status: null when the viewer can't see it or it has no key. Episode
         /// lists are read (<paramref name="load"/>) or only taken from memory.
         /// </summary>
-        private async Task<Gathered?> PrepareItemAsync(StatusViewer viewer, Guid itemId, bool load, CancellationToken cancellationToken, bool fresh = false)
+        private async Task<Gathered?> PrepareItemAsync(StatusViewer viewer, Guid itemId, bool load, CancellationToken cancellationToken, Func<ArrConnection, bool>? fresh = null)
         {
             if (_view.Resolve(itemId, viewer) is not { Key: not null } item) return null;
             var title = item.Key.Title;
@@ -337,6 +337,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private void Reach(CopyBinding bound, StatusViewer viewer)
         {
+            bound.Route = bound.InstanceId;
             bound.Variant = bound.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null };
             if (_config()?.ArrRequestBackend != "je" || bound.Variant == null)
             {
@@ -356,21 +357,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// A season page's press, worked out again now (D53, edition round 19: the server decides every press; round 20: fresh
-        /// facts): the season composed for the viewer as Jellyfin has them now (its copy binding reached now, never a cached body)
-        /// from the arrs' queue, history and episode files read again from the arrs now (bounded; <see cref="PressChecks.Unverified"/>
-        /// when they can't be), and compared with what the control was drawn to do (<see cref="PressChecks.Compare"/>). A synthetic
-        /// absent season page (Jellyfin 12's native details of a title not in the library) is resolved as that page
-        /// (<paramref name="pages"/>) and composed freshly the same way. Seerr mode reads Seerr's partial-request setting again for
-        /// a title-wide ask. The caller records or sends nothing more than what this proves, and nothing at all on a refusal.
-        /// <paramref name="input"/>: the ask (route <see cref="PressChecks.Ask"/>); <paramref name="key"/>: the searched key (the
-        /// Search routes). Only awaits before the comparison: the caller's next step is its write.
+        /// facts; round 21: the check returns the command), and the command it resolves: the season composed for the viewer as
+        /// Jellyfin has it now (its copy binding reached now, never a cached body) from arr facts read again from the arrs now,
+        /// compared with what the control was drawn to do (<see cref="PressChecks.Compare(PressIntent, string, TitleStatus, int, MutationInput?, bool, bool?, bool, out CopyBinding?)"/>),
+        /// then resolved into the one <see cref="PressCommand"/> the caller sends, records and fingerprints (a Search: the Sonarr
+        /// ids of exactly its episodes on its instance, from the episode list read for this check). Fresh means complete
+        /// evidence from the instances the press depends on (<see cref="PressDepends"/>: its destination and every instance of
+        /// its edition): their queue, history and episode list are read now, and one that can't be read completely now leaves
+        /// the press <see cref="PressChecks.Unverified"/>; an instance outside that set is read as for a page and its outage
+        /// never refuses the press. A synthetic absent season page (Jellyfin 12's native details of a title not in the
+        /// library) is resolved as that page (<paramref name="pages"/>) and composed freshly the same way. Seerr mode reads
+        /// Seerr's partial-request setting again for a title-wide ask. The caller records or sends nothing more than the command,
+        /// and nothing at all on a refusal. <paramref name="input"/>: the ask (route <see cref="PressChecks.Ask"/>);
+        /// <paramref name="key"/>: the searched key (the Search routes); <paramref name="subset"/>: a household Search's episodes
+        /// to search now (a subset of the press's; null: all of them); <paramref name="searchOn"/>: the instance a title-wide
+        /// household Search was chosen for; <paramref name="resolve"/> false: only whether the press still holds (an early
+        /// check before the caller's own work; no command). Only awaits before the comparison: the caller's next step is its write.
         /// </summary>
-        internal async Task<PressProof> PressAsync(StatusViewer viewer, PressIntent intent, string route, MutationInput? input, TitleKey? key, CancellationToken cancellationToken, IAbsentTitlePages? pages = null)
+        internal async Task<PressProof> PressAsync(StatusViewer viewer, PressIntent intent, string route, MutationInput? input, TitleKey? key, CancellationToken cancellationToken, IAbsentTitlePages? pages = null, IReadOnlyCollection<int>? subset = null, string? searchOn = null, bool resolve = true)
         {
             if (!Guid.TryParseExact(intent.Item, "N", out var itemId) || itemId == Guid.Empty) return PressProof.Changed;
             var seerr = _config()?.ArrRequestBackend != "je";
             bool? whole = null;
             if (seerr && route == PressChecks.Ask && _seerr != null) whole = await _seerr.WholeSeriesOnlyAsync(cancellationToken).ConfigureAwait(false);
+            var edition = route == PressChecks.Ask ? input?.Variant ?? intent.Variant : intent.Variant;
+            if (edition is not ("standard" or "4k")) return PressProof.Changed;
+            // Where it lands: an ask's target (the edition's default Sonarr; Seerr mode: Seerr picks), an administrator's
+            // instance, a household Search's standard copy (the binding's own, else the instance it was chosen for).
+            var destination = route switch
+            {
+                PressChecks.Admin => intent.Instance,
+                PressChecks.Household => searchOn,
+                _ => seerr ? null : _store.Registry.DefaultFor(ArrKind.Sonarr, edition == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id,
+            };
+            Func<ArrConnection, bool> depends = i => PressDepends(i, edition, destination);
             // Not a library item the viewer opens: a synthetic absent season page, resolved as the page itself for the viewer.
             AbsentTitle? absent = null;
             if (_view.Resolve(itemId, viewer) == null && pages != null)
@@ -384,15 +404,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     default: return PressProof.Changed;
                 }
             }
-            PressProof Compare(StatusViewer now, TitleStatus? status, TitleKey seasonKey, int season, bool unverified)
+            PressProof Compare(StatusViewer now, TitleStatus? status, TitleKey seasonKey, int season, Gathered gather)
             {
-                if (unverified) return new PressProof(PressChecks.Unverified);
+                if (gather.Unverified) return new PressProof(PressChecks.Unverified);
                 if (status == null) return PressProof.Changed;
                 // The press is for this season of this title (whichever id each side used).
                 var title = _aliases.Canonical(seasonKey.Title);
                 var pressed = input != null ? TitleKey.Parse(input.Key) : key;
                 if (pressed == null || !_aliases.Canonical(pressed.Title).Equals(title) || (key?.Season is int s && s != season)) return PressProof.Changed;
-                return new PressProof(PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin));
+                if (PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin, out var bound) is { } refusal) return new PressProof(refusal);
+                return resolve ? Resolve(gather, pressed, season, bound) : new PressProof(null);
+            }
+            // The command the check proves: built only from what was just compared and read (nothing chosen before the check).
+            PressProof Resolve(Gathered gather, TitleKey pressed, int season, CopyBinding? bound)
+            {
+                var numbers = (intent.Episodes ?? Array.Empty<int>()).Distinct().OrderBy(n => n).ToArray();
+                var command = new PressCommand
+                {
+                    Route = route, Page = itemId, Title = pressed, Season = season, Episodes = numbers, Copy = bound?.Role, Edition = edition,
+                    Seasons = seerr && route == PressChecks.Ask ? input!.Seasons.Distinct().OrderBy(n => n).ToArray() : null,
+                    Declared = route switch { PressChecks.Ask => intent.Dest, PressChecks.Admin => intent.Instance, _ => null },
+                };
+                switch (route)
+                {
+                    case PressChecks.Ask:
+                        if (!seerr && destination == null) return PressProof.Changed;
+                        return new PressProof(null, command with { Instance = destination });
+                    case PressChecks.Household:
+                    {
+                        // The binding's own Sonarr; a title-wide Search runs where its caller chose (one of the title's copies).
+                        var on = bound?.Route ?? destination;
+                        if (on == null || (destination != null && !string.Equals(on, destination, StringComparison.OrdinalIgnoreCase))) return PressProof.Changed;
+                        return Searched(gather, command with { Instance = on }, subset);
+                    }
+                    default:
+                        return destination == null ? PressProof.Changed : Searched(gather, command with { Instance = destination }, null);
+                }
             }
             if (absent != null)
             {
@@ -400,24 +447,54 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // The page was resolved for the viewer as they were: a changed viewer is a changed press (no second resolve).
                 return await GatedAsync(
                     viewer,
-                    v => GatherAsync(v, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken, fresh: true),
+                    v => GatherAsync(v, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken, fresh: depends),
                     (now, gather) =>
                     {
                         var asked = _requests.ForSeason(title, absent.Season!.Value, now);
-                        return Compare(now, ComposeAbsent(now, absent, gather, asked), absent.ScopeKey, absent.Season!.Value, gather.Unverified);
+                        return Compare(now, ComposeAbsent(now, absent, gather, asked), absent.ScopeKey, absent.Season!.Value, gather);
                     },
                     _ => PressProof.Changed,
                     again: false).ConfigureAwait(false);
             }
             return await GatedAsync(
                 viewer,
-                v => PrepareItemAsync(v, itemId, load: true, cancellationToken, fresh: true),
+                v => PrepareItemAsync(v, itemId, load: true, cancellationToken, fresh: depends),
                 (now, gather) =>
                 {
                     if (gather == null || ItemNow(now, itemId, gather) is not { Kind: "season", Key: { } seasonKey, Season: int season } item) return PressProof.Changed;
-                    return Compare(now, ComposeItem(now, item, gather), seasonKey, season, gather.Unverified);
+                    return Compare(now, ComposeItem(now, item, gather), seasonKey, season, gather);
                 },
                 _ => PressProof.Changed).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Whether a press's outcome can change with <paramref name="instance"/>'s facts (D53, edition round 21: fresh means
+        /// complete evidence for the press's own dependencies): its destination, and every instance that holds the same edition
+        /// (an instance whose role names no edition, such as anime or custom, is counted in: what it holds can't be told apart).
+        /// </summary>
+        internal static bool PressDepends(ArrConnection instance, string edition, string? destination)
+            => string.Equals(instance.Id, destination, StringComparison.OrdinalIgnoreCase)
+                || (instance.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null }) is not { } holds
+                || holds == edition;
+
+        /// <summary>
+        /// A Search command's Sonarr series and episode ids on its instance, from the episode list read for this check: exactly
+        /// one Sonarr episode for every number (of <paramref name="subset"/>, which must be among the press's own), or the press
+        /// changed (a renumbered or missing episode never borrows another's id).
+        /// </summary>
+        private static PressProof Searched(Gathered gather, PressCommand command, IReadOnlyCollection<int>? subset)
+        {
+            var numbers = subset?.Distinct().OrderBy(n => n).ToArray() ?? command.Episodes.ToArray();
+            if (numbers.Length == 0 || numbers.Any(n => !command.Episodes.Contains(n))) return PressProof.Changed;
+            // Only the lists this check read from the instance itself (never one held from before the check).
+            var matches = gather.CheckedEpisodes
+                .Where(c => string.Equals(c.Instance, command.Instance, StringComparison.OrdinalIgnoreCase))
+                .Select(c => (Series: c.SeriesId, Ids: numbers.Select(n => c.Episodes.Episodes.Where(e => e.SeasonNumber == command.Season && e.EpisodeNumber == n).Select(e => e.Id).Distinct().ToList()).ToList()))
+                .Where(m => m.Ids.All(ids => ids.Count == 1))
+                .DistinctBy(m => m.Series)
+                .ToList();
+            if (matches.Count != 1) return PressProof.Changed;
+            return new PressProof(null, command with { SeriesId = matches[0].Series, EpisodeIds = matches[0].Ids.Select(ids => ids[0]).OrderBy(x => x).ToArray() });
         }
 
         /// <summary>
@@ -1477,20 +1554,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             public string Revision { get; set; } = string.Empty;
 
-            /// <summary>A fresh gather (a press's check) couldn't read an arr fact it needed now (see <see cref="GatherAsync"/>).</summary>
+            /// <summary>A press's check couldn't read completely now an arr fact of an instance it depends on (see <see cref="GatherAsync"/>).</summary>
             public bool Unverified { get; set; }
+
+            /// <summary>
+            /// A press's check: the episode lists read from the arrs for it (instance id, Sonarr series id, the list), the only
+            /// source of a Search command's episode ids (D53, edition round 21); never shown to anyone.
+            /// </summary>
+            public List<(string Instance, int SeriesId, ArrEpisodesSnapshot Episodes)> CheckedEpisodes { get; } = new();
         }
 
         /// <summary>
         /// Reads every snapshot the titles need (library, queue, history per instance of each kind
         /// needed; episodes of the series in <paramref name="loadEpisodes"/>, or only those already in
         /// memory for <paramref name="peekEpisodes"/>) and builds the facts plus their revision.
-        /// <paramref name="fresh"/> (a press's check, D53 edition round 20: fresh facts for action validation): the queue,
-        /// history and episode list of every instance holding a title are read from the arr NOW (a read already running is
-        /// waited for, then a new one; bounded), never served from memory; one that can't be read now marks the gather
-        /// <see cref="Gathered.Unverified"/>, as does an instance whose library can't be read.
+        /// <paramref name="fresh"/> (a press's check, D53 edition round 20: fresh facts for action validation; round 21: only
+        /// for the instances the press depends on): the queue, history and episode list of every such instance holding a title
+        /// are read from the arr NOW (a read already running is waited for, then a new one; bounded), never served from memory;
+        /// one that can't be read completely now marks the gather <see cref="Gathered.Unverified"/>, as does such an instance
+        /// whose library can't be read. Every other instance is read as for a page.
         /// </summary>
-        private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct, bool fresh = false)
+        private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct, Func<ArrConnection, bool>? fresh = null)
         {
             var result = new Gathered();
             var distinct = titles.Distinct().ToList();
@@ -1511,7 +1595,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     var library = await _store.GetLibraryAsync(i, ct).ConfigureAwait(false);
                     // A press's check reads the downloads of an instance that holds the title from the arr now.
-                    var now = fresh && (library.Value == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && (kind == ArrKind.Radarr ? MoviesOf(library.Value, t).Any() : SeriesOf(library.Value, t).Any())));
+                    var now = fresh != null && fresh(i) && (library.Value == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && (kind == ArrKind.Radarr ? MoviesOf(library.Value, t).Any() : SeriesOf(library.Value, t).Any())));
                     var queue = now ? await _store.ReadQueueNowAsync(i, ct).ConfigureAwait(false) : await _store.GetQueueAsync(i, ct).ConfigureAwait(false);
                     var history = now ? await _store.ReadHistoryNowAsync(i, ct).ConfigureAwait(false) : await _store.GetHistoryAsync(i, ct).ConfigureAwait(false);
                     if (now && (library.Value == null || queue.Value == null || queue.Error != null || history.Value == null || history.Error != null)) result.Unverified = true;
@@ -1585,11 +1669,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 if (!MayUseCopy(viewer, copyAccess, instance, series.Path)) continue;
                                 if (series.TvdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForSeries(canonical.ToString(CultureInfo.InvariantCulture), null, null));
                                 ArrSnapshotRead<ArrEpisodesSnapshot>? episodes = null;
-                                if (load.Contains(title) && fresh)
+                                if (load.Contains(title) && fresh != null && fresh(instance))
                                 {
                                     // A press's check: the episode files as the arr has them now.
                                     episodes = await _store.ReadEpisodesNowAsync(instance, series.Id, ct).ConfigureAwait(false);
                                     if (episodes.Value == null || episodes.Error != null) result.Unverified = true;
+                                    else result.CheckedEpisodes.Add((instance.Id, series.Id, episodes.Value));
                                 }
                                 else if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
                                 else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
