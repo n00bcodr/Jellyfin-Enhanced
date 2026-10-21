@@ -62,14 +62,14 @@
     }
 
     /**
-     * @param {string} type
-     * @param {object} detail
+     * Announces a move (the two event types are constants: every listener of each is listed by the bundle's scans).
+     * @param {Event} event
      */
-    function announce(type, detail) {
+    function announce(event) {
         try {
-            document.dispatchEvent(new CustomEvent(type, { detail }));
+            document.dispatchEvent(event);
         } catch (err) {
-            console.warn(`${logPrefix} ${type} listeners failed:`, err);
+            console.warn(`${logPrefix} ${event.type} listeners failed:`, err);
         }
     }
 
@@ -85,12 +85,12 @@
             const before = documents[name];
             if (before === revision) continue;
             documents[name] = revision;
-            if (before !== null) announce('je-document-revision', { document: name, before, revision });
+            if (before !== null) announce(new CustomEvent('je-document-revision', { detail: { document: name, before, revision } }));
         }
         if (parsed.access !== access) {
             const before = access;
             access = parsed.access;
-            if (before !== null) announce('je-access-revision', { before, revision: access });
+            if (before !== null) announce(new CustomEvent('je-access-revision', { detail: { before, revision: access } }));
         }
         return true;
     }

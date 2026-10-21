@@ -234,9 +234,13 @@
     function watchDocument(on) {
         if (on === watchingDocument) return;
         watchingDocument = on;
-        const method = on ? 'addEventListener' : 'removeEventListener';
-        window[method]('pagehide', onPageHide);
-        window[method]('pageshow', onPageShow);
+        if (on) {
+            window.addEventListener('pagehide', onPageHide);
+            window.addEventListener('pageshow', onPageShow);
+        } else {
+            window.removeEventListener('pagehide', onPageHide);
+            window.removeEventListener('pageshow', onPageShow);
+        }
     }
 
     /**

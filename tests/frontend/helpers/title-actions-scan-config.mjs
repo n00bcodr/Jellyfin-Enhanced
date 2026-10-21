@@ -109,7 +109,7 @@ export const SITES = {
   'enhanced/features-random-button.js': 2, 'enhanced/helpers.js': 3,
   'enhanced/hiddencontent/hidden-content-buttons.js': 4, 'enhanced/hiddencontent/hidden-content-data.js': 2,
   'enhanced/hiddencontent/hidden-content-filter.js': 2, 'enhanced/hiddencontent/hidden-content-page-admin.js': 1,
-  'enhanced/hiddencontent/hidden-content-save.js': 5, 'enhanced/homeremoval/features-remove-home.js': 2,
+  'enhanced/hiddencontent/hidden-content-save.js': 4, 'enhanced/homeremoval/features-remove-home.js': 2,
   'enhanced/itemdetails/features-details-media-info.js': 7, 'enhanced/itemdetails/features-details-page.js': 3,
   'enhanced/itemdetails/features-release-dates.js': 3, 'enhanced/native-tabs.js': 1,
   'enhanced/player/auto-skip.js': 2, 'enhanced/player/osd-rating.js': 2, 'enhanced/player/pausescreen.js': 3,
@@ -134,7 +134,10 @@ export const SITES = {
   'arr/lists/list-import.js': 1, 'arr/status/status-cards.js': 2,
   'arr/ready/ready-settings.js': 1,
   // Integration rebuild (4d home rows, the Does the Dog Die panel): reads only.
-  'arr/home/home-rows.js': 1, 'others/doesthedogdie.js': 4,
+  'arr/home/home-rows.js': 1, 'others/doesthedogdie.js': 3,
+  // Play r21c: core user-change caches' revision probe (a read of the person's revisions). The Hidden Content save
+  // module's whole-document POST left with the join (changes go through the settings store's PATCH queue: 4 sites).
+  'core/access-revision.js': 1,
 };
 
 /**
@@ -240,6 +243,8 @@ export const OWNER_SITES = {
   // opening, each taking the press's own owner (JE.ownerOf(event)).
   'arr/lists/list-collection.js': 1, 'arr/lists/list-pages.js': 2, 'arr/lists/list-playlist.js': 1, 'arr/lists/list-request.js': 1,
   'arr/ask/ask-collection.js': 2, 'arr/home/home-render.js': 4,
+  // Play r21c: the list surface's openers (4c3), each taking its caller's explicit owner.
+  'arr/lists/list-surface.js': 2,
 };
 
 /**
@@ -254,6 +259,7 @@ export const EVENT_LISTENERS = {
   'je-spoiler-policy-changed': 'the viewer\'s Spoiler Guard policy changed: pages redraw what they blur (the window reopens under its owner, D46S2-R6-1)',
   'jellyseerr-manual-refresh': 'the viewer asked the search results to refresh: a read that redraws them',
   'je:spoiler-changed': 'the viewer\'s Spoiler Guard choice changed: the Does the Dog Die section redraws with it (a read, no write\'s answer)',
+  'je-access-revision': 'the person\'s access moved (core user-change caches): list cards read their missing counts again (a read, no write\'s answer)',
 };
 
 /**
