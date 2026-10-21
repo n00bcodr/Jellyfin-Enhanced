@@ -55,7 +55,10 @@
     let storeBaseServedAt = 0;       // capture time of the stored snapshot this page restored and confirmed
     let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
     let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
-    let privacyGeneration = 0;       // bumped whenever what the cache may hold changed (a Spoiler Guard change, a user change)
+    let privacyGeneration = 0;       // bumped whenever what the cache may hold changed (a Spoiler Guard or Hidden Content change, a user change)
+    let cacheAuthority = null;       // the authority memory (and the stored copy behind it) was published under
+    let reviewAuthority = null;      // the authority the review averages were published under
+    let invalidationToken = 0;       // the latest invalidation (an older one's completion never ends a newer one)
     let persistChain = Promise.resolve(); // stored-copy writes run one after another
     const storeMisses = new Set();   // ids the stored copy has no entry for (never ask IndexedDB twice)
     let skipStoreThisSession = false; // server answered empty or disabled: don't restore a stored copy
@@ -65,7 +68,7 @@
     let lastNavigationRoute = null;  // route key of the last navigation the pipeline acted on (see navigationRoute)
     let lastNavRefreshAt = -Infinity; // performance.now() of the last navigation-triggered delta
     let navRefreshTimer = null;      // trailing delta for navigations that fell inside the minimum interval
-    let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable
+    let reviewRatings = null;        // Map<"mediaType:tmdbKey", average> from the payload; null = unavailable (read through currentReviewRatings)
     let reviewRatingsRequestedAt = 0; // performance.now() when the request behind reviewRatings started
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
@@ -302,7 +305,7 @@
      * @returns {{identity: string, epoch: number, privacy: number}}
      */
     function publicationAuthority() {
-        return { identity: liveIdentity(), epoch: JE.session ? JE.session.getEpoch() : 0, privacy: privacyGeneration };
+        return { identity: liveIdentity(), epoch: typeof JE.session?.getEpoch === 'function' ? JE.session.getEpoch() : 0, privacy: privacyGeneration };
     }
 
     /**
@@ -313,9 +316,13 @@
      * @param {{identity: string, epoch: number, privacy: number}} authority
      * @returns {boolean}
      */
+    function sameAuthority(a, b) {
+        return !!a && !!b && a.identity === b.identity && a.epoch === b.epoch && a.privacy === b.privacy;
+    }
+
     function authorityHolds(authority) {
         if (!authority || authority.privacy !== privacyGeneration) return false;
-        if (JE.session && !JE.session.isCurrent(authority.epoch)) return false;
+        if (typeof JE.session?.isCurrent === 'function' && !JE.session.isCurrent(authority.epoch)) return false;
         if (liveIdentity() !== authority.identity) {
             try { JE.session?.checkNow?.('tag-cache-publication'); } catch (_) {}
             return false;
@@ -328,9 +335,25 @@
      * @returns {string|null} `${serverId}:${userId}`, or null before sign-in.
      */
     function cacheScope() {
-        const userId = JE.session?.getUserId() || ApiClient.getCurrentUserId();
+        // The live account (the same one the authority names), not the session's last notice of it.
+        let userId = null;
+        let serverId = '';
+        try {
+            userId = ApiClient.getCurrentUserId() || null;
+            serverId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ApiClient._serverInfo?.Id || '';
+        } catch (_) { /* no live client */ }
+        userId = userId || JE.session?.getUserId() || null;
         if (!userId) return null;
-        return `${JE.session?.getServerId() || ''}:${userId}`;
+        return `${serverId || JE.session?.getServerId() || ''}:${userId}`;
+    }
+
+    /**
+     * The review averages, only while the authority they were published under
+     * holds (a switch the session has not noticed yet already hides them).
+     * @returns {Map<string, number>|null}
+     */
+    function currentReviewRatings() {
+        return reviewRatings && authorityHolds(reviewAuthority) ? reviewRatings : null;
     }
 
     /**
@@ -343,9 +366,10 @@
      * @param {object} resp - Tag-cache response body.
      * @param {number} requestedAt - performance.now() when its request started.
      */
-    function applyReviewRatings(resp, requestedAt) {
+    function applyReviewRatings(resp, requestedAt, authority) {
         if (requestedAt < reviewRatingsRequestedAt) return;
         reviewRatingsRequestedAt = requestedAt;
+        reviewAuthority = authority;
         const previous = reviewRatings;
         const raw = resp && resp.reviewRatings;
         if (!raw || typeof raw !== 'object') {
@@ -389,11 +413,24 @@
     }
 
     /**
+     * Forget the review averages (a privacy change or an account switch): chips
+     * already on cards are told every key changed.
+     */
+    function dropReviewRatings() {
+        const previous = reviewRatings;
+        reviewRatings = null;
+        reviewRatingsRequestedAt = 0;
+        reviewAuthority = null;
+        notifyReviewRatingsChanged(previous, null);
+    }
+
+    /**
      * Forget the server cache (memory and the stored copy as a lookup source).
      * Queued stored-copy writes stop at their next slice.
      */
     function dropServerCache() {
         serverCache = null;
+        cacheAuthority = null;
         serverCacheComplete = false;
         serverCacheVersion = 0;
         serverCacheTimestamp = 0;
@@ -441,7 +478,7 @@
      * @param {string} scope
      * @param {object} resp - Full tag-cache response body.
      */
-    function persistFullCache(scope, resp) {
+    function persistFullCache(scope, resp, authority) {
         const servedAt = typeof resp.servedAt === 'number' ? resp.servedAt : 0;
         if (!JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
@@ -461,7 +498,8 @@
             // Not urgent: the page's own tag scans get the idle slices first.
             // A page closed before this runs simply downloads in full next time.
             await new Promise((resolve) => setTimeout(resolve, PERSIST_START_DELAY_MS));
-            if (generation !== persistGeneration) return;
+            // Each write checks the authority it was downloaded under, right before it reaches the store.
+            if (generation !== persistGeneration || !authorityHolds(authority)) return;
             // Claim the scope; another tab rewriting it later takes it over and
             // this write stops (every slice and the final meta check the claim).
             const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -469,10 +507,10 @@
             if (!await store.beginFullWrite(scope, token, { servedAt })) return;
             for (let i = 0; i < entries.length; i += PERSIST_SLICE) {
                 await idleYield();
-                if (generation !== persistGeneration) return;
+                if (generation !== persistGeneration || !authorityHolds(authority)) return;
                 if (!await store.putManyIfOwner(scope, token, entries.slice(i, i + PERSIST_SLICE))) return;
             }
-            if (generation !== persistGeneration) return;
+            if (generation !== persistGeneration || !authorityHolds(authority)) return;
             if (await store.commitFullWrite(scope, token, meta)) {
                 console.log(`${logPrefix} Server cache persisted: ${entries.length} items`);
             }
@@ -490,13 +528,13 @@
      * @param {number} timestamp - The delta response's timestamp.
      * @param {number} servedAt - When the server captured the delta (ms, server clock).
      */
-    function persistDelta(entries, base, timestamp, servedAt) {
+    function persistDelta(entries, base, timestamp, servedAt, authority) {
         const scope = storeScope;
         if (!scope || !JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
         const generation = persistGeneration;
         queuePersist(async () => {
-            if (generation !== persistGeneration) return;
+            if (generation !== persistGeneration || !authorityHolds(authority)) return;
             await store.applyDelta(scope, base, entries, timestamp, servedAt);
         });
     }
@@ -515,12 +553,13 @@
         const authority = publicationAuthority();
         try {
             const meta = await store.getMeta(scope);
+            if (!authorityHolds(authority)) return false;
             // Other users' copies go in the background (queued ahead of any
             // persist, and only ever touching keys outside this scope), so a
             // first load isn't held up by a second transaction before its
-            // full download can start.
-            queuePersist(() => store.clearOtherScopes(scope));
-            if (!authorityHolds(authority)) return false;
+            // full download can start. Only while the account that owns this
+            // scope is still the live one (never the incoming account's copy).
+            queuePersist(async () => { if (authorityHolds(authority)) await store.clearOtherScopes(scope); });
             // Complete copies only (a pending record is a rewrite in progress),
             // written with a filter revision and capture time (older copies
             // predate them).
@@ -534,6 +573,7 @@
                 return false;
             }
             serverCache = new Map();
+            cacheAuthority = authority;
             serverCacheComplete = false;
             serverCacheVersion = meta.version;
             serverCacheTimestamp = meta.timestamp;
@@ -588,7 +628,7 @@
         });
         if (!authorityHolds(authority)) return false;
 
-        applyReviewRatings(resp, requestedAt);
+        applyReviewRatings(resp, requestedAt, authority);
         if (!(resp && resp.items && resp.count > 0)) {
             console.log(`${logPrefix} Server cache empty, using batch fallback`);
             dropServerCache();
@@ -598,6 +638,7 @@
 
         persistGeneration++;
         serverCache = new Map(Object.entries(resp.items));
+        cacheAuthority = authority;
         serverCacheComplete = true;
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
@@ -609,7 +650,7 @@
         // Memory is complete and current: nothing needs the stored copy now.
         releaseStoreGate();
         console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
-        if (scope) persistFullCache(scope, resp);
+        if (scope) persistFullCache(scope, resp, authority);
         return true;
     }
 
@@ -796,8 +837,10 @@
             // Memory was replaced while this was in flight (full download,
             // invalidation): the answer is relative to a cursor that's gone.
             if (!resp || !resp.items || !serverCache || generation !== cacheGeneration) return;
+            // Memory itself is published under one authority: a delta for another never patches it.
+            if (!sameAuthority(cacheAuthority, authority)) return;
 
-            applyReviewRatings(resp, requestedAt);
+            applyReviewRatings(resp, requestedAt, authority);
 
             // Full rebuild (entries may have been removed, which a delta can't
             // express), or this user's filter changed since memory was made
@@ -848,7 +891,7 @@
                     deltaIds.add(id);
                 }
                 serverCacheTimestamp = resp.timestamp;
-                persistDelta(newEntries, base, resp.timestamp, typeof resp.servedAt === 'number' ? resp.servedAt : 0);
+                persistDelta(newEntries, base, resp.timestamp, typeof resp.servedAt === 'number' ? resp.servedAt : 0, authority);
                 // Notify renderers to invalidate derived caches for updated items
                 for (const [, renderer] of renderers) {
                     if (renderer.onServerCacheRefresh) {
@@ -886,7 +929,10 @@
         // A restored copy renders nothing until the delta confirms it.
         if (storeGate) return storeGate.then(() => lookupServerEntries(ids));
         const found = new Map();
-        if (!serverCache) return found;
+        // Memory is consumed only under the authority it was published under:
+        // an account switch the session has not noticed yet already hides it.
+        const authority = cacheAuthority;
+        if (!serverCache || !authorityHolds(authority)) return found;
         let missing = null;
         for (const id of ids) {
             const entry = serverCache.get(id);
@@ -901,6 +947,10 @@
         const scope = storeScope;
         const generation = cacheGeneration;
         return JE.tagCacheStore.getMany(scope, missing).then(({ entries: read, meta }) => {
+            // The stored read is published (to memory and the cards) only under
+            // the authority it was started under, checked now that it arrived:
+            // another account may be live before the session notices.
+            if (!authorityHolds(authority)) return new Map();
             // Memory was replaced (user switch, full download, invalidation)
             // while reading: what was read may predate it. Answer again from
             // the current state instead.
@@ -947,7 +997,8 @@
             return found;
         }).catch((err) => {
             console.warn(`${logPrefix} Stored server cache read failed:`, err);
-            return found;
+            // The memory hits gathered before the read, only while their authority still holds.
+            return authorityHolds(authority) ? found : new Map();
         });
     }
 
@@ -1120,6 +1171,7 @@
          * @param {Map<string, object>} entries
          */
         function renderChunk(chunk, entries) {
+            // The entries were checked against their authority by the lookup, in this same tick.
             const started = performance.now();
             const hosts = [];
             for (const card of chunk) {
@@ -1296,6 +1348,12 @@
     async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
+        // Tag data is projected for THIS account under THIS privacy generation:
+        // nothing it returns (or a first-episode / parent-series lookup it
+        // started) is rendered once another account is live or a privacy
+        // change revoked it, even before the session notices a switch.
+        const authority = publicationAuthority();
+        const current = () => generation === batchGeneration && authorityHolds(authority);
         // Titles that aren't in the library (native details pages, their rails) have no tag data.
         if (JE.titleDetails?.isSynthetic) batch = batch.filter(b => !JE.titleDetails.isSynthetic(b.itemId));
         if (!batch.length) return;
@@ -1320,8 +1378,8 @@
 
             const items = response?.Items || [];
 
-            // Abort if navigation happened while we were waiting for the API response
-            if (generation !== batchGeneration) return;
+            // Abort if navigation, an account switch or a privacy change happened while we were waiting
+            if (!current()) return;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1349,6 +1407,7 @@
                         const parent = await getParentSeries(userId, seriesId);
                         if (parent) parentSeriesMap.set(normalizedId, parent);
                     } catch {}
+                    if (!current()) return;
                 }
             }
 
@@ -1368,9 +1427,10 @@
 
             const renderItem = (item, firstEpisode) => {
                 // Re-check per render: first-episode/parent-series awaits can
-                // span a navigation OR a user switch (clearProcessed bumps the
-                // generation) — stale data must not be rendered or persisted.
-                if (generation !== batchGeneration) return;
+                // span a navigation, a user switch (even one the session has not
+                // noticed yet) or a privacy change — stale data must not be
+                // rendered or persisted.
+                if (!current()) return;
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
@@ -1444,7 +1504,7 @@
                         renderedSinceYield = 0;
                         stackPendingHosts();
                         await idleYield();
-                        if (generation !== batchGeneration) return; // navigation or user switch while yielded
+                        if (!current()) return; // navigation, user switch or privacy change while yielded
                     }
                 }
             }
@@ -1458,7 +1518,7 @@
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
             for (const { el, renderTarget: queuedRenderTarget, itemId } of batch) {
-                if (generation !== batchGeneration) break; // navigation or user switch
+                if (!current()) break; // navigation, user switch or privacy change
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
@@ -1467,7 +1527,7 @@
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
-                    if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!current()) break; // switched or revoked during the awaits above
                     let renderTarget = queuedRenderTarget;
                     if (!renderTarget.isConnected) {
                         if (!el.isConnected) continue; // card itself is gone
@@ -1675,13 +1735,13 @@
          * @returns {Promise<Map<string, number>|null>}
          */
         getReviewRatings() {
-            return (loadInFlight || refreshInFlight || Promise.resolve()).then(() => reviewRatings);
+            return (loadInFlight || refreshInFlight || Promise.resolve()).then(() => currentReviewRatings());
         },
         /**
          * The review rating averages already at hand, without waiting.
          * @returns {Map<string, number>|null}
          */
-        peekReviewRatings() { return reviewRatings; },
+        peekReviewRatings() { return currentReviewRatings(); },
         /** @returns {number} Bumped each time the review rating averages are replaced. */
         /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
         getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
@@ -1717,12 +1777,15 @@
             // processing cards against the empty cache. processedCards is reset a
             // SECOND time after load so cards partially marked during await re-scan.
             isInvalidating = true;
+            const token = ++invalidationToken;
             // Nothing requested before this point is published any more (a
             // download in flight resolves into nothing, and a failed reload
-            // leaves the cache empty rather than reviving it).
+            // leaves the cache empty rather than reviving it); the averages
+            // published under the old generation go too.
             privacyGeneration++;
             try {
                 dropServerCache();
+                dropReviewRatings();
                 processedCards = new WeakSet();
                 requestQueue = [];
                 batchGeneration++;
@@ -1774,8 +1837,10 @@
             } catch (e) {
                 console.warn(`${logPrefix} invalidateServerCache failed:`, e);
             } finally {
-                isInvalidating = false;
+                // A newer invalidation started meanwhile owns the flag (and its own scan).
+                if (token === invalidationToken) isInvalidating = false;
             }
+            if (token !== invalidationToken) return;
             try {
                 runScan();
             } catch (e) {
@@ -1794,11 +1859,41 @@
     JE.session?.onUserChange('tag-pipeline', () => {
         privacyGeneration++;
         dropServerCache();
-        reviewRatings = null;
-        reviewRatingsRequestedAt = 0;
+        dropReviewRatings();
         skipStoreThisSession = false;
         JE.tagPipeline.clearProcessed();
     });
+    // A Hidden Content save changes what this account's tag cache holds (the
+    // hidden titles' entries leave it): everything published or in flight under
+    // the old rules is revoked now, synchronously — a download or a tag-data
+    // batch requested before the save resolves into nothing, memory and the
+    // review averages are dropped, and the stored copy is not trusted again
+    // until a delta confirms its new filter revision. Cards that stay visible
+    // keep their overlays (their entries did not change); a hidden card is
+    // hidden by Hidden Content itself. Every card is scanned again (a renderer
+    // skips a card it already tagged), so a card whose revoked answer never
+    // arrived (or one shown again by an unhide) gets its tags, now and once the
+    // cache is loaded again by the normal refresh (which never reuses an answer
+    // requested before the save). The same happens when the server acknowledges
+    // the save ('je-hidden-content-saved'): an answer asked for between the
+    // local change and the save still carries the old rules.
+    const hiddenContentChanged = () => {
+        if (!pipelineStarted) return;
+        privacyGeneration++;
+        dropServerCache();
+        dropReviewRatings();
+        requestQueue = [];
+        batchGeneration++;
+        scanGeneration++;
+        firstEpisodeCache.clear();
+        parentSeriesCache.clear();
+        processedCards = new WeakSet();
+        const rescan = () => { processedCards = new WeakSet(); scheduleScan(); };
+        if (anyTagTypeEnabled()) refreshServerCache().then(rescan, rescan);
+        scheduleScan();
+    };
+    window.addEventListener('je-hidden-content-changed', hiddenContentChanged);
+    window.addEventListener('je-hidden-content-saved', hiddenContentChanged);
     document.addEventListener('je:user-data-loaded', () => {
         // The incoming user's tag types registered during the switch and
         // already started loading their cache: don't drop it and load again.

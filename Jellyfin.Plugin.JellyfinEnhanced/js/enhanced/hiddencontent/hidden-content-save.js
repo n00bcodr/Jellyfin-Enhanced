@@ -171,6 +171,11 @@
                 getHiddenData().revision = revision;
                 sent.revision = revision;
             }
+            // The server now answers with these rules: what was asked for before it had them (card tags) is asked
+            // again ('je-hidden-content-changed' fired when the rules changed locally, before this save).
+            if (action.current()) {
+                try { window.dispatchEvent(new CustomEvent('je-hidden-content-saved')); } catch (_) { /* no listeners */ }
+            }
             return JSON.stringify(sent);
         });
     }

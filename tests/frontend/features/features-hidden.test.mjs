@@ -289,3 +289,13 @@ for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing
  if(churn){assert.ok(result.error);assert.equal(requests.some(o=>o.type==='PUT'),false);}
  else {assert.equal(result.value,true);assert.deepEqual(requests.map(o=>o.type),['POST','POST','POST','PUT']);}
 });
+
+test('an acknowledged save tells the page the server now answers with the saved rules',async t=>{
+ const post=deferred(),saved=[];const h=setup(t,{ajax:o=>o.type==='POST'?post.promise:Promise.resolve({success:true})});
+ h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');
+ h.window.addEventListener('je-hidden-content-saved',()=>saved.push('saved'));
+ h.api.updateSettings({filterSearch:true});const flushing=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(saved,[],'nothing is announced before the server answers');
+ post.resolve({success:true,revision:'r1'});await flushing;await new Promise(r=>setImmediate(r));
+ assert.deepEqual(saved,['saved']);
+});
