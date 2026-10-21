@@ -1115,7 +1115,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 IsMovie = type == "movie",
                 TmdbId = Int(media, "tmdbId"),
                 TvdbId = Int(media, "tvdbId"),
-                ImdbId = Str(media, "imdbId") is { } imdb && System.Text.RegularExpressions.Regex.IsMatch(imdb, "^tt[0-9]{1,10}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50)) ? imdb : null,
+                ImdbId = Str(media, "imdbId") is { } imdb && Helpers.AsciiGrammar.IsImdb(imdb, 10) ? imdb : null,
                 Is4k = is4k,
                 Status = Int(item, "status") ?? 0,
                 MediaStatus = Int(media, is4k ? "status4k" : "status"),

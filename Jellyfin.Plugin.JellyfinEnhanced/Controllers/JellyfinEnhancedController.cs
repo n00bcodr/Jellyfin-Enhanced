@@ -11329,9 +11329,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 (startDate, endDate) = (endDate, startDate);
             }
 
-            // The viewer's own first and last day (their time zone): date-only releases are kept by day.
+            // The viewer's own first and last day (their time zone): date-only releases are kept by day. Its shape only
+            // (dddd-dd-dd), matched deterministically; no calendar-date check is added here.
             static string? Day(Microsoft.Extensions.Primitives.StringValues value)
-                => System.Text.RegularExpressions.Regex.IsMatch(value.ToString(), "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(50)) ? value.ToString() : null;
+                => Helpers.AsciiGrammar.IsDayShape(value.ToString()) ? value.ToString() : null;
             var startDay = Request.Query.TryGetValue("startDay", out var startDayValue) ? Day(startDayValue) : null;
             var endDay = Request.Query.TryGetValue("endDay", out var endDayValue) ? Day(endDayValue) : null;
             if (startDay != null && endDay != null && string.CompareOrdinal(startDay, endDay) > 0) (startDay, endDay) = (endDay, startDay);

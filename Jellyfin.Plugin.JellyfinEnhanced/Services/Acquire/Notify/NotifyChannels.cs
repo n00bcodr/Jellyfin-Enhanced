@@ -8,7 +8,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Security.Authentication;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -32,8 +31,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
     /// </summary>
     public static class NotifyEndpoints
     {
-        private static readonly Regex TopicShape = new("^[A-Za-z0-9_-]{8,64}$", RegexOptions.CultureInvariant | RegexOptions.Compiled, TimeSpan.FromMilliseconds(50));
-
         /// <summary>The HTTP client for ntfy (no redirects, no proxy, guarded connect).</summary>
         public const string ClientName = "JellyfinEnhanced.Notify";
 
@@ -52,7 +49,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         /// <summary>A topic name a user may pick: 8-64 letters, digits, '-' or '_' (no slashes, so it can't change the path).</summary>
-        public static bool IsTopic(string? topic) => !string.IsNullOrEmpty(topic) && TopicShape.IsMatch(topic);
+        public static bool IsTopic(string? topic)
+        {
+            if (topic is not { Length: >= 8 and <= 64 }) return false;
+            foreach (var c in topic)
+            {
+                if (!(c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or '_' or '-' || Helpers.AsciiGrammar.IsDigit(c))) return false;
+            }
+            return true;
+        }
 
         /// <summary>A random topic that nobody can guess (128 bits).</summary>
         public static string NewTopic()

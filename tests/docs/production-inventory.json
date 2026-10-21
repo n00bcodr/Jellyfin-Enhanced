@@ -175,6 +175,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AsciiGrammar.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AudioLanguageTagHelper.cs",
       "category": "Helpers"
     },
@@ -9745,7 +9749,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 536,
+    "files": 537,
     "routes": 258,
     "configuration_properties": 586,
     "storage_references": 86,
