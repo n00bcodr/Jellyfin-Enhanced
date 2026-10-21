@@ -230,13 +230,11 @@
      * @param {string} [reason] Why it was published ('observed' for the registration itself).
      */
     function followStore(doc, reason) {
-        const before = new Set(hiddenIdSet);
         hiddenData = withParts(doc);
         rebuildSets();
         if (reason === 'observed') return;
-        const restored = new Set([...before].filter(id => !hiddenIdSet.has(id)));
         emitChange();
-        if (restored.size) restoreNativeCardsForIds(restored);
+        // D46: one full re-decision of the native cards shows every card the new rules no longer hide.
         refreshNativeCardVisibility();
     }
 
@@ -521,8 +519,8 @@
         }
         // The server also removes the same item stored under another spelling of its id (another tab may have hidden it so).
         persist({ remove: [key || itemId].filter(Boolean) });
-        // Cards of a scoped hide (not in the global lookup set) come back too.
-        if (itemId && !String(itemId).startsWith('tmdb-')) restoreNativeCardsForIds(new Set([itemId]));
+        // Cards of a scoped hide (not in the global lookup set) come back too: every native card is decided again.
+        refreshNativeCardVisibility();
     }
 
     /**
@@ -698,14 +696,11 @@
                 loadedRevision = after === revision ? revision : null;
                 if (after !== revision) revisionPending = true;
                 if (JSON.stringify(next) === JSON.stringify(before)) return true;
-                const shownBefore = new Set(hiddenIdSet);
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.hiddenContent = next;
                 hiddenData = next;
                 rebuildSets();
                 emitChange();
-                const shownAgain = new Set([...shownBefore].filter(id => !hiddenIdSet.has(id)));
-                if (shownAgain.size) restoreNativeCardsForIds(shownAgain);
                 refreshNativeCardVisibility();
                 return true;
             } catch (e) {
