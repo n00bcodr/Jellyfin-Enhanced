@@ -178,6 +178,23 @@ public class UserCacheRegistryTests
         Assert.Contains(Problems(snapshot, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._plantedSnapshot (", StringComparison.Ordinal));
     }
 
+    // A keyed computation may name a gate of another type in its snapshot (Discover's response gate): only the read made in
+    // that gate passes, once; another read of the viewer in the computation, or a second one inside the gate, is reported.
+    [Fact]
+    public void AGateNamedInASnapshotExcusesOnlyItsOwnRead()
+    {
+        const string Discover = "Services/Acquire/Requests/DiscoverService.cs";
+        Assert.DoesNotContain(Problems(WriteGateWalk.Plugin, Registry()), p => p.StartsWith("DiscoverService._cache:", StringComparison.Ordinal));
+        var extra = WriteGateWalk.Plugin.With(Discover, s => s.Replace(
+            "            if (list == \"because\")",
+            "            _ = _requests.View.Viewer(viewer.UserId);\n            if (list == \"because\")", StringComparison.Ordinal));
+        Assert.Contains(Problems(extra, Registry()), p => p.StartsWith("DiscoverService._cache: DiscoverService.PrepareDiscoverAsync reads the user by id", StringComparison.Ordinal));
+        var twice = WriteGateWalk.Plugin.With("Services/Acquire/ResponseGate.cs", s => s.Replace(
+            "            if (_view.Viewer(prepared.User) is not { } now) return null;",
+            "            if (_view.Viewer(prepared.User) is not { } now || _view.Viewer(prepared.User) == null) return null;", StringComparison.Ordinal));
+        Assert.Contains(Problems(twice, Registry()), p => p.StartsWith("DiscoverService._cache: DiscoverService.PublishAsync → ResponseGate.Current reads the user by id", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ACacheListedAsStampedMustBeTheHelperAndAKeyedOneMustKeepItsKey()
     {

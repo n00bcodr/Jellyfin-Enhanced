@@ -227,7 +227,10 @@ internal static partial class UserCacheScan
             var found = ReReadsOf(plugin, cache);
             foreach (var read in found)
             {
-                var allowed = cache.Snapshot.Contains(read.Member + "=" + read.Reader) && read.Via == read.Member
+                // Its snapshot's own read (in the cache's member), or the read of a gate the row names (a member that answers
+                // only when the viewer is unchanged, called from the computation): made directly in that gate member.
+                var gate = read.Via.Split(" → ")[^1];
+                var allowed = (read.Via == read.Member ? cache.Snapshot.Contains(read.Member + "=" + read.Reader) : cache.Snapshot.Contains(gate + "=" + read.Reader))
                     && found.Count(r => r.Via == read.Via && r.Reader == read.Reader) == 1;
                 if (!allowed) problems.Add(read.ToString());
             }
