@@ -133,11 +133,13 @@ public class IntegrationEditionReferenceTests
     private static JsonElement? CopyOf(JsonElement season) => season.TryGetProperty("copy", out var copy) ? copy : null;
 
     [Theory]
-    [InlineData("this copy")]   // control: Seerr's default 4K Sonarr is the 4K copy's: "Get them in 4K" lands there
-    [InlineData("another 4K")]  // the finding: Seerr's default 4K Sonarr is another server; the ask would land there
-    [InlineData("unreadable")]  // Seerr's servers can't be read (a key that isn't an administrator's): nothing is proven
-    [InlineData("no 4K")]       // Seerr has no 4K Sonarr: a 4K request reaches no copy
-    public async Task ASeerrModeAskIsBoundToTheCopyOnlyWhereSeerrSendsIt(string seerrSide)
+    [InlineData("this copy")]   // Seerr's default 4K Sonarr is the 4K copy's
+    [InlineData("another 4K")]  // Seerr's default 4K Sonarr is another server
+    [InlineData("unreadable")]  // Seerr's servers can't be read
+    [InlineData("no 4K")]       // Seerr has no 4K Sonarr
+    // Adapted in edition round 20 (D80: Seerr mode is out of scope for edition awareness): whatever Seerr's servers say, a
+    // Seerr-mode season page offers nothing under a copy's name (Seerr picks the server; its requests stay title-wide).
+    public async Task ASeerrModeAskIsNeverBoundToACopy(string seerrSide)
     {
         using var rig = M.OneLibrary(grouped: true);
         rig.Sonarr.Episodes.Add(M.Aired(103, 3));
@@ -162,13 +164,13 @@ public class IntegrationEditionReferenceTests
         var service = WithSeerr(rig, new SeerrBackend(fake.Transport, model, null, () => config, () => rig.Arr.Now));
 
         var fourK = CopyOf(await Page(service, rig.Member, M.SeasonPage(rig, rig.UhdCopy)));
-        var reaches = seerrSide == "this copy";
+        var reaches = false;
         Assert.True(fourK is { } k && k.GetProperty("role").GetString() == "4k" && k.GetProperty("ask").GetBoolean() == reaches && !k.GetProperty("search").GetBoolean(),
             $"Seerr {seerrSide}: 4K page copy {fourK?.ToString() ?? "(none)"}");
 
-        // The standard copy: Seerr's default standard Sonarr is its own (when Seerr's servers can be read at all).
+        // The standard copy: nothing under its name either.
         var std = CopyOf(await Page(service, rig.Member, M.SeasonPage(rig, rig.HdCopy)));
-        var proven = seerrSide != "unreadable";
+        var proven = false;
         Assert.True(std is { } s && s.GetProperty("ask").GetBoolean() == proven && s.GetProperty("search").GetBoolean() == proven,
             $"Seerr {seerrSide}: standard page copy {std?.ToString() ?? "(none)"}");
     }

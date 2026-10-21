@@ -37,6 +37,9 @@ public class IntegrationNotifyHardeningTests
         rig.Phones(rig.Emma);
         var series = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse("tv:tvdb:371980")!, new JfCopy { ItemId = series });
+        // Adapted in edition round 20: an older alert is checked by its scope too, so Season 2 plays two episodes for her.
+        rig.View.AddEpisodeFile(series, TitleKey.Parse("tv:tvdb:371980")!, 2, 1, 1920, 1080, rig.Arr.Now.UtcDateTime);
+        rig.View.AddEpisodeFile(series, TitleKey.Parse("tv:tvdb:371980")!, 2, 2, 1920, 1080, rig.Arr.Now.UtcDateTime);
         var id = rig.NotifyStore.Add(rig.Emma.UserId, "older-episode-batch", NotifyKind.Episodes, "tv:tvdb:371980", series.ToString("N"),
             new Dictionary<string, string> { ["title"] = "Severance", ["mode"] = "many", ["count"] = "2", ["seasons"] = "2" },
             new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);

@@ -201,6 +201,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
         }
 
+        /// <summary>
+        /// <see cref="ReplayAsync"/> for an action whose name and instance the caller works out only later (a household Search:
+        /// which copy and which episodes it searches): the earlier outcome of any action of this user under this idempotency
+        /// key within the window, as a replay; null when there is none.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="idempotencyKey">The click's idempotency key.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The replayed outcome, or null.</returns>
+        public async Task<ArrActionOutcome?> ReplayAnyAsync(Guid userId, string idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            var prefix = userId.ToString("N") + "\n";
+            var suffix = "\n" + idempotencyKey;
+            var now = _now();
+            var entry = _recent.Where(r => r.Key.StartsWith(prefix, StringComparison.Ordinal) && r.Key.EndsWith(suffix, StringComparison.Ordinal) && now - r.Value.At <= IdempotencyWindow)
+                .OrderBy(r => r.Value.At).Select(r => r.Value.Task).FirstOrDefault();
+            return entry == null ? null : Replay(await entry.WaitAsync(cancellationToken).ConfigureAwait(false));
+        }
+
         private static string Key(Guid userId, string action, string instanceId, string idempotencyKey)
             => string.Join("\n", userId.ToString("N"), action, instanceId.ToLowerInvariant(), idempotencyKey);
 

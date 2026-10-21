@@ -175,32 +175,31 @@ public class IntegrationEditionPressTests
         p.Rig.View.Rev++;
     }
 
-    // ------------------------------------------------------------------ ED-R17-1 / ED-R17-6: an ask goes only where it was drawn to go
+    // ------------------------------------------------------------------ ED-R17-1: a title-wide Seerr ask goes only as it was drawn
+    // (D80, edition round 20: Seerr mode offers no copy-qualified ask, so the Seerr press is the title-wide "Get Season 1")
 
     [Theory]
-    [InlineData("unchanged")]      // control: it asks for exactly what it says ("Get Season 1" in 4K for the 4K copy)
-    [InlineData("whole series")]   // ED-R17-1: Seerr took partial requests when drawn and takes the whole series only now
-    [InlineData("4K default moved")] // ED-R17-6: Seerr's 4K default server moved to another Sonarr after the page was drawn
-    [InlineData("arrived")]        // the episode the control was for plays in that copy now: there is nothing to ask for
+    [InlineData("unchanged")]    // control: it asks for exactly what it says ("Get Season 1")
+    [InlineData("whole series")] // ED-R17-1: Seerr took partial requests when drawn and takes the whole series only now
+    [InlineData("arrived")]      // the episode the control was for plays now: there is nothing to ask for
     public async Task ASeerrAskTheSeasonPageWouldNoLongerDrawIsRefusedAndNothingIsRecorded(string change)
     {
         using var p = new PressRig(seerr: true);
-        var page = await p.Page(p.Rig.Member, p.FourKPage);
-        var copy = CopyOf(page);
-        Assert.True(copy is { } k && k.GetProperty("role").GetString() == "4k" && k.GetProperty("ask").GetBoolean(), $"drawn binding {copy}");
+        // E4 is missing from both copies: its control is title-wide (no copy's gap).
+        p.Rig.Sonarr.Episodes.Add(M.Aired(104, 4));
+        p.Rig.Sonarr4k!.Episodes.Add(M.Aired(104, 4));
+        var page = await p.Page(p.Rig.Member, p.StandardPage);
+        Assert.Contains(page.GetProperty("episodes").EnumerateArray(), e => e.GetProperty("episode").GetInt32() == 4 && !(e.TryGetProperty("copyGap", out var g) && g.ValueKind == JsonValueKind.String));
         switch (change)
         {
             case "whole series": p.Seerr!.Settings["partialRequestsEnabled"] = false; break;
-            case "4K default moved":
-                p.Seerr!.SonarrServers = new JsonArray(FakeSeerr.Server(0, "sonarr.lan", 8989, false, true), FakeSeerr.Server(1, "sonarr4k.lan", 8989, true, false), FakeSeerr.Server(2, "sonarr4k-b.lan", 8989, true, true));
-                break;
-            case "arrived": Arrives(p, p.Rig.UhdCopy, 2, fourK: true); break;
+            case "arrived": Arrives(p, p.Rig.HdCopy, 4, fourK: false); break;
         }
         var body = new JsonObject
         {
             ["clientRequestId"] = Guid.NewGuid().ToString("N"),
-            ["input"] = new JsonObject { ["key"] = Firefly.ToString(), ["scope"] = "seasons", ["variant"] = "4k", ["seasons"] = new JsonArray(1), ["episodes"] = new JsonArray() },
-            ["expect"] = Intent(p.FourKPage, "get", new[] { 2 }, copy, "4k", seasons: new[] { 1 }),
+            ["input"] = new JsonObject { ["key"] = Firefly.ToString(), ["scope"] = "seasons", ["variant"] = "standard", ["seasons"] = new JsonArray(1), ["episodes"] = new JsonArray() },
+            ["expect"] = Intent(p.StandardPage, "get", new[] { 4 }, null, "standard", seasons: new[] { 1 }),
         };
         var (status, answer) = Read(await p.Asks(p.Rig.Member).Create(Wiring.Body<CreateRequest>(body.ToJsonString()), default));
         if (change == "unchanged")
@@ -336,63 +335,5 @@ public class IntegrationEditionPressTests
         var command = JsonNode.Parse(Assert.Single(p.Rig.Sonarr4k.Writes, w => w.Path == "/api/v3/command").Body)!;
         Assert.Equal("EpisodeSearch", (string?)command["name"]);
         Assert.Equal(new[] { 102, 104 }, command["episodeIds"]!.AsArray().Select(n => (int)n!).OrderBy(n => n).ToArray());
-    }
-
-    // ------------------------------------------------------------------ ED-R17-6: the Seerr transport sends only to the server the ask was proven for
-
-    [Theory]
-    [InlineData("default kept", 32 | 4096, true, false)]   // control: Seerr's 4K default is still the proven server; no server named
-    [InlineData("default moved", 32 | 4096, false, false)] // ED-R17-6: it moved to another Sonarr; nothing is sent
-    [InlineData("default moved, may choose", 32 | 4096 | 8192, true, true)] // an account Seerr lets choose: sent to the proven server by name
-    [InlineData("server gone", 32 | 4096 | 8192, false, false)] // the proven server isn't one of Seerr's any more: nothing is sent
-    public async Task ASeerrSendGoesOnlyToTheServerTheAskWasProvenFor(string seerrSide, long permissions, bool sent, bool named)
-    {
-        using var lab = new IntegrationRequestBackendsTests.SeerrLab(permissions);
-        lab.Seerr.Settings["series4kEnabled"] = true;
-        lab.Seerr.Shows[1731] = new JsonObject { ["id"] = 1731, ["seasons"] = new JsonArray(new JsonObject { ["seasonNumber"] = 1 }), ["mediaInfo"] = new JsonObject { ["status"] = 1, ["status4k"] = 1, ["seasons"] = new JsonArray(), ["requests"] = new JsonArray() } };
-        var std = FakeSeerr.Server(0, "sonarr.lan", 8989, false, true);
-        lab.Seerr.SonarrServers = seerrSide switch
-        {
-            "default kept" => new JsonArray(std, FakeSeerr.Server(1, "sonarr4k.lan", 8989, true, true), FakeSeerr.Server(2, "sonarr4k-b.lan", 8989, true, false)),
-            "server gone" => new JsonArray(std, FakeSeerr.Server(2, "sonarr4k-b.lan", 8989, true, true)),
-            _ => new JsonArray(std, FakeSeerr.Server(1, "sonarr4k.lan", 8989, true, false), FakeSeerr.Server(2, "sonarr4k-b.lan", 8989, true, true)),
-        };
-        var job = lab.Job(new MutationInput { Key = "tv:tmdb:1731", Scope = "seasons", Seasons = new[] { 1 }, Variant = "4k" });
-        // Proven at the press: Seerr's server 1 (rig Sonarr 4K) is the copy's.
-        job = job with { Authorization = Wiring.With(job.Authorization, "SeerrServer", 1) };
-        var result = await lab.Backend.SendAsync(job, () => null, default);
-        if (!sent)
-        {
-            Assert.Empty(lab.Seerr.Posts);
-            Assert.Equal("destination_changed", result.Outcome.Reason);
-            return;
-        }
-        var (_, _, posted) = Assert.Single(lab.Seerr.Posts);
-        Assert.True((bool)posted["is4k"]!);
-        if (named) Assert.Equal(1, (int?)posted["serverId"]);
-        else Assert.False(posted.ContainsKey("serverId"), posted.ToJsonString());
-    }
-
-    // ------------------------------------------------------------------ ED-R17-7: exact destination identity
-
-    [Theory]
-    [InlineData("http://Sonarr.LAN:8989/sonarr", "http://sonarr.lan:8989/sonarr", true)]   // host: case-insensitive
-    [InlineData("HTTP://sonarr.lan:8989", "http://sonarr.lan:8989", true)]                 // scheme: case-insensitive
-    [InlineData("http://sonarr.lan", "http://sonarr.lan:80", true)]                         // the default port, written or not
-    [InlineData("https://sonarr.lan:443/s", "https://sonarr.lan/s", true)]
-    [InlineData("http://sonarr.lan:8989/sonarr/", "http://sonarr.lan:8989/sonarr", true)]  // a trailing slash
-    [InlineData("http://sonarr.lan:8989/", "http://sonarr.lan:8989", true)]
-    [InlineData("http://sonarr.lan:8989/sonarr//", "http://sonarr.lan:8989/sonarr", true)]
-    [InlineData("http://sonarr.lan:8989/Sonarr", "http://sonarr.lan:8989/sonarr", false)]  // ED-R17-7: a base path is case-sensitive
-    [InlineData("http://sonarr.lan:8989/sonarr4k", "http://sonarr.lan:8989/sonarr", false)]
-    [InlineData("http://sonarr.lan:8989", "https://sonarr.lan:8989", false)]                // another scheme
-    [InlineData("http://sonarr.lan:8989", "http://sonarr.lan:8990", false)]                 // another port
-    [InlineData("http://sonarr.lan:80", "https://sonarr.lan:443", false)]                   // each one's default port, but another scheme
-    [InlineData("http://sonarr.lan:8989", "http://sonarr-b.lan:8989", false)]               // another host
-    [InlineData("not a url", "http://sonarr.lan:8989", false)]
-    public void TwoArrAddressesAreOneServerOnlyWhenSchemeHostPortAndBasePathAllMatch(string a, string b, bool same)
-    {
-        Assert.Equal(same, ArrStatusService.SameAddress(a, b));
-        Assert.Equal(same, ArrStatusService.SameAddress(b, a));
     }
 }

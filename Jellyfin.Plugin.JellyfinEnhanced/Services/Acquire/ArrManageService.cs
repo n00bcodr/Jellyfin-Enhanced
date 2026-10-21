@@ -523,6 +523,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static string[] Targets(bool movie, int arrId)
             => movie ? new[] { "movie:" + arrId.ToString(CultureInfo.InvariantCulture) } : new[] { "series:" + arrId.ToString(CultureInfo.InvariantCulture), "episode-of:" + arrId.ToString(CultureInfo.InvariantCulture) };
 
+        /// <summary>The action name a Search of <paramref name="key"/> runs under (named episodes: an episode search).</summary>
+        private static string SearchAction(TitleKey key, bool episodes)
+            => key.IsMovie ? "movie.search" : episodes || key.Episode != null ? "episode.search" : key.Season != null ? "season.search" : "series.search";
+
+        /// <summary>
+        /// A season page's press refused before anything ran (D53, edition round 20: its request says something else than the
+        /// press it was checked for), audited like the runner's refusals.
+        /// </summary>
+        internal ManageSearchResult RefusePress(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string refusal)
+            => new() { Outcome = Refuse(viewer, userName, instanceId, key, refusal, PressChecks.Message(refusal)), Refusal = refusal };
+
+        /// <summary>The earlier outcome of a household Search under this click's key (any copy, any episodes), as a replay; null when none.</summary>
+        internal Task<ArrActionOutcome?> ReplayAnyAsync(Guid user, string idempotencyKey, CancellationToken cancellationToken)
+            => _runner.ReplayAnyAsync(user, idempotencyKey, cancellationToken);
+
         /// <summary>A Search now refused before any arr call, written to the audit log (and so to Jellyfin's activity log) like the runner's refusals.</summary>
         private ArrActionOutcome Refuse(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string reason, string message)
         {
@@ -610,6 +625,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "invalid_input", "Choose episodes of a series or season.") };
             if (episodeNumbers != null && (key.IsMovie || key.Season == null || key.Episode != null || episodeNumbers.Count == 0))
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "invalid_input", "Choose episodes of a season.") };
+            // A retry of a press that already ran (its answer was lost) gets that outcome before anything is checked again (D53,
+            // edition round 20: replay before revalidation; the caller's own checks were made before this).
+            if (recheck != null && await _runner.ReplayAsync(viewer.UserId, SearchAction(key, episodeIds != null || episodeNumbers != null), instanceId, idempotencyKey, cancellationToken).ConfigureAwait(false) is { } replayed)
+                return new ManageSearchResult { Outcome = replayed };
             var instance = _store.Registry.Get(instanceId);
             if (instance == null || !instance.Usable || instance.Kind != (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.") };

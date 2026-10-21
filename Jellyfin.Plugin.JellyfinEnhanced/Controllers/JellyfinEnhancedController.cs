@@ -11601,6 +11601,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 foreach (var instance in arrInstances) _ = _arrState.WarmSystem(instance);
             }
 
+            // "Available" (the filter, the Play button, the time pill) is the one availability predicate's answer for the caller
+            // (D53, edition round 20: no other availability signal decides "you have it"): Jellyfin has a movie or episode item
+            // of the event they can open that plays. The arr's (or Shoko's) own file only chose between instances above.
+            var seasonItems = new Dictionary<(Guid Series, int Season), List<MediaBrowser.Controller.Entities.TV.Episode>?>();
+            bool CalendarPlays(ArrItem evt)
+            {
+                if (calendarPerson == null) return false;
+                var id = evt.Type == "Movie" ? evt.ItemId : evt.ItemEpisodeId;
+                if (id == null && evt.Type != "Movie" && evt.ItemId is Guid series && evt.SeasonNumber is int season && evt.EpisodeNumber is int number)
+                {
+                    // An episode found by its number in the caller's copy of the series (a multi-episode file covers its range).
+                    if (!seasonItems.TryGetValue((series, season), out var listed))
+                    {
+                        try
+                        {
+                            listed = _libraryManager.GetItemList(new InternalItemsQuery(calendarPerson)
+                            {
+                                AncestorIds = new[] { series },
+                                Recursive = true,
+                                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                                ParentIndexNumber = season,
+                            }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToList();
+                        }
+                        catch (Exception)
+                        {
+                            listed = null;
+                        }
+                        seasonItems[(series, season)] = listed;
+                    }
+                    id = listed?.Where(e => e.IndexNumber is int first && new Services.Acquire.EpisodeRange(first, e.IndexNumberEnd).Contains(number)).Select(e => (Guid?)e.Id).FirstOrDefault();
+                }
+                if (id is not Guid itemId || itemId == Guid.Empty) return false;
+                return Services.Acquire.EditionAvailability.PlaysItem(_libraryManager.GetItemById<BaseItem>(itemId, calendarPerson));
+            }
+            foreach (var evt in events) evt.HasFile = CalendarPlays(evt);
+
             return Ok(new { events, errors });
         }
 

@@ -834,6 +834,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (bound.Reached) return;
             var stage = composed?.Status.Stage ?? "hidden";
             var scopeName = interest.Scope?.Only4k == true ? "m4k" : "m";
+            // An interest in one edition (a request): the copies that played anything at the last look, so a copy that turns into
+            // that edition in place is an arrival of it dated by the transition (D53, edition round 20), not by the copy's date.
+            var hadPlaying = interest.Scope == null ? null : PlayingBefore(viewer, key, scopeName);
+            if (interest.Scope != null)
+                RememberPlaying(viewer, key, scopeName, _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList(), generation);
             var mark = "ready|" + key + "|" + scopeName;
             var itemId = composed?.Visible?.ItemId;
             // The same Jellyfin item is one event however many ids the title is known by.
@@ -873,7 +878,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
             }
-            if (!prefs.Ready || (arrived is DateTime at && now.UtcDateTime - at > ArrivalFreshFor))
+            var upgraded = itemId is Guid shown && hadPlaying?.Contains(shown) == true;
+            if (!prefs.Ready || (arrived is DateTime at && now.UtcDateTime - at > ArrivalFreshFor && !upgraded))
             {
                 Written(key, _store.InTransaction(generation, Handle, false).Done);
                 return;
@@ -936,8 +942,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // it sits in (an HD file in the 4K folder is no 4K arrival and consumes no 4K mark; a real 4K file in the standard
             // folder is the 4K request's arrival), and a stub plays nothing.
             var (seriesCopies, files) = Arrived(key, viewer, edition);
+            // An edition that became available on an item the viewer already played in another edition (a file replaced in
+            // place: Jellyfin keeps the item and its date) is an arrival dated by the observed transition (D53, edition round
+            // 20), never by the item's date: the items that played at the last look are remembered for an interest in one edition.
+            var hadPlaying = edition == Edition.Any ? null : PlayingBefore(viewer, key, scope);
+            var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToList();
             // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
             if (bound.Reached) return;
+            if (playingNow != null) RememberPlaying(viewer, key, scope, playingNow, generation);
             seriesItem = files.Select(f => (Guid?)f.Series).FirstOrDefault() ?? seriesCopies.FirstOrDefault()?.ItemId;
             foreach (var copy in seriesCopies.Where(c => c.ItemId != Guid.Empty)) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
@@ -991,7 +1003,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         fresh &= tx.TryMark(viewer.UserId, NotifyTransaction.EpisodeItemMark(series, interest.Only4k, number), now);
                     }
                     if (!fresh) continue;
-                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor) continue;
+                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor && hadPlaying?.Contains(id) != true) continue;
                     wanted.Add((number.Season, number.Episode, id));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
@@ -1021,6 +1033,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             return numbers;
         }
+
+        /// <summary>
+        /// The items that played for the viewer (any edition) at the last look of an interest in one edition (see
+        /// <see cref="RememberPlaying"/>); null when none was remembered yet (no evidence of an upgrade in place).
+        /// </summary>
+        private HashSet<Guid>? PlayingBefore(StatusViewer viewer, TitleKey key, string scope)
+            => _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known is { } known
+                ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Guid.TryParseExact(x, "N", out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToHashSet()
+                : null;
+
+        /// <summary>Remembers the items that play for the viewer now (any edition), when that changed (see <see cref="PlayingBefore"/>).</summary>
+        private void RememberPlaying(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, long generation)
+        {
+            var known = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
+            if (_store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known == known) return;
+            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, known, _now()); return true; }, false);
+        }
+
+        /// <summary>The watch scope suffix of the items that played in any edition (see <see cref="PlayingBefore"/>).</summary>
+        private const string PlayingSuffix = "|playing";
 
         /// <summary>
         /// The edition an interest is told about: a 4K request's 4K; a standard request's standard (with "Standard requests

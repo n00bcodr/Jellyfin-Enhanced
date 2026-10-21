@@ -208,6 +208,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return ReadSlotAsync(state, slot, cancellationToken);
         }
 
+        /// <summary>How long a press's read of one snapshot from the arr may take (tests shorten it).</summary>
+        internal TimeSpan ReadNowWait { get; set; } = TimeSpan.FromSeconds(8);
+
+        /// <summary>
+        /// The download queue as the arr has it NOW, for checking a press (D53, edition round 20: fresh facts for action
+        /// validation): never what is in memory. A read already running is waited for (it may have started before the change)
+        /// and a new one made, each within <see cref="ReadNowWait"/>; <see cref="ArrSnapshotRead{T}.Error"/> is set when no read
+        /// made now answered (the press is then refused as unverified).
+        /// </summary>
+        /// <param name="instance">The instance.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The read.</returns>
+        internal Task<ArrSnapshotRead<ArrQueueSnapshot>> ReadQueueNowAsync(ArrConnection instance, CancellationToken cancellationToken)
+            => StateFor(instance, out var notUsable) is { } state ? ReadNowAsync(state.Queue, cancellationToken) : Task.FromResult(new ArrSnapshotRead<ArrQueueSnapshot> { Error = notUsable });
+
+        /// <summary>The recent history as the arr has it now (see <see cref="ReadQueueNowAsync"/>).</summary>
+        /// <param name="instance">The instance.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The read.</returns>
+        internal Task<ArrSnapshotRead<ArrHistorySnapshot>> ReadHistoryNowAsync(ArrConnection instance, CancellationToken cancellationToken)
+            => StateFor(instance, out var notUsable) is { } state ? ReadNowAsync(state.History, cancellationToken) : Task.FromResult(new ArrSnapshotRead<ArrHistorySnapshot> { Error = notUsable });
+
+        /// <summary>One Sonarr series' episodes (with their files) as Sonarr has them now (see <see cref="ReadQueueNowAsync"/>).</summary>
+        /// <param name="instance">The Sonarr instance.</param>
+        /// <param name="seriesId">Sonarr's series id.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The read.</returns>
+        internal Task<ArrSnapshotRead<ArrEpisodesSnapshot>> ReadEpisodesNowAsync(ArrConnection instance, int seriesId, CancellationToken cancellationToken)
+        {
+            if (instance.Kind != ArrKind.Sonarr)
+                return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Internal, "Episodes are read from Sonarr only.") });
+            if (StateFor(instance, out var notUsable) is not { } state) return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = notUsable });
+            var slot = state.EpisodesFor(seriesId, _now());
+            return slot == null
+                ? Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Timeout, "Still loading other series from the instance; try again in a moment.") })
+                : ReadNowAsync(slot, cancellationToken);
+        }
+
+        private async Task<ArrSnapshotRead<T>> ReadNowAsync<T>(ArrSnapshotSlot<T> slot, CancellationToken cancellationToken)
+            where T : class
+        {
+            var started = _now();
+            slot.Touch(started);
+            ArrRequestScope.MarkWaited();
+            try
+            {
+                // A read already running may have asked the arr before the change: wait for it, then read again.
+                if (slot.Inflight is { } running) await running.WaitAsync(ReadNowWait, cancellationToken).ConfigureAwait(false);
+                await slot.StartRefresh(_backgroundCalls, _now, _shutdownToken).WaitAsync(ReadNowWait, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                return new ArrSnapshotRead<T> { Error = new ArrError(ArrErrorKind.Timeout, "The instance didn't answer in time.") };
+            }
+            var peek = slot.Peek();
+            // Only an answer to a read made now is a fact about now (a failed read leaves the held value, which isn't).
+            if (peek.Value == null || peek.Error != null || slot.CheckedAt < started)
+                return new ArrSnapshotRead<T> { Error = peek.Error ?? new ArrError(ArrErrorKind.Internal, "The instance couldn't be read now.") };
+            return new ArrSnapshotRead<T> { Value = peek.Value, LoadedAt = peek.LoadedAt };
+        }
+
         /// <summary>Test seam: called after a read picked (or failed to pick) a series' episodes slot, before reading it.</summary>
         internal Action<int>? EpisodeSlotPicked { get; set; }
 

@@ -751,7 +751,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => Playable(video) ? new List<JfSource> { new() { SourceId = video.Id, ItemId = video.Id, BackingItemId = video.Id, Path = video.Path, DateCreated = Utc(video.DateCreated) } } : new List<JfSource>();
 
         /// <summary>True for a movie or episode with a file (a missing episode is a virtual item without one).</summary>
-        private static bool Playable(Video video) => !video.IsVirtualItem && !video.IsPlaceHolder && !string.IsNullOrEmpty(video.Path);
+        internal static bool Playable(Video video) => !video.IsVirtualItem && !video.IsPlaceHolder && !string.IsNullOrEmpty(video.Path);
 
         /// <summary>A listed (not missing) episode that plays nothing: a stub file (Jellyfin's IsPlaceHolder) or no file path.</summary>
         private static bool Placeholder(Episode e) => !e.IsMissingEpisode && !Playable(e);

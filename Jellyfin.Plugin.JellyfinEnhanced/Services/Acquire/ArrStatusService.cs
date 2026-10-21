@@ -50,7 +50,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private readonly ArrChangeFeed? _feed;
         private readonly TitleAliases _aliases;
         private readonly ArrInstanceLibraries _libraries;
-        private readonly Requests.ISeerrDestinations? _seerr;
+        private readonly Requests.ISeerrRequestSettings? _seerr;
 
         /// <summary>The service for a Jellyfin installation (DI).</summary>
         public ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, ArrChangeFeed feed, ArrInstanceLibraries libraries, Requests.SeerrBackend seerr)
@@ -59,10 +59,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         }
 
         /// <summary>
-        /// A service with explicit configuration, clock and change feed (tests). <paramref name="seerr"/> says where Seerr sends
-        /// a request (null: nowhere known, so no Seerr-mode page binds an ask to a copy).
+        /// A service with explicit configuration, clock and change feed (tests). <paramref name="seerr"/> answers Seerr's
+        /// partial-request setting for a press of a title-wide Seerr ask (null: unknown, so such a press can't be checked).
         /// </summary>
-        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null, ArrInstanceLibraries? libraries = null, Requests.ISeerrDestinations? seerr = null)
+        internal ArrStatusService(ArrStateStore store, IArrJellyfinView view, IArrRequestFacts requests, Func<PluginConfiguration?>? config, Func<DateTimeOffset>? now, ArrChangeFeed? feed = null, ArrInstanceLibraries? libraries = null, Requests.ISeerrRequestSettings? seerr = null)
         {
             _seerr = seerr;
             _store = store;
@@ -216,14 +216,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The arr reads for one Jellyfin item's status: null when the viewer can't see it or it has no key. Episode
         /// lists are read (<paramref name="load"/>) or only taken from memory.
         /// </summary>
-        private async Task<Gathered?> PrepareItemAsync(StatusViewer viewer, Guid itemId, bool load, CancellationToken cancellationToken)
+        private async Task<Gathered?> PrepareItemAsync(StatusViewer viewer, Guid itemId, bool load, CancellationToken cancellationToken, bool fresh = false)
         {
             if (_view.Resolve(itemId, viewer) is not { Key: not null } item) return null;
             var title = item.Key.Title;
-            // A season page's copy binding in Seerr mode needs Seerr's own servers (where its request goes, see Reach).
-            if (item.Kind == "season" && _seerr != null && _config()?.ArrRequestBackend != "je") await _seerr.RefreshDestinationsAsync(ArrKind.Sonarr, cancellationToken).ConfigureAwait(false);
             var episodes = item.Kind is "series" or "season" or "episode" ? new[] { title } : Array.Empty<TitleKey>();
-            return await GatherAsync(viewer, new[] { title }, loadEpisodes: load ? episodes : null, peekEpisodes: load ? null : episodes, cancellationToken).ConfigureAwait(false);
+            return await GatherAsync(viewer, new[] { title }, loadEpisodes: load ? episodes : null, peekEpisodes: load ? null : episodes, cancellationToken, fresh).ConfigureAwait(false);
         }
 
         /// <summary>The item as the viewer (past the final gate) can open it now, when its facts were read; else null.</summary>
@@ -240,7 +238,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A missing (virtual) episode or season whose file has arrived: Jellyfin adds the file's item
             // under a new id and drops the virtual one at its next series refresh. Until then the page of
             // the virtual item reads as the arrived one and names it, so the page can move there.
-            if (!EditionAvailability.Plays(item) && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { } arrived && EditionAvailability.Plays(arrived) && arrived.ItemId != item.ItemId)
+            if (!EditionAvailability.Plays(item) && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { } arrived && ScopePlays(viewer, arrived) && arrived.ItemId != item.ItemId)
             {
                 var status = WithVersions(ComposeItem(viewer, arrived, gather), arrived, viewer);
                 status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
@@ -330,104 +328,96 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// Where a season page's copy-qualified controls land (D53, edition round 15: one binding decides wording and action;
         /// round 16: the binding is verified for every transport). A request names the copy's edition and reaches the copy only
-        /// when its EFFECTIVE destination is the copy's own Sonarr: in Jellyfin Enhanced mode that edition's default Sonarr (the
-        /// request target); in Seerr mode the server Seerr itself sends it to (JE sends Seerr no server: Seerr's default server
-        /// for the edition), proven only when exactly one Sonarr here is that server (same address, and the same Seerr id when
-        /// the instance was imported from Seerr) and it is the copy's. Unknown (Seerr's servers unread, unreadable, or none
-        /// for the edition): not proven, so nothing is offered under the copy's name. A household Search runs on the standard
-        /// request target only (Seerr mode: any non-4K Sonarr, so only when there is one), and asks when nothing was sent, so it
-        /// needs the ask too. An administrator's Search runs on the copy's own Sonarr; nobody else is told which one it is.
+        /// when its destination is the copy's own Sonarr: in Jellyfin Enhanced mode that edition's default Sonarr (the request
+        /// target). A household Search runs on the standard request target only and asks when nothing was sent, so it needs
+        /// the ask too. An administrator's Search runs on the copy's own Sonarr; nobody else is told which one it is.
+        /// Seerr mode is out of scope for edition awareness (D80, edition round 20): Seerr picks the server a request goes to,
+        /// so nothing is offered under the copy's name there (no ask, no Search, no instance); its pages keep their title-wide
+        /// standard and 4K requests.
         /// </summary>
         private void Reach(CopyBinding bound, StatusViewer viewer)
         {
-            var config = _config();
             bound.Variant = bound.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null };
-            var je = config?.ArrRequestBackend == "je";
-            var (destination, token) = Destination(bound.Variant, je);
+            if (_config()?.ArrRequestBackend != "je" || bound.Variant == null)
+            {
+                bound.Ask = false;
+                bound.Dest = null;
+                bound.Search = false;
+                bound.InstanceId = null;
+                return;
+            }
+            var destination = _store.Registry.DefaultFor(ArrKind.Sonarr, bound.Variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id;
             bound.Ask = destination != null && string.Equals(destination, bound.InstanceId, StringComparison.OrdinalIgnoreCase);
             // Where the ask lands, for the press to send back (D53, edition round 19): opaque, and only for an ask that reaches the copy.
-            bound.Dest = bound.Ask ? token : null;
-            bound.Search = bound.Ask && bound.Variant == "standard"
-                && (je || _store.Instances(ArrKind.Sonarr).Count(i => i.Role != Model.Arr.ArrInstanceRole.FourK) == 1);
+            bound.Dest = bound.Ask ? PressChecks.DestinationToken("je", destination!) : null;
+            bound.Search = bound.Ask && bound.Variant == "standard";
             if (!viewer.IsAdmin) bound.InstanceId = null;
         }
 
         /// <summary>
-        /// The Sonarr instance a series request of an edition lands on now and its press token: JE mode, that edition's default
-        /// Sonarr; Seerr mode, the one instance here that is Seerr's default server for it (<see cref="SeerrSendsTo"/>). Nulls when
-        /// that isn't proven.
+        /// A season page's press, worked out again now (D53, edition round 19: the server decides every press; round 20: fresh
+        /// facts): the season composed for the viewer as Jellyfin has them now (its copy binding reached now, never a cached body)
+        /// from the arrs' queue, history and episode files read again from the arrs now (bounded; <see cref="PressChecks.Unverified"/>
+        /// when they can't be), and compared with what the control was drawn to do (<see cref="PressChecks.Compare"/>). A synthetic
+        /// absent season page (Jellyfin 12's native details of a title not in the library) is resolved as that page
+        /// (<paramref name="pages"/>) and composed freshly the same way. Seerr mode reads Seerr's partial-request setting again for
+        /// a title-wide ask. The caller records or sends nothing more than what this proves, and nothing at all on a refusal.
+        /// <paramref name="input"/>: the ask (route <see cref="PressChecks.Ask"/>); <paramref name="key"/>: the searched key (the
+        /// Search routes). Only awaits before the comparison: the caller's next step is its write.
         /// </summary>
-        private (string? Instance, string? Token) Destination(string? variant, bool je)
-        {
-            if (variant == null) return (null, null);
-            if (je)
-            {
-                var id = _store.Registry.DefaultFor(ArrKind.Sonarr, variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id;
-                return (id, id == null ? null : PressChecks.DestinationToken("je", id));
-            }
-            var (instance, server) = SeerrSendsTo(variant == "4k");
-            return (instance, server is int s ? PressChecks.DestinationToken("seerr", s.ToString(CultureInfo.InvariantCulture)) : null);
-        }
-
-        /// <summary>
-        /// The Sonarr instance Seerr sends a series request of that edition to, and Seerr's id of that server: the one instance
-        /// here that is Seerr's default server for it (see <see cref="Reach"/>); nulls when that isn't proven.
-        /// </summary>
-        private (string? Instance, int? Server) SeerrSendsTo(bool is4k)
-        {
-            if (_seerr?.DefaultServer(ArrKind.Sonarr, is4k) is not { } server) return (null, null);
-            var matches = _store.Instances(ArrKind.Sonarr).Where(i => (i.SeerrServerId == null || i.SeerrServerId == server.Id) && SameAddress(i.Url, server.Url)).Take(2).ToList();
-            return matches.Count == 1 ? (matches[0].Id, server.Id) : (null, null);
-        }
-
-        /// <summary>
-        /// A season page's press, worked out again now (D53, edition round 19: the server decides every press): Seerr's servers
-        /// and partial-request setting read again (no cache), the season composed for the viewer as Jellyfin has them now (its
-        /// copy binding reached now, never a cached body), and compared with what the control was drawn to do
-        /// (<see cref="PressChecks.Compare"/>). The caller records or sends nothing more than what this proves, and nothing at
-        /// all on a refusal. <paramref name="input"/>: the ask (route <see cref="PressChecks.Ask"/>); <paramref name="key"/>:
-        /// the searched key (the Search routes). Only awaits before the comparison: the caller's next step is its write.
-        /// </summary>
-        internal async Task<PressProof> PressAsync(StatusViewer viewer, PressIntent intent, string route, MutationInput? input, TitleKey? key, CancellationToken cancellationToken)
+        internal async Task<PressProof> PressAsync(StatusViewer viewer, PressIntent intent, string route, MutationInput? input, TitleKey? key, CancellationToken cancellationToken, IAbsentTitlePages? pages = null)
         {
             if (!Guid.TryParseExact(intent.Item, "N", out var itemId) || itemId == Guid.Empty) return PressProof.Changed;
             var seerr = _config()?.ArrRequestBackend != "je";
             bool? whole = null;
-            if (seerr && _seerr != null)
+            if (seerr && route == PressChecks.Ask && _seerr != null) whole = await _seerr.WholeSeriesOnlyAsync(cancellationToken).ConfigureAwait(false);
+            // Not a library item the viewer opens: a synthetic absent season page, resolved as the page itself for the viewer.
+            AbsentTitle? absent = null;
+            if (_view.Resolve(itemId, viewer) == null && pages != null)
             {
-                await _seerr.RefreshDestinationsAsync(ArrKind.Sonarr, cancellationToken, fresh: true).ConfigureAwait(false);
-                if (route == PressChecks.Ask) whole = await _seerr.WholeSeriesOnlyAsync(cancellationToken).ConfigureAwait(false);
+                var page = await pages.ResolveAsync(viewer.UserId, itemId, cancellationToken).ConfigureAwait(false);
+                switch (page.Outcome)
+                {
+                    case AbsentLookup.Unavailable: return new PressProof(PressChecks.Unverified);
+                    case AbsentLookup.Found when page.Title is { Kind: "season", Season: int } found: absent = found; break;
+                    case AbsentLookup.NotAbsent: break;
+                    default: return PressProof.Changed;
+                }
+            }
+            PressProof Compare(StatusViewer now, TitleStatus? status, TitleKey seasonKey, int season, bool unverified)
+            {
+                if (unverified) return new PressProof(PressChecks.Unverified);
+                if (status == null) return PressProof.Changed;
+                // The press is for this season of this title (whichever id each side used).
+                var title = _aliases.Canonical(seasonKey.Title);
+                var pressed = input != null ? TitleKey.Parse(input.Key) : key;
+                if (pressed == null || !_aliases.Canonical(pressed.Title).Equals(title) || (key?.Season is int s && s != season)) return PressProof.Changed;
+                return new PressProof(PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin));
+            }
+            if (absent != null)
+            {
+                var title = absent.Title.Title;
+                // The page was resolved for the viewer as they were: a changed viewer is a changed press (no second resolve).
+                return await GatedAsync(
+                    viewer,
+                    v => GatherAsync(v, new[] { title }, loadEpisodes: title.IsMovie ? null : new[] { title }, peekEpisodes: null, cancellationToken, fresh: true),
+                    (now, gather) =>
+                    {
+                        var asked = _requests.ForSeason(title, absent.Season!.Value, now);
+                        return Compare(now, ComposeAbsent(now, absent, gather, asked), absent.ScopeKey, absent.Season!.Value, gather.Unverified);
+                    },
+                    _ => PressProof.Changed,
+                    again: false).ConfigureAwait(false);
             }
             return await GatedAsync(
                 viewer,
-                v => PrepareItemAsync(v, itemId, load: true, cancellationToken),
+                v => PrepareItemAsync(v, itemId, load: true, cancellationToken, fresh: true),
                 (now, gather) =>
                 {
                     if (gather == null || ItemNow(now, itemId, gather) is not { Kind: "season", Key: { } seasonKey, Season: int season } item) return PressProof.Changed;
-                    // The press is for this season of this title (whichever id each side used).
-                    var title = _aliases.Canonical(seasonKey.Title);
-                    var pressed = input != null ? TitleKey.Parse(input.Key) : key;
-                    if (pressed == null || !_aliases.Canonical(pressed.Title).Equals(title) || (key?.Season is int s && s != season)) return PressProof.Changed;
-                    var status = ComposeItem(now, item, gather);
-                    var refusal = PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin);
-                    int? server = refusal == null && seerr && route == PressChecks.Ask && status.Copy is { Ask: true } bound && intent.Copy != null
-                        ? SeerrSendsTo(bound.Variant == "4k").Server
-                        : null;
-                    return new PressProof(refusal, server);
+                    return Compare(now, ComposeItem(now, item, gather), seasonKey, season, gather.Unverified);
                 },
                 _ => PressProof.Changed).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Two arr addresses name the same server (D53, edition round 19: exact destination identity): the scheme and host
-        /// compared without case (they have none), the port with each scheme's default filled in (":80" written or not), and
-        /// the base path ORDINALLY, trailing slashes aside: a reverse proxy may tell "/Sonarr" from "/sonarr", so they are two.
-        /// </summary>
-        internal static bool SameAddress(string? a, string? b)
-        {
-            if (!Uri.TryCreate(a?.Trim(), UriKind.Absolute, out var x) || !Uri.TryCreate(b?.Trim(), UriKind.Absolute, out var y)) return false;
-            return string.Equals(x.Scheme, y.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(x.IdnHost, y.IdnHost, StringComparison.OrdinalIgnoreCase) && x.Port == y.Port
-                && string.Equals(x.AbsolutePath.TrimEnd('/'), y.AbsolutePath.TrimEnd('/'), StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -611,10 +601,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 return copies.FirstOrDefault(x => x.Visible && holding.Contains(x.ItemId))?.ItemId;
             }
             var scope = ScopeItem(viewer, key);
-            if (scope == null) return null;
-            if (key.Episode != null) return EditionAvailability.Plays(scope) ? scope.ItemId : null;
-            return scope.SeriesId is Guid series && Editions.Holding(viewer, copies.Where(x => x.ItemId == series).ToList(), movie: false, Edition.Any, season).Count > 0
-                ? scope.ItemId : null;
+            return scope != null && ScopePlays(viewer, scope, copies) ? scope.ItemId : null;
+        }
+
+        /// <summary>
+        /// A season or episode item plays for the viewer (D53, edition round 20: season decisions are per-copy episode coverage):
+        /// an episode by its own playable source; a season only when its own series copy plays an episode of that season (a
+        /// season of stubs, or one whose episodes are all missing, plays nothing, whatever its own item is).
+        /// </summary>
+        private bool ScopePlays(StatusViewer viewer, JfItemRef item, IReadOnlyList<JfCopy>? copies = null)
+        {
+            if (item.Kind != "season") return EditionAvailability.Plays(item);
+            if (item.SeriesId is not Guid series || item.Season is not int season || item.Key == null) return false;
+            copies ??= CopiesOf(item.Key.Title, viewer).Display;
+            return Editions.Holding(viewer, copies.Where(x => x.ItemId == series).ToList(), movie: false, Edition.Any, season).Count > 0;
         }
 
         /// <summary>
@@ -630,8 +630,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// series (a virtual episode included); null otherwise or for movie/series keys. In the series item
         /// <paramref name="seriesId"/> when given (a page's own copy: a 4K copy, or the series in another
         /// library, is another series item; never swapped for one). Unpinned (no series named), every copy the
-        /// viewer can open is searched: the first copy's item Jellyfin plays (<see cref="JfItemRef.Playable"/>), else the first
-        /// missing item or placeholder.
+        /// viewer can open is searched: the first copy's item that plays (an episode with a playable source; a season whose copy
+        /// plays an episode of it, <see cref="ScopePlays"/>), else the first missing item or placeholder.
         /// </summary>
         internal JfItemRef? ScopeItem(StatusViewer viewer, TitleKey key, Guid? seriesId = null)
         {
@@ -643,7 +643,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var copy in copies.Where(x => x.Visible).DistinctBy(x => x.ItemId))
             {
                 var item = ScopeItemIn(viewer, key, copy.ItemId, season);
-                if (item != null && EditionAvailability.Plays(item)) return item;
+                // The first copy's item that plays (a season: whose copy plays an episode of it), never a copy's stubs before it.
+                if (item != null && ScopePlays(viewer, item, copies)) return item;
                 first ??= item;
             }
             return first;
@@ -714,7 +715,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return null;
 
-            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && !EditionAvailability.Plays(scope)) ? null : scope.ItemId;
+            // Only an item that plays is an arrival: an episode with a playable source, a season its copy plays an episode of.
+            Guid? Arrival(JfItemRef? scope) => scope == null || !ScopePlays(viewer, scope) ? null : scope.ItemId;
         }
 
         /// <summary>
@@ -1392,7 +1394,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The per-user cache key: user, policy revision, what was asked, the arr facts revision, the
-        /// Jellyfin library revision, the request facts revision, where Seerr sends requests, every edition setting
+        /// Jellyfin library revision, the request facts revision, every edition setting
         /// (<see cref="EditionAvailability.SemanticRevision"/>), the settings that change texts and a ten-minute time bucket
         /// (for time-based wording such as "Still looking").
         /// </summary>
@@ -1410,7 +1412,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _view.Revision.ToString(CultureInfo.InvariantCulture),
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
                 _libraries.Revision,
-                _seerr?.DestinationsRevision ?? "-",
                 EditionAvailability.SemanticRevision(config),
                 (config?.ArrRequestBackend ?? "seerr") + "#" + (config?.ArrPhase3Enabled == true ? "3" : "0") + "#" + (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
@@ -1475,14 +1476,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             public Dictionary<TitleKey, CopyLookup> Copies { get; } = new();
 
             public string Revision { get; set; } = string.Empty;
+
+            /// <summary>A fresh gather (a press's check) couldn't read an arr fact it needed now (see <see cref="GatherAsync"/>).</summary>
+            public bool Unverified { get; set; }
         }
 
         /// <summary>
         /// Reads every snapshot the titles need (library, queue, history per instance of each kind
         /// needed; episodes of the series in <paramref name="loadEpisodes"/>, or only those already in
         /// memory for <paramref name="peekEpisodes"/>) and builds the facts plus their revision.
+        /// <paramref name="fresh"/> (a press's check, D53 edition round 20: fresh facts for action validation): the queue,
+        /// history and episode list of every instance holding a title are read from the arr NOW (a read already running is
+        /// waited for, then a new one; bounded), never served from memory; one that can't be read now marks the gather
+        /// <see cref="Gathered.Unverified"/>, as does an instance whose library can't be read.
         /// </summary>
-        private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct)
+        private async Task<Gathered> GatherAsync(StatusViewer viewer, IEnumerable<TitleKey> titles, IEnumerable<TitleKey>? loadEpisodes, IEnumerable<TitleKey>? peekEpisodes, CancellationToken ct, bool fresh = false)
         {
             var result = new Gathered();
             var distinct = titles.Distinct().ToList();
@@ -1499,11 +1507,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var kind in kinds)
             {
                 var instances = _store.Instances(kind);
-                var reads = await Task.WhenAll(instances.Select(async i => (
-                    Instance: i,
-                    Library: await _store.GetLibraryAsync(i, ct).ConfigureAwait(false),
-                    Queue: await _store.GetQueueAsync(i, ct).ConfigureAwait(false),
-                    History: await _store.GetHistoryAsync(i, ct).ConfigureAwait(false)))).ConfigureAwait(false);
+                var reads = await Task.WhenAll(instances.Select(async i =>
+                {
+                    var library = await _store.GetLibraryAsync(i, ct).ConfigureAwait(false);
+                    // A press's check reads the downloads of an instance that holds the title from the arr now.
+                    var now = fresh && (library.Value == null || distinct.Any(t => t.IsMovie == (kind == ArrKind.Radarr) && (kind == ArrKind.Radarr ? MoviesOf(library.Value, t).Any() : SeriesOf(library.Value, t).Any())));
+                    var queue = now ? await _store.ReadQueueNowAsync(i, ct).ConfigureAwait(false) : await _store.GetQueueAsync(i, ct).ConfigureAwait(false);
+                    var history = now ? await _store.ReadHistoryNowAsync(i, ct).ConfigureAwait(false) : await _store.GetHistoryAsync(i, ct).ConfigureAwait(false);
+                    if (now && (library.Value == null || queue.Value == null || queue.Error != null || history.Value == null || history.Error != null)) result.Unverified = true;
+                    return (Instance: i, Library: library, Queue: queue, History: history);
+                })).ConfigureAwait(false);
                 foreach (var (instance, library, queue, history) in reads)
                 {
                     revision.Append(instance.Id).Append(':').Append(instance.Name).Append(':').Append(instance.Role).Append(instance.IsDefault ? "*" : string.Empty)
@@ -1572,7 +1585,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                                 if (!MayUseCopy(viewer, copyAccess, instance, series.Path)) continue;
                                 if (series.TvdbId is > 0 and var canonical) NoteLiveKey(revision, facts, TitleKey.ForSeries(canonical.ToString(CultureInfo.InvariantCulture), null, null));
                                 ArrSnapshotRead<ArrEpisodesSnapshot>? episodes = null;
-                                if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
+                                if (load.Contains(title) && fresh)
+                                {
+                                    // A press's check: the episode files as the arr has them now.
+                                    episodes = await _store.ReadEpisodesNowAsync(instance, series.Id, ct).ConfigureAwait(false);
+                                    if (episodes.Value == null || episodes.Error != null) result.Unverified = true;
+                                }
+                                else if (load.Contains(title)) episodes = await _store.GetEpisodesAsync(instance, series.Id, ct).ConfigureAwait(false);
                                 else if (peek.Contains(title)) episodes = _store.PeekEpisodes(instance, series.Id);
                                 if (episodes != null) revision.Append('e').Append(series.Id).Append(':').Append(Stamp(episodes.LoadedAt)).Append(';');
                                 // Its episode list was needed and can't be read (nothing to serve meanwhile): the copy is judged by

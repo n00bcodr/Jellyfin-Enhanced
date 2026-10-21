@@ -46,8 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
     /// <summary>The server's fresh answer to a press (<see cref="ArrStatusService.PressAsync"/>).</summary>
     /// <param name="Refusal">Null: still exactly what was drawn; else <c>press_changed</c> or <c>press_unverified</c>.</param>
-    /// <param name="SeerrServer">Seerr mode, a copy-bound ask: the Seerr server it was proven to land on (the send is held to it).</param>
-    public sealed record PressProof(string? Refusal, int? SeerrServer = null)
+    public sealed record PressProof(string? Refusal)
     {
         /// <summary>The press no longer does what it was drawn to do.</summary>
         public static PressProof Changed { get; } = new(PressChecks.Changed);
@@ -80,8 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             : "This changed since the page was shown, so nothing was sent.";
 
         /// <summary>
-        /// An opaque token for where an ask lands (an instance id or a Seerr server id): the page echoes it with the press and
-        /// learns nothing from it (instance ids are never given to anyone but administrators).
+        /// An opaque token for where an ask lands (the request target's instance id; Seerr mode has none, D80): the page echoes
+        /// it with the press and learns nothing from it (instance ids are never given to anyone but administrators).
         /// </summary>
         public static string DestinationToken(string kind, string id)
             => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("je-press-destination|" + kind + "|" + id)), 0, 8).ToLowerInvariant();
@@ -143,6 +142,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 default:
                     return Changed;
             }
+        }
+
+        /// <summary>
+        /// The command an administrator's Search from a season page runs (D53, edition round 20: the executed command IS the
+        /// validated intent): the instance and the exact episodes of the season the press names, never the request's parallel
+        /// fields. The request's own fields must say the same (the instance, a season key or one of its episodes, the episodes
+        /// when given), or nothing runs: null (<see cref="Changed"/>).
+        /// </summary>
+        /// <param name="intent">The press.</param>
+        /// <param name="instanceId">The request's instance.</param>
+        /// <param name="key">The request's key.</param>
+        /// <param name="episodes">The request's episodes (null: none named).</param>
+        /// <returns>The instance, the season key and its episode numbers to search; null when the request says otherwise.</returns>
+        public static (string Instance, TitleKey Season, int[] Episodes)? AdminCommand(PressIntent intent, string? instanceId, TitleKey key, int[]? episodes)
+        {
+            var numbers = (intent.Episodes ?? Array.Empty<int>()).Distinct().OrderBy(n => n).ToArray();
+            if (intent.Mode != "search" || string.IsNullOrWhiteSpace(intent.Instance) || numbers.Length == 0 || numbers.Any(n => n < 1)) return null;
+            if (!string.Equals(intent.Instance, instanceId, StringComparison.OrdinalIgnoreCase) || key.IsMovie || key.Season is not int season) return null;
+            if (key.Episode is int one && !(numbers.Length == 1 && numbers[0] == one)) return null;
+            if (episodes is { Length: > 0 } && !episodes.Distinct().OrderBy(n => n).SequenceEqual(numbers)) return null;
+            return (intent.Instance!, key.Title.WithSeason(season), numbers);
         }
 
         /// <summary>The episode numbers of a season a search key names (one episode), or the intent's for a season key.</summary>

@@ -47,8 +47,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var viewer = Person();
             if (Gate(viewer) is { } refusal) return Reply(refusal);
             // A season page's press is worked out again by the server right before the ask is recorded (nothing on a difference).
+            // A synthetic absent season page (Jellyfin 12's native details) is checked as that page, under its viewer rules.
+            var pages = HttpContext?.RequestServices?.GetService(typeof(IAbsentTitlePages)) as IAbsentTitlePages;
             Func<MutationInput, CancellationToken, Task<PressProof>>? press = body?.Expect is { } expect
-                ? (input, token) => _status == null ? Task.FromResult(new PressProof(PressChecks.Unverified)) : _status.PressAsync(viewer!, expect, PressChecks.Ask, input, null, token)
+                ? (input, token) => _status == null ? Task.FromResult(new PressProof(PressChecks.Unverified)) : _status.PressAsync(viewer!, expect, PressChecks.Ask, input, null, token, pages)
                 : null;
             return Reply(await _service.CreateAsync(viewer!.UserId, body, ct, press: press).ConfigureAwait(false));
         }
@@ -66,7 +68,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var viewer = Person();
             if (Gate(viewer) is { } refusal) return Reply(refusal);
             if (_search == null) return Reply(RequestOutcome.Refused("feature_disabled"));
-            var (outcome, found) = await _search.SearchAsync(viewer!, body?.Key, body?.IdempotencyKey, ct, body?.Expect).ConfigureAwait(false);
+            var pages = HttpContext?.RequestServices?.GetService(typeof(IAbsentTitlePages)) as IAbsentTitlePages;
+            var (outcome, found) = await _search.SearchAsync(viewer!, body?.Key, body?.IdempotencyKey, ct, body?.Expect, pages).ConfigureAwait(false);
             if (outcome.HttpStatus >= 400) return Reply(outcome);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new { outcome = outcome.Outcome, reason = outcome.Reason, certainty = outcome.Certainty.ToString(), message = outcome.Message, found });

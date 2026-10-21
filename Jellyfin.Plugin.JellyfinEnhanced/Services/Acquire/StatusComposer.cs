@@ -503,9 +503,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var variants = new List<(ArrCopyRead Copy, CopyState State, JfCopy? Jf)>();
             var movieCopies = facts.Copies.Where(x => x.Movie != null).ToList();
             var siblings = owners ?? movieCopies;
+            // Which Jellyfin copy is whose, for sure; a copy no instance owns for sure is anyone's that may own it (D53, edition
+            // round 20: uncertain is not absent).
+            var definite = movieCopies.ToDictionary(x => x, x => MovieMatches(x, jf, siblings));
+            var owned = new HashSet<Guid>(siblings.SelectMany(o => definite.TryGetValue(o, out var mine) ? mine : MovieMatches(o, jf, siblings)).Select(x => x.ItemId));
             foreach (var arrCopy in movieCopies)
             {
-                var matched = MovieMatches(arrCopy, jf, siblings);
+                var matched = definite[arrCopy];
                 if (unlisted != null && HoldsFolder(arrCopy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
                 var copy = arrCopy.Radarr();
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
@@ -524,9 +528,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     state = MovieFromArr(copy, c, facts.Request);
                 }
-                else if (matched.FirstOrDefault(m => !m.Visible) is { } hidden)
+                else if ((matched.FirstOrDefault(m => !m.Visible) ?? MayOwn(arrCopy, jf, siblings, owned).FirstOrDefault(m => !m.Visible)) is { } hidden)
                 {
-                    // Its copy is one the viewer can't open: never theirs to follow (nor "nobody's").
+                    // Its copy is one the viewer can't open, or may be (which copy is whose can't be told and one of them is
+                    // hidden): never theirs to follow (nor "nobody's"), its downloads never shown to them.
                     state = new CopyState(StatusStage.NotHere, StatusReasonCode.NotVisibleToUser, Since: hidden.DateCreated);
                 }
                 else
@@ -2048,7 +2053,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// 4K instance may well be the standard one, so it is never taken for the 4K copy).</description></item>
         /// </list>
         /// </summary>
-        internal static List<JfCopy> MatchCopies(ArrCopyFacts copy, IReadOnlyList<JfCopy> jf, IReadOnlyList<ArrCopyFacts> siblings, bool soleFallback = true)
+        internal static List<JfCopy> MatchCopies(ArrCopyFacts copy, IReadOnlyList<JfCopy> jf, IReadOnlyList<ArrCopyFacts> siblings, bool soleFallback = true, bool possible = false)
         {
             if (jf.Count == 0) return new List<JfCopy>();
             if (Claimed(copy, jf) is { } strong) return strong;
@@ -2057,7 +2062,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 var others = siblings.Where(x => !ReferenceEquals(x, copy) && x.Instance.Id != copy.Instance.Id).ToList();
                 var ambiguous = others.Any(o => ArrPathOf(o) is { } p && !string.IsNullOrWhiteSpace(p) && string.Equals(Tail(Norm(p), 2), tail, StringComparison.OrdinalIgnoreCase));
-                if (!ambiguous)
+                if (!ambiguous || possible)
                 {
                     var claimed = new HashSet<Guid>(others.SelectMany(o => Claimed(o, jf) ?? new List<JfCopy>()).Select(x => x.ItemId));
                     var free = jf.Where(x => !claimed.Contains(x.ItemId) && x.Path != null).ToList();
@@ -2067,8 +2072,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (hits.Count > 0) return hits;
                 }
             }
+            // What it may own when that can't be told (possible): any copy nobody claims for sure.
+            if (possible) return jf.Where(x => !siblings.Where(o => o.Instance.Id != copy.Instance.Id).Any(o => Claimed(o, jf)?.Any(y => y.ItemId == x.ItemId) == true)).ToList();
             return soleFallback && siblings.Count <= 1 ? jf.ToList() : new List<JfCopy>();
         }
+
+        /// <summary>
+        /// The Jellyfin copies of a movie an arr copy MAY own although no instance owns them for sure (D53, edition round 20:
+        /// uncertain is not absent): several instances' linked libraries or mappings claim them alike, two instances' folders
+        /// end the same way, or its folder tells nothing. A copy the viewer can't open among them keeps that instance's facts
+        /// (its downloads, its readiness) from them. <paramref name="owned"/>: the copies some instance owns for sure.
+        /// </summary>
+        internal static List<JfCopy> MayOwn(ArrCopyFacts copy, IReadOnlyList<JfCopy> jf, IReadOnlyList<ArrCopyFacts> siblings, IReadOnlySet<Guid> owned)
+            => MatchCopies(copy, jf.Where(x => !owned.Contains(x.ItemId)).ToList(), siblings, soleFallback: false, possible: true);
 
         /// <summary>
         /// The Jellyfin copies of a movie one Radarr copy owns (D53, edition round 19: movies get the series' per-instance

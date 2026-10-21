@@ -57,8 +57,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="origin">Automation origin; null for a person's own ask.</param>
         /// <param name="press">
         /// A season page's press (D53, edition round 19: the server decides every press): worked out again after every other
-        /// await, right before the ask is recorded; a refusal records nothing (409), and a Seerr ask proven to land on one Seerr
-        /// server is sent there or not at all.
+        /// await, right before the ask is recorded; a refusal records nothing (409).
         /// </param>
         public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
@@ -67,21 +66,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return RequestOutcome.Refused("admin_required");
+            // A retry of an ask already recorded (its answer was lost) gets that receipt before anything about it is worked out
+            // again (D53, edition round 20: replay before revalidation); the caller's own checks (a person who may ask, the
+            // feature, the database) were made above and by the route.
+            if (_ledger.Replay(user, body with { Input = input }) is { } recorded) return recorded;
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
-            int? seerrServer = null;
             if (press != null)
             {
                 // The last await: what is recorded below (no await in between) is what this proves, or nothing.
                 var proof = await press(input, ct).ConfigureAwait(false);
                 if (proof.Refusal is { } refusal) return RequestOutcome.Refused(refusal, 409, "conflict") with { Message = PressChecks.Message(refusal) };
-                seerrServer = proof.SeerrServer;
             }
-            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, seerrServer);
+            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;

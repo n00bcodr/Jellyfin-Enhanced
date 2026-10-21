@@ -1534,3 +1534,101 @@ test('press: every season-page control sends what it was drawn to do, and a serv
   assert.equal(e.toasts.at(-1), translate('arr_ask_changed'));
   assert.notEqual(e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, translate('arr_ask_chip_asked'));
 });
+
+// ------------------------------------------------------------------ edition round 20: per-edition capabilities, focus, Seerr mode
+
+/** The rows answer with each edition's own policy answer: the standard edition's (`canRequest`, `blocked`) and the 4K one's. */
+function rowsPerEdition({ canRequest = true, blocked = null, canRequest4k = true, blocked4k = null, displayMissing = true } = {}) {
+  const body = rowsBody({ displayMissing, canRequest, blocked });
+  body.rows.canRequest4k = canRequest4k;
+  body.rows.blocked4k = blocked4k;
+  return body;
+}
+
+const FOUR_K_COPY = { variant: '4k', ask: true, search: false, dest: 'd4k' };
+
+test('per edition: a 4K copy\'s Get it is offered while only the standard edition is paused (its drive is full)', async t => {
+  const rows = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest: false, blocked: FULL }) } });
+  await rows.open();
+  for (const n of [2, 4]) {
+    const row = rows.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    const get = row.querySelector('.je-ask-get');
+    assert.ok(get, `E${n}: the 4K gap can be asked for in 4K`);
+    assert.match(get.getAttribute('aria-label'), /4K/);
+    assert.equal(row.querySelector('.je-ask-paused'), null, `E${n}: the standard edition's pause is not this control's`);
+  }
+  const banner = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest: false, blocked: FULL, displayMissing: false }) } });
+  await banner.open();
+  const btn = banner.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.ok(btn, 'Get them in 4K drawn');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  btn.click();
+  await settle(20);
+  assert.equal(banner.posts.length, 1);
+  assert.equal(banner.posts[0].body.input.variant, '4k');
+});
+
+test('per edition: a 4K copy\'s gap says the 4K edition\'s pause, and no 4K Get it, while the standard edition may still ask', async t => {
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest4k: false, blocked4k: FULL }) } });
+  await h.open();
+  for (const n of [2, 4]) {
+    const row = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(row.querySelector('.je-ask-get'), null, `E${n}: no 4K ask while the 4K edition is paused`);
+    assert.equal(row.querySelector('.je-ask-paused')?.textContent, 'Paused: storage full', `E${n}: the 4K edition's own pause`);
+    assert.equal(row.querySelector('.je-ask-paused')?.title, FAMILY_TEXT);
+  }
+  // The 4K edition's own refusal is what the banner says too.
+  const banner = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest4k: false, blocked4k: FULL, displayMissing: false }) } });
+  await banner.open();
+  const action = banner.document.querySelector('.je-arr-banner .je-ask-banner-action');
+  assert.equal(action?.querySelector('.je-ask-get') ?? null, null, 'no Get them in 4K');
+  assert.equal(action?.querySelector('.je-ask-paused-title')?.textContent, 'Paused: storage full');
+});
+
+test('focus: a refused press keeps the focus on the page however long the redraw after it takes', async t => {
+  let release = null;
+  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server });
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    // The server refuses (the binding moved), and the season's status read again is slow to come back.
+    h.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  btn.focus();
+  btn.click();
+  await settle(40);
+  assert.ok(release, 'the press reached the server');
+  // Five seconds pass before the status read comes back and the page is drawn without the button.
+  const realNow = h.window.Date.now;
+  h.window.Date.now = () => realNow() + 5000;
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-get'), null, 'the 4K button is gone after the redraw');
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active), `focus on ${active?.tagName}.${active?.className}`);
+  assert.ok(active.closest('#itemDetailPage'), 'on the season page');
+});
+
+test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an older server says about its binding', async t => {
+  const status = withCopy(season(), [2], '4k', FOUR_K_COPY);
+  const h = setup(t, { status, server: { me: { ...SEERR_MEMBER, can4kSeries: true } } });
+  await h.open();
+  await settle();
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-ask-get'), null, 'no "Get it in 4K" for the 4K copy in Seerr mode');
+  // The title-wide control (an episode no copy plays) is Seerr's ordinary season request.
+  const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get');
+  assert.ok(four, 'the ordinary Seerr ask stays');
+  assert.equal(four.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
+  four.click();
+  await settle(20);
+  assert.equal(h.posts.length, 1);
+  same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
+});

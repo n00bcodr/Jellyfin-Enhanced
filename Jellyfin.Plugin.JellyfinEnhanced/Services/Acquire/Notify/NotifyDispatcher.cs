@@ -378,32 +378,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var edition = payload.TryGetValue("variant", out var variant) && variant == "4k" ? Edition.FourK
                 : payload.TryGetValue("edition", out var named) && named == NotificationService.EditionName(Edition.Standard) ? Edition.Standard
                 : Edition.Any;
-            // Older notifications have no episodeItems and retain their parent-item check. New
-            // batches carry each number's actual file, including combined files and the variant.
-            if (delivery.Kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
+            // An episode alert is re-validated episode by episode against what each item IS now (D53, edition round 20: arrivals
+            // are observed transitions with current identity): an announced number survives only while its item is still an
+            // episode of this title and season whose current range covers it (a rescan can renumber a file, or narrow a combined
+            // one) and still plays the edition; the text is rebuilt from the survivors. An older alert without its episode items
+            // is checked by its scope (the episode or seasons it names), or not sent.
+            if (delivery.Kind == NotifyKind.Episodes)
             {
-                List<NotifyEpisode>? episodes;
-                try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
-                catch (JsonException) { episodes = null; }
-                var visible = episodes?.Where(e => e.ItemId != Guid.Empty && editions.Item(viewer, e.ItemId, edition).Count > 0)
-                    .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
-                if (visible is not { Count: > 0 }) return "The recipient can no longer play these episodes in the edition announced.";
-                var seasons = visible.Select(e => e.Season).Distinct().ToList();
-                payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
-                payload["seasons"] = string.Join(", ", seasons);
-                if (visible.Count == 1)
+                var title = TitleKey.Parse(delivery.TitleKey)?.Title;
+                if (payload.TryGetValue("episodeItems", out var json))
                 {
-                    payload["mode"] = "single";
-                    payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
-                    payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
-                    itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+                    List<NotifyEpisode>? episodes;
+                    try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+                    catch (JsonException) { episodes = null; }
+                    var visible = episodes?.Where(e => e.ItemId != Guid.Empty && StillIs(viewer, e, title) && editions.Item(viewer, e.ItemId, edition).Count > 0)
+                        .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
+                    if (visible is not { Count: > 0 }) return "The recipient can no longer play these episodes in the edition announced.";
+                    var seasons = visible.Select(e => e.Season).Distinct().ToList();
+                    payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+                    payload["seasons"] = string.Join(", ", seasons);
+                    if (visible.Count == 1)
+                    {
+                        payload["mode"] = "single";
+                        payload["season"] = visible[0].Season.ToString(CultureInfo.InvariantCulture);
+                        payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
+                        itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
+                    }
+                    else if (visible.Count != episodes!.Count)
+                    {
+                        // The whole season is no longer visible: don't announce it as complete.
+                        payload["mode"] = "many";
+                        payload.Remove("season");
+                        payload.Remove("episode");
+                    }
                 }
-                else if (visible.Count != episodes!.Count)
+                else if (LegacyEpisodesGone(viewer, title, payload, editions, edition) is { } gone)
                 {
-                    // The whole season is no longer visible: don't announce it as complete.
-                    payload["mode"] = "many";
-                    payload.Remove("season");
-                    payload.Remove("episode");
+                    return gone;
                 }
             }
             if (Guid.TryParse(delivery.ItemId, out var item) && item != Guid.Empty)
@@ -419,6 +430,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seen = _view.Copies(key, viewer, _aliases?.Of(key)).Seen;
             var plays = key.IsMovie ? editions.Movie(viewer, seen, edition).Count > 0 : editions.Episodes(viewer, seen, edition, null).Hits.Count > 0;
             return plays ? null : "The recipient can no longer play this title in the edition announced.";
+        }
+
+        /// <summary>
+        /// An announced episode's item is still that episode (see <see cref="Suppression"/>): an episode item of the alert's
+        /// title in the announced season whose number range, as Jellyfin has it now, covers the announced number.
+        /// </summary>
+        private bool StillIs(StatusViewer viewer, NotifyEpisode announced, TitleKey? title)
+        {
+            if (_view!.Resolve(announced.ItemId, viewer) is not { Kind: "episode", Season: int season, Episode: int first } item || season != announced.Season) return false;
+            if (!new EpisodeRange(first, item.EpisodeEnd).Contains(announced.Episode)) return false;
+            if (title == null || item.Key?.Title is not { } its) return true;
+            return its.Equals(title) || _aliases?.Of(title).Any(k => k.Title.Equals(its)) == true;
+        }
+
+        /// <summary>
+        /// An older episode alert (no episode items): why it must not go out, or null. It names one episode (<c>single</c>) or a
+        /// count over seasons: the episode must still play the edition for the recipient, or each season named must still hold at
+        /// least that many episodes playing it together; with nothing to check (no seasons named), it is not sent.
+        /// </summary>
+        private static string? LegacyEpisodesGone(StatusViewer viewer, TitleKey? title, Dictionary<string, string> payload, EditionAvailability editions, Edition edition)
+        {
+            const string Gone = "The recipient can no longer play these episodes in the edition announced.";
+            if (title == null) return Gone;
+            if (payload.TryGetValue("mode", out var mode) && mode == "single")
+            {
+                return payload.TryGetValue("season", out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var season)
+                    && payload.TryGetValue("episode", out var e) && int.TryParse(e, NumberStyles.Integer, CultureInfo.InvariantCulture, out var episode)
+                    && editions.Available(viewer, title.WithEpisode(season, episode), edition) ? null : Gone;
+            }
+            var seasons = (payload.TryGetValue("seasons", out var list) ? list : string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : -1).Distinct().ToList();
+            if (seasons.Count == 0 || seasons.Any(n => n < 0)) return Gone;
+            var playing = seasons.Sum(n => editions.Scope(viewer, title.WithSeason(n), edition).Select(h => (h.Season, h.Episode)).Distinct().Count());
+            var count = payload.TryGetValue("count", out var c) && int.TryParse(c, NumberStyles.Integer, CultureInfo.InvariantCulture, out var announced) ? announced : 1;
+            return seasons.All(n => editions.Scope(viewer, title.WithSeason(n), edition).Count > 0) && playing >= count ? null : Gone;
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>

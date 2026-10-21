@@ -65,7 +65,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <c>press_changed</c>) and leaves its parts free. A season key's search is limited to the episodes it names.
         /// </param>
         /// <returns>The outcome, and whether the search grabbed a copy (null: not known).</returns>
-        public async Task<(RequestOutcome Outcome, bool? Found)> SearchAsync(StatusViewer viewer, string? key, string? idempotencyKey, CancellationToken ct, PressIntent? expect = null)
+        /// <param name="pages">Synthetic absent pages (a press from one is checked as that page).</param>
+        public async Task<(RequestOutcome Outcome, bool? Found)> SearchAsync(StatusViewer viewer, string? key, string? idempotencyKey, CancellationToken ct, PressIntent? expect = null, IAbsentTitlePages? pages = null)
         {
             if (TitleKey.Parse(key) is not { } scope || (!scope.IsMovie && (scope.Season is < 0 || scope.Episode is < 1 || (scope.Episode != null && scope.Season == null))))
                 return (RequestOutcome.Refused("invalid_input", 400), null);
@@ -89,9 +90,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var probe = Input(null);
             if (probe == null) return (RequestOutcome.Refused("invalid_input", 400), null);
             await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
+            // A retry of a press whose search already ran (its answer was lost) gets that outcome before anything is checked
+            // again (D53, edition round 20: replay before revalidation; the route's own checks were made).
+            if (expect != null && await _manage.ReplayAnyAsync(viewer.UserId, "family-" + idempotencyKey, ct).ConfigureAwait(false) is { } replayed)
+            {
+                if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                    return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
+                return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
+            }
             // A season page's press that no longer matches is refused before anything else (nothing claimed, nothing asked for
             // instead); it is worked out again right before the command too.
-            if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct).ConfigureAwait(false)).Refusal is { } early)
+            if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct, pages).ConfigureAwait(false)).Refusal is { } early)
                 return (RequestOutcome.Refused(early, 409, "conflict") with { Message = PressChecks.Message(early) }, null);
             // A series or season: exactly its episodes missing for a long while, per standard copy, the first ones nobody
             // searched in this period (a peek: the claims below still decide), so a long series doesn't get the same
@@ -165,7 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Func<CancellationToken, Task<string?>> recheck = async token =>
             {
                 var refusal = expect != null
-                    ? (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, token).ConfigureAwait(false)).Refusal
+                    ? (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, token, pages).ConfigureAwait(false)).Refusal
                     : _requests.View.Viewer(viewer.UserId) is { } still && still.IsAdmin == viewer.IsAdmin && still.PolicyRevision == viewer.PolicyRevision ? null : PressChecks.Changed;
                 return refusal ?? (_requests.Ledger.SentCovers(searched, _requests.Policy.Evaluate(viewer.UserId, searched)) ? null : PressChecks.Changed);
             };

@@ -188,6 +188,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public static bool Plays(JfItemRef item) => item.Playable;
 
         /// <summary>
+        /// <see cref="Edition.Any"/> for a Jellyfin item a route resolved for the caller itself (the calendar): a movie or episode
+        /// with a file Jellyfin plays, by the same rule the view reads every item with (never a missing item or a stub).
+        /// </summary>
+        /// <param name="item">The item as the caller opens it (null: they can't).</param>
+        /// <returns>True when it plays.</returns>
+        public static bool PlaysItem(MediaBrowser.Controller.Entities.BaseItem? item)
+            => item is MediaBrowser.Controller.Entities.Video video && ArrJellyfinView.Playable(video);
+
+        /// <summary>
         /// The qualifying sources of one movie or episode item the viewer opens (a page's own item, an item an alert names):
         /// every version of it (dimensions read), each only where they can open the item that plays it. None for an item they
         /// can't open, a placeholder or a missing item.

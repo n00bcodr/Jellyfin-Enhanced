@@ -1215,10 +1215,12 @@ public class ApiArrStatusTests
         Assert.Equal(other.ToString("N"), Items(await Item(rig, rig.Member, missing))[0].GetProperty("openItemId").GetString());
         Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, null, copy)));
 
-        // A season only the other folder has: never the rig copy's successor.
+        // A season only the other folder has: never the rig copy's successor. (Adapted in edition round 20: a season is an
+        // arrival only once its copy plays an episode of it, so the other folder's Season 2 has one.)
         var season2 = Guid.NewGuid();
         rig.View.AddSeason(copy, new JfSeason { ItemId = season2, Season = 2 });
         rig.View.AddItem(new JfItemRef { ItemId = season2, Kind = "season", Key = TitleKey.Parse("tv:tvdb:78874:s2"), SeriesId = copy, Season = 2 });
+        AddEpisodeFile(rig, copy, 2, 1);
         rig.View.Rev++;
         Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, rig.Firefly)));
         Assert.Equal(season2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, copy)));

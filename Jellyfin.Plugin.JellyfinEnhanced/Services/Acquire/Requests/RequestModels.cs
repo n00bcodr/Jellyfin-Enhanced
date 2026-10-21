@@ -115,12 +115,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it
-    /// went out with, so a later read-back looks for exactly that. <c>SeerrServer</c>: a season page's ask proven, at the
-    /// press, to land on that Seerr server (D53, edition round 19): it is sent there or not at all.
+    /// went out with, so a later read-back looks for exactly that.
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, int? SeerrServer = null);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>

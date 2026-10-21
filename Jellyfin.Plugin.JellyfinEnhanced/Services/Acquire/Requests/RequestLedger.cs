@@ -222,7 +222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The backend target an ask with these facts goes to (its backend, instance, connection and Seerr source).</summary>
         internal static string TargetKey(RequestPolicyFacts facts) => TargetKey(Authorize(facts, null, new MutationInput(), false));
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
-        private static bool Deleted(SqliteConnection c, SqliteTransaction t, Guid user)
+        private static bool Deleted(SqliteConnection c, SqliteTransaction? t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE user_hash=$u", ("$u", MutationInput.Hash("deleted:" + Id(user)))) != null;
         private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty')='Unknown')";
         private const string KnownUnsent = "COALESCE(json_extract(outcome,'$.certainty'),'Rejected') NOT IN ('Unknown','Succeeded')";
@@ -306,8 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="policy">Current policy.</param>
         /// <param name="now">Commit time.</param>
         /// <param name="origin">Where the intent came from; automation never self-approves a Member in JE mode.</param>
-        /// <param name="seerrServer">A season page's Seerr ask proven to land on this Seerr server: its job is sent there or not at all.</param>
-        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null, int? seerrServer = null)
+        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return RequestOutcome.Refused("invalid_input", 400);
@@ -315,27 +314,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // Matching asks may approve existing wants; a later refusal must undo those approvals too.
                 Exec(c, t, "SAVEPOINT request_create");
-                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin, seerrServer);
+                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
                 if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
                 Exec(c, t, "RELEASE request_create");
                 return outcome;
             });
         }
-        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin, int? seerrServer = null)
+        /// <summary>
+        /// A retry of an ask this person already made (the same client request id): the outcome recorded for it when the input
+        /// is the same (a split ask answers as the split did), a conflict when the id was used for another input; null when the
+        /// id is new.
+        /// </summary>
+        private RequestOutcome? Recorded(SqliteConnection c, SqliteTransaction? t, Guid user, string clientRequestId, MutationInput normalized)
+        {
+            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId));
+            if (priorHash == null) return null;
+            if (priorHash != normalized.Fingerprint) return RequestOutcome.Refused("idempotency_conflict", 409);
+            var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId))!;
+            var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
+            // A retry of an ask that was split answers as the split did.
+            if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
+                return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
+            return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
+        }
+
+        /// <summary>
+        /// The recorded outcome of a retry of an ask this person already made with the same client request id and input (its
+        /// first answer was lost), read before anything about the ask is worked out again (D53, edition round 20: replay
+        /// before revalidation: a retry of an accepted press gets its receipt even after the episode arrived). Null when there
+        /// is none to replay (a new id, another input under the id: <see cref="Create"/> decides, or a person who is gone).
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="request">Client id and input (as the request service normalized it).</param>
+        /// <returns>The recorded outcome, or null.</returns>
+        public RequestOutcome? Replay(Guid user, CreateRequest request)
+        {
+            var normalized = request.Input?.Normalize();
+            if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return null;
+            return _db.Read(c => Deleted(c, null, user) ? null : Recorded(c, null, user, request.ClientRequestId, normalized) is { HttpStatus: < 400 } recorded ? recorded : null);
+        }
+
+        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
         {
             var automation = origin?.Kind == RequestOrigin.AutomationKind;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
-            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId));
-            if (priorHash != null && priorHash != normalized.Fingerprint) return RequestOutcome.Refused("idempotency_conflict", 409);
-            if (priorHash != null)
-            {
-                var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId))!;
-                var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
-                // A retry of an ask that was split answers as the split did.
-                if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
-                    return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
-                return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
-            }
+            if (Recorded(c, t, user, request.ClientRequestId, normalized) is { } recorded) return recorded;
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             var facts = policy.Evaluate(user, normalized);
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : "denied");
@@ -404,7 +427,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial");
             Fault?.Invoke("reservation");
-            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false) with { SeerrServer = facts.Backend == "seerr" ? seerrServer : null }, now);
+            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now);
             Fault?.Invoke("job");
             if (status == "queued" && extra != null && auto) ReleasePendingFollowers(c, t, acquisition, user, policy, now, false);
             Record(c, t, id, null, user, "create", "accepted", reason, stored.Key, now);

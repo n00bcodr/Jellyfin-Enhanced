@@ -141,12 +141,28 @@
     }
 
     /**
-     * True when this page can offer Get it (feature on, rows loaded, the viewer may ask: the rows say so and the caller's
-     * capabilities, once read, don't say otherwise).
+     * True when this page can offer Get it for an edition (feature on, rows loaded, the viewer may ask: the caller's
+     * capabilities, once read, don't say otherwise, and that edition's own policy answer allows it). D53, edition round 20
+     * (per-edition capabilities): a 4K control reads the 4K edition's answer (`canRequest4k`, the caller's 4K permission),
+     * never the standard edition's, and the other way round: a full standard drive never hides a 4K ask.
+     * @param {'standard'|'4k'} [variant] The edition (default standard).
      * @returns {boolean} Can ask.
      */
-    function canAsk() {
-        return !!(JE.arrAsk?.enabled() && season?.rows?.canRequest && season.caps?.canRequest !== false && season.caps?.canRequestSeries !== false);
+    function canAsk(variant) {
+        const rows = season?.rows;
+        if (!(JE.arrAsk?.enabled() && rows && season.caps?.canRequest !== false && season.caps?.canRequestSeries !== false)) return false;
+        if (variant === '4k') return (rows.canRequest4k ?? rows.canRequest) === true && season.caps?.can4kSeries === true;
+        return !!rows.canRequest;
+    }
+
+    /**
+     * The edition the control for these episodes asks in: its copy binding's (a 4K copy's gap: 4K), else standard.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {'standard'|'4k'} Edition.
+     */
+    function editionOf(eps, status) {
+        return bindingOf(eps, status)?.variant === '4k' ? '4k' : 'standard';
     }
 
     /**
@@ -209,9 +225,11 @@
      */
     function reach(binding, mode, eps, status) {
         if (!binding) return mode;
-        if (mode === 'search' && (adminInstance(eps, status || null, eps[0]?.key) || (binding.search && canAsk()))) return 'search';
-        // A 4K ask needs the caller's 4K permission and the 4K edition's own policy probe (its target and drive) to allow it.
-        if (binding.ask && canAsk() && (binding.variant !== '4k' || (season?.caps?.can4kSeries === true && season?.rows?.canRequest4k !== false))) return 'get';
+        // Seerr mode is out of scope for edition awareness (D80): Seerr picks the server, so nothing acts under a copy's name.
+        if (JE.arrAsk?.seasonsOnly?.(season?.caps)) return null;
+        if (mode === 'search' && (adminInstance(eps, status || null, eps[0]?.key) || (binding.search && canAsk('standard')))) return 'search';
+        // An ask in the copy's edition needs that edition's own permission and policy answer (its target and drive).
+        if (binding.ask && canAsk(binding.variant === '4k' ? '4k' : 'standard')) return 'get';
         return null;
     }
 
@@ -222,7 +240,7 @@
      * @returns {boolean} Offered.
      */
     function offered(ep, status) {
-        return (canAsk() || adminSearchable(ep, status)) && modeOf(ep, status) !== null;
+        return (canAsk(editionOf([ep], status)) || adminSearchable(ep, status)) && modeOf(ep, status) !== null;
     }
 
     /**
@@ -241,7 +259,7 @@
         if (!mode || !eps.length) return null;
         const binding = bindingOf(eps, status);
         const instance = mode === 'search' ? adminInstance(eps, status, key) : null;
-        if (!instance && !canAsk()) return null;
+        if (!instance && !canAsk(binding?.variant === '4k' ? '4k' : 'standard')) return null;
         const round = mode === 'get' && rounded();
         const whole = round && !!JE.arrAsk.wholeSeriesOnly?.(season?.caps);
         return {
@@ -301,33 +319,43 @@
      */
     function refused(text, button, key) {
         const hadFocus = !!button && (document.activeElement === button || !document.activeElement || document.activeElement === document.body);
-        // Kept for a moment: the page is drawn again now and once more when the season's status has been read again.
-        pendingFocus = hadFocus ? { focusKey: button.dataset?.jeFocus || null, place: button.closest?.('.listItem, .je-arr-banner') || null, episode: button.dataset?.jeAskEpisode || null, until: Date.now() + 3000 } : null;
+        // Kept until the page has been drawn again from the season's status read after this (D53, edition round 20: tied to the
+        // pending redraw, never to a timer: that read may take any time), and dropped with the season.
+        pendingFocus = hadFocus ? { focusKey: button.dataset?.jeFocus || null, place: button.closest?.('.listItem, .je-arr-banner') || null, episode: button.dataset?.jeAskEpisode || null, drawn: season, itemId: season?.itemId || null } : null;
         const seasonKey = key || season?.statusRef?.key;
-        if (seasonKey) JE.arrStatus.refresh([seasonKey]);
+        const reading = seasonKey ? JE.arrStatus.refresh([seasonKey]) > 0 : false;
         JE.internals?.arrStatusEpisodes?.apply?.();
         announce(text);
         JE.arrAsk.toast(text);
         focusStable();
+        // Nothing will draw the season again (no status read follows): the focus placed now is the last word.
+        if (!reading) pendingFocus = null;
     }
 
-    /** Where the focus goes after a press that wasn't carried out (see {@link refused}), while that is fresh. */
+    /** Where the focus goes after a press that wasn't carried out (see {@link refused}), until the redraw after it. */
     let pendingFocus = null;
 
     /**
      * Moves the focus, after a refused press, to the control that took the pressed one's place (the same focus key), else its
-     * row's title or chip, else the banner; only while nothing else has the focus (the person may have moved on).
+     * row's title or chip, else the banner; only while nothing else has the focus (the person may have moved on), and until the
+     * page has been drawn again from the season's status read after the refusal.
      * @returns {void}
      */
     function focusStable() {
         const want = pendingFocus;
         if (!want) return;
-        if (Date.now() > want.until) {
+        // Another season is shown: the focus went with its page.
+        if (!season || (want.itemId && season.itemId !== want.itemId)) {
             pendingFocus = null;
             return;
         }
+        // The season drawn again from the status read after the refusal (a new read, its rows in): this is the last placement.
+        const redrawn = season !== want.drawn && !season.loading;
         const active = document.activeElement;
-        if (active && active !== document.body && document.contains(active)) return;
+        if (active && active !== document.body && document.contains(active)) {
+            if (redrawn) pendingFocus = null;
+            return;
+        }
         const page = document.querySelector('#itemDetailPage:not(.hide)') || document;
         const replacement = want.focusKey ? page.querySelector(`[data-je-focus="${want.focusKey}"]:not([disabled])`) : null;
         const row = want.place && document.contains(want.place) ? want.place
@@ -338,6 +366,7 @@
         if (!stable) return;
         if (stable.tagName !== 'BUTTON' && !stable.hasAttribute('tabindex')) stable.tabIndex = -1;
         stable.focus();
+        if (redrawn) pendingFocus = null;
     }
 
     /**
@@ -423,13 +452,29 @@
     }
 
     /**
-     * The words of the season's request block (the viewer's role may ask, the policy can't take an ask
-     * now: "Paused: storage full"), or null.
+     * The words of an edition's request block (the viewer's role may ask, that edition's policy can't take an ask now:
+     * "Paused: storage full"), or null. A 4K copy's gap says the 4K edition's block (`blocked4k`), never the standard one's.
+     * @param {'standard'|'4k'} [variant] The edition (default standard).
      * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
      */
-    function blockedWords() {
-        if (!JE.arrAsk?.enabled() || canAsk() || !season?.rows?.blocked) return null;
-        return JE.arrAsk.blockWords ? JE.arrAsk.blockWords(season.rows.blocked, season.caps) : null;
+    function blockedWords(variant) {
+        const block = variant === '4k' ? season?.rows?.blocked4k : season?.rows?.blocked;
+        if (!JE.arrAsk?.enabled() || canAsk(variant) || !block) return null;
+        return JE.arrAsk.blockWords ? JE.arrAsk.blockWords(block, season.caps) : null;
+    }
+
+    /**
+     * The block words of the first of these episodes whose edition can't take an ask now (see {@link blockedWords}), or null.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status.
+     * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
+     */
+    function blockedWordsOf(eps, status) {
+        for (const ep of eps) {
+            const words = blockedWords(editionOf([ep], status));
+            if (words) return words;
+        }
+        return null;
     }
 
     /**
@@ -444,7 +489,7 @@
         const byState = chipForState(shownState(ep));
         if (byState) return byState;
         if (!offerable(ep)) return null;
-        if (!offered(ep) && !blockedWords()) return null;
+        if (!offered(ep) && !blockedWords(editionOf([ep]))) return null;
         // Another copy the viewer can open plays it: this copy's gap (the chip names the copy).
         return { text: ep.copyGap ? tr('arr_chip_missing_in_copy', { copy: JE.arrStatus.copyName(ep.copyGap) }) : tr('arr_chip_missing'), tone: 'notOut' };
     }
@@ -606,7 +651,7 @@
      * @returns {void}
      */
     function syncNote(page, list, status) {
-        const words = list && (status.episodes || []).some(ep => offerable(ep) && !shownState(ep)) ? blockedWords() : null;
+        const words = list ? blockedWordsOf((status.episodes || []).filter(ep => offerable(ep) && !shownState(ep)), status) : null;
         const existing = page.querySelector('.je-ask-season-note');
         const signature = words ? `${words.chip}|${words.detail || words.text}` : '';
         if (existing && (!words || existing.dataset.sig !== signature || existing.nextElementSibling !== list)) existing.remove();
@@ -683,7 +728,7 @@
         const want = placeable && !outcome;
         const existing = scope.querySelector(`.je-ask-get[data-je-ask-episode="${ep?.episode}"]`) || scope.querySelector('.je-ask-get');
         syncSearched(chipEl, scope, outcome);
-        syncPaused(chipEl, scope, open && !placeable ? blockedWords() : null);
+        syncPaused(chipEl, scope, open && !placeable ? blockedWords(editionOf([ep])) : null);
         if (!want) {
             if (existing && !busy.has(Number(existing.dataset.jeAskEpisode))) existing.remove();
             return;
@@ -1327,7 +1372,7 @@
         const openEps = missingEps.filter(ep => !states.get(ep.episode) && offerable(ep));
         // What the button is for: every episode left when the viewer may ask; otherwise an administrator's Search
         // for the ones missing for a long while (it runs whatever the request policy says).
-        const candidates = canAsk() ? openEps : openEps.filter(ep => adminSearchable(ep, status));
+        const candidates = openEps.filter(ep => canAsk(editionOf([ep], status)) || adminSearchable(ep, status));
         // Some of them another copy the viewer can open plays: the button acts for that copy, says which, and is offered under
         // its name only when its action reaches it (one binding decides wording and action); otherwise only the episodes no
         // copy has get the plain button.
@@ -1371,13 +1416,13 @@
         if (bannerSearched && (bannerSearched.itemId !== normalize(status.itemId) || Date.now() - bannerSearched.at > SEARCHED_TTL_MS)) bannerSearched = null;
         const outcome = search ? bannerSearched : null;
         // Asking can't be done now: the banner says why (administrators: where and how much is free).
-        const words = open.length ? blockedWords() : null;
+        const words = open.length ? blockedWordsOf(openEps, status) : null;
         // A season of a title that isn't in the library (native details) with every aired episode
         // still open: its page's "Get Season N" asks for exactly that, so the banner doesn't repeat it.
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}:${binding?.variant || ''}:${binding?.ask ? 1 : 0}:${binding?.search ? 1 : 0}:${binding?.instanceId || ''}|${plan.intent}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk('standard')}:${canAsk('4k')}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}:${binding?.variant || ''}:${binding?.ask ? 1 : 0}:${binding?.search ? 1 : 0}:${binding?.instanceId || ''}|${plan.intent}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -1555,8 +1600,8 @@
         if (meta.overview && !spoiler) dialog.appendChild(S.el('p', 'je-ask-dialog-overview', meta.overview));
         const actions = S.el('div', 'je-ask-dialog-actions');
         // Why it can't be asked for now, above the buttons (an administrator's Search stays below it).
-        if (offerable(ep) && !shownState(ep) && blockedWords()) {
-            const note = pausedNote(blockedWords(), '');
+        if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
+            const note = pausedNote(blockedWords(editionOf([ep])), '');
             note.id = `${titleId}-paused`;
             dialog.appendChild(note);
             // Read out with the dialog's name (focus lands on a button; the reason is plain text).
