@@ -529,7 +529,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             normalized = Canonical(c, t, normalized);
             var facts = policy.Evaluate(user, normalized);
             // A press records only where its check proved it lands (the request target now, in the same transaction).
-            if (target != null && facts.Backend == "je" && !string.Equals(facts.InstanceId, target, StringComparison.OrdinalIgnoreCase))
+            if (target != null && facts.Backend == "je" && !RequestDestination.SameInstance(facts.InstanceId, target))
                 return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;

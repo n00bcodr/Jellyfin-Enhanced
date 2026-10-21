@@ -46,6 +46,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         internal static bool SameTarget(string? a, string? b) => string.Equals(a, b, StringComparison.Ordinal);
 
         /// <summary>
+        /// The same arr instance: a press's checked destination (an instance id, D53 edition round 21) against the instance a
+        /// request goes to (instance ids compare case-insensitively, as the configuration's instance list does).
+        /// </summary>
+        /// <param name="a">An instance id.</param>
+        /// <param name="b">Another instance id.</param>
+        internal static bool SameInstance(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
         /// A target key without its connection generation: the backend, the instance and the Seerr source (a Seerr target
         /// has no generation, so its place is its target).
         /// </summary>

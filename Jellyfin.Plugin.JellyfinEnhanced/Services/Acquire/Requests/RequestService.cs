@@ -94,7 +94,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 MutationInput? command = null;
                 if (refusal == null)
                 {
-                    command = proof.Command is { } checkedPress && (input.InstanceId == null || string.Equals(input.InstanceId, checkedPress.Instance, StringComparison.OrdinalIgnoreCase))
+                    command = proof.Command is { } checkedPress && (input.InstanceId == null || RequestDestination.SameInstance(input.InstanceId, checkedPress.Instance))
                         ? Normalize(checkedPress.AskInput()) : null;
                     if (command == null || PressChecks.RequestFingerprint(body.Expect!, PressChecks.Ask, null, command) != proof.Command!.Fingerprint) refusal = PressChecks.Changed;
                 }
