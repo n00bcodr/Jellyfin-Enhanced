@@ -195,6 +195,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                // A kept read lives from when it began, not from when the (possibly slow, paged) answer came in.
+                var readAt = DateTime.UtcNow;
                 SourceFetchResult result;
                 try
                 {
@@ -223,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 if (SourceSnapshots.Classify(result, null).State == SnapshotState.Complete)
                 {
                     PruneCache(result.Items.Count);
-                    _cache[cacheKey] = (DateTime.UtcNow + CacheTtl, result);
+                    _cache[cacheKey] = (readAt + CacheTtl, result);
                 }
                 else if (!result.Ok)
                 {
