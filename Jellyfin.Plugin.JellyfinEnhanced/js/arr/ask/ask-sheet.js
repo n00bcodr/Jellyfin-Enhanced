@@ -360,6 +360,9 @@
     async function open(title, options) {
         const action = JE.createSessionAction();
         const submitted = JE.captureSubmitted(options?.operation);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening, so the
+        // viewer's pending opening stays the newest.
+        if (!submitted.current()) return null;
         // Only the newest opening builds its sheet: an older one whose reads answer later is dropped (D46S2-R6).
         const newest = opening(submitted);
         if (!JE.arrAsk?.enabled() || !title?.key) return null;
@@ -869,34 +872,20 @@
     }
 
     /**
-     * Keyboard: Escape (and Back on TV) closes, Tab stays inside the sheet.
+     * Keyboard: Backspace outside a text field closes (Escape, Back and Tab are the surface stack's).
      * @param {Object} state Sheet state.
      * @param {KeyboardEvent} e Event.
      * @returns {void}
      */
     function onKey(state, e) {
         if (state.done) return;
+        // Escape, Back and Tab are the surface stack's (the topmost surface, the viewer's key: D46S2-R12-3, -6). The
+        // sheet's own extra: Backspace outside a text field closes it, only while it is the topmost surface.
         const typing = /input|textarea|select/i.test(e.target?.tagName || '') && e.target?.type !== 'checkbox';
-        // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
-        if ((e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || (e.key === 'Backspace' && !typing)) && JE.isTopmostSurface(state.backdrop)) {
+        if (e.key === 'Backspace' && !typing && JE.surfaceInput(state.backdrop, e)) {
             e.preventDefault();
             e.stopPropagation();
             finish(state, null);
-            return;
-        }
-        if (e.key !== 'Tab') return;
-        const focusables = [...state.sheet.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
-            .filter(n => !n.disabled && !n.hidden && !n.closest('[hidden]'));
-        if (!focusables.length) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const inside = state.sheet.contains(document.activeElement);
-        if (e.shiftKey && (document.activeElement === first || !inside)) {
-            e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
-            e.preventDefault();
-            first.focus();
         }
     }
 
@@ -921,16 +910,18 @@
      * @returns {void}
      */
     function restoreFocus(state) {
+        // Never under a surface that is now on top (a host dialog that arrived, the window below: the stack has given
+        // it focus, D46S2-R12-6).
         const opener = state.opener;
         if (opener && document.contains(opener) && typeof opener.focus === 'function') {
-            opener.focus();
+            if (!JE.isCovered?.(opener)) opener.focus();
             return;
         }
         const same = state.focusId ? [...document.querySelectorAll('[data-je-focus]')].find(n => n.dataset.jeFocus === state.focusId) : null;
         const holder = (state.openerPath || []).find(n => document.contains(n) && (n.tabIndex >= 0 || n.hasAttribute('tabindex')));
         const main = document.querySelector('.mainAnimatedPage:not(.hide)') || document.querySelector('main, [role="main"]');
         const target = same || holder || main;
-        if (!target) return;
+        if (!target || JE.isCovered?.(target)) return;
         if (target === main && !main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
         target.focus({ preventScroll: true });
     }

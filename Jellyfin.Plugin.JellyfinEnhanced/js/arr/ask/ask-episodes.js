@@ -899,7 +899,8 @@
         if (still) image.style.backgroundImage = `url("https://image.tmdb.org/t/p/w300${still}")`;
         else image.appendChild(S.icon('tv', 'je-ask-row-placeholder'));
         if (spoiler) image.classList.add('je-ask-row-spoiler');
-        image.addEventListener('click', () => openDetails(ep, ctx));
+        // Every entry path opens the episode's details only for a press someone made (D46S2-R12-5).
+        image.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         content.appendChild(image);
 
         const body = S.el('div', 'listItemBody je-ask-row-body');
@@ -911,7 +912,7 @@
         bdi.textContent = `${ep.episode}. ${title}`;
         open.appendChild(bdi);
         open.title = tr('arr_ask_row_open', { episode: ep.episode });
-        open.addEventListener('click', () => openDetails(ep, ctx));
+        open.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         heading.appendChild(open);
         body.appendChild(heading);
 
@@ -941,7 +942,7 @@
         infoButton.title = tr('arr_ask_row_open', { episode: ep.episode });
         infoButton.setAttribute('aria-label', tr('arr_ask_row_open', { episode: ep.episode }));
         infoButton.appendChild(S.icon('info_outline'));
-        infoButton.addEventListener('click', () => openDetails(ep, ctx));
+        infoButton.addEventListener('click', (e) => { if (JE.ownerOf(e)) openDetails(ep, ctx, e); });
         buttons.appendChild(infoButton);
         content.appendChild(buttons);
         row.appendChild(content);
@@ -977,7 +978,7 @@
         for (const type of ['contextmenu', 'mousedown', 'pointerdown', 'touchstart']) row.addEventListener(type, (e) => e.stopPropagation());
         row.addEventListener('click', (e) => {
             e.stopPropagation();
-            openDetails(ep, ctx);
+            if (JE.ownerOf(e)) openDetails(ep, ctx, e);
         });
         const image = S.el('div', 'listItemImage listItemImage-large listItemImage-large-tv je-ask-row-image');
         const still = typeof meta.still === 'string' && STILL.test(meta.still) ? meta.still : null;
@@ -1183,14 +1184,19 @@
 
     /**
      * The episode's status details (from a JE row): title, air date, runtime, overview, the status
-     * pill and journey, and Get it. A focus-trapped dialog; Escape or Close returns focus. It closes
-     * by itself when the page changes (navigation, another season, a sign-out).
+     * pill and journey, and Get it. A surface on the one stack (D46S2-R12-5): admitted for the press that opened it
+     * BEFORE the dialog shown so far is touched, registered with openSurface (only while it is the topmost surface
+     * does it take Escape, Back, Tab, the D-pad and focus; the page behind is covered), and closed once: Close, Escape,
+     * its owner ending, or the page changing (navigation, another season, a sign-out). Focus goes back to its opener.
      * @param {Object} ep Episode status.
      * @param {Object} ctx Response context.
+     * @param {Event|Object} press The press (or the owner) it opens for.
      * @returns {void}
      */
-    function openDetails(ep, ctx) {
+    function openDetails(ep, ctx, press) {
         const S = JE.arrStatus;
+        const owner = JE.admitSurface(press, 'the episode details');
+        if (!owner) return;
         closeDialog();
         const opener = document.activeElement;
         const meta = metaOf(ep.episode) || {};
@@ -1238,58 +1244,47 @@
         actions.appendChild(closeBtn);
         dialog.appendChild(actions);
         backdrop.appendChild(dialog);
+        // Escape, Back and Tab are the surface stack's. TV remotes' arrows move between the dialog's buttons only (the
+        // page behind stays put), only while it is the topmost surface and for the viewer's key (D46S2-R12-6).
         const onKey = (e) => {
-            if (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack' || (e.key === 'Backspace' && !/input|textarea/i.test(e.target?.tagName || ''))) {
-                e.preventDefault();
-                e.stopPropagation();
-                close();
-            } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                // TV remotes: move between the dialog's buttons only (the page behind stays put).
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const at = focusables.indexOf(document.activeElement);
-                const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
-                focusables[(at + step + focusables.length) % focusables.length].focus();
-            } else if (e.key === 'Tab') {
-                const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
-                if (!focusables.length) return;
-                const first = focusables[0];
-                const last = focusables[focusables.length - 1];
-                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-            }
+            if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) || !JE.surfaceInput(backdrop, e)) return;
+            const focusables = [...dialog.querySelectorAll('button:not([disabled])')];
+            if (!focusables.length) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const at = focusables.indexOf(document.activeElement);
+            const step = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1;
+            focusables[(at + step + focusables.length) % focusables.length].focus();
         };
         const shownAt = location.href;
         const offNavigate = JE.core?.navigation?.onNavigate?.(() => { if (location.href !== shownAt) close(false); });
+        let release = null;
         /**
-         * Closes the dialog and (unless the page changed under it) returns focus to what opened it.
-         * @param {boolean} [restore] Return focus to the opener (default true).
+         * Closes the dialog; the stack gives focus back (its opener while live, else the page).
          * @returns {void}
          */
-        function close(restore) {
+        function close() {
             if (shownDialog?.close === close) shownDialog = null;
-            document.removeEventListener('keydown', onKey, true);
+            backdrop.removeEventListener('keydown', onKey);
             if (typeof offNavigate === 'function') offNavigate();
-            if (!backdrop.isConnected) return;
-            backdrop.remove();
-            if (restore !== false && opener && document.contains(opener) && typeof opener.focus === 'function') opener.focus();
+            release?.();
+            if (backdrop.isConnected) backdrop.remove();
         }
+        release = JE.openSurface(backdrop, () => close(), owner, { opener });
+        if (!release) { if (typeof offNavigate === 'function') offNavigate(); return; }
         shownDialog = { itemId: season?.itemId || null, close };
         backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
-        document.addEventListener('keydown', onKey, true);
+        backdrop.addEventListener('keydown', onKey);
         document.body.appendChild(backdrop);
         (actions.querySelector('button') || closeBtn).focus();
     }
 
     /**
-     * Closes the episode dialog if one is shown, without moving focus to its opener (the page it
-     * was opened from is gone or belongs to someone else).
+     * Closes the episode dialog if one is shown (its page went, or another dialog replaces it).
      * @returns {void}
      */
     function closeDialog() {
-        if (shownDialog) shownDialog.close(false);
+        if (shownDialog) shownDialog.close();
     }
 
     /**

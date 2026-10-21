@@ -34,7 +34,13 @@ function visit(node, fn, stack = []) {
 /** The names of a member chain (`JE.a.b` → ['JE', 'a', 'b']), or null when it is not a plain chain. */
 function chain(node) {
   const parts = [];
-  while (node && MEMBER.has(node.type) && !node.computed) { parts.unshift(node.property.name); node = node.object; }
+  for (;;) {
+    if (node && MEMBER.has(node.type) && !node.computed) { parts.unshift(node.property.name); node = node.object; continue; }
+    // A member of an assignment or a default (`(JE.internals = JE.internals || {}).arrHub`, `(JE.x || {}).y`) is a
+    // member of what it assigns to or defaults (D46S2-R12: such nested aliases were invisible to the reachability).
+    if (node && (node.type === 'AssignmentExpression' || node.type === 'LogicalExpression')) { node = node.left; continue; }
+    break;
+  }
   if (node?.type === 'Identifier') { parts.unshift(node.name); return parts; }
   if (node?.type === 'ThisExpression') { parts.unshift('this'); return parts; }
   return null;
@@ -191,9 +197,64 @@ function inTimer(stack) {
   return false;
 }
 // Calls that check an owner, intent or surface at the moment they run.
-// An argument that hands the callee its owner or binding.
-const OWNER_ARGUMENT = /\b(bound|owner|submitted|operation|press)\b/;
-const GUARD = /^(current|effectOwner|admitSurface|runAs|later|isTopmostSurface|writable|mayWrite|newest|reaches|apply|mutate|run|shown|live|requireOrigin|isCurrent|holds|stillCurrent|admitted|valid|alive|isConnected|sameSession|mayAsk)$/;
+const GUARD = /^(admit|current|effectOwner|admitSurface|runAs|later|isTopmostSurface|surfaceInput|focusIn|writable|mayWrite|newest|reaches|apply|mutate|run|shown|live|requireOrigin|isCurrent|holds|stillCurrent|admitted|valid|alive|isConnected|sameSession|mayAsk|ownerOf|isViewerInput|isCovered)$/;
+// The names an argument hands its callee an owner or binding by (D46S2-R12: the argument itself, not a word in it).
+const OWNER_NAME = /^(bound|owner|submitted|operation|press|event|e|ev|admitted|native|owned|action|publication|handle)$/;
+const BINDING_CALL = /^(bound|operationBound)$/;
+// Registering a foreground surface on the one stack (an opener's own function does it, or hands the node to one).
+const REGISTER = /^(openSurface|openPopup|openHostDialog)$/;
+// A node that is a foreground surface when it is inserted: its class or role says so.
+const FOREGROUND = /(dialog|modal|sheet|drawer|backdrop|overlay|popup|popover)/i;
+const WRITE_METHOD = /^(POST|PUT|DELETE|PATCH)$/i;
+
+/** True when the AST `argument` hands its callee an owner or a binding (an identifier or member named as one, a
+ * `.bound()` call, or an options object with such a property). A decoy word inside a longer name does not. */
+function handsOwner(argument) {
+  if (!argument) return false;
+  if (argument.type === 'Identifier') return OWNER_NAME.test(argument.name);
+  if (MEMBER.has(argument.type) && !argument.computed) return OWNER_NAME.test(argument.property.name);
+  if (CALL.has(argument.type)) return BINDING_CALL.test(chain(argument.callee)?.at(-1) || '') || /^(ownerOf|captureSubmitted|effectOwner|requireOwner)$/.test(chain(argument.callee)?.at(-1) || '');
+  if (argument.type === 'ObjectExpression') return argument.properties.some(p => p.type === 'ObjectProperty' && /^(bound|operation|owner)$/.test(p.key?.name ?? p.key?.value ?? '') && handsOwner(p.value.type === 'Identifier' && /^(bound|operation|owner)$/.test(p.value.name) ? p.value : p.value));
+  if (argument.type === 'SpreadElement') return false;
+  return false;
+}
+/** True when `node` (a statement) always leaves its block: return, throw, break, continue (or a block ending so). */
+function exits(node) {
+  if (!node) return false;
+  if (/^(ReturnStatement|ThrowStatement|BreakStatement|ContinueStatement)$/.test(node.type)) return true;
+  if (node.type === 'BlockStatement') return node.body.length > 0 && exits(node.body.at(-1));
+  if (node.type === 'ExpressionStatement') return false;
+  return false;
+}
+const within = (outer, node) => !!outer && node.start >= outer.start && node.end <= outer.end;
+/**
+ * True when `guard` dominates the effect at `node` (its ancestors `stack`), inside function `fn` (D46S2-R12: a guard
+ * in another branch, in a nested function, or merely earlier in the source is no evidence): the effect is in the branch
+ * a conditional's test containing the guard selects; or a statement before the effect's (in a block that contains it)
+ * leaves the block when a test containing the guard (or a name declared from it) says so.
+ */
+function dominates(guard, node, stack, fn) {
+  const from = fn ? stack.indexOf(fn) : -1;
+  const chainOf = stack.slice(from + 1);
+  for (let i = 0; i < chainOf.length; i++) {
+    const a = chainOf[i], child = chainOf[i + 1] || node;
+    if ((a.type === 'IfStatement' || a.type === 'ConditionalExpression') && within(a.test, guard) && (child === a.consequent || child === a.alternate)) return true;
+    if (a.type === 'LogicalExpression' && a.operator === '&&' && within(a.left, guard) && child === a.right) return true;
+    const body = a.type === 'BlockStatement' || a.type === 'Program' ? a.body : a.type === 'SwitchCase' ? a.consequent : null;
+    if (!body) continue;
+    const at = body.indexOf(child);
+    const declared = new Set();
+    for (const statement of body.slice(0, Math.max(0, at))) {
+      if (statement.type === 'VariableDeclaration' && within(statement, guard)) for (const d of statement.declarations) if (d.id.type === 'Identifier') declared.add(d.id.name);
+      if (statement.type !== 'IfStatement' || !exits(statement.consequent)) continue;
+      if (within(statement.test, guard)) return true;
+      let named = false;
+      visit(statement.test, n => { if (n.type === 'Identifier' && declared.has(n.name)) named = true; });
+      if (named) return true;
+    }
+  }
+  return false;
+}
 
 /** The module-level mutable bindings of a module (the classic-script IIFE's top level). */
 function moduleBindings(ast) {
@@ -213,35 +274,72 @@ function moduleBindings(ast) {
   return { names, top: body };
 }
 
-/** Every effect site of `file`: { file, fn, category, target, line, guarded, deferred }. */
+/** The literal prefix of a route argument (a string, or a template up to its first expression). */
+function routeOf(argument) {
+  if (!argument) return '?';
+  if (argument.type === 'StringLiteral') return argument.value.split('?')[0];
+  if (argument.type === 'TemplateLiteral') return (argument.quasis[0]?.value.cooked || '').split('?')[0] + (argument.expressions.length ? '…' : '');
+  return '…';
+}
+/** The method a transport call's options name: 'GET' when none, 'dynamic' when it is not a literal. */
+function methodOf(options) {
+  if (!options || options.type !== 'ObjectExpression') return options ? 'dynamic' : 'GET';
+  const property = options.properties.find(p => p.type === 'ObjectProperty' && /^(method|type)$/.test(p.key?.name ?? p.key?.value ?? ''));
+  if (!property) return options.properties.some(p => p.type === 'SpreadElement') ? 'dynamic' : 'GET';
+  return property.value.type === 'StringLiteral' ? property.value.value.toUpperCase() : 'dynamic';
+}
+
+/** Every effect site of `file`: { file, fn, category, target, line, guarded, deferred, handed, registered }. */
 export function sitesOf(file, text) {
   const ast = parsed(text);
   const { names } = moduleBindings(ast);
   const out = [];
-  // Await positions per function (source offsets), and guard calls per function.
-  const awaits = new Map(), guards = new Map();
+  // Await positions per function (source offsets); guard calls per innermost function (never an enclosing one: a
+  // nested callback's guard does not check its outer function's effect); registrations and foreground nodes per function.
+  const awaits = new Map(), guards = new Map(), registers = new Set(), foreground = new Map(), locals = new Map();
   visit(ast.program, (node, stack) => {
     const fn = innermost(stack);
     if (node.type === 'AwaitExpression') { if (!awaits.has(fn)) awaits.set(fn, []); awaits.get(fn).push(node.end); }
     if (CALL.has(node.type)) {
       const name = chain(node.callee)?.at(-1) ?? node.callee.property?.name;
-      if (GUARD.test(name || '')) for (let i = stack.length - 1; i >= 0; i--) {
-        if (!FUNCTION.has(stack[i].type)) continue;
-        if (!guards.has(stack[i])) guards.set(stack[i], []);
-        guards.get(stack[i]).push(node.start);
+      if (GUARD.test(name || '')) { if (!guards.has(fn)) guards.set(fn, []); guards.get(fn).push(node); }
+      if (REGISTER.test(name || '')) registers.add(fn);
+      // A node marked a foreground surface in this function: `x.className = '…dialog…'`, `x.setAttribute('role', 'dialog')`,
+      // `el('div', '…backdrop…')`, `document.createElement('dialog')`.
+      const first = node.arguments[0], second = node.arguments[1];
+      const parent = stack.at(-1);
+      const assigned = parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier' ? parent.id.name : null;
+      if (assigned && ((first?.type === 'StringLiteral' && first.value === 'dialog') || (second?.type === 'StringLiteral' && FOREGROUND.test(second.value)))) {
+        if (!foreground.has(fn)) foreground.set(fn, new Set()); foreground.get(fn).add(assigned);
+      }
+      if (name === 'setAttribute' && first?.type === 'StringLiteral' && first.value === 'role' && second?.type === 'StringLiteral' && /dialog/.test(second.value)) {
+        const target = chain(node.callee.object)?.[0];
+        if (target) { if (!foreground.has(fn)) foreground.set(fn, new Set()); foreground.get(fn).add(target); }
       }
     }
+    if (node.type === 'AssignmentExpression' && MEMBER.has(node.left.type) && node.left.property?.name === 'className' && node.right.type === 'StringLiteral' && FOREGROUND.test(node.right.value)) {
+      const target = chain(node.left.object)?.[0];
+      if (target) { if (!foreground.has(fn)) foreground.set(fn, new Set()); foreground.get(fn).add(target); }
+    }
+    // Closure-local mutable bindings: a `let` declared in a function (not the module's top level).
+    if (node.type === 'VariableDeclaration' && node.kind === 'let' && fn && stack.some(n => FUNCTION.has(n.type))) {
+      for (const d of node.declarations) if (d.id.type === 'Identifier') locals.set(d.id.name + '@' + fn.start, fn);
+    }
   });
-  const add = (node, stack, category, target) => {
+  const localOwner = (name, stack) => {
+    for (let i = stack.length - 1; i >= 0; i--) if (FUNCTION.has(stack[i].type) && locals.has(name + '@' + stack[i].start)) return stack[i];
+    return null;
+  };
+  const add = (node, stack, category, target, extra = {}) => {
     const fn = innermost(stack);
     const lastAwait = Math.max(-1, ...(awaits.get(fn) || []).filter(at => at <= node.start));
     const deferred = lastAwait >= 0 ? 'await' : inTimer(stack) ? 'timer' : null;
     const from = deferred === 'await' ? lastAwait : fn ? fn.start : 0;
     // A write, opener or navigation handed its owner (or its binding) is checked by its callee at the effect: the
     // transport right before the bytes go out, an opener's admission before it touches anything.
-    const handed = category !== 'state' && CALL.has(node.type) && node.arguments.some(argument => OWNER_ARGUMENT.test(text.slice(argument.start, argument.end)));
-    const guarded = handed || (guards.get(fn) || []).some(at => at >= from && at < node.start);
-    out.push({ file, fn: functionName(stack), category, target, line: node.loc.start.line, deferred, guarded, handed });
+    const handed = category !== 'state' && CALL.has(node.type) && node.arguments.some(handsOwner);
+    const guarded = handed || (guards.get(fn) || []).some(g => g.start >= from && g.start < node.start && dominates(g, node, stack, fn));
+    out.push({ file, fn: functionName(stack), category, target, line: node.loc.start.line, deferred, guarded, handed, registered: registers.has(fn), ...extra });
   };
   visit(ast.program, (node, stack) => {
     const insideFunction = stack.some(n => FUNCTION.has(n.type));
@@ -250,9 +348,25 @@ export function sitesOf(file, text) {
       const path = names2?.join('.') || '';
       const name = names2?.at(-1) || (node.callee.property?.name ?? '');
       if (names2 && NOT_PRIMITIVE.test(names2.slice(0, -1).join('.'))) return;
+      // A transport write (D46S2-R12-1): the core transport called with a write method, by method and route.
+      if (/(^|\.)core\.api\.(plugin|ajax|pluginResponse|fetch|jf)$/.test(path)) {
+        const options = name === 'ajax' ? node.arguments[0] : node.arguments[1];
+        const method = methodOf(options);
+        if (method !== 'GET') { add(node, stack, 'write', `transport ${method} ${name === 'ajax' ? '(ajax)' : routeOf(node.arguments[0])}`); return; }
+      }
       const qualified = QUALIFIED.find(([, re]) => re.test(path));
       if (qualified) { add(node, stack, qualified[0], path.split('.').slice(-2).join('.')); return; }
       for (const [category, re] of PRIMITIVES) if (re.test(name)) { add(node, stack, category, name); return; }
+      // A foreground node put in the document (D46S2-R12-5): inserted into the body, or a node this function marked a
+      // dialog, sheet, drawer, backdrop, overlay or popup — whatever the opener is called. It must be registered on the
+      // one surface stack (the lint checks), else listed with its reason.
+      if (/^(appendChild|append|insertBefore|prepend|insertAdjacentElement|replaceWith|after|before)$/.test(name) && insideFunction) {
+        const host = chain(node.callee.object)?.join('.') || '';
+        const inserted = node.arguments.map(a => a.type === 'Identifier' ? a.name : null).filter(Boolean);
+        const marked = foreground.get(innermost(stack)) || new Set();
+        if (/(^|\.)document\.(body|documentElement)$/.test(host)) { add(node, stack, 'surface', 'insert body'); return; }
+        if (inserted.some(n => marked.has(n)) && !/(^|\.)document\.head$/.test(host)) { add(node, stack, 'surface', 'insert foreground'); return; }
+      }
       // Shared state: a module-level collection changed inside a function.
       if (insideFunction && node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' && names.has(node.callee.object.name) &&
         /^(set|add|delete|clear|push|splice|pop|shift|unshift)$/.test(node.callee.property.name)) add(node, stack, 'state', node.callee.object.name);
@@ -261,10 +375,16 @@ export function sitesOf(file, text) {
     if (node.type === 'AssignmentExpression') {
       const names2 = chain(node.left);
       if (names2 && /^(window\.)?location\.(hash|href)$/.test(names2.join('.'))) { add(node, stack, 'navigation', names2.slice(-2).join('.')); return; }
-      if (insideFunction && node.left.type === 'Identifier' && names.has(node.left.name)) add(node, stack, 'state', node.left.name);
+      if (insideFunction && node.left.type === 'Identifier' && names.has(node.left.name)) { add(node, stack, 'state', node.left.name); return; }
+      if (node.left.type === 'Identifier') { const owner = localOwner(node.left.name, stack); if (owner && owner !== innermost(stack)) add(node, stack, 'state', 'closure ' + node.left.name); }
       return;
     }
-    if (insideFunction && node.type === 'UpdateExpression' && node.argument.type === 'Identifier' && names.has(node.argument.name)) add(node, stack, 'state', node.argument.name);
+    if (insideFunction && node.type === 'UpdateExpression' && node.argument.type === 'Identifier') {
+      if (names.has(node.argument.name)) { add(node, stack, 'state', node.argument.name); return; }
+      // A closure-local counter changed by a function it returned (D46S2-R12-7: latestIntent's own counter).
+      const owner = localOwner(node.argument.name, stack);
+      if (owner && owner !== innermost(stack)) add(node, stack, 'state', 'closure ' + node.argument.name);
+    }
   });
   return out;
 }
@@ -272,14 +392,15 @@ export function sitesOf(file, text) {
 /** The key a manifest entry lists a site under. */
 export const siteKey = site => `${site.fn} ${site.category} ${site.target}`;
 
-/** Every site of `modules`, grouped: { file: { key: { n, lines, deferred, unguarded, handed, guarded } } }. */
+/** Every site of `modules`, grouped: { file: { key: { n, lines, deferred, unguarded, handed, guarded, unregistered } } }. */
 export function inventory(sources, modules) {
   const out = {};
   for (const file of [...modules].sort()) {
     const grouped = {};
     for (const site of sitesOf(file, sources[file])) {
-      const entry = grouped[siteKey(site)] ||= { n: 0, lines: [], deferred: 0, unguarded: 0, handed: 0, guarded: 0 };
+      const entry = grouped[siteKey(site)] ||= { n: 0, lines: [], deferred: 0, unguarded: 0, handed: 0, guarded: 0, unregistered: 0 };
       entry.n++; entry.lines.push(site.line);
+      if (site.category === 'surface' && site.target.startsWith('insert') && !site.registered) entry.unregistered++;
       if (site.handed) entry.handed++;
       if (site.guarded) entry.guarded++;
       if (site.deferred) { entry.deferred++; if (!site.guarded) entry.unguarded++; }

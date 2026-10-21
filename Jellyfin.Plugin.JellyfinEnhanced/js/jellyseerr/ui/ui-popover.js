@@ -283,6 +283,8 @@
      */
     function toggle4KPopup(e, buttonGroup, item) {
         e.stopPropagation();
+        // Opening and closing are both the press's (D46S2-R12-3): a script's click on the arrow does neither.
+        if (!JE.ownerOf(e)) return;
         if (popupOpenFor(buttonGroup)) { hide4KPopup(); return; }
         show4KPopup(buttonGroup, item, e, { keyboard: e.detail === 0 });
     }

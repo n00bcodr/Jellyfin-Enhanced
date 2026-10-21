@@ -138,7 +138,7 @@ test('R9-2: advanced on, a card\'s 4K popup → the form → Save → that card\
   const { main, arrow, popupItem } = cardWithPopup(h);
   h.click(popupItem); await delivered(); await wait(150);
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened');
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
   h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);
@@ -169,7 +169,7 @@ test('R9-2: a real search card whose overview closed while its 4K form answers �
   assert.equal(card.querySelector('.jellyseerr-split-arrow'), null, 'the overview closed');
   h.click(h.document.querySelector('.jellyseerr-4k-popup-item[data-action="request4k"]')); await delivered(); await wait(150);
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened');
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
   h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered();
   assert.equal(posts(h).length, 1);

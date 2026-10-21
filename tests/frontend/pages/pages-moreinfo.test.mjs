@@ -49,7 +49,7 @@ test('more-info closing while details are pending cancels the pending open',asyn
 });
 test('more-info stale refresh cannot update replacement modal actions',async t=>{
   const pending=deferred();let oldCalls=0;const h=setup(t,{details:id=>id===1&&oldCalls++>0?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'movie',undefined,h.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(2,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);h.click(h.state.currentModal.querySelector('.modal-refresh'));await h.P.open(2,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,2]);
 });
 for(const outcome of ['completion','failure'])test(`more-info stale TV request ${outcome} cannot render into replacement`,async t=>{
@@ -68,7 +68,7 @@ test('more-info Request owners retain exact scope through refresh without contam
   const cached={id:1}; const h=setup(t,{details:async()=>cached}); const scopes=[];
   h.internal.renderActions=data=>scopes.push(data.jeActionScope);
   await h.P.open(1,'tv',{season:2,episode:4},h.NATIVE);
-  h.state.currentModal.querySelector('.modal-refresh').click(); await nextTurn();
+  h.click(h.state.currentModal.querySelector('.modal-refresh')); await nextTurn();
   assert.deepEqual(JSON.parse(JSON.stringify(scopes)),[{season:2,episode:4},{season:2,episode:4}]);
   assert.equal(cached.jeActionScope,undefined);
   await h.P.open(1,'tv',undefined,h.NATIVE); assert.equal(scopes.at(-1),undefined);
@@ -94,7 +94,7 @@ test('more-info actual session transition closes existing modal and invalidates 
 });
 test('more-info same-ID replacement rejects stale refresh by modal identity',async t=>{
   const pending=deferred();let calls=0;const h=setup(t,{details:id=>++calls===2?pending.promise:Promise.resolve({id})});
-  await h.P.open(1,'movie',undefined,h.NATIVE);h.state.currentModal.querySelector('.modal-refresh').click();await h.P.open(1,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
+  await h.P.open(1,'movie',undefined,h.NATIVE);h.click(h.state.currentModal.querySelector('.modal-refresh'));await h.P.open(1,'movie',undefined,h.NATIVE);pending.resolve({id:1});await nextTurn();
   assert.deepEqual(h.actions,[1,1]);
 });
 test('more-info download bars keep separate downloads apart for everyone (projected group tokens, Seerr ids for admins)',t=>{

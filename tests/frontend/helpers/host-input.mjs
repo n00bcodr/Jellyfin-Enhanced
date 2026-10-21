@@ -4,8 +4,9 @@ import { repositoryRoot } from './discovery.mjs';
 // The host's OWN input handling, verbatim (tests/fixtures/host-input/<host>, made by
 // tests/host/web-bundle/extract-input.mjs): jellyfin-web's keyboardNavigation (its window keydown listener: Back keys,
 // TV Escape, the D-pad, a UWP gamepad's OK), inputManager (back → the router; select → click() on the focused element),
-// focusManager (D-pad focus moves inside focus containers) and the gamepad-to-key chunk (a gamepad's buttons → key
-// events; OK → click() on the focused element). They run in the test's browser realm through a minimal module loader;
+// focusManager (D-pad focus moves inside focus containers), serverNotifications with the events helper (the server's
+// WebSocket messages: another client's remote-control commands → inputManager) and the gamepad-to-key chunk (a
+// gamepad's buttons → key events; OK → click() on the focused element). They run in the test's browser realm through a minimal module loader;
 // only their imports that are not part of this (the router, the layout and browser flags, the app host) are fixtures.
 
 export const HOSTS = ['12.2', '10.11.11'];
@@ -63,7 +64,7 @@ export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
   require.n = module => { const getter = module?.__esModule ? () => module.default : () => module; require.d(getter, { a: getter }); return getter; };
   require.o = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
   require.e = () => Promise.resolve();
-  for (const name of ['focus-manager', 'input-manager', 'keyboard-navigation']) {
+  for (const name of ['focus-manager', 'input-manager', 'keyboard-navigation', 'events', 'server-notifications']) {
     const text = fixture(host, `${name}.module.js`);
     const box = window.eval(`(function () { const module = {}; ${text.replace(/^\/\/.*\n/, '')}\n return module.exports; })()`);
     factories[box.id] = box.module;
@@ -74,6 +75,54 @@ export function hostInput(h, host, { tv = false, canGoBack = true } = {}) {
   return {
     get back() { return calls.back; },
     handleCommand: (...args) => (input.Ay || input.default).handleCommand(...args),
+    /**
+     * Another Jellyfin client's remote control (Q-D46S2FIX12-1): the server's WebSocket, as the host reads it. A
+     * loopback server (127.0.0.1, this process) holds the other end of a real WebSocket of the test's browser realm, so
+     * every message arrives as the browser delivers one (a trusted MessageEvent of that socket). The host's own
+     * serverNotifications module (verbatim) subscribes to it the way each host's API client wires its socket — 10.11.11:
+     * jellyfin-apiclient's onmessage → Events.trigger(apiClient, 'message', [message]) (the host's events module,
+     * verbatim); 12.2: the SDK socket's 'message' listener → the subscribers of the message's type — and turns a
+     * GeneralCommand into inputManager.handleCommand (Select → click() on the focused element, Back → the router).
+     * Resolves { command(name): the server sends GeneralCommand `name` (resolves once the browser has dispatched it),
+     * send(message), close() }.
+     */
+    async remote() {
+      const { WebSocketServer } = await import('ws');
+      const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+      await new Promise(resolve => server.once('listening', resolve));
+      const accepted = new Promise(resolve => server.once('connection', resolve));
+      const socket = new window.WebSocket(`ws://127.0.0.1:${server.address().port}/socket`);
+      const [peer] = await Promise.all([accepted, new Promise(resolve => socket.addEventListener('open', resolve, { once: true }))]);
+      const events = require(44797).A;
+      const apiClient = { serverId: () => 'server-a', serverInfo: () => ({ Id: 'server-a' }), getCurrentUserId: () => 'user-a' };
+      if (host === '12.2') {
+        // The SDK's WebSocket (node_modules.@jellyfin.sdk: initSocket's 'message' listener) and its subscribe(types, cb).
+        const subscriptions = new Map();
+        apiClient.subscribe = (types, callback) => {
+          for (const type of types) { if (!subscriptions.has(type)) subscriptions.set(type, []); subscriptions.get(type).push(callback); }
+          return () => {};
+        };
+        socket.addEventListener('message', event => { const message = JSON.parse(event.data); subscriptions.get(message.MessageType)?.forEach(callback => callback(message)); });
+        stubs[4935] = { De: { Play: 'Play', Playstate: 'Playstate', GeneralCommand: 'GeneralCommand', SyncPlayCommand: 'SyncPlayCommand', SyncPlayGroupUpdate: 'SyncPlayGroupUpdate' } };
+      } else {
+        // jellyfin-apiclient's openWebSocket: onmessage = j (JSON.parse, then Events.trigger(apiClient, 'message', [msg])).
+        socket.onmessage = event => events.trigger(apiClient, 'message', [JSON.parse(event.data)]);
+      }
+      stubs[67430] = { tF: { getApiClients: () => [apiClient] } };
+      const notifications = require(10736);
+      (notifications.D || notifications.initializeServerConnections)();
+      const send = message => new Promise(resolve => {
+        // Resolves after the host's own listener (registered first) has handled the message.
+        socket.addEventListener('message', () => resolve(), { once: true });
+        peer.send(JSON.stringify(message));
+      });
+      return {
+        socket,
+        send,
+        command: (name, args = {}) => send({ MessageType: 'GeneralCommand', Data: { Name: name, Arguments: args } }),
+        close() { socket.close(); peer.terminate(); server.close(); },
+      };
+    },
     focusManager: require(9164).A,
     /**
      * Loads the host's gamepad-to-key chunk with `pad` connected (its 20 ms poll reads pad.buttons[i].pressed; the page

@@ -64,13 +64,19 @@
         const c = cardContext(card); if (!c || !enabled()) return;
         mountCard(card);
         const mounted = cards.get(card);
-        const owner = A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === mounted && cardContext(card)?.key === c.key);
+        if (!mounted || mounted.key !== c.key) return;
+        // The OPENING (D46S2-R12-8): an offer of the card's stable mount, finished on every terminal path — rejected,
+        // failed, superseded by a newer opening, or the sheet it showed closing. What the viewer submits from the sheet
+        // belongs to the card's mount, not to this opening (it outlives the sheet).
+        const owner = A.generation(() => mounted.mount.current());
         const newest = sheetOpening(owner);
+        let shown = false;
         try {
             if (!await A.admit(c, owner)) return;
             const entries = await A.entries(c, { action: owner, surface: 'recommendations' });
-            if (newest()) A.show(c, entries, opener || card.querySelector('.je-card-more'), owner);
+            if (newest()) shown = A.show(c, entries, opener || card.querySelector('.je-card-more'), owner, { mount: mounted.mount, onClose: () => A.finish(owner) });
         } catch (_) { if (owner.current()) JE.toast?.(JE.t('title_actions_failed')); }
+        finally { if (!shown) A.finish(owner); }
     }
 
     /** Reconciles a retained/recycled card without retaining detached nodes. */
@@ -80,6 +86,8 @@
         if (!c) { removeCard(card); return; }
         if (prior?.key === c.key && prior.button.parentNode === card) {
             card.querySelectorAll(':scope > .je-card-more').forEach(n => { if (n !== prior.button) n.remove(); });
+            // A card the host keeps and shows again (another route, then back): its mount is this route's now.
+            if (!prior.mount.current()) prior.mount = cardMount(card, prior);
             return;
         }
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
@@ -87,7 +95,16 @@
         const node = button('more', JE.t('title_actions_more'), 'more_horiz'); node.className = 'je-card-more'; node.dataset.jeActionKey = c.key;
         // Only a press someone made opens it (D46S2-R11-1: a script's click names no owner).
         node.onclick = e => { e.preventDefault(); e.stopPropagation(); if (JE.ownerOf(e)) openCard(card, node); };
-        card.append(node); cards.set(card, { key: c.key, button: node });
+        // The card's stable MOUNT (D46S2-R12-8): one per drawn card (this title, this card, still shown); a recycled
+        // card gets another. Its openings and the operations submitted from them are its children.
+        const record = { key: c.key, button: node, mount: null };
+        record.mount = cardMount(card, record);
+        card.append(node); cards.set(card, record);
+    }
+
+    /** The stable mount token of a drawn card (its record, this title, still shown, this route). */
+    function cardMount(card, record) {
+        return A.generation(() => !disposed && enabled() && card.isConnected && cards.get(card) === record && cardContext(card)?.key === record.key);
     }
 
     /** Removes a card's adapter button; the card's own nodes stay as they are. */

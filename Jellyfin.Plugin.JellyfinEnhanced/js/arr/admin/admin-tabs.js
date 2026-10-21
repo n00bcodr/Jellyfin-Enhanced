@@ -716,7 +716,8 @@
         }
         state.busy.delete(busyId);
         report(busyId, outcome);
-        opener?.focus?.({ preventScroll: true });
+        // Back to the control that acted, unless a surface opened over it meanwhile (D46S2-R12-6).
+        if (opener && !JE.isCovered?.(opener)) opener.focus?.({ preventScroll: true });
         return outcome;
     }
 
@@ -739,7 +740,8 @@
         }
         state.busy.delete(target.id);
         report(target.id, outcome);
-        opener?.focus?.({ preventScroll: true });
+        // Back to the control that acted, unless a surface opened over it meanwhile (D46S2-R12-6).
+        if (opener && !JE.isCovered?.(opener)) opener.focus?.({ preventScroll: true });
     }
 
     /**
@@ -774,10 +776,10 @@
         if (!d || (owner && d.owner !== owner)) return;
         state.dialog = null;
         d.releaseScope?.();
-        document.removeEventListener('keydown', d.onKey, true);
-        document.removeEventListener('focusin', d.onFocus, true);
         d.overlay.remove();
-        openerNow(d)?.focus?.({ preventScroll: true });
+        // Back to its opener (or the control a redraw put in its place) unless a surface above covers it now.
+        const back = openerNow(d);
+        if (back && !JE.isCovered?.(back)) back.focus?.({ preventScroll: true });
     }
 
     /**
@@ -805,7 +807,7 @@
      *   leaving the admin tabs closes only theirs, closing the drawer only its own.
      * @param {Object} scope The owner it opens for (required, D46S2-R6): the drawer's operation, or the press's owner from
      *   the tabs; once it ends the dialog takes no more input and closes.
-     * @returns {{box: HTMLElement, buttons: HTMLElement}|null} Parts to fill (null: no owner, nothing opened).
+     * @returns {{box: HTMLElement, buttons: HTMLElement, overlay: HTMLElement}|null} Parts to fill (null: no owner, nothing opened).
      */
     function openDialog(title, opener, owner, scope) {
         if (!JE.admitSurface(scope, 'the arr dialog')) return null;
@@ -823,42 +825,14 @@
         const buttons = el('div', 'je-ops-dialog-buttons');
         overlay.appendChild(box);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDialog(); });
-        const onKey = (e) => {
-            if (!state.dialog) return;
-            // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
-            if (e.key === 'Escape' && JE.isTopmostSurface(overlay)) {
-                e.preventDefault();
-                e.stopPropagation();
-                closeDialog();
-                return;
-            }
-            if (e.key !== 'Tab') return;
-            const items = [...box.querySelectorAll('button, input, a[href]')].filter(n => !n.disabled);
-            if (!items.length) return;
-            const first = items[0];
-            const last = items[items.length - 1];
-            if (e.shiftKey && (document.activeElement === first || !box.contains(document.activeElement))) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) {
-                e.preventDefault();
-                first.focus();
-            }
-        };
-        // Focus that leaves the dialog (D-pad, a click behind it) comes back to its first control.
-        const onFocus = (e) => {
-            if (!state.dialog || box.contains(e.target)) return;
-            const first = [...box.querySelectorAll('button, input, a[href]')].find(n => !n.disabled);
-            (first || box).focus({ preventScroll: true });
-        };
+        // Escape, Back, Tab and focus are the surface stack's (D46S2-R12-6): only the topmost surface takes them (a host
+        // dialog over this one keeps its own), and focus that leaves it while it is on top comes back to it.
         box.tabIndex = -1;
-        document.addEventListener('keydown', onKey, true);
-        document.addEventListener('focusin', onFocus, true);
         document.body.appendChild(overlay);
         const focusId = opener?.closest?.('[data-je-focus]')?.dataset.jeFocus || null;
-        const dialog = state.dialog = { overlay, opener, onKey, onFocus, focusId, owner: owner || 'tabs' };
+        const dialog = state.dialog = { overlay, opener, focusId, owner: owner || 'tabs' };
         dialog.releaseScope = JE.openSurface(overlay, () => { if (state.dialog === dialog) closeDialog(); }, scope);
-        return { box, buttons };
+        return { box, buttons, overlay };
     }
 
     /**
@@ -921,7 +895,7 @@
         if (!run && target.canDeleteData) buttons.appendChild(data);
         buttons.appendChild(ok);
         box.appendChild(buttons);
-        ok.focus();
+        JE.focusIn(parts.overlay, ok);
     }
 
     /**
@@ -961,7 +935,9 @@
         draw();
         const dl = confirmation?.download || {};
         const word = tr('arr_ops_confirm_word');
-        const { box, buttons } = openDialog(tr('arr_ops_delete_title'), opener, 'tabs', native);
+        const parts = openDialog(tr('arr_ops_delete_title'), opener, 'tabs', native);
+        if (!parts) return;
+        const { box, buttons } = parts;
         const warn = el('div', 'je-ops-warnbox');
         warn.appendChild(el('p', '', tr('arr_ops_delete_body', { title: [dl.title, dl.scope].filter(Boolean).join(' '), instance: dl.instance || '' })));
         if (dl.episodes > 1) warn.appendChild(el('p', '', tr('arr_ops_remove_pack', { scope: dl.scope || '', n: dl.episodes })));
@@ -1002,7 +978,7 @@
         buttons.appendChild(cancel);
         buttons.appendChild(ok);
         box.appendChild(buttons);
-        input.focus();
+        JE.focusIn(parts.overlay, input);
     }
 
     JE.session?.onUserChange?.('arr-hub-admin', () => {

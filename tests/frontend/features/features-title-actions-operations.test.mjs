@@ -108,7 +108,8 @@ async function openSheet(h, id) {
   assert.ok(entry, 'the sheet offers ' + id);
   return entry;
 }
-const escape = h => h.document.querySelector('.je-actions-sheet').dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+// The viewer's Escape (a script's key event dismisses nothing: D46S2-R12-3).
+const escape = h => h.key(h.document.querySelector('.je-actions-sheet'), 'Escape');
 
 /**
  * Each sheet action: how to finish it once submitted (accept its confirmation), and what its completion looks

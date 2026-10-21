@@ -90,15 +90,17 @@ test('absent capability menu never offers file mutations or fake favourite', asy
 });
 
 test('sheet keyboard and TV directions trap focus and Back restores opener', t => {
-  const { actions: a, document: d, window: w } = setup(t);
+  const h = setup(t);
+  const { actions: a, document: d } = h;
   const opener = d.querySelector('#opener'); opener.focus();
   a.show({ name: 'Title' }, [{ id: 'one', group: 'view', label: 'One', run() {} }, { id: 'two', group: 'view', label: 'Two', run() {} }], opener, a.generation());
   const dialog = d.querySelector('[role="dialog"]');
   assert.ok(dialog);
   const one = dialog.querySelector('[data-action="one"]');
-  one.focus(); one.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  // The viewer's keys (a script's key event moves and dismisses nothing: D46S2-R12-3).
+  one.focus(); h.key(one, 'ArrowDown');
   assert.equal(d.activeElement.dataset.action, 'two');
-  d.activeElement.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  h.key(d.activeElement, 'Escape');
   assert.equal(d.querySelector('[role="dialog"]'), null);
   assert.equal(d.activeElement, opener);
 });

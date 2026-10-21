@@ -26,6 +26,12 @@
 // caller awaited first, and before every retry attempt) and sends with that session's own credentials; when the
 // session is no longer the signed-in one, or current() is not true, it rejects with an AbortError and sends nothing.
 // The answer is published only while both still hold. A call without `bound` behaves exactly as before.
+// A WRITE's binding is checked by the core itself (D46S2-R12-1), for every endpoint: a binding carrying an owner token
+// sends only while that token's core record may write and names the token's own session; one without a token sends
+// only for a session the core captured (JE.core.api.session(), a session action's). Anything else sends nothing. Once a
+// write is sent its facts are the transport's (D46S2-R12-4): an answer that arrives after its owner ended, or after
+// another account signed in, is ACCEPTED (the AbortError carries the answer, for the origin's own reconciliation),
+// never "unsent"; a sent write with no answer fails as sent (`jeSent`), never as unsent.
 // The binding is part of the request's identity: de-duplication and the response cache key on it (its session and its
 // owner's predicate, by object identity), so a bound request never shares an in-flight request or a cached answer with
 // another binding or with an unbound caller, and one binding ending (or its caller aborting) cancels only its own request.
@@ -181,6 +187,7 @@
         error.jeOutcome = 'accepted';
         error.jeAnswer = data;
         error.jeSessionChanged = sessionChanged;
+        error.jeSent = true;
         return error;
     }
     /** @returns {Error} */
@@ -190,15 +197,17 @@
         return error;
     }
     /**
-     * The outcome of a write's error: 'unsent' (never sent), 'accepted' (answered after its owner ended; `answer`), or
-     * 'failed' (anything else).
+     * The outcome of a write's error: 'unsent' (never sent: nothing reached the server), 'accepted' (sent and answered
+     * after its owner ended or another account signed in: `answer`, `sessionChanged`; the origin reconciles its own
+     * state from it and nothing is published), or 'failed' (anything else: `sent` says whether it went out — a sent
+     * write with no answer may or may not have been taken, so it is never called unsent).
      * @param {*} error
-     * @returns {{outcome: 'unsent'|'accepted'|'failed', answer?: *, sessionChanged?: boolean}}
+     * @returns {{outcome: 'unsent'|'accepted'|'failed', answer?: *, sessionChanged?: boolean, sent?: boolean}}
      */
     function writeOutcome(error) {
-        if (error?.jeOutcome === 'accepted') return { outcome: 'accepted', answer: error.jeAnswer, sessionChanged: !!error.jeSessionChanged };
-        if (error?.jeOutcome === 'unsent' || (error?.name === 'AbortError' && error?.jeSent !== true)) return { outcome: 'unsent' };
-        return { outcome: 'failed' };
+        if (error?.jeOutcome === 'accepted') return { outcome: 'accepted', answer: error.jeAnswer, sessionChanged: !!error.jeSessionChanged, sent: true };
+        if (error?.jeOutcome === 'unsent' || (error?.name === 'AbortError' && error?.jeSent !== true)) return { outcome: 'unsent', sent: false };
+        return { outcome: 'failed', sent: error?.jeSent === true };
     }
 
     // Read freshness (D46S2-R10-9, audit S4): each resource family a title action writes has a write epoch, moved on when
@@ -206,8 +215,8 @@
     // started in, so a read that starts after a write never joins (or answers from) one that started before it.
     /** @type {Map<string, number>} */
     const writeEpochs = new Map();
-    // Read-only POSTs (they change nothing) do not move an epoch.
-    const READ_POSTS = /\/JellyfinEnhanced\/arr\/calendar\/user-data(?:\?|$)/;
+    // A read-only POST (it changes nothing: the calendar's user-data lookup) says so itself (`readOnly: true`, its
+    // caller's explicit provenance, D46S2-R12-1) and moves no epoch; no endpoint is exempted by its address.
     /** @param {string} url @returns {string} The family a request belongs to ('' when untracked). */
     function familyOf(url) {
         const m = /\/JellyfinEnhanced\/(jellyseerr|acquire|arr|spoiler-blur)(?:\/|\?|$)/.exec(String(url || ''));
@@ -217,10 +226,10 @@
     function bumpEpoch(family) {
         if (family) writeEpochs.set(family, (writeEpochs.get(family) || 0) + 1);
     }
-    // The title-action write endpoints (D46S2-R10-1): a write there goes out only with an owner token's binding (the
-    // Seerr request and issue, Follow and Remind; every caller passes one). JE mode's own asks and searches carry their
-    // owner's binding from every title action; its library pages still send session-guarded writes of their own.
-    const OWNED_WRITES = /\/JellyfinEnhanced\/(?:jellyseerr\/(?:request|issue)|acquire\/(?:follows|remind))(?:\?|$)/;
+    // Endpoints only ever written with an owner's binding (D46S2-R10-1: the Seerr request and issue, Follow and Remind):
+    // one sent without a binding (a dropped owner) is refused. A RESTRICTION only, never authority: whether a binding
+    // is checked does not depend on the endpoint (D46S2-R12-1; every write's binding is, see coreFetch).
+    const BINDING_REQUIRED = /\/JellyfinEnhanced\/(?:jellyseerr\/(?:request|issue)|acquire\/(?:follows|remind))(?:\?|$)/;
 
     /**
      * The abort of a read that started under an older Hidden Content / Spoiler Guard policy. Only this abort may be
@@ -287,11 +296,14 @@
      * @param {string} url
      * @param {RequestInit} [options]
      * @param {typeof CONFIG.retry} [retryConfig]
-     * @param {() => void} [assertSession] Submit-time identity check, including every retry.
+     * @param {() => void} [assertSession] Submit-time identity check, run right before every attempt (retries included).
      * @param {boolean} [acceptHttpErrors=false] Return HTTP errors to status-preserving callers.
+     * @param {(() => void)|null} [onSend] Called right before each attempt goes out.
+     * @param {() => void} [afterSend] The check after an attempt was sent (a read's identity check; a write's facts are
+     *     kept whatever happens to its owner, so a write passes a no-op).
      * @returns {Promise<Response>}
      */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null) {
+    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null, afterSend = assertSession) {
         const startTime = performance.now();
         let lastError;
         let lastStatus;
@@ -309,11 +321,12 @@
                 throw abortError;
             }
 
+            // Checked right before every attempt; a retry its check refuses ends with the attempt that was answered.
+            try { assertSession(); } catch (refusal) { throw attempt > 1 && lastError ? lastError : refusal; }
             try {
-                assertSession();
                 if (onSend) onSend();
                 const response = await fetch(url, options);
-                assertSession();
+                afterSend();
 
                 if (response.ok || acceptHttpErrors) {
                     if (metrics.enabled) {
@@ -336,7 +349,7 @@
                 // Capture body so callers can read structured error details (e.g. quota messages).
                 try {
                     const text = await response.clone().text();
-                    assertSession();
+                    afterSend();
                     if (text) {
                         lastError.responseText = text;
                         try {
@@ -355,7 +368,7 @@
                     throw lastError;
                 }
             } catch (error) {
-                assertSession();
+                afterSend();
                 lastError = error;
 
                 // Don't retry abort errors
@@ -865,6 +878,8 @@
      * @returns {RequestSession}
      */
     function session() {
+        // The core's own capture (D46S2-R12-1): a write bound to this session is one the core recognizes.
+        if (typeof JE.captureSession === 'function') return JE.captureSession();
         const userId = ApiClient.getCurrentUserId();
         const epoch = JE.session?.getEpoch?.();
         const server = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
@@ -878,19 +893,20 @@
     }
 
     /**
-     * The one bound-request check: an owned write's token may still write by the core's own record (`owned`), the
-     * request's own session must still be the signed-in one and its owner's current() (when given) must be true. Used
-     * as the request's session assertion, so the transport runs it immediately before every send and again before the
-     * answer is published.
+     * The one bound-request check: a write's core-decided authority (`authority`, see JE.writeAuthority: its token's
+     * core record, or a session the core captured) holds, the request's own session is still the signed-in one and its
+     * owner's current() (when given) is true. Used as the request's session assertion, so the transport runs it
+     * immediately before every send (after the queue's wait, before every retry) and again before the answer is
+     * published.
      * @param {{session: RequestSession, current?: () => boolean, token?: object}} bound
-     * @param {boolean} [owned] A title-action write (OWNED_WRITES): its token is checked too.
+     * @param {(() => boolean)|null} [authority] A write's authority check (null for a read).
      * @returns {(() => void) & {userId: string, token: string}}
      */
-    function bindRequest(bound, owned = false) {
+    function bindRequest(bound, authority = null) {
         const owner = bound?.session;
         if (!owner || typeof owner.current !== 'function') throw new TypeError('A bound request needs the session that asked for it');
         return Object.assign(() => {
-            if ((owned && !JE.mayWrite(bound.token, owner)) || !owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
+            if ((authority && authority() !== true) || !owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
         }, { userId: owner.userId, token: owner.token });
     }
 
@@ -972,7 +988,10 @@
      *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
      * @property {{session: RequestSession, current?: () => boolean}} [bound] - Deferred work: the session that
      *   asked (and its owner's predicate). Checked immediately before every send; otherwise AbortError, nothing sent.
-     *   Part of the request's identity: de-duplication and caching never cross bindings or unbound callers.
+     *   Part of the request's identity: de-duplication and caching never cross bindings or unbound callers. A WRITE's
+     *   binding is the core's to verify (JE.writeAuthority): an owner token's (by its core record) or a session the core
+     *   captured; anything else sends nothing.
+     * @property {boolean} [readOnly=false] - A POST that changes nothing (a lookup sent as a POST): it moves no write epoch.
      */
 
     /**
@@ -996,40 +1015,47 @@
             auth = true,
             timeoutMs,
             priority,
-            bound
+            bound,
+            readOnly = false
         } = options;
 
         const isWrite = !/^(GET|HEAD)$/i.test(method);
-        // A title-action write goes out only with an owner token's binding (D46S2-R10-1): one without (a planted or
-        // dropped owner) is refused before any byte goes out. The token's own state decides (D46S2-R11-3): the core's
-        // record of it (minted by the core, not ended, its session the signed-in one, its write lifetime) and the binding
-        // naming that token's own session; the binding's predicate can only restrict further.
-        const owned = isWrite && OWNED_WRITES.test(url);
-        if (owned && !(bound && JE.isOwnerToken?.(bound.token))) {
-            const message = `Jellyfin Enhanced: ${method} ${url} was sent without its owner's binding`;
+        /** Refused before any byte goes out: logged (thrown in tests), never sent. */
+        const refuse = why => {
+            const message = `Jellyfin Enhanced: ${method} ${url} ${why}`;
             if (JE.strictOwners === true) throw new Error(message);
             if (JE.strictOwners === 'record') (JE.refusals = JE.refusals || []).push(message); else console.error(message);
             throw createUnsentAbort();
-        }
+        };
+        // Every write's authority is the core's to decide, whatever its endpoint (D46S2-R12-1): a write with a binding
+        // goes out only while the binding's core-recorded authority holds (JE.writeAuthority: its token's record, or a
+        // session the core captured), checked here, after the queue's wait and right before every attempt; the binding's
+        // own predicate only restricts. A binding the core does not recognize (a plain object naming a session or token
+        // it never made) sends nothing.
+        const authority = isWrite && bound ? (typeof JE.writeAuthority === 'function' ? JE.writeAuthority(bound) : null) : null;
+        if (isWrite && bound && !authority) refuse('was sent with a binding the core did not make');
+        // An endpoint only ever written with its owner's binding: one without (a dropped owner) is refused.
+        if (isWrite && !bound && BINDING_REQUIRED.test(url)) refuse('was sent without its owner\'s binding');
         // A write without its binding while an operation acts (its press, runner or publication callback) dropped that
         // operation's owner: refused at the send, before any byte goes out (D46S2-R9-4).
         if (!bound && isWrite && JE.refuseUnboundWrite?.(`${method} ${url}`)) throw createUnsentAbort();
-        if (owned && !JE.mayWrite(bound.token, bound.session)) throw createUnsentAbort();
         // A bound request is checked against its own session before anything else (it may have been made after
-        // another account signed in); the live identity is then recorded as for any request. An owned write's token is
-        // checked again by the core right before it is sent (its predicate after the core's).
-        const boundSession = bound ? bindRequest(bound, owned) : null;
+        // another account signed in); the live identity is then recorded as for any request.
+        const boundSession = bound ? bindRequest(bound, authority) : null;
         if (boundSession) {
             try { boundSession(); } catch (error) { throw isWrite ? createUnsentAbort() : error; }
         }
         const live = captureSession();
-        // A write: once sent, its owner ending no longer aborts it midway (it is accepted, see writeOutcome).
+        // A write's gate runs right before every attempt (D46S2-R12-1). Once it is sent, its facts belong to the
+        // transport (D46S2-R12-4): nothing about its owner or the signed-in account aborts it midway or erases that it
+        // was sent and what was answered; whether the answer may be published is decided once, at the end.
         let sent = false;
-        const assertSession = !isWrite || !boundSession ? (boundSession || live)
-            : Object.assign(() => { if (!sent) boundSession(); else live(); }, { userId: boundSession.userId, token: boundSession.token });
-        const family = READ_POSTS.test(url) ? '' : familyOf(url);
+        const assertSession = boundSession || live;
+        const afterSend = isWrite ? () => {} : assertSession;
+        const family = !isWrite || readOnly ? '' : familyOf(url);
         // Dedup and cache keys of a bound request are its binding's own, and a read's carry its family's write epoch.
-        const scope = bindingScope(bound) + (family && !isWrite ? `\u0000epoch:${family}:${writeEpochs.get(family) || 0}\u0000` : '');
+        const readFamily = familyOf(url);
+        const scope = bindingScope(bound) + (readFamily && !isWrite ? `\u0000epoch:${readFamily}:${writeEpochs.get(readFamily) || 0}\u0000` : '');
         const onSend = isWrite ? () => { if (!sent) { sent = true; bumpEpoch(family); } } : null;
         const withStatus = responseMode === 'status';
         const isGet = method.toUpperCase() === 'GET';
@@ -1109,12 +1135,13 @@
                     (skipRetry || withStatus) ? { ...CONFIG.retry, maxAttempts: 1 } : undefined,
                     assertSession,
                     withStatus,
-                    onSend
+                    onSend,
+                    afterSend
                 );
-                assertSession();
+                afterSend();
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
                 const text = await response.text();
-                assertSession();
+                afterSend();
                 assertPresentation();
                 let data;
                 if (withStatus) {
@@ -1129,9 +1156,9 @@
                 if (isGet && cacheKey) setCache(scope + cacheKey, data);
                 return data;
             } catch (error) {
-                assertSession();
-                assertPresentation();
+                // A sent write's error keeps that it was sent (D46S2-R12-4); a read's is checked as before.
                 if (sent && error && typeof error === 'object') /** @type {any} */ (error).jeSent = true;
+                if (!isWrite) { assertSession(); assertPresentation(); }
                 throw error;
             } finally {
                 if (timeoutId) clearTimeout(timeoutId);
@@ -1171,18 +1198,21 @@
         catch (error) {
             // Not sent (its binding ended while it queued): unsent, nothing reached the server.
             if (isWrite && !sent && /** @type {any} */ (error)?.name === 'AbortError' && !/** @type {any} */ (error).jeOutcome) throw createUnsentAbort();
+            if (isWrite && sent && error && typeof error === 'object') /** @type {any} */ (error).jeSent = true;
             throw error;
         }
-        // Each deduplicated caller owns its own publication boundary too. A bound write the server answered after its
-        // owner ended is accepted: the answer goes back in the abort, for its session's state only.
-        if (isWrite && boundSession && sent) {
+        // Each deduplicated caller owns its own publication boundary too. A write the server answered after its owner
+        // ended, or after another account signed in, is accepted: the answer goes back in the abort, for its origin's
+        // own reconciliation only (D46S2-R12-4); nothing is published to the page or the account that is current now.
+        if (isWrite && sent) {
             let current = true;
-            try { boundSession(); } catch (_) { current = false; }
+            try { assertSession(); } catch (_) { current = false; }
             if (!current) {
                 let sameSession = true;
                 try { live(); } catch (_) { sameSession = false; }
                 throw createAcceptedAbort(data, !sameSession);
             }
+            return data;
         }
         assertSession();
         assertPresentation();

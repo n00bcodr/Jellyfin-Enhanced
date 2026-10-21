@@ -108,7 +108,7 @@ test('R8-2: advanced on, More → Request in 4K → only the 4K state changes: t
   assert.match(standard.textContent, /jellyseerr_btn_request$/);
   h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   const form = seerrModal(h); assert.ok(form, 'the 4K form opened'); await new Promise(resolve => setTimeout(resolve, 150));
-  form.querySelector('#movie-server').value = '1'; form.querySelector('#movie-server').dispatchEvent(new h.window.Event('change'));
+  form.querySelector('#movie-server').value = '1'; h.trusted(form.querySelector('#movie-server'), new h.window.Event('change', { bubbles: true }));
   form.querySelector('#movie-quality').value = '4'; form.querySelector('#movie-folder').value = '/movies';
   h.click(form.querySelector('.jellyseerr-modal-button-primary')); await delivered(); h.a.scan(); await delivered();
   assert.equal(posts(h).length, 1);

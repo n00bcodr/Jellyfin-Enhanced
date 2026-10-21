@@ -296,9 +296,11 @@
         episodeNumber: evt.episodeNumber,
       }));
 
+      // A lookup sent as a POST (the events list is long): it changes nothing, and says so.
       const data = await JE.core.api.plugin("/arr/calendar/user-data", {
         method: "POST",
         body: { events: eventsToCheck },
+        readOnly: true,
       });
       if ((JE.session && !JE.session.isCurrent(epoch)) || !current()) return;
 

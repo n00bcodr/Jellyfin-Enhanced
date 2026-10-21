@@ -112,6 +112,9 @@
             } catch (err) {
                 const written = JE.core.api.writeOutcome?.(err);
                 if (written?.outcome === 'accepted' && !written.sessionChanged) { reply = written.answer; accepted = true; }
+                // Taken after another account signed in (D46S2-R12-4): the origin's rule changed on the server; the new
+                // account's rules and page are not touched.
+                else if (written?.outcome === 'accepted') return false;
                 else if (err?.name === 'AbortError' && !submitted.writable()) return false;
                 else throw err;
             }

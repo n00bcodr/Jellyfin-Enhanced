@@ -70,9 +70,23 @@
         // passes or navigation.
         for (const token of live) if (!token.current()) live.delete(token);
         const token = JE.operation({ mount: () => lifecycle === born && mount() !== false });
+        // Ending it releases it at once (D46S2-R12-8): an offer that closed, failed or was superseded is not kept until
+        // the next mint or route change.
+        const end = token.end;
+        token.end = () => { live.delete(token); end(); };
         live.add(token);
         return token;
     }
+    /**
+     * Finishes an owner (D46S2-R12-8): an OFFER (a menu's opening, a sheet's lease) ends on every terminal path — its
+     * normal close, a rejected or failed opening, a newer opening superseding it — and leaves the registry with it.
+     */
+    function finish(token) { if (token) token.end(); }
+    /**
+     * Releases a SUBMITTED operation from the registry once its run has settled (D46S2-R12-8): it is not ended (what it
+     * opened, a sheet or a drawer, lives on with its own scope and closes with it), but the registry no longer holds it.
+     */
+    function release(token) { if (token) live.delete(token); }
 
     /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
     const cancelled = error => error?.name === 'AbortError';
@@ -158,20 +172,26 @@
         return (source === entry.control || source.isConnected) && !source.disabled && source.getAttribute('aria-disabled') !== 'true';
     }
 
-    /** One submitted operation, carried through admission, the owner's run and its confirmations. */
+    /**
+     * One submitted operation, carried through admission, the owner's run and its confirmations. It has a lifetime of
+     * its own (its session, route and mount), independent of the offer that showed the choice, and leaves the registry
+     * once its run has settled (D46S2-R12-8).
+     */
     async function invoke(c, entry, opener, operation = generation()) {
-        if (!operation.current() || entry.disabled) return false;
-        if (entry.source) {
-            if (c?.absent && !await admit(c, operation)) return false;
-            if (!operation.current() || !pressable(entry)) return false;
+        try {
+            if (!operation.current() || entry.disabled) return false;
+            if (entry.source) {
+                if (c?.absent && !await admit(c, operation)) return false;
+                if (!operation.current() || !pressable(entry)) return false;
+                entry.beforeRun?.();
+                dispatch(entry.source, operation);
+                return true;
+            }
+            if (!await admit(c, operation) || !operation.current()) return false;
             entry.beforeRun?.();
-            dispatch(entry.source, operation);
-            return true;
-        }
-        if (!await admit(c, operation) || !operation.current()) return false;
-        entry.beforeRun?.();
-        const result = await entry.run(opener, operation);
-        return operation.current() && result !== false;
+            const result = await entry.run(opener, operation);
+            return operation.current() && result !== false;
+        } finally { release(operation); }
     }
 
     /** Registers a lazy capability (4c3b: provider returns null until permitted). No list storage lives here. */
@@ -284,5 +304,5 @@
     }
     /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
     const registrySize = () => live.size;
-    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
+    Object.assign(A, { context, fromKey, routeKey, generation, finish, release, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
 })(window.JellyfinEnhanced);

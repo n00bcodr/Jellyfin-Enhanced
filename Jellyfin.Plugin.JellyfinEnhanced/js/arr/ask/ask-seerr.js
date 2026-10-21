@@ -184,6 +184,8 @@
      */
     async function collectionAsk(collectionId, collectionName, options) {
         const submitted = JE.captureSubmitted(options?.operation);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening.
+        if (!submitted.current()) return;
         // Only the newest opening opens its picker (D46S2-R6): an older one whose reads answer later is dropped.
         const newest = pickerOpening(submitted);
         const caps = await JE.arrAsk.me();

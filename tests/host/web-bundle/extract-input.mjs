@@ -2,8 +2,9 @@
 // Copies the parts of a Jellyfin host's own web client (jellyfin-web, as shipped in the official image) that turn the
 // viewer's keys, remote buttons and gamepad into actions: keyboardNavigation (the key → command map and its window
 // keydown listener), inputManager (commands: Back → the router, select → click() on the focused element), focusManager
-// (the D-pad's focus moves and their containers) and the gamepad-to-key chunk (a gamepad's buttons → key events, and
-// its OK → click() on the focused element). The frontend tests run them, verbatim, against JE's surfaces
+// (the D-pad's focus moves and their containers), serverNotifications (the server's WebSocket messages: another client's
+// remote-control commands → the input manager) and the gamepad-to-key chunk (a gamepad's buttons → key events, and its
+// OK → click() on the focused element). The frontend tests run them, verbatim, against JE's surfaces
 // (tests/frontend/helpers/host-input.mjs). Regenerate for a new Jellyfin release:
 //   id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin/jellyfin-web ./web-12.2 && docker rm "$id"
 //   node tests/host/web-bundle/extract-input.mjs ./web-12.2 tests/fixtures/host-input/12.2 jellyfin/jellyfin:12.2
@@ -46,6 +47,10 @@ const MODULES = {
   'keyboard-navigation': '10009:"Back"',
   'input-manager': '.dialogContainer .dialog.opened',
   'focus-manager': '"focuscontainer-x"',
+  // The server's remote-control commands (another Jellyfin client's Select, Back, …) → the input manager.
+  'server-notifications': 'case"Select":',
+  // The host's event helper (Events.on/trigger) the server's messages travel through on 10.11.
+  'events': '"obj cannot be null!"',
 };
 const main = files.find(f => f === 'main.jellyfin.bundle.js');
 if (!main) throw new Error('no main.jellyfin.bundle.js in ' + web);

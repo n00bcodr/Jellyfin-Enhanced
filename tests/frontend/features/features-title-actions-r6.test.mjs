@@ -105,10 +105,10 @@ for (const [name, arrange] of SHARE_PATHS) {
     arrange(h);
     await share(h);
     assert.ok(link(h), 'the fallback link sheet is open');
-    assert.equal(h.page.inert, true, 'the page behind it is inert while it is open');
+    assert.equal(h.page.hasAttribute('inert'), true, 'the page behind it is inert while it is open (the surface stack covers it)');
     await rerender(h);
     assert.equal(link(h), null, 'the link sheet did not outlive its operation');
-    assert.notEqual(h.page.inert, true, 'the page takes input again');
+    assert.equal(h.page.hasAttribute('inert'), false, 'the page takes input again');
   });
 }
 

@@ -288,12 +288,13 @@ test('bfcache control: after pageshow a fresh press on the restored page works (
 test('bfcache: the Manage drawer and the title-action sheet close on pagehide', async t => {
   const h = setup(t);
   h.a.initialize(); mount(h); await settle();
-  await press(h, 'manage'); await delivered();
-  const drawer = h.document.querySelector('.je-manage-overlay');
-  assert.ok(drawer);
+  // The sheet open, and the drawer opened over it (a covered row takes no press: D46S2-R12-9).
   h.click(h.row().querySelector('.je-actions-more')); await settle();
   const offer = h.document.querySelector('.je-actions-backdrop');
   assert.ok(offer);
+  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await delivered();
+  const drawer = h.document.querySelector('.je-manage-overlay');
+  assert.ok(drawer);
   h.pagehide(true); await settle();
   assert.equal(drawer.isConnected, false);
   assert.equal(offer.isConnected, false);

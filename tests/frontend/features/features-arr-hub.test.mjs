@@ -293,7 +293,7 @@ test('the Manage drawer explains, offers Search now and Open in, lists versions,
   assert.equal(drawer.querySelector('.je-manage-result').textContent, 'Done. Search finished: 0 reports downloaded.');
 
   // Esc closes it and gives focus back.
-  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(drawer, 'Escape');
   assert.equal(h.document.querySelector('.je-manage'), null);
   assert.equal(h.document.activeElement, opener);
   assert.equal(h.live().length, 0);
@@ -355,6 +355,8 @@ test('the Seerr more-info modal gets the pill and journey of its title, follows 
   h.JE.initializeArrStatus();
   const modal = h.document.body.appendChild(h.document.createElement('div'));
   modal.innerHTML = '<div class="header-info"><div data-mount="je-requested-by"></div></div>';
+  // A window is a surface of the viewer's (its reads render for its owner, D46S2-R12-7).
+  h.JE.openSurface(modal, () => modal.remove(), h.NATIVE);
   h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data: { id: 5 }, mediaType: 'movie' } }));
   await wait(5);
   assert.equal(h.calls.at(-1).path, '/acquire/status?keys=movie%3Atmdb%3A5&detail=true');
@@ -373,6 +375,7 @@ test('the Seerr more-info modal gets the pill and journey of its title, follows 
   // A series uses its TVDB id; a quiet answer shows nothing.
   const other = h.document.body.appendChild(h.document.createElement('div'));
   other.innerHTML = '<div data-mount="je-requested-by"></div>';
+  h.JE.openSurface(other, () => other.remove(), h.NATIVE);
   answers['tv:tvdb:78874'] = [status('ready', 'ready', { key: 'tv:tvdb:78874', quiet: true })];
   h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal: other, data: { id: 1437, externalIds: { tvdbId: 78874 } }, mediaType: 'tv' } }));
   await wait(5);
@@ -450,7 +453,7 @@ test('Search now stays busy across re-renders (no second search), and focus neve
   const search = () => drawer.querySelector('.je-manage-btn-primary');
   // Shift+Tab from the drawer itself (where focus is on open) wraps to its last control.
   assert.equal(h.document.activeElement, drawer);
-  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  h.key(drawer, 'Tab', { shiftKey: true });
   assert.ok(drawer.contains(h.document.activeElement) && h.document.activeElement !== drawer);
 
   search().focus();
@@ -486,7 +489,7 @@ test('Search now stays busy across re-renders (no second search), and focus neve
   const behind = h.document.body.appendChild(h.document.createElement('button'));
   behind.focus();
   assert.ok(drawer.contains(h.document.activeElement));
-  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(drawer, 'Escape');
   assert.equal(h.document.querySelector('.je-manage'), null);
   // Closed: focus is free again.
   behind.focus();
@@ -514,6 +517,7 @@ test('the modal of a series known only by TMDB follows the viewer\'s own request
   h.JE.initializeArrStatus();
   const modal = h.document.body.appendChild(h.document.createElement('div'));
   modal.innerHTML = '<div data-mount="je-requested-by"></div>';
+  h.JE.openSurface(modal, () => modal.remove(), h.NATIVE);
   h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data: { id: 99, externalIds: {} }, mediaType: 'tv' } }));
   await wait(5);
   assert.equal(h.calls.at(-1).path, '/acquire/status?keys=tv%3Atmdb%3A99&detail=true');
@@ -732,7 +736,7 @@ test('the Manage drawer says when a queue it can\'t read was last read, and how 
   assert.ok(note, 'the expired queue is said');
   assert.equal(note.getAttribute('role'), 'status');
   assert.match(note.querySelector('.je-manage-event-label').textContent, /^queue can't be read; last read /);
-  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(drawer, 'Escape');
   expired = false;
   await h.JE.arrManage.open({ key: 'movie:tmdb:1' }, { operation: h.NATIVE });
   assert.match(h.document.querySelector('.je-manage .je-manage-event-queue-asof .je-manage-event-label').textContent, /^queue as of /);
@@ -767,7 +771,7 @@ test('the Manage drawer keeps what it shows when a re-read fails, says so, and r
   fail = true;
   h.live().find(s => s.keys.includes('movie:tmdb:1')).cb(['movie:tmdb:1']);
   await until(() => timers.delays().length === 1);
-  drawer.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(drawer, 'Escape');
   assert.deepEqual(timers.delays(), []);
   assert.ok(reads >= 3);
 });

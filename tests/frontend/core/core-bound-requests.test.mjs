@@ -277,8 +277,9 @@ test('every retry path sends through the bound-request primitive',()=>{
  const core=readFileSync(resolve(jsRoot,'core/api-client.js'),'utf8');
  // ONE primitive: the binding is checked by the transport itself, immediately before fetch().
  assert.equal((core.match(/function bindRequest\(/g)||[]).length,1);
- // (A write marks itself sent there, for its outcome: D46S2 audit S3.)
- assert.match(core,/assertSession\(\);\s*\n\s*if \(onSend\) onSend\(\);\s*\n\s*const response = await fetch\(url, options\);/);
+ // (Checked right before every attempt, retries included (D46S2-R12-1); a write marks itself sent there, for its
+ // outcome: D46S2 audit S3.)
+ assert.match(core,/try \{ assertSession\(\); \} catch \(refusal\) \{[^\n]*\}\s*\n\s*try \{\s*\n\s*if \(onSend\) onSend\(\);\s*\n\s*const response = await fetch\(url, options\);/);
 });
 
 // ---- D46 r18 (review round 17, D46-R17-3): the binding is part of request identity. De-duplication, caching and

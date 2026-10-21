@@ -27,7 +27,7 @@ for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','p
    assert.ok(dialog,'confirmation opens');assert.equal(writes.length,0,'no persistence before confirmation');
    assert.equal(card.classList.contains('je-hidden'),false);
    if(mode==='switch') h.switchUser();
-   dialog.querySelector(mode==='cancel'?'.je-hide-confirm-cancel':'.je-hide-confirm-hide').click();
+   h.click(dialog.querySelector(mode==='cancel'?'.je-hide-confirm-cancel':'.je-hide-confirm-hide'));
   }else assert.equal(dialog,null);
   await new Promise(r=>setImmediate(r));h.flush();
   assert.equal(writes.length,mode==='cancel'||mode==='switch'?0:1);

@@ -549,6 +549,8 @@ test('control (D46S2-R11-1 replaces Q-D46S2FIX10-2): focus alone is no gesture; 
   focused.focus();
   focused.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   assert.equal(seen[0], null, 'a synthetic click on the focused control is no one\'s');
+  // jellyfin-web's gamepad-to-key reads a connected gamepad (D46S2-R12-9: its chain is the viewer's only while one is).
+  Object.defineProperty(h.window.navigator, 'getGamepads', { configurable: true, value: () => [{ index: 0, connected: true, buttons: [] }] });
   gamepadOk();
   assert.equal(seen[1]?.native, true, 'the host\'s own activation of the focused control is native');
   other.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));

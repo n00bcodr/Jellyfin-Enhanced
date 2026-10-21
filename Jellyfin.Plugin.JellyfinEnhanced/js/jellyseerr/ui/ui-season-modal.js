@@ -30,6 +30,9 @@
         if (mediaType !== 'tv') return;
         // The modal opens, and its request goes out, only while its owner is current, and only for the newest opening.
         const submitted = JE.captureSubmitted(owner);
+        // Admitted before anything shared changes (D46S2-R12-7): an owner that is not current reserves no opening and
+        // leaves the shown modal's refresh running.
+        if (!submitted.current()) return;
         const newest = seasonOpening(submitted);
         if (refreshModalInterval) {
             clearInterval(refreshModalInterval);

@@ -5,8 +5,16 @@
     // Operation scopes (D46S2-R5): the UI each owner opened (its surfaces), and the owner each such surface belongs to.
     const scopes = new Map();
     const owners = new WeakMap();
-    // Presses dispatched for an owner (a title action pressing an owner's control): event → token.
+    // Presses dispatched for an owner (a title action pressing an owner's control, D46S2-R12-2): event → { owner, target,
+    // active }. A press is its event, its ONE dispatch (JE.press dispatches it once, synchronously), the node it was
+    // pressed on and its owner: it names its owner only while that dispatch is in progress, on that node, while the
+    // owner is current. The same event dispatched again (on another title, or on the same one) is no one's.
     const presses = new WeakMap();
+    /** The owner of title action's press `event` (see presses), or null. */
+    function pressOwner(event) {
+        const press = presses.get(event);
+        return press && press.active && event.target === press.target && isCurrent(press.owner) ? press.owner : null;
+    }
 
     /**
      * A dropped or unprovable owner at an effect: a programming error. Throws in tests (JE.strictOwners); else it is
@@ -81,8 +89,12 @@
         const token = ApiClient.accessToken();
         const current = () => ApiClient.getCurrentUserId() === user && serverId() === server &&
             ApiClient.accessToken() === token && JE.session?.isCurrent?.(epoch) !== false;
-        return Object.freeze({ userId: user, serverId: server, token, epoch, current });
+        const captured = Object.freeze({ userId: user, serverId: server, token, epoch, current });
+        sessions.add(captured);
+        return captured;
     }
+    /** The signed-in session, captured by the core now (the transport's session-only writes name one of these). */
+    JE.captureSession = captureSession;
 
     // ------------------------------------------------------------------ owner tokens (D46S2-R10 shape 1)
     // Authority is explicit: every effect takes a token minted here. There is no ambient owner (no JE.NATIVE, no
@@ -93,6 +105,9 @@
     // caller's predicate can only further restrict).
     const minted = new WeakSet();
     const records = new WeakMap();
+    // Sessions the core captured (D46S2-R12-1): a binding without a token is a session-only write's, sent only when it
+    // names a session the core itself captured (see JE.writeAuthority).
+    const sessions = new WeakSet();
     /**
      * Mints an owner token. kind: 'operation' (a title action's submitted work), 'native' (a viewer's own gesture, see
      * {@link JE.nativeFrom}) or 'publication' (an answer's handle, see {@link JE.publication}). `parent`: its ancestry
@@ -141,8 +156,6 @@
     /** The root record of a minted token's ancestry. */
     const rootRecord = x => { let r = records.get(x); while (r?.parent) r = records.get(r.parent); return r || null; };
     const nativeRoot = x => rootRecord(x)?.kind === 'native';
-    /** A minted token by the core's record; anything else (a caller's own state object) by its own current(). */
-    const holds = x => records.has(x) ? isCurrent(x) : x?.current?.() !== false;
     /**
      * The transport's own check of an owned write (D46S2-R11-3): `token` is one the core minted and may write now (not
      * ended, its session the signed-in one, its write lifetime), by the core's record; `session` (when given) must be
@@ -151,6 +164,22 @@
     JE.mayWrite = (token, session) => {
         const record = records.get(token);
         return !!record && (session === undefined || session === record.session) && record.writable() === true;
+    };
+    /**
+     * The authority of a write's binding, decided by the core at the transport (D46S2-R12-1) — for EVERY write, whatever
+     * its endpoint: null when the binding grants nothing, else a check the transport runs right before every send
+     * (after the queue's wait, before each retry). A binding that carries a token (any value under `token`): that token's
+     * core record (minted here, not ended, its session the signed-in one, its write lifetime) and the binding naming the
+     * token's own session — a forged predicate, an ended token, or A's token with B's session grants nothing. A binding
+     * without one (a session-only write: a session action's, a library page's, the notification read
+     * acknowledgement's): its session must be one the core captured and still the signed-in one. The binding's own
+     * predicate is ANDed by the transport (it can only restrict).
+     */
+    JE.writeAuthority = bound => {
+        if (!bound || typeof bound !== 'object') return null;
+        if ('token' in bound) return records.has(bound.token) ? () => JE.mayWrite(bound.token, bound.session) : null;
+        const session = bound.session;
+        return sessions.has(session) ? () => session.current() === true : null;
     };
 
     // Who is acting right now — RESTRICTIONS only, never authority (D46S2-R10-3): while an operation's press, runner or
@@ -171,8 +200,12 @@
     //   13} on the focused element followed, in the same call, by that element's click(); and a UWP gamepad's OK (a
     //   trusted keydown, keyCode 195) into inputManager's select: click() on the focused element inside that keydown's
     //   dispatch. Only the first click after that key event, on the same focused element, while nothing of JE's acts.
-    // Focus alone never grants; a plain object never grants; a token is remembered per event only for the same target
-    // and the same dispatch, and never consulted inside an operation.
+    // - or another Jellyfin client's remote-control "Select" (Q-D46S2FIX12-1 (a)), through jellyfin-web's own path on
+    //   10.11.11 and 12.2: the server's WebSocket message GeneralCommand {Name: 'Select'} (a trusted MessageEvent of the
+    //   socket) → serverNotifications → inputManager.handleCommand('select') → click() on the focused element, all
+    //   inside that message's dispatch (see remoteSelect).
+    // Focus alone never grants; a plain object never grants; a command-shaped event never grants; a token is remembered
+    // per event only for the same target and the same dispatch, and never consulted inside an operation.
     const GESTURE_TYPES = ['click', 'auxclick', 'dblclick', 'contextmenu', 'keydown', 'keyup', 'pointerdown', 'pointerup',
         'mousedown', 'mouseup', 'touchstart', 'touchend', 'submit', 'change', 'input'];
     // Each gesture event object's dispatches as the core saw them (window, capture: before any other listener).
@@ -180,6 +213,19 @@
     let armed = null;
     const count = event => { dispatches.set(event, (dispatches.get(event) || 0) + 1); };
     for (const type of GESTURE_TYPES) window.addEventListener(type, count, true);
+    /** A gamepad is connected now (what jellyfin-web's gamepad-to-key reads its buttons from). */
+    function gamepadConnected() {
+        try { return [...(navigator.getGamepads?.() || [])].some(pad => pad && pad.connected !== false); } catch (_) { return false; }
+    }
+    /**
+     * A key event that is the viewer's (D46S2-R12-3): the browser's own (trusted), or jellyfin-web's gamepad-to-key
+     * turning a connected gamepad's button into a key ('GamepadA', 'GamepadB', the D-pad; untrusted by construction). A
+     * script's key event is no one's: it dismisses nothing, moves no focus and reaches no surface's controls.
+     */
+    function viewerKey(event) {
+        return event.isTrusted === true || (typeof event.key === 'string' && event.key.startsWith('Gamepad') && gamepadConnected());
+    }
+    JE.isViewerKey = viewerKey;
     /** The host's activation chain started on `event.target` (the focused element). */
     function arm(event, during) {
         const target = event.target;
@@ -188,18 +234,50 @@
         // The gamepad's click() follows in the same call: nothing later (another task, a JE continuation) is it.
         if (!during) queueMicrotask(() => { if (armed === mine) armed = null; });
     }
-    window.addEventListener('keyup', event => { if (!event.isTrusted && event.key === 'GamepadA' && event.keyCode === 13) arm(event, false); }, true);
+    window.addEventListener('keyup', event => { if (!event.isTrusted && event.key === 'GamepadA' && event.keyCode === 13 && gamepadConnected()) arm(event, false); }, true);
     window.addEventListener('keydown', event => {
         if (event.isTrusted && event.keyCode === 195) arm(event, true);
         else if (armed && armed.key !== event) armed = null;
     }, true);
+    // A remote Select in progress: { target, message, click } while jellyfin-web's select() clicks the focused element
+    // inside the server message's dispatch (see remoteSelect); nothing else ever sets it.
+    let remote = null;
     window.addEventListener('click', event => {
+        if (remote && !remote.click && !event.isTrusted && event.target === remote.target) remote.click = event;
         if (!armed) return;
         // Only the first click after the key event is the host's.
         if (armed.click || event.isTrusted) armed = null; else armed.click = event;
     }, true);
-    /** True once for the click jellyfin-web's own activation chain made (consumed). */
+    /**
+     * The server message a click() on `target` is jellyfin-web's remote Select of, or null. It is: the event being
+     * dispatched right now (window.event) is a trusted 'message' of a WebSocket — the browser delivering the server's
+     * message — whose data is a GeneralCommand named Select, and `target` is the focused element (what inputManager's
+     * select clicks). A JE continuation (a timer, an await) runs outside any such dispatch; a script's own command
+     * event or click() is not a server message.
+     */
+    function remoteSelect(target) {
+        const message = window.event;
+        if (!message || message.isTrusted !== true || message.type !== 'message' || message.eventPhase === 0 ||
+            typeof WebSocket !== 'function' || !(message.target instanceof WebSocket) || target !== document.activeElement) return null;
+        let data = null;
+        try { data = typeof message.data === 'string' ? JSON.parse(message.data) : null; } catch (_) { return null; }
+        return data?.MessageType === 'GeneralCommand' && data.Data?.Name === 'Select' ? message : null;
+    }
+    // The adapter: jellyfin-web's select() calls the focused element's click(); while that click is dispatched inside a
+    // remote Select's server message, its one click event is the viewer's (see hostActivation). Every other click()
+    // is untouched (it stays untrusted and names no one).
+    const nativeClick = HTMLElement.prototype.click;
+    Object.defineProperty(HTMLElement.prototype, 'click', { configurable: true, writable: true, value: function click() {
+        const message = remoteSelect(this);
+        if (!message) return nativeClick.call(this);
+        const outer = remote;
+        remote = { target: this, message, click: null };
+        try { return nativeClick.call(this); } finally { remote = outer; }
+    } });
+    /** True once for the click jellyfin-web's own activation chain (gamepad, UWP select, remote Select) made (consumed). */
     function hostActivation(event) {
+        if (remote && remote.click === event && event.type === 'click' && event.target === remote.target && event.eventPhase !== 0 &&
+            remote.message.eventPhase !== 0) { remote.click = true; return true; }
         const chain = armed;
         if (!chain || chain.click !== event || event.type !== 'click' || event.target !== chain.target ||
             chain.target !== document.activeElement || (chain.during && chain.key.eventPhase === 0)) return false;
@@ -247,13 +325,17 @@
      * of the gesture. Null otherwise.
      */
     JE.nativeFrom = function (event) {
+        // Only while its one dispatch is in progress (D46S2-R12-2): an event kept for later (an await, a timer) names no
+        // one, whatever it named while it was dispatched; the work it started carries the token it took then.
         if (!(event instanceof Event) || presses.has(event) || !gesture(event)) return null;
         if (actingOperation()) return refused('a native owner was minted inside an operation (its owner was dropped)');
+        if (event.eventPhase === 0) return null;
         const known = gestures.get(event);
         const dispatch = dispatches.get(event) || 0;
         if (known && (known.target !== event.target || known.dispatch !== dispatch)) return null;
         if (known?.token) return known.token;
-        if (event.eventPhase === 0 || !mountCurrent(event.target)) return null;
+        // A control under the topmost modal surface (a JE surface or a host dialog over it) is not the viewer's to press.
+        if (!mountCurrent(event.target) || covered(event.target)) return null;
         const token = mint('native');
         gestures.set(event, { token, target: event.target, dispatch, activation: event.isTrusted !== true });
         return token;
@@ -277,9 +359,9 @@
     /** The current route generation (D46S2-R10 shape 3: a fetch → render path carries it and re-checks it). */
     JE.routeGeneration = () => observe();
 
-    /** The owner of the registered surface `node` is in (or is), else null. */
+    /** The owner of the registered surface `node` is in (or is), else null. A closed surface names no one. */
     function scopeOf(node) {
-        for (let n = node; n; n = n.parentNode || n.host) { const owner = owners.get(n); if (owner) return owner; }
+        for (let n = node; n; n = n.parentNode || n.host) { const owner = owners.get(n); if (owner) return n._jeClosed ? null : owner; }
         return null;
     }
     JE.scopeOf = scopeOf;
@@ -298,14 +380,18 @@
         if (minted.has(x.owner)) return x.owner;
         if (typeof x.nodeType === 'number') return scopeOf(x);
         if (x instanceof Event) {
-            const pressed = presses.get(x);
-            if (pressed) return pressed;
+            // A title action's press: its owner, during its one dispatch on its own target only (D46S2-R12-2).
+            if (presses.has(x)) return pressOwner(x);
             // Only an event someone made names an owner (D46S2-R11-1): the viewer's own (trusted) or the host's verified
-            // activation. A script's click or a re-dispatched event names none, inside a surface too.
-            if (!gesture(x)) return null;
-            // Inside a registered surface: that surface's owner (derived from where it happened, never minted). Else the
-            // gesture's own native token.
-            return scopeOf(x.composedPath?.()[0] || x.target) || JE.nativeFrom(x);
+            // activation, and only while it is being dispatched (D46S2-R12-2: a kept event authorizes nothing later).
+            // A script's click or a re-dispatched event names none, inside a surface too.
+            if (x.eventPhase === 0 || !gesture(x)) return null;
+            const at = x.composedPath?.()[0] || x.target;
+            // Inside a registered surface: that surface's owner (derived from where it happened, never minted), unless a
+            // modal surface covers it. Else the gesture's own native token.
+            const scoped = scopeOf(at);
+            if (scoped) return covered(at) ? null : scoped;
+            return JE.nativeFrom(x);
         }
         return null;
     }
@@ -366,15 +452,18 @@
      * Presses `source` for `owner` (a title action pressing an owner's control, D46S2-R6): a fresh click event that
      * carries its owner, which the control's handler reads explicitly ({@link JE.ownerOf}(event)). Like click(), a
      * disabled control is not pressed; an owner that is not current presses nothing, before any handler or default
-     * runs (D46S2-R10-4). While it is dispatched, the owner restricts what its handlers do (see acting).
+     * runs (D46S2-R10-4). While it is dispatched, the owner restricts what its handlers do (see acting). The press is
+     * bound to `source` and to this one dispatch (D46S2-R12-2): once it is over, the event names no one, here or on any
+     * other node it is dispatched on again.
      */
     JE.press = function (source, owner) {
         if (!source || source.disabled) return false;
         const resolved = JE.effectOwner(owner, 'press');
         if (!resolved) return false;
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        presses.set(event, resolved);
-        return restricted(resolved, () => source.dispatchEvent(event));
+        const press = { owner: resolved, target: source, active: true };
+        presses.set(event, press);
+        try { return restricted(resolved, () => source.dispatchEvent(event)); } finally { press.active = false; }
     };
 
     /**
@@ -393,9 +482,12 @@
     };
 
     // ------------------------------------------------------------------ surfaces (audit S2: one terminal lifecycle)
-    // Every surface JE opens (a sheet, drawer, modal, window, popup portaled to the body, a host dialog) is admitted for an
-    // owner, sits on one stack, closes once (terminal and at once inert: it takes no input, its focus goes back to its
-    // opener) and is dismissed by Escape or Back only while it is the topmost one.
+    // Every foreground surface JE opens (a sheet, drawer, modal, window, dialog, popup portaled to the body) and every
+    // host dialog that arrives over one is on ONE stack (D46S2-R12-4): admitted for an owner, registered here, closed
+    // once (terminal and at once inert: it takes no input, its focus goes back to its opener). The stack alone decides
+    // who takes the viewer's input: only the topmost surface takes Escape and every Back key, Tab, the D-pad and focus;
+    // a modal one covers everything outside it (inert, out of the accessibility tree; its own role, name and modal
+    // state are set here, D46S2-R12-11); and every interaction inside a surface is a press of its own (D46S2-R12-3).
     const stack = [];
     /**
      * UI opened for an owner only closes once `ended(event)`: a click, middle-click, key press or form submission inside
@@ -444,24 +536,131 @@
     /** A control focus may go back to: connected, enabled, not inert and not inside a closed surface. */
     const live = node => !!node?.isConnected && typeof node.focus === 'function' && !node.disabled && !node.closest('[inert]') &&
         !(node.closest && [...stack].some(entry => entry.closed && entry.root.contains(node)));
-    /** Where focus goes when a surface closes (see above). */
+    /** The page focus falls back to: the shown view (jellyfin-web's), else the document's main region. */
+    const page = () => document.querySelector('.mainAnimatedPage:not(.hide), .page:not(.hide), main, [role="main"]');
+    /**
+     * Where focus goes when a surface closes (D46S2-R12-10), once the page behind it is live again: its opener while
+     * that is live; else the next surface down (a host dialog keeps its own focus); else the nearest live part of the
+     * page the opener was on (its card, row, list or view: a vanished card's neighbours); else the page's first
+     * control, else the page itself. Never the document's body.
+     */
     function restoreFocus(entry) {
-        if (live(entry.opener) && focusFirst([entry.opener])) return;
+        if (live(entry.opener) && !covered(entry.opener) && focusFirst([entry.opener])) return;
         const below = topmost();
         if (below) { if (!below.host) focusInto(below.root); return; }
-        const holder = entry.holder?.isConnected ? entry.holder : document.querySelector('.mainAnimatedPage:not(.hide), .page:not(.hide)');
-        if (holder && focusFirst(focusables(holder))) return;
-        document.activeElement?.blur?.();
+        for (const holder of [entry.holder, ...(entry.path || [])]) {
+            if (holder?.isConnected && !holder.closest('[inert]') && focusFirst(focusables(holder))) return;
+        }
+        const view = page();
+        if (!view) { document.activeElement?.blur?.(); return; }
+        if (focusFirst(focusables(view))) return;
+        if (!view.hasAttribute('tabindex')) view.setAttribute('tabindex', '-1');
+        focusFirst([view]);
     }
+
+    /** The topmost open entry (or null), host dialogs that arrived or left meanwhile included. */
+    function topmost() {
+        flushHost();
+        for (let i = stack.length - 1; i >= 0; i--) if (!stack[i].closed && stack[i].root.isConnected) return stack[i];
+        return null;
+    }
+    /** The topmost open modal entry (a host dialog is modal; a popup is not), or null. */
+    function topmostModal() {
+        flushHost();
+        for (let i = stack.length - 1; i >= 0; i--) if (!stack[i].closed && stack[i].root.isConnected && stack[i].modal !== false) return stack[i];
+        return null;
+    }
+    /**
+     * True when `node` is under the topmost modal surface (D46S2-R12-9, -6): inside neither it nor a surface above it (a
+     * popup it opened, a host dialog over it). Nothing there takes the viewer's input or focus while it is covered.
+     */
+    function covered(node) {
+        const top = topmostModal();
+        if (!top || !node || node.nodeType !== 1) return false;
+        return !stack.slice(stack.indexOf(top)).some(entry => !entry.closed && entry.root.contains(node));
+    }
+    JE.isCovered = covered;
+
+    // Background (D46S2-R12-11, -10): while a modal surface is the topmost (a JE surface, or a host dialog over one),
+    // everything outside it and the surfaces above it is inert: it takes no input or focus and is not in the
+    // accessibility tree, nodes the page appends meanwhile included; an ancestor of an active surface never is. Each
+    // node's own inert state is kept and given back as soon as it is active again (a nested surface or the host's
+    // dialog closing, an owner ending, a removal, a failed opening), before any focus moves.
+    const quieted = new Map();
+    const EXEMPT = 'script, style, link, template, [aria-live], [role="status"], [role="alert"], .toastContainer';
+    function applyBackground() {
+        const want = new Set();
+        const top = topmostModal();
+        if (top) {
+            const active = stack.slice(stack.indexOf(top)).filter(entry => !entry.closed && entry.root.isConnected).map(entry => entry.root);
+            for (const root of active) {
+                for (let n = root; n.parentElement && n !== document.body; n = n.parentElement) {
+                    for (const sibling of n.parentElement.children) {
+                        if (sibling === n || sibling.matches(EXEMPT) || active.some(r => sibling.contains(r) || r.contains(sibling))) continue;
+                        want.add(sibling);
+                    }
+                }
+            }
+        }
+        for (const [node, before] of [...quieted]) {
+            if (want.has(node)) continue;
+            quieted.delete(node);
+            if (!before) node.removeAttribute('inert');
+        }
+        for (const node of want) {
+            if (quieted.has(node)) continue;
+            quieted.set(node, node.hasAttribute('inert'));
+            node.setAttribute('inert', '');
+        }
+    }
+
+    // Modal semantics (D46S2-R12-11): a modal surface is announced as a dialog, named, and modal; one whose content
+    // already carries a dialog role keeps it (and its name) there. Popups keep their own (menu/list) semantics.
+    const DIALOG = '[role="dialog"], [role="alertdialog"], dialog';
+    function announce(root, options) {
+        const dialog = options.dialog || (root.matches(DIALOG) ? root : root.querySelector(DIALOG)) || root;
+        if (!dialog.hasAttribute('role') && dialog.tagName !== 'DIALOG') dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        if (dialog.hasAttribute('aria-label') || dialog.hasAttribute('aria-labelledby')) return;
+        if (options.label) { dialog.setAttribute('aria-label', options.label); return; }
+        const heading = dialog.querySelector('h1, h2, h3, [role="heading"]');
+        if (!heading) return;
+        if (!heading.id) heading.id = `je-surface-title-${++titles}`;
+        dialog.setAttribute('aria-labelledby', heading.id);
+    }
+    let titles = 0;
+
+    /**
+     * True for an interaction that is the viewer's (D46S2-R12-3): the browser's own (trusted), jellyfin-web's verified
+     * activation of the focused control (its gamepad, a UWP pad's OK, another client's remote Select), a connected
+     * gamepad's key, or a title action's press during its one dispatch on its own target while its owner is current.
+     */
+    function fromViewer(event) {
+        if (event.isTrusted === true) return true;
+        if (presses.has(event)) return !!pressOwner(event);
+        if (event.type === 'click') return gesture(event);
+        if (event.type === 'keydown' || event.type === 'keyup') return viewerKey(event);
+        return false;
+    }
+    JE.isViewerInput = fromViewer;
+    // Every interaction a surface takes (D46S2-R12-3): activation, its default (a form's submission, a checkbox's or a
+    // select's change, typing), keys, and a native dialog's cancel.
+    const INPUTS = ['click', 'auxclick', 'dblclick', 'contextmenu', 'submit', 'change', 'input', 'keydown', 'keyup', 'cancel'];
+    const block = event => { event.preventDefault(); event.stopImmediatePropagation(); };
 
     /**
      * Registers an admitted surface `root` for `owner` (see admitSurface; an owner that is not current is rejected:
      * null, and `close()` runs at once for a caller that drew it already). `close()` closes it; `options.opener`: the
      * control focus goes back to (default: the focused one); `options.dismiss`: what Escape and every Back key do while
-     * it is topmost (default close). It joins the one surface stack, takes focus (once it is in the document) and keeps
-     * the host's D-pad inside it. Once the owner ends, the surface takes no more input and closes at the next lifecycle
-     * step. Returns release() for a normal close (the surface leaves the stack and every registry, turns inert and gives
-     * focus back), or null when rejected.
+     * it is topmost (default close); `options.modal` (default true; a popup: false): it covers what is under it (inert,
+     * out of the accessibility tree) and is announced as a named modal dialog (`options.dialog`: the element that is
+     * the dialog, default the root or the dialog inside it; `options.label`: its name when it has no heading). It joins
+     * the one surface stack, takes focus (once it is in the document) and keeps the host's D-pad inside it. Every
+     * interaction inside it is checked as a press of its own before any listener or default runs (a script's does
+     * nothing, and the surface stays as it was for the viewer's). Once the owner ends, the surface takes no more input
+     * and closes at the next lifecycle step. Returns release() for a normal close (terminal at once: the surface leaves
+     * the stack and every registry and turns inert, the page behind is live again, and focus goes back), or null when
+     * rejected.
      */
     JE.openSurface = function (root, close, owner, options = {}) {
         if (!root) return null;
@@ -472,44 +671,86 @@
         let surfaces = scopes.get(resolved);
         if (!surfaces) scopes.set(resolved, surfaces = new Set());
         const opener = options.opener || (document.activeElement !== document.body ? document.activeElement : null);
-        const entry = { root, owner: resolved, dismiss: options.dismiss || null, closed: false, close: null, release: null, opener,
+        const path = [];
+        for (let n = opener?.parentElement; n && n !== document.body; n = n.parentElement) path.push(n);
+        const entry = { root, owner: resolved, dismiss: options.dismiss || null, closed: false, close: null, release: null, opener, path,
+            modal: options.modal !== false,
             holder: opener?.closest?.('.card, .jellyseerr-card, .mainDetailButtons, .detailButtons, .je-more-info-modal, .page') || null };
+        const guard = event => {
+            // A title action's press during its one dispatch (an owned control of a closed sheet included) is its owner's.
+            if (presses.has(event) && pressOwner(event)) return;
+            // Closed: terminal, it takes no input.
+            if (entry.closed) { if (event.type !== 'keydown' && event.type !== 'keyup') block(event); return; }
+            // Its owner ended: nothing it shows acts; it closes.
+            if (!isCurrent(resolved)) { block(event); entry.close(); return; }
+            // Under the topmost modal surface (a host dialog or another JE surface over it): it takes nothing (what the
+            // browser's inert does for real input, decided here for every input, D46S2-R12-6).
+            if (covered(event.target)) { block(event); return; }
+            // A script's interaction is no one's: no listener, no default, the surface stays as it was.
+            if (!fromViewer(event)) block(event);
+        };
         entry.release = () => {
             if (entry.closed) return;
             entry.closed = true;
+            root._jeClosed = true;
+            root.setAttribute('inert', '');
             surfaces.delete(entry);
             if (!surfaces.size && scopes.get(resolved) === surfaces) scopes.delete(resolved);
             const index = stack.indexOf(entry);
             if (index >= 0) stack.splice(index, 1);
-            root.setAttribute('inert', '');
-            root._jeClosed = true;
+            // (Its input guard stays: a closed surface is terminal, its detached controls take nothing.)
+            // The page (or the surface below) is live again first, then focus goes back to it.
+            applyBackground();
             const focused = document.activeElement;
-            if (!focused || focused === document.body || root.contains(focused)) restoreFocus(entry);
-            entry.opener = entry.holder = null;
+            if (!focused || focused === document.body || root.contains(focused) || !focused.isConnected) restoreFocus(entry);
+            entry.opener = entry.holder = entry.path = null;
         };
         entry.close = () => { if (entry.closed) return; entry.release(); close(); };
         surfaces.add(entry);
         stack.push(entry);
         watchHost();
         root.classList.add('focuscontainer');
-        // Its opener draws it now (it may be appended after this call): focus moves in once it is in the document.
-        queueMicrotask(() => { if (!entry.closed && JE.isTopmostSurface(root)) focusInto(root); });
-        JE.rejectEnded(root, event => {
-            // A press dispatched inside it for another, current owner (an owned control of a closed sheet) is that owner's.
-            const pressed = event && presses.get(event);
-            if (pressed && pressed !== resolved && isCurrent(pressed)) return false;
-            // Closed: terminal, it takes no input. Else only while its owner is current.
-            if (entry.closed) return event.type !== 'keydown';
-            return !isCurrent(resolved);
-        }, entry.close);
+        if (entry.modal) announce(root, options);
+        for (const type of INPUTS) root.addEventListener(type, guard, true);
+        applyBackground();
+        // Its opener draws it now (it may be appended after this call): it covers the page and takes focus once it is
+        // in the document.
+        queueMicrotask(() => {
+            if (entry.closed) return;
+            applyBackground();
+            if (JE.isTopmostSurface(root)) focusInto(root);
+        });
         return entry.release;
     };
+    /**
+     * True when `root` (a surface) may act on `event` now (D46S2-R12-6): it is the topmost surface and the key is the
+     * viewer's. A surface's own key handling (arrows, Home/End, Tab, Escape) asks this first; a covered surface or a
+     * script's key does nothing.
+     */
+    JE.surfaceInput = (root, event) => !!event && viewerKey(event) && JE.isTopmostSurface(root);
+    /**
+     * Moves focus to `node` inside surface `root` only while `root` is the topmost surface (D46S2-R12-6): a delayed,
+     * re-render or restoring focus of a covered surface never takes focus from the surface (or host dialog) above it.
+     */
+    JE.focusIn = (root, node) => {
+        if (!node || !JE.isTopmostSurface(root)) return false;
+        try { node.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
+        return document.activeElement === node;
+    };
+    // Focus stays in the topmost modal JE surface (D46S2-R12-6): anything that moves focus under it (a covered surface's
+    // delayed focus, the host page) is undone; a host dialog over it keeps its own focus.
+    document.addEventListener('focusin', event => {
+        const top = topmost();
+        if (!top || top.host || top.modal === false || !covered(event.target)) return;
+        focusInto(top.root);
+    }, true);
 
     // Dismissal keys (D46S2-R11-11): every key jellyfin-web turns into Back (its keyboard navigation and input manager on
     // 10.11.11 and 12.2: keyCode 461 and 10009, TV-layout Escape (27, also a gamepad's B through its gamepad-to-key) and a
     // UWP gamepad's B (196), Backspace on Hisense VIDAA TVs; plus the browser's own Back key) dismisses the topmost JE
     // surface only, and is consumed before jellyfin-web's router (its window keydown listener ignores a prevented key)
-    // or the browser sees it. Escape closes a JE surface on every layout. A host dialog on top keeps its own keys.
+    // or the browser sees it. Escape closes a JE surface on every layout. A host dialog on top keeps its own keys. Only
+    // the viewer's keys count (D46S2-R12-3): a script's Escape dismisses nothing.
     const VIDAA = /vidaa/i.test(navigator.userAgent || '');
     const editable = node => !!node && (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName) || node.isContentEditable);
     /** True for a key jellyfin-web (or the browser) treats as Back. */
@@ -517,8 +758,9 @@
         event.code === 'BrowserBack' || (VIDAA && event.key === 'Backspace' && !editable(event.target));
     JE.isDismissalKey = dismissalKey;
     window.addEventListener('keydown', event => {
+        if (event.defaultPrevented || !viewerKey(event)) return;
         const top = topmost();
-        if (!top || top.host || event.defaultPrevented) return;
+        if (!top || top.host) return;
         if (dismissalKey(event)) {
             event.preventDefault(); event.stopImmediatePropagation();
             if (top.dismiss) top.dismiss(event); else top.close();
@@ -530,7 +772,9 @@
         const active = document.activeElement;
         const inside = top.root.contains(active);
         const edge = event.shiftKey ? controls[0] : controls[controls.length - 1];
-        if (inside && controls.length && active !== edge && active !== top.root) return;
+        // Inside, on a control that is not the edge: the browser moves it. From the surface itself, any other element in
+        // it or outside it, or past either end, focus wraps inside.
+        if (inside && controls.includes(active) && active !== edge) return;
         event.preventDefault(); event.stopImmediatePropagation();
         if (!controls.length) { focusInto(top.root); return; }
         focusFirst(event.shiftKey ? [controls[controls.length - 1]] : [controls[0]]);
@@ -583,7 +827,7 @@
         };
         // Escape and every Back key reach it through the surface stack while it is topmost (its focus goes back to its
         // opener as it closes).
-        const release = JE.openSurface(popup, () => { finish(); close(); }, admitted, { opener });
+        const release = JE.openSurface(popup, () => { finish(); close(); }, admitted, { opener, modal: false });
         if (!release) return null;
         const follow = () => { if (life && !JE.placePopup(popup, anchor, { gap, matchWidth })) { finish(); close(); } };
         life = { release, follow };
@@ -595,11 +839,6 @@
         return finish;
     };
 
-    /** The topmost open surface's root (or null). */
-    const topmost = () => {
-        for (let i = stack.length - 1; i >= 0; i--) if (!stack[i].closed && stack[i].root.isConnected) return stack[i];
-        return null;
-    };
     /** True while `root` is the topmost open surface: Escape and Back act on it only (D46S2 audit S2). */
     JE.isTopmostSurface = root => topmost()?.root === root;
     /** True once `root` (a surface) has closed: it is terminal, no input reaches it. */
@@ -638,12 +877,21 @@
     // is registered on arrival (topmost: Escape and Back are the host's, nothing under it takes them) and released when
     // the host removes it; an opening's claim on its own dialog (see openHostDialog) is released with it. No record or
     // node outlives the dialog.
+    // The host's container shape, derived from both hosts' bundles (10.11.11 and 12.2: dialogHelper.open creates a new
+    // `div.dialogContainer`, appends the dialog to it and the container to document.body; closing removes it): a direct
+    // child of the body, never reused. One that was already open when a JE surface opened is under that surface (the
+    // surface was appended after it) and is covered with the rest of the page. Arrivals and removals are taken into
+    // account synchronously at every decision (flushHost), not only when the observer's callback runs.
     const claims = new Map();
     let hostObserver = null;
     function hostChanged(records) {
+        let changed = false;
+        let hostLeft = false;
         for (const record of records) {
             for (const node of record.addedNodes) {
-                if (node.nodeType !== 1 || !node.matches(HOST_DIALOG)) continue;
+                if (node.nodeType !== 1) continue;
+                changed = true;
+                if (!node.matches(HOST_DIALOG)) continue;
                 const text = node.textContent || '';
                 for (const [mark, opening] of openings) {
                     if (!text.includes(mark)) continue;
@@ -656,12 +904,31 @@
             }
             for (const node of record.removedNodes) {
                 if (node.nodeType !== 1 || node.isConnected) continue;
+                changed = true;
                 const index = stack.findIndex(entry => entry.host && entry.root === node);
-                if (index >= 0) { stack[index].closed = true; stack.splice(index, 1); }
+                if (index >= 0) { stack[index].closed = true; stack.splice(index, 1); hostLeft = true; }
                 const claim = claims.get(node);
                 if (claim) { claims.delete(node); claim(); }
+                // A JE surface removed from the document without its close (its page went with it): released, so no
+                // registry keeps it and it covers nothing.
+                for (const entry of [...stack]) if (!entry.host && !entry.closed && !entry.root.isConnected && (entry.root === node || node.contains(entry.root))) entry.release();
             }
         }
+        if (changed) applyBackground();
+        // A host dialog over a JE surface went (D46S2-R12-10): once the surface is live again, focus that the host left
+        // nowhere (the body, or a node that went with the dialog) goes back into the topmost surface.
+        if (hostLeft) {
+            const top = topmost();
+            const focused = document.activeElement;
+            if (top && !top.host && (!focused || focused === document.body || !focused.isConnected)) focusInto(top.root);
+        }
+    }
+    let flushing = false;
+    /** Takes the observer's pending records into account now (a host dialog that arrived or left in this task). */
+    function flushHost() {
+        if (!hostObserver || flushing) return;
+        flushing = true;
+        try { const records = hostObserver.takeRecords(); if (records.length) hostChanged(records); } finally { flushing = false; }
     }
     /** Starts watching the body's children for host dialogs (once; the body's direct children only). */
     function watchHost() {
@@ -713,10 +980,15 @@
      * Refresh or a replacement still supersedes both.
      */
     JE.surfaceIntent = function (surface, owner, key) {
+        // Admitted before anything changes (D46S2-R12-7): an owner that names no current token (an ended opening, a
+        // stale publication, a closed surface's) starts nothing and supersedes nothing. No owner at all (undefined) is
+        // an explicit owner-less read of the surface's own.
+        const admitted = admit(owner);
+        if (!admitted) return () => false;
         let slot = intents.get(surface);
         if (!slot) intents.set(surface, slot = { all: 0, reads: 0, writes: new Map() });
         const mine = ++slot.all;
-        const live = () => !owner || holds(owner);
+        const live = admitted.live;
         if (key == null) { slot.reads = mine; return () => slot.all === mine && live(); }
         const reads = slot.reads;
         slot.writes.set(key, mine);
@@ -845,8 +1117,29 @@
      */
     JE.latestIntent = function () {
         let latest = 0;
-        return owner => { const mine = ++latest; return () => mine === latest && (!owner || holds(owner)); };
+        return owner => {
+            // Admitted before the counter moves (D46S2-R12-7): a rejected opening (an ended or unprovable owner) reserves
+            // nothing, so the viewer's pending opening stays the newest. No owner at all (undefined): an explicit
+            // owner-less read.
+            const admitted = admit(owner);
+            if (!admitted) return () => false;
+            const mine = ++latest;
+            return () => mine === latest && admitted.live();
+        };
     };
+    /**
+     * The admission of an intent's `owner` (D46S2-R12-7), decided by the core: undefined (no owner given) is an explicit
+     * owner-less intent, always live; anything else must name a token the core minted that is current now — a caller's
+     * wrapper (a captured action) only restricts further, it never asserts liveness itself. Returns { live() } or null.
+     */
+    function admit(owner) {
+        if (owner === undefined) return { live: () => true };
+        const token = owner && typeof owner === 'object' ? ownerOf(owner) : null;
+        if (!token || !isCurrent(token)) return null;
+        const wrapper = owner !== token && !(owner instanceof Event) && typeof owner.nodeType !== 'number' && typeof owner.current === 'function' ? owner : null;
+        if (wrapper && wrapper.current() === false) return null;
+        return { live: () => isCurrent(token) && (!wrapper || wrapper.current() !== false) };
+    }
 
     /**
      * Captures identity before a gesture, confirmation, timer or asynchronous lookup. With `{ owner }` (required

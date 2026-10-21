@@ -320,7 +320,11 @@
      *     press it comes from.
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
-        const action = JE.createSessionAction({ owner: dialogOptions.owner });
+        // Admitted first (D46S2-R12-7): an owner that is not current now (an ended press or operation) opens nothing and
+        // leaves the confirmation shown so far alone.
+        const admitted = JE.admitSurface(dialogOptions.owner, 'the hide confirmation');
+        if (!admitted) return;
+        const action = JE.createSessionAction({ owner: admitted });
         if (!action.owner) return;
         onConfirm = action.bind(onConfirm);
         dialogOptions = { ...dialogOptions };
@@ -359,11 +363,11 @@
             release();
             releaseScope?.();
             overlay.remove();
-            document.removeEventListener('keydown', escHandler);
         };
         const release = action.onCancel(closeDialog);
-        // Asked for a title action: the confirmation is in that operation's scope and closes once it ends.
-        const releaseScope = JE.openSurface(overlay, closeDialog, action.owner);
+        // Asked for a title action: the confirmation is in that operation's scope and closes once it ends. The stack
+        // announces it as a named modal dialog, covers the page and takes its Escape (D46S2-R12-11, -3).
+        const releaseScope = JE.openSurface(overlay, closeDialog, action.owner, { dialog });
         overlay.jeDismiss = closeDialog;
         // Also reject detached old buttons, including the suppression checkbox write.
         overlay.addEventListener('click', event => {
@@ -383,12 +387,6 @@
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) closeDialog();
         });
-
-        // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
-        const escHandler = (e) => {
-            if (e.key === 'Escape' && JE.isTopmostSurface(overlay)) closeDialog();
-        };
-        document.addEventListener('keydown', escHandler);
 
         document.body.appendChild(overlay);
     }

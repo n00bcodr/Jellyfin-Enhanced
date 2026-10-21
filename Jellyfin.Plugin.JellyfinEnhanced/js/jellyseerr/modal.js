@@ -125,44 +125,8 @@
         let pushed = false;
         let releaseScope = null;
 
-        // Handle keyboard navigation
-        const handleKeydown = (e) => {
-            if (closed || !JE.isTopmostSurface(modalElement)) return;
-            // Close on Escape
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopPropagation();
-                dismiss();
-                return;
-            }
-
-            // Tab key focus trap
-            if (e.key === 'Tab') {
-                const focusableElements = modalElement.querySelectorAll(
-                    'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-                );
-                const focusableArray = Array.from(focusableElements);
-
-                if (focusableArray.length === 0) return;
-
-                const firstElement = focusableArray[0];
-                const lastElement = focusableArray[focusableArray.length - 1];
-
-                if (e.shiftKey) {
-                    // Shift+Tab: if on first element, wrap to last
-                    if (document.activeElement === firstElement || document.activeElement === modalElement) {
-                        e.preventDefault();
-                        lastElement.focus();
-                    }
-                } else {
-                    // Tab: if on last element, wrap to first
-                    if (document.activeElement === lastElement) {
-                        e.preventDefault();
-                        firstElement.focus();
-                    }
-                }
-            }
-        };
+        // Escape, every Back key and Tab are the surface stack's (D46S2-R12-3, -6): the viewer's key, only while the form
+        // is the topmost surface; it dismisses the form as Cancel does (see `dismiss` below).
 
         // Its own history entry, marked, so a popstate that did not leave it (one queued by a navigation just before the
         // form opened) closes nothing.
@@ -182,18 +146,14 @@
             history.pushState({ jeModal: entryMark }, '', location.href);
             pushed = true;
             window.addEventListener('popstate', onBack);
-            document.addEventListener('keydown', handleKeydown);
             setTimeout(() => {
                 // Closed before it finished opening (its operation ended at once): it stays closed, and focus stays put.
                 if (closed || !modalElement.isConnected || !submitted.current()) return;
                 modalElement.classList.add('show');
-                // Focus the first interactive element in the modal
+                // Focus the first interactive element in the modal, only while it is the topmost surface (a host dialog
+                // that arrived meanwhile keeps its focus: D46S2-R12-6).
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
-                if (firstFocusable) {
-                    firstFocusable.focus();
-                } else {
-                    modalElement.focus();
-                }
+                JE.focusIn(modalElement, firstFocusable || modalElement);
             }, 10);
             return true;
         };
@@ -215,7 +175,6 @@
             }
 
             window.removeEventListener('popstate', onBack);
-            document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
             setTimeout(() => {

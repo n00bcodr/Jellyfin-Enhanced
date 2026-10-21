@@ -206,15 +206,8 @@ function showModal(data, mediaType, scope, submitted) {
     document.body.appendChild(modal);
     state.currentModal = modal;
 
-    // Add Escape key handler: only while the window is the topmost surface (a form or popup opened over it takes its
-    // own Escape; D46S2 audit S2).
-    const handleEscape = (e) => {
-        if (e.key === 'Escape' && JE.isTopmostSurface(modal)) {
-            moreInfoModal.close();
-        }
-    };
-    document.addEventListener('keydown', handleEscape);
-    modal._cleanupEscapeListener = () => document.removeEventListener('keydown', handleEscape);
+    // Escape and every Back key reach the window through the surface stack only (D46S2-R12-3): the viewer's key, while
+    // it is the topmost surface (a form, popup or host dialog over it takes its own).
 
     // Render action buttons/chips after mount
     internal.renderActions(data, mediaType);
@@ -278,10 +271,6 @@ function closeCurrentModal() {
         // Clean up TV request listener if exists
         if (state.currentModal._cleanupRequestListener) {
             state.currentModal._cleanupRequestListener();
-        }
-        // Clean up Escape key listener if exists
-        if (state.currentModal._cleanupEscapeListener) {
-            state.currentModal._cleanupEscapeListener();
         }
         state.currentModal.classList.remove('active');
         // The fading modal keeps its DOM for the exit animation but takes no more input.

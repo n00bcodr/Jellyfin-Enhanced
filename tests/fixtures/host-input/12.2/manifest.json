@@ -16,6 +16,16 @@
    "module": 9164,
    "sha256": "03977dddd279b97d5f46b790e83dd773f7972c50655ec8f8f0d0e5cb56117656"
   },
+  "server-notifications.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 10736,
+   "sha256": "822626f4823a1d432f12845e0a716372384fa0df8149fdfeb09c54387a5f56e0"
+  },
+  "events.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 44797,
+   "sha256": "3b6021972da0fe813ddf749ca335874fda4e9199acdf1abd4a19de64be47beaa"
+  },
   "gamepadtokey.chunk.js": {
    "file": "84348.af69b1c00f13f8c923bc.chunk.js",
    "sha256": "8f8ddac9b27323a7c1ccb7a5dbc02c86a6fb5ccab1de04fc5c4774709f85e462"

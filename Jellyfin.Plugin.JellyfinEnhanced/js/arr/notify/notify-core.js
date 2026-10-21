@@ -188,12 +188,15 @@
      */
     async function markRead(ids) {
         const body = ids ? { ids } : { all: true };
+        // A read acknowledgement is the viewer's own inbox state, no title action's (D46S2-R12-1): it is sent with an
+        // explicit session-only binding (the session the core captured now), so it goes out only as this account.
+        const session = typeof JE.core.api.session === 'function' ? JE.core.api.session() : JE.captureSession?.();
         state.items = state.items.map(i => (!ids || ids.includes(i.id)) ? Object.assign({}, i, { read: true }) : i);
         state.unread = ids ? Math.max(0, state.unread - ids.length) : 0;
         emit('inbox');
         const identity = state.identity;
         try {
-            const res = await api('/acquire/notify/read', { method: 'POST', body });
+            const res = await api('/acquire/notify/read', { method: 'POST', body, ...(session ? { bound: { session } } : {}) });
             if (identity === state.identity && res && typeof res.unread === 'number') {
                 state.unread = res.unread;
                 emit('inbox');
@@ -283,9 +286,12 @@
         } catch (err) {
             const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
             if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
-            if (outcome.outcome !== 'accepted' || outcome.sessionChanged) {
+            if (outcome.outcome !== 'accepted') {
                 return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
             }
+            // Taken after another account signed in (D46S2-R12-4): it happened for the origin; nothing is reread or
+            // said for the new account.
+            if (outcome.sessionChanged) return { ok: true, accepted: true, sessionChanged: true };
             accepted = true;
         }
         if (!action.current()) return { ok: false, code: 'cancelled' };
@@ -311,7 +317,7 @@
         } catch (err) {
             const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
             if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
-            if (outcome.outcome === 'accepted' && !outcome.sessionChanged) return { ok: true, accepted: true, nextAt: outcome.answer?.nextAt };
+            if (outcome.outcome === 'accepted') return { ok: true, accepted: true, nextAt: outcome.answer?.nextAt, ...(outcome.sessionChanged ? { sessionChanged: true } : {}) };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };
         }
     }

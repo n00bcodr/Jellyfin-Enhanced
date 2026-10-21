@@ -248,7 +248,7 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.match(dialog.textContent, /This download covers S02E01–E03; removing it affects all 3 episodes\./);
   assert.match(dialog.textContent, /its data is kept/);
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
   assert.equal(posts.length, 0);
   h.click(remove);
@@ -282,10 +282,10 @@ test('Remove & search again asks first (keeps the data); deleting the data needs
   assert.equal(posts.length, 2); // only the confirm call
   const input = dialog.querySelector('input[type="text"]');
   input.value = 'delet';
-  input.dispatchEvent(new h.window.Event('input'));
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
   assert.equal(confirm.disabled, true);
   input.value = 'delete';
-  input.dispatchEvent(new h.window.Event('input'));
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
   assert.equal(confirm.disabled, false);
   h.click(confirm);
   await until(() => posts.length === 3);
@@ -470,7 +470,7 @@ test('dialogs: the Overview row knows a pack\'s size; focus survives a redraw; D
   // A poll redraws the panel while the dialog is open (the opener is replaced): Esc still returns focus to that fix.
   await h.JE.internals.arrHub.admin.refresh();
   assert.equal(fix.isConnected, false);
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ops-dialog'), null);
   assert.equal(h.document.activeElement?.dataset?.jeFocus, 'fix:a8:remove_search');
   assert.ok(h.document.activeElement.isConnected);
@@ -713,7 +713,9 @@ test('Cancel closes every dialog: the tabs\' Remove, the drawer\'s Remove and th
     assert.equal(h.document.querySelector('.je-ops-dialog'), null, 'Cancel closed the dialog');
     assert.equal(h.document.querySelector('.je-ops-dialog-overlay'), null);
     assert.equal(h.JE.internals.arrHub.admin.state.dialog, null);
-    assert.deepEqual(removed.sort(), ['focusin', 'keydown'], 'the focus trap listeners are gone');
+    // No local focus trap to remove: the surface stack takes the dialog's keys and focus (D46S2-R12-6).
+    assert.deepEqual(removed.filter(type => type === 'keydown' || type === 'focusin'), [], 'no local key or focus listeners');
+    assert.equal(h.JE.isTopmostSurface(dialog), false, 'the dialog left the surface stack');
   };
   h.JE.initializeArrStatus();
   await until(() => h.document.querySelector('.je-ops-dl'));
@@ -1030,7 +1032,7 @@ test('a download that can\'t be removed with its data offers no delete option, i
   assert.equal(dialog.querySelector('.je-ops-btn-danger'), null);
   assert.doesNotMatch(dialog.textContent, /Delete the download's data too/);
   // The other download allows it.
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   h.click(page.querySelector('[data-je-focus="dl:r1|dlB:remove"]'));
   assert.ok(h.document.querySelector('.je-ops-dialog .je-ops-btn-danger'));
 });
@@ -1059,7 +1061,7 @@ test('the Overview\'s "delete it too?" sends Remove & search again\'s choices (b
   assert.deepEqual([...dialog.querySelectorAll('.je-ops-delete-also li')].map(li => li.textContent), ["The release is blocklisted, so it won't be grabbed again.", 'Sonarr then searches for another copy.']);
   const input = dialog.querySelector('input[type="text"]');
   input.value = 'DELETE';
-  input.dispatchEvent(new h.window.Event('input'));
+h.trusted(input, new h.window.Event('input', { bubbles: true }));
   h.click(dialog.querySelector('.je-ops-btn-danger'));
   await until(() => posts.length === 2);
   assert.deepEqual({ ...posts[1].body, idempotencyKey: 'k' }, { instanceId: 's1', downloadId: 'dlA', action: 'remove_with_data', blocklist: true, searchAgain: true, confirmationToken: 'TOKEN-2', idempotencyKey: 'k' });

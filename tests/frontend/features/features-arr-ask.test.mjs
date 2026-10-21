@@ -401,7 +401,7 @@ test('the episode dialog shows the status and Get it, traps focus and gives it b
   assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Not being fetched/);
   assert.equal(dialog.getAttribute('aria-describedby'), null, 'nothing paused to read out');
   assert.equal(h.document.activeElement, dialog.querySelector('.je-ask-get'));
-  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+h.key(h.document, 'Escape');
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
   assert.equal(h.document.activeElement, title);
 });
@@ -484,9 +484,9 @@ test('TV layout: a JE row is one focusable button that opens the dialog; arrows 
   assert.equal(buttons[0].className.split(' ')[0], 'je-ask-get');
   let jellyfinSaw = 0;
   h.window.addEventListener('keydown', () => jellyfinSaw++);
-  h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+h.key(h.document.activeElement, 'ArrowRight');
   assert.equal(h.document.activeElement, buttons[1]);
-  h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+h.key(h.document.activeElement, 'ArrowRight');
   assert.equal(h.document.activeElement, buttons[0], 'wraps around');
   assert.equal(jellyfinSaw, 0, 'the page behind never sees the arrows');
   h.click(buttons[0]);
@@ -737,7 +737,7 @@ test('a request already sent gives way to Search once the episode is missing for
   await household.open();
   assert.equal(household.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get .je-ask-get-text').textContent, 'Search');
   assert.equal(household.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Said no');
-  household.JE.internals.arrAskEpisodes.openDetails(longMissing().episodes[1], { contact: 'Dad' });
+  household.JE.internals.arrAskEpisodes.openDetails(longMissing().episodes[1], { contact: 'Dad' }, household.NATIVE);
   await settle();
   const dialog = household.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Search', 'the dialog offers Search too');

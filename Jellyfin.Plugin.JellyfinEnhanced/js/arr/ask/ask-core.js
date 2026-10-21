@@ -350,11 +350,13 @@
             // Three outcomes (D46S2-R11-9). Answered after its owner ended (accepted): the server took it, so this
             // session's state is reconciled (the clientRequestId is spent, the capability and title checks go, the
             // surfaces showing the title re-read) with no page effect (`stale`: nobody is told on a newer page).
+            // Answered after another account signed in (D46S2-R12-4): still accepted — the origin's key is spent and its
+            // caches went with its session (onUserChange) — and nothing reaches the new account (no change event).
             const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
             if (written?.outcome === 'accepted') {
                 const answered = written.answer || {};
                 if (!(answered.status >= 500)) openIds.delete(print);
-                const result = { ...interpret(answered.status || 0, answered.body), clientRequestId, stale: true, accepted: true };
+                const result = { ...interpret(answered.status || 0, answered.body), clientRequestId, stale: true, accepted: true, sessionChanged: written.sessionChanged };
                 if (!written.sessionChanged && started === epoch() && (result.ok || result.state === 'unknown')) {
                     meState = null;
                     checks.clear();
@@ -397,6 +399,8 @@
             // nobody); never sent, nothing happened.
             const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
             if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            // Taken after another account signed in (D46S2-R12-4): it happened, for the origin only; nothing for the new one.
+            else if (written?.outcome === 'accepted') return { ...interpret(written.answer?.status || 0, written.answer?.body), requestId, stale: true, accepted: true, sessionChanged: true };
             else if (written?.outcome === 'unsent') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId, stale: true };
             else {
                 console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
@@ -707,9 +711,11 @@
         try {
             answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said).
+            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said);
+            // after another account signed in (D46S2-R12-4): accepted for the origin, nothing for the new account.
             const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
             if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            else if (written?.outcome === 'accepted') return { ok: true, state: 'accepted', chip: '', text: '', tone: '', stale: true, accepted: true, sessionChanged: true };
             else if (err?.name === 'AbortError') throw err;
             else return { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: err?.message || String(err) }), tone: 'attention' };
         }
@@ -748,9 +754,11 @@
         try {
             answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said).
+            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said);
+            // after another account signed in (D46S2-R12-4): accepted for the origin, nothing for the new account.
             const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
             if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            else if (written?.outcome === 'accepted') return { ok: true, state: 'accepted', chip: '', text: '', tone: '', stale: true, accepted: true, sessionChanged: true };
             else if (err?.name === 'AbortError') throw err;
             else return null;
         }

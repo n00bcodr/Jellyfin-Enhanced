@@ -56,7 +56,8 @@ function fire(h, node, type, init = {}) {
   h.document.addEventListener(type, outside);
   const Kind = type === 'submit' ? h.window.Event : h.window.MouseEvent;
   const event = new Kind(type, { bubbles: true, cancelable: true, ...init });
-  node.dispatchEvent(event);
+  // The viewer's own event (trusted): a script's is no one's anywhere in a surface (D46S2-R12-3).
+  h.trusted(node, event);
   h.document.removeEventListener(type, outside);
   return { prevented: event.defaultPrevented, escaped };
 }

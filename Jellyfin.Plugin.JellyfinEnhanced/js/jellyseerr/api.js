@@ -535,6 +535,9 @@
             }
             return normalized;
         } catch (error) {
+            // Cancelled (the session that asked ended, e.g. another account signed in): not a failure, and the rules
+            // cached so far may be the previous account's, so none are returned.
+            if (error?.name === 'AbortError') return [];
             console.error(`${logPrefix} Failed to fetch override rules:`, error);
             return cachedOverrideRules || [];
         }
