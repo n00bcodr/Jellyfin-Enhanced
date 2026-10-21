@@ -101,20 +101,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             CancellationToken cancellationToken,
             PosterTagDataSnapshot? snapshot = null)
         {
-            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings).ConfigureAwait(false);
-            if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
+            // The one delivery gate: the tags are drawn from data stripped under one read-set (the viewer's Spoiler Guard
+            // state and the admin's settings, the item's and its owner's library facts and watched state, recorded as they
+            // are read), and the drawing leaves only when the gate, after the awaited render, finds that set unchanged;
+            // else it is drawn again from scratch (bounded). Inputs that keep changing get the original image, untagged.
+            var composed = await PrivacyDelivery.DeliverAsync(user.Id, async () =>
+            {
+                _data.SpoilerRevision(httpContext, user);
+                PrivacyReadSet.Current?.Library(item.Id);
+                PrivacyReadSet.Current?.Library(PrivacyIdentities.ExtraOwner(null, item));
+                var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings).ConfigureAwait(false);
+                // Nothing drawn: nothing judged, under whatever policy is current.
+                if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
-            var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
-            var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
-            Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality);
+                var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
+                var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
+                Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality);
 
-            var bytes = useCache
-                ? await _cache.GetOrCreateAsync(key, Extension(image.ContentType), Render, cancellationToken).ConfigureAwait(false)
-                : await Render().ConfigureAwait(false);
+                var bytes = useCache
+                    ? await _cache.GetOrCreateAsync(key, Extension(image.ContentType), Render, cancellationToken).ConfigureAwait(false)
+                    : await Render().ConfigureAwait(false);
+                return bytes.Length == 0
+                    ? new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, key, data.SpoilerStripped)
+                    : new PosterTagComposeResult(PosterTagComposeStatus.Rendered, bytes, key, data.SpoilerStripped);
+            }, httpContext).ConfigureAwait(false);
 
-            return bytes.Length == 0
-                ? new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, key, data.SpoilerStripped)
-                : new PosterTagComposeResult(PosterTagComposeStatus.Rendered, bytes, key, data.SpoilerStripped);
+            return composed ?? new PosterTagComposeResult(PosterTagComposeStatus.Passthrough, null, string.Empty, true);
         }
 
         /// <summary>

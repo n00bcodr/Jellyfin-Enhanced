@@ -33,6 +33,32 @@ internal static class PrivacyTestHost
 
     private static readonly string[] Ratings = ["G", "PG", "PG-13", "R", "NC-17", "TV-14", "TV-MA", "NR", "FSK-16"];
 
+    /// <summary>The request's device id and token the model's caller carries (the values the host puts into its URLs).</summary>
+    public const string CallerDeviceId = "TW96aWxsYS81LjAgKFgxMTsgTGludXggeDg2XzY0KXwxNzYwOTQ0MDAwMDAw";
+
+    public const string CallerToken = "4f1d2c3b4a59687766554433221100ff";
+
+    /// <summary>
+    /// The hosts' rating PARSER (LocalizationManager.GetRatingScore), not a closed list: a table entry, a whole number, the
+    /// right part after ':' (10.11.11 accepts any left part), a '-' separated pair, and on 12.2 any '/'-separated part. So
+    /// "text:PG", "text/PG" and "text-PG" all score, as on the real hosts.
+    /// </summary>
+    private static ParentalRatingScore? Score(string rating)
+    {
+        if (string.IsNullOrEmpty(rating)) return null;
+        if (int.TryParse(rating, out var number)) return new ParentalRatingScore(number, null);
+        var at = Array.FindIndex(Ratings, r => string.Equals(r, rating.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (at >= 0) return new ParentalRatingScore(at + 1, null);
+        foreach (var separator in new[] { '/', ':', '-' })
+        {
+            var parts = rating.Split(separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 2) continue;
+            foreach (var part in separator == '/' ? parts : [string.Join(separator, parts.Skip(1))])
+                if (Score(part) is { } score) return score;
+        }
+        return null;
+    }
+
     /// <summary>The host's localization manager, as far as the privacy projection asks it.</summary>
     public static ILocalizationManager Localization()
     {
@@ -43,8 +69,9 @@ internal static class PrivacyTestHost
                 || c.ThreeLetterISOLanguageNames.Contains(language, StringComparer.OrdinalIgnoreCase) || language.Equals(c.TwoLetterISOLanguageName, StringComparison.OrdinalIgnoreCase)));
         mock.Setup(l => l.GetCultures()).Returns(Cultures);
         mock.Setup(l => l.GetLocalizedString(It.IsAny<string>())).Returns((string phrase) => Labels.GetValueOrDefault(phrase, phrase));
-        mock.Setup(l => l.GetRatingScore(It.IsAny<string>(), It.IsAny<string?>()))
-            .Returns((string rating, string? _) => Ratings.Contains(rating, StringComparer.OrdinalIgnoreCase) ? new ParentalRatingScore(Array.IndexOf(Ratings, rating) + 1, null) : null);
+        mock.Setup(l => l.GetRatingScore(It.IsAny<string>(), It.IsAny<string?>())).Returns((string rating, string? _) => Score(rating));
+        // The server's own list of ratings (its country's table and the host's generic entries).
+        mock.Setup(l => l.GetParentalRatings()).Returns(Ratings.Concat(["Unrated", "Approved", "XXX", "Banned"]).Select((r, i) => new ParentalRating(r, new ParentalRatingScore(i + 1, null))).ToArray());
         mock.Setup(l => l.GetCountries()).Returns(new[] { ("US", "United States"), ("GB", "United Kingdom"), ("FR", "France"), ("DE", "Germany"), ("JP", "Japan") }
             .Select(c => new CountryInfo { Name = c.Item1, TwoLetterISORegionName = c.Item1, DisplayName = c.Item2, ThreeLetterISORegionName = c.Item1 + "A" }).ToArray());
         return mock.Object;

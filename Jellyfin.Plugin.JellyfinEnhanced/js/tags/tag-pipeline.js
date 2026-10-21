@@ -55,6 +55,7 @@
     let storeBaseServedAt = 0;       // capture time of the stored snapshot this page restored and confirmed
     let storeScope = null;           // `${serverId}:${userId}` while the stored copy backs lookups/writes
     let persistGeneration = 0;       // bumped whenever queued stored-copy writes must stop
+    let privacyGeneration = 0;       // bumped whenever what the cache may hold changed (a Spoiler Guard change, a user change)
     let persistChain = Promise.resolve(); // stored-copy writes run one after another
     const storeMisses = new Set();   // ids the stored copy has no entry for (never ask IndexedDB twice)
     let skipStoreThisSession = false; // server answered empty or disabled: don't restore a stored copy
@@ -278,6 +279,51 @@
     // ── Server Cache ───────────────────────────────────────────────────
 
     /**
+     * The account the host is signed in as right now (server, user and access
+     * token), read from the host's own client each time: a switch the session
+     * module has not noticed yet still changes it.
+     * @returns {string}
+     */
+    function liveIdentity() {
+        try {
+            if (typeof ApiClient === 'undefined' || !ApiClient) return '';
+            const userId = (typeof ApiClient.getCurrentUserId === 'function' ? ApiClient.getCurrentUserId() : null) || '';
+            const serverId = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ApiClient._serverInfo?.Id || '';
+            const token = (typeof ApiClient.accessToken === 'function' ? ApiClient.accessToken() : null) || '';
+            return `${serverId}|${userId}|${token}`;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    /**
+     * What a tag-cache answer is published under: the live account and the
+     * session and privacy generations at the moment it was requested.
+     * @returns {{identity: string, epoch: number, privacy: number}}
+     */
+    function publicationAuthority() {
+        return { identity: liveIdentity(), epoch: JE.session ? JE.session.getEpoch() : 0, privacy: privacyGeneration };
+    }
+
+    /**
+     * Whether an answer requested under `authority` may still be published
+     * (into memory, the review ratings, the stored copy or the cards): the same
+     * live account, the same session and no privacy change since. A changed
+     * account also tells the session module, so its reset runs now.
+     * @param {{identity: string, epoch: number, privacy: number}} authority
+     * @returns {boolean}
+     */
+    function authorityHolds(authority) {
+        if (!authority || authority.privacy !== privacyGeneration) return false;
+        if (JE.session && !JE.session.isCurrent(authority.epoch)) return false;
+        if (liveIdentity() !== authority.identity) {
+            try { JE.session?.checkNow?.('tag-cache-publication'); } catch (_) {}
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Storage scope of the signed-in user's cache copy.
      * @returns {string|null} `${serverId}:${userId}`, or null before sign-in.
      */
@@ -466,7 +512,7 @@
         if (!store?.available() || skipStoreThisSession) return false;
         const scope = cacheScope();
         if (!scope) return false;
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const authority = publicationAuthority();
         try {
             const meta = await store.getMeta(scope);
             // Other users' copies go in the background (queued ahead of any
@@ -474,7 +520,7 @@
             // first load isn't held up by a second transaction before its
             // full download can start.
             queuePersist(() => store.clearOtherScopes(scope));
-            if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+            if (!authorityHolds(authority)) return false;
             // Complete copies only (a pending record is a rewrite in progress),
             // written with a filter revision and capture time (older copies
             // predate them).
@@ -521,9 +567,11 @@
         if (!userId) return false;
         const scope = cacheScope();
 
-        // The response is spoiler-stripped for THIS user — drop it if the
-        // signed-in user changed while the request was in flight.
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        // The response is spoiler-stripped for THIS user under THIS policy —
+        // drop it if the signed-in account changed or the policy changed while
+        // the request was in flight (memory, review ratings and the stored copy
+        // alike).
+        const authority = publicationAuthority();
         const requestedAt = performance.now();
         // A download that will be persisted must carry a current capture time
         // (servedAt): revalidating the browser's HTTP-cached body (304) hands
@@ -538,7 +586,7 @@
             url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}${fresh}`),
             dataType: 'json'
         });
-        if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+        if (!authorityHolds(authority)) return false;
 
         applyReviewRatings(resp, requestedAt);
         if (!(resp && resp.items && resp.count > 0)) {
@@ -735,7 +783,7 @@
 
             // Same identity guard as loadServerCache: incremental entries are
             // spoiler-stripped for the user that requested them.
-            const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+            const authority = publicationAuthority();
             const generation = cacheGeneration;
             const base = { timestamp: serverCacheTimestamp, version: serverCacheVersion, filterRevision: serverFilterRevision };
             const requestedAt = performance.now();
@@ -744,7 +792,7 @@
                 url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
                 dataType: 'json'
             });
-            if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+            if (!authorityHolds(authority)) return;
             // Memory was replaced while this was in flight (full download,
             // invalidation): the answer is relative to a cursor that's gone.
             if (!resp || !resp.items || !serverCache || generation !== cacheGeneration) return;
@@ -1669,6 +1717,10 @@
             // processing cards against the empty cache. processedCards is reset a
             // SECOND time after load so cards partially marked during await re-scan.
             isInvalidating = true;
+            // Nothing requested before this point is published any more (a
+            // download in flight resolves into nothing, and a failed reload
+            // leaves the cache empty rather than reviving it).
+            privacyGeneration++;
             try {
                 dropServerCache();
                 processedCards = new WeakSet();
@@ -1740,6 +1792,7 @@
     // race the credential swap. The stored copy is per user as well: the
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
+        privacyGeneration++;
         dropServerCache();
         reviewRatings = null;
         reviewRatingsRequestedAt = 0;

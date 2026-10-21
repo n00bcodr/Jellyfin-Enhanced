@@ -64,7 +64,7 @@ public class PrivacyPresentationGateTests
         var result=Run(); var json=Assert.IsType<ContentResult>(result.Result).Content!;
         Assert.DoesNotContain("secret",json); Assert.DoesNotContain("hidden",json);
         var etag=http.Response.Headers.ETag.ToString(); Assert.NotEmpty(etag);
-        http.Request.Headers.IfNoneMatch=etag; Assert.IsType<StatusCodeResult>(Run().Result);
+        http.Request.Headers.IfNoneMatch=etag; Assert.Equal(304, Assert.IsAssignableFrom<Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult>(Run().Result).StatusCode);
         f.Core.Manager.SaveUserConfiguration(user.ToString("N"),"spoilerblur.json",new UserSpoilerBlur());
         Assert.Contains("secret",Assert.IsType<ContentResult>(Run().Result).Content!); Assert.NotEqual(etag,http.Response.Headers.ETag.ToString());
     }

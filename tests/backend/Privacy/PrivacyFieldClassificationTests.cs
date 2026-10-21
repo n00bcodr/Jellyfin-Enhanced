@@ -117,7 +117,9 @@ public class PrivacyFieldClassificationTests
         {
             var kind = PrivacyFieldClassification.Of(typeof(BaseItemDto), p.Name);
             var value = p.GetValue(stub);
-            if (kind != PrivacyField.HostRequired) Assert.True(value == null || value.Equals(Activator.CreateInstance(p.PropertyType)), p.Name + " left in the stub");
+            // Nothing else: no value (a collection the host sent keeps its shape, empty: its clients index it).
+            if (kind != PrivacyField.HostRequired)
+                Assert.True(value == null || value is System.Collections.IEnumerable list and not string && !list.Cast<object>().Any() || p.PropertyType.IsValueType && value.Equals(Activator.CreateInstance(p.PropertyType)), p.Name + " left in the stub");
             else if (p.Name != "MediaStreams") Assert.Equal(p.GetValue(dto), value);
         }
         // Media streams: the same tracks, no title-bearing field, a display title the menus can show.
@@ -250,20 +252,48 @@ public class PrivacyFieldClassificationTests
             foreach (var d in AllDtos(p.GetValue(node), depth + 1)) yield return d;
     }
 
-    /// <summary>The hosts' own URL shapes (live, 12.2 and 10.11.11; api keys masked as hex) pass; a URL carrying text does not.</summary>
+    /// <summary>
+    /// The hosts' own URL shapes (live, 12.2 and 10.11.11; api keys masked as hex) are rebuilt byte for byte from their
+    /// route templates, with the caller's own device id and token; a URL carrying text keeps none of it.
+    /// </summary>
     [Theory]
-    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=d46r20-live-18554&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&VideoBitrate=808000&AudioBitrate=192000&AudioSampleRate=44100&MaxFramerate=24&SegmentContainer=ts&BreakOnNonKeyFrames=False&PlaySessionId=bea7025a61ca464884ea2a18f785d2a4&ApiKey=0123456789abcdef0123456789abcdef&RequireAvc=false&EnableAudioVbrEncoding=true&Tag=5304726cd85a2d70bf6431e65e91b5ca&h264-level=12&h264-profile=high&TranscodeReasons=DirectPlayError,ContainerNotSupported&allowVideoStreamCopy=false", true)]
-    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?&DeviceId=d46r20-probe&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&ApiKey=0123456789abcdef0123456789abcdef&h264-videobitdepth=8&aac-profile=lc&TranscodeReasons=DirectPlayError&allowAudioStreamCopy=false", true)]
-    [InlineData("/audio/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/stream.mp3?Static=true&DeviceId=TW96aWxsYS81LjA%3D", true)]
-    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=x&Title=Secret%20ending", false)]
-    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?Name=Secret ending", false)]
-    [InlineData("https://provider.invalid/Secret.m3u8", false)]
-    public void TheTranscodingUrlValidatorKnowsTheHostsShapes(string url, bool valid) => Assert.Equal(valid, PrivacyTokens.TranscodingUrl(url));
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=d46r20-live-18554&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&VideoBitrate=808000&AudioBitrate=192000&AudioSampleRate=44100&MaxFramerate=24&SegmentContainer=ts&BreakOnNonKeyFrames=False&PlaySessionId=bea7025a61ca464884ea2a18f785d2a4&ApiKey=0123456789abcdef0123456789abcdef&RequireAvc=false&EnableAudioVbrEncoding=true&Tag=5304726cd85a2d70bf6431e65e91b5ca&h264-level=12&h264-profile=high&TranscodeReasons=DirectPlayError,ContainerNotSupported&allowVideoStreamCopy=false", "d46r20-live-18554", true)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?&DeviceId=d46r20-probe&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&VideoCodec=h264&AudioCodec=aac&AudioStreamIndex=2&ApiKey=0123456789abcdef0123456789abcdef&h264-videobitdepth=8&aac-profile=lc&TranscodeReasons=DirectPlayError&allowAudioStreamCopy=false", "d46r20-probe", true)]
+    [InlineData("/audio/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/stream.mp3?Static=true&DeviceId=TW96aWxsYS81LjA%3D", "TW96aWxsYS81LjA=", true)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=x&Title=Secret%20ending", "x", false)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?Name=Secret ending", "x", false)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?Title=The.Death.of.Secret.mkv&PlaySessionId=SecretEnding&VideoCodec=h264,Secret", "x", false)]
+    [InlineData("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/stream.Secret?Static=true", "x", false)]
+    [InlineData("https://provider.invalid/Secret.m3u8", "x", false)]
+    public void TheTranscodingUrlIsRebuiltFromTheHostsTemplate(string url, string device, bool host)
+    {
+        var rebuilt = PrivacyTokens.TranscodingUrl(url, new PrivacyTokens.Caller(device, "0123456789abcdef0123456789abcdef"));
+        if (host) Assert.Equal(url, rebuilt);
+        else Assert.DoesNotContain("Secret", rebuilt ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TheTranscodingUrlCarriesTheCallersOwnDeviceAndToken()
+    {
+        const string url = "/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=SecretDevice&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&ApiKey=0123456789abcdef0123456789abcdef";
+        Assert.Equal("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?DeviceId=own-device&MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87&ApiKey=ffffffffffffffffffffffffffffffff",
+            PrivacyTokens.TranscodingUrl(url, new PrivacyTokens.Caller("own-device", "ffffffffffffffffffffffffffffffff")));
+        // Without a caller (no request), the parameters the host fills from the request are left out.
+        Assert.Equal("/videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/master.m3u8?MediaSourceId=7a2e4f8ef2cf9cdb31bc06e83a64bf87", PrivacyTokens.TranscodingUrl(url, default));
+    }
 
     [Theory]
     [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Subtitles/0/0/Stream.srt?ApiKey=0123456789abcdef0123456789abcdef", true)]
+    [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Subtitles/2/0/Stream.vtt", true)]
     [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Attachments/3", true)]
-    [InlineData("/config/media/D46 R20 Show - S01E01.en.srt", false)]
+    [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Subtitles/0/0/TheDeathOfSecret.srt?ApiKey=0123456789abcdef0123456789abcdef", false)]
+    [InlineData("/Videos/7a2e4f8e-f2cf-9cdb-31bc-06e83a64bf87/7a2e4f8ef2cf9cdb31bc06e83a64bf87/Attachments/3?Name=Secret", false)]
+    [InlineData("/config/media/D46 R20 Secret - S01E01.en.srt", false)]
     [InlineData("https://provider.invalid/Secret.srt", false)]
-    public void TheDeliveryUrlValidatorKnowsTheHostsShapes(string url, bool valid) => Assert.Equal(valid, PrivacyTokens.DeliveryUrl(url));
+    public void TheDeliveryUrlIsRebuiltWithTheHostsFileName(string url, bool host)
+    {
+        var rebuilt = PrivacyTokens.DeliveryUrl(url, new PrivacyTokens.Caller(null, "0123456789abcdef0123456789abcdef"));
+        if (host) Assert.Equal(url, rebuilt);
+        else Assert.DoesNotContain("Secret", rebuilt ?? "", StringComparison.OrdinalIgnoreCase);
+    }
 }

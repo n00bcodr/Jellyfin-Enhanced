@@ -135,26 +135,77 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return body;
         }
 
-        /// <summary>A 200 result that writes the three segments to the response.</summary>
-        public IActionResult ToActionResult() => new SegmentedResult(this);
+        /// <summary>
+        /// The result that answers with this body: a 200 writing the three segments, or a 304 when
+        /// <paramref name="ifNoneMatch"/> names its ETag. The answer is decided where the bytes leave: the result checks
+        /// <paramref name="reads"/> (the read-set the body was validated with) before it answers, and when an input
+        /// changed builds the body again (<paramref name="rebuild"/>, bounded; withheld when it fails); every segment is
+        /// then written through the response's guard, which checks again before each write.
+        /// </summary>
+        public IActionResult ToActionResult(PrivacyReadSet? reads = null, Func<(TagCacheResponseBody Body, PrivacyReadSet? Reads)?>? rebuild = null, string? ifNoneMatch = null)
+            => new SegmentedResult(this, reads, rebuild, ifNoneMatch);
 
         private sealed class SegmentedResult : IActionResult
         {
             private readonly TagCacheResponseBody _body;
+            private readonly PrivacyReadSet? _reads;
+            private readonly Func<(TagCacheResponseBody Body, PrivacyReadSet? Reads)?>? _rebuild;
+            private readonly string? _ifNoneMatch;
 
-            public SegmentedResult(TagCacheResponseBody body) => _body = body;
+            public SegmentedResult(TagCacheResponseBody body, PrivacyReadSet? reads, Func<(TagCacheResponseBody Body, PrivacyReadSet? Reads)?>? rebuild, string? ifNoneMatch)
+            {
+                _body = body;
+                _reads = reads;
+                _rebuild = rebuild;
+                _ifNoneMatch = ifNoneMatch;
+            }
 
             public async Task ExecuteResultAsync(ActionContext context)
             {
-                var response = context.HttpContext.Response;
-                var aborted = context.HttpContext.RequestAborted;
-                response.StatusCode = 200;
-                response.ContentType = ContentType;
-                response.ContentLength = _body.Length;
-                await response.Body.WriteAsync(_body._prefix, aborted).ConfigureAwait(false);
-                await response.Body.WriteAsync(_body._items, aborted).ConfigureAwait(false);
-                await response.Body.WriteAsync(_body._suffix, aborted).ConfigureAwait(false);
+                var http = context.HttpContext;
+                var response = http.Response;
+                var (body, reads) = (_body, _reads);
+                // The body is held and committed here: its read-set validated, the response started, then the bytes handed
+                // over. An input that changed before the commit builds the body (and its ETag) again, bounded.
+                var guard = reads != null ? PrivacyResponseGuard.Install(http, reads) : PrivacyResponseGuard.Find(http);
+                guard?.Bind(http, owned: true);
+                for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+                {
+                    if (attempt > 0)
+                    {
+                        if (_rebuild?.Invoke() is not { } fresh) break;
+                        PrivacyResponseGuard.Replace(http, reads, fresh.Reads ?? reads!);
+                        guard!.Discard();
+                        (body, reads) = (fresh.Body, fresh.Reads);
+                    }
+                    // no-cache (not no-store): the client may keep a copy to revalidate against, but must always revalidate.
+                    response.Headers.CacheControl = "private, no-cache";
+                    response.Headers.ETag = body.ETag;
+                    if (_ifNoneMatch != null && _ifNoneMatch.Contains(body.ETag, StringComparison.Ordinal))
+                    {
+                        // A 304 is confirmed at the header commit.
+                        response.StatusCode = 304;
+                        response.ContentLength = null;
+                    }
+                    else
+                    {
+                        response.StatusCode = 200;
+                        response.ContentType = ContentType;
+                        response.ContentLength = body.Length;
+                        var aborted = http.RequestAborted;
+                        foreach (var segment in new[] { body._prefix, body._items, body._suffix })
+                            for (var offset = 0; offset < segment.Length; offset += Slice)
+                                await response.Body.WriteAsync(segment.AsMemory(offset, Math.Min(Slice, segment.Length - offset)), aborted).ConfigureAwait(false);
+                    }
+                    if (guard == null) return;
+                    if (await guard.TryCommitAsync().ConfigureAwait(false)) return;
+                    if (guard.Stopped) return;
+                }
+                guard?.Stop();
             }
+
+            /// <summary>The largest single write.</summary>
+            private const int Slice = 64 * 1024;
         }
     }
 }

@@ -1,0 +1,418 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+
+namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
+
+/// <summary>
+/// The one commit point of a protected answer. A gated response's bytes are held until the answer is complete (its writer
+/// finished, or it reached its declared length); then its read-sets are validated, the response is started (the host's
+/// start callbacks run, and the read-sets are checked once more as the headers are committed), and only then are the bytes
+/// handed to the transport. Nothing protected leaves before that validation, so nothing ever needs retracting: an input
+/// that changed before the commit makes the answer be built again (native answers, the tag cache) or withheld (an empty,
+/// uncached 503); a change after it applies from the next answer. Validators are confirmed the same way: a 304 is decided
+/// at the header commit (<see cref="Confirm"/>). Answers larger than <see cref="MaxHeld"/> are committed when they reach it
+/// (their remaining bytes come from the same validated answer). Unprotected responses (no guard) stream as before.
+/// </summary>
+public sealed class PrivacyResponseGuard
+{
+    /// <summary>The most a protected answer holds before it is committed (larger ones commit at this point).</summary>
+    public const int MaxHeld = 128 * 1024 * 1024;
+
+    private readonly HttpContext _http;
+    private readonly List<PrivacyReadSet> _reads = new();
+    private readonly object _lock = new();
+    private GuardedBody? _body;
+    private int _stopped;
+    private bool _committing;
+    private bool _committed;
+    private bool _startChecked;
+    private bool _owned;
+
+    private PrivacyResponseGuard(HttpContext http) => _http = http;
+
+    /// <summary>
+    /// Guards the response of <paramref name="http"/> with <paramref name="reads"/> (an answer validated with it is in the
+    /// response): its body is held until the commit, which validates every set installed on it.
+    /// </summary>
+    public static PrivacyResponseGuard? Install(HttpContext? http, PrivacyReadSet reads)
+    {
+        if (http == null) return null;
+        var guard = Of(http);
+        lock (guard._lock) if (!guard._reads.Contains(reads)) guard._reads.Add(reads);
+        return guard;
+    }
+
+    /// <summary>
+    /// The host's object answer, executed through the guard: the host's executor writes it into the held body, then it is
+    /// committed; when an input changed before the commit it is projected again (<paramref name="rebuild"/>, bounded) and
+    /// written again, else withheld.
+    /// </summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="guard">The response's guard.</param>
+    /// <param name="rebuild">Builds the answer again in place when an input changed before the commit (true: a new
+    /// read-set holds); without it, or when it fails, the answer is withheld.</param>
+    public static ObjectResult Guarded(ObjectResult answer, PrivacyResponseGuard guard, Func<bool>? rebuild = null)
+        => answer is GuardedObjectResult ? answer : new GuardedObjectResult(answer, guard, rebuild);
+
+    private sealed class GuardedObjectResult : ObjectResult
+    {
+        private readonly PrivacyResponseGuard _guard;
+        private readonly Func<bool>? _rebuild;
+        private readonly string[] _contentTypes;
+
+        public GuardedObjectResult(ObjectResult inner, PrivacyResponseGuard guard, Func<bool>? rebuild) : base(inner.Value)
+        {
+            _guard = guard;
+            _rebuild = rebuild;
+            _contentTypes = inner.ContentTypes.ToArray();
+            StatusCode = inner.StatusCode;
+            DeclaredType = inner.DeclaredType;
+            ContentTypes = inner.ContentTypes;
+            Formatters = inner.Formatters;
+        }
+
+        public override async Task ExecuteResultAsync(ActionContext context)
+        {
+            _guard.Bind(context.HttpContext, owned: true);
+            for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
+            {
+                // An input that changed before the last commit builds the answer again first, written from a clean
+                // response (the host's executor folds the content type it chose into the result).
+                if (attempt > 0)
+                {
+                    if (_rebuild?.Invoke() != true) break;
+                    ContentTypes.Clear();
+                    foreach (var type in _contentTypes) ContentTypes.Add(type);
+                    context.HttpContext.Response.ContentType = null;
+                    context.HttpContext.Response.ContentLength = null;
+                    context.HttpContext.Response.StatusCode = StatusCode ?? StatusCodes.Status200OK;
+                }
+                await base.ExecuteResultAsync(context).ConfigureAwait(false);
+                if (await _guard.TryCommitAsync().ConfigureAwait(false)) return;
+                if (_guard.Stopped) return;
+                _guard.Discard();
+            }
+            _guard.Stop();
+        }
+    }
+
+    /// <summary>Makes the response's current body the held one (once per body); <paramref name="owned"/>: its writer commits it.</summary>
+    internal void Bind(HttpContext http, bool owned = false)
+    {
+        lock (_lock) _owned |= owned;
+        if (http.Response.Body is GuardedBody body && body.Guard == this) { _body = body; return; }
+        _body = new GuardedBody(http.Response.Body, http.Features.Get<IHttpResponseBodyFeature>(), this);
+        http.Response.Body = _body;
+    }
+
+    /// <summary>
+    /// Replaces a set an answer was validated with by the set of its rebuild (the answer it guarded is no longer sent).
+    /// </summary>
+    public static void Replace(HttpContext http, PrivacyReadSet? old, PrivacyReadSet reads)
+    {
+        var guard = Of(http);
+        lock (guard._lock)
+        {
+            if (old != null) guard._reads.Remove(old);
+            if (!guard._reads.Contains(reads)) guard._reads.Add(reads);
+        }
+    }
+
+    /// <summary>The response's guard (its body held from here on, once per response body).</summary>
+    public static PrivacyResponseGuard Of(HttpContext http)
+    {
+        if (http.Response.Body is GuardedBody body) return body.Guard;
+        if (http.Items[GuardKey] is PrivacyResponseGuard known)
+        {
+            known.Bind(http);
+            return known;
+        }
+        var guard = new PrivacyResponseGuard(http);
+        http.Items[GuardKey] = guard;
+        guard.Bind(http);
+        // The check at the header commit: registered now, so it runs after every start callback registered later (the
+        // answer's own, later filters'), as the headers are committed.
+        try { http.Response.OnStarting(static state => ((PrivacyResponseGuard)state).OnStarting(), guard); }
+        catch (InvalidOperationException) { }
+        return guard;
+    }
+
+    private const string GuardKey = "__JE_PRIVACY_RESPONSE_GUARD";
+
+    /// <summary>The response's guard, when it has one.</summary>
+    internal static PrivacyResponseGuard? Find(HttpContext http) => http.Items[GuardKey] as PrivacyResponseGuard;
+
+    /// <summary>
+    /// Whether every read-set installed on the response still holds (the commit check; <paramref name="live"/>: the items
+    /// the decisions read are compared with the host's live items too, which the header-commit check a moment later skips).
+    /// </summary>
+    public bool Holds(bool live = true)
+    {
+        PrivacyReadSet[] reads;
+        lock (_lock) reads = _reads.ToArray();
+        foreach (var set in reads)
+            if (!set.StillValid(live)) { PrivacyReadSet.Withheld(set); return false; }
+        return true;
+    }
+
+    /// <summary>Whether a changed input stopped the response (nothing more is written).</summary>
+    public bool Stopped => Volatile.Read(ref _stopped) != 0;
+
+    /// <summary>Whether the answer was committed (validated and handed to the transport).</summary>
+    public bool Committed
+    {
+        get { lock (_lock) return _committed; }
+    }
+
+    private Task OnStarting()
+    {
+        lock (_lock) _startChecked = true;
+        if (Stopped) return Task.CompletedTask;
+        bool committing, held;
+        lock (_lock) { committing = _committing; held = _body?.Held > 0; }
+        // A protected answer whose writer never committed it: nothing of it leaves.
+        if (!committing && held) { Stop(); return Task.CompletedTask; }
+        if (!Holds(live: !committing)) Stop();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Commits the held answer: validates every read-set, starts the response (the header-commit check runs there) and
+    /// hands the bytes to the transport. False when an input changed before the start (the held bytes are kept for the
+    /// caller to discard and build again) or when the answer was withheld at the header commit (<see cref="Stopped"/>).
+    /// </summary>
+    internal async Task<bool> TryCommitAsync()
+    {
+        lock (_lock) if (_committed) return true;
+        if (Stopped || !Holds()) return false;
+        var body = _body;
+        lock (_lock) _committing = true;
+        try
+        {
+            if (body?.Transport is { } transport) await transport.StartAsync().ConfigureAwait(false);
+            else await _http.Response.StartAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_lock) _committing = false;
+        }
+        if (Stopped) return false;
+        // A host without start callbacks (an in-process context) is checked here instead.
+        bool checkedAtStart;
+        lock (_lock) checkedAtStart = _startChecked;
+        if (!checkedAtStart && !Holds(live: false))
+        {
+            Stop();
+            return false;
+        }
+        lock (_lock) _committed = true;
+        if (body != null) await body.ReleaseAsync().ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// The commit at the end of an answer's result (the outermost resource filter calls it): a held answer is committed,
+    /// or withheld when an input changed.
+    /// </summary>
+    public static async Task CommitAsync(HttpContext http)
+    {
+        if (Find(http) is not { } guard || guard.Stopped || guard.Committed) return;
+        if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
+    }
+
+    /// <summary>Drops the held bytes (an answer that is built and written again).</summary>
+    internal void Discard() => _body?.Discard();
+
+    /// <summary>
+    /// Stops the response: before the start it becomes an empty, uncached 503 (the answer is withheld); after (an answer
+    /// larger than <see cref="MaxHeld"/>), the connection is aborted.
+    /// </summary>
+    internal void Stop()
+    {
+        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
+        _body?.Discard();
+        var response = _http.Response;
+        if (!response.HasStarted)
+        {
+            response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            response.ContentLength = 0;
+            response.Headers.CacheControl = "private, no-store";
+            response.Headers.Remove("ETag");
+            response.Headers.Remove("Last-Modified");
+            response.Headers.Remove("Content-Type");
+            return;
+        }
+        _http.Abort();
+    }
+
+    /// <summary>
+    /// A result that confirms the client's copy (a 304, which writes no bytes): decided at the header commit, so it leaves
+    /// only while the response's read-sets hold; otherwise the answer is withheld.
+    /// </summary>
+    public static IActionResult Confirm(HttpContext http, IActionResult notModified) => new ConfirmedResult(Of(http), notModified);
+
+    private sealed class ConfirmedResult(PrivacyResponseGuard guard, IActionResult inner) : IActionResult, Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult
+    {
+        public int? StatusCode => (inner as Microsoft.AspNetCore.Mvc.Infrastructure.IStatusCodeActionResult)?.StatusCode;
+
+        public async Task ExecuteResultAsync(ActionContext context)
+        {
+            guard.Bind(context.HttpContext, owned: true);
+            if (!guard.Holds()) { guard.Stop(); return; }
+            await inner.ExecuteResultAsync(context).ConfigureAwait(false);
+            if (!await guard.TryCommitAsync().ConfigureAwait(false)) guard.Stop();
+        }
+    }
+
+    /// <summary>Whether the response's writer commits it itself (else the declared length or the result's end does).</summary>
+    private bool Owned
+    {
+        get { lock (_lock) return _owned; }
+    }
+
+    /// <summary>
+    /// A writer that commits its answer itself (the tag cache's segments, a guarded result): the declared length does not
+    /// commit it.
+    /// </summary>
+    internal void Own() { lock (_lock) _owned = true; }
+
+    /// <summary>
+    /// The response body: every write is held until the commit. The declared length reached (an answer whose writer does
+    /// not commit it itself) or <see cref="MaxHeld"/> commits it; after the commit, writes go to the transport.
+    /// </summary>
+    private sealed class GuardedBody(Stream inner, IHttpResponseBodyFeature? transport, PrivacyResponseGuard guard) : Stream
+    {
+        private readonly List<byte[]> _held = new();
+        private long _length;
+        private bool _released;
+        private readonly object _lock = new();
+
+        public PrivacyResponseGuard Guard { get; } = guard;
+
+        /// <summary>The host's body feature under this one (what the commit starts).</summary>
+        public IHttpResponseBodyFeature? Transport { get; } = transport;
+
+        /// <summary>How many bytes are held.</summary>
+        public long Held
+        {
+            get { lock (_lock) return _length; }
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public void Discard()
+        {
+            lock (_lock)
+            {
+                if (_released) return;
+                _held.Clear();
+                _length = 0;
+            }
+        }
+
+        /// <summary>Hands the held bytes to the transport (the commit).</summary>
+        public async Task ReleaseAsync()
+        {
+            byte[][] held;
+            lock (_lock)
+            {
+                if (_released) return;
+                _released = true;
+                held = _held.ToArray();
+                _held.Clear();
+                _length = 0;
+            }
+            foreach (var chunk in held) await inner.WriteAsync(chunk).ConfigureAwait(false);
+            if (held.Length > 0) await inner.FlushAsync().ConfigureAwait(false);
+        }
+
+        private bool Released
+        {
+            get { lock (_lock) return _released; }
+        }
+
+        /// <summary>Holds <paramref name="buffer"/>; true when the answer is now complete or at the bound (to be committed).</summary>
+        private bool Hold(ReadOnlySpan<byte> buffer)
+        {
+            lock (_lock)
+            {
+                if (buffer.Length > 0)
+                {
+                    _held.Add(buffer.ToArray());
+                    _length += buffer.Length;
+                }
+                if (_length >= MaxHeld) return true;
+                return !Guard.Owned && Guard._http.Response.ContentLength is { } declared && declared > 0 && _length >= declared;
+            }
+        }
+
+        private async Task CommitHeldAsync()
+        {
+            if (!await Guard.TryCommitAsync().ConfigureAwait(false)) Guard.Stop();
+        }
+
+        public override void Flush()
+        {
+            if (Released && !Guard.Stopped) inner.Flush();
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+            => Released && !Guard.Stopped ? inner.FlushAsync(cancellationToken) : Task.CompletedTask;
+
+        public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            if (Guard.Stopped) return;
+            if (Released) { inner.Write(buffer); return; }
+            if (Hold(buffer)) CommitHeldAsync().GetAwaiter().GetResult();
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Guard.Stopped) return;
+            if (Released) { await inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false); return; }
+            if (Hold(buffer.Span)) await CommitHeldAsync().ConfigureAwait(false);
+        }
+
+        // The host owns the stream it handed the response (disposing the wrapper leaves it open).
+        protected override void Dispose(bool disposing) { }
+
+        public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The commit at the end of every MVC answer: the outermost resource filter, so it runs after the answer's result executed
+/// (whatever filter answered it, a short circuit included) and commits a held protected answer that its writer did not.
+/// </summary>
+public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IOrderedFilter
+{
+    /// <inheritdoc />
+    public int Order => int.MinValue;
+
+    /// <inheritdoc />
+    public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
+    {
+        await next().ConfigureAwait(false);
+        await PrivacyResponseGuard.CommitAsync(context.HttpContext).ConfigureAwait(false);
+    }
+}

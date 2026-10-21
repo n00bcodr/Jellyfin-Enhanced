@@ -23,7 +23,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <param name="SpoilerStripped">True when Spoiler Guard removed something for this viewer.</param>
     /// <param name="Reviews">The viewer's user-review chip data.</param>
     /// <param name="Stamp">The viewer's acquisition stamp (phase 4e; None unless stamps are on for them).</param>
-    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews, AcquisitionStamp Stamp = AcquisitionStamp.None);
+    /// <param name="PolicyRevision">The revision of the Spoiler Guard strip policy the entry was stripped under.</param>
+    public sealed record PosterTagRenderData(TagCacheEntry Entry, string DataKey, bool SpoilerStripped, PosterTagReviewSummary Reviews, AcquisitionStamp Stamp = AcquisitionStamp.None, string PolicyRevision = "-");
 
     /// <summary>
     /// The live tag data a variant token's data hash is checked against, kept so the composite is drawn from
@@ -105,6 +106,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
+            // The ownership changes the delivery gate compares for a poster (the stripper observes user data).
+            PrivacyInputs.Observe(libraryManager, null);
         }
 
         /// <summary>
@@ -164,6 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             var stripped = false;
+            // Read as of now (not the request's memo): the composer checks it again after drawing (policy fresh at emit).
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)
             {
@@ -175,7 +179,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var reviews = snapshot?.Reviews ?? _reviews.Get(entry, user);
             // The stamp the token pinned; without a snapshot (a weak token) the viewer's stamp now.
             var stamp = snapshot?.Stamp ?? StampFor(item.Id, user, settings);
-            return new PosterTagRenderData(entry, DataKey(entry, reviews, stamp), stripped, reviews, stamp);
+            return new PosterTagRenderData(entry, DataKey(entry, reviews, stamp), stripped, reviews, stamp, SpoilerTagStripPolicy.RevisionOf(policy));
         }
 
         /// <summary>
@@ -227,8 +231,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (!SpoilerTagDataStripper.IsConfigured(cfg)) return null;
-            return SpoilerTagDataStripper.CreatePolicy(cfg, _spoilerResolver.LoadUserState(httpContext, user.Id));
+            return SpoilerTagDataStripper.CreatePolicy(cfg, _spoilerResolver.LoadUserStateFresh(httpContext, user.Id));
         }
+
+        /// <summary>The revision of the viewer's tag strip as of now (what <see cref="PosterTagRenderData.PolicyRevision"/> is compared with).</summary>
+        public string SpoilerRevision(HttpContext httpContext, JUser user) => SpoilerTagStripPolicy.RevisionOf(CreateSpoilerPolicy(httpContext, user));
 
         private async Task<TagCacheEntry?> GetOrBuildAsync(BaseItem item, CancellationToken cancellationToken)
         {

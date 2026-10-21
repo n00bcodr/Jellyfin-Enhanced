@@ -498,6 +498,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // First: a synthetic-id request is answered (or refused) before any native action or JE filter runs.
                 o.Filters.AddService<Services.NativeDetails.NativeDetailsFacadeFilter>(Services.NativeDetails.NativeDetailsFacadeFilter.Order);
 #endif
+                // Outermost: commits a held protected answer once its result executed (whichever filter answered it).
+                o.Filters.Add(new Services.PrivacyCommitFilter());
                 o.Filters.AddService<TitlePresentationResultFilter>(int.MaxValue);
                 o.Filters.AddService<HiddenContentResponseFilter>();
                 o.Filters.AddService<SpoilerIdentityTagFilter>();

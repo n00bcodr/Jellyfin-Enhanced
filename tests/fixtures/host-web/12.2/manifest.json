@@ -18,6 +18,15 @@
    "module": 77733,
    "export": "Y",
    "sha256": "4559476942dd7ae6ba9627d56a2fcdae10c31972105b2fb4d324f0655570a1da"
+  },
+  "playback-manager.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 68221,
+   "sha256": "3e05d42c3a70777d742ce677224796370cc839d1b206d6bae2e36eeca6ad6dde"
+  },
+  "htmlVideoPlayer-plugin.chunk.js": {
+   "file": "htmlVideoPlayer-plugin.02b37b7cfd0e06696bd1.chunk.js",
+   "sha256": "eb20794d5051e092fe39373c8b265fcd60a05f43b61df0b212b3ebe70e52c748"
   }
  },
  "licenses": {
@@ -26,6 +35,9 @@
   },
   "main.jellyfin.bundle.js.LICENSE.txt": {
    "sha256": "be00e9ae0b464141b75106ce36313c47070d2536728441c2cc24495ca08c7c99"
+  },
+  "htmlVideoPlayer-plugin.02b37b7cfd0e06696bd1.chunk.js.LICENSE.txt": {
+   "sha256": "8c9946dfc859a2bfb26cc541125631cd96e7110fa20a702eb19275c9d1658805"
   }
  }
 }
