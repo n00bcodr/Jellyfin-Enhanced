@@ -301,7 +301,9 @@ public class PosterBlurFilterTests
         f.Trickplay.Setup(t=>t.GetTrickplayResolutions(f.Episode.Id)).ReturnsAsync(new Dictionary<int,TrickplayInfo>{{320,new TrickplayInfo{ItemId=f.Episode.Id,Width=320,TileWidth=5,TileHeight=2,Interval=1000}}});
         var original=new FileContentResult(PosterBlurTests.Source(),"image/jpeg");var(executed,http)=await f.RunTrickplay(original,f.Episode.Id);
         Assert.Same(original,executed.Result);Private(http);
-        f.Trickplay.Verify(t=>t.GetTrickplayResolutions(f.Episode.Id),admin?Times.Once():Times.Never());
+        // Protected: read for the decision, and once more by the delivery gate, which re-reads the recorded tile timing
+        // (D46's read-set) before the answer leaves. Opted out: never read.
+        f.Trickplay.Verify(t=>t.GetTrickplayResolutions(f.Episode.Id),admin?Times.Exactly(2):Times.Never());
     }
     // A spoilerblur.json with no Prefs object (or "Prefs": null) predates per-user prefs; it inherits trickplay protection.
     // The loader always materialises an empty Prefs, so "memory" seeds the per-request state cache with a genuinely null Prefs.
