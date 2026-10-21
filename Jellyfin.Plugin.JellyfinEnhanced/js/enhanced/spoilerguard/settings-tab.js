@@ -119,8 +119,7 @@
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
                 // Only this override: the others are as the server holds them (or will, once their saves are answered).
                 const key = changed.dataset.pref;
-                prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
-                await internal.setUserPrefs(prefs, native);
+                await internal.setUserPrefs({ [key]: key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false) }, native);
             } catch (e) {
                 if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);

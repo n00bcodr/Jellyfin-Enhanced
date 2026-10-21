@@ -325,16 +325,31 @@
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
-    // Play edge: the rebuild's PATCH (only the preferences that differ; the server applies them to what it holds now)
-    // sent through D46's owner-bound mutateState.
+    /** The preferences as the server will hold them once the override saves still out are answered. */
+    function expectedPrefs() {
+        return Object.assign({}, userPrefs, ...pendingPrefs);
+    }
+
+    // Play edge: the rebuild's PATCH (only the preferences that differ from what the server will hold once the saves still
+    // out are answered; the server applies them to what it holds then, so a preference changed back while its save is out
+    // is sent too) sent through D46's owner-bound mutateState.
     internal.setUserPrefs = function(next, owner) {
+        const expected = expectedPrefs();
         const set = {};
         for (const [key, value] of Object.entries(next || {})) {
-            if (JSON.stringify(value) !== JSON.stringify(userPrefs?.[key])) set[key] = value;
+            if (JSON.stringify(value) !== JSON.stringify(expected[key])) set[key] = value;
         }
         if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
+        pendingPrefs.push(set);
+        const queue = pendingPrefs;
+        const settled = () => { const i = queue.indexOf(set); if (i !== -1) queue.splice(i, 1); };
         return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, () => { userPrefs = { ...(userPrefs || {}), ...set }; }, owner)
-            .then(() => internal.getUserPrefs());
+            .then(result => {
+                settled();
+                // Never sent (its owner ended first): the caller is told, as for a failed save (the panel puts its box back).
+                if (result === UNSENT) throw Object.assign(new Error('Spoiler Guard preferences not sent'), { notSent: true });
+                return internal.getUserPrefs();
+            }, err => { settled(); throw err; });
     };
 
     // Spoiler Guard state (enabled series/movies/collections, prefs) is
@@ -359,6 +374,8 @@
         enabledCollections.clear();
         enabledPendingTmdb.clear();
         userPrefs = {};
+        // The previous person's saves are not this person's (their owners ended with the session: never sent).
+        pendingPrefs = [];
         // The outgoing viewer's native toggles show their state; the next page view draws the incoming one.
         document.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
         refreshControls();
