@@ -221,6 +221,22 @@ test('Discover and search menu titles read the title separately from the display
   assert.equal(h.actions.cardContext(card).name, 'Animals');
 });
 
+test('Seerr card menu titles read the title link, never the overview Request button or the link tooltip', t => {
+  const h = setup(t);
+  h.load('arr/actions/title-actions-hosts.js');
+  const card = h.document.createElement('div');
+  card.className = 'card jellyseerr-card';
+  // ui-cards.js order: the overview (with its Request button) is appended inside cardScalable, ahead of the title link.
+  card.innerHTML = '<div class="cardScalable"><div class="jellyseerr-overview"><div class="content">Zion defends itself.</div>'
+    + '<button class="jellyseerr-request-button" data-tmdb-id="55" data-media-type="movie">Request<span class="material-icons">more_horiz</span></button></div></div>'
+    + '<div class="cardText cardText-first"><a class="jellyseerr-more-info-link" data-tmdb-id="55" data-media-type="movie" title="View on Seerr"><bdi>The Matrix Revolutions</bdi></a></div>';
+  h.document.body.append(card);
+  assert.equal(h.actions.cardContext(card).name, 'The Matrix Revolutions');
+  card.querySelector('.cardText-first').remove();
+  assert.equal(h.actions.cardContext(card).name, '');
+  assert.equal(h.actions.cardContext(card).key, 'movie:tmdb:55');
+});
+
 test('compact row proxies originals; a cloned row is remounted; wide rows keep native controls', t => {
   const { actions: a, click, document: d, load } = setup(t);
   load('arr/actions/title-actions-hosts.js');

@@ -41,7 +41,9 @@
         const key = card.dataset.jeHideTitle || card.dataset.key;
         if (key) { const c = A.fromKey(key); if (c) return A.context({ ...c.data, name: card.dataset.jeHideName || card.querySelector('.je-discover-name bdi')?.textContent || '' }); }
         const meta = card.matches('[data-tmdb-id]') ? card : card.querySelector('[data-tmdb-id][data-media-type]');
-        return meta ? A.context({ mediaType: meta.dataset.mediaType, tmdbId: meta.dataset.tmdbId, name: meta.title || meta.textContent }) : null;
+        // The title link names the card: the overview's Request button comes first in a Seerr card and its tooltip can read "View on Seerr".
+        const link = card.querySelector('a[data-tmdb-id][data-media-type]');
+        return meta ? A.context({ mediaType: meta.dataset.mediaType, tmdbId: meta.dataset.tmdbId, name: (link?.querySelector('bdi') || link)?.textContent.trim() || '' }) : null;
     }
 
     /** Builds a visible keyboard/touch button. */
