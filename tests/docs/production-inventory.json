@@ -667,6 +667,22 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollageConsentRules.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollageLegacyEvidence.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollagePosterSet.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/Collages/ListCollageRenderer.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs",
       "category": "Services"
     },
@@ -11444,7 +11460,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 691,
+    "files": 695,
     "routes": 308,
     "configuration_properties": 651,
     "storage_references": 104,
