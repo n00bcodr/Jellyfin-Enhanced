@@ -401,13 +401,15 @@ public sealed class PrivacyResponseGuard
 }
 
 /// <summary>
-/// The commit at the end of every MVC answer: the outermost resource filter, so it runs after the answer's result executed
-/// (whatever filter answered it, a short circuit included) and commits a held protected answer that its writer did not.
+/// The commit at the end of every MVC answer: outside every other resource filter but the legacy collage body (its body is
+/// the last thing written, so a held protected answer is committed into it while it is still installed), so it runs after
+/// the answer's result executed (whatever filter answered it, a short circuit included) and commits a held protected
+/// answer that its writer did not.
 /// </summary>
 public sealed class PrivacyCommitFilter : IAsyncResourceFilter, IOrderedFilter
 {
     /// <inheritdoc />
-    public int Order => int.MinValue;
+    public int Order => Acquire.Lists.LegacyCollageBody.Order + 1;
 
     /// <inheritdoc />
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)

@@ -167,7 +167,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                return await action(user).ConfigureAwait(false);
+                // The one delivery gate: a review marks and strips titles by the viewer's Hidden Content and Spoiler Guard
+                // policies, so it leaves only when the read-set of the attempt that built it still holds (else built again,
+                // bounded; then 503).
+                return await Services.PrivacyDelivery.DeliverAsync(user.Id, () => action(user), HttpContext).ConfigureAwait(false)
+                    ?? Refused(503, "privacy_changed", "Your title rules changed while the titles were checked; try again.");
             }
             catch (InvalidDataException ex)
             {
