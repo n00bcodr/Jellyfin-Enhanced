@@ -48,12 +48,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (!HomeFlags.Rows(JellyfinEnhanced.Instance?.Configuration)) return NotFound(new { outcome = "refused", reason = "disabled" });
             using var scope = _home.Status.Store.BeginRequest("acquire/home");
             var hss = HomeFlags.HssSections(JellyfinEnhanced.Instance?.Configuration) && HssSectionsAdapter.Present;
-            var body = await _home.ForViewerAsync(viewer, hss, cancellationToken).ConfigureAwait(false);
-            if (body == null) return NotFound(new { outcome = "refused", reason = "disabled" });
-            Response.Headers["Cache-Control"] = "private, no-cache";
-            Response.Headers["ETag"] = body.ETag;
-            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], body.ETag)) return StatusCode(304);
-            return File(body.Json, "application/json; charset=utf-8");
+            // The one delivery gate: the rows carry titles judged by the viewer's privacy policies, so they leave only when
+            // the read-set of the attempt that built them still holds (else built again, bounded; then 503).
+            var answer = await Services.PrivacyDelivery.DeliverAsync<IActionResult>(viewer.UserId, async () =>
+            {
+                var body = await _home.ForViewerAsync(viewer, hss, cancellationToken).ConfigureAwait(false);
+                if (body == null) return NotFound(new { outcome = "refused", reason = "disabled" });
+                Response.Headers["Cache-Control"] = "private, no-cache";
+                Response.Headers["ETag"] = body.ETag;
+                if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], body.ETag)) return StatusCode(304);
+                return File(body.Json, "application/json; charset=utf-8");
+            }, HttpContext).ConfigureAwait(false);
+            return answer ?? StatusCode(503);
         }
 
         /// <summary>

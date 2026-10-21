@@ -440,10 +440,9 @@ public class ApiNotifyRoutesTests
         Task? second = null;
         store.UpdatePrefs(user, prefs =>
         {
-            second = Task.Run(() => store.UpdatePrefs(user, p => { p.Episodes = false; return true; }, rig.Arr.Now));
+            second = Task.Run(() => store.UpdatePrefs(user, p => { p.Episodes = false; }, rig.Arr.Now));
             Assert.False(second.Wait(200), "the second change waits for the first");
             prefs.Ready = false;
-            return true;
         }, rig.Arr.Now);
         await second!.WaitAsync(TimeSpan.FromSeconds(5));
         var stored = store.Prefs(user);

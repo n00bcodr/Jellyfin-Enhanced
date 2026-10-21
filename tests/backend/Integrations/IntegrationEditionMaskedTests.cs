@@ -366,11 +366,8 @@ public class IntegrationEditionMaskedTests
         "HomeProjection.NewestEpisode",       // "Just arrived": Jellyfin's own episode items and their dates (plays: the predicate)
         "ItemStatsService.Collect",           // item stats of Jellyfin's own season (no arr fact)
         "RequestPolicy.NativeScopeAllowed",   // the hidden-part request gate (a part a copy they open plays is theirs)
+        "PrivacyReads.SeasonEpisodes",        // Spoiler Guard: what the viewer watched in Jellyfin's own season (no arr fact; D46 r21+)
         "SeasonRowsService.ForSeasonAsync",   // the native season page's rows (presentation)
-        "SpoilerBlurImageFilter.HasWatchedAnyEpisodeInSeason",            // Spoiler Guard: what the viewer watched in Jellyfin's own season
-        "SpoilerFieldStripFilter.HasWatchedAnyEpisodeInSeasonServerSide", // (no arr fact in any of them)
-        "SpoilerTagDataStripper.HasWatchedAnyEpisode",
-        "SpoilerTagDataStripper.StripTagCache",
     };
 
     [Fact]

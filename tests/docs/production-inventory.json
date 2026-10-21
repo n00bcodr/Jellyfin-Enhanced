@@ -1639,6 +1639,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyDelivery.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyFieldClassification.cs",
       "category": "Services"
     },
@@ -1647,11 +1651,23 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyReadSet.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyResponseGuard.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySessionsWebSocketListener.cs",
       "category": "Services"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacySurfaceRegistry.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PrivacyTagValues.cs",
       "category": "Services"
     },
     {
@@ -11105,6 +11121,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
       "literal": "processed-watchlist-items.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
@@ -11114,6 +11134,10 @@
     },
     {
       "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
+    },
+    {
+      "literal": "spoilerblur.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfigurationManager.cs"
     },
     {
@@ -11697,10 +11721,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 727,
+    "files": 731,
     "routes": 311,
     "configuration_properties": 661,
-    "storage_references": 104,
+    "storage_references": 106,
     "scheduled_tasks": 15,
     "locales": 33
   }

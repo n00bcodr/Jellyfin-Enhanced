@@ -49,7 +49,7 @@ public class PrivacyHostShapeModelTests
 
     internal sealed record Manifest(Dictionary<string, string> Roles, Dictionary<string, string> Owners, List<Shot> Shots);
 
-    private static readonly JsonSerializerOptions Json = Jellyfin.Extensions.Json.JsonDefaults.Options;
+    internal static readonly JsonSerializerOptions Json = Jellyfin.Extensions.Json.JsonDefaults.Options;
 
     private static readonly Lazy<Manifest> _manifest = new(() =>
     {
@@ -135,6 +135,8 @@ public class PrivacyHostShapeModelTests
         public HashSet<(Guid User, Guid Item)> Played { get; } = new();
         public Mock<ILibraryManager> Library { get; } = new();
         public Mock<IUserManager> Users { get; } = new();
+        /// <summary>The host's user-data store (its saves raise <c>UserDataSaved</c>).</summary>
+        public Mock<IUserDataManager> UserData { get; } = new();
         public SpoilerFieldStripFilter Strip { get; }
         public SpoilerPresentation Spoilers { get; }
         public Guid Admin { get; }
@@ -155,7 +157,7 @@ public class PrivacyHostShapeModelTests
             BaseItem.LibraryManager = Library.Object;
             foreach (var (id, name) in new[] { (Admin, "real-admin"), (Viewer, "real-viewer") })
                 Users.Setup(u => u.GetUserById(id)).Returns(new User(name, "default", "default") { Id = id });
-            var data = new Mock<IUserDataManager>();
+            var data = UserData;
             data.Setup(d => d.GetUserData(It.IsAny<User>(), It.IsAny<BaseItem>()))
                 .Returns((User user, BaseItem item) => new UserItemData { Key = "k", Played = Played.Contains((user.Id, item.Id)) });
             var identities = new RequestIdentityService(Mock.Of<ISessionManager>(), Users.Object, new SpoilerIdentityService(Users.Object, F.Core.Logger), F.Core.Logger);
@@ -338,6 +340,9 @@ public class PrivacyHostShapeModelTests
     public static ActionContext Context(Shot shot, Guid viewer)
     {
         var http = new DefaultHttpContext { User = TestCallers.Principal(viewer, viewer == G(Data.Roles["user:admin"])) };
+        // The request's own device and token (the host puts them into the URLs it builds for this caller).
+        ((System.Security.Claims.ClaimsIdentity)http.User.Identity!).AddClaims([
+            new System.Security.Claims.Claim("Jellyfin-DeviceId", PrivacyTestHost.CallerDeviceId), new System.Security.Claims.Claim("Jellyfin-Token", PrivacyTestHost.CallerToken)]);
         http.Request.Method = shot.Method;
         var parts = shot.Path.Split('?', 2);
         http.Request.Path = parts[0];

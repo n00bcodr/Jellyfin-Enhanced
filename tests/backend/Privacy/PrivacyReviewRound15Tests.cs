@@ -126,17 +126,17 @@ public class PrivacyReviewRound15Tests
         var movie = rig.Add(new MediaBrowser.Controller.Entities.Movies.Movie { Name = "Movie" });
         var other = rig.Add(new MediaBrowser.Controller.Entities.Movies.Movie { Name = "Other" });
         QueryResult<BaseItemDto> Answer() => new(0, 1, [Dto(movie)]);
-        Assert.IsType<ObjectResult>(rig.Deliver(rig.Native("Future", "GetThings"), new ObjectResult(Answer())));
+        Assert.IsAssignableFrom<ObjectResult>(rig.Deliver(rig.Native("Future", "GetThings"), new ObjectResult(Answer())));
         rig.Hide(other.Id);
         Assert.Equal(503, Assert.IsType<StatusCodeResult>(rig.Deliver(rig.Native("Future", "GetThings"), new ObjectResult(Answer()))).StatusCode);
         // An answer without titles is never withheld.
-        Assert.IsType<ObjectResult>(rig.Deliver(rig.Native("Future", "GetThings"), new ObjectResult(new UserItemDataDto { Key = "k" })));
+        Assert.IsAssignableFrom<ObjectResult>(rig.Deliver(rig.Native("Future", "GetThings"), new ObjectResult(new UserItemDataDto { Key = "k" })));
         // Spoiler Guard alone also withholds.
         rig.Hide();
         rig.Guard(new UserSpoilerBlur { Movies = { [other.Id.ToString("N")] = new() } });
         Assert.Equal(503, Assert.IsType<StatusCodeResult>(rig.Deliver(rig.Native("Plugin", "GetRows", "POST"), new ObjectResult(Answer()))).StatusCode);
         // A registered endpoint with the same answer is projected, not withheld.
-        Assert.IsType<ObjectResult>(rig.Deliver(rig.Native("Items", "GetItems"), new ObjectResult(Answer())));
+        Assert.IsAssignableFrom<ObjectResult>(rig.Deliver(rig.Native("Items", "GetItems"), new ObjectResult(Answer())));
     }
 
     // ---- D46-SEC-R15-2: movie recommendations. ----
@@ -165,7 +165,7 @@ public class PrivacyReviewRound15Tests
         ];
         object value = lazy ? new[] { 0 }.SelectMany(_ => Build()) : Build().ToList();
         var delivered = Assert.IsAssignableFrom<IEnumerable<RecommendationDto>>(
-            Assert.IsType<ObjectResult>(rig.Deliver(rig.Native("Movies", "GetMovieRecommendations"), new ObjectResult(value))).Value).ToArray();
+            Assert.IsAssignableFrom<ObjectResult>(rig.Deliver(rig.Native("Movies", "GetMovieRecommendations"), new ObjectResult(value))).Value).ToArray();
         Assert.Equal(new[] { "Watched seed", "An actor" }, delivered.Select(c => c.BaselineItemName));
         foreach (var category in delivered) Assert.Equal(new[] { shown.Id }, category.Items.Select(i => i.Id));
     }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -124,24 +125,48 @@ internal static partial class PrivacyTokens
         + "application/font-woff font/ttf font/otf font/sfnt font/woff font/woff2 font/collection image/jpeg image/png image/webp image/gif image/bmp "
         + "application/octet-stream text/plain text/xml application/xml");
 
-    public static bool Codec(string? value) => value != null && (_codecs.Contains(value) || value.Split(',').All(_codecs.Contains));
+    /// <summary>The table's own entry for a value (its canonical spelling), or null when the table has no such entry.</summary>
+    private static string? Entry(FrozenSet<string> table, string? value) => value != null && table.TryGetValue(value, out var entry) ? entry : null;
 
-    public static bool Profile(string? value) => value != null && _profiles.Contains(value);
+    /// <summary>A comma-separated list whose every part is a table entry: the entries, joined as the host joins them; else null.</summary>
+    private static string? Entries(FrozenSet<string> table, string? value)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length > 512) return null;
+        var parts = value.Split(',');
+        var entries = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+            if ((entries[i] = Entry(table, parts[i])!) == null) return null;
+        return string.Join(',', entries);
+    }
 
-    public static bool PixelFormat(string? value) => value != null && _pixelFormats.Contains(value);
+    /// <summary>The codec table's entry (or a comma-separated list of entries, as ffprobe names some formats).</summary>
+    public static string? Codec(string? value) => Entry(_codecs, value) ?? Entries(_codecs, value);
 
-    /// <summary>A channel layout name, or ffprobe's "N channels" for an unnamed layout.</summary>
-    public static bool Layout(string? value) => value != null && (_layouts.Contains(value) || ChannelCount().IsMatch(value));
+    /// <summary>The profile table's entry.</summary>
+    public static string? Profile(string? value) => Entry(_profiles, value);
 
-    /// <summary>A container: one name or a comma-separated list of names.</summary>
-    public static bool Container(string? value) => value != null && value.Split(',').All(_containers.Contains);
+    /// <summary>The pixel-format table's entry.</summary>
+    public static string? PixelFormat(string? value) => Entry(_pixelFormats, value);
 
-    public static bool Color(string? value) => value != null && _colors.Contains(value);
+    /// <summary>The channel-layout table's entry, or ffprobe's "N channels" for an unnamed layout (rebuilt from its number).</summary>
+    public static string? Layout(string? value)
+        => Entry(_layouts, value) ?? (value != null && ChannelCount().Match(value) is { Success: true } m ? string.Create(CultureInfo.InvariantCulture, $"{int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)} channels") : null);
 
-    public static bool MimeType(string? value) => value != null && _mimeTypes.Contains(value);
+    /// <summary>A container: the table's entry, or a comma-separated list of entries.</summary>
+    public static string? Container(string? value) => Entry(_containers, value) ?? Entries(_containers, value);
+
+    /// <summary>The colour table's entry.</summary>
+    public static string? Color(string? value) => Entry(_colors, value);
+
+    /// <summary>The attachment MIME table's entry.</summary>
+    public static string? MimeType(string? value) => Entry(_mimeTypes, value);
 
     /// <summary>A hexadecimal id (32 hex digits, the host's "N" GUID form) or a GUID in any form.</summary>
     public static bool Id(string? value) => value != null && (HexId().IsMatch(value) || Guid.TryParse(value, out _));
+
+    /// <summary>An id rebuilt from its parsed value, in the layout it came in (the host's "N" form or the dashed "D" form).</summary>
+    public static string? IdOf(string? value)
+        => value != null && value.Length is 32 or 36 && Guid.TryParse(value, out var id) ? id.ToString(value.Length == 32 ? "N" : "D", CultureInfo.InvariantCulture) : null;
 
     /// <summary>
     /// An image tag or ETag: hex, as the host writes it, with Spoiler Guard's (sb-) and JE's (-jeu) cache-bust parts, or JE's
@@ -183,20 +208,210 @@ internal static partial class PrivacyTokens
     /// <summary>A user-data key: an id (optionally with the episode's season/episode digits) or provider digits.</summary>
     public static bool UserDataKey(string? value) => value != null && (IdShaped(value) || UserDataKeyPattern().IsMatch(value));
 
-    /// <summary>The host's delivery URL of an indexed subtitle stream or attachment (no file name).</summary>
-    public static bool DeliveryUrl(string? value) => value != null && DeliveryUrlPattern().IsMatch(value);
+    /// <summary>One of the named values: the list's own entry.</summary>
+    public static string? OneOf(string? value, params string[] names)
+    {
+        if (value == null) return null;
+        foreach (var name in names) if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase)) return name;
+        return null;
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // URLs, rebuilt from the hosts' own route templates: named parameters only, each value rebuilt by its own rule, the
+    // host's fixed file names; never a segment or parameter of the original copied as text.
+
+    /// <summary>The request a projection answers: its device id and access token (the values the host put into its URLs).</summary>
+    public readonly record struct Caller(string? DeviceId, string? Token);
 
     /// <summary>
-    /// The host's transcoding URL (StreamInfo.ToUrl on both lines): its own route, and parameters whose values are ids,
-    /// numbers, flags and comma-separated tokens; never a space or an encoded space, so no free text. (10.11 starts its
-    /// query with an empty parameter: "master.m3u8?&DeviceId=…".)
+    /// A media stream's or attachment's delivery URL, rebuilt from the host's templates (StreamInfo's subtitle URL and
+    /// MediaInfoHelper's attachment URL, the same on 12.2 and 10.11.11): "/Videos/{item}/{source}/Subtitles/{index}/{ticks}/Stream.{format}",
+    /// "?ApiKey=" the caller's own token, and "/Videos/{item}/{source}/Attachments/{index}". The file name is always the host's
+    /// "Stream"; anything else is null.
     /// </summary>
-    public static bool TranscodingUrl(string? value) => value != null && TranscodingUrlPattern().IsMatch(value);
+    public static string? DeliveryUrl(string? value, Caller caller)
+    {
+        if (value == null || value.Length > 1024) return null;
+        if (AttachmentRoute().Match(value) is { Success: true } a)
+        {
+            var item = IdOf(a.Groups["item"].Value);
+            var source = SourceId(a.Groups["source"].Value);
+            var index = Int(a.Groups["index"].Value);
+            return item == null || source == null || index == null ? null : "/" + RouteRoot(a.Groups["root"].Value) + "/" + item + "/" + source + "/Attachments/" + index;
+        }
+        if (SubtitleRoute().Match(value) is not { Success: true } m) return null;
+        var id = IdOf(m.Groups["item"].Value);
+        var sourceId = SourceId(m.Groups["source"].Value);
+        var stream = Int(m.Groups["index"].Value);
+        var ticks = m.Groups["ticks"].Success ? Long(m.Groups["ticks"].Value) : null;
+        var format = Codec(m.Groups["format"].Value);
+        if (id == null || sourceId == null || stream == null || format == null || m.Groups["ticks"].Success && ticks == null) return null;
+        var url = "/" + RouteRoot(m.Groups["root"].Value) + "/" + id + "/" + sourceId + "/Subtitles/" + stream + (ticks != null ? "/" + ticks : "") + "/Stream." + format;
+        // The host appends "?ApiKey=" with the caller's token; it is the caller's own value, never the original's.
+        return m.Groups["query"].Success && Query(m.Groups["query"].Value).Any(p => string.Equals(p.Key, "ApiKey", StringComparison.OrdinalIgnoreCase)) && Token(caller.Token) is { } token
+            ? url + "?ApiKey=" + token : url;
+    }
 
-    /// <summary>One of the named values.</summary>
-    public static bool OneOf(string? value, params string[] names) => value != null && names.Contains(value, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// A transcoding URL, rebuilt from the host's template (StreamInfo.ToUrl and MediaInfoHelper's additions, 12.2 and
+    /// 10.11.11): "/videos|/audio/{item}/master.m3u8|main.m3u8|stream[.{container}]", then the host's named parameters in
+    /// their original order, each value rebuilt by its own rule (ids from their parsed value, numbers, flags and enum names
+    /// from their tables, codec and container lists from the token tables, the device id and access token from the caller);
+    /// an unknown parameter, or one whose value its rule does not accept, is left out. 10.11's leading empty parameter
+    /// ("master.m3u8?&DeviceId=…") is kept as the host writes it.
+    /// </summary>
+    public static string? TranscodingUrl(string? value, Caller caller)
+    {
+        if (value == null || value.Length > 8192 || TranscodingRoute().Match(value) is not { Success: true } m) return null;
+        var item = IdOf(m.Groups["item"].Value);
+        var file = m.Groups["file"].Value;
+        string? name = file.ToLowerInvariant() switch
+        {
+            "master.m3u8" => "master.m3u8",
+            "main.m3u8" => "main.m3u8",
+            "stream" => "stream",
+            _ => file.StartsWith("stream.", StringComparison.OrdinalIgnoreCase) && Container(file[7..]) is { } container ? "stream." + container : null,
+        };
+        if (item == null || name == null) return null;
+        var url = "/" + m.Groups["kind"].Value.ToLowerInvariant() + "/" + item + "/" + name;
+        if (!m.Groups["query"].Success) return url;
+        var query = m.Groups["query"].Value;
+        var kept = new List<string>();
+        foreach (var (key, raw) in Query(query))
+        {
+            if (key.Length == 0) continue;
+            if (Parameter(key, raw, caller) is { } rebuilt) kept.Add(rebuilt);
+        }
+        if (kept.Count == 0) return url;
+        return url + (query.StartsWith('&') ? "?&" : "?") + string.Join('&', kept);
+    }
 
-    [GeneratedRegex(@"^\d{1,2} channels$")]
+    /// <summary>A query's parameters in order (the separator '&amp;'; a parameter without '=' has an empty value).</summary>
+    private static IEnumerable<(string Key, string Value)> Query(string query)
+        => query.Split('&').Select(p => p.IndexOf('=', StringComparison.Ordinal) is var at && at >= 0 ? (p[..at], p[(at + 1)..]) : (p, ""));
+
+    private delegate string? ValueRule(string value, Caller caller);
+
+    private static readonly string[] _flags = ["true", "false", "True", "False"];
+
+    /// <summary>The host's transcoding parameters (StreamInfo.ToUrl, both lines, and MediaInfoHelper), each with its value rule.</summary>
+    private static readonly Dictionary<string, ValueRule> _parameters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["DeviceProfileId"] = (v, _) => IdOf(v),
+        ["DeviceId"] = (v, c) => CallerValue(v, c.DeviceId, 512),
+        ["MediaSourceId"] = (v, _) => SourceId(v),
+        ["Static"] = (v, _) => Flag(v),
+        ["VideoCodec"] = (v, _) => Codec(v),
+        ["AudioCodec"] = (v, _) => Codec(v),
+        ["SubtitleCodec"] = (v, _) => Codec(v),
+        ["AudioStreamIndex"] = (v, _) => Int(v),
+        ["SubtitleStreamIndex"] = (v, _) => Int(v),
+        ["VideoBitrate"] = (v, _) => Long(v),
+        ["AudioBitrate"] = (v, _) => Long(v),
+        ["AudioSampleRate"] = (v, _) => Long(v),
+        ["MaxFramerate"] = (v, _) => Decimal(v),
+        ["MaxWidth"] = (v, _) => Long(v),
+        ["MaxHeight"] = (v, _) => Long(v),
+        ["SegmentContainer"] = (v, _) => Container(v),
+        ["SegmentLength"] = (v, _) => Long(v),
+        ["MinSegments"] = (v, _) => Long(v),
+        ["StartTimeTicks"] = (v, _) => Long(v),
+        ["PlaySessionId"] = (v, _) => IdOf(v),
+        ["ApiKey"] = (v, c) => Token(c.Token) is { } token && v.Length > 0 ? token : null,
+        ["LiveStreamId"] = (v, _) => SourceId(v),
+        ["RequireNonAnamorphic"] = (v, _) => Flag(v),
+        ["TranscodingMaxAudioChannels"] = (v, _) => Long(v),
+        ["EnableSubtitlesInManifest"] = (v, _) => Flag(v),
+        ["EnableMpegtsM2TsMode"] = (v, _) => Flag(v),
+        ["EstimateContentLength"] = (v, _) => Flag(v),
+        ["TranscodeSeekInfo"] = (v, _) => EnumName<MediaBrowser.Model.Dlna.TranscodeSeekInfo>(v),
+        ["CopyTimestamps"] = (v, _) => Flag(v),
+        ["BreakOnNonKeyFrames"] = (v, _) => Flag(v),
+        ["RequireAvc"] = (v, _) => Flag(v),
+        ["EnableAudioVbrEncoding"] = (v, _) => Flag(v),
+        ["Tag"] = (v, _) => Tag(v) ? v : null,
+        ["SubtitleMethod"] = (v, _) => EnumName<MediaBrowser.Model.Dlna.SubtitleDeliveryMethod>(v),
+        ["TranscodeReasons"] = (v, _) => EnumNames<MediaBrowser.Model.Session.TranscodeReason>(v),
+        ["allowVideoStreamCopy"] = (v, _) => Flag(v),
+        ["allowAudioStreamCopy"] = (v, _) => Flag(v),
+        ["alwaysBurnInSubtitleWhenTranscoding"] = (v, _) => Flag(v),
+    };
+
+    /// <summary>Profile names as StreamBuilder writes them into a URL: lower case, spaces removed.</summary>
+    private static readonly FrozenSet<string> _optionProfiles = _profiles.Select(p => p.ToLowerInvariant().Replace(" ", "", StringComparison.Ordinal))
+        .Concat(["constrainedbaseline", "main10", "high10", "mainstillpicture", "lc", "he-aac", "he-aacv2", "ltp", "ssr", "ld", "eld", "xhe-aac", "high444", "highprofile"])
+        .ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>The per-codec options StreamBuilder sets ("{codec}-{option}"), each with its value rule.</summary>
+    private static readonly Dictionary<string, Func<string, string?>> _codecOptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["profile"] = v => List(v, p => Entry(_optionProfiles, p)),
+        ["level"] = v => List(v, Decimal),
+        ["rangetype"] = v => List(v, EnumName<Jellyfin.Data.Enums.VideoRangeType>),
+        ["codectag"] = v => List(v, t => FourCcPattern().IsMatch(t) && t.Length == 4 ? t : null),
+        ["deinterlace"] = Flag,
+        ["audiochannels"] = v => List(v, Long),
+        ["maxrefframes"] = v => List(v, Long),
+        ["videobitdepth"] = v => List(v, Long),
+        ["audiobitdepth"] = v => List(v, Long),
+        ["rotation"] = v => List(v, Long),
+    };
+
+    private static string? Parameter(string key, string value, Caller caller)
+    {
+        if (_parameters.TryGetValue(key, out var rule))
+        {
+            var name = _parameters.Keys.First(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase));
+            return rule(value, caller) is { } rebuilt ? name + "=" + rebuilt : null;
+        }
+        // "{codec}-{option}" (StreamInfo.StreamOptions): a codec from the codec table and an option from StreamBuilder's own.
+        var dash = key.LastIndexOf('-');
+        if (dash <= 0 || Codec(key[..dash]) is not { } codec || !_codecOptions.TryGetValue(key[(dash + 1)..], out var option)) return null;
+        var optionName = _codecOptions.Keys.First(k => string.Equals(k, key[(dash + 1)..], StringComparison.OrdinalIgnoreCase));
+        return option(value) is { } kept ? codec + "-" + optionName + "=" + kept : null;
+    }
+
+    /// <summary>The caller's own value for a parameter the host fills from the request (escaped when the original was).</summary>
+    private static string? CallerValue(string original, string? own, int max)
+    {
+        if (string.IsNullOrEmpty(original) || string.IsNullOrEmpty(own) || own.Length > max) return null;
+        return original.Contains('%', StringComparison.Ordinal) ? Uri.EscapeDataString(own) : own;
+    }
+
+    /// <summary>An access token as the host issues it (32 hex digits).</summary>
+    private static string? Token(string? token) => token != null && HexId().IsMatch(token) ? token : null;
+
+    /// <summary>A media source or live stream id: an id, or hex runs joined by underscores (the host's live-stream ids).</summary>
+    private static string? SourceId(string value)
+        => IdOf(value) ?? (value.Length is > 0 and <= 200 && value.Split('_').All(part => part.Length > 0 && part.All(Uri.IsHexDigit)) ? string.Join('_', value.Split('_').Select(p => p.ToLowerInvariant())) : null);
+
+    private static string? Flag(string value) => _flags.FirstOrDefault(f => string.Equals(f, value, StringComparison.Ordinal));
+
+    private static string? Int(string value) => value.Length <= 11 && int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var n) ? n.ToString(CultureInfo.InvariantCulture) : null;
+
+    private static string? Long(string value) => value.Length <= 20 && long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var n) ? n.ToString(CultureInfo.InvariantCulture) : null;
+
+    private static string? Decimal(string value)
+        => value.Length <= 24 && decimal.TryParse(value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var n) ? n.ToString(CultureInfo.InvariantCulture) : null;
+
+    private static string? EnumName<T>(string value) where T : struct, Enum
+        => Enum.GetNames<T>().FirstOrDefault(n => string.Equals(n, value, StringComparison.Ordinal));
+
+    private static string? EnumNames<T>(string value) where T : struct, Enum => List(value, EnumName<T>);
+
+    private static string? List(string value, Func<string, string?> each)
+    {
+        if (value.Length == 0 || value.Length > 1024) return null;
+        var parts = value.Split(',');
+        var rebuilt = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+            if ((rebuilt[i] = each(parts[i])!) == null) return null;
+        return string.Join(',', rebuilt);
+    }
+
+    private static string RouteRoot(string root) => root.ToLowerInvariant() switch { "audio" => "Audio", "items" => "Items", _ => "Videos" };
+
+    [GeneratedRegex(@"^(\d{1,2}) channels$")]
     private static partial Regex ChannelCount();
 
     [GeneratedRegex("^[0-9a-fA-F]{32}$")]
@@ -226,9 +441,12 @@ internal static partial class PrivacyTokens
     [GeneratedRegex(@"^([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\d{0,12}$")]
     private static partial Regex UserDataKeyPattern();
 
-    [GeneratedRegex(@"^/(Videos|Audio|Items)/[0-9a-fA-F-]{32,36}/[0-9a-fA-F_-]{1,200}/(Subtitles|Attachments)/\d{1,4}(/\d{1,20})?(/[A-Za-z]{1,16}\.[A-Za-z0-9]{1,10})?(\?[A-Za-z_]{1,32}=[0-9A-Za-z._-]{0,128}(&[A-Za-z_]{1,32}=[0-9A-Za-z._-]{0,128}){0,8})?$", RegexOptions.IgnoreCase)]
-    private static partial Regex DeliveryUrlPattern();
+    [GeneratedRegex(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Subtitles/(?<index>\d{1,4})(/(?<ticks>\d{1,20}))?/(?<file>[^/?]{1,200})\.(?<format>[A-Za-z0-9]{1,16})(\?(?<query>[^?]{0,1024}))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex SubtitleRoute();
 
-    [GeneratedRegex(@"^/(videos|audio)/[0-9a-f-]{32,36}/[a-z0-9_]{1,24}(\.[a-z0-9]{1,12})?(\?&?[a-z0-9_-]{1,40}=([0-9a-z._,:=+/|-]|%2c|%3d|%2b|%2f|%7c){0,512}(&[a-z0-9_-]{1,40}=([0-9a-z._,:=+/|-]|%2c|%3d|%2b|%2f|%7c){0,512}){0,80})?$", RegexOptions.IgnoreCase)]
-    private static partial Regex TranscodingUrlPattern();
+    [GeneratedRegex(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Attachments/(?<index>\d{1,4})$", RegexOptions.IgnoreCase)]
+    private static partial Regex AttachmentRoute();
+
+    [GeneratedRegex(@"^/(?<kind>videos|audio)/(?<item>[0-9a-fA-F-]{32,36})/(?<file>[A-Za-z0-9_.]{1,40})(\?(?<query>[^?#]{0,8000}))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex TranscodingRoute();
 }

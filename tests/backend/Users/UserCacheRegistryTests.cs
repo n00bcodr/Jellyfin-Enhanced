@@ -183,8 +183,8 @@ public class UserCacheRegistryTests
     {
         // Round 2's season cache as it was: a plain dictionary keyed by (user, season).
         var plain = WriteGateWalk.Plugin.With(Filter, s => s.Replace(
-            "private static readonly UserAccessCache<(Guid User, Guid Season), bool> _watchedCache = new(SeasonWatchedCacheTtl, 512);",
-            "private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid User, Guid Season), bool> _watchedCache = new();", StringComparison.Ordinal));
+            "private static readonly UserAccessCache<(Guid User, Guid Season, string Specials), WatchedCacheEntry> _watchedCache = new(SeasonWatchedCacheTtl, 512);",
+            "private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid User, Guid Season, string Specials), WatchedCacheEntry> _watchedCache = new();", StringComparison.Ordinal));
         Assert.Contains(Problems(plain, Registry()), p => p.StartsWith("SpoilerBlurImageFilter._watchedCache (", StringComparison.Ordinal) && p.Contains("not UserAccessCache", StringComparison.Ordinal));
 
         // The feed audience keyed by another read of the user (the round 2 race) instead of the user it decides with.
