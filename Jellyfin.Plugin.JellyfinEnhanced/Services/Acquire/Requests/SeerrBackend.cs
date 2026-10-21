@@ -43,8 +43,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         /// <param name="kind">Sonarr or Radarr.</param>
         /// <param name="ct">Cancellation.</param>
+        /// <param name="fresh">Read again whatever the held read's age (a press is checked on what Seerr says now, D53 edition round 19).</param>
         /// <returns>A task that completes when the read is current or has failed.</returns>
-        Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct);
+        Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct, bool fresh = false);
+
+        /// <summary>
+        /// Whether Seerr takes whole-series requests only now (its partial-request setting off, or not a real on/off), read
+        /// again now; null when it can't be read.
+        /// </summary>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True, false, or null (unknown).</returns>
+        Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct);
 
         /// <summary>
         /// The server Seerr sends a request of <paramref name="kind"/> and that edition to (its one default server for the
@@ -342,15 +351,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         public string DestinationsRevision => Interlocked.Read(ref _destinationsRevision).ToString(CultureInfo.InvariantCulture);
 
         /// <inheritdoc />
-        public async Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct)
+        public async Task RefreshDestinationsAsync(ArrKind kind, CancellationToken ct, bool fresh = false)
         {
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
-            if (config == null || source == null || Fresh(kind, source)) return;
+            if (config == null || source == null || (!fresh && Fresh(kind, source))) return;
             await _destinationsGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (Fresh(kind, source)) return;
+                if (!fresh && Fresh(kind, source)) return;
                 IReadOnlyList<SeerrServer>? servers = null;
                 // Read where requests are sent (the first address), as every confirming read is.
                 if (Urls(config).FirstOrDefault() is { } url)
@@ -390,6 +399,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private bool Fresh(ArrKind kind, string source)
             => _destinations.TryGetValue(kind, out var held) && held.Source == source && _now() - held.At < DestinationsFor;
+
+        /// <inheritdoc />
+        public async Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (config == null || source == null) return null;
+            var settings = await SettingsAsync(config, source, fresh: true, ct).ConfigureAwait(false);
+            return settings == null ? null : settings.Partial != true;
+        }
+
+        /// <summary>
+        /// Seerr's servers of <paramref name="kind"/> read now at <paramref name="url"/> (where the request goes): null when they
+        /// can't be read. Also refreshes what <see cref="DefaultServer"/> answers.
+        /// </summary>
+        private async Task<IReadOnlyList<SeerrServer>?> ServersNowAsync(PluginConfiguration config, string source, string url, ArrKind kind, CancellationToken ct)
+        {
+            var json = await GetAsync(config, "/api/v1/settings/" + (kind == ArrKind.Sonarr ? "sonarr" : "radarr"), ct, url).ConfigureAwait(false);
+            IReadOnlyList<SeerrServer>? servers = json is { ValueKind: JsonValueKind.Array } rows ? Servers(rows) : null;
+            if (servers != null)
+            {
+                var before = _destinations.TryGetValue(kind, out var held) ? held : null;
+                _destinations[kind] = new DestinationsRead(source, servers, _now());
+                if (before == null || before.Source != source || !SameServers(before.Servers, servers)) Interlocked.Increment(ref _destinationsRevision);
+            }
+            return servers;
+        }
 
         // Seerr's server rows: the address as Seerr reaches it (as the config page builds an imported instance's URL).
         private static List<SeerrServer> Servers(JsonElement rows)
@@ -485,6 +521,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     : BackendResults.Retry("backend_unavailable", "Seerr couldn't confirm the person's account; nothing was sent.");
             if (!string.Equals(Str(linked, "jellyfinUserId"), job.Authorization.Requester.ToString("N"), StringComparison.OrdinalIgnoreCase))
                 return Unlinked(job.Authorization.Requester, source, "That Seerr account is no longer linked to the person who asked.");
+            // A season page's ask proven to land on one of Seerr's servers (D53, edition round 19: the server decides every press)
+            // goes there or nowhere: Seerr's servers are read again right before the POST. An account Seerr lets choose a server
+            // names it; any other goes to Seerr's default for the edition, so it is sent only while that default is still it.
+            if (!key.IsMovie && job.Authorization.SeerrServer is int proven)
+            {
+                var servers = await ServersNowAsync(config, source, url, ArrKind.Sonarr, ct).ConfigureAwait(false);
+                if (servers == null) return BackendResults.Retry("backend_unavailable", "Seerr's servers couldn't be read; nothing was sent.");
+                if (!servers.Any(x => x.Id == proven && x.Is4k == is4k))
+                    return BackendResults.Hold("destination_changed", "The Seerr server this ask was shown to reach isn't one of Seerr's any more; nothing was sent.");
+                var bits = linked.TryGetProperty("permissions", out var held) && held.ValueKind == JsonValueKind.Number && held.TryGetInt64(out var value) ? value : 0;
+                bool Has(JellyseerrPermission bit) => (bits & (long)bit) == (long)bit;
+                if (Has(JellyseerrPermission.ADMIN) || Has(JellyseerrPermission.MANAGE_REQUESTS) || Has(JellyseerrPermission.REQUEST_ADVANCED))
+                {
+                    body = JsonSerializer.Serialize(new { mediaType = "tv", mediaId = tmdb, is4k, seasons, serverId = proven });
+                }
+                else
+                {
+                    var defaults = servers.Where(x => x.Is4k == is4k && x.IsDefault).Take(2).ToList();
+                    if (defaults.Count != 1 || defaults[0].Id != proven)
+                        return BackendResults.Hold("destination_changed", "Seerr's default server for this edition changed after the page was shown; nothing was sent.");
+                }
+            }
             if (finalGuard() is { } late) return RequestBackendResult.Hold(late);
             // What goes out is recorded first (the account and the exact seasons), so a read-back looks for exactly that,
             // whatever Seerr's settings or account links say by then.

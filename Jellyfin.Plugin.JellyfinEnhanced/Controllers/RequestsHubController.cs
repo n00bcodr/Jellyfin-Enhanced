@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -22,6 +23,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>One key per click (a repeated click gets the first outcome).</summary>
         [JsonPropertyName("idempotencyKey")] public string? IdempotencyKey { get; set; }
+
+        /// <summary>
+        /// A season key's episodes to search (a season page's banner names some of them): exactly those, one EpisodeSearch,
+        /// never the whole season (D53, edition round 19). Null: the key's whole scope.
+        /// </summary>
+        [JsonPropertyName("episodes")] public int[]? Episodes { get; set; }
+
+        /// <summary>From a season page: what the control was drawn to do; the server works it out again before searching.</summary>
+        [JsonPropertyName("expect")] public Services.Acquire.Requests.PressIntent? Expect { get; set; }
     }
 
     /// <summary>
@@ -135,8 +145,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // The audit line keeps the user id either way.
             }
-            var result = await _manage.SearchCheckedAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
+            if (request.Episodes is { Length: > 0 } && (key.IsMovie || key.Season == null || key.Episode != null || request.Episodes.Length > 1000 || request.Episodes.Any(n => n < 1)))
+                return BadRequest(new { code = "invalid_request" });
+            // A season page's press is worked out again after the arr reads, right before the command (nothing on a difference);
+            // the Manage drawer's own Search (no press) still needs an administrator then.
+            var expect = request.Expect;
+            Func<CancellationToken, Task<string?>> recheck = expect != null
+                ? async token => (await _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, key, token).ConfigureAwait(false)).Refusal
+                : token => Task.FromResult(Viewer(_manage.Status) is { IsAdmin: true } still && still.PolicyRevision == viewer.PolicyRevision ? null : Services.Acquire.Requests.PressChecks.Changed);
+            var result = await _manage.SearchPressAsync(viewer, userName, request.InstanceId, key, request.Episodes is { Length: > 0 } numbers ? numbers : null, request.IdempotencyKey, recheck, cancellationToken).ConfigureAwait(false);
             var outcome = result.Outcome;
+            if (result.Refusal is { } refusal)
+                return StatusCode(409, new { code = refusal, status = outcome.Status, message = outcome.Message, auditId = outcome.AuditId });
             return Ok(new
             {
                 found = result.Found,

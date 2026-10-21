@@ -134,6 +134,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool StandardNeedsNonFourK => _config()?.ArrStandardNeedsNonFourK == true;
 
         /// <summary>
+        /// Every setting that changes what an edition answer is (D53, edition round 19: every response proven fresh), as one
+        /// short text: a cached answer or a response gate that carries it is never served after one of them changed. Today the
+        /// administrator's "Standard requests need a non-4K copy"; a new edition setting is added here, and only here.
+        /// </summary>
+        /// <param name="config">The settings.</param>
+        public static string SemanticRevision(PluginConfiguration? config) => config?.ArrStandardNeedsNonFourK == true ? "s1" : "s0";
+
+        /// <summary>
         /// Whether one playable source qualifies for an edition. 4K needs 4K dimensions. Standard takes any source,
         /// or with <see cref="StandardNeedsNonFourK"/> one whose dimensions Jellyfin has read and aren't 4K (a file
         /// Jellyfin hasn't read yet may still be 4K, and a request closed on it would be closed for good).

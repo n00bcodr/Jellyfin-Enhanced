@@ -319,7 +319,9 @@
             else state = 'asked';
         } else if (status === 429) state = 'quota';
         else if (status === 409 && (reason === 'seerr_whole_season_only' || reason === 'single_season_only')) state = 'blocked';
-        else if (status === 409) state = reason === 'idempotency_conflict' ? 'changed' : 'busy';
+        // The server refused a press that no longer does what it was drawn to do, or couldn't check it (nothing was recorded).
+        else if (status === 409 && reason === 'press_unverified') state = 'unchecked';
+        else if (status === 409) state = reason === 'idempotency_conflict' || reason === 'press_changed' ? 'changed' : 'busy';
         else if (status === 503) state = 'unavailable';
         else if (status === 400) state = 'invalid';
         else if (status === 403 && (outcome === 'blocked' || reason === 'decline_cooldown' || reason === 'not_visible_to_user' || reason === 'low_disk')) state = 'blocked';
@@ -349,7 +351,8 @@
      * lost answer reuses the same clientRequestId; a definitive answer (any HTTP status but 5xx) ends it.
      * On success the surfaces showing the title refresh.
      * @param {Object} input Mutation input (see movieInput / seasonsInput / episodesInput).
-     * @param {{clientRequestId?: string, signal?: AbortSignal}} [options] Options.
+     * @param {{clientRequestId?: string, signal?: AbortSignal, expect?: Object}} [options] Options; `expect` is what a season
+     * page's control was drawn to do (the server works it out again and refuses any difference: state 'changed').
      * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came.
      */
     async function ask(input, options) {
@@ -360,7 +363,7 @@
         const started = epoch();
         let answer;
         try {
-            answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal });
+            answer = await call('/acquire/requests', { method: 'POST', body: options?.expect ? { clientRequestId, input, expect: options.expect } : { clientRequestId, input }, signal: options?.signal });
         } catch (err) {
             if (err?.name === 'AbortError') throw err;
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
@@ -449,6 +452,7 @@
                     tone: 'attention'
                 };
             case 'denied': return { chip: '', text: tr('arr_ask_toast_denied'), tone: 'attention' };
+            case 'unchecked': return { chip: '', text: tr('arr_ask_check_failed'), tone: 'attention' };
             case 'changed':
             case 'busy':
             case 'gone': return { chip: '', text: tr('arr_ask_toast_changed'), tone: 'attention' };
@@ -685,12 +689,17 @@
      * then read their status again.
      * @param {string} key Title key in scope.
      * @param {string} instanceId Instance ({@link searchInstance}).
-     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}>} Result.
+     * @param {{episodes?: number[], expect?: Object}} [options] A season key's episodes to search (exactly those), and what a
+     * season page's control was drawn to do (the server works it out again: a refusal is state 'changed' or 'unchecked').
+     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string}>} Result.
      */
-    async function adminSearch(key, instanceId) {
+    async function adminSearch(key, instanceId, options) {
         let answer;
+        const payload = { instanceId, key, idempotencyKey: newClientId() };
+        if (options?.episodes?.length) payload.episodes = options.episodes;
+        if (options?.expect) payload.expect = options.expect;
         try {
-            answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() } });
+            answer = await call('/arr/admin/manage/search', { method: 'POST', body: payload });
         } catch (err) {
             if (err?.name === 'AbortError') throw err;
             const text = tr('arr_manage_search_failed', { message: err?.message || String(err) });
@@ -698,7 +707,9 @@
         }
         const body = answer.body || {};
         let result;
-        if (answer.status !== 200 || body.status === 'Failed' || body.status === 'Rejected') {
+        if (answer.status === 409 && (body.code === 'press_changed' || body.code === 'press_unverified')) {
+            result = { ok: false, state: body.code === 'press_changed' ? 'changed' : 'unchecked', reason: body.code, chip: '', text: tr(body.code === 'press_changed' ? 'arr_ask_changed' : 'arr_ask_check_failed'), tone: 'attention' };
+        } else if (answer.status !== 200 || body.status === 'Failed' || body.status === 'Rejected') {
             const message = typeof body.message === 'string' && body.message ? body.message : (typeof body.code === 'string' ? body.code : String(answer.status));
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message }), tone: 'attention' };
         } else if (body.found === true) {
@@ -720,21 +731,25 @@
      * that doesn't apply (nothing was sent for it yet, it isn't missing for long enough, or the caller
      * may not): the caller then asks for it instead, as before.
      * @param {string} key Title key in scope (a movie key, or a series key, alone or ending :sN or :sN:eN).
-     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string}|null>} Result, or null to ask instead.
+     * @param {{expect?: Object}} [options] What a season page's control was drawn to do (the server works it out again: a
+     * refusal is state 'changed' or 'unchecked', never "ask instead").
+     * @returns {Promise<{ok: boolean, state: string, chip: string, text: string, tone: string, reason?: string}|null>} Result, or null to ask instead.
      */
-    async function familySearch(key) {
+    async function familySearch(key, options) {
         const k = String(key || '');
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
         try {
-            answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() } });
+            answer = await call('/acquire/requests/search', { method: 'POST', body: options?.expect ? { key: k, idempotencyKey: newClientId(), expect: options.expect } : { key: k, idempotencyKey: newClientId() } });
         } catch (err) {
             if (err?.name === 'AbortError') throw err;
             return null;
         }
         const body = answer.body || {};
         let result;
-        if (answer.status === 429 && body.reason === 'searched_recently') {
+        if (answer.status === 409 && (body.reason === 'press_changed' || body.reason === 'press_unverified')) {
+            result = { ok: false, state: body.reason === 'press_changed' ? 'changed' : 'unchecked', reason: body.reason, chip: '', text: tr(body.reason === 'press_changed' ? 'arr_ask_changed' : 'arr_ask_check_failed'), tone: 'attention' };
+        } else if (answer.status === 429 && body.reason === 'searched_recently') {
             result = { ok: false, state: 'recent', chip: tr('arr_search_recent_chip'), text: tr('arr_search_recent'), tone: 'looking' };
         } else if (answer.status === 403 && body.reason === 'low_disk') {
             // The drive its folder is on is full: the download couldn't be imported, and an ask would be refused too.

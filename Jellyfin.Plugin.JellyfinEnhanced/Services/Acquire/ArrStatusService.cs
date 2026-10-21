@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
@@ -345,32 +346,91 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var config = _config();
             bound.Variant = bound.Role switch { Model.Arr.ArrInstanceRole.FourK => "4k", Model.Arr.ArrInstanceRole.Standard => "standard", _ => null };
             var je = config?.ArrRequestBackend == "je";
-            var destination = bound.Variant == null ? null
-                : je ? _store.Registry.DefaultFor(ArrKind.Sonarr, bound.Variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id
-                : SeerrSendsTo(bound.Variant == "4k");
+            var (destination, token) = Destination(bound.Variant, je);
             bound.Ask = destination != null && string.Equals(destination, bound.InstanceId, StringComparison.OrdinalIgnoreCase);
+            // Where the ask lands, for the press to send back (D53, edition round 19): opaque, and only for an ask that reaches the copy.
+            bound.Dest = bound.Ask ? token : null;
             bound.Search = bound.Ask && bound.Variant == "standard"
                 && (je || _store.Instances(ArrKind.Sonarr).Count(i => i.Role != Model.Arr.ArrInstanceRole.FourK) == 1);
             if (!viewer.IsAdmin) bound.InstanceId = null;
         }
 
         /// <summary>
-        /// The Sonarr instance Seerr sends a series request of that edition to: the one instance here that is Seerr's default
-        /// server for it (see <see cref="Reach"/>); null when that isn't proven.
+        /// The Sonarr instance a series request of an edition lands on now and its press token: JE mode, that edition's default
+        /// Sonarr; Seerr mode, the one instance here that is Seerr's default server for it (<see cref="SeerrSendsTo"/>). Nulls when
+        /// that isn't proven.
         /// </summary>
-        private string? SeerrSendsTo(bool is4k)
+        private (string? Instance, string? Token) Destination(string? variant, bool je)
         {
-            if (_seerr?.DefaultServer(ArrKind.Sonarr, is4k) is not { } server) return null;
-            var matches = _store.Instances(ArrKind.Sonarr).Where(i => (i.SeerrServerId == null || i.SeerrServerId == server.Id) && SameAddress(i.Url, server.Url)).Take(2).ToList();
-            return matches.Count == 1 ? matches[0].Id : null;
+            if (variant == null) return (null, null);
+            if (je)
+            {
+                var id = _store.Registry.DefaultFor(ArrKind.Sonarr, variant == "4k" ? Model.Arr.ArrInstanceRole.FourK : Model.Arr.ArrInstanceRole.Standard)?.Id;
+                return (id, id == null ? null : PressChecks.DestinationToken("je", id));
+            }
+            var (instance, server) = SeerrSendsTo(variant == "4k");
+            return (instance, server is int s ? PressChecks.DestinationToken("seerr", s.ToString(CultureInfo.InvariantCulture)) : null);
         }
 
-        /// <summary>Two arr addresses name the same server: scheme, host, port and base path (case-insensitive, no trailing slash).</summary>
+        /// <summary>
+        /// The Sonarr instance Seerr sends a series request of that edition to, and Seerr's id of that server: the one instance
+        /// here that is Seerr's default server for it (see <see cref="Reach"/>); nulls when that isn't proven.
+        /// </summary>
+        private (string? Instance, int? Server) SeerrSendsTo(bool is4k)
+        {
+            if (_seerr?.DefaultServer(ArrKind.Sonarr, is4k) is not { } server) return (null, null);
+            var matches = _store.Instances(ArrKind.Sonarr).Where(i => (i.SeerrServerId == null || i.SeerrServerId == server.Id) && SameAddress(i.Url, server.Url)).Take(2).ToList();
+            return matches.Count == 1 ? (matches[0].Id, server.Id) : (null, null);
+        }
+
+        /// <summary>
+        /// A season page's press, worked out again now (D53, edition round 19: the server decides every press): Seerr's servers
+        /// and partial-request setting read again (no cache), the season composed for the viewer as Jellyfin has them now (its
+        /// copy binding reached now, never a cached body), and compared with what the control was drawn to do
+        /// (<see cref="PressChecks.Compare"/>). The caller records or sends nothing more than what this proves, and nothing at
+        /// all on a refusal. <paramref name="input"/>: the ask (route <see cref="PressChecks.Ask"/>); <paramref name="key"/>:
+        /// the searched key (the Search routes). Only awaits before the comparison: the caller's next step is its write.
+        /// </summary>
+        internal async Task<PressProof> PressAsync(StatusViewer viewer, PressIntent intent, string route, MutationInput? input, TitleKey? key, CancellationToken cancellationToken)
+        {
+            if (!Guid.TryParseExact(intent.Item, "N", out var itemId) || itemId == Guid.Empty) return PressProof.Changed;
+            var seerr = _config()?.ArrRequestBackend != "je";
+            bool? whole = null;
+            if (seerr && _seerr != null)
+            {
+                await _seerr.RefreshDestinationsAsync(ArrKind.Sonarr, cancellationToken, fresh: true).ConfigureAwait(false);
+                if (route == PressChecks.Ask) whole = await _seerr.WholeSeriesOnlyAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return await GatedAsync(
+                viewer,
+                v => PrepareItemAsync(v, itemId, load: true, cancellationToken),
+                (now, gather) =>
+                {
+                    if (gather == null || ItemNow(now, itemId, gather) is not { Kind: "season", Key: { } seasonKey, Season: int season } item) return PressProof.Changed;
+                    // The press is for this season of this title (whichever id each side used).
+                    var title = _aliases.Canonical(seasonKey.Title);
+                    var pressed = input != null ? TitleKey.Parse(input.Key) : key;
+                    if (pressed == null || !_aliases.Canonical(pressed.Title).Equals(title) || (key?.Season is int s && s != season)) return PressProof.Changed;
+                    var status = ComposeItem(now, item, gather);
+                    var refusal = PressChecks.Compare(intent, route, status, season, input, seerr, whole, now.IsAdmin);
+                    int? server = refusal == null && seerr && route == PressChecks.Ask && status.Copy is { Ask: true } bound && intent.Copy != null
+                        ? SeerrSendsTo(bound.Variant == "4k").Server
+                        : null;
+                    return new PressProof(refusal, server);
+                },
+                _ => PressProof.Changed).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Two arr addresses name the same server (D53, edition round 19: exact destination identity): the scheme and host
+        /// compared without case (they have none), the port with each scheme's default filled in (":80" written or not), and
+        /// the base path ORDINALLY, trailing slashes aside: a reverse proxy may tell "/Sonarr" from "/sonarr", so they are two.
+        /// </summary>
         internal static bool SameAddress(string? a, string? b)
         {
             if (!Uri.TryCreate(a?.Trim(), UriKind.Absolute, out var x) || !Uri.TryCreate(b?.Trim(), UriKind.Absolute, out var y)) return false;
-            return string.Equals(x.Scheme, y.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(x.Host, y.Host, StringComparison.OrdinalIgnoreCase) && x.Port == y.Port
-                && string.Equals(x.AbsolutePath.TrimEnd('/'), y.AbsolutePath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+            return string.Equals(x.Scheme, y.Scheme, StringComparison.OrdinalIgnoreCase) && string.Equals(x.IdnHost, y.IdnHost, StringComparison.OrdinalIgnoreCase) && x.Port == y.Port
+                && string.Equals(x.AbsolutePath.TrimEnd('/'), y.AbsolutePath.TrimEnd('/'), StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -601,8 +661,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// one is no arrival). A series, season or episode stays in the series copy the page showed: the
         /// shown item's own series while Jellyfin still has it, else <paramref name="seriesId"/> (the page
         /// names it once the item is gone); never another copy then, except one: once Jellyfin deleted the
-        /// shown item and its own copy has nothing for the scope, a series item automatic grouping presents as the
-        /// same show (Jellyfin itself deletes a folder's missing episode when another grouped folder has the file).
+        /// shown item (deleted for everyone, <see cref="IArrJellyfinView.ItemExists"/>: never one only hidden from this viewer,
+        /// nor one whose existence can't be told) and its own copy has nothing for the scope, a series item automatic grouping
+        /// presents as the same show (Jellyfin itself deletes a folder's missing episode when another grouped folder has the file).
         /// Null when the viewer can open none. Never calls an arr.
         /// </summary>
         internal Guid? ArrivedItem(StatusViewer viewer, TitleKey key, Guid? shown, Guid? seriesId = null)
@@ -625,7 +686,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var shownItem = shown is Guid page ? _view.Resolve(page, viewer) : null;
             var series = shownItem is { SeriesId: Guid of } ? of : seriesId;
             if (Arrival(ScopeItem(viewer, key, series)) is Guid own) return own;
-            if (shown is Guid && shownItem == null && series is Guid ownSeries)
+            // Only a DELETED shown item hands over (Q-ARRIVE-15): one this viewer can't open now (hidden, a limit) still exists,
+            // and one whose existence can't be told is not known to be gone (D53, edition round 19: deleted, denied and unknown).
+            if (shown is Guid deleted && shownItem == null && _view.ItemExists(deleted) == false && series is Guid ownSeries)
             {
                 foreach (var sibling in _view.GroupedSeries(ownSeries, viewer))
                 {
@@ -947,7 +1010,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     // The whole title, as before, once a copy plays: Play opens one that does.
                     if (held.Count > 0) return whole.Visible is { } open && held.Any(x => x.ItemId == open.ItemId) ? whole : whole with { Visible = held[0] };
                     // A copy that doesn't play (a placeholder, a missing item) is no arrival: where every Radarr has got to.
-                    var (none, _, _) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, fourK: false, everyEdition: true);
+                    var (none, _, _) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, fourK: false, everyEdition: true, copies: copies);
                     return whole with { Status = WithLiveKey(none, facts), Visible = null, Scoped = true, ArrivedAt = null };
                 }
                 if (noFourKArr)
@@ -959,7 +1022,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     var (only, at) = StatusComposer.RequestedOnly(whole.Status, scope.Request, held.Count > 0, held.Count > 0 ? arrivedAt ?? scope.AvailableAt : null, facts);
                     return whole with { Status = WithLiveKey(only, whose), Visible = held.FirstOrDefault(), Scoped = true, ArrivedAt = at };
                 }
-                var (status, arrived, shown) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, scope.Only4k);
+                var (status, arrived, shown) = StatusComposer.RequestedEdition(facts, whole.Status, held, hits, c, scope.Only4k, copies: copies);
                 return whole with { Status = WithLiveKey(status, facts), Visible = shown, Scoped = true, ArrivedAt = arrived };
             }
 
@@ -1024,10 +1087,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var shown = HeldCopies(asked.Select(h => h.CopyId), copies, null).FirstOrDefault()
                     ?? (scope.Only4k ? mine.FirstOrDefault(x => x.Visible) ?? SeerrCopy(scope, copies) : whole.Visible);
                 if (scope.Only4k && mine.Count == 0 && shown != null) mine = new List<JfCopy> { shown };
+                // The evidence of which Sonarr copy is whose keeps every copy the viewer can't open (D53, edition round 19:
+                // projection keeps complete ownership): a 4K Sonarr copy that may be one of those is never taken for "nobody's",
+                // so its downloads are never told to someone who can't open it. What plays the edition stays in the hits.
+                var evidence = scope.Only4k ? mine.Concat(copies.Where(x => !x.Visible)).DistinctBy(x => x.ItemId).ToList() : mine;
                 // What the library hides from a viewer with parental limits in the copy the parts are read through goes in
                 // as hidden markers there (RequestedSeasons: the binding's own, numbers only).
                 var episodes = available.AsEpisodes().ToList();
-                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, mine, c, scope.Only4k, picked);
+                var (status, arrived) = StatusComposer.RequestedSeasons(facts, whole.Status, seasons, episodes, evidence, c, scope.Only4k, picked);
                 // A requested season read Ready without Sonarr's episode list: with no Sonarr copy while a Sonarr (that
                 // may hold it) couldn't be read ("one episode of each requested season is here"), or from a copy whose
                 // list couldn't be read (its season counts, which miss episodes it doesn't monitor yet).
@@ -1300,8 +1367,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// The per-user cache key: user, policy revision, what was asked, the arr facts revision, the
-        /// Jellyfin library revision, the request facts revision, the settings that change texts and a
-        /// ten-minute time bucket (for time-based wording such as "Still looking").
+        /// Jellyfin library revision, the request facts revision, where Seerr sends requests, every edition setting
+        /// (<see cref="EditionAvailability.SemanticRevision"/>), the settings that change texts and a ten-minute time bucket
+        /// (for time-based wording such as "Still looking").
         /// </summary>
         private string CacheKey(StatusViewer viewer, string route, string what, string factsRevision)
         {
@@ -1318,6 +1386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _requests.Revision.ToString(CultureInfo.InvariantCulture),
                 _libraries.Revision,
                 _seerr?.DestinationsRevision ?? "-",
+                EditionAvailability.SemanticRevision(config),
                 (config?.ArrRequestBackend ?? "seerr") + "#" + (config?.ArrPhase3Enabled == true ? "3" : "0") + "#" + (config?.ArrHouseholdContactName ?? string.Empty) + "#" + (config?.ArrStatusLookingHours ?? 24).ToString(CultureInfo.InvariantCulture)
                     + "#" + (HandoffGrace(config)?.TotalMinutes.ToString(CultureInfo.InvariantCulture) ?? "-") + "#" + HandoffEpoch(viewer, config),
                 bucket.ToString(CultureInfo.InvariantCulture));

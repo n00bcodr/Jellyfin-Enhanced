@@ -20,10 +20,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly RequestService _service;
         private readonly SeasonRowsService? _rows;
         private readonly RequestSearchService? _search;
+        private readonly ArrStatusService? _status;
         /// <summary>Maximum request payload size.</summary>
         public const int MaxBodyBytes = 64 * 1024;
-        /// <summary>Creates the controller.</summary>
-        public AcquireRequestsController(RequestService service, SeasonRowsService? rows = null, RequestSearchService? search = null) { _service = service; _rows = rows; _search = search; }
+        /// <summary>Creates the controller; <paramref name="status"/> works a season page's press out again (D53, edition round 19).</summary>
+        public AcquireRequestsController(RequestService service, SeasonRowsService? rows = null, RequestSearchService? search = null, ArrStatusService? status = null) { _service = service; _rows = rows; _search = search; _status = status; }
         private StatusViewer? Person() => ArrCaller.Human(User, _service.View);
         private IActionResult Reply(RequestOutcome outcome) { Response.Headers["Cache-Control"] = "private, no-store"; return StatusCode(outcome.HttpStatus, outcome); }
         private RequestOutcome? Gate(StatusViewer? viewer, bool approve = false, bool readOnly = false)
@@ -45,7 +46,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         {
             var viewer = Person();
             if (Gate(viewer) is { } refusal) return Reply(refusal);
-            return Reply(await _service.CreateAsync(viewer!.UserId, body, ct).ConfigureAwait(false));
+            // A season page's press is worked out again by the server right before the ask is recorded (nothing on a difference).
+            Func<MutationInput, CancellationToken, Task<PressProof>>? press = body?.Expect is { } expect
+                ? (input, token) => _status == null ? Task.FromResult(new PressProof(PressChecks.Unverified)) : _status.PressAsync(viewer!, expect, PressChecks.Ask, input, null, token)
+                : null;
+            return Reply(await _service.CreateAsync(viewer!.UserId, body, ct, press: press).ConfigureAwait(false));
         }
         /// <summary>
         /// Search again for a movie, one episode, or a series' or season's episodes that requests already sent
@@ -61,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var viewer = Person();
             if (Gate(viewer) is { } refusal) return Reply(refusal);
             if (_search == null) return Reply(RequestOutcome.Refused("feature_disabled"));
-            var (outcome, found) = await _search.SearchAsync(viewer!, body?.Key, body?.IdempotencyKey, ct).ConfigureAwait(false);
+            var (outcome, found) = await _search.SearchAsync(viewer!, body?.Key, body?.IdempotencyKey, ct, body?.Expect).ConfigureAwait(false);
             if (outcome.HttpStatus >= 400) return Reply(outcome);
             Response.Headers["Cache-Control"] = "private, no-store";
             return Ok(new { outcome = outcome.Outcome, reason = outcome.Reason, certainty = outcome.Certainty.ToString(), message = outcome.Message, found });

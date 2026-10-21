@@ -35,6 +35,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// ask is on its way), declined (their ask was declined), household (someone else asked), or null.
         /// </summary>
         [JsonPropertyName("request")] public string? Request { get; init; }
+
+        /// <summary>
+        /// The same for the 4K edition (D53, edition round 19: a control reads the request states of its own binding's edition
+        /// and destination): a 4K copy's Get it reads this, never the standard asks.
+        /// </summary>
+        [JsonPropertyName("request4k")] public string? Request4k { get; init; }
     }
 
     /// <summary>The season answer: request state and metadata of the episodes Jellyfin has no file for.</summary>
@@ -70,6 +76,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The viewer's request state of the whole season (same values as an episode's).</summary>
         [JsonPropertyName("seasonRequest")] public string? SeasonRequest { get; init; }
 
+        /// <summary>The viewer may ask for this series in 4K now (the 4K edition's own policy probe: its target and its drive).</summary>
+        [JsonPropertyName("canRequest4k")] public bool CanRequest4k { get; init; }
+
+        /// <summary>Why the viewer can't ask for the 4K edition now although their role may (as <see cref="Blocked"/>).</summary>
+        [JsonPropertyName("blocked4k")] public RequestBlock? Blocked4k { get; init; }
+
+        /// <summary>The viewer's 4K request state of the whole season.</summary>
+        [JsonPropertyName("seasonRequest4k")] public string? SeasonRequest4k { get; init; }
+
         /// <summary>Episodes in number order: request state for all, metadata for the ones without a file.</summary>
         [JsonPropertyName("episodes")] public IReadOnlyList<SeasonRowEpisode> Episodes { get; init; } = Array.Empty<SeasonRowEpisode>();
     }
@@ -93,6 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly TitleAliases? _aliases;
         private readonly Func<int, int, string?, CancellationToken, Task<string?>> _tmdbSeason;
         private readonly Func<DateTimeOffset> _now;
+        private readonly ResponseGate _gate;
 
         /// <summary>Creates the service over the shared TMDB cache.</summary>
         public SeasonRowsService(IArrJellyfinView view, RequestLedger ledger, IRequestPolicy policy, TitleAliases aliases, TmdbResponseCache tmdb)
@@ -109,32 +125,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _aliases = aliases;
             _tmdbSeason = tmdbSeason;
             _now = now ?? (() => DateTimeOffset.UtcNow);
+            _gate = new ResponseGate(view, () => policy.Configuration);
         }
 
         /// <summary>
         /// The rows of one season item the viewer can see, or null (not a season, not visible to the
-        /// viewer, or no usable provider id).
+        /// viewer, or no usable provider id). Published through the response gate (D53, edition round 19): the metadata and
+        /// policy reads await; after the last of them the season, its episodes (what the library hides from the viewer
+        /// included) and the request states are read again for the viewer as Jellyfin has them now, so an episode hidden
+        /// meanwhile never carries its title or synopsis. A viewer whose policy changed meanwhile gets the rows prepared again.
         /// </summary>
         public async Task<SeasonRows?> ForSeasonAsync(StatusViewer viewer, Guid seasonId, string? language, CancellationToken ct)
         {
-            for (var attempt = 0; attempt < ArrStatusService.GateAttempts; attempt++)
+            for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
             {
+                var stamp = _gate.Take(viewer);
                 if (_view.Resolve(seasonId, viewer) is not { Kind: "season", Key: { } key, SeriesId: Guid seriesId, Season: int season } item) return null;
-                var jf = _view.Episodes(seriesId, season, viewer, includeVirtual: true).Where(e => e.Season == season).ToList();
                 var tmdbId = item.TmdbId ?? _aliases?.Of(key.Title).Append(key.Title).FirstOrDefault(k => k.Provider == "tmdb" && !k.IsMovie)?.NumericId;
-                var rows = await ComposeAsync(viewer, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, tmdbId, jf, language, ct).ConfigureAwait(false);
-                // The final gate: the season and its episodes were read for the viewer as they were before the metadata
-                // and policy reads; when their policy changed meanwhile (or they are gone), the rows are read again.
-                if (Unchanged(viewer) is { } now && _view.Resolve(seasonId, now) is { Kind: "season" } still && still.SeriesId == seriesId) return rows;
+                var meta = await PrepareAsync(key, season, tmdbId, language, ct).ConfigureAwait(false);
+                // Publication: no await from here on.
+                if (_gate.Current(stamp, rereadsLibrary: true) is { } now)
+                {
+                    var before = _gate.Take(now);
+                    if (_view.Resolve(seasonId, now) is not { Kind: "season", SeriesId: Guid still } || still != seriesId) return null;
+                    var jf = _view.Episodes(seriesId, season, now, includeVirtual: true).Where(e => e.Season == season).ToList();
+                    var rows = Project(now, key, seriesId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, jf, meta);
+                    // The viewer didn't change while it was projected: published; else read again for them as they are then.
+                    if (ResponseGate.SameViewer(before, _gate.Take(now))) return rows;
+                    viewer = now;
+                    continue;
+                }
                 if (_view.Viewer(viewer.UserId) is not { } changed) return null;
                 viewer = changed;
             }
             return null;
         }
-
-        /// <summary>The viewer as Jellyfin has them now, when their policy is the same as <paramref name="prepared"/>'s; else null.</summary>
-        private StatusViewer? Unchanged(StatusViewer prepared)
-            => _view.Viewer(prepared.UserId) is { } now && now.IsAdmin == prepared.IsAdmin && string.Equals(now.PolicyRevision, prepared.PolicyRevision, StringComparison.Ordinal) ? now : null;
 
         /// <summary>
         /// The rows of a season of a title that isn't in the library (the native details page of an
@@ -156,10 +181,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task<SeasonRows?> ComposeAbsentAsync(StatusViewer viewer, AbsentTitle page, Guid seriesPageId, int season, List<JfEpisode> hidden, string? language, CancellationToken ct)
         {
-            var rows = await ComposeAsync(viewer, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, page.TmdbId, hidden, language, ct).ConfigureAwait(false);
-            // The page was read for the viewer as they were: none when their policy changed meanwhile (the page asks again).
-            if (Unchanged(viewer) == null) return null;
-            if (rows == null || page.Spoilers is not { } spoilers) return rows;
+            var stamp = _gate.Take(viewer);
+            var meta = await PrepareAsync(page.ScopeKey, season, page.TmdbId, language, ct).ConfigureAwait(false);
+            // The page (what the library hides from the viewer, their Spoiler Guard) was read for the viewer and the library as
+            // they were before the metadata read: none when either changed meanwhile (the page asks again).
+            if (_gate.Current(stamp) is not { } now) return null;
+            var rows = Project(now, page.ScopeKey, seriesPageId.ToString("N", System.Globalization.CultureInfo.InvariantCulture), season, hidden, meta);
+            if (page.Spoilers is not { } spoilers) return rows;
             // Spoiler Guard on the title: the rows carry no plot (as the page's own episode list).
             return rows with
             {
@@ -173,30 +201,46 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
         }
 
-        private async Task<SeasonRows?> ComposeAsync(StatusViewer viewer, TitleKey key, string seriesId, int season, int? tmdbId, List<JfEpisode> jf, string? language, CancellationToken ct)
+        /// <summary>The metadata of a season's episodes (TMDB) and the policy's disk facts of both editions, read ahead of publication.</summary>
+        private async Task<Dictionary<int, SeasonRowEpisode>> PrepareAsync(TitleKey key, int season, int? tmdbId, string? language, CancellationToken ct)
         {
-            var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
-            var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && e.Playable).SelectMany(Numbers));
-            var series = key.Title;
-            var canonical = _aliases?.Canonical(series) ?? series;
-
             var meta = new Dictionary<int, SeasonRowEpisode>();
             if (tmdbId is int id && id > 0)
             {
                 var json = await _tmdbSeason(id, season, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
                 foreach (var episode in ParseSeason(json)) meta[episode.Episode] = episode;
             }
+            var canonical = _aliases?.Canonical(key.Title) ?? key.Title;
+            foreach (var variant in new[] { "standard", "4k" }) await _policy.PrepareDiskAsync(Probe(canonical, season, variant), ct).ConfigureAwait(false);
+            return meta;
+        }
 
-            var probe = new MutationInput { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) } };
-            await _policy.PrepareDiskAsync(probe, ct).ConfigureAwait(false);
-            var facts = _policy.Evaluate(viewer.UserId, probe);
-            var (perEpisode, seasonState) = _ledger.Database.Available
-                ? RequestStates(_ledger.ForTitle(canonical.ToString()), viewer.UserId, season, _now(), _policy.Configuration.ArrRequestDeclineCooldownDays, RequestLedger.TargetKey(facts))
-                : (new Dictionary<int, string>(), null);
+        /// <summary>The policy probe of a season's episodes in one edition.</summary>
+        private static MutationInput Probe(TitleKey canonical, int season, string variant)
+            => new() { Key = canonical.ToString(), Scope = "episodes", Episodes = new[] { new RequestEpisode(season, 1) }, Variant = variant };
+
+        /// <summary>
+        /// The rows from Jellyfin's episodes as the viewer sees them now, the metadata read ahead, the policy and the ledger (no
+        /// I/O): each edition's request states and policy probe on its own target (D53, edition round 19: a control reads its
+        /// own binding's edition, never the other one's).
+        /// </summary>
+        private SeasonRows Project(StatusViewer viewer, TitleKey key, string seriesId, int season, List<JfEpisode> jf, Dictionary<int, SeasonRowEpisode> meta)
+        {
+            var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
+            var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && e.Playable).SelectMany(Numbers));
+            var canonical = _aliases?.Canonical(key.Title) ?? key.Title;
+            var facts = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "standard"));
+            var facts4k = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "4k"));
+            IReadOnlyList<RequestWant> wants = _ledger.Database.Available ? _ledger.ForTitle(canonical.ToString()) : Array.Empty<RequestWant>();
+            var cooldown = _policy.Configuration.ArrRequestDeclineCooldownDays;
+            var (perEpisode, seasonState) = RequestStates(wants, viewer.UserId, season, _now(), cooldown, RequestLedger.TargetKey(facts));
+            var (perEpisode4k, seasonState4k) = RequestStates(wants, viewer.UserId, season, _now(), cooldown, RequestLedger.TargetKey(facts4k), "4k");
 
             var canRequest = facts.Refusal == null && facts.CanCreate && facts.Backend is "je" or "seerr";
+            var canRequest4k = facts4k.Refusal == null && facts4k.CanCreate && facts4k.Can4k && facts4k.Backend is "je" or "seerr";
             var numbers = new SortedSet<int>(meta.Keys);
             numbers.UnionWith(perEpisode.Keys);
+            numbers.UnionWith(perEpisode4k.Keys);
             numbers.UnionWith(jf.Where(e => !e.Hidden).SelectMany(Numbers));
             numbers.ExceptWith(hidden);
             var episodes = new List<SeasonRowEpisode>();
@@ -213,6 +257,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     AirDate = known ? info!.AirDate : null,
                     Still = known ? info!.Still : null,
                     Request = perEpisode.GetValueOrDefault(n),
+                    Request4k = perEpisode4k.GetValueOrDefault(n),
                 });
             }
 
@@ -226,18 +271,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 CanRequest = canRequest,
                 Blocked = canRequest ? null : RequestBlock.Of(facts),
                 SeasonRequest = seasonState,
+                CanRequest4k = canRequest4k,
+                Blocked4k = canRequest4k ? null : RequestBlock.Of(facts4k),
+                SeasonRequest4k = seasonState4k,
                 Episodes = episodes,
             };
         }
 
         /// <summary>
-        /// The viewer's request state per episode of a season and of the season as a whole, from the
-        /// standard-edition wants on the series (the controls ask for that one; a 4K ask leaves them
-        /// alone): the viewer's own asks win over other people's (shown only as "household"), and asks on
-        /// <paramref name="currentTarget"/> (where an ask goes now) over asks left on another target, such as an
-        /// ask sent to Seerr before requests moved to Jellyfin Enhanced, whose request now waits for an OK here.
+        /// The viewer's request state per episode of a season and of the season as a whole, from the wants of one edition
+        /// (<paramref name="variant"/>: a control reads its own binding's edition, never the other one's): the viewer's own
+        /// asks win over other people's (shown only as "household"), and asks on <paramref name="currentTarget"/> (where an
+        /// ask of that edition goes now) over asks left on another target, such as an ask sent to Seerr before requests moved
+        /// to Jellyfin Enhanced, whose request now waits for an OK here.
         /// </summary>
-        internal static (Dictionary<int, string> Episodes, string? Season) RequestStates(IEnumerable<RequestWant> wants, Guid viewer, int season, DateTimeOffset now, int declineCooldownDays, string? currentTarget = null)
+        internal static (Dictionary<int, string> Episodes, string? Season) RequestStates(IEnumerable<RequestWant> wants, Guid viewer, int season, DateTimeOffset now, int declineCooldownDays, string? currentTarget = null, string variant = "standard")
         {
             var episodes = new Dictionary<int, string>();
             var elsewhere = new Dictionary<int, string>();
@@ -245,7 +293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             string? wholeElsewhere = null;
             foreach (var want in wants)
             {
-                if (want.Input.Variant != "standard") continue;
+                if (want.Input.Variant != variant) continue;
                 var state = StateOf(want, viewer, now, declineCooldownDays);
                 if (state == null) continue;
                 var here = currentTarget == null || want.TargetKey == currentTarget;

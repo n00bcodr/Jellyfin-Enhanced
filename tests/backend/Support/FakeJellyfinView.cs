@@ -370,6 +370,16 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         return copy;
     }
 
+    /// <summary>
+    /// Whether an item exists for anyone (Jellyfin's own lookup with no user): true while it is an item, copy, episode or
+    /// season here, false once it is gone (deleted). A plain method on a plugin without the view's existence question.
+    /// </summary>
+    public bool? ItemExists(Guid itemId)
+        => Items.ContainsKey(itemId)
+            || CopiesByKey.Values.Any(l => l.Any(c => c.Copy.ItemId == itemId))
+            || EpisodesBySeries.Values.Any(l => l.Any(e => e.Episode.ItemId == itemId))
+            || SeasonsBySeries.Values.Any(l => l.Any(s => s.Season.ItemId == itemId));
+
     /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
     public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
     {

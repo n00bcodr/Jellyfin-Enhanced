@@ -470,29 +470,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <paramref name="copies"/> every Jellyfin copy of the movie (null: only <paramref name="item"/> is known).
         /// </summary>
         /// <remarks>
-        /// <paramref name="followEveryRole"/>: a request for one edition (its own instances' facts only): a family
+        /// <para><paramref name="followEveryRole"/>: a request for one edition (its own instances' facts only): a family
         /// member follows that edition's copies wherever they have got to, 4K ones included (the whole title's status
-        /// follows a 4K copy only once its item is visible).
+        /// follows a 4K copy only once its item is visible).</para>
+        /// <para>D53, edition round 19 (projection keeps complete ownership): <paramref name="copies"/> are the EVIDENCE of
+        /// which Radarr copy is whose (every copy of the title, the ones the viewer can't open included), kept apart from what
+        /// plays the edition asked for (<paramref name="qualifying"/>, null: any copy they open). A Radarr copy matched to a
+        /// copy they can't open is that hidden copy's, never "nobody's" (its downloads are never theirs to see), and ownership
+        /// is judged against every instance holding the title (<paramref name="owners"/>, default the facts' own), so an edition's
+        /// instances alone never take a copy by "it is the only Radarr here".</para>
         /// </remarks>
-        public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false)
+        public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false,
+            IReadOnlyCollection<Guid>? qualifying = null, IReadOnlyList<ArrCopyFacts>? owners = null)
         {
             var self = item != null ? new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } : null;
             var jf = copies ?? (self != null ? new[] { self } : Array.Empty<JfCopy>());
+            bool Qualifies(JfCopy x) => qualifying == null || qualifying.Contains(x.ItemId);
             // The page's own item as the viewer opens it now, when the copies don't list it (a lookup that couldn't finish):
             // an arr copy whose folder is exactly its title folder owns it all the same (as SeriesCopyFor).
             var unlisted = self != null && jf.All(x => x.ItemId != self.ItemId) && !string.IsNullOrWhiteSpace(self.Path) ? self : null;
             var variants = new List<(ArrCopyRead Copy, CopyState State, JfCopy? Jf)>();
             var movieCopies = facts.Copies.Where(x => x.Movie != null).ToList();
+            var siblings = owners ?? movieCopies;
             foreach (var arrCopy in movieCopies)
             {
-                var matched = MatchCopies(arrCopy, jf, movieCopies);
+                var matched = MovieMatches(arrCopy, jf, siblings);
                 if (unlisted != null && HoldsFolder(arrCopy, TitleFolder(Norm(unlisted.Path!), movie: true))) matched.Insert(0, unlisted);
                 var copy = arrCopy.Radarr();
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
                 // The page's own item is a stub (D53, edition round 16: it plays nothing): this copy reads where its Radarr
                 // has got to, a download of it included, never Ready.
                 var stub = own != null && !item!.Playable;
-                var visible = stub ? null : own ?? matched.FirstOrDefault(m => m.Visible);
+                var visible = stub ? null : own ?? matched.FirstOrDefault(m => m.Visible && Qualifies(m));
                 CopyState state;
                 if (visible != null)
                 {
@@ -504,15 +513,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     state = MovieFromArr(copy, c, facts.Request);
                 }
-                else if (matched.Count > 0)
+                else if (matched.FirstOrDefault(m => !m.Visible) is { } hidden)
                 {
-                    state = new CopyState(StatusStage.NotHere, StatusReasonCode.NotVisibleToUser, Since: matched[0].DateCreated);
+                    // Its copy is one the viewer can't open: never theirs to follow (nor "nobody's").
+                    state = new CopyState(StatusStage.NotHere, StatusReasonCode.NotVisibleToUser, Since: hidden.DateCreated);
                 }
                 else
                 {
+                    // Not in Jellyfin, or only in a copy they open that doesn't play the edition asked for: where its Radarr is.
                     state = MovieFromArr(copy, c, facts.Request);
                 }
-                variants.Add((copy, state, stub ? own : visible ?? matched.FirstOrDefault()));
+                variants.Add((copy, state, stub ? own : visible ?? matched.FirstOrDefault(m => !m.Visible) ?? matched.FirstOrDefault()));
             }
 
             // The headline: the item asked for is ready by definition (the viewer opened it) when Jellyfin plays it; on the key
@@ -532,18 +543,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     headline = item.Playable ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated) : NothingKnown(facts);
                 }
             }
-            else if (jf.Any(x => x.Visible))
+            else if (jf.Any(x => x.Visible && Qualifies(x)))
             {
                 var best = variants.Where(v => v.State.Stage == StatusStage.Ready).Select(v => (v.Copy, v.State)).FirstOrDefault();
-                headline = best.State ?? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: jf.First(x => x.Visible).DateCreated);
+                headline = best.State ?? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: jf.First(x => x.Visible && Qualifies(x)).DateCreated);
                 headlineCopy = best.Copy;
             }
             else
             {
-                // Jellyfin has it only in libraries a family member can't open: the copies that are (or
-                // may be) those hidden items are left out, so the answer is the one they would get if
-                // the hidden copies didn't exist (a title nobody has, when nothing else is left).
-                var hiddenCopies = !c.Viewer.IsAdmin && jf.Count > 0;
+                // Jellyfin has it (in the edition asked for) only in libraries a family member can't open: the copies that are
+                // (or may be) those hidden items are left out, so the answer is the one they would get if the hidden copies
+                // didn't exist (a title nobody has, when nothing else is left).
+                var hiddenCopies = !c.Viewer.IsAdmin && jf.Any(x => !x.Visible);
                 var eligible = variants.Where(v => c.Viewer.IsAdmin || ((followEveryRole || FamilyMayFollow(v.Copy, v.State)) && !(hiddenCopies && MayBeHiddenCopy(v.Copy, v.State, c)))).ToList();
                 if (eligible.Count > 0)
                 {
@@ -1336,14 +1347,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <paramref name="everyEdition"/>: a standard request any playable copy satisfies (a 4K one included): every
         /// Radarr's progress counts.
         /// </remarks>
-        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK, bool everyEdition = false)
+        public static (TitleStatus Status, DateTime? ArrivedAt, JfCopy? Shown) RequestedEdition(TitleFacts facts, TitleStatus movie, IReadOnlyList<JfCopy> held, IReadOnlyList<EditionHit> hits, ComposeContext c, bool fourK, bool everyEdition = false, IReadOnlyList<JfCopy>? copies = null)
         {
             // "No 4K Radarr has it" is judged on the edition's instances alone: a standard Radarr that can't be read
             // says nothing about the 4K copy (as the Overview's Needs attention list), and the other way round.
             var edition = everyEdition ? EveryEdition(facts) : fourK ? FourKOnly(facts) : StandardOnly(facts);
             edition.Copies.RemoveAll(x => x.Movie == null);
             var jf = held.Where(x => x.Visible).ToList();
-            var scoped = Movie(edition, null, jf, c, detail: false, followEveryRole: true);
+            // What plays the edition (qualifying) and the evidence of whose copy is which (every copy, hidden ones included,
+            // judged against every Radarr holding the title) go in apart (D53, edition round 19): a 4K copy the viewer can't
+            // open keeps its Radarr copy its own, so that copy's download is never told to them.
+            var scoped = Movie(edition, null, copies ?? jf, c, detail: false, followEveryRole: true,
+                qualifying: jf.Select(x => x.ItemId).ToHashSet(), owners: facts.Copies.Where(x => x.Movie != null).ToList());
             var status = new TitleStatus
             {
                 Key = movie.Key,
@@ -2030,6 +2045,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
             }
             return soleFallback && siblings.Count <= 1 ? jf.ToList() : new List<JfCopy>();
+        }
+
+        /// <summary>
+        /// The Jellyfin copies of a movie one Radarr copy owns (D53, edition round 19: movies get the series' per-instance
+        /// binding): a copy whose title folder is exactly one or more Radarr copies' folders is theirs and nobody else's
+        /// (exact-folder precedence, whatever the libraries say); otherwise <see cref="MatchCopies"/>'s match, except a copy that
+        /// several instances' linked libraries or path mappings claim alike: a library several Radarrs link proves nothing
+        /// about which one's copy it is (conservative ambiguity). <paramref name="siblings"/> are every instance's copies of
+        /// the title (never only one edition's).
+        /// </summary>
+        internal static List<JfCopy> MovieMatches(ArrCopyFacts copy, IReadOnlyList<JfCopy> jf, IReadOnlyList<ArrCopyFacts> siblings)
+        {
+            var result = new List<JfCopy>();
+            if (jf.Count == 0) return result;
+            var matched = MatchCopies(copy, jf, siblings);
+            var claims = siblings.Where(o => o.Instance.Id != copy.Instance.Id).Select(o => Claimed(o, jf)).Where(x => x != null).ToList();
+            var mine = Claimed(copy, jf);
+            foreach (var x in jf.DistinctBy(x => x.ItemId))
+            {
+                var folder = string.IsNullOrWhiteSpace(x.Path) ? null : TitleFolder(Norm(x.Path!), movie: true);
+                var folderOwners = folder == null ? new List<ArrCopyFacts>() : siblings.Where(o => HoldsFolder(o, folder)).ToList();
+                if (folderOwners.Count > 0)
+                {
+                    if (folderOwners.Any(o => ReferenceEquals(o, copy) || o.Instance.Id == copy.Instance.Id)) result.Add(x);
+                    continue;
+                }
+                if (!matched.Any(m => m.ItemId == x.ItemId)) continue;
+                if (mine?.Any(y => y.ItemId == x.ItemId) == true && claims.Any(other => other!.Any(y => y.ItemId == x.ItemId))) continue;
+                result.Add(x);
+            }
+            return result;
         }
 
         /// <summary>

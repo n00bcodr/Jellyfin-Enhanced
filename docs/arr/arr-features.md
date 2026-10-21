@@ -915,9 +915,16 @@ ask fetch the episodes that are missing, one tap each.
       handling requests, a copy's ask is offered only when Seerr's own default server for that edition is this copy's
       Sonarr (Jellyfin Enhanced doesn't pick Seerr's server), so with two 4K Sonarrs only the one Seerr sends 4K requests to
       gets **Get them in 4K**; when Seerr's servers can't be read, no copy's ask is offered under its name. Every button is
-      checked again when you press it: if what you may do there has changed since the page was shown (your permissions,
-      or which Sonarr a request would reach), nothing is sent, the buttons are drawn again for what you can do now and a
-      short message says so. A copy plays an episode only when it has a file Jellyfin can play: a placeholder or stub file
+      checked again when you press it, by your browser and then by the server, which works out afresh exactly what the
+      button was drawn to do (which episodes or seasons, which copy and edition, which Sonarr or Seerr server it lands on,
+      whether Seerr takes whole series only): if any of that has changed since the page was shown (your permissions, an
+      episode that has arrived, Seerr's default server or partial-request setting), nothing is sent, the buttons are drawn
+      again for what you can do now and a short message says so; if it can't be checked right now, nothing is sent and the
+      message says that. A button pressed twice (on an episode's row and in its dialog, say) sends one request. An ask
+      Seerr took for one server goes to that server: an account Seerr lets choose a server names it, any other is sent only
+      while Seerr's default for that edition is still that server. An administrator's **Search** for some episodes of a
+      season searches exactly those episodes. A 4K copy's buttons show that copy's own requests (a standard request waiting
+      for an OK never hides **Get it in 4K**), and a download of a copy you can't open is never shown to you. A copy plays an episode only when it has a file Jellyfin can play: a placeholder or stub file
       (such as a *.disc* stub) is never *Ready*, in this copy or another, on its season page, its own episode page, its
       card or a movie's page, a download of it is that episode on its way (not a better copy), and its arrival is never
       announced.

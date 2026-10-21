@@ -306,7 +306,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="policy">Current policy.</param>
         /// <param name="now">Commit time.</param>
         /// <param name="origin">Where the intent came from; automation never self-approves a Member in JE mode.</param>
-        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
+        /// <param name="seerrServer">A season page's Seerr ask proven to land on this Seerr server: its job is sent there or not at all.</param>
+        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null, int? seerrServer = null)
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return RequestOutcome.Refused("invalid_input", 400);
@@ -314,13 +315,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // Matching asks may approve existing wants; a later refusal must undo those approvals too.
                 Exec(c, t, "SAVEPOINT request_create");
-                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
+                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin, seerrServer);
                 if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
                 Exec(c, t, "RELEASE request_create");
                 return outcome;
             });
         }
-        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
+        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin, int? seerrServer = null)
         {
             var automation = origin?.Kind == RequestOrigin.AutomationKind;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
@@ -403,7 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial");
             Fault?.Invoke("reservation");
-            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false), now);
+            if (extra != null && status == "queued") AddJob(c, t, id, extra!, Authorize(facts, null, extra!, false) with { SeerrServer = facts.Backend == "seerr" ? seerrServer : null }, now);
             Fault?.Invoke("job");
             if (status == "queued" && extra != null && auto) ReleasePendingFollowers(c, t, acquisition, user, policy, now, false);
             Record(c, t, id, null, user, "create", "accepted", reason, stored.Key, now);

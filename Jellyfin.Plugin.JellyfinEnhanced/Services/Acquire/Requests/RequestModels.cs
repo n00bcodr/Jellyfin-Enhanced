@@ -92,10 +92,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     }
     /// <summary>A single episode coordinate.</summary>
     public sealed record RequestEpisode(int Season, int Episode);
-    /// <summary>Family Search payload: the title key in scope (a movie, or a series alone, with a season, or with a season and an episode) and one idempotency key per press.</summary>
-    public sealed record RequestSearchBody(string? Key, string? IdempotencyKey);
-    /// <summary>Create payload; the id is scoped to the signed-in requester.</summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input);
+    /// <summary>
+    /// Family Search payload: the title key in scope (a movie, or a series alone, with a season, or with a season and an episode),
+    /// one idempotency key per press, and (from a season page) what the control was drawn to do (<see cref="PressIntent"/>).
+    /// </summary>
+    public sealed record RequestSearchBody(string? Key, string? IdempotencyKey, PressIntent? Expect = null);
+    /// <summary>
+    /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
+    /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
+    /// </summary>
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null);
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);
     /// <summary>A decline explanation shown to the requester as plain text.</summary>
@@ -109,11 +115,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <summary>
     /// Authorization facts captured at approval, never returned to a browser. <c>SeerrSeasons</c> (and <c>SeerrUser</c>
     /// when approval didn't know it) are bound right before a Seerr request is sent: the exact seasons and account it
-    /// went out with, so a later read-back looks for exactly that.
+    /// went out with, so a later read-back looks for exactly that. <c>SeerrServer</c>: a season page's ask proven, at the
+    /// press, to land on that Seerr server (D53, edition round 19): it is sent there or not at all.
     /// </summary>
     public sealed record RequestAuthorization(Guid Requester, Guid? Approver, string Action, string Scope, string Variant,
         string Backend, string InstanceId, string ConnectionGeneration, string PolicyRevision, string? SeerrSource = null,
-        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null);
+        int? SeerrUser = null, long SeerrPermissions = 0, bool Edited = false, int[]? SeerrSeasons = null, int? SeerrServer = null);
     /// <summary>One scope that went out to a target (see <see cref="RequestLedger.Dispatches"/>).</summary>
     /// <param name="TargetKey">The backend target it went to.</param>
     /// <param name="Input">The scope that went out.</param>

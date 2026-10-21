@@ -55,7 +55,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="body">Client id and input.</param>
         /// <param name="ct">Cancellation.</param>
         /// <param name="origin">Automation origin; null for a person's own ask.</param>
-        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null)
+        /// <param name="press">
+        /// A season page's press (D53, edition round 19: the server decides every press): worked out again after every other
+        /// await, right before the ask is recorded; a refusal records nothing (409), and a Seerr ask proven to land on one Seerr
+        /// server is sent there or not at all.
+        /// </param>
+        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
@@ -68,7 +73,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
-            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
+            int? seerrServer = null;
+            if (press != null)
+            {
+                // The last await: what is recorded below (no await in between) is what this proves, or nothing.
+                var proof = await press(input, ct).ConfigureAwait(false);
+                if (proof.Refusal is { } refusal) return RequestOutcome.Refused(refusal, 409, "conflict") with { Message = PressChecks.Message(refusal) };
+                seerrServer = proof.SeerrServer;
+            }
+            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, seerrServer);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;

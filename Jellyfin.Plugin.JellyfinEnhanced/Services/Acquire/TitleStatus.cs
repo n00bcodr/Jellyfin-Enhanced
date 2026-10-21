@@ -325,6 +325,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>Administrators only: the copy's Sonarr, where their Search runs. Never given to anyone else.</summary>
         public string? InstanceId { get; set; }
+
+        /// <summary>
+        /// Where an ask of <see cref="Variant"/> lands, as an opaque token (D53, edition round 19: the server decides every press):
+        /// the page sends it back with the press and the server refuses the press when it lands anywhere else now. Null when
+        /// the ask reaches no copy (<see cref="Ask"/> false).
+        /// </summary>
+        public string? Dest { get; set; }
     }
 
     /// <summary>Admin view of one copy (instance) of a title.</summary>

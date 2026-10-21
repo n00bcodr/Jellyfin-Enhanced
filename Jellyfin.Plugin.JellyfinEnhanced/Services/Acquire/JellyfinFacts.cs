@@ -393,6 +393,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         JfItemRef? Resolve(Guid itemId, StatusViewer viewer);
 
         /// <summary>
+        /// Whether an item exists at all, for anyone (D53, edition round 19: deleted, denied and unknown are distinct): true
+        /// while Jellyfin has it, false once it is deleted, null when that can't be told. <see cref="Resolve"/> answering null
+        /// says only that this viewer can't open it now, never that it is gone.
+        /// </summary>
+        /// <param name="itemId">Item id.</param>
+        /// <returns>True, false or null (unknown).</returns>
+        bool? ItemExists(Guid itemId) => null;
+
+        /// <summary>
         /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
         /// current library: the key's kind only, once per item, up to twenty eligible copies. Native

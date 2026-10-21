@@ -59,8 +59,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="key">Title key in scope.</param>
         /// <param name="idempotencyKey">One per press.</param>
         /// <param name="ct">Cancellation.</param>
+        /// <param name="expect">
+        /// From a season page: what the control was drawn to do (D53, edition round 19: the server decides every press). It
+        /// is worked out again after the arr reads, right before the search command; a difference searches nothing (409
+        /// <c>press_changed</c>) and leaves its parts free. A season key's search is limited to the episodes it names.
+        /// </param>
         /// <returns>The outcome, and whether the search grabbed a copy (null: not known).</returns>
-        public async Task<(RequestOutcome Outcome, bool? Found)> SearchAsync(StatusViewer viewer, string? key, string? idempotencyKey, CancellationToken ct)
+        public async Task<(RequestOutcome Outcome, bool? Found)> SearchAsync(StatusViewer viewer, string? key, string? idempotencyKey, CancellationToken ct, PressIntent? expect = null)
         {
             if (TitleKey.Parse(key) is not { } scope || (!scope.IsMovie && (scope.Season is < 0 || scope.Episode is < 1 || (scope.Episode != null && scope.Season == null))))
                 return (RequestOutcome.Refused("invalid_input", 400), null);
@@ -71,25 +76,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var now = _now();
             // Search slots are kept under the title's canonical key, whichever id the page used.
             var title = _requests.CanonicalTitle(scope.Title);
-            // A series or season: exactly its episodes missing for a long while, per standard copy, the first ones nobody
-            // searched in this period (a peek: the claims below still decide), so a long series doesn't get the same
-            // first MaxEpisodes searched on every press while the rest never are.
-            var candidates = many
-                ? await _manage.Status.SearchableEpisodesAsync(viewer, scope, MaxEpisodes, (s, e) => Searched(title.WithEpisode(s, e).ToString(), now, hours), ct).ConfigureAwait(false)
-                : null;
-            if (candidates is { Count: 0 })
-                return (Skipped("not_searchable", "Still looking for it; nothing to search for yet."), null);
             MutationInput? Input(ArrStatusService.SearchableEpisodes? part) => _requests.NormalizeInput(scope.IsMovie
                 ? new MutationInput { Key = scope.Title.ToString() }
                 : new MutationInput
                 {
                     Key = scope.Title.ToString(), Scope = "episodes",
-                    Episodes = part != null ? part.Episodes.Select(e => new RequestEpisode(e.Season, e.Episode)).ToArray() : new[] { new RequestEpisode(scope.Season!.Value, scope.Episode!.Value) },
+                    Episodes = part != null ? part.Episodes.Select(e => new RequestEpisode(e.Season, e.Episode)).ToArray()
+                        : new[] { new RequestEpisode(scope.Season ?? 1, scope.Episode ?? 1) },
                 });
+            // The policy's facts for the title are prepared first (they await): the candidates are worked out after them, for the
+            // viewer as they are then (D53, edition round 19: a household Search never reuses candidates chosen before an await).
+            var probe = Input(null);
+            if (probe == null) return (RequestOutcome.Refused("invalid_input", 400), null);
+            await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
+            // A season page's press that no longer matches is refused before anything else (nothing claimed, nothing asked for
+            // instead); it is worked out again right before the command too.
+            if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct).ConfigureAwait(false)).Refusal is { } early)
+                return (RequestOutcome.Refused(early, 409, "conflict") with { Message = PressChecks.Message(early) }, null);
+            // A series or season: exactly its episodes missing for a long while, per standard copy, the first ones nobody
+            // searched in this period (a peek: the claims below still decide), so a long series doesn't get the same
+            // first MaxEpisodes searched on every press while the rest never are. A season page's press: only the ones it names.
+            var named = expect != null && many ? PressChecks.Numbers(scope, expect).ToHashSet() : null;
+            var candidates = many
+                ? await _manage.Status.SearchableEpisodesAsync(viewer, scope, MaxEpisodes, (s, e) => Searched(title.WithEpisode(s, e).ToString(), now, hours), ct).ConfigureAwait(false)
+                : null;
+            if (candidates != null && named != null)
+            {
+                candidates = candidates.Select(c => c with { Episodes = c.Episodes.Where(e => e.Season == scope.Season && named.Contains(e.Episode)).ToList() })
+                    .Where(c => c.Episodes.Count > 0).ToList();
+            }
+            if (candidates is { Count: 0 })
+                return (Skipped("not_searchable", "Still looking for it; nothing to search for yet."), null);
             var part = candidates?[0];
             var input = Input(part);
             if (input == null) return (RequestOutcome.Refused("invalid_input", 400), null);
-            await _requests.Policy.PrepareAsync(viewer.UserId, input, ct).ConfigureAwait(false);
             var facts = _requests.Policy.Evaluate(viewer.UserId, input);
             var target = facts.Backend == "je" ? facts.InstanceId : null;
             if (candidates != null && !string.IsNullOrEmpty(target) && part!.InstanceId != target)
@@ -138,12 +158,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 foreach (var p in claimed) _last.TryRemove(new KeyValuePair<string, DateTimeOffset>(p.Slot, now));
             }
+            // Right before the command (after the arr reads): the season page's press worked out again (without one, the viewer
+            // the candidates were chosen for must still be the viewer as Jellyfin has them now), and a sent request still covers
+            // what is searched (D53, edition round 19: re-derived at the transport boundary, nothing reused across an await).
+            MutationInput searched = input;
+            Func<CancellationToken, Task<string?>> recheck = async token =>
+            {
+                var refusal = expect != null
+                    ? (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, token).ConfigureAwait(false)).Refusal
+                    : _requests.View.Viewer(viewer.UserId) is { } still && still.IsAdmin == viewer.IsAdmin && still.PolicyRevision == viewer.PolicyRevision ? null : PressChecks.Changed;
+                return refusal ?? (_requests.Ledger.SentCovers(searched, _requests.Policy.Evaluate(viewer.UserId, searched)) ? null : PressChecks.Changed);
+            };
             ManageSearchResult result;
             try
             {
                 result = part != null
-                    ? await _manage.SearchEpisodesCheckedAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, ct).ConfigureAwait(false)
-                    : await _manage.SearchCheckedAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, ct).ConfigureAwait(false);
+                    ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false)
+                    : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false);
             }
             catch
             {
@@ -153,6 +184,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (result.Outcome.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
                 return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = result.Found == true ? "Found a copy. It's downloading." : "Searched for it." }, result.Found);
             Release();
+            // A press refusal: nothing was searched and its parts are free again; the page redraws and says so.
+            if (result.Refusal is { } pressRefusal)
+                return (RequestOutcome.Refused(pressRefusal, 409, "conflict") with { Message = PressChecks.Message(pressRefusal) }, null);
             return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
         }
 

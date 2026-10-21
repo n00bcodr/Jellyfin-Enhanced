@@ -139,6 +139,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 || user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems).Length > 0;
 
         /// <inheritdoc />
+        public bool? ItemExists(Guid itemId)
+        {
+            if (itemId == Guid.Empty) return null;
+            try
+            {
+                return _libraryManager.GetItemById(itemId) != null;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // A library read that failed tells nothing.
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
         public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
         {
             if (viewer.Handle is not User) return null;
