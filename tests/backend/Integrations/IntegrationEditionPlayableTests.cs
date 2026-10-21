@@ -487,8 +487,9 @@ public class IntegrationEditionPlayableTests(ITestOutputHelper output)
         (@"\.Playable\b", new[] { "Services/Acquire/EditionAvailability.cs",
             "Services/Acquire/Lists/ListEditionAvailability.cs:AddSources", // lists' own source adapter (4c), until it is replaced by EditionAvailability
             "Services/Acquire/Lists/ListHost.cs:IsFourK" }), // the same adapter's host (lists' Jellyfin facts)
-        // A media source list: the view produces it, EditionAvailability judges it.
-        (@"\.(Sources|EpisodeSources)\(", new[] { "Services/Acquire/EditionAvailability.cs" }),
+        // A media source list: the view produces it, EditionAvailability judges it. (ListImportFlags.Sources is 4c2's list
+        // sources switch, a configuration flag: not a media source list.)
+        (@"(?<!\bListImportFlags)\.(Sources|EpisodeSources)\(", new[] { "Services/Acquire/EditionAvailability.cs" }),
         // "A copy they can open was seen": access only (may they ask about it, see it, a parental filter), never "they have it".
         (@"\bSeenOpenable\b", new[]
         {

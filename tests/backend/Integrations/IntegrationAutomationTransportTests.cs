@@ -26,6 +26,8 @@ public class IntegrationAutomationTransportTests
     private static readonly Dictionary<string, string> NotChecked = new(StringComparer.Ordinal)
     {
         [NotifyEndpoints.ClientName] = "notifications to people (ntfy, webhooks): never a request to Sonarr, Radarr or Seerr",
+        [Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources.SourceHttp.ClientName] =
+            "list-source reads (MDBList, TMDB, Trakt, IMDb, Chronolists; 4c2): pinned provider hosts, public addresses only, no redirects: never a request to Sonarr, Radarr or Seerr",
     };
 
     public static IEnumerable<object[]> Clients() => Checked.Select(c => new object[] { c });
