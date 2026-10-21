@@ -224,34 +224,42 @@ public class UserCacheWrittenStateTests
     [Fact]
     public void AHiddenContentSaveDuringAnInFlightReadHidesAtOnce()
     {
-        using var core = new CoreFixture();
+        // D46: the filter reads the person's Hidden Content strictly, once per request (HiddenContentPolicy.Load under the
+        // document's lock): no cache across requests that a read from before the save could be put back into.
+        using var plugin = new ApiPluginFixture();
+        plugin.Plugin.Configuration.HiddenContentEnabled = true;
+        var core = plugin.Core;
         var (user, item) = (Guid.NewGuid(), Guid.NewGuid());
         var idN = user.ToString("N");
         core.Manager.SaveUserConfiguration(idN, "hidden-content.json", new UserHiddenContent());
         var filter = new HiddenContentResponseFilter(core.Manager, core.Logger);
-        var load = typeof(HiddenContentResponseFilter).GetMethod("LoadHideContext", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        bool Hides() => ((Dictionary<string, HashSet<string>>)load.ReturnType.GetProperty("ItemIdScopes")!.GetValue(load.Invoke(filter, [new DefaultHttpContext(), user]))!).Count > 0;
-        var raced = false;
-        core.Manager.AfterRead = (who, file) =>
+        var load = typeof(HiddenContentResponseFilter).GetMethod("LoadHiddenContentPolicy", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        bool Hides() => ((HiddenContentPolicy)load.Invoke(filter, [new DefaultHttpContext(), user])!).GlobalKeys().Contains(item.ToString("N"));
+        // A read in flight holds the document's lock (as HiddenContentPolicy.Load does while it reads); a save, which takes
+        // the same lock, starts during it.
+        var document = core.Manager.GetUserFileLock(idN, "hidden-content.json");
+        Task save;
+        lock (document)
         {
-            if (raced || file != "hidden-content.json" || !string.Equals(who, idN, StringComparison.OrdinalIgnoreCase)) return;
-            raced = true;
-            core.Manager.SaveUserConfiguration(idN, "hidden-content.json", new UserHiddenContent
+            save = Task.Run(() =>
             {
-                Items = new() { ["entry"] = new HiddenContentItem { ItemId = item.ToString("N"), Type = "Movie", HideScope = "global" } },
+                lock (document)
+                {
+                    core.Manager.SaveUserConfiguration(idN, "hidden-content.json", new UserHiddenContent
+                    {
+                        Items = new() { ["entry"] = new HiddenContentItem { ItemId = item.ToString("N"), Type = "Movie", HideScope = "global" } },
+                    });
+                }
+                HiddenContentResponseFilter.InvalidateUser(idN);
             });
-            HiddenContentResponseFilter.InvalidateUser(idN);
-        };
-        try
-        {
+            // The save waits for the read, which answers from the document as it was ...
+            Assert.False(save.Wait(TimeSpan.FromMilliseconds(200)));
             Assert.False(Hides());
-            Assert.True(raced);
-            Assert.True(Hides());
         }
-        finally
-        {
-            core.Manager.AfterRead = null;
-        }
+
+        Assert.True(save.Wait(TimeSpan.FromSeconds(10)));
+        // ... and the next request hides at once (before: the old read, put back after the invalidation, for 30 s).
+        Assert.True(Hides());
     }
 
     [Fact]
