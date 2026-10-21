@@ -333,7 +333,11 @@ public class ListsLegacyCollageHostTests
             "Jellyfin.Api.WebSocketListeners.ScheduledTasksWebSocketListener",
             "Jellyfin.Api.WebSocketListeners.SessionInfoWebSocketListener",
         }, listeners.OrderBy(l => l, StringComparer.Ordinal));
-        Assert.Equal(listeners.OrderBy(l => l), socket["registered"]!.AsArray().Select(l => l!.GetValue<string>()).OrderBy(l => l));
+        // Registered: the host's listeners, with the native session updates replaced by D46's privacy projection of them
+        // (it sends through the same connection, so through the collage projection too).
+        var expected = listeners.Select(l => l == Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacySessionsWebSocketListener.NativeTypeName
+            ? typeof(Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacySessionsWebSocketListener).FullName! : l);
+        Assert.Equal(expected.OrderBy(l => l, StringComparer.Ordinal), socket["registered"]!.AsArray().Select(l => l!.GetValue<string>()).OrderBy(l => l, StringComparer.Ordinal));
         // Every listener writes through the one connection the host's WebSocketManager made over the accepted socket:
         // that socket is the plugin's projection.
         Assert.StartsWith("Jellyfin.Plugin.JellyfinEnhanced.", socket["socketType"]?.GetValue<string>() ?? "(none)");
