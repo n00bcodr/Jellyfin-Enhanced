@@ -137,12 +137,12 @@ public class UserAccessCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelp
 {
     private sealed class World
     {
-        public World(Interleavings scheduler, int records)
+        public World(Interleavings scheduler, int records, bool full = true)
         {
             Scheduler = scheduler;
-            Cache = new UserAccessCache<Guid, bool>(TimeSpan.FromMinutes(5), 16, null, null, records, _ => scheduler.Yield());
-            // The record bound reached: the next invalidation rolls over.
-            for (var i = 0; i < records; i++) Cache.Invalidate(Guid.NewGuid(), Guid.NewGuid());
+            Cache = new UserAccessCache<Guid, bool>(TimeSpan.FromMinutes(5), 16, null, records, _ => scheduler.Yield());
+            // The record bound reached: the next invalidation rolls over (else room for every record).
+            if (full) for (var i = 0; i < records; i++) Cache.Invalidate(Guid.NewGuid(), Guid.NewGuid());
         }
 
         public Interleavings Scheduler { get; }
@@ -179,6 +179,19 @@ public class UserAccessCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelp
         w.Cache.Invalidate(w.Viewer.Id, w.Season);
     });
 
+    // Review round 4: an invalidation of the SAME key (the viewer's season) that changes nothing (a repeated save, a library
+    // event): with the save, three invalidators can collide on one record, and an older one taking its clock first can
+    // publish an epoch equal to the one the save read.
+    private static readonly (string Name, Action<World> Body) SameKey = ("invalidate", w => w.Cache.Invalidate(w.Viewer.Id, w.Season));
+
+    // A save that invalidates everything (a library change).
+    private static readonly (string Name, Action<World> Body) SaveAll = ("saveall", w =>
+    {
+        w.Watched = false;
+        w.Scheduler.Yield();
+        w.Cache.InvalidateAll();
+    });
+
     public static TheoryData<string> Scenarios => new()
     {
         "rollover rollover compute save",
@@ -187,11 +200,28 @@ public class UserAccessCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelp
         "rollover all compute save",
         "all all compute save",
         "rollover compute save compute",
+        // Review round 4 (COREUC-R4-1): same-key, duplicate-record and three-actor schedules.
+        "invalidate invalidate compute save",
+        "invalidate save compute",
+        "save save compute",
+        "invalidate compute save",
+    };
+
+    // Review round 4: full invalidations racing each other need one more preemption to collide.
+    public static TheoryData<string> DeepScenarios => new()
+    {
+        "all all compute saveall",
     };
 
     [Theory]
     [MemberData(nameof(Scenarios))]
-    public void NoInterleavingOfRolloversAndASaveLeavesAnAnswerFromBeforeTheSave(string scenario)
+    public void NoInterleavingOfRolloversAndASaveLeavesAnAnswerFromBeforeTheSave(string scenario) => Search(scenario, 2);
+
+    [Theory]
+    [MemberData(nameof(DeepScenarios))]
+    public void NoInterleavingOfFullInvalidationsLeavesAnAnswerFromBeforeTheSave(string scenario) => Search(scenario, 3);
+
+    private void Search(string scenario, int preemptions)
     {
         var operations = scenario.Split(' ').Select(name => name switch
         {
@@ -199,9 +229,13 @@ public class UserAccessCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelp
             "all" => Everything,
             "compute" => Compute,
             "save" => Save,
+            "invalidate" => SameKey,
+            "saveall" => SaveAll,
             _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
         }).ToList();
-        var runs = Interleavings.Run(scheduler => new World(scheduler, records: 2), operations, (world, schedule) =>
+        // Same-key schedules collide on records, not on the bound: room for them.
+        var collide = scenario.Contains("invalidate", StringComparison.Ordinal) || scenario.Contains("save save", StringComparison.Ordinal) || scenario.Contains("saveall", StringComparison.Ordinal);
+        var runs = Interleavings.Run(scheduler => collide ? new World(scheduler, 64, full: false) : new World(scheduler, 2), operations, (world, schedule) =>
         {
             var authority = world.Cache.Begin(world.Viewer).Authority;
             if (world.Cache.TryGet(world.Viewer.Id, authority, out var served))
@@ -210,6 +244,75 @@ public class UserAccessCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelp
             var ticket = world.Cache.Begin(world.Viewer, world.Season);
             world.Cache.Set(world.Viewer.Id, ticket, world.Watched);
             Assert.True(world.Cache.TryGet(world.Viewer.Id, authority, out served) && served == world.Watched, "a fresh answer isn't served, schedule: " + schedule);
+        }, preemptions);
+        output.WriteLine(scenario + ": " + runs + " schedules");
+        Assert.True(runs > 1);
+    }
+}
+
+/// <summary>
+/// Review round 4: the written-state helper (state JE writes itself) under the same bounded search: a read, the write that
+/// invalidates it and other invalidations of the same key, in every order.
+/// </summary>
+public class WrittenStateCacheInterleavingTests(Xunit.Abstractions.ITestOutputHelper output)
+{
+    private sealed class World
+    {
+        public World(Interleavings scheduler)
+        {
+            Scheduler = scheduler;
+            Cache = new WrittenStateCache<string, bool>(TimeSpan.FromMinutes(5), 16, StringComparer.OrdinalIgnoreCase, 64, _ => scheduler.Yield());
+        }
+
+        public Interleavings Scheduler { get; }
+
+        public WrittenStateCache<string, bool> Cache { get; }
+
+        // Whether the person's stored state opts the title in.
+        public volatile bool OptedIn;
+    }
+
+    private static readonly (string Name, Action<World> Body) Read = ("read", w =>
+    {
+        var ticket = w.Cache.Begin();
+        w.Scheduler.Yield();
+        var state = w.OptedIn;
+        w.Scheduler.Yield();
+        w.Cache.Set("person", ticket, state);
+    });
+
+    private static readonly (string Name, Action<World> Body) Write = ("write", w =>
+    {
+        w.OptedIn = true;
+        w.Scheduler.Yield();
+        w.Cache.Invalidate("PERSON");
+    });
+
+    private static readonly (string Name, Action<World> Body) Again = ("invalidate", w => w.Cache.Invalidate("person"));
+
+    private static readonly (string Name, Action<World> Body) All = ("all", w => w.Cache.InvalidateAll());
+
+    [Theory]
+    [InlineData("read write")]
+    [InlineData("invalidate invalidate read write")]
+    [InlineData("invalidate write read")]
+    [InlineData("all read write")]
+    public void NoInterleavingKeepsAStateReadBeforeTheWrite(string scenario)
+    {
+        var operations = scenario.Split(' ').Select(name => name switch
+        {
+            "read" => Read,
+            "write" => Write,
+            "invalidate" => Again,
+            "all" => All,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        }).ToList();
+        var runs = Interleavings.Run(scheduler => new World(scheduler), operations, (world, schedule) =>
+        {
+            if (world.Cache.TryGet("person", out var served)) Assert.True(served == world.OptedIn, "served " + served + " after the write, schedule: " + schedule);
+            var ticket = world.Cache.Begin();
+            world.Cache.Set("person", ticket, world.OptedIn);
+            Assert.True(world.Cache.TryGet("person", out served) && served == world.OptedIn, "a fresh read isn't served, schedule: " + schedule);
         });
         output.WriteLine(scenario + ": " + runs + " schedules");
         Assert.True(runs > 1);

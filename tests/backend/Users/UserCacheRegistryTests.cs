@@ -26,13 +26,19 @@ namespace JE.Tests;
 /// </summary>
 public class UserCacheRegistryTests
 {
-    internal sealed record Row(string Member, string Build, string Class, string Key, string Reason);
+    internal sealed record Row(string Member, string Build, string Class, string Key, string Reason, string Rules = "")
+    {
+        /// <summary>The value of a rule ("write:…", "snapshot:…"; several snapshot rules may be given).</summary>
+        internal IEnumerable<string> Rule(string name)
+            => Rules.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(r => r.StartsWith(name + ":", StringComparison.Ordinal)).Select(r => r[(name.Length + 1)..]);
+    }
 
     private static string Build => Environment.Version.Major >= 10 ? "jf12" : "jf10";
 
     internal static List<Row> Registry()
         => File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "fixtures", "user-caches", "user-caches.tsv"))
-            .Where(l => l.Length > 0 && !l.StartsWith('#')).Select(l => l.Split('\t')).Select(c => new Row(c[0], c[1], c[2], c[3], c[4])).ToList();
+            .Where(l => l.Length > 0 && !l.StartsWith('#')).Select(l => l.Split('\t')).Select(c => new Row(c[0], c[1], c[2], c[3], c[4], c.ElementAtOrDefault(5) ?? string.Empty)).ToList();
 
     /// <summary>What is wrong with the registry for <paramref name="plugin"/> (empty: nothing).</summary>
     internal static List<string> Problems(WriteGateWalk plugin, IReadOnlyList<Row> registry)
@@ -42,7 +48,10 @@ public class UserCacheRegistryTests
         foreach (var row in registry)
         {
             if (!rows.TryAdd(row.Member, row)) problems.Add(row.Member + ": listed twice");
-            if (row.Class is not ("stamped" or "keyed" or "independent")) problems.Add(row.Member + ": unknown class " + row.Class);
+            if (row.Class is not ("stamped" or "keyed" or "ticketed" or "independent")) problems.Add(row.Member + ": unknown class " + row.Class);
+            // Round 4: "invalidated on every write" isn't a reason a cache can't serve what it read before the write.
+            if (row.Class == "independent" && System.Text.RegularExpressions.Regex.IsMatch(row.Reason, "invalidated on (every )?write|dropped when the file is saved|invalidated by every"))
+                problems.Add(row.Member + ": independent because it is \"invalidated on write\": a read from before the write is stored after it; put it on the ticket protocol (WrittenStateCache)");
             if (row.Build is not ("both" or "jf12")) problems.Add(row.Member + ": unknown build " + row.Build);
             if (string.IsNullOrWhiteSpace(row.Key) || string.IsNullOrWhiteSpace(row.Reason)) problems.Add(row.Member + ": no key or reason");
         }
@@ -58,6 +67,9 @@ public class UserCacheRegistryTests
 
             if (row.Class == "stamped" && !cache.Stamped) problems.Add(cache.Member + " (" + cache.Where + "): listed as stamped but declared as " + cache.Type + ", not UserAccessCache");
             if (row.Class != "stamped" && cache.Stamped) problems.Add(cache.Member + " (" + cache.Where + "): declared as UserAccessCache but listed as " + row.Class);
+            var written = cache.Ticketed && !cache.Stamped;
+            if (row.Class == "ticketed" && !written) problems.Add(cache.Member + " (" + cache.Where + "): listed as ticketed but declared as " + cache.Type + ", not WrittenStateCache");
+            if (row.Class != "ticketed" && written) problems.Add(cache.Member + " (" + cache.Where + "): declared as WrittenStateCache but listed as " + row.Class);
             if (row.Class == "keyed")
             {
                 foreach (var via in row.Reason.Split(','))
@@ -69,6 +81,22 @@ public class UserCacheRegistryTests
                 }
             }
         }
+
+        // Round 4: no invalidate-only caches. Dropped outside the code that fills it: the ticket protocol, or a disposition
+        // the scan can check (fenced, locked) or a reason why no stale read can be put back.
+        foreach (var (member, drops) in UserCacheScan.Invalidations(plugin, found))
+        {
+            if (!rows.TryGetValue(member, out var row)) continue;
+            var write = row.Rule("write").FirstOrDefault();
+            if (write == null) problems.Add(member + " is dropped outside the code that fills it (" + drops.Sites + "): an invalidate-only cache, whose reader can put back what it read before the write; declare it as WrittenStateCache or give it a write: disposition");
+            else problems.AddRange(UserCacheScan.CheckWrite(plugin, drops, write));
+        }
+
+        // Round 4: a decision and its key come from one snapshot.
+        var keyed = registry.Where(r => r.Class == "keyed" && (r.Build == "both" || r.Build == Build) && rows.ContainsKey(r.Member)).Select(r => new UserCacheScan.Keyed(r.Member,
+            new[] { r.Member[..r.Member.LastIndexOf('.')] }.Concat(r.Reason.Split(',').Select(v => v.Split('~')[0]).Where(m => m.Contains('.')).Select(m => m[..m.LastIndexOf('.')])).Distinct(StringComparer.Ordinal).ToList(),
+            r.Rule("snapshot").ToHashSet(StringComparer.Ordinal)));
+        problems.AddRange(UserCacheScan.ReReads(plugin, keyed));
 
         var names = found.Select(c => c.Member).ToHashSet(StringComparer.Ordinal);
         foreach (var row in registry.Where(r => (r.Build == "both" || r.Build == Build) && !names.Contains(r.Member)))
@@ -198,7 +226,7 @@ public class UserCacheStampSourceTests
         // The user cache stamping its own read afresh.
         var users = WriteGateWalk.Plugin.With("Services/PosterTags/PosterTagUserCache.cs", s => s.Replace(
             "() => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById)",
-            "() => (_userManager.GetUserById(userId), new UserAuthority.Stamp(0, 0, 0))", StringComparison.Ordinal));
+            "() => (_userManager.GetUserById(userId), new UserAuthority.Stamp(0, 0, 0, 0, long.MaxValue))", StringComparison.Ordinal));
         problems = UserCacheScan.StampSources(users);
         Assert.Contains(problems, p => p.Contains("PosterTagUserCache.GetStamped makes a version (new Stamp)", StringComparison.Ordinal));
         Assert.Contains(problems, p => p.Contains("PosterTagUserCache.GetStamped GetHeldStamped's read must return", StringComparison.Ordinal));
@@ -319,7 +347,8 @@ public class UserAccessCacheTests
     public void AnEntryEndsWithItsLifetimeAndTheCacheStaysBounded()
     {
         var now = 0L;
-        var cache = new UserAccessCache<int, int>(TimeSpan.FromSeconds(30), 4, ticks: () => now);
+        using var clock = MonotonicClock.Use(() => now);
+        var cache = new UserAccessCache<int, int>(TimeSpan.FromSeconds(30), 4);
         var user = Read(Guid.NewGuid());
         var ticket = cache.Begin(user);
         for (var i = 0; i < 10; i++) cache.Set(i, ticket, i);

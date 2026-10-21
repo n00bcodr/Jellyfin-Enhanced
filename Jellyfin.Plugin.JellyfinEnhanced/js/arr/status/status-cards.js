@@ -563,6 +563,10 @@
     }
 
     JE.session?.onUserChange?.('arr-status-cards', clearAll);
+    // The server's answers carry the person's access revision (the tag pipeline reads it with every tag answer): when it
+    // moves (a library taken away, a parental limit changed), every status and badge kept here was worked out for the
+    // old access, so all are read again rather than kept for their minute.
+    document.addEventListener('je-access-revision', () => { if (started) clearAll(); });
 
     JE.internals = JE.internals || {};
     JE.internals.arrStatusCards = { scan, flush, paint, refreshKeys, prune, badgeCorner, reset, onUserData, cache, idsByKey };

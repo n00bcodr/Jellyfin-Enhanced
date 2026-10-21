@@ -315,6 +315,15 @@
         paintTicket = null;
     }
 
+    // The person's access moved (the server's access revision): each list's missing count was worked out for the old
+    // access, so it is read again.
+    document.addEventListener('je-access-revision', () => {
+        if (!observing) return;
+        reset();
+        unmarkAll();
+        scan();
+    });
+
     /**
      * A list changed (its entries or who sees them): refresh its visible cards, including changes during a batch.
      * @param {string} listId List id.

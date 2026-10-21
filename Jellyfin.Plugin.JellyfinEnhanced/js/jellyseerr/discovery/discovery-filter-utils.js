@@ -348,12 +348,10 @@
 
         if (JE.requestManager) {
             const cacheKey = `${cachePrefix}:${path}`;
-            // The server's native feeds are filtered for the viewer's current policy (library access,
-            // parental limits): never kept by the tab, so a changed policy shows on the next read. The
+            // Every row is filtered for the viewer's current policy (the native feeds and Seerr's rows
+            // alike: library access, parental limits, their Seerr account): never kept by the tab, so a
+            // changed policy shows on the next read; identical reads in flight share one request. The
             // server keeps the upstream answers, so reading them again is cheap.
-            const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
-            const cached = keep ? JE.requestManager.getCached(cacheKey) : null;
-            if (cached) return cached;
 
             // Identity epoch at request start. Cache keys carry no user id and the
             // cache is flushed on a user switch, so a response that lands after the
@@ -379,20 +377,16 @@
                 if (!stillCurrent()) {
                     throw new DOMException('User changed during request', 'AbortError');
                 }
-                if (keep) JE.requestManager.setCache(cacheKey, data);
                 return data;
             };
 
-            // Dedup outside the pool (only the unique fetch holds a slot) and
-            // re-check the cache after acquiring the slot, so a prefetch that
-            // finished while we queued is not fetched again.
+            // Dedup outside the pool (only the unique fetch holds a slot).
             return JE.requestManager.deduplicatedFetch(cacheKey, () =>
                 JE.requestManager.withConcurrencyLimit(() => {
                     if (!stillCurrent()) {
                         return Promise.reject(new DOMException('User changed during request', 'AbortError'));
                     }
-                    const hit = keep ? JE.requestManager.getCached(cacheKey) : null;
-                    return hit ? Promise.resolve(hit) : fetchFn();
+                    return fetchFn();
                 }),
                 signal
             );

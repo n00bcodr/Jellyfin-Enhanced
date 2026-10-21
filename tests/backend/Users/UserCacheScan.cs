@@ -17,10 +17,16 @@ namespace JE.Tests;
 /// Helpers/UserAccessCache.cs) or <c>independent</c> with the reason it doesn't depend on a user's access.
 /// </para>
 /// </summary>
-internal static class UserCacheScan
+internal static partial class UserCacheScan
 {
-    /// <summary>One cache: "Type.member" (nested types dotted), its declared type, where.</summary>
-    internal sealed record Cache(string Member, string Type, string Where, bool Stamped);
+    /// <summary>One cache: "Type.member" (nested types dotted), its declared type, where; stamped: the access-stamp
+    /// helper; ticketed: one of the two helpers on the ticket protocol (stamped, or the written-state cache).</summary>
+    internal sealed record Cache(string Member, string Type, string Where, bool Stamped)
+    {
+        internal bool Ticketed { get; init; }
+
+        internal ISymbol? Symbol { get; init; }
+    }
 
     private static readonly string[] Containers =
     [
@@ -86,6 +92,8 @@ internal static class UserCacheScan
 
     internal const string Helper = "Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAccessCache<";
 
+    internal const string WrittenState = "Jellyfin.Plugin.JellyfinEnhanced.Helpers.WrittenStateCache<";
+
     /// <summary>Every cache in <paramref name="plugin"/> (see the class summary).</summary>
     internal static List<Cache> Caches(WriteGateWalk plugin)
     {
@@ -149,14 +157,15 @@ internal static class UserCacheScan
                         if (owner.StartsWith(Helper, StringComparison.Ordinal) && method.Name is "GetHeld" or "GetHeldStamped")
                         {
                             var read = call.ArgumentList.Arguments.ElementAtOrDefault(2)?.Expression;
-                            if (read is not LambdaExpressionSyntax { ExpressionBody: InvocationExpressionSyntax })
+                            if (!OneCall(read))
                                 problems.Add(where + ": " + member + " " + method.Name + "'s read must return the value and its version from one call (a read), not put them together");
                         }
 
                         if (owner.StartsWith(Helper, StringComparison.Ordinal) && method.Name == "BeginHeld" && !FromARead(call.ArgumentList.Arguments.ElementAtOrDefault(1)?.Expression, model))
                             problems.Add(where + ": " + member + " BeginHeld's version must be the .Stamp of the read the value is computed from");
                         break;
-                    case BaseObjectCreationExpressionSyntax made when member is not "UserAuthority.Take" && model.GetTypeInfo(made).Type?.ToDisplayString() == StampType:
+                    // The stamp handing itself on with an earlier deadline (Within) keeps its version and read instant.
+                    case BaseObjectCreationExpressionSyntax made when member is not ("UserAuthority.Take" or "UserAuthority.Stamp.Within") && model.GetTypeInfo(made).Type?.ToDisplayString() == StampType:
                         problems.Add(where + ": " + member + " makes a version (new Stamp) instead of taking the one its user was read under");
                         break;
                     case LiteralExpressionSyntax { RawKind: (int)SyntaxKind.DefaultLiteralExpression } or DefaultExpressionSyntax or WithExpressionSyntax
@@ -168,6 +177,25 @@ internal static class UserCacheScan
         }
 
         return problems;
+    }
+
+    /// <summary>
+    /// A held read given as one call whose result is the value and its version together: <c>() =&gt; Read()</c>,
+    /// <c>() =&gt; { return Read(); }</c> or <c>delegate { return Read(); }</c> (parentheses aside). Anything that builds
+    /// the pair from parts is not, nor a method group (its body isn't checked here).
+    /// </summary>
+    internal static bool OneCall(ExpressionSyntax? read)
+    {
+        while (read is ParenthesizedExpressionSyntax inner) read = inner.Expression;
+        var body = read switch
+        {
+            LambdaExpressionSyntax { ExpressionBody: { } expression } => expression,
+            LambdaExpressionSyntax { Block.Statements: [ReturnStatementSyntax { Expression: { } returned }] } => returned,
+            AnonymousMethodExpressionSyntax { Block.Statements: [ReturnStatementSyntax { Expression: { } returned }] } => returned,
+            _ => null,
+        };
+        while (body is ParenthesizedExpressionSyntax inner) body = inner.Expression;
+        return body is InvocationExpressionSyntax;
     }
 
     // "<local>.Stamp" where the local holds the result of a read (a call returning the user and their version).
@@ -200,7 +228,12 @@ internal static class UserCacheScan
         var file = Path.GetRelativePath(Path.Combine(root, "Jellyfin.Plugin.JellyfinEnhanced"), span.Path).Replace(Path.DirectorySeparatorChar, '/');
         // The helper itself (a type nested in it, like its own storage, isn't).
         var stamped = Is(type, Helper) && type is not INamedTypeSymbol { ContainingType: not null };
-        return new Cache(Name(symbol), type.ToDisplayString(), file + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), stamped);
+        var written = Is(type, WrittenState) && type is not INamedTypeSymbol { ContainingType: not null };
+        return new Cache(Name(symbol), type.ToDisplayString(), file + ":" + (span.StartLinePosition.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), stamped)
+        {
+            Ticketed = stamped || written,
+            Symbol = symbol,
+        };
     }
 
     /// <summary>"Outer.Inner.member".</summary>
@@ -214,7 +247,7 @@ internal static class UserCacheScan
     private static bool Holds(WriteGateWalk plugin, ISymbol member, ITypeSymbol type, bool readOnly, ExpressionSyntax? initializer)
     {
         if (member.IsImplicitlyDeclared) return false;
-        if (Contains(type, Helper) || HoldsUser(type, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default))) return true;
+        if (Contains(type, Helper) || Contains(type, WrittenState) || HoldsUser(type, new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default))) return true;
         var state = Contains(type, Containers);
         // A mutable field named for a user or viewer is per-user state, whatever its type (an interface or delegate is a
         // service, not state).

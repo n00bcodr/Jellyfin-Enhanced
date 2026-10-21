@@ -20,19 +20,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const string CacheKey = "__JE_HC_FILTER_CACHE";
 
         // Cross-request in-memory cache keyed by userId (N-format string).
-        // Eliminates per-request disk reads for hidden-content.json.
-        private static readonly ConcurrentDictionary<string, (HideContext Ctx, DateTime CachedAt)> _hcCache = new(StringComparer.OrdinalIgnoreCase);
+        // Eliminates per-request disk reads for hidden-content.json. A read that
+        // began before a write's invalidation is never kept (the ticket protocol
+        // of Helpers.WrittenStateCache): a plain remove-on-write let a reader that
+        // loaded the old file put it back after the write's remove.
         private static readonly TimeSpan _hcCacheTtl = TimeSpan.FromSeconds(30);
+        private static readonly WrittenStateCache<string, HideContext> _hcCache = new(_hcCacheTtl, 1024, StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Removes the cached hidden-content context for the given user so the next
-        /// request re-reads from disk. Call this immediately after any write to
-        /// hidden-content.json for that user.
+        /// Ends the cached hidden-content context for the given user, and every read
+        /// of it running now, so the next request re-reads from disk. Call this
+        /// immediately after any write to hidden-content.json for that user.
         /// </summary>
         public static void InvalidateUser(string userId)
         {
             if (!string.IsNullOrEmpty(userId))
-                _hcCache.TryRemove(userId, out _);
+                _hcCache.Invalidate(Guid.TryParse(userId, out var id) ? id.ToString("N") : userId);
         }
 
         // Shared immutable surface sets. Kept as statics so neither route matching nor per-request
@@ -323,11 +326,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // 2. Cross-request in-memory cache, avoids disk reads on every Jellyfin API call.
             var userIdN = userId.ToString("N");
-            var now = DateTime.UtcNow;
-            if (_hcCache.TryGetValue(userIdN, out var entry) && (now - entry.CachedAt) < _hcCacheTtl)
+            // Taken before the read: a write landing during it ends what it read.
+            var ticket = _hcCache.Begin();
+            if (_hcCache.TryGet(userIdN, out var known))
             {
-                httpContext.Items[CacheKey] = entry.Ctx;
-                return entry.Ctx;
+                httpContext.Items[CacheKey] = known;
+                return known;
             }
 
             // 3. Cache miss, read from disk.
@@ -349,7 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (data != null) _warnedReadFailure.TryRemove(userId, out _);
 
             var ctx = HideContext.Build(data);
-            _hcCache[userIdN] = (ctx, now);
+            _hcCache.Set(userIdN, ticket, ctx);
             httpContext.Items[CacheKey] = ctx;
             return ctx;
         }

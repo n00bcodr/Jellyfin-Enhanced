@@ -126,7 +126,8 @@ public class UserCacheInputStampTests
     public void AnEntrysLifetimeRunsFromWhenItsInputsWereRead()
     {
         var now = 0L;
-        var cache = new UserAccessCache<Guid, int>(TimeSpan.FromSeconds(30), 16, ticks: () => now);
+        using var clock = MonotonicClock.Use(() => now);
+        var cache = new UserAccessCache<Guid, int>(TimeSpan.FromSeconds(30), 16);
         var user = UserChange.Read(Guid.NewGuid());
         var ticket = cache.Begin(user);
         // A slow computation (a cold access query) ...
@@ -138,7 +139,7 @@ public class UserCacheInputStampTests
         Assert.False(cache.TryGet(user.Id, ticket.Authority, out _));
 
         // The same for a held read.
-        var held = new UserAccessCache<Guid, int>(TimeSpan.FromSeconds(30), 16, ticks: () => now);
+        var held = new UserAccessCache<Guid, int>(TimeSpan.FromSeconds(30), 16);
         var reads = 0;
         held.GetHeld(user.Id, user.Id, () =>
         {

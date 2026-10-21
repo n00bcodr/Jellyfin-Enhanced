@@ -47,6 +47,7 @@
     let serverCacheVersion = 0;
     let serverCacheTimestamp = 0;
     let serverFilterRevision = null; // filter revision memory was made under (access + Spoiler Guard, from the server)
+    let announcedFilterRevision = null; // the last revision a server answer carried (see noteFilterRevision)
     let cacheGeneration = 0;         // bumped whenever memory is replaced or dropped
     let storeGate = null;            // Promise while a restored copy awaits confirmation; lookups wait on it
     let openStoreGate = null;        // resolves storeGate
@@ -343,6 +344,24 @@
     }
 
     /**
+     * The server's filter revision for the signed-in person (their access and Spoiler Guard) as an answer just carried
+     * it. When it moves, every browser cache of an answer the server projected for them (arr status cards, badges) was
+     * worked out for an access they no longer have: 'je-access-revision' tells them to drop it.
+     * @param {string} revision - The revision the answer carried.
+     */
+    function noteFilterRevision(revision) {
+        if (typeof revision !== 'string' || revision === announcedFilterRevision) return;
+        const before = announcedFilterRevision;
+        announcedFilterRevision = revision;
+        if (before === null) return;
+        try {
+            document.dispatchEvent(new CustomEvent('je-access-revision', { detail: { revision, before } }));
+        } catch (err) {
+            console.warn(`${logPrefix} access revision listeners failed:`, err);
+        }
+    }
+
+    /**
      * Forget the server cache (memory and the stored copy as a lookup source).
      * Queued stored-copy writes stop at their next slice.
      */
@@ -554,6 +573,7 @@
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
         serverFilterRevision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+        noteFilterRevision(serverFilterRevision);
         cacheGeneration++;
         storeMisses.clear();
         deltaIds.clear();
@@ -756,6 +776,7 @@
             // (library access revoked, Spoiler Guard list or policy changed,
             // possibly on another device): the copy can't be patched — replace it.
             const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+            noteFilterRevision(revision);
             // A cursor older than the one asked about means the server's cache
             // went back (restored from an older save or backup): entries this
             // copy got since may disagree with it, and a delta can't say which.
@@ -1741,6 +1762,8 @@
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
+        // Another person: their first answer starts their revision (the switch itself clears per-person caches).
+        announcedFilterRevision = null;
         reviewRatings = null;
         reviewRatingsRequestedAt = 0;
         skipStoreThisSession = false;

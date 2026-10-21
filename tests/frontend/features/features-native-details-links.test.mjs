@@ -416,7 +416,7 @@ test('the native-feeds choice: no Seerr account, Seerr reachable, Jellyfin Enhan
   assert.equal(use(UNLINKED), false);
 });
 
-test('the native feeds are read again each time (filtered for the viewer\'s policy now); Seerr\'s rows keep the tab cache', async t => {
+test('the native feeds and Seerr\'s rows are read again each time (filtered for the viewer\'s policy now); identical reads in flight share one request', async t => {
   const calls = [];
   const h = createHarness({
     JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key },
@@ -433,7 +433,10 @@ test('the native feeds are read again each time (filtered for the viewer\'s poli
   await get(native); await get(native);
   await get(proxy); await get(proxy);
   assert.equal(calls.filter(u => u.includes('native-details')).length, 2);
-  assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 1);
+  // Seerr's rows are per person too (their Seerr account, the parental filter the server applies): not kept.
+  assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 2);
+  await Promise.all([get(proxy), get(proxy)]);
+  assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 3);
 });
 
 test('library rows count a title held only in 4K as in the library: left out when library titles are excluded, else its card opens the 4K copy', async t => {

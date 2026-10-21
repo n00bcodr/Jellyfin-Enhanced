@@ -809,6 +809,12 @@
         openIds.clear();
         checks.clear();
     });
+    // The person's access moved (the server's access revision, read with every tag answer): what they may ask for and
+    // the title checks were worked out for the old access.
+    document.addEventListener('je-access-revision', () => {
+        meState = null;
+        checks.clear();
+    });
 
     JE.arrAsk = Object.freeze({
         enabled,

@@ -888,7 +888,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                 }
             }
-            await ReadMetaAsync(url, apiKey, current, metaChanged, ct).ConfigureAwait(false);
+            await ReadMetaAsync(url, apiKey, source, current, metaChanged, ct).ConfigureAwait(false);
             if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
             if (read == null && metaChanged.Count == 0) return (ReadOutcome.Ok, null);
 
@@ -896,6 +896,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             Snapshot old;
             lock (_lock)
             {
+                // Checked again under the lock Clear holds: a switch-off (or another Seerr) that cleared while this read
+                // ran isn't undone by publishing what it read.
+                if (SourceOf(_config()) != source) return (ReadOutcome.Abandoned, null);
                 old = _snapshot;
                 // A list from another Seerr replaces the old one silently (Clear announced the old one going).
                 var sameSource = old.Source == null || old.Source == source;
@@ -1030,7 +1033,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             };
         }
 
-        private async Task ReadMetaAsync(string url, string apiKey, IReadOnlyList<SeerrRequestRecord> records, List<(bool, int)> changed, CancellationToken ct)
+        private async Task ReadMetaAsync(string url, string apiKey, string source, IReadOnlyList<SeerrRequestRecord> records, List<(bool, int)> changed, CancellationToken ct)
         {
             var wanted = records.Where(r => r.TmdbId > 0).Select(r => (r.IsMovie, r.TmdbId!.Value)).Distinct().ToList();
             List<(bool Movie, int Tmdb)> due;
@@ -1052,6 +1055,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 SeerrTitleMeta? before;
                 lock (_lock)
                 {
+                    // Another Seerr since this read began (Clear dropped its details): not kept.
+                    if (SourceOf(_config()) != source) return;
                     if (_meta.Count >= MaxMeta) _meta.Clear();
                     _meta.TryGetValue((movie, tmdb), out before);
                     _meta[(movie, tmdb)] = meta;

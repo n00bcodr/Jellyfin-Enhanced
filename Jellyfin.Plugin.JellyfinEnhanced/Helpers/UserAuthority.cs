@@ -99,17 +99,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <returns>The fingerprint.</returns>
         public static string Fingerprint(JUser user) => UserAuthorityFields.Fingerprint(user);
 
-        /// <summary>A person's version: their own Jellyfin user version, and the changes of unknown person that have run.</summary>
+        /// <summary>
+        /// One read of a person, as everything computed from it must carry it: their version (their own Jellyfin user
+        /// version, and the changes of unknown person that have run) AND when it was read, on the monotonic clock. A value
+        /// computed from the read, however much later and through however many caches, is filed under this version and
+        /// lives from <see cref="ReadAt"/>, never past <see cref="Until"/>.
+        /// </summary>
         /// <param name="Own">The person's own Jellyfin user version (<see cref="JellyfinUserVersions.SampleOwn"/>).</param>
         /// <param name="Attributed">How many changes of unknown person turned out to be about them.</param>
         /// <param name="Unknown">How many changes of unknown person couldn't be told (every person's).</param>
-        public readonly record struct Stamp(long Own, long Attributed, long Unknown);
+        /// <param name="ReadAt">When the person was read (<see cref="MonotonicClock"/>; taken just before the read).</param>
+        /// <param name="Until">The latest a value computed from this read may be served (<see cref="long.MaxValue"/>
+        /// for a read just made; a cache that held it hands it on with its own deadline).</param>
+        public readonly record struct Stamp(long Own, long Attributed, long Unknown, long ReadAt, long Until)
+        {
+            /// <summary>This read, handed on by a cache whose entry ends at <paramref name="deadline"/>.</summary>
+            /// <param name="deadline">The holding entry's deadline.</param>
+            /// <returns>The stamp with the earlier deadline.</returns>
+            internal Stamp Within(long deadline) => new(Own, Attributed, Unknown, ReadAt, Math.Min(Until, deadline));
+        }
 
-        /// <summary>The person's version now: take it BEFORE reading what is cached under it.</summary>
+        /// <summary>The person's version now, and now as the read instant: take it BEFORE reading what is cached under it.</summary>
         /// <param name="userId">The user.</param>
         /// <returns>The stamp.</returns>
         public static Stamp Take(Guid userId)
-            => new(JellyfinUserVersions.SampleOwn(userId), Attributed.GetValueOrDefault(userId), Interlocked.Read(ref _unknown));
+            => new(JellyfinUserVersions.SampleOwn(userId), Attributed.GetValueOrDefault(userId), Interlocked.Read(ref _unknown), MonotonicClock.Now(), long.MaxValue);
 
         /// <summary>
         /// True when nothing changed the person since <paramref name="stamp"/>: their own version is settled and equal (a
@@ -147,8 +161,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         /// <summary>
         /// The user read once per request: the first call in a request reads (<paramref name="lookup"/>, with the stamp
-        /// taken before), later calls in the same request get that read. A read is never handed to another request, in
-        /// flight or done; outside a request every call reads.
+        /// taken before), later calls in the same request get that read, with its stamp (its version AND its read instant,
+        /// so a value computed from it later in the request still lives from the read). A read is never handed to another
+        /// request, in flight or done; outside a request every call reads.
         /// </summary>
         /// <param name="userId">The user.</param>
         /// <param name="lookup">The read (Jellyfin's <c>GetUserById</c>: a database query on both versions).</param>

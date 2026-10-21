@@ -84,6 +84,21 @@
     /** @type {Map<string, {data: any, timestamp: number}>} */
     const responseCache = new Map();
 
+    // Only answers that are the same for every person are kept (awards, MDBList ratings, the DoesTheDogDie catalog).
+    // Everything else the server projects for the person asking: the Seerr and TMDB proxies and watch providers apply
+    // their parental limits and Seerr account, so a restriction must apply to the next request, not after the TTL.
+    // Those keys still share a request already in flight; nothing is kept once it settles.
+    const SHARED_CACHE_PREFIXES = Object.freeze(['awards:', 'mdblist-ratings:', 'ddd:']);
+
+    /**
+     * True when a cache key's answer is the same for everyone (see SHARED_CACHE_PREFIXES).
+     * @param {string} key - Cache key.
+     * @returns {boolean} Whether it may be kept.
+     */
+    function isSharedKey(key) {
+        return typeof key === 'string' && SHARED_CACHE_PREFIXES.some(prefix => key.startsWith(prefix));
+    }
+
     // AbortController management per page/context
     /** @type {Map<string, AbortController>} */
     const activeControllers = new Map();
@@ -556,6 +571,7 @@
      * @param {string} key
      */
     function getCached(key) {
+        if (!isSharedKey(key)) return null;
         const entry = responseCache.get(key);
         if (entry && Date.now() - entry.timestamp < CONFIG.cache.ttlMs) {
             if (metrics.enabled) {
@@ -579,6 +595,8 @@
      * @param {*} data
      */
     function setCache(key, data) {
+        // A per-person answer is never kept (it would outlive a change to the person's access).
+        if (!isSharedKey(key)) return;
         // Refresh an existing key without evicting an unrelated entry. Deleting
         // first also moves the refreshed response to the newest LRU position.
         responseCache.delete(key);
@@ -731,6 +749,7 @@
         // Cache management
         getCached,
         setCache,
+        isSharedKey,
         clearCache,
         clearCacheMatching,
 

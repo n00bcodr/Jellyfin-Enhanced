@@ -81,11 +81,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Logger _logger;
         private int _computeFailureLogBudget = 5;
 
-        // Test / diagnostic seams: substitute the boundary computation (no live
-        // library) and the clock (deterministic TTL expiry).
+        // Test / diagnostic seam: substitute the boundary computation (no live
+        // library). The clock is the helper's (Helpers.MonotonicClock).
         internal Func<Guid, Guid, NextUnwatchedBoundary?>? BoundaryComputerForTest { get; set; }
-
-        internal Func<long>? ClockTicksForTest { get; set; }
 
         public SpoilerNextUnwatchedService(
             ILibraryManager libraryManager,
@@ -97,7 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userManager = userManager;
             _userDataManager = userDataManager;
             _logger = logger;
-            _cache = new Helpers.UserAccessCache<(Guid UserId, Guid SeriesId), NextUnwatchedBoundary?>(CacheTtl, MaxCacheEntries, ticks: () => ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks);
+            _cache = new Helpers.UserAccessCache<(Guid UserId, Guid SeriesId), NextUnwatchedBoundary?>(CacheTtl, MaxCacheEntries);
             _userDataManager.UserDataSaved += OnUserDataSaved;
             _libraryManager.ItemAdded += OnLibraryChanged;
             _libraryManager.ItemRemoved += OnLibraryChanged;
@@ -159,7 +157,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var read = Helpers.UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById);
                 user = read.User;
-                ticket = user != null ? _cache.Begin(user, seriesId) : _cache.BeginHeld(userId, read.Stamp, seriesId);
+                ticket = user != null ? _cache.Begin(user, read.Stamp, seriesId) : _cache.BeginHeld(userId, read.Stamp, seriesId);
             }
 
             var key = (userId, seriesId);

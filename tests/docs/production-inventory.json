@@ -223,6 +223,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/InvalidationLedger.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/JellyseerrPermissionHelper.cs",
       "category": "Helpers"
     },
@@ -271,6 +275,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MonotonicClock.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PrivateResponseAttribute.cs",
       "category": "Helpers"
     },
@@ -312,6 +320,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserHelper.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/WrittenStateCache.cs",
       "category": "Helpers"
     },
     {
@@ -10895,7 +10907,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 632,
+    "files": 635,
     "routes": 292,
     "configuration_properties": 638,
     "storage_references": 93,

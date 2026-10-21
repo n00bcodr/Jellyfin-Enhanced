@@ -97,6 +97,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Tests: runs as <see cref="SaveUserConfiguration"/> has put the file in place (readers see it), before it returns.</summary>
         internal Action<string, string>? Moved { get; set; }
 
+        /// <summary>Tests: runs as <see cref="GetUserConfiguration"/> has read the file, before it returns what it read (user id as given, file name).</summary>
+        internal Action<string, string>? AfterRead { get; set; }
+
         /// <summary>One of a person's own consents in their settings.json (what JE may request or do on their behalf).</summary>
         /// <param name="Field">The settings field (and the consent operation's field name).</param>
         /// <param name="Get">Reads it.</param>
@@ -469,6 +472,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Lenient read; returns new T() on missing/empty/unparseable. Write path should use GetUserConfigurationStrict.
         public T GetUserConfiguration<T>(string userId, string fileName) where T : new()
+        {
+            var read = ReadUserConfiguration<T>(userId, fileName);
+            AfterRead?.Invoke(userId, fileName);
+            return read;
+        }
+
+        private T ReadUserConfiguration<T>(string userId, string fileName) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
 

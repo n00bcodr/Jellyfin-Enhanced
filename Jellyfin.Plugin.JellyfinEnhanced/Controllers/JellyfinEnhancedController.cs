@@ -99,6 +99,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
 
+        // Moves on every drop of the Seerr response and TMDB enrichment caches (a settings save, a request that changes a
+        // title), before the drop and under the cache's lock: a read that began under an older value isn't stored.
+        private static long _seerrResponseGeneration;
+
         // Throttle for manual user import
         private static DateTime _lastManualImport = DateTime.MinValue;
         private static readonly object _importThrottleLock = new();
@@ -594,10 +598,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             SeerrAskedProofCache.Shared.Clear();
             lock (_responseCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _responseCache.Clear();
             }
             lock (_tmdbEnrichmentCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _tmdbEnrichmentCache.Clear();
             }
             // Avatar cache may reference the OLD Seerr URL — clear it too.
@@ -761,6 +767,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var subPathInfix = $":/api/v1/{mediaType}/{mediaId}/";
                 lock (_responseCacheLock)
                 {
+                    Interlocked.Increment(ref _seerrResponseGeneration);
                     var keys = _responseCache.Keys
                         .Where(k =>
                             k.EndsWith(bareSuffix, StringComparison.Ordinal)
@@ -1229,6 +1236,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // Taken before the read: a drop while it runs means its answer may be from before the change.
+            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);
             var urls = config.JellyseerrUrls.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
             httpClient.Timeout = TimeSpan.FromSeconds(15);
@@ -1298,7 +1307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             lock (_responseCacheLock)
                             {
-                                _responseCache[cacheKey] = (json, DateTime.UtcNow);
+                                if (responseGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _responseCache[cacheKey] = (json, DateTime.UtcNow);
 
                                 if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
@@ -11751,6 +11760,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // Taken before the read: a drop while it runs means its answer may be from before the change.
+            var enrichmentGeneration = Interlocked.Read(ref _seerrResponseGeneration);
+
             async Task<TmdbEnrichmentResult> FetchEnrichmentAsync()
             {
                 try
@@ -11885,7 +11897,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     lock (_tmdbEnrichmentCacheLock)
                     {
-                        _tmdbEnrichmentCache[cacheKey] = (result!, DateTime.UtcNow);
+                        if (enrichmentGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _tmdbEnrichmentCache[cacheKey] = (result!, DateTime.UtcNow);
 
                         if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
                         {

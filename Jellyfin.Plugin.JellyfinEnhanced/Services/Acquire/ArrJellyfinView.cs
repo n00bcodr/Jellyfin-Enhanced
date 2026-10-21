@@ -50,19 +50,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // An API key's user id is the empty GUID, which Jellyfin 12 refuses to look up (it throws).
             var user = Helpers.ArrCaller.Find(userId, _userManager);
             if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
-            var isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
-            var parental = HasParentalLimit(user);
-
-            return new StatusViewer
-            {
-                UserId = user.Id,
-                IsAdmin = isAdmin,
-                DisplayMissingEpisodes = user.DisplayMissingEpisodes,
-                HasParentalLimit = parental,
-                PolicyRevision = PolicyRevisionOf(user),
-                Handle = user,
-            };
+            return ViewerOf(user);
         }
+
+        /// <summary>
+        /// The viewer as <paramref name="user"/> (one read of them): every fact of the viewer, its policy revision and its
+        /// handle come from this same object, so what is decided with it and what it is keyed by agree.
+        /// </summary>
+        /// <param name="user">The user, as read.</param>
+        /// <returns>The viewer.</returns>
+        internal static StatusViewer ViewerOf(User user) => new()
+        {
+            UserId = user.Id,
+            IsAdmin = user.HasPermission(PermissionKind.IsAdministrator),
+            DisplayMissingEpisodes = user.DisplayMissingEpisodes,
+            HasParentalLimit = HasParentalLimit(user),
+            PolicyRevision = PolicyRevisionOf(user),
+            Handle = user,
+        };
 
         /// <summary>
         /// The policy revision of <paramref name="user"/> as read (<see cref="StatusViewer.PolicyRevision"/>): role,

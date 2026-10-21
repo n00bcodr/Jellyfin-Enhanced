@@ -45,7 +45,7 @@ public class IntegrationRequestDiscoverTests
         public Rig()
         {
             Service = new DiscoverService(R.Service, null,
-                (kind, id, user, ct) => { Interlocked.Increment(ref MaySeeCalls); return MaySee(kind, id, user); },
+                (kind, id, viewer, ct) => { Interlocked.Increment(ref MaySeeCalls); return MaySee(kind, id, viewer.UserId); },
                 (path, query, ct) => { lock (Reads) Reads.Add((path, query)); return Task.FromResult(Tmdb.TryGetValue(path, out var json) ? json : null); },
                 (viewer, max) => Recent.Take(max).ToList(),
                 _ => Hidden,

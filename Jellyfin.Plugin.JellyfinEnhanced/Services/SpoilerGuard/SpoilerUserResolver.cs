@@ -30,12 +30,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // F7: cross-request in-memory cache of each user's spoiler state, keyed
         // by userId (N-format). An anonymous image burst on a shared IP probes
         // every candidate's state on every image request; without this each
-        // probe re-reads + re-parses spoilerblur.json from disk. Invalidated by
-        // every controller/pending/promoter write path via InvalidateUser, and
-        // per-request the HttpContext.Items layer still short-circuits repeats.
+        // probe re-reads + re-parses spoilerblur.json from disk. Every
+        // controller/pending/promoter write path calls InvalidateUser after its
+        // write, and a read that began before such an invalidation is never kept
+        // (WrittenStateCache's ticket): a plain remove-on-write let a reader that
+        // loaded the old file put it back after the write's remove, so a title
+        // just opted in stayed outside Spoiler Guard for the TTL. Per-request the
+        // HttpContext.Items layer still short-circuits repeats.
         private static readonly TimeSpan UserStateCacheTtl = TimeSpan.FromSeconds(30);
-        private static readonly ConcurrentDictionary<string, (UserSpoilerBlur State, DateTime CachedAt)> _userStateCache
-            = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly WrittenStateCache<string, UserSpoilerBlur> _userStateCache
+            = new(UserStateCacheTtl, 512, StringComparer.OrdinalIgnoreCase);
 
         // F6: memoized result of the O(opted-collections × members) collection
         // walk in FindOptedInCollectionForMovie (runs 2-3× per movie image/DTO).
@@ -58,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (string.IsNullOrEmpty(userIdN)) return;
             var key = userIdN.Replace("-", "").ToLowerInvariant();
-            _userStateCache.TryRemove(key, out _);
+            _userStateCache.Invalidate(key);
             // The collection-scope memo is self-invalidating (its key includes
             // the collection set), so no per-user sweep is required there.
         }
@@ -68,11 +72,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static void SeedUserStateCacheForTest(string userIdN)
         {
             if (!string.IsNullOrEmpty(userIdN))
-                _userStateCache[userIdN] = (new UserSpoilerBlur(), DateTime.UtcNow);
+                _userStateCache.Set(userIdN, _userStateCache.Begin(), new UserSpoilerBlur());
         }
 
         internal static bool IsUserStateCachedForTest(string userIdN)
-            => !string.IsNullOrEmpty(userIdN) && _userStateCache.ContainsKey(userIdN);
+            => !string.IsNullOrEmpty(userIdN) && _userStateCache.TryGet(userIdN, out _);
 
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
@@ -221,13 +225,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             // 2. F7 cross-request cache — skips the disk read + parse when a
-            //    recent copy exists. Invalidated by every write path.
-            var now = DateTime.UtcNow;
-            if (_userStateCache.TryGetValue(userIdN, out var entry)
-                && (now - entry.CachedAt) < UserStateCacheTtl)
+            //    recent copy exists that no write invalidated since it was read.
+            //    The ticket is taken before the read.
+            var ticket = _userStateCache.Begin();
+            if (_userStateCache.TryGet(userIdN, out var known))
             {
-                httpContext.Items[cacheKey] = entry.State;
-                return entry.State;
+                httpContext.Items[cacheKey] = known;
+                return known;
             }
 
             // 3. Miss — read from disk.
@@ -259,17 +263,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 return state;
             }
 
-            _userStateCache[userIdN] = (state, now);
-            // Opportunistic prune so the cache can't grow unbounded across many
-            // users over a long uptime (mirrors the IP-scan cache prune).
-            if (_userStateCache.Count > 512)
-            {
-                foreach (var kvp in _userStateCache)
-                {
-                    if ((now - kvp.Value.CachedAt) >= UserStateCacheTtl)
-                        _userStateCache.TryRemove(kvp.Key, out _);
-                }
-            }
+            // Not kept when a write invalidated this user since the ticket (the
+            // state read may be from before it); bounded by the helper.
+            _userStateCache.Set(userIdN, ticket, state);
             httpContext.Items[cacheKey] = state;
             return state;
         }
