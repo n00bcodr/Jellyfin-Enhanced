@@ -1635,3 +1635,164 @@ test('LIST-REQ-INFLIGHT-1 audit: the Playlists grid left and shown again while i
   assert.equal(card.querySelector('.je-list-grid-count')?.textContent, '3', 'the shown card gets the answer');
   assert.equal(count, 1, 'joined, not asked twice');
 });
+
+// The document's own lifecycle ends a page show too: leaving for another site can put the whole document in the
+// back/forward cache (a persisted pagehide), and the browser's Back restores it as it was (a persisted pageshow) with no
+// view show from jellyfin-web. Every hold of that show ends on the pagehide; the pageshow starts a new show.
+/** A page transition event as the browser fires it (persisted: the document goes to / comes from the bfcache). */
+function transition(h, type, persisted) {
+  const Ctor = h.window.PageTransitionEvent;
+  if (typeof Ctor === 'function') return new Ctor(type, { persisted });
+  const e = new h.window.Event(type);
+  Object.defineProperty(e, 'persisted', { value: persisted });
+  return e;
+}
+/** Leaves the document into the bfcache and restores it (the page stays shown and the route stays the list's). */
+const docLeave = async h => { h.window.dispatchEvent(transition(h, 'pagehide', true)); await h.settle(); };
+const docBack = async h => { h.window.dispatchEvent(transition(h, 'pageshow', true)); await h.settle(); };
+
+for (const collection of [false, true]) for (const [late, end] of Object.entries(LATE)) {
+  test(`LIST-REQ-INFLIGHT-2: ${collection ? 'collection' : 'playlist'} Request after the document left into the bfcache and came back is B's own press; A's late preview (${late}) draws nothing`, async t => {
+    const r = await heldRequestPage(t, collection);
+    const { h, lp } = r;
+    const a = r.button();
+    const ticketA = r.ctrl().ticket;
+    a.click();
+    await h.settle();
+    assert.equal(r.previews.length, 1, "A's preview is asked for");
+    assert.equal(a.disabled, true, "A's press takes the button while it prepares");
+    await docLeave(h);
+    assert.equal(ticketA.current(), false, "the persisted pagehide ends A's page show (its ticket)");
+    assert.equal(a.disabled, false, "the persisted pagehide gives A's button back");
+    const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+    await docBack(h);
+    assert.equal(r.button(), a, 'the restored document is the same page: the same row and button');
+    assert.equal(a.disabled, false, "the restored page's Request is enabled");
+    assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads + 1, 'the persisted pageshow resumes the shown page (it reads its list again)');
+    const ticketB = r.ctrl().ticket;
+    assert.ok(ticketB && ticketB !== ticketA && ticketB.current(), 'the resumed page has a fresh, current ticket');
+    const toasts = h.toasts.length;
+    r.button().click();
+    await h.settle();
+    assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
+    assert.equal(a.disabled, true, "B's press takes the button");
+    end(r.previews[0], r.entry.id);
+    await h.settle(60);
+    assert.equal(h.toasts.length, toasts, "A's late answer shows no toast: " + h.toasts.join(' / '));
+    assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, "A's late answer opens no sheet on the restored page");
+    assert.equal(a.disabled, true, "A's cleanup never gives back the button B holds");
+    const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+    await h.settle();
+    assert.equal(r.previews.length, 2, "A's cleanup left B's in-flight entry in place");
+    assert.equal(await again, null);
+    r.previews[1].resolve(ASKABLE(r.entry.id));
+    await h.settle(60);
+    assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
+    assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
+    h.document.querySelector('.je-sheet-secondary').click();
+    await h.settle();
+  });
+}
+
+for (const collection of [false, true]) test(`LIST-REQ-INFLIGHT-2 lifecycle: a ${collection ? 'collection' : 'playlist'} page's read, refresh timer and status subscription end on a persisted pagehide; the pageshow reads again with a fresh ticket and the late answer of the old read is dropped`, async t => {
+  const id = collection ? COLL : LIST;
+  const first = ph(P(1), { actions: ['request'] });
+  const second = ph(P(2), { actions: ['request'], title: 'Second' });
+  const held = deferred();
+  t.after(async () => { held.resolve(); await sleep(20); });
+  let reads = 0;
+  const body = entries => view(entries, entries.map(e => e.token), { listId: id, listKind: collection ? 'collection' : 'playlist', rev: reads });
+  const h = setup(t, {
+    items: { [id]: { Id: id, Type: collection ? 'BoxSet' : 'Playlist' } },
+    views: async () => {
+      reads++;
+      // The second read (a refresh started on the old show) is held until after the restore, then answers with only
+      // the first entry; the restored show's own read answers with both.
+      if (reads === 2) { await held.promise; return [body([first])]; }
+      return [body(reads === 1 ? [first] : [first, second])];
+    }
+  });
+  await h.start();
+  const page = collection ? h.collectionPage() : h.playlistPage().page;
+  await h.show(page, '#/details?id=' + id);
+  const lp = h.JE.internals.arrListPages;
+  const ctrl = [...lp.pages.controllers].find(c => c.page === page);
+  const ticketA = ctrl.ticket;
+  assert.ok(ticketA?.current());
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 1);
+  ctrl.load();
+  await h.settle();
+  assert.equal(reads, 2, 'a read of the old show is on its way');
+  ctrl.scheduleRefetch(40);
+  await docLeave(h);
+  assert.equal(ticketA.current(), false, "the persisted pagehide ends the page's ticket");
+  assert.equal(ctrl.paused, true, 'the page is paused');
+  assert.equal(ctrl.refetchTimer, null, 'its refresh timer is cleared');
+  assert.equal(ctrl.statusOff, null, 'its status subscription is gone');
+  await sleep(80);
+  assert.equal(reads, 2, 'nothing reads while the document is away');
+  await docBack(h);
+  assert.equal(reads, 3, 'the persisted pageshow reads the list again');
+  const ticketB = ctrl.ticket;
+  assert.ok(ticketB && ticketB !== ticketA && ticketB.current(), 'with a fresh ticket');
+  assert.equal(ctrl.paused, false);
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 2, "the restored show's view is drawn");
+  held.resolve();
+  await h.settle(60);
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 2, "the old show's late answer replaces nothing");
+});
+
+test('LIST-REQ-INFLIGHT-2: a Request sheet open when the document leaves into the bfcache closes with its page show; after the restore Request opens a new one', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const a = r.button();
+  a.click();
+  await h.settle();
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "A's sheet is open");
+  await docLeave(h);
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, 'the sheet ends with the page show it was opened for');
+  assert.equal(a.disabled, false);
+  await docBack(h);
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 2, "the restored page's press asks again");
+  r.previews[1].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, 'one new sheet');
+  h.document.querySelector('.je-sheet-secondary').click();
+  await h.settle();
+});
+
+test('LIST-REQ-INFLIGHT-2 control: the first load\'s pageshow (not persisted) neither ends nor restarts the shown page', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const ticket = r.ctrl().ticket;
+  const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+  h.window.dispatchEvent(transition(h, 'pageshow', false));
+  await h.settle();
+  assert.equal(r.ctrl().ticket, ticket, 'same ticket');
+  assert.equal(ticket.current(), true);
+  assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 1, 'Request still works on that show');
+});
+
+test('LIST-REQ-INFLIGHT-2 control: a page element\'s own bubbling pageshow / pagehide (as JE\'s pages dispatch) is not the document\'s lifecycle', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const ticket = r.ctrl().ticket;
+  const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+  for (const type of ['pagehide', 'pageshow']) {
+    const e = new h.window.CustomEvent(type, { bubbles: true, detail: {} });
+    Object.defineProperty(e, 'persisted', { value: true });
+    r.page.dispatchEvent(e);
+  }
+  await h.settle();
+  assert.equal(r.ctrl().paused, false, 'not paused');
+  assert.equal(r.ctrl().ticket, ticket, 'same ticket');
+  assert.equal(ticket.current(), true);
+  assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
+});

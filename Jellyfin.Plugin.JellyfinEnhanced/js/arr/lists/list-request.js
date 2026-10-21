@@ -12,9 +12,9 @@
  * What it draws (the button's busy state, toasts, the sheet) goes through the paint gate with the page's ticket; the
  * button is enabled again through erase (it only gives back what JE took).
  * A press owns what it holds (its in-flight entry and the button it disabled) for its page show only: when that ticket
- * ends (the page is left) the press gives both back at once, so Back on the page jellyfin-web kept can press again
- * while the old preview is still on its way; a later press starts its own, and the old one's cleanup only ever
- * removes what is still its own.
+ * ends (the page is left, or the whole document is: a pagehide) the press gives both back at once, so Back on the page
+ * jellyfin-web kept, or the browser restoring the document, can press again while the old preview is still on its way;
+ * a later press starts its own, and the old one's cleanup only ever removes what is still its own.
  */
 (function (JE) {
     'use strict';
