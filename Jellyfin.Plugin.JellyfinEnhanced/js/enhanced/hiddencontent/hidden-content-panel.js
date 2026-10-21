@@ -159,9 +159,10 @@
                     ? (hasTmdbId ? item.tmdbId : card.dataset.resolvedTmdbId)
                     : '';
                 // The title's native details page when offered, else the more-info modal.
+                const owner = JE.ownerOf(e);
                 const openAbsent = (id, type) => {
-                    if (JE.titleDetails?.show) JE.titleDetails.show(id, type);
-                    else JE.jellyseerrMoreInfo.open(id, type, undefined, JE.NATIVE);
+                    if (JE.titleDetails?.show) JE.titleDetails.show(id, type, undefined, owner);
+                    else JE.jellyseerrMoreInfo.open(id, type, undefined, owner);
                 };
                 if (hasJellyfinId && removedId && JE.jellyseerrMoreInfo) {
                     e.preventDefault();

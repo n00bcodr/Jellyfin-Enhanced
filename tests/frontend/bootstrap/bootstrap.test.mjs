@@ -65,7 +65,7 @@ function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage 
     return result;
   };
   h.load('plugin.js');
-  return { ...h, calls, scripts, initialized, get translationLoads() { return translationLoads; }, get plugin() { return h.window.JellyfinEnhanced; },
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, scripts, initialized, get translationLoads() { return translationLoads; }, get plugin() { return h.window.JellyfinEnhanced; },
     switchUser(id) { userId = id; h.window.JellyfinEnhanced.session.checkNow('test'); } };
 }
 

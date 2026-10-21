@@ -11,7 +11,7 @@ function setup(t, fetch) {
  setAuthenticationInfo(nextToken,nextUser){token=nextToken;user=nextUser;}}});
  t.after(()=>h.close());
  for(const m of ['navigation','session','api-client'])h.load('core/'+m+'.js');
- return {...h,switchUser(mode='both'){
+ return {...h,get NATIVE(){return h.NATIVE;},switchUser(mode='both'){
   if(mode==='server'){server='two';return;}
   if(mode==='token'){token='replacement-token';return;}
   if(mode==='epoch'){server='two';h.JE.session.checkNow('test');return;}
@@ -87,7 +87,8 @@ test('JE write helpers all enter the core transport',()=>{
  assert.equal(nonCoreWrites("window.fetch('/rule',opts)",'probe.js').length,1);
  // Play edge only (Q-PLAYD51-3): modules from tracks merged beside D46 that the integration rebuild binds to the
  // core transport ("session-bound client modules" rule). Exactly these files; anything new still fails.
- const pendingRebuild=['arr/adminusers/admin-users-api.js','arr/lists/list-api.js','arr/lists/list-grid.js'];
+ // 4c2's list import transport (own fetch, bound per operation to its session like list-api.js) joins them.
+ const pendingRebuild=['arr/adminusers/admin-users-api.js','arr/lists/list-api.js','arr/lists/list-grid.js','arr/lists/list-import.js'];
  const bypass=walk(jsRoot).filter(f=>!f.endsWith('/core/api-client.js')).flatMap(f=>nonCoreWrites(readFileSync(f,'utf8'),f.slice(jsRoot.length+1)));
  assert.deepEqual(bypass.filter(s=>!pendingRebuild.includes(s.split(':')[0])),[]);
  assert.deepEqual([...new Set(bypass.map(s=>s.split(':')[0]))].sort(),pendingRebuild,'drop an entry once the rebuild binds it');

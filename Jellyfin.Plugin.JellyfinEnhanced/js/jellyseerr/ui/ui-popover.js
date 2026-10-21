@@ -189,32 +189,53 @@
     // 4K POPUP MANAGEMENT
     // ================================
 
+    // The open popup's release (its lifecycle is core's JE.openPopup, D46S2 audit S6).
+    let popupRelease = null;
+
     /**
-     * Hides any active 4K popup menu.
+     * Hides any active 4K popup menu: terminal for that popup (it leaves the surface stack and gives focus back to the
+     * control it opened from when focus was in it).
      */
     function hide4KPopup() {
-        if (state.active4KPopup) {
-            state.active4KPopup.remove();
-            state.active4KPopup = null;
-        }
+        const popup = state.active4KPopup;
+        if (!popup) return;
+        state.active4KPopup = null;
+        const release = popupRelease;
+        popupRelease = null;
+        release?.();
+        popup.remove();
+    }
+
+    /** True while the open popup was opened from `buttonGroup` (its recorded source, D46S2 audit S6). */
+    function popupOpenFor(buttonGroup) {
+        return !!state.active4KPopup && popupSources.get(state.active4KPopup)?.buttonGroup === buttonGroup;
     }
 
     /**
-     * Shows the 4K request popup menu below the button group.
+     * Shows the 4K request popup menu next to the button group, as a surface of `owner` (the arrow's press, D46S2 audit
+     * S1: a title action's operation that pressed it, else the viewer's own): it closes when that owner ends, its item
+     * acts for that owner, and Escape / Back close it (topmost only) with focus back on the arrow. Opened from the
+     * keyboard or a remote, its item takes focus.
      * @param {HTMLElement} buttonGroup - The split button container.
      * @param {Object} item - Media item data.
+     * @param {Object|Event} owner - The arrow's press (or its owner).
+     * @param {{keyboard?: boolean}} [options] - keyboard: opened from the keyboard or a remote.
      */
-    function show4KPopup(buttonGroup, item) {
+    function show4KPopup(buttonGroup, item, owner, options = {}) {
+        const admitted = JE.admitSurface(owner, 'the 4K popup');
+        if (!admitted) return false;
         hide4KPopup();
 
         const popup = document.createElement('div');
         popup.className = 'jellyseerr-4k-popup';
+        popup.setAttribute('role', 'menu');
 
         const status4k = item.mediaInfo ? item.mediaInfo.status4k : 1;
 
         // Create 4K button
         const request4KBtn = document.createElement('button');
         request4KBtn.className = 'jellyseerr-4k-popup-item';
+        request4KBtn.setAttribute('role', 'menuitem');
 
         const popupDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
         if (popupDs4k === DisplayStatus.AVAILABLE) {
@@ -238,20 +259,32 @@
         }
 
         popup.appendChild(request4KBtn);
-        document.body.appendChild(popup);
+        const arrow = buttonGroup.querySelector('.jellyseerr-split-arrow');
+        // Its origin, recorded while the split button is on the page (D46S2-R9-2): a phone's tap on the popup closes the
+        // card's overview (the split button goes with it) before the popup's own click handler runs.
+        popupSources.set(popup, { buttonGroup, item, card: buttonGroup.closest('.jellyseerr-card'), arrow });
         state.active4KPopup = popup;
-        popupSources.set(popup, { buttonGroup, item });
-
-        // Position the popup relative to the button group
-        const rect = buttonGroup.getBoundingClientRect();
-        popup.style.position = 'fixed';
-        popup.style.left = `${rect.left}px`;
-        popup.style.top = `${rect.bottom + 4}px`;
-        popup.style.width = `${rect.width}px`;
+        popupRelease = JE.openPopup(popup, { anchor: buttonGroup, owner: admitted, opener: arrow || buttonGroup, keyboard: !!options.keyboard,
+            close: () => { if (state.active4KPopup === popup) hide4KPopup(); } });
+        if (!popupRelease) { state.active4KPopup = null; popup.remove(); return false; }
 
         setTimeout(() => {
             popup.classList.add('show');
         }, 10);
+        return true;
+    }
+
+    /**
+     * The arrow's press (D46S2 audit S6): closes the popup it opened (its recorded source), else opens one for the
+     * press's owner. A click without a pointer (the keyboard, a remote) moves focus into the popup.
+     * @param {Event} e The arrow's click.
+     * @param {HTMLElement} buttonGroup The split button container.
+     * @param {Object} item Media item data.
+     */
+    function toggle4KPopup(e, buttonGroup, item) {
+        e.stopPropagation();
+        if (popupOpenFor(buttonGroup)) { hide4KPopup(); return; }
+        show4KPopup(buttonGroup, item, e, { keyboard: e.detail === 0 });
     }
 
     /**
@@ -318,10 +351,11 @@
     internal.createInlineProgress = createInlineProgress;
     internal.hide4KPopup = hide4KPopup;
     internal.show4KPopup = show4KPopup;
+    internal.toggle4KPopup = toggle4KPopup;
     /**
-     * The split button and item a 4K popup was opened for (the popup is appended to <body>).
+     * The split button, item and card a 4K popup was opened for (the popup is appended to <body>), recorded as it opened.
      * @param {Element|null} popup The .jellyseerr-4k-popup element.
-     * @returns {{buttonGroup: HTMLElement, item: Object}|null} Its source, or null.
+     * @returns {{buttonGroup: HTMLElement, item: Object, card: HTMLElement|null}|null} Its source, or null.
      */
     internal.fourKPopupSource = (popup) => (popup && popupSources.get(popup)) || null;
     internal.addDownloadProgressHover = addDownloadProgressHover;

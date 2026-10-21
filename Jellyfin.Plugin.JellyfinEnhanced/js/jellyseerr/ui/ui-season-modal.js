@@ -21,10 +21,12 @@
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k] - The 4K request.
-     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
-     *   node or press it is opened from.
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, a viewer's native
+     *   owner, or the node or press it is opened from.
+     * @param {HTMLElement|null} [origin] - Where it was opened (a window, a card): its answer publishes there and to the
+     *   cards that follow the title (D46S2-R8-2); without one, only the form says what happened.
      */
-    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, owner) {
+    ui.showSeasonSelectionModal = async function(tmdbId, mediaType, showTitle, searchResultItem = null, is4k = false, owner, origin = null) {
         if (mediaType !== 'tv') return;
         // The modal opens, and its request goes out, only while its owner is current, and only for the newest opening.
         const submitted = JE.captureSubmitted(owner);
@@ -49,6 +51,8 @@
             partialRequestsEnabled = false;
             enableSpecialEpisodes = false;
         }
+        // Each await carries the opening's owner (its session, document and route) and its intent (D46S2-R10 shape 3).
+        if (!newest()) return;
 
         const singleSeasonOnly = partialRequestsEnabled && JE.pluginConfig?.JellyseerrSingleSeasonRequestOnly === true;
 
@@ -134,7 +138,16 @@
                     refreshModalInterval = null;
                 }
             },
-            onSave: async (modalEl, requestBtn, closeFn) => {
+            onSave: async (modalEl, requestBtn, closeFn, press) => {
+                // The press's owner (D46S2-R7-1): the operation the form is open for. Its requests carry it; what their
+                // answers publish (toasts, events, the card) appears only while it is current.
+                const submitted = JE.captureSubmitted(press);
+                // What the answer changes outside the form goes through the publication of where it was opened, for this
+                // series, edition and season set only (D46S2-R8-2, R9-3), taken right before its request is sent.
+                let publication = null;
+                let requested = null;
+                let remaining = [];
+                const publicationFor = seasons => (publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'tv', is4k, variant: seasons.join(',') } }));
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
 
@@ -178,7 +191,12 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
-                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                        // The seasons still requestable after this one (what the form showed): the answer keeps its scope.
+                        remaining = Array.from(modalEl.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:checked):not(:disabled)')).map(cb => parseInt(cb.dataset.seasonNumber)).filter(Number.isFinite);
+                        requested = selectedSeasons;
+                        publicationFor(selectedSeasons);
+                        await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
+                        if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: selectedSeasons.length, title: resolvedShowTitle }), 4000);
                     } else {
                         // Partial requests disabled: request all non-special seasons to avoid locking specials
@@ -186,36 +204,25 @@
                             .map(season => season.seasonNumber)
                             .filter(seasonNumber => Number.isFinite(seasonNumber) && seasonNumber > 0);
 
+                        publicationFor(allSeasons.length > 0 ? allSeasons : ['all']);
                         if (allSeasons.length > 0) {
-                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                            await requestTvSeasons(tmdbId, allSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
                         } else {
-                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId, { bound: JE.captureSubmitted(modalEl).bound() });
+                            await requestMedia(tmdbId, 'tv', settings, is4k, searchResultItem, manualTvdbId, { bound: submitted.bound() });
                         }
 
+                        if (!submitted.current()) return;
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
-                    // Notify any listening modals that TV was requested
-                    document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
-                    document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', { detail: { tmdbId, mediaType: 'tv', is4k } }));
-
-                    // Update original card button to pending state
-                    internal.markCardRequested(tmdbId, 'tv', is4k);
+                    // Where it was opened (the window re-reads its seasons) and the cards that follow the series.
+                    publication?.publish({ seasons: requested, remaining });
 
                     closeFn();
-                    setTimeout(() => {
-                        const query = new URLSearchParams(window.location.hash.split('?')[1])?.get('query');
-                        if (query) {
-                            const mainController = JE.jellyseerr;
-                            if (mainController) {
-                                mainController.fetchAndRenderResults(query, { skipCache: true });
-                            }
-                        }
-                    }, 1000);
                 } catch (error) {
                     const resetLabel = is4k
                         ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K')
                         : (partialRequestsEnabled ? JE.t('jellyseerr_modal_request_selected') : JE.t('jellyseerr_modal_request'));
-                    await internal.handleRequestError(error, 'tv', requestBtn, resetLabel);
+                    await internal.handleRequestError(error, 'tv', requestBtn, resetLabel, submitted);
                 }
             }
         });

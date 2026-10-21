@@ -86,7 +86,7 @@ function setup(t, { config = {}, routes = {}, hash = '#/home', clock } = {}) {
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, calls, subscriptions, navigation, state, N: h.JE.internals.arrNotify, switchUser: () => userChange.forEach(fn => fn()) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, subscriptions, navigation, state, N: h.JE.internals.arrNotify, switchUser: () => userChange.forEach(fn => fn()) };
 }
 
 async function until(check, ms = 10000) {

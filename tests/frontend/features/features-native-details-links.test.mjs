@@ -47,7 +47,7 @@ function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load(`jellyseerr/discovery/${file}`);
   const signal = new h.window.AbortController().signal;
-  return { ...h, spec, requests, genreReads, items, signal };
+  return { ...h, get NATIVE() { return h.NATIVE; }, spec, requests, genreReads, items, signal };
 }
 
 const FILMOGRAPHY = '/JellyfinEnhanced/native-details/person/3810/filmography';
@@ -148,7 +148,7 @@ function realPersonPage(t, results) {
   h.load('jellyseerr/discovery/person-discovery.js');
   cleanups.push(() => controller.cleanup());
   const cards = selector => Array.from(h.document.querySelectorAll(`${selector} .card`), c => c.textContent);
-  return { ...h, controller, filter, requests, create, cards, cleanUp: fn => cleanups.push(fn) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, controller, filter, requests, create, cards, cleanUp: fn => cleanups.push(fn) };
 }
 
 test('with library titles excluded (the default), a filmography of someone the library lacks still shows its library titles, through the real discovery base and card filter', async t => {

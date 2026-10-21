@@ -32,7 +32,7 @@ function realm(t, { native = true, html = '', JE = {} } = {}) {
     },
   });
   t.after(() => h.close());
-  return { ...h, shown, modal };
+  return { ...h, get NATIVE() { return h.NATIVE; }, shown, modal };
 }
 
 for (const native of [true, false]) {
@@ -62,7 +62,7 @@ test('Hidden Content: a hidden title with no Jellyfin page opens through the nav
   h.load('enhanced/hiddencontent/hidden-content-page-cards.js');
   const card = h.JE.internals.hiddenContentPage.createGroupCard({ seriesId: null, seriesName: 'Andor', items: [{ type: 'Series', tmdbId: '83867', name: 'Andor', itemId: 'x' }] });
   h.document.body.appendChild(card);
-  card.querySelector('.je-hidden-group-poster-link').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  h.trusted(card.querySelector('.je-hidden-group-poster-link'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   assert.deepEqual(h.shown, [[83867, 'tv', null]]);
   assert.deepEqual(h.modal, []);
 });

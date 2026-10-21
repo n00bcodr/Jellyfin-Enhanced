@@ -18,7 +18,7 @@ function requests(t) {
   h.load('arr/requests/requests-page-render-helpers.js');
   h.load('arr/requests/requests-page-render-cards.js');
   h.load('arr/requests/requests-page-render.js');
-  return { ...h, P, state, actions, navigations };
+  return { ...h, get NATIVE() { return h.NATIVE; }, P, state, actions, navigations };
 }
 const pending = { id: 42, title: 'Existing series, new season', type: 'tv', requestStatus: 1,
   mediaStatus: 'Partially Available', jellyfinMediaId: 'series-a' };
@@ -64,7 +64,7 @@ function quality(t) {
       tagPipeline: { registerRenderer: (key, renderer) => renderers.set(key, renderer), clearProcessed() {}, scheduleScan() {} } } });
   t.after(() => h.close());
   h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('tags/qualitytags.js'); h.JE.initializeQualityTags();
-  return { ...h, renderers };
+  return { ...h, get NATIVE() { return h.NATIVE; }, renderers };
 }
 
 test('history issue 659 stereo first cannot hide richer audio badges', t => {

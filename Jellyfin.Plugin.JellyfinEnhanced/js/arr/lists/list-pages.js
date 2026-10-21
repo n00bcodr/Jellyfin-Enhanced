@@ -243,9 +243,10 @@
      * Opens an entry's title at its exact scope (season / episode), keeping where the person was for Back.
      * @param {Object} ctrl Controller of the page.
      * @param {Object} ph Entry.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): what opens is its effect.
      * @returns {void}
      */
-    function openEntry(ctrl, ph) {
+    function openEntry(ctrl, ph, owner) {
         if (!lp.render.opensTitle(ph)) return;
         const options = { mediaType: ph.mediaType === 'movie' ? 'movie' : 'tv', tmdbId: Number(ph.tmdbId) || undefined };
         if (ph.kind === 'season' || ph.kind === 'episodes') options.season = Number(ph.seasonNumber);
@@ -254,9 +255,9 @@
         lp.gate.paint(ctrl.ticket, () => {
             lastOpened = { listId: ctrl.listId, placeholderId: ph.id };
             if (typeof JE.titleDetails?.openKey === 'function') {
-                JE.titleDetails.openKey(ph.titleKey, options).catch?.(() => {});
+                JE.titleDetails.openKey(ph.titleKey, { ...options, owner }).catch?.(() => {});
             } else if (Number(ph.tmdbId) > 0 && typeof JE.jellyseerrMoreInfo?.open === 'function') {
-                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType, undefined, JE.NATIVE);
+                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType, undefined, owner);
             }
         }, 'open');
     }

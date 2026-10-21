@@ -184,9 +184,12 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
      * Opens a card: the Jellyfin item when the caller has it, else the title's native details page
      * (when offered) or Seerr's more-info window.
      * @param {Object} card Card data.
+     * @param {Object} owner The press's owner (JE.ownerOf(event), D46S2-R10-5): a title action's operation that pressed
+     *     the poster, else the viewer's own; every effect below is its own, checked as it happens.
      * @returns {void}
      */
-    function open(card) {
+    function open(card, owner) {
+        if (!JE.effectOwner(owner, 'a Discover poster')) return;
         if (card.inLibrary && card.itemId) {
             if (window.Emby?.Page?.showItem) window.Emby.Page.showItem(card.itemId);
             else window.location.hash = `#/details?id=${encodeURIComponent(card.itemId)}`;
@@ -195,8 +198,8 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
         if (!(card.tmdbId > 0)) return;
         const mediaType = card.kind === 'tv' ? 'tv' : 'movie';
         // The title's native details page when offered, else Seerr's window.
-        if (JE.titleDetails?.open?.(card.tmdbId, mediaType)) return;
-        if (seerrWindow()) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType, undefined, JE.NATIVE);
+        if (JE.titleDetails?.open?.(card.tmdbId, mediaType, undefined, owner)) return;
+        if (seerrWindow()) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType, undefined, owner);
     }
 
     /**
@@ -297,7 +300,8 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             const sheet = JE.arrAskSheet;
             const title = { key: card.key, kind: series ? 'series' : 'movie', name: card.title, year: card.year ?? null, poster: card.poster ?? null };
             if (series && Array.isArray(card.mineSeasons)) title.askedSeasons = card.mineSeasons.slice();
-            const options = left.variant ? { opener: button, variant: left.variant, operation: JE.NATIVE } : { opener: button, operation: JE.NATIVE };
+            const operation = JE.ownerOf(e);
+            const options = left.variant ? { opener: button, variant: left.variant, operation } : { opener: button, operation };
             button.setAttribute('aria-busy', 'true');
             if (!series && !words) text.textContent = tr('arr_ask_asking');
             const started = epoch();
@@ -418,7 +422,7 @@ button.je-discover-poster-box { border: 0; padding: 0; margin: 0; cursor: pointe
             posterBox.setAttribute('aria-label', tr('arr_discover_open_label', { title: year ? `${card.title} (${year})` : card.title }));
             posterBox.addEventListener('click', (e) => {
                 e.preventDefault();
-                open(card);
+                open(card, JE.ownerOf(e));
             });
         }
         if (src) {

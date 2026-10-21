@@ -5,7 +5,7 @@ function setup(t,request=async()=>({size:1073741824,progress:50,totalPlaybackTic
  const calls=[],saved=[],handlers=[],maps=[];let epoch=0;const h=createHarness({html:'<div id="info" class="hide"></div>',globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{currentSettings:{},t:key=>key,saveUserSettings:async(file,data)=>saved.push([file,{...data}]),core:{api:{plugin:(...args)=>{calls.push(args);return request(...args);}}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.push(fn)}}});
  // Every Map the module creates, so a test can check what its caches hold on to.
  const BaseMap=h.window.Map;h.window.Map=class extends BaseMap{constructor(...args){super(...args);maps.push(this);}};
- t.after(()=>h.close());h.load('enhanced/itemdetails/features-details-media-info.js');return {...h,calls,saved,api:h.JE.internals.features,container:h.document.getElementById('info'),async settle(){await new Promise(done=>setImmediate(done));},switchUser(){epoch++;for(const fn of handlers)fn();},
+ t.after(()=>h.close());h.load('enhanced/itemdetails/features-details-media-info.js');return {...h,get NATIVE(){return h.NATIVE;},calls,saved,api:h.JE.internals.features,container:h.document.getElementById('info'),async settle(){await new Promise(done=>setImmediate(done));},switchUser(){epoch++;for(const fn of handlers)fn();},
   /** Whether a value in any of the module's maps refers to `target`. */
   retains(target){return maps.some(map=>[...map.values()].some(value=>value===target||(value&&typeof value==='object'&&Object.values(value).includes(target))));}};
 }

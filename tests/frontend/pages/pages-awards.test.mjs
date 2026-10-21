@@ -7,7 +7,7 @@ async function setup(t,{item={Type:'Movie',ProviderIds:{Tmdb:7}},data={Found:tru
   const h=createHarness({html:`<div id="itemDetailPage">${html}</div>`,url:'http://jellyfin.test/web/index.html#!/details?id=item',apiClient:{getItem:getItem||(async(_user,id)=>id==='series'?parent:item)},expectedConsoleErrors:errors,JE:{pluginConfig:{ShowAwards:enabled},escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),cdn:{url:(_source,path)=>`https://cdn.test/${path}`},t:(key,args)=>args?`${key} ${args.count??args.work??''}`:key,helpers:{onViewPage:fn=>{hook=fn;return()=>{};}},core:{api:{plugin:async path=>{calls.push(path);return api?api():data;}}}}});
   t.after(()=>h.close());h.window.setTimeout=fn=>{queueMicrotask(fn);return 1;};h.load('awards/awards.js');h.JE.initializeAwardsScript();
   const navigate=async()=>{if(hook){await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();}};
-  await navigate();return {...h,calls,navigate};
+  await navigate();return {...h,get NATIVE(){return h.NATIVE;},calls,navigate};
 }
 test('awards normalize nested server fields, escape upstream strings and replace rather than duplicate banners',async t=>{
   const h=await setup(t);const banner=h.document.querySelector('.je-awards-section');assert.ok(banner);assert.match(banner.textContent,/Academy Award for <script>bad<\/script>/);assert.equal(banner.querySelector('script'),null);assert.equal(banner.querySelector('[src="x"]'),null);

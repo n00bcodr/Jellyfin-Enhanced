@@ -17,7 +17,7 @@ async function setup(t,{item={Id:'item',Type:'Movie',ProviderIds:{Tmdb:'7'}},con
   h.window.setTimeout=fn=>{queueMicrotask(fn);return 1;};
   h.load('elsewhere/reviews.js');h.JE.initializeReviewsScript();
   async function navigate(){if(hook){await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();}}
-  await navigate(); return {...h,calls,navigate};
+  await navigate(); return {...h,get NATIVE(){return h.NATIVE;},calls,navigate};
 }
 
 for(const source of ['tmdb','user']) {

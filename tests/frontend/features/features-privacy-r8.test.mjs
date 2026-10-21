@@ -33,7 +33,7 @@ function sgSetup(t){
  for(const m of ['ids','state','detail-button','seerr-toggle','settings-tab'])h.load('enhanced/spoilerguard/'+m+'.js');
  let reloads=0;const toasts=[];h.JE.toast=m=>toasts.push(m);
  const api=h.JE.internals.spoilerGuard;Object.assign(api,{confirmDisableSpoiler:async()=>true,refreshSpoilerableImages(){},scheduleFullReload(){reloads++;}});
- return {...h,api,calls,server,toasts,reloads:()=>reloads,reads:()=>calls.filter(c=>c.method==='GET').length,
+ return {...h,get NATIVE(){return h.NATIVE;},api,calls,server,toasts,reloads:()=>reloads,reads:()=>calls.filter(c=>c.method==='GET').length,
   setGets(v){gets=v;},setWrites(v){writes=v;},switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');},
   page:()=>h.document.querySelector('#itemDetailPage')};
 }
@@ -57,7 +57,7 @@ test('accepted guard with both rereads failing stays truthful, refreshes the pag
  await until(()=>h.api.isLoadOk(),'recovery adopts server state');
  assert.equal(h.api.isMovieEnabledFor('aabb'),true);assert.equal(button.getAttribute('aria-pressed'),'true');
  const box=mountPrefs(h);await until(()=>!box.disabled,'prefs sync');
- box.checked=false;box.dispatchEvent(new h.window.Event('change'));
+ box.checked=false;h.trusted(box,new h.window.Event('change'));
  await until(()=>h.calls.some(c=>c.url.includes('/user-prefs')),'preferences save');
  assert.equal(h.server.Prefs.HideCast,false,'preferences save again after recovery');assert.equal(box.checked,false);
 });
@@ -71,7 +71,7 @@ test('accepted provider guard with failing rereads keeps the pending control tru
 test('preferences saved while the reread fails are kept and the box is not reverted',async t=>{
  const h=sgSetup(t);await h.api.loadState();controlTimers(h,slow);
  const box=mountPrefs(h);await until(()=>!box.disabled,'prefs sync');
- h.setGets('down');box.checked=false;box.dispatchEvent(new h.window.Event('change'));
+ h.setGets('down');box.checked=false;h.trusted(box,new h.window.Event('change'));
  await until(()=>h.reads()>=3&&!box.disabled,'save settles');
  assert.equal(h.server.Prefs.HideCast,false);assert.equal(box.checked,false,'accepted save is not shown as failed');
  assert.equal(h.api.getUserPrefs().HideCast,false);assert.deepEqual(h.toasts,[]);
@@ -118,7 +118,7 @@ test('an identity change removes the outgoing viewer\'s native guard control',as
 });
 test('a preferences view mounted for one viewer cannot save for the next',async t=>{
  const h=sgSetup(t);h.server.Prefs={HideCast:false};await h.api.loadState();const box=mountPrefs(h);await until(()=>!box.disabled,'prefs sync');
- assert.equal(box.checked,false);h.switchUser();box.checked=true;box.dispatchEvent(new h.window.Event('change'));
+ assert.equal(box.checked,false);h.switchUser();box.checked=true;h.trusted(box,new h.window.Event('change'));
  for(let i=0;i<20;i++)await tick();
  assert.equal(h.calls.filter(c=>c.method==='POST').length,0,'no preference write from the outgoing view');
 });
@@ -135,7 +135,7 @@ function hcSetup(t,{items,ajax}){
  internal.resetFromUserConfig();
  h.JE.hiddenContent={getAllHiddenItems:internal.getAllHiddenItems,createItemCard:internal.createItemCard,unhideItem:internal.unhideItem,unhideAll:internal.unhideAll,
   unhideConfirmed:internal.unhideConfirmed,showUnhideFailed:internal.showUnhideFailed,adminUnhideForUser:internal.adminUnhideForUser,adminHideForUser:internal.adminHideForUser};
- return {...h,internal,ajaxCalls,toasts,switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');}};
+ return {...h,get NATIVE(){return h.NATIVE;},internal,ajaxCalls,toasts,switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');}};
 }
 const unavailable=()=>{const e=new Error('Service Unavailable');e.status=503;throw e;};
 const providerRule={'movie:tmdb:42':{itemId:'',type:'Movie',tmdbId:'42',name:'Title',hideScope:'global'},'movie:tmdb:43':{itemId:'',type:'Movie',tmdbId:'43',name:'Other',hideScope:'global'}};
@@ -179,7 +179,7 @@ function pageSetup(t,{items,ajax,admin}){
  for(const m of ['cards','render'])h.load(`enhanced/hiddencontent/hidden-content-page-${m}.js`);
  if(admin){h.JE.pluginConfig.HiddenContentAdmin=true;Object.assign(page.state,{adminIsAdmin:true,adminUsers:[{userId:'target-c',userName:'C',count:admin.length}],selectedAdminUserId:'target-c',adminEditMode:true,adminItemsUserId:'target-c',adminItems:admin});}
  const container=h.document.createElement('div');h.document.body.appendChild(container);
- return {...h,page,container};
+ return {...h,get NATIVE(){return h.NATIVE;},page,container};
 }
 const episodes=[{type:'Episode',itemId:'e1',_key:'e1',name:'One',seriesId:'s',seriesName:'Show',seasonNumber:1,episodeNumber:1},{type:'Episode',itemId:'e2',_key:'e2',name:'Two',seriesId:'s',seriesName:'Show',seasonNumber:1,episodeNumber:2}];
 for(const host of ['standard card','group card','group item'])test(`manager page ${host} is restored with a retry when unhide fails`,async t=>{
@@ -225,7 +225,7 @@ function addSetup(t){
  Object.assign(page.state,{selectedAdminUserId:'target-c',adminUserName:'C',adminItems:[],adminItemsUserId:'target-c'});
  const timers=controlTimers(h);
  async function search(term){const input=h.document.querySelector('.je-hidden-admin-add-overlay .je-hidden-management-search');input.value=term;input.dispatchEvent(new h.window.Event('input'));}
- return {...h,page,sent,timers,search,renders:()=>renders,gate(){hideGate=deferred();return hideGate;},switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');}};
+ return {...h,get NATIVE(){return h.NATIVE;},page,sent,timers,search,renders:()=>renders,gate(){hideGate=deferred();return hideGate;},switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');}};
 }
 test('identity change dismisses the admin Add modal; its search and captured results never submit',async t=>{
  const h=addSetup(t);h.page.openAdminAddModal();await h.search('Captured');h.timers.fire();
@@ -270,7 +270,7 @@ function filterSetup(t,items,reply){
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  const settle=async()=>{for(let i=0;i<4;i++){await tick();await new Promise(r=>h.window.requestAnimationFrame(r));}};
  const later=ms=>{const now=h.window.Date.now;h.window.Date.now=()=>now()+ms;};
- return {...h,api,reads,settle,later};
+ return {...h,get NATIVE(){return h.NATIVE;},api,reads,settle,later};
 }
 test('a failed parent provider batch is retried by a later view, not cached for the session',async t=>{
  const h=filterSetup(t,{provider:{type:'Series',tmdbId:'42'}},(o,n)=>{

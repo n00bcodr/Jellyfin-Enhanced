@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHarness,deferred,jsonResponse} from '../helpers/harness.mjs';
 function setup(t,{item={Type:'Movie',ProviderIds:{Tmdb:'42'}},data={},fetch,getItem,JE={}}={}){
  let itemCalls=0,fetchCalls=0;const h=createHarness({html:'<div id="info"></div>',apiClient:{getItem:async(...args)=>{itemCalls++;return getItem?getItem(...args):item;}},fetch:async(...args)=>{fetchCalls++;return fetch?fetch(...args):jsonResponse(data);},globals:{requestAnimationFrame:fn=>{fn();return 1;}},JE:{pluginConfig:{DEFAULT_REGION:'AU'},t:key=>key,helpers:{addCSS:()=>{}},...JE}});
- t.after(()=>h.close());h.load('enhanced/itemdetails/features-release-dates.js');return {...h,api:h.JE.internals.features,container:h.document.getElementById('info'),counts:()=>({itemCalls,fetchCalls}),async settle(){await new Promise(done=>setImmediate(done));}};
+ t.after(()=>h.close());h.load('enhanced/itemdetails/features-release-dates.js');return {...h,get NATIVE(){return h.NATIVE;},api:h.JE.internals.features,container:h.document.getElementById('info'),counts:()=>({itemCalls,fetchCalls}),async settle(){await new Promise(done=>setImmediate(done));}};
 }
 test('release chips deduplicate in-flight requests and resolve regional theatrical/digital/physical dates',async t=>{
  const pending=deferred();const h=setup(t,{fetch:()=>pending.promise});h.api.displayReleaseDate('movie',h.container);h.api.displayReleaseDate('movie',h.container);

@@ -70,6 +70,7 @@ function setup(t) {
   h.load('arr/actions/title-actions.js');
   return {
     ...h, sent, entered, hooks,
+    get NATIVE() { return h.NATIVE; },
     writes: (method, prefix) => sent.filter(([m, p]) => m === method && p.startsWith(prefix)),
     /** An action-bar operation (a title action's press on this page); it ends when the person leaves the page. */
     operation: () => h.JE.titleActions.generation(),
@@ -193,11 +194,11 @@ for (const [name, owner] of Object.entries(OWNERS)) {
   }
 }
 
-test('natively (no operation) the same writes are unbound: a page change while queued still sends, exactly as before', async t => {
+test('natively (no operation) the same writes carry the viewer\'s session binding: a page change while queued still sends', async t => {
   const h = setup(t);
   h.load('jellyseerr/api.js');
   const release = h.holdPool();
-  const done = h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false).catch(e => e);
+  const done = h.JE.jellyseerrAPI.requestMedia(603, 'movie', { serverId: 1 }, false, null, null, { bound: h.NATIVE.bound() }).catch(e => e);
   await settle();
   await h.leave();
   await release(); await done;
@@ -214,7 +215,7 @@ const WRITES = {
   'arr/manage/manage-drawer.js': [/JE\.core\.api\.plugin\(path, \{ \.\.\.options, bound: state\.action\.bound\(/],
   'arr/notify/notify-core.js': [/api\('\/acquire\/follows', \{ method: 'PUT', body: \{ key, on \}, bound: submitted\.bound\(\) \}\)/],
   'enhanced/hiddencontent/hidden-content-data.js': [/JE\.core\.api\.ajax\(\{ type: hidden \? 'PUT' : 'DELETE', dataType: 'json', bound: submitted\.operationBound\(\)/],
-  'enhanced/spoilerguard/state.js': [/request\(path, \{ \.\.\.options, bound: submitted\.operationBound\(\) \}\)/],
+  'enhanced/spoilerguard/state.js': [/const bound = submitted\.bound\(\);[\s\S]*?request\(path, \{ \.\.\.options, bound \}\)/],
 };
 test('source scan: every operation-owned write passes its operation to the transport', () => {
   for (const [file, patterns] of Object.entries(WRITES)) {

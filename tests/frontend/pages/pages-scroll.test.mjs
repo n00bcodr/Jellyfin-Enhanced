@@ -7,7 +7,7 @@ function setup(t){
   t.after(()=>h.close());h.load('jellyseerr/seamless-scroll.js');const state={};
   const section=h.document.querySelector('section');section.getClientRects=()=>[{}];
   t.after(()=>h.JE.seamlessScroll.cleanupInfiniteScroll(state));
-  return {...h,P:h.JE.seamlessScroll,state,section,observers};
+  return {...h,get NATIVE(){return h.NATIVE;},P:h.JE.seamlessScroll,state,section,observers};
 }
 test('sparse scroll historical regression: nonempty pages with no measured growth stop at safety valve',async t=>{
   const h=setup(t);let loads=0;h.P.setupInfiniteScroll(h.state,'#feed',async()=>{loads++;return {pages:1,rendered:1};},()=>true,()=>false);

@@ -4,7 +4,7 @@ import {createHarness, plain} from '../helpers/harness.mjs';
 function setup(t, fetch, genre = async()=>[]) {
   const h=createHarness({JE:{discoveryFilter:{fetchWithManagedRequest:fetch},jellyseerrAPI:{fetchGenreSlider:genre}}});
   t.after(()=>h.close()); h.load('jellyseerr/recommendations/recommendations-data.js');
-  return {...h,P:h.JE.internals.recommendationsPage};
+  return {...h,get NATIVE(){return h.NATIVE;},P:h.JE.internals.recommendationsPage};
 }
 function setupTiles(t, fetch) {
   const h=setup(t,fetch);

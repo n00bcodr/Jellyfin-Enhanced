@@ -109,7 +109,7 @@ function downloads(t, { ajax } = {}) {
   h.load('arr/requests/requests-page-data.js');
   const P = h.JE.internals.requestsPage;
   P.renderPage = () => {};
-  return { ...h, P, waits, read: prefix => waits.filter(w => w.path.startsWith(prefix)), switchUser: () => { epoch++; changed.forEach(fn => fn()); } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, P, waits, read: prefix => waits.filter(w => w.path.startsWith(prefix)), switchUser: () => { epoch++; changed.forEach(fn => fn()); } };
 }
 
 test('downloads: a read from before a user switch publishes nothing for the next person, on every list', async t => {

@@ -80,10 +80,10 @@ test('the policy refresh\'s replacement belongs to the same live operation (its 
 
 test('control: a native window\'s policy refresh reopens it natively and its Request sends once', async t => {
   const h = setup(t, { asks: false });
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   policyChanged(h); await delivered();
-  assert.equal(h.JE.ownerOf(moreInfo(h)), h.JE.NATIVE);
-  await h.leave(); // natively nothing ends with the page
+  assert.equal(h.JE.ownerOf(moreInfo(h)).native, true, 'reopened natively');
+  await h.leave(); // the viewer's window ends with its route (D46S2-R10)
   moreInfo(h)?.querySelector('.jellyseerr-request-button')?.click(); await delivered();
   assert.ok(h.sent('POST', '/jellyseerr/request').length <= 1);
 });
@@ -230,8 +230,8 @@ test('read path: two request sheet openings, the older one\'s reads answer last 
   h.JE.t = (key, params) => params ? key + ' ' + Object.values(params).join(' ') : key;
   // Each opening checks its own title: the older title's check is held, the newer's answers at once.
   const held = h.hold('GET', '/acquire/requests/check');
-  const older = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'OLDER' }, { operation: h.JE.NATIVE }); await settle();
-  h.JE.arrAskSheet.open({ key: 'movie:tmdb:604', kind: 'movie', name: 'NEWER' }, { operation: h.JE.NATIVE }); await delivered();
+  const older = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'OLDER' }, { operation: h.NATIVE }); await settle();
+  h.JE.arrAskSheet.open({ key: 'movie:tmdb:604', kind: 'movie', name: 'NEWER' }, { operation: h.NATIVE }); await delivered();
   assert.match(sheet(h)?.textContent || '', /NEWER/, 'the newer sheet is open');
   held.resolve(); await delivered();
   assert.equal(h.document.querySelectorAll('.je-sheet').length, 1);
@@ -242,8 +242,8 @@ test('read path: two request sheet openings, the older one\'s reads answer last 
 test('read path: two Collection openings, the older details answer last → one form (the newer)', async t => {
   const h = setup(t, { asks: false });
   const held = h.hold('GET', '/jellyseerr/collection/2344');
-  const older = h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'OLDER', null, { operation: h.JE.NATIVE }); await settle();
-  const newer = h.JE.jellyseerrUI.showCollectionRequestModal(9, 'NEWER', null, { operation: h.JE.NATIVE }); await delivered();
+  const older = h.JE.jellyseerrUI.showCollectionRequestModal(2344, 'OLDER', null, { operation: h.NATIVE }); await settle();
+  const newer = h.JE.jellyseerrUI.showCollectionRequestModal(9, 'NEWER', null, { operation: h.NATIVE }); await delivered();
   held.resolve(); await Promise.all([older, newer]); await delivered();
   const forms = [...h.document.querySelectorAll('.jellyseerr-season-modal')];
   assert.equal(forms.length, 1, 'the older opening was dropped');
@@ -253,8 +253,8 @@ test('read path: two Collection openings, the older details answer last → one 
 test('read path: two season modal openings, the older details answer last → one modal (the newer)', async t => {
   const h = setup(t, { asks: false });
   const held = h.hold('GET', '/jellyseerr/tv/1399');
-  const older = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'OLDER', null, false, h.JE.NATIVE); await settle();
-  const newer = h.JE.jellyseerrUI.showSeasonSelectionModal(1400, 'tv', 'NEWER', null, false, h.JE.NATIVE); await delivered();
+  const older = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'OLDER', null, false, h.NATIVE); await settle();
+  const newer = h.JE.jellyseerrUI.showSeasonSelectionModal(1400, 'tv', 'NEWER', null, false, h.NATIVE); await delivered();
   held.resolve(); await Promise.all([older, newer]); await delivered();
   const modals = [...h.document.querySelectorAll('.jellyseerr-season-modal')];
   assert.equal(modals.length, 1, 'the older opening was dropped');
@@ -328,7 +328,8 @@ test('a press carries its owner explicitly: JE.press tags the click, a direct pr
   const op = h.a.generation(); const seen = [];
   button.addEventListener('click', e => seen.push(h.JE.ownerOf(e)));
   h.JE.press(button, op); button.click();
-  assert.deepEqual(seen, [op, h.JE.NATIVE]);
+  assert.equal(seen[0], op);
+  assert.equal(seen[1]?.native, true, 'the viewer\'s own click is native');
   // A detached node outside any registered surface names no owner (it is not on the page, nor in UI an operation opened).
   assert.equal(h.JE.ownerOf(h.document.createElement('div')), null);
 });
@@ -376,7 +377,7 @@ test('4K: with Seerr 4K off, the window\'s More sheet has no Request in 4K', asy
 test('control: a native window\'s Request in 4K sends natively, once', async t => {
   const h = setup(t, { asks: false, seerr4k: true });
   h.a.initialize(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });

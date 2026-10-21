@@ -20,7 +20,7 @@ function setup(t, bookmarks = {}, save = async()=>{}) {
   h.document.addEventListener('je-bookmarks-updated',e=>events.push(e.detail.reason));
   h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.load('enhanced/bookmarks/bookmarks.js');
-  return {...h,events,toasts,routes,api:h.JE.bookmarks};
+  return {...h,get NATIVE(){return h.NATIVE;},events,toasts,routes,api:h.JE.bookmarks};
 }
 /** Answers each user-settings save with a promise the test settles, in call order. */
 function controlledSaves(){

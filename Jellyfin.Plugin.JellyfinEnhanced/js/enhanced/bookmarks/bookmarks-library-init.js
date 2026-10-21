@@ -50,18 +50,18 @@
     let attempts = 0;
     const checkReady = setInterval(() => {
       attempts += 1;
-      const je = getJE();
-      const ready = !!(je && je.userConfig && je.bookmarks);
+      const JE = getJE();
+      const ready = !!(JE && JE.userConfig && JE.bookmarks);
 
       if (attempts % 10 === 0 || attempts <= 5) {
-        console.log(`${logPrefix} ready check #${attempts} (JE=${!!je}, userConfig=${!!(je && je.userConfig)}, bookmarks=${!!(je && je.bookmarks)})`);
+        console.log(`${logPrefix} ready check #${attempts} (JE=${!!JE}, userConfig=${!!(JE && JE.userConfig)}, bookmarks=${!!(JE && JE.bookmarks)})`);
       }
 
       if (ready) {
         clearInterval(checkReady);
         // If JE is available only on parent/top, make it accessible locally for this script
-        if (!window.JE && je) {
-          window.JE = je;
+        if (!window.JE && JE) {
+          window.JE = JE;
         }
         hookViewEvents();
 
