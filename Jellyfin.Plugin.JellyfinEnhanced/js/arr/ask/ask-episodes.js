@@ -318,10 +318,30 @@
      * @returns {void}
      */
     function refused(text, button, key) {
-        const hadFocus = !!button && (document.activeElement === button || !document.activeElement || document.activeElement === document.body);
+        // A control inside the episode dialog acts for the row that opened it (D53, edition round 21): the dialog gives the
+        // focus back to that row when it closes, so the row is where the person still is, and its place is what recovers.
+        const origin = button ? origins.get(button) || null : null;
+        const active = document.activeElement;
+        const hadFocus = !!button && (active === button || !active || active === document.body || (!!origin && (active === origin.el || origin.el.contains(active))));
+        const from = origin && document.contains(origin.el) ? origin.el : button;
+        const place = from?.closest?.('.listItem, .je-arr-banner') || null;
         // Kept until the page has been drawn again from the season's status read after this (D53, edition round 20: tied to the
-        // pending redraw, never to a timer: that read may take any time), and dropped with the season.
-        pendingFocus = hadFocus ? { focusKey: button.dataset?.jeFocus || null, place: button.closest?.('.listItem, .je-arr-banner') || null, episode: button.dataset?.jeAskEpisode || null, drawn: season, itemId: season?.itemId || null } : null;
+        // pending redraw, never to a timer: that read may take any time), and dropped with the season. Its neighbours are
+        // remembered too: the row itself may be gone after the redraw (the episode arrived).
+        pendingFocus = hadFocus ? {
+            focusKey: button.dataset?.jeFocus || null,
+            originKey: origin?.focusKey || null,
+            place,
+            // The opener's row may already be gone (a live redraw while the dialog was open): its neighbours as they were then.
+            neighbours: place ? neighboursOf(place) : origin?.neighbours || [],
+            episode: button.dataset?.jeAskEpisode || origin?.episode || null,
+            drawn: season,
+            itemId: season?.itemId || null,
+            // Where the focus is now (the pressed control, or the row the dialog gave it back to); null: nowhere.
+            placed: active && active !== document.body ? active : null,
+            moved: false,
+            input: false
+        } : null;
         const seasonKey = key || season?.statusRef?.key;
         const reading = seasonKey ? JE.arrStatus.refresh([seasonKey]) > 0 : false;
         JE.internals?.arrStatusEpisodes?.apply?.();
@@ -335,10 +355,24 @@
     /** Where the focus goes after a press that wasn't carried out (see {@link refused}), until the redraw after it. */
     let pendingFocus = null;
 
+    /** What opened the episode dialog a control sits in (its row, that row's episode, focus key and neighbours): the control's origin. */
+    const origins = new WeakMap();
+
+    /**
+     * The rows next to a row (after it, then before it), by what a redraw keeps: an episode number or Jellyfin's item id.
+     * @param {Element|null} place Row.
+     * @returns {Array<{episode?: string, id?: string}>} Neighbours.
+     */
+    function neighboursOf(place) {
+        if (!place) return [];
+        return [place.nextElementSibling, place.previousElementSibling]
+            .map(n => n?.dataset?.jeAskEpisode ? { episode: n.dataset.jeAskEpisode } : n?.dataset?.id ? { id: n.dataset.id } : null).filter(Boolean);
+    }
+
     /**
      * Moves the focus, after a refused press, to the control that took the pressed one's place (the same focus key), else its
-     * row's title or chip, else the banner; only while nothing else has the focus (the person may have moved on), and until the
-     * page has been drawn again from the season's status read after the refusal.
+     * row's title or chip, else the row next to where it was, else the banner; only while nothing else has the focus or the
+     * element it was put on went with a redraw, and until the person moves the focus themselves (or the season changes).
      * @returns {void}
      */
     function focusStable() {
@@ -349,25 +383,49 @@
             pendingFocus = null;
             return;
         }
-        // The season drawn again from the status read after the refusal (a new read, its rows in): this is the last placement.
-        const redrawn = season !== want.drawn && !season.loading;
-        const active = document.activeElement;
-        if (active && active !== document.body && document.contains(active)) {
-            if (redrawn) pendingFocus = null;
+        // The person moved the focus themselves: it stays where they put it, and the recovery is over.
+        if (want.moved) {
+            pendingFocus = null;
             return;
         }
+        // The focus is where the recovery (or the dialog closing) put it, on something still on the page: nothing to do. When that
+        // element went with a redraw (the page's own list drawn again, the episode arrived), the focus fell to the page or the
+        // host moved it on its own; that was no move of the person's, so it is placed again (D53, edition round 21: the recovery
+        // lasts through the redraws, never a timer, and ends at the person's own move or with the season).
+        const active = document.activeElement;
+        const vanished = !!want.placed && !document.contains(want.placed);
+        if (active && active !== document.body && document.contains(active) && !vanished) return;
         const page = document.querySelector('#itemDetailPage:not(.hide)') || document;
-        const replacement = want.focusKey ? page.querySelector(`[data-je-focus="${want.focusKey}"]:not([disabled])`) : null;
-        const row = want.place && document.contains(want.place) ? want.place
-            : want.episode ? page.querySelector(`.je-ask-row[data-je-ask-episode="${want.episode}"]`) : null;
+        const byKey = key => (key ? page.querySelector(`[data-je-focus="${key}"]:not([disabled])`) : null);
+        const rowOf = n => page.querySelector(`.listItem[data-je-ask-episode="${n}"]`);
+        const replacement = byKey(want.focusKey) || byKey(want.originKey);
+        const row = want.place && document.contains(want.place) ? want.place : want.episode ? rowOf(want.episode) : null;
+        // The row is gone (the episode arrived): the row next to where it was, as the redraw has it.
+        const neighbour = row ? null : (want.neighbours || []).map(n => n.episode
+            ? rowOf(n.episode)
+            : [...page.querySelectorAll('[data-id]')].find(e => e.dataset.id === n.id)).find(Boolean) || null;
         const stable = replacement
             || (row && !row.classList.contains('je-arr-banner') ? row.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || row : null)
+            || (neighbour ? neighbour.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || neighbour : null)
             || page.querySelector('.je-arr-banner .je-ask-get:not([disabled]), .je-arr-banner .je-arr-chip, .je-arr-banner-title, .je-arr-banner');
         if (!stable) return;
         if (stable.tagName !== 'BUTTON' && !stable.hasAttribute('tabindex')) stable.tabIndex = -1;
+        want.placed = stable;
+        want.input = false;
         stable.focus();
-        if (redrawn) pendingFocus = null;
     }
+
+    // The person's own move: a focus change that follows their own input (a TV remote's key, Tab, a click or a touch) while the
+    // recovery's element is still on the page. The recovery ends there (see focusStable). A focus the host moves by itself (its
+    // page refresh focusing its first button) follows no input of theirs and ends nothing.
+    const input = () => { if (pendingFocus) pendingFocus.input = true; };
+    document.addEventListener('keydown', input, true);
+    document.addEventListener('pointerdown', input, true);
+    document.addEventListener('mousedown', input, true);
+    document.addEventListener('focusin', (e) => {
+        const want = pendingFocus;
+        if (want && want.input && want.placed && e.target !== want.placed && document.contains(want.placed)) want.moved = true;
+    }, true);
 
     /**
      * Check at the press (D53, edition rounds 16 and 19): reads the caller's capabilities and the season's status again and lets
@@ -1612,6 +1670,10 @@
             // Seerr mode: why the button asks for the whole season, in words above it.
             if (get.dataset.rounded === '1') dialog.appendChild(S.el('p', 'je-ask-dialog-note', roundedWords().note));
             get.classList.add('je-ask-get-large');
+            if (opener && opener !== document.body) {
+                const row = opener.closest?.('.listItem, .je-arr-banner') || null;
+                origins.set(get, { el: opener, episode: opener.dataset?.jeAskEpisode || row?.dataset?.jeAskEpisode || null, focusKey: opener.dataset?.jeFocus || null, neighbours: neighboursOf(row) });
+            }
             get.addEventListener('click', () => close());
             actions.appendChild(get);
         }

@@ -87,6 +87,9 @@ public class IntegrationEditionPressTests
                 Policy.People[who.UserId] = new RequestPolicyFacts(who.UserId, role, true, role == "Admin", true, true, "p1", Config.ArrRequestBackend, seerr ? string.Empty : sonarr, seerr ? string.Empty : "g1",
                     7, 7, 0, "{}", SeerrSource: seerr ? "seerr|src" : null, SeerrUser: seerr ? 7 : null);
             }
+            // Like production: an ask goes to its edition's default Sonarr (4K to Sonarr 4K).
+            var sonarr4k = Rig.Arr.Instance("Sonarr4kZ").Id;
+            if (!seerr) Policy.Adjust = (_, input, facts) => input.Variant == "4k" && input.InstanceId == null ? facts with { InstanceId = sonarr4k } : facts;
             Directory.CreateDirectory(_root);
             Db = new AcquireDatabase(Path.Combine(_root, "acquire.db"));
             Ledger = new RequestLedger(Db);

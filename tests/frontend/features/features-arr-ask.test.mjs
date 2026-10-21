@@ -1616,6 +1616,131 @@ test('focus: a refused press keeps the focus on the page however long the redraw
   assert.ok(active.closest('#itemDetailPage'), 'on the season page');
 });
 
+test('focus: a Get it refused from the episode dialog on a TV keeps the focus on the page after its row is gone', async t => {
+  let release;
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    // The episode arrived meanwhile: the server refuses, and the status read that redraws the page is slow.
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  assert.ok(release, 'the press reached the server');
+  assert.equal(h.document.activeElement.dataset.jeAskEpisode, '2', 'the dialog gave the focus back to its row');
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]'), null, 'the row is gone after the redraw');
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active) && active.closest('#itemDetailPage'),
+    `focus after the refusal and redraw: ${active?.tagName}.${active?.className}`);
+});
+
+test('focus: on a TV, a Get it refused after a live redraw removed its row while the dialog was open lands next to that row', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => ({ status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } });
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  const get = h.document.querySelector('.je-ask-dialog .je-ask-get');
+  assert.ok(get, 'the dialog offers Get it');
+  // The episode arrives and the page is drawn again (a live update) while the dialog is still open: its row goes.
+  h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+  await h.JE.internals.arrStatusDetails.update(true);
+  await settle(20);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(20);
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]'), null, 'the row is gone before the press');
+  assert.ok(h.document.querySelector('.je-ask-dialog .je-ask-get'), 'the dialog is still open');
+  get.focus();
+  get.click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active) && active.closest('#itemDetailPage'),
+    `focus after the refusal: ${active?.tagName}.${active?.className}`);
+});
+
+test('focus: when the host draws the list again under the recovered focus and moves it to the top, the next redraw puts it back by the row', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const row = recovered?.closest?.('.listItem');
+  assert.ok(row && row.dataset.jeAskEpisode !== '2', `recovered next to the row: ${recovered?.className}`);
+  // The host refreshes its page by itself: its focus manager takes the page's first button (no key or click of the person's),
+  // then its list is drawn again (the row that had the focus is replaced).
+  const page = h.document.querySelector('#itemDetailPage');
+  const top = h.document.createElement('button');
+  top.className = 'btnPlay';
+  page.prepend(top);
+  top.focus();
+  row.replaceWith(row.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const active = h.document.activeElement;
+  assert.notEqual(active, top, 'not left on the top button');
+  assert.equal(active?.closest?.('.listItem')?.dataset?.jeAskEpisode, row.dataset.jeAskEpisode, 'back by the row');
+});
+
+test('focus: a refused press never takes the focus back from where the person moved it', async t => {
+  let release;
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  // The person moves on to another row before the redraw.
+  const other = h.list().querySelector('.je-ask-row:not([data-je-ask-episode="2"])') || h.list().firstElementChild;
+  if (other.tagName !== 'BUTTON' && !other.hasAttribute('tabindex')) other.tabIndex = -1;
+  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  other.focus();
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.ok(h.document.contains(other), 'the row the person moved to is still there');
+  assert.equal(h.document.activeElement, other, 'the deliberate move stands');
+});
+
 test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an older server says about its binding', async t => {
   const status = withCopy(season(), [2], '4k', FOUR_K_COPY);
   const h = setup(t, { status, server: { me: { ...SEERR_MEMBER, can4kSeries: true } } });

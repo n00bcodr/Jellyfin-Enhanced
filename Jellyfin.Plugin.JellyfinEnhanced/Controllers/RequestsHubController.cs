@@ -148,28 +148,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
             if (request.Episodes is { Length: > 0 } && (key.IsMovie || key.Season == null || key.Episode != null || request.Episodes.Length > 1000 || request.Episodes.Any(n => n < 1)))
                 return BadRequest(new { code = "invalid_request" });
-            // A season page's press is worked out again after the arr reads, right before the command (nothing on a difference);
-            // the Manage drawer's own Search (no press) still needs an administrator then.
+            // A season page's press: the check returns the command, and only that command runs (D53, edition round 21); the
+            // Manage drawer's own Search (no press) still needs an administrator then.
             var expect = request.Expect;
-            var instanceId = request.InstanceId;
-            IReadOnlyList<int>? episodes = request.Episodes is { Length: > 0 } numbers ? numbers : null;
+            Services.Acquire.ManageSearchResult result;
             if (expect != null)
             {
-                // The executed command IS the validated intent (D53, edition round 20): the instance and the exact episodes of
-                // the season the press names; a request whose own fields say anything else runs nothing.
-                if (Services.Acquire.Requests.PressChecks.AdminCommand(expect, request.InstanceId, key, request.Episodes) is not { } command)
+                // The request's own routing fields (instance, key, episodes) must name the press; anything else runs nothing.
+                if (Services.Acquire.Requests.PressChecks.AdminCommand(expect, request.InstanceId, key, request.Episodes) is not { } named
+                    || Services.Acquire.Requests.PressChecks.RequestFingerprint(expect, Services.Acquire.Requests.PressChecks.Admin, named.Season, null) is not { } fingerprint)
                 {
                     var refused = _manage.RefusePress(viewer, userName, request.InstanceId, key, Services.Acquire.Requests.PressChecks.Changed);
                     return StatusCode(409, new { code = refused.Refusal, status = refused.Outcome.Status, message = refused.Outcome.Message, auditId = refused.Outcome.AuditId });
                 }
-                (instanceId, key, episodes) = (command.Instance, command.Season, command.Episodes);
+                var pages = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.IAbsentTitlePages)) as Services.Acquire.IAbsentTitlePages;
+                result = await _manage.SearchCommandAsync(viewer, userName, named.Instance, named.Season, request.IdempotencyKey, fingerprint,
+                    token => _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, named.Season, token, pages), cancellationToken).ConfigureAwait(false);
             }
-            var pages = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.IAbsentTitlePages)) as Services.Acquire.IAbsentTitlePages;
-            var checkedKey = key;
-            Func<CancellationToken, Task<string?>> recheck = expect != null
-                ? async token => (await _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, checkedKey, token, pages).ConfigureAwait(false)).Refusal
-                : token => Task.FromResult(Viewer(_manage.Status) is { IsAdmin: true } still && still.PolicyRevision == viewer.PolicyRevision ? null : Services.Acquire.Requests.PressChecks.Changed);
-            var result = await _manage.SearchPressAsync(viewer, userName, instanceId, key, episodes, request.IdempotencyKey, recheck, cancellationToken).ConfigureAwait(false);
+            else
+            {
+                IReadOnlyList<int>? episodes = request.Episodes is { Length: > 0 } numbers ? numbers : null;
+                result = await _manage.SearchPressAsync(viewer, userName, request.InstanceId, key, episodes, request.IdempotencyKey,
+                    token => Task.FromResult(Viewer(_manage.Status) is { IsAdmin: true } still && still.PolicyRevision == viewer.PolicyRevision ? null : Services.Acquire.Requests.PressChecks.Changed),
+                    cancellationToken).ConfigureAwait(false);
+            }
             var outcome = result.Outcome;
             if (result.Refusal is { } refusal)
                 return StatusCode(409, new { code = refusal, status = outcome.Status, message = outcome.Message, auditId = outcome.AuditId });

@@ -395,6 +395,12 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
             || EpisodesBySeries.Values.Any(l => l.Any(e => e.Episode.ItemId == itemId))
             || SeasonsBySeries.Values.Any(l => l.Any(s => s.Season.ItemId == itemId));
 
+    /// <summary>
+    /// Each version of an episode is listed only where the viewer may open the item behind it (like <see cref="Sources"/>, and
+    /// like Jellyfin's own episode query); off by default, so older tests keep listing every version of an episode they see.
+    /// </summary>
+    public bool EpisodeVersionsFollowAccess { get; set; }
+
     /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
     public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
     {
@@ -406,7 +412,7 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
         if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
         return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
                 && Sees(e.VisibleTo) && (viewer.IsLibraryContext || !Withdrawn(e.Episode.ItemId, viewer)) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))
-            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
+            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : EpisodeVersionsFollowAccess ? Sources(e.Episode.ItemId, viewer, readDimensions) : SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
             .ToList();
     }
 

@@ -85,6 +85,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>Budget for the write and the read-back together (default 60 s).</summary>
         public TimeSpan? Timeout { get; init; }
+
+        /// <summary>
+        /// A season page's press (D53, edition round 21: a retry key replays only the identical press): its fingerprint. With
+        /// it the action is kept under the user and the idempotency key alone, whatever it runs and where, and the same key
+        /// with another fingerprint is refused (<see cref="ArrActionOutcome.Conflict"/>), never answered with the first outcome.
+        /// </summary>
+        public string? Fingerprint { get; init; }
     }
 
     /// <summary>The result shown to the admin.</summary>
@@ -110,6 +117,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
 
         /// <summary>True when this is the stored outcome of an earlier request with the same idempotency key.</summary>
         public bool Replayed { get; init; }
+
+        /// <summary>True when the idempotency key was already used for another press (nothing ran; see <see cref="ArrActionRequest.Fingerprint"/>).</summary>
+        public bool Conflict { get; init; }
     }
 
     /// <summary>
@@ -126,7 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private readonly ArrAuditLog _audit;
         private readonly ArrConfirmationTokens _tokens;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<string, (Task<ArrActionOutcome> Task, DateTimeOffset At)> _recent = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (Task<ArrActionOutcome> Task, DateTimeOffset At, string? Fingerprint)> _recent = new(StringComparer.Ordinal);
 
         /// <summary>Creates the runner.</summary>
         public ArrActionRunner(ArrAuditLog audit, ArrConfirmationTokens tokens)
@@ -163,11 +173,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 _recent.TryRemove(stale, out _);
             }
 
-            var key = Key(request.UserId, request.Action, request.InstanceId, request.IdempotencyKey);
+            var key = request.Fingerprint != null ? PressKey(request.UserId, request.IdempotencyKey) : Key(request.UserId, request.Action, request.InstanceId, request.IdempotencyKey);
             var created = new TaskCompletionSource<ArrActionOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var entry = _recent.GetOrAdd(key, _ => (created.Task, now));
+            var entry = _recent.GetOrAdd(key, _ => (created.Task, now, request.Fingerprint));
             if (!ReferenceEquals(entry.Task, created.Task))
             {
+                if (!string.Equals(entry.Fingerprint, request.Fingerprint, StringComparison.Ordinal)) return Conflicting(request);
                 return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
             }
 
@@ -202,26 +213,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>
-        /// <see cref="ReplayAsync"/> for an action whose name and instance the caller works out only later (a household Search:
-        /// which copy and which episodes it searches): the earlier outcome of any action of this user under this idempotency
-        /// key within the window, as a replay; null when there is none.
+        /// A press under its idempotency key (see <see cref="ArrActionRequest.Fingerprint"/>): the outcome of the same press
+        /// earlier (or still running) within the window, as a replay; <see cref="ArrActionOutcome.Conflict"/> when the key was
+        /// used for another press; null when the key wasn't used. Callers ask this before anything is checked again.
         /// </summary>
         /// <param name="userId">The user.</param>
         /// <param name="idempotencyKey">The click's idempotency key.</param>
+        /// <param name="fingerprint">The press's fingerprint as its request describes it.</param>
         /// <param name="cancellationToken">Cancellation.</param>
-        /// <returns>The replayed outcome, or null.</returns>
-        public async Task<ArrActionOutcome?> ReplayAnyAsync(Guid userId, string idempotencyKey, CancellationToken cancellationToken = default)
+        /// <returns>The replayed outcome, a conflict, or null.</returns>
+        public async Task<ArrActionOutcome?> ReplayPressAsync(Guid userId, string idempotencyKey, string fingerprint, CancellationToken cancellationToken = default)
         {
-            var prefix = userId.ToString("N") + "\n";
-            var suffix = "\n" + idempotencyKey;
-            var now = _now();
-            var entry = _recent.Where(r => r.Key.StartsWith(prefix, StringComparison.Ordinal) && r.Key.EndsWith(suffix, StringComparison.Ordinal) && now - r.Value.At <= IdempotencyWindow)
-                .OrderBy(r => r.Value.At).Select(r => r.Value.Task).FirstOrDefault();
-            return entry == null ? null : Replay(await entry.WaitAsync(cancellationToken).ConfigureAwait(false));
+            if (!_recent.TryGetValue(PressKey(userId, idempotencyKey), out var entry) || _now() - entry.At > IdempotencyWindow) return null;
+            if (!string.Equals(entry.Fingerprint, fingerprint, StringComparison.Ordinal)) return new ArrActionOutcome { Status = ArrActionStatus.Rejected, Message = "This retry names another press.", Conflict = true };
+            return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
         }
 
         private static string Key(Guid userId, string action, string instanceId, string idempotencyKey)
             => string.Join("\n", userId.ToString("N"), action, instanceId.ToLowerInvariant(), idempotencyKey);
+
+        private static string PressKey(Guid userId, string idempotencyKey)
+            => string.Join("\n", userId.ToString("N"), "press", string.Empty, idempotencyKey);
+
+        // A key used for another press: refused (audited), never remembered, nothing runs.
+        private ArrActionOutcome Conflicting(ArrActionRequest request)
+        {
+            var refused = Finish(request, Guid.NewGuid().ToString("N"), ArrActionStatus.Rejected, "This retry names another press.", null, null, 0, "idempotency_conflict");
+            return new ArrActionOutcome { Status = refused.Status, Message = refused.Message, AuditId = refused.AuditId, Audited = refused.Audited, Conflict = true };
+        }
 
         private static ArrActionOutcome Replay(ArrActionOutcome previous) => new()
         {

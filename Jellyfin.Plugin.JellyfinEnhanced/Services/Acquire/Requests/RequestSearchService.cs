@@ -90,17 +90,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var probe = Input(null);
             if (probe == null) return (RequestOutcome.Refused("invalid_input", 400), null);
             await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
-            // A retry of a press whose search already ran (its answer was lost) gets that outcome before anything is checked
-            // again (D53, edition round 20: replay before revalidation; the route's own checks were made).
-            if (expect != null && await _manage.ReplayAnyAsync(viewer.UserId, "family-" + idempotencyKey, ct).ConfigureAwait(false) is { } replayed)
+            // A season page's press is known by its fingerprint (D53, edition round 21): a retry of the identical press whose search
+            // already ran (its answer was lost) gets that outcome before anything is checked again (round 20: replay before
+            // revalidation; the route's own checks were made); the same key used for another press is refused.
+            string? fingerprint = null;
+            if (expect != null)
             {
-                if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
-                    return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
-                return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
+                fingerprint = PressChecks.RequestFingerprint(expect, PressChecks.Household, scope, null);
+                if (fingerprint == null) return (RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) }, null);
+                if (await _manage.ReplayPressAsync(viewer.UserId, "family-" + idempotencyKey, fingerprint, ct).ConfigureAwait(false) is { } replayed)
+                {
+                    if (replayed.Conflict) return (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, null);
+                    if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                        return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
+                    return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
+                }
             }
             // A season page's press that no longer matches is refused before anything else (nothing claimed, nothing asked for
             // instead); it is worked out again right before the command too.
-            if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct, pages).ConfigureAwait(false)).Refusal is { } early)
+            if (expect != null && (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, ct, pages, resolve: false).ConfigureAwait(false)).Refusal is { } early)
                 return (RequestOutcome.Refused(early, 409, "conflict") with { Message = PressChecks.Message(early) }, null);
             // A series or season: exactly its episodes missing for a long while, per standard copy, the first ones nobody
             // searched in this period (a peek: the claims below still decide), so a long series doesn't get the same
@@ -149,8 +157,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // used) per "still looking" period, for the whole household, two presses at once included: a series or
             // season searches only its episodes nobody searched in that period, and is refused when that leaves none.
             var parts = part != null
-                ? part.Episodes.Select(e => (Slot: title.WithEpisode(e.Season, e.Episode).ToString(), Id: (int?)e.Id)).ToList()
-                : new List<(string Slot, int? Id)> { ((scope.IsMovie ? title : title.WithEpisode(scope.Season!.Value, scope.Episode!.Value)).ToString(), null) };
+                ? part.Episodes.Select(e => (Slot: title.WithEpisode(e.Season, e.Episode).ToString(), Id: (int?)e.Id, Episode: (int?)e.Episode)).ToList()
+                : new List<(string Slot, int? Id, int? Episode)> { ((scope.IsMovie ? title : title.WithEpisode(scope.Season!.Value, scope.Episode!.Value)).ToString(), null, scope.Episode) };
             // Slots of searches older than any looking period are spent: drop them so the map stays small.
             if (_last.Count > MaxSlots)
             {
@@ -171,17 +179,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // the candidates were chosen for must still be the viewer as Jellyfin has them now), and a sent request still covers
             // what is searched (D53, edition round 19: re-derived at the transport boundary, nothing reused across an await).
             MutationInput searched = input;
-            Func<CancellationToken, Task<string?>> recheck = async token =>
+            Func<CancellationToken, Task<string?>> recheck = _ =>
             {
-                var refusal = expect != null
-                    ? (await _manage.Status.PressAsync(viewer, expect, PressChecks.Household, null, scope, token, pages).ConfigureAwait(false)).Refusal
-                    : _requests.View.Viewer(viewer.UserId) is { } still && still.IsAdmin == viewer.IsAdmin && still.PolicyRevision == viewer.PolicyRevision ? null : PressChecks.Changed;
-                return refusal ?? (_requests.Ledger.SentCovers(searched, _requests.Policy.Evaluate(viewer.UserId, searched)) ? null : PressChecks.Changed);
+                var refusal = _requests.View.Viewer(viewer.UserId) is { } still && still.IsAdmin == viewer.IsAdmin && still.PolicyRevision == viewer.PolicyRevision ? null : PressChecks.Changed;
+                return Task.FromResult(refusal ?? (_requests.Ledger.SentCovers(searched, _requests.Policy.Evaluate(viewer.UserId, searched)) ? null : PressChecks.Changed));
+            };
+            // A season page's press (D53, edition round 21): the check returns the command, which searches exactly the episodes
+            // claimed here, by the Sonarr ids of the episode list read at the check, on the copy's own Sonarr; nothing chosen
+            // above (the candidates' ids) is sent.
+            var subset = claimed.Select(p => p.Episode).OfType<int>().ToArray();
+            Func<CancellationToken, Task<PressProof>> check = async token =>
+            {
+                var proof = await _manage.Status.PressAsync(viewer, expect!, PressChecks.Household, null, scope, token, pages, subset, instanceId).ConfigureAwait(false);
+                return proof.Refusal != null || _requests.Ledger.SentCovers(searched, _requests.Policy.Evaluate(viewer.UserId, searched)) ? proof : PressProof.Changed;
             };
             ManageSearchResult result;
             try
             {
-                result = part != null
+                result = expect != null
+                    ? await _manage.SearchCommandAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, fingerprint!, check, ct).ConfigureAwait(false)
+                    : part != null
                     ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false)
                     : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false);
             }

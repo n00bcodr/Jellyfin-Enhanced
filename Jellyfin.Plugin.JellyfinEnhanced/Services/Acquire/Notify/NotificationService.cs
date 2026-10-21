@@ -836,9 +836,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var scopeName = interest.Scope?.Only4k == true ? "m4k" : "m";
             // An interest in one edition (a request): the copies that played anything at the last look, so a copy that turns into
             // that edition in place is an arrival of it dated by the transition (D53, edition round 20), not by the copy's date.
+            // An upgrade in place is a change of what backs the item (round 21): the sources each of those copies had then, as
+            // Jellyfin holds them for anyone, so a version the viewer only now may open is no arrival.
             var hadPlaying = interest.Scope == null ? null : PlayingBefore(viewer, key, scopeName);
+            var hadSources = interest.Scope == null ? null : SourcesBefore(viewer, key, scopeName);
             if (interest.Scope != null)
-                RememberPlaying(viewer, key, scopeName, _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList(), generation);
+            {
+                var playing = _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList();
+                RememberPlaying(viewer, key, scopeName, playing, generation);
+                RememberSources(viewer, key, scopeName, _status.Editions.HeldSources(playing), generation);
+            }
             var mark = "ready|" + key + "|" + scopeName;
             var itemId = composed?.Visible?.ItemId;
             // The same Jellyfin item is one event however many ids the title is known by.
@@ -878,7 +885,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
             }
-            var upgraded = itemId is Guid shown && hadPlaying?.Contains(shown) == true;
+            var upgraded = itemId is Guid shown && hadPlaying?.Contains(shown) == true
+                && NewSource(_status.Editions.Item(viewer, shown, EditionAvailability.Of(interest.Scope!.Only4k)).Select(h => h.Source), hadSources);
             if (!prefs.Ready || (arrived is DateTime at && now.UtcDateTime - at > ArrivalFreshFor && !upgraded))
             {
                 Written(key, _store.InTransaction(generation, Handle, false).Done);
@@ -945,11 +953,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // An edition that became available on an item the viewer already played in another edition (a file replaced in
             // place: Jellyfin keeps the item and its date) is an arrival dated by the observed transition (D53, edition round
             // 20), never by the item's date: the items that played at the last look are remembered for an interest in one edition.
+            // Round 21: an upgrade in place is a change of the item's backing source (its version, path or quality), judged against
+            // the sources those items had at the last look as Jellyfin holds them for anyone (an access-only change is no arrival).
             var hadPlaying = edition == Edition.Any ? null : PlayingBefore(viewer, key, scope);
-            var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToList();
+            var hadSources = edition == Edition.Any ? null : SourcesBefore(viewer, key, scope);
+            var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToHashSet();
             // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
             if (bound.Reached) return;
-            if (playingNow != null) RememberPlaying(viewer, key, scope, playingNow, generation);
+            if (playingNow != null)
+            {
+                RememberPlaying(viewer, key, scope, playingNow, generation);
+                RememberSources(viewer, key, scope, _status.Editions.HeldSources(playingNow, seriesCopies), generation);
+            }
             seriesItem = files.Select(f => (Guid?)f.Series).FirstOrDefault() ?? seriesCopies.FirstOrDefault()?.ItemId;
             foreach (var copy in seriesCopies.Where(c => c.ItemId != Guid.Empty)) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
@@ -1003,7 +1018,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         fresh &= tx.TryMark(viewer.UserId, NotifyTransaction.EpisodeItemMark(series, interest.Only4k, number), now);
                     }
                     if (!fresh) continue;
-                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor && hadPlaying?.Contains(id) != true) continue;
+                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor
+                        && !(hadPlaying?.Contains(id) == true && NewSource(_status.Editions.Item(viewer, id, edition).Select(h => h.Source), hadSources))) continue;
                     wanted.Add((number.Season, number.Episode, id));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
@@ -1053,6 +1069,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>The watch scope suffix of the items that played in any edition (see <see cref="PlayingBefore"/>).</summary>
         private const string PlayingSuffix = "|playing";
+
+        /// <summary>The watch scope suffix of the sources those items had (see <see cref="SourcesBefore"/>).</summary>
+        private const string SourcesSuffix = "|sources";
+
+        /// <summary>
+        /// The backing sources the playing items had at the last look of an interest in one edition, as Jellyfin holds them for
+        /// anyone (see <see cref="RememberSources"/>): each source's identity (its version item and path) with its quality (the
+        /// video size, "-" while unread); null when none were remembered yet (no evidence of an upgrade in place).
+        /// </summary>
+        private Dictionary<string, HashSet<string>>? SourcesBefore(StatusViewer viewer, TitleKey key, string scope)
+            => _store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known is { } known
+                ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => x.Split(':')).Where(x => x.Length == 2)
+                    .GroupBy(x => x[0], StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Select(x => x[1]).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal)
+                : null;
+
+        /// <summary>Remembers the backing sources of the items that play now (library context: whoever may open them), when that changed.</summary>
+        private void RememberSources(StatusViewer viewer, TitleKey key, string scope, IEnumerable<JfSource> sources, long generation)
+        {
+            var known = string.Join(",", sources.Select(s => SourceIdentity(s) + ":" + SourceQuality(s)).Distinct().OrderBy(x => x, StringComparer.Ordinal));
+            if (_store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known == known) return;
+            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, known, _now()); return true; }, false);
+        }
+
+        /// <summary>
+        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes):
+        /// a version or path not held then, or one whose known quality changed (a file replaced in place). A source that was
+        /// there and only became visible to the viewer is not new. Nothing remembered: no evidence, no.
+        /// </summary>
+        private static bool NewSource(IEnumerable<JfSource> qualifying, Dictionary<string, HashSet<string>>? before)
+            => before != null && qualifying.Any(s => !before.TryGetValue(SourceIdentity(s), out var qualities)
+                || !(qualities.Contains(SourceQuality(s)) || qualities.Contains("-") || SourceQuality(s) == "-"));
+
+        // A source's identity: the item behind the version and its file (never Jellyfin's source id: 10.11 changes it while grouping).
+        private static string SourceIdentity(JfSource source)
+            => MutationInput.Hash(source.BackingItemId.ToString("N", CultureInfo.InvariantCulture) + "|" + (source.Path ?? string.Empty))[..16];
+
+        // A source's quality as Jellyfin read it ("-" while unread).
+        private static string SourceQuality(JfSource source)
+            => source.Width > 0 || source.Height > 0 ? (source.Width ?? 0).ToString(CultureInfo.InvariantCulture) + "x" + (source.Height ?? 0).ToString(CultureInfo.InvariantCulture) : "-";
 
         /// <summary>
         /// The edition an interest is told about: a 4K request's 4K; a standard request's standard (with "Standard requests

@@ -374,7 +374,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // for the edition it was judged by when it was created: an item it names must still have an accessible playable
             // source of that edition for the recipient (a 4K file replaced by an HD one, or a file that became a stub, is no
             // longer the arrival it announced). Older alerts name no edition: a 4K one is 4K, any other whatever plays.
-            var editions = new EditionAvailability(_view, _config, (k, v) => _view.Copies(k, v, _aliases?.Of(k)).Display);
+            var editions = EditionAvailability.Over(_view, _config, _aliases);
             var edition = payload.TryGetValue("variant", out var variant) && variant == "4k" ? Edition.FourK
                 : payload.TryGetValue("edition", out var named) && named == NotificationService.EditionName(Edition.Standard) ? Edition.Standard
                 : Edition.Any;
@@ -395,7 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
                     if (visible is not { Count: > 0 }) return "The recipient can no longer play these episodes in the edition announced.";
                     var seasons = visible.Select(e => e.Season).Distinct().ToList();
-                    payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+                    payload["count"] = new EpisodeCoverage(visible.Select(e => new JfEpisode { Season = e.Season, Episode = e.Episode })).Count.ToString(CultureInfo.InvariantCulture);
                     payload["seasons"] = string.Join(", ", seasons);
                     if (visible.Count == 1)
                     {
@@ -404,18 +404,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
                         itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
                     }
-                    else if (visible.Count != episodes!.Count)
+                    else
                     {
-                        // The whole season is no longer visible: don't announce it as complete.
-                        payload["mode"] = "many";
-                        payload.Remove("season");
-                        payload.Remove("episode");
+                        if (visible.Count != episodes!.Count)
+                        {
+                            // The whole season is no longer visible: don't announce it as complete.
+                            payload["mode"] = "many";
+                            payload.Remove("season");
+                            payload.Remove("episode");
+                        }
+                        itemId = Relinked(viewer, delivery.ItemId, visible.Select(e => e.ItemId));
                     }
+                    // Checked and linked as a whole against what it was rebuilt for (D53, edition round 21): the item it names now
+                    // is one of its survivors (or what holds them), never the original item a rescan may have deleted.
+                    return null;
                 }
-                else if (LegacyEpisodesGone(viewer, title, payload, editions, edition) is { } gone)
-                {
-                    return gone;
-                }
+                if (LegacyEpisodesGone(viewer, title, payload, editions, edition) is { } gone) return gone;
+                // An older alert passed by its scope: it links to its item while that still opens, else to a copy that plays it.
+                itemId = Guid.TryParse(delivery.ItemId, out var older) && older != Guid.Empty && _view.Resolve(older, viewer) != null
+                    ? delivery.ItemId
+                    : title == null ? null : LegacyTarget(viewer, title, payload, editions, edition);
+                return null;
             }
             if (Guid.TryParse(delivery.ItemId, out var item) && item != Guid.Empty)
             {
@@ -462,9 +471,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var seasons = (payload.TryGetValue("seasons", out var list) ? list : string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(x => int.TryParse(x, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : -1).Distinct().ToList();
             if (seasons.Count == 0 || seasons.Any(n => n < 0)) return Gone;
-            var playing = seasons.Sum(n => editions.Scope(viewer, title.WithSeason(n), edition).Select(h => (h.Season, h.Episode)).Distinct().Count());
+            // Counted by the episodes the files cover (one interval-coverage helper), never by their starting numbers.
+            var each = seasons.Select(n => editions.EpisodeCount(viewer, title, n, edition)).ToList();
             var count = payload.TryGetValue("count", out var c) && int.TryParse(c, NumberStyles.Integer, CultureInfo.InvariantCulture, out var announced) ? announced : 1;
-            return seasons.All(n => editions.Scope(viewer, title.WithSeason(n), edition).Count > 0) && playing >= count ? null : Gone;
+            return each.All(n => n > 0) && each.Sum() >= count ? null : Gone;
+        }
+
+        /// <summary>
+        /// Where a rebuilt episode alert links (see <see cref="Suppression"/>): its item while it still opens for the recipient,
+        /// else the series item its surviving episodes are in (one series), else its first survivor.
+        /// </summary>
+        private string? Relinked(StatusViewer viewer, string? original, IEnumerable<Guid> survivors)
+        {
+            if (Guid.TryParse(original, out var item) && item != Guid.Empty && _view!.Resolve(item, viewer) != null) return original;
+            var items = survivors.Where(id => id != Guid.Empty).Select(id => _view!.Resolve(id, viewer)).OfType<JfItemRef>().ToList();
+            var series = items.Select(i => i.SeriesId).Distinct().ToList();
+            var target = series is [Guid one] && _view!.Resolve(one, viewer) != null ? one : items.FirstOrDefault()?.ItemId;
+            return target?.ToString("N", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>An older episode alert's link when its item no longer opens: the series copy that plays its scope.</summary>
+        private static string? LegacyTarget(StatusViewer viewer, TitleKey title, Dictionary<string, string> payload, EditionAvailability editions, Edition edition)
+        {
+            var scope = payload.TryGetValue("mode", out var mode) && mode == "single"
+                && payload.TryGetValue("season", out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var season)
+                && payload.TryGetValue("episode", out var e) && int.TryParse(e, NumberStyles.Integer, CultureInfo.InvariantCulture, out var episode)
+                ? title.WithEpisode(season, episode) : title;
+            var hit = editions.Scope(viewer, scope, edition).FirstOrDefault();
+            return (scope.Episode != null ? hit?.Source.ItemId : hit?.SeriesId)?.ToString("N", CultureInfo.InvariantCulture);
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>
