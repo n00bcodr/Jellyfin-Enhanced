@@ -8,7 +8,7 @@ namespace JE.Tests;
 /// display), items with the users who may see them, copies per title key, and episodes/seasons
 /// per series. Counts every call so tests can prove which surfaces touch Jellyfin.
 /// </summary>
-internal sealed class FakeJellyfinView : IArrJellyfinView
+internal sealed partial class FakeJellyfinView : IArrJellyfinView
 {
     public sealed record Item(JfItemRef Ref, HashSet<Guid>? VisibleTo);
 
@@ -19,6 +19,14 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public Dictionary<Guid, List<(JfSeason Season, HashSet<Guid>? VisibleTo)>> SeasonsBySeries { get; } = new();
     public long Rev { get; set; }
     public int EpisodeCalls { get; private set; }
+
+    /// <summary>
+    /// Jellyfin reads of each series item's seasons or episodes (Episodes, Seasons and the physical folder read alike), so
+    /// tests can prove a copy is read once per answer.
+    /// </summary>
+    public Dictionary<Guid, int> ReadsOf { get; } = new();
+
+    private void Read(Guid seriesItemId) => ReadsOf[seriesItemId] = ReadsOf.GetValueOrDefault(seriesItemId) + 1;
 
     /// <summary>
     /// Jellyfin's automatic series grouping: series items of one group share a presentation key, and
@@ -117,7 +125,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public JfItemRef? Resolve(Guid itemId, StatusViewer viewer)
     {
         if (Withdrawn(itemId, viewer)) return null;
-        if (Items.TryGetValue(itemId, out var item)) return (item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId)) && (item.Ref.SeriesId is not Guid of || !Withdrawn(of, viewer)) ? item.Ref : null;
+        if (Items.TryGetValue(itemId, out var item)) return (item.VisibleTo == null || item.VisibleTo.Contains(viewer.UserId)) && (item.Ref.SeriesId is not Guid of || !Withdrawn(of, viewer)) ? ShownItem(item.Ref) : null;
         if (!ResolveAnyItem) return null;
         bool Sees(HashSet<Guid>? to) => to == null || to.Contains(viewer.UserId);
         foreach (var list in CopiesByKey.Values)
@@ -151,6 +159,15 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         return !Withdrawn(seriesItemId, viewer) && (copies.Count == 0 || copies.Any(c => c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId)));
     }
 
+    /// <summary>Answers Copies instead of the in-memory copies when it returns a lookup (tests route one title to a real ArrJellyfinView).</summary>
+    public Func<TitleKey, StatusViewer, IReadOnlyCollection<TitleKey>?, CopyLookup?>? CopiesFrom { get; set; }
+
+    /// <summary>
+    /// The real view <see cref="CopiesFrom"/> routes a title to: the sources of an item this fake doesn't hold are read there
+    /// too, so one Jellyfin answers both the copies and what plays in them (as the real host does).
+    /// </summary>
+    public IArrJellyfinView? Routed { get; set; }
+
     /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
     public List<IReadOnlyList<string>> CopyQueries { get; } = new();
 
@@ -172,11 +189,13 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         return keys.SelectMany(k => CopiesByKey.TryGetValue(k, out var list) ? list.Select(c => c.Copy.ItemId) : Enumerable.Empty<Guid>()).Distinct().ToList();
     }
 
-    /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item.</summary>
-    public IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
+    /// <summary>Copies carrying the key or any alias of the same kind (Jellyfin's "any provider id"), once per item (a finished lookup unless <see cref="Production"/> stopped early).</summary>
+    public CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null)
     {
         OnCopies?.Invoke();
-        var returned = Production?.Copies(titleKey, StatusViewer.Library, aliases).Select(c => c.ItemId).ToHashSet();
+        if (CopiesFrom?.Invoke(titleKey, viewer, aliases) is { } routed) return routed;
+        var production = Production?.Copies(titleKey, StatusViewer.Library, aliases);
+        var returned = production?.Seen.Select(c => c.ItemId).ToHashSet();
         var keys = new[] { titleKey }.Concat(aliases ?? Array.Empty<TitleKey>()).Where(k => k.IsMovie == titleKey.IsMovie).Select(k => k.Title.ToString()).Distinct().ToList();
         CopyQueries.Add(keys);
         var seen = new HashSet<Guid>();
@@ -190,7 +209,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
                 result.Add(new JfCopy { ItemId = c.Copy.ItemId, LibraryId = c.Copy.LibraryId, LibraryName = c.Copy.LibraryName, Path = c.Copy.Path, DateCreated = c.Copy.DateCreated, Visible = viewer.IsLibraryContext || ((c.VisibleTo == null || c.VisibleTo.Contains(viewer.UserId)) && !Withdrawn(c.Copy.ItemId, viewer)) });
             }
         }
-        return result;
+        return production is { IsComplete: false } ? CopyLookup.Incomplete(result) : CopyLookup.Complete(result);
     }
 
     /// <summary>Runs on every episode lookup (tests use it to make something happen mid-way).</summary>
@@ -202,6 +221,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual)
     {
         EpisodeCalls++;
+        Read(seriesItemId);
         OnEpisodes?.Invoke();
         if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
         var list = Presented(seriesItemId).SelectMany(id => EpisodesBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
@@ -209,7 +229,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
         if (Withdrawn(seriesItemId, viewer)) return new List<JfEpisode>();
         bool Sees((JfEpisode Episode, HashSet<Guid>? VisibleTo) e) => (e.VisibleTo == null || e.VisibleTo.Contains(viewer.UserId)) && !Withdrawn(e.Episode.ItemId, viewer);
         var inSeason = list.Where(e => season == null || e.Episode.Season == season).ToList();
-        var result = inSeason.Where(e => Sees(e) && (includeVirtual || !e.Episode.Virtual)).Select(e => e.Episode).ToList();
+        var result = inSeason.Where(e => Sees(e) && (includeVirtual || !e.Episode.Virtual)).Select(e => Shown(e.Episode)).ToList();
         // Like the real view: episodes (real or virtual, whatever includeVirtual says) hidden from a
         // viewer with parental limits, numbers only.
         if (!viewer.IsAdmin && viewer.HasParentalLimit)
@@ -219,6 +239,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
 
     public IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer)
     {
+        Read(seriesItemId);
         var list = Presented(seriesItemId).SelectMany(id => SeasonsBySeries.TryGetValue(id, out var l) ? l : new()).ToList();
         if (list.Count == 0) return new List<JfSeason>();
         if (Withdrawn(seriesItemId, viewer)) return new List<JfSeason>();
@@ -321,7 +342,7 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
     public IReadOnlyList<JfSource> Sources(Guid itemId, StatusViewer viewer, bool readDimensions = true)
     {
         bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
-        if (!viewer.IsLibraryContext && Withdrawn(itemId, viewer)) return Array.Empty<JfSource>();
+        if (Placeholders.Contains(itemId) || (!viewer.IsLibraryContext && Withdrawn(itemId, viewer))) return Array.Empty<JfSource>();
         IReadOnlyList<JfSource> Read(DateTime? created)
         {
             var all = SourcesOf(itemId, created);
@@ -342,17 +363,76 @@ internal sealed class FakeJellyfinView : IArrJellyfinView
                 if (copy.ItemId == itemId && Sees(to)) return Read(copy.DateCreated);
             }
         }
-        return Array.Empty<JfSource>();
+        // Like the real view, any episode item: one listed in a series folder with a file, which the viewer sees in a copy they open.
+        foreach (var (series, list) in EpisodesBySeries)
+        {
+            foreach (var (episode, to) in list)
+            {
+                if (episode.ItemId != itemId || episode.Virtual || episode.Hidden) continue;
+                return Sees(to) && (viewer.IsLibraryContext || SeesSeries(series, viewer)) ? Read(episode.DateCreated) : Array.Empty<JfSource>();
+            }
+        }
+        return Routed?.Sources(itemId, viewer, readDimensions) ?? Array.Empty<JfSource>();
     }
+
+    /// <summary>
+    /// Episode items that are placeholders (Jellyfin's IsPlaceHolder: a stub such as a ".disc" file): listed like any other
+    /// episode, but with no playable source.
+    /// </summary>
+    public HashSet<Guid> Placeholders { get; } = new();
+
+    /// <summary>
+    /// An episode as the view lists it: a placeholder carries JfEpisode.Placeholder (set by name, so this file also builds
+    /// against a plugin without that property, where a stub lists like any other episode).
+    /// </summary>
+    internal JfEpisode Shown(JfEpisode episode)
+    {
+        if (!Placeholders.Contains(episode.ItemId) || typeof(JfEpisode).GetProperty("Placeholder") is not { } flag) return episode;
+        var copy = new JfEpisode { ItemId = episode.ItemId, Season = episode.Season, Episode = episode.Episode, EpisodeEnd = episode.EpisodeEnd, Virtual = episode.Virtual, DateCreated = episode.DateCreated, Hidden = episode.Hidden };
+        flag.SetValue(copy, true);
+        return copy;
+    }
+
+    /// <summary>
+    /// An item as the view resolves it: a placeholder carries JfItemRef.Placeholder (set by name, so this file also builds
+    /// against a plugin without that property, where a stub resolves like any other item).
+    /// </summary>
+    internal JfItemRef ShownItem(JfItemRef item)
+    {
+        if (!Placeholders.Contains(item.ItemId) || typeof(JfItemRef).GetProperty("Placeholder") is not { } flag) return item;
+        var copy = (JfItemRef)typeof(object).GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(item, null)!;
+        flag.SetValue(copy, true);
+        return copy;
+    }
+
+    /// <summary>
+    /// Whether an item exists for anyone (Jellyfin's own lookup with no user): true while it is an item, copy, episode or
+    /// season here, false once it is gone (deleted). A plain method on a plugin without the view's existence question.
+    /// </summary>
+    public bool? ItemExists(Guid itemId)
+        => Items.ContainsKey(itemId)
+            || CopiesByKey.Values.Any(l => l.Any(c => c.Copy.ItemId == itemId))
+            || EpisodesBySeries.Values.Any(l => l.Any(e => e.Episode.ItemId == itemId))
+            || SeasonsBySeries.Values.Any(l => l.Any(s => s.Season.ItemId == itemId));
+
+    /// <summary>
+    /// Each version of an episode is listed only where the viewer may open the item behind it (like <see cref="Sources"/>, and
+    /// like Jellyfin's own episode query); off by default, so older tests keep listing every version of an episode they see.
+    /// </summary>
+    public bool EpisodeVersionsFollowAccess { get; set; }
 
     /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
     public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
     {
+        // An episode lookup like any other (tests hold or fail one mid-way), never counted as a season/episode list read.
+        OnEpisodes?.Invoke();
+        if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
         bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
+        if (!EpisodesBySeries.ContainsKey(seriesItemId) && Routed != null) return Routed.EpisodeSources(seriesItemId, season, viewer, readDimensions);
         if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
         return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
                 && Sees(e.VisibleTo) && (viewer.IsLibraryContext || !Withdrawn(e.Episode.ItemId, viewer)) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))
-            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
+            .Select(e => new JfEpisodeSources { ItemId = e.Episode.ItemId, Season = e.Episode.Season, Episode = e.Episode.Episode, EpisodeEnd = e.Episode.EpisodeEnd, Sources = Placeholders.Contains(e.Episode.ItemId) ? Array.Empty<JfSource>() : EpisodeVersionsFollowAccess ? Sources(e.Episode.ItemId, viewer, readDimensions) : SourcesOf(e.Episode.ItemId, e.Episode.DateCreated) })
             .ToList();
     }
 

@@ -619,7 +619,7 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | Setting | Default | What it does |
 |---|---|---|
 | `ArrRequest4kMoviesEnabled` / `ArrRequest4kSeriesEnabled` | false | Phase-3 edition switches; work with Seerr disabled in JE mode |
-| `ArrStandardNeedsNonFourK` | false | *Standard requests need a non-4K copy*: a standard request (Requests page, arrival) waits for a playable copy that isn't 4K; off, any playable copy satisfies it. A 4K request always needs a playable 4K version (3200 px wide or 2000 px tall) in a copy the requester can open |
+| `ArrStandardNeedsNonFourK` | false | *Standard requests need a non-4K copy*: a standard request (Requests page, arrival) waits for a playable copy that isn't 4K; off, any playable copy satisfies it. A 4K request always needs a playable 4K version (3200 px wide or 2000 px tall) in a current, enabled library the requester can open; rows left from a removed library or a removed path within a current library never satisfy a request |
 | `ArrRequestQuotaLimit` | 0 | Preset limit: 7 for Ask first, 15 for Open house; negative means unlimited |
 | `ArrRequestQuotaWindowDays` | 7 | Rolling window, bounded to 1–365 days |
 | `ArrRequestSeriesThreshold` | 4 | Cumulative seasons before a Member needs approval |
@@ -630,6 +630,18 @@ The advanced fields are server-owned. Quota and preset settings govern JE mode; 
 | `ArrRequestStaleDays` | 30 | Flag a sent request that hasn't arrived for review; no automatic refund. A request whose part is in Jellyfin is marked fulfilled instead and never turns stale, nor does a 4K request nothing can take any more (it says `no_4k_instance`) |
 | `ArrRequestRoles` | `{}` | Optional per-role `QuotaLimit`, `QuotaGb` and `FourKInstances` defaults |
 | `ArrRequestUsers` | `{}` | Per-user `Role`, `QuotaLimit`, `QuotaGb` and `FourKInstances` overrides |
+
+Copy lookups count at most 20 distinct copies in current enabled libraries, after excluding retained rows from removed
+paths. Native queries read pages of 100 rows for the title and each of its aliases. A lookup stops at 1,000 rows under
+current locations of libraries the viewer can open (rows from removed paths or libraries they can't open never count),
+or after 100 pages of any rows. A lookup that stops there is incomplete, not proof that the title is absent. Pages
+show it as not in the library for that read only: status, Requests and Discover answers composed from it are not
+cached (the next read looks again), and it never makes a request Ready or fulfilled. Nothing that depends on a title
+being absent acts on it: no request or Discover card through the absent-title rules, no "Was here, since removed" or
+"declined", no missing collection movie offered, no recipe ask, and no alert dropped (it stays pending). The copies
+it did see still count: one you can't open keeps the title hidden from you, one you can open counts as present. It
+is logged once per title per hour. Real libraries don't come near these bounds. These bounds are fixed and do not add
+a setting.
 
 ??? info "Per-role and per-user JSON, 4K, and size estimates"
     For example, the roles JSON can be `{"Manager":{"FourKInstances":["your-4k-instance-id"]}}`; the users JSON is keyed by

@@ -217,7 +217,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>The backend target an ask with these facts goes to (its backend, instance, connection and Seerr source).</summary>
         internal static string TargetKey(RequestPolicyFacts facts) => TargetKey(Authorize(facts, null, new MutationInput(), false));
         private static bool Active(RequestWant w) => w.Status is "pending" or "queued" or "sent" or "stale";
-        private static bool Deleted(SqliteConnection c, SqliteTransaction t, Guid user)
+        private static bool Deleted(SqliteConnection c, SqliteTransaction? t, Guid user)
             => Scalar(c, t, "SELECT user_hash FROM request_deleted_users WHERE user_hash=$u", ("$u", MutationInput.Hash("deleted:" + Id(user)))) != null;
         private const string LiveJobs = "(state IN ('queued','retry','sending','maybe_sent','succeeded') OR (state!='cancelled' AND json_extract(outcome,'$.certainty')='Unknown'))";
         private const string KnownUnsent = "COALESCE(json_extract(outcome,'$.certainty'),'Rejected') NOT IN ('Unknown','Succeeded')";
@@ -359,7 +359,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <param name="policy">Current policy.</param>
         /// <param name="now">Commit time.</param>
         /// <param name="origin">Where the intent came from; automation never self-approves a Member in JE mode.</param>
-        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null)
+        /// <param name="target">
+        /// A season page's ask (D53, edition round 21: the check's command is what is recorded): the instance the check proved it
+        /// lands on; the ask is refused (<see cref="PressChecks.Changed"/>) unless the policy sends it there now. Null: no press.
+        /// </param>
+        public RequestOutcome Create(Guid user, CreateRequest request, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin = null, string? target = null)
         {
             var normalized = request.Input?.Normalize();
             if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return RequestOutcome.Refused("invalid_input", 400);
@@ -367,7 +371,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // Matching asks may approve existing wants; a later refusal must undo those approvals too.
                 Exec(c, t, "SAVEPOINT request_create");
-                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin);
+                var outcome = CreateCore(c, t, user, request, normalized, policy, now, origin, target);
                 if (outcome.HttpStatus >= 400) Exec(c, t, "ROLLBACK TO request_create");
                 Exec(c, t, "RELEASE request_create");
                 return outcome;
@@ -468,29 +472,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             });
         }
-        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin)
+
+        /// <summary>
+        /// A retry of an ask this person already made (the same client request id): the outcome recorded for it when the input
+        /// is the same (a split ask answers as the split did), a conflict when the id was used for another input; null when the
+        /// id is new.
+        /// </summary>
+        private RequestOutcome? Recorded(SqliteConnection c, SqliteTransaction? t, Guid user, string clientRequestId, MutationInput normalized, PressIntent? expect)
+        {
+            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId));
+            if (priorHash == null) return null;
+            // A retry of the same ask names the title by any of its ids.
+            if (priorHash != Idempotency(expect, normalized) && (expect != null || !Fingerprints(c, t, normalized).Contains(priorHash))) return RequestOutcome.Refused(PressChecks.Conflict, 409);
+            var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId))!;
+            var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
+            // A retry of an ask that was split answers as the split did.
+            if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", clientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
+                return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
+            return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
+        }
+
+        /// <summary>
+        /// The recorded outcome of a retry of an ask this person already made with the same client request id and input (its
+        /// first answer was lost), read before anything about the ask is worked out again (D53, edition round 20: replay
+        /// before revalidation: a retry of an accepted press gets its receipt even after the episode arrived). Null when there
+        /// is none to replay (a new id, another input under the id: <see cref="Create"/> decides, or a person who is gone).
+        /// </summary>
+        /// <param name="user">The requester.</param>
+        /// <param name="request">Client id and input (as the request service normalized it).</param>
+        /// <returns>The recorded outcome, or null.</returns>
+        public RequestOutcome? Replay(Guid user, CreateRequest request)
+        {
+            var normalized = request.Input?.Normalize();
+            if (normalized == null || string.IsNullOrWhiteSpace(request.ClientRequestId) || request.ClientRequestId.Length > 128 || request.ClientRequestId.Any(char.IsControl)) return null;
+            return _db.Read(c => Deleted(c, null, user) ? null : Recorded(c, null, user, request.ClientRequestId, normalized, request.Expect) is { } recorded && (recorded.HttpStatus < 400 || recorded.Reason == PressChecks.Conflict) ? recorded : null);
+        }
+
+        /// <summary>
+        /// What a client request id is remembered by (D53, edition round 21: a key replays only the identical press): an ask's
+        /// input, and for a season page's press the whole press too (its page, copy, edition and destination as well as its
+        /// scope), so the same id with another press is a conflict, never the first ask's receipt.
+        /// </summary>
+        private static string Idempotency(PressIntent? expect, MutationInput normalized)
+            => expect == null ? normalized.Fingerprint : MutationInput.Hash("press|" + (PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, normalized) ?? normalized.Fingerprint));
+
+        private RequestOutcome CreateCore(SqliteConnection c, SqliteTransaction t, Guid user, CreateRequest request, MutationInput normalized, IRequestPolicy policy, DateTimeOffset now, RequestOrigin? origin, string? target = null)
         {
             // Automatic origins (recipes, list sync) never self-approve a Member and never approve someone else's ask.
             var automation = origin?.Automatic == true;
             // Ask mode, or automation the person isn't eligible for: the want waits for an OK whoever they are.
             var mustAsk = origin?.RequireApproval == true;
             if (Deleted(c, t, user)) return RequestOutcome.Refused("user_required");
-            var priorHash = Scalar(c, t, "SELECT fingerprint FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId));
-            // A retry of the same ask names the title by any of its ids.
-            if (priorHash != null && !Fingerprints(c, t, normalized).Contains(priorHash)) return RequestOutcome.Refused("idempotency_conflict", 409);
-            if (priorHash != null)
-            {
-                var existingId = Scalar(c, t, "SELECT want_id FROM request_inputs WHERE user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId))!;
-                var existing = Wants(c, t, "id=$id", ("$id", existingId)).Single();
-                // A retry of an ask that was split answers as the split did.
-                if (Wants(c, t, "user_id=$u AND client_request_id=$k", ("$u", Id(user)), ("$k", request.ClientRequestId + SplitHeldSuffix)).SingleOrDefault() is { } heldPart)
-                    return Split(RequestOutcome.Accepted(existing.Id, existing.Reason, 200), heldPart.Id, heldPart.Input.SeasonNumbers.OrderBy(n => n).ToArray());
-                return RequestOutcome.Accepted(existing.Id, existing.Reason, 200);
-            }
+            if (Recorded(c, t, user, request.ClientRequestId, normalized, request.Expect) is { } recorded) return recorded;
             if (!policy.IsAdmin(user) && HasRouting(normalized)) return RequestOutcome.Refused("admin_required");
             // The title as the ledger holds it (any of its ids resolved).
             normalized = Canonical(c, t, normalized);
             var facts = policy.Evaluate(user, normalized);
+            // A press records only where its check proved it lands (the request target now, in the same transaction).
+            if (target != null && facts.Backend == "je" && !string.Equals(facts.InstanceId, target, StringComparison.OrdinalIgnoreCase))
+                return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
             if (RequestPolicy.Check(facts, null, normalized, false) is { } refusal) return RequestOutcome.Refused(refusal, RequestPolicy.RefusalStatus(refusal), outcome: refusal is "not_visible_to_user" or "low_disk" ? "blocked" : refusal == "backend_unavailable" ? "unavailable" : "denied");
             if (SeerrEpisodes(facts, normalized) is { } seerrOnly) return seerrOnly;
             if (SingleSeason(policy.Configuration, facts, normalized) is { } oneSeason) return oneSeason;
@@ -518,7 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ?? (ownSame.Length > 1 && normalized.Extra(ownSame.Select(w => w.Input)) == null ? ownSame.First(w => w.Input.Overlaps(normalized)) : null);
             if (sameOwn != null)
             {
-                RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, sameOwn.Id);
+                RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), sameOwn.Id);
                 return RequestOutcome.Accepted(sameOwn.Id, sameOwn.Reason, 200) with { Message = "Your request is already recorded." };
             }
             // An explicit household-rule deny (phase 4b) refuses every new request of the person for it, following someone
@@ -576,7 +616,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // The verdict it was created with, as its rationale (phase 4b).
             if (rules is { Verdict: not HouseholdRules.None } && extra != null)
                 Exec(c, t, "UPDATE wants SET rule_detail=$rules WHERE id=$id", ("$rules", rules.Json), ("$id", id));
-            RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, id);
+            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), id);
             Fault?.Invoke("want");
             Reserve(c, t, id, user, cost, gb, status == "pending" ? "held" : "charged", now, "initial", facts.Pool?.Id);
             Fault?.Invoke("reservation");
@@ -652,7 +692,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return null;
             }
             Exec(c, t, "RELEASE request_split");
-            RememberInput(c, t, user, request.ClientRequestId, normalized.Fingerprint, queued.RequestId!);
+            RememberInput(c, t, user, request.ClientRequestId, Idempotency(request.Expect, normalized), queued.RequestId!);
             return Split(queued, waiting.RequestId!, held);
         }
         /// <summary>The client id suffix of the part of a split ask that waits for an OK.</summary>

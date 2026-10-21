@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live;
 
@@ -257,6 +258,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// and grabbed nothing. Null: unknown (still running, failed, or the history could not be read).
         /// </summary>
         public bool? Found { get; init; }
+
+        /// <summary>
+        /// A press refusal (D53, edition round 19): <c>press_changed</c> or <c>press_unverified</c> when the season page's
+        /// control no longer does what it was drawn to do; nothing was searched. Null otherwise.
+        /// </summary>
+        public string? Refusal { get; init; }
     }
 
     /// <summary>
@@ -340,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
             var kind = key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr;
             var audit = _audit.ReadRecent(500);
-            var jfCopies = _status.CopiesOf(title, viewer);
+            var jfCopies = _status.CopiesOf(title, viewer).Display;
             var holders = new List<(ArrConnection Instance, ArrMovieEntry? Movie, ArrSeriesEntry? Series)>();
             var instances = new List<ManageInstance>();
             string? name = null;
@@ -516,6 +523,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private static string[] Targets(bool movie, int arrId)
             => movie ? new[] { "movie:" + arrId.ToString(CultureInfo.InvariantCulture) } : new[] { "series:" + arrId.ToString(CultureInfo.InvariantCulture), "episode-of:" + arrId.ToString(CultureInfo.InvariantCulture) };
 
+        /// <summary>The action name a Search of <paramref name="key"/> runs under (named episodes: an episode search).</summary>
+        private static string SearchAction(TitleKey key, bool episodes)
+            => key.IsMovie ? "movie.search" : episodes || key.Episode != null ? "episode.search" : key.Season != null ? "season.search" : "series.search";
+
+        /// <summary>
+        /// A season page's press refused before anything ran (D53, edition round 20: its request says something else than the
+        /// press it was checked for), audited like the runner's refusals.
+        /// </summary>
+        internal ManageSearchResult RefusePress(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string refusal)
+            => new() { Outcome = Refuse(viewer, userName, instanceId, key, refusal, PressChecks.Message(refusal)), Refusal = refusal };
+
+        /// <summary>
+        /// The earlier outcome of the identical press under this click's key, as a replay; a conflict when the key was used for
+        /// another press; null when none (see <see cref="ArrActionRunner.ReplayPressAsync"/>).
+        /// </summary>
+        internal Task<ArrActionOutcome?> ReplayPressAsync(Guid user, string idempotencyKey, string fingerprint, CancellationToken cancellationToken)
+            => _runner.ReplayPressAsync(user, idempotencyKey, fingerprint, cancellationToken);
+
         /// <summary>A Search now refused before any arr call, written to the audit log (and so to Jellyfin's activity log) like the runner's refusals.</summary>
         private ArrActionOutcome Refuse(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string reason, string message)
         {
@@ -556,6 +581,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             => SearchCoreAsync(viewer, userName, instanceId, key, null, idempotencyKey, cancellationToken);
 
         /// <summary>
+        /// <see cref="SearchCheckedAsync"/> as a press (D53, edition round 19: the server decides every press): a season key with
+        /// <paramref name="episodeNumbers"/> searches exactly those episodes of that season (one EpisodeSearch, never the whole
+        /// season); <paramref name="recheck"/> works the press out again after the arr reads, right before the command is sent
+        /// (a refusal sends nothing: <see cref="ManageSearchResult.Refusal"/>).
+        /// </summary>
+        /// <param name="viewer">The caller.</param>
+        /// <param name="userName">The caller's name for the audit log, if known.</param>
+        /// <param name="instanceId">The instance.</param>
+        /// <param name="key">The title key in scope.</param>
+        /// <param name="episodeNumbers">A season key's episodes to search (null: the key's whole scope).</param>
+        /// <param name="idempotencyKey">One per press.</param>
+        /// <param name="recheck">The press, worked out again (null: none).</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The outcome.</returns>
+        internal Task<ManageSearchResult> SearchPressAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int>? episodeNumbers, string idempotencyKey, Func<CancellationToken, Task<string?>>? recheck, CancellationToken cancellationToken)
+            => SearchCoreAsync(viewer, userName, instanceId, key, null, idempotencyKey, cancellationToken, episodeNumbers, recheck);
+
+        /// <summary>
         /// <see cref="SearchCheckedAsync"/> for exactly these episodes of the series (or season) in <paramref name="key"/>:
         /// one EpisodeSearch command with their Sonarr ids (the ones the instance doesn't list are left out; none left:
         /// refused). <see cref="ManageSearchResult.Found"/> is a grab of any of them since the command started.
@@ -571,10 +614,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public Task<ManageSearchResult> SearchEpisodesCheckedAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int> episodeIds, string idempotencyKey, CancellationToken cancellationToken)
             => SearchCoreAsync(viewer, userName, instanceId, key, episodeIds, idempotencyKey, cancellationToken);
 
-        private async Task<ManageSearchResult> SearchCoreAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int>? episodeIds, string idempotencyKey, CancellationToken cancellationToken)
+        /// <summary>
+        /// <see cref="SearchEpisodesCheckedAsync"/> with the press worked out again (<paramref name="recheck"/>) after the arr
+        /// reads, right before the command is sent (a household Search: its candidates are never used past a change).
+        /// </summary>
+        internal Task<ManageSearchResult> SearchEpisodesPressAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int> episodeIds, string idempotencyKey, Func<CancellationToken, Task<string?>>? recheck, CancellationToken cancellationToken)
+            => SearchCoreAsync(viewer, userName, instanceId, key, episodeIds, idempotencyKey, cancellationToken, null, recheck);
+
+        private async Task<ManageSearchResult> SearchCoreAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, IReadOnlyList<int>? episodeIds, string idempotencyKey, CancellationToken cancellationToken,
+            IReadOnlyList<int>? episodeNumbers = null, Func<CancellationToken, Task<string?>>? recheck = null)
         {
             if (episodeIds != null && (key.IsMovie || key.Episode != null || episodeIds.Count == 0))
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "invalid_input", "Choose episodes of a series or season.") };
+            if (episodeNumbers != null && (key.IsMovie || key.Season == null || key.Episode != null || episodeNumbers.Count == 0))
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "invalid_input", "Choose episodes of a season.") };
+            // A retry of a press that already ran (its answer was lost) gets that outcome before anything is checked again (D53,
+            // edition round 20: replay before revalidation; the caller's own checks were made before this).
+            if (recheck != null && await _runner.ReplayAsync(viewer.UserId, SearchAction(key, episodeIds != null || episodeNumbers != null), instanceId, idempotencyKey, cancellationToken).ConfigureAwait(false) is { } replayed)
+                return new ManageSearchResult { Outcome = replayed };
             var instance = _store.Registry.Get(instanceId);
             if (instance == null || !instance.Usable || instance.Kind != (key.IsMovie ? ArrKind.Radarr : ArrKind.Sonarr))
                 return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, "wrong_instance", "That instance can't search for this title.") };
@@ -589,18 +646,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             string target;
             IReadOnlyCollection<int>? episodeSet = null;
             int? seasonNumber = key.Season;
-            bool? found = null;
             if (key.IsMovie)
             {
                 command = new { name = "MoviesSearch", movieIds = new[] { arrId.Value } };
                 action = "movie.search";
                 target = "movie:" + arrId.Value.ToString(CultureInfo.InvariantCulture);
             }
-            else if (episodeIds != null)
+            else if (episodeIds != null || episodeNumbers != null)
             {
                 var episodes = await _store.GetEpisodesAsync(instance, arrId.Value, cancellationToken).ConfigureAwait(false);
                 var listed = episodes.Value?.Episodes.Select(e => e.Id).ToHashSet() ?? new HashSet<int>();
-                var ids = episodeIds.Where(listed.Contains).Distinct().OrderBy(x => x).ToArray();
+                int[] ids;
+                if (episodeNumbers != null)
+                {
+                    // Exactly the episodes the press names (enumerated episodes are never widened to the season): every one of
+                    // them, or nothing.
+                    var listedHere = (episodes.Value?.Episodes ?? Array.Empty<ArrEpisodeEntry>()).Where(e => e.SeasonNumber == key.Season && episodeNumbers.Contains(e.EpisodeNumber)).ToList();
+                    ids = listedHere.Count == episodeNumbers.Distinct().Count() ? listedHere.Select(e => e.Id).Distinct().OrderBy(x => x).ToArray() : Array.Empty<int>();
+                }
+                else ids = episodeIds!.Where(listed.Contains).Distinct().OrderBy(x => x).ToArray();
                 if (ids.Length == 0)
                     return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, "no_such_episode", $"{instance.Name} doesn't list those episodes of this series.") };
                 command = new { name = "EpisodeSearch", episodeIds = ids };
@@ -632,6 +696,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 target = "series:" + arrId.Value.ToString(CultureInfo.InvariantCulture);
             }
 
+            // The press worked out again after the arr reads (D53, edition round 19); from here to the command no await.
+            if (recheck != null && await recheck(cancellationToken).ConfigureAwait(false) is { } refusal)
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instance.Id, key, refusal, PressChecks.Message(refusal)), Refusal = refusal };
+
+            return await RunSearchAsync(viewer, userName, instance, key, arrId.Value, command, action, target, episodeSet, seasonNumber, idempotencyKey, null, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// A season page's Search press (D53, edition round 21: the check returns the command that executes): a retry of the
+        /// identical press gets its outcome before anything is checked (the same key used for another press is refused,
+        /// <see cref="PressChecks.Conflict"/>); else <paramref name="check"/> works the press out against fresh facts and
+        /// returns the command, and exactly that command runs (one EpisodeSearch of its Sonarr ids, from the episode list read
+        /// at the check, on its instance), under its fingerprint. Nothing chosen before the check is sent.
+        /// </summary>
+        /// <param name="viewer">The caller.</param>
+        /// <param name="userName">The caller's name for the audit log, if known.</param>
+        /// <param name="instanceId">The instance the request named (audit of a refusal).</param>
+        /// <param name="key">The key the request named (audit of a refusal).</param>
+        /// <param name="idempotencyKey">One per press.</param>
+        /// <param name="fingerprint">The press as its request describes it (<see cref="PressChecks.RequestFingerprint"/>).</param>
+        /// <param name="check">The press, worked out now: a refusal or the command.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The outcome and whether the search grabbed one of its episodes.</returns>
+        internal async Task<ManageSearchResult> SearchCommandAsync(StatusViewer viewer, string? userName, string instanceId, TitleKey key, string idempotencyKey, string fingerprint, Func<CancellationToken, Task<PressProof>> check, CancellationToken cancellationToken)
+        {
+            if (await _runner.ReplayPressAsync(viewer.UserId, idempotencyKey, fingerprint, cancellationToken).ConfigureAwait(false) is { } replayed)
+            {
+                return replayed.Conflict
+                    ? new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, PressChecks.Conflict, PressChecks.Message(PressChecks.Conflict)), Refusal = PressChecks.Conflict }
+                    : new ManageSearchResult { Outcome = replayed };
+            }
+            var proof = await check(cancellationToken).ConfigureAwait(false);
+            var refusal = proof.Refusal
+                ?? (proof.Command is { SeriesId: int, Instance: not null, EpisodeIds.Count: > 0 } done && done.Fingerprint == fingerprint ? null : PressChecks.Changed);
+            var command = proof.Command!;
+            var instance = refusal == null ? _store.Registry.Get(command.Instance!) : null;
+            if (refusal == null && (instance == null || !instance.Usable || instance.Kind != ArrKind.Sonarr)) refusal = PressChecks.Changed;
+            if (refusal != null)
+                return new ManageSearchResult { Outcome = Refuse(viewer, userName, instanceId, key, refusal, PressChecks.Message(refusal)), Refusal = refusal };
+            // From the check to the command no await but the runner's own: exactly the command, nothing else.
+            var ids = command.EpisodeIds.ToArray();
+            var seriesId = command.SeriesId!.Value;
+            var target = "episode-of:" + seriesId.ToString(CultureInfo.InvariantCulture) + ":" + string.Join(",", ids.Select(x => x.ToString(CultureInfo.InvariantCulture)));
+            return await RunSearchAsync(viewer, userName, instance!, command.Title.Title.WithSeason(command.Season), seriesId, new { name = "EpisodeSearch", episodeIds = ids }, "episode.search", target, ids, command.Season,
+                idempotencyKey, fingerprint, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Runs one Search command through the audited runner and reads back how it ended (and whether it grabbed something).
+        private async Task<ManageSearchResult> RunSearchAsync(StatusViewer viewer, string? userName, ArrConnection instance, TitleKey key, int arrId, object command, string action, string target,
+            IReadOnlyCollection<int>? episodeSet, int? seasonNumber, string idempotencyKey, string? fingerprint, CancellationToken cancellationToken)
+        {
+            var title = key.Title;
+            bool? found = null;
             int? commandId = null;
             var outcome = await _runner.RunAsync(new ArrActionRequest
             {
@@ -644,6 +761,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Tier = ArrActionTier.Safe,
                 Details = new Dictionary<string, string> { ["key"] = key.ToString() },
                 Timeout = TimeSpan.FromSeconds(30),
+                Fingerprint = fingerprint,
                 Execute = async ct =>
                 {
                     var client = _clients.For(instance.Id);
@@ -671,7 +789,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (last == null) return new ArrReadBack { Confirmed = null, Summary = "Could not check the search." };
                     var message = string.IsNullOrWhiteSpace(last.Message) ? null : last.Message!.Trim();
                     if (string.Equals(last.Status, "completed", StringComparison.OrdinalIgnoreCase))
-                        found = await GrabbedSinceAsync(client.Value!, key.IsMovie, arrId.Value, seasonNumber, episodeSet, ArrDates.Parse(last.Started), ct).ConfigureAwait(false);
+                        found = await GrabbedSinceAsync(client.Value!, key.IsMovie, arrId, seasonNumber, episodeSet, ArrDates.Parse(last.Started), ct).ConfigureAwait(false);
                     return (last.Status?.ToLowerInvariant()) switch
                     {
                         "completed" => new ArrReadBack { Confirmed = true, Summary = "Search finished" + (message != null && !string.Equals(message, "Completed", StringComparison.OrdinalIgnoreCase) ? ": " + Cap(message) : ".") },
@@ -687,8 +805,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 _store.RequestRefresh(instance.Id, ArrSnapshotKind.Queue);
                 _store.RequestRefresh(instance.Id, ArrSnapshotKind.History);
                 // The title's own "last searched" time (the admin line) moves too.
-                if (key.IsMovie) _ = _store.RefreshTitlesAsync(instance.Id, new[] { arrId.Value }, CancellationToken.None);
-                else _store.RequestEpisodesRefresh(instance.Id, arrId.Value);
+                if (key.IsMovie) _ = _store.RefreshTitlesAsync(instance.Id, new[] { arrId }, CancellationToken.None);
+                else _store.RequestEpisodesRefresh(instance.Id, arrId);
                 if (key.IsMovie ? key.Provider == "tmdb" : key.Provider == "tvdb") _feed?.Bump(new[] { title.ToString() }, instance.Id);
             }
             return new ManageSearchResult { Outcome = outcome, Found = outcome.Status == ArrActionStatus.Succeeded ? found : null };

@@ -229,8 +229,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 ((T?)null, _boxSet(current, itemId) is { } finalSet && finalSet.TmdbCollectionId == collectionId
                     ? "collection_unknown" : "not_found"));
             var covering = _coverage != null && _phase4() ? CoveredAsync(set.ItemId, viewer, ct) : null;
+            // "Have" is the one availability predicate (D53, edition round 19 part B): a copy they open that plays (any
+            // edition); never a ".disc" stub or a pathless item, which are missing like a movie Jellyfin doesn't have.
+            var editions = new EditionAvailability(_view, () => null, (k, v) => _view.Copies(k, v, _aliases?.Of(k)).Display);
+            // A copy they open that plays nothing is theirs to see: missing. A copy the viewer can't open (another library, its
+            // rating or tags): Jellyfin's answer is final, so the movie isn't theirs to see here. Otherwise only a movie proven
+            // absent is missing (a lookup that couldn't finish may have a copy they can't open among the rows it didn't read).
+            bool Plays(CopyLookup copies, StatusViewer who) => editions.Movie(who, copies.Seen, Edition.Any).Count > 0;
+            static bool Missing(CopyLookup copies) => copies.SeenOpenable != null || copies.IsProvenAbsent;
             // Prepare every absent part, including covered titles: a later revoke can make them gaps again.
-            var absent = parts.Where(p => _view.Copies(TitleKey.Parse(p.Key)!, viewer, _aliases?.Of(TitleKey.Parse(p.Key)!)).Count == 0).ToList();
+            var absent = parts.Where(p =>
+            {
+                var key = TitleKey.Parse(p.Key)!;
+                var copies = _view.Copies(key, viewer, _aliases?.Of(key));
+                return !Plays(copies, viewer) && Missing(copies);
+            }).ToList();
             var allowed = await Task.WhenAll(absent.Select(p => MaySeeAsync(p, viewer.UserId, ct))).ConfigureAwait(false);
             var permitted = absent.Where((_, i) => allowed[i]).Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
             var coverage = covering != null ? await covering.ConfigureAwait(false) : null;
@@ -251,8 +264,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     var key = TitleKey.Parse(part.Key)!;
                     var copies = _view.Copies(key, current, _aliases?.Of(key));
-                    if (copies.Any(c => c.Visible)) { have++; continue; }
-                    if (copies.Count > 0 || !permitted.Contains(part.Key)) continue;
+                    if (Plays(copies, current)) { have++; continue; }
+                    if (!Missing(copies) || !permitted.Contains(part.Key)) continue;
                     if (IsCovered(part.Key, keys)) { covered++; continue; }
                     var row = wants ? part with { Request = RequestState(part.Key, current.UserId, currentTarget) } : part;
                     if (paused.TryGetValue(part.Key, out var block)) row = row with { Blocked = block };

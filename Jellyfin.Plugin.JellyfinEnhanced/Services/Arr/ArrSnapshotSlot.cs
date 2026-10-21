@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private DateTimeOffset _keptAt = DateTimeOffset.MinValue;
         private ArrError? _error;
         private DateTimeOffset _errorAt;
+        private ArrSlotAnswer<T>? _answer;
         private int _failures;
         private DateTimeOffset _lastRead = DateTimeOffset.MinValue;
         private DateTimeOffset _lastBackgroundRead = DateTimeOffset.MinValue;
@@ -109,6 +110,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 var error = _error != null && (_value == null || _errorAt >= _loadedAt) ? _error : null;
                 return (_value, _loadedAt, error);
             }
+        }
+
+        /// <summary>
+        /// What the latest finished refresh itself answered (D53, edition round 21: a fresh read result is kept apart from the
+        /// value held for display): its own value (with live patches that came while it ran) and whether it is complete, or its
+        /// error, and when it started. A read kept behind a recent complete value (<see cref="Peek"/> still serves that value)
+        /// is answered here as the incomplete read it was. Null before any refresh finished.
+        /// </summary>
+        public ArrSlotAnswer<T>? Answer
+        {
+            get { lock (_lock) return _answer; }
         }
 
         public bool HasValue
@@ -326,6 +338,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     // The arr answered, so this is no failure; the held value (with live patches
                     // already applied to it) stays, with its own age.
                     _keptAt = started;
+                    _answer = new ArrSlotAnswer<T>(result.Value, null, started, Complete: false);
                     // Like Publishing, this bookkeeping must precede the next read.
                     Notify(() => Kept?.Invoke(result.Value!));
                     _error = null;
@@ -351,6 +364,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                     _value = value;
                     Publish(before, after);
                     _loadedAt = started;
+                    _answer = new ArrSlotAnswer<T>(value, null, started, Complete: _incomplete == null || !_incomplete(value));
                     _error = null;
                     _failures = 0;
                 }
@@ -358,6 +372,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 {
                     _error = result.Error;
                     _errorAt = now();
+                    _answer = new ArrSlotAnswer<T>(null, result.Error, started, Complete: false);
                     _failures++;
                     _failedRefreshes++;
                 }
@@ -499,4 +514,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <summary>When.</summary>
         public DateTimeOffset At { get; init; }
     }
+
+    /// <summary>One refresh's own answer (see <see cref="ArrSnapshotSlot{T}.Answer"/>).</summary>
+    /// <param name="Value">What it read (null when it failed).</param>
+    /// <param name="Error">Why it failed (null when it answered).</param>
+    /// <param name="StartedAt">When it started.</param>
+    /// <param name="Complete">It answered completely (no rows moved between pages).</param>
+    /// <typeparam name="T">Snapshot type.</typeparam>
+    internal sealed record ArrSlotAnswer<T>(T? Value, ArrError? Error, DateTimeOffset StartedAt, bool Complete)
+        where T : class;
 }

@@ -62,6 +62,8 @@ public class IntegrationArrLiveStatusTests
             Admin = View.AddUser(admin: true);
             var showKey = TitleKey.Parse("tv:tvdb:700")!;
             View.AddItem(new JfItemRef { ItemId = Show, Kind = "series", Key = showKey });
+            // The series is a Jellyfin copy of the title (a page reads the Sonarr that owns its own copy).
+            View.AddCopy(showKey, new JfCopy { ItemId = Show, Path = "/media/tv/Show" });
             View.AddItem(new JfItemRef { ItemId = Season1, Kind = "season", Key = showKey.WithSeason(1), SeriesId = Show, Season = 1 });
             View.AddEpisode(Show, new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1 });
         }

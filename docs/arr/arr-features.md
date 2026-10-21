@@ -343,7 +343,7 @@ Click legend chips to select release categories or **Available**, plus **Request
   <figcaption>Switch from Month to Week to Agenda, then select and clear the Episode filter.</figcaption>
 </figure>
 
-Event times use your browser's local timezone. Click a series event to open the matching series in Jellyfin. A movie event needs a file in Radarr before you can open it. The **Available** arrow and available time labels open episode or movie details without starting playback.
+Event times use your browser's local timezone. Click a series event to open the matching series in Jellyfin. A movie event opens in Jellyfin once you have it there. An event is **Available** (the filter, the arrow and the available time label) only when Jellyfin has a playable episode or movie for it that you can open, in any of its copies: a file Sonarr, Radarr or Shoko has but Jellyfin hasn't added yet, a placeholder or stub file, a missing episode, or an item of a library that was removed is not available. The **Available** arrow and available time labels open the episode or movie that plays (not a stub copy Jellyfin lists first, and the episode rather than its series) without starting playback.
 
 Your controls have personal defaults, saved through Calendar itself:
 
@@ -362,7 +362,7 @@ Your controls have personal defaults, saved through Calendar itself:
     For example, select **Episode** and **Available**, then **AND** to show available episodes. Selecting mutually exclusive release categories with **AND** can yield no events. Your selected filter chips are not saved as personal preferences.
 
 ??? info "Event availability and duplicate releases"
-    Time labels have different styles for upcoming unavailable events, past unavailable events, and those at least 24 hours late. Available files have their own styling. A source file may exist before Jellyfin has scanned or matched it, so clicking may do nothing yet.
+    Time labels have different styles for upcoming unavailable events, past unavailable events, and those at least 24 hours late. Available episodes and movies have their own styling. A source file may exist before Jellyfin has scanned or matched it; the event becomes available once Jellyfin has it.
 
     Duplicate Sonarr events merge by TVDB ID, season, episode, and UTC date; Radarr events merge by TMDB ID, release category, and UTC date. Titles are the fallback when provider IDs are missing. JE prefers an accessible match, then one with a file, and retains distinct instance names in the badge. Cinema/digital/physical releases stay separate, as do Shoko events from Sonarr events.
 
@@ -425,7 +425,7 @@ Shoko adds pink **Anime** events from its server collection. Use it to include a
 
     Jellyfin matches use the `Shoko Series` and `Shoko Episode` provider IDs, normally supplied by Shokofin. Matched events can use Jellyfin poster artwork. Unmatched events may lack artwork and cannot open a matched Jellyfin detail page, but administrators can use **Open in Shoko** on the source icon when a Shoko series ID and URL are available. This opens `/webui/collection/series/<id>` using **Shoko URL** and **Shoko URL Mappings**. These connection details and links are available only to administrators.
 
-    A Shoko event is **Available** when Shoko reports an episode file. Shoko air dates are converted to your browser's local time, so depending on your timezone an event can show a time or appear on the previous day.
+    A Shoko event is **Available** by the same rule as any other: when Jellyfin has a playable episode for it that you can open. Shoko air dates are converted to your browser's local time, so depending on your timezone an event can show a time or appear on the previous day.
 
 ## Downloads Page
 
@@ -609,7 +609,15 @@ again for you as you are now (if you were removed or keep changing, the Requests
       for Season 3 of a show you already have waits for Season 3, and a 4K request for the 4K copy. A 4K request has
       arrived only once a copy you can open has a playable 4K version (each version of an item counts on its own, in
       any library and in any folder of a grouped series, every requested episode by its own files, and only a version
-      whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours); a 4K
+      whose own item you can open: one in a library you can't open, or above your parental limit, isn't yours).
+      Copies must lie under a current location of an enabled library you can open. Removing one path from a
+      library excludes its copies, seasons and episodes immediately, including rows grouped with a live series,
+      even when an interrupted scan leaves their database rows and collection mappings behind. Retained rows do not
+      spend the 20-copy lookup budget: Jellyfin Enhanced keeps reading until it finds current copies or reaches the
+      end. A lookup that reaches its scan bound (far beyond any real library) reads as "not in the library" for that
+      read only: nothing is cached from it, requests stay pending, and the next read looks again. It is never taken
+      as proof that the title is gone (no absent-title request or Discover card, no "since removed"), and a copy it
+      did see still counts. This also applies to Get 4K, poster badges and library-wide edition lookups; a 4K
       Sonarr/Radarr holding the title, sharing its folder or library with the standard copy, or Seerr saying it is
       available is never enough on its own. A 4K request for a whole series with no 4K seasons to follow (no 4K Sonarr,
       or one that monitors none) has arrived once a copy you can open has 4K episodes, when the newest of them arrived
@@ -805,8 +813,12 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       the 4K copy, and a title in a library you can't open never counts); **new episodes** of series you follow or
       asked for, gathered per series for 10 minutes from the first one ("Severance: 3 new episodes ready"; a whole season
       at once reads "Season 2 is ready" when Sonarr says that is all of it; only numbers, never an episode's name, so
-      nothing is spoiled; a 4K request hears about the 4K copy's episodes only, and with no 4K Sonarr set up in
-      Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**
+      nothing is spoiled; a 4K request hears about episodes whose own file is 4K, in whichever copy or folder they are: an
+      HD file in the 4K Sonarr's folder is not a 4K arrival (and doesn't use up the 4K one), a 4K file in the standard folder
+      is, and an HD episode or movie whose file is replaced by a 4K one in place is a 4K arrival however old the item is
+      (being given access to an old 4K version that was already there is not an arrival);
+      with *Standard requests need a non-4K copy* on, a standard request isn't told about a 4K-only episode; a stub or
+      placeholder file is never an arrival, and neither is a season whose episodes are all stubs); a request of yours **declined**
       (with the reason given) and, for requests Jellyfin Enhanced handles (phase 3), a request of yours **OK'd** ("Dad
       OK'd Firefly S1E4"; "… is on its way" when someone else's request covered it). In JE mode your requests are
       followed like Seerr requests are in Seerr mode: Ready and new episodes are told for exactly the part you asked for
@@ -819,7 +831,12 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       no longer open by the time a batch goes out is left out (a series followed under two ids, even for different
       seasons, is still one batch).
       Phone alerts and e-mails held back by quiet hours or retries are checked again as they go out (nothing about a
-      title you can no longer open, nothing of a kind you switched off meanwhile, nothing on a channel switched off
+      title you can no longer open, nothing about a file that no longer plays the edition announced, such as a 4K file
+      replaced by an HD one or turned into a stub, nothing about an episode a file no longer is after Jellyfin renumbered it,
+      and a batch says only what still plays, rebuilt from those episodes and linked to what remains, even when the season
+      it first linked to is gone; an older alert that doesn't name its files is sent only while the episode or seasons it
+      names still play, counting each episode a combined file holds, nothing of a kind you switched
+      off meanwhile, nothing on a channel switched off
       meanwhile; the bell then shows such an entry without its title), and a disabled account is told nothing. When a
       Jellyfin user is deleted, their follows, settings and inbox go with them.
 
@@ -901,7 +918,8 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
 
     If your Hidden Content can't be read at that moment, nothing is told: a new alert or batch waits until it can be read,
     phone and e-mail wait too (given up after a day), the TV message isn't shown and the bell doesn't name the title.
-    Deliveries saved before episode files were recorded continue using the parent item's visibility check.
+    Deliveries saved before episode files were recorded are checked by the episodes their seasons still play (a combined
+    E1–E2 file counts as two) and link to their item while it still opens, else to a copy that plays them.
 
 ### Request rules (phase 3)
 
@@ -1010,6 +1028,46 @@ ask fetch the episodes that are missing, one tap each.
       where that episode has got to.
     - **The "Missing" line instead.** With that display setting off, the season keeps the *Missing: E4, E7* line above
       the list and it gets **Get them** (or **Get E4** for a single one). Rows and the line are never shown together.
+    - **Missing from this copy only.** When another copy of the show that you can open plays an episode (a 4K copy shown
+      next to this one, or the show in another library), that episode is missing from this copy, not from the show: the
+      line reads *Missing in the standard copy: E3* (or *the 4K copy*), the button **Get them in standard**, and its row
+      *Missing in standard*. *Missing: E5* is kept for episodes no copy you can open has. The season's summary says the same
+      (*1 missing* and *1 missing in standard*). A copy's buttons act on that copy: **Get them in 4K** asks for the 4K
+      edition, so it goes to the 4K Sonarr, and an administrator's **Search in 4K** searches the 4K Sonarr. Where a button
+      can't reach the copy it would be named for (someone who may not ask for 4K, an anime or other copy no request goes
+      to, or a household Search, which only searches standard copies), it isn't offered under that name: episodes no copy
+      has keep the plain **Get them**, and a household Search on a 4K copy's gaps becomes **Get them in 4K**.
+      **Buttons that act on one copy need the Jellyfin Enhanced request backend.** With Seerr handling requests, Seerr picks
+      the server each request goes to, so no button is offered under a copy's name there (no **Get them in 4K**, no
+      **Search in 4K**): the season's own **Get Season 1** and Seerr's standard and 4K requests work as before. Every button is
+      checked again when you press it, by your browser and then by the server, which works out afresh exactly what the
+      button was drawn to do (which episodes or seasons, which copy and edition, which Sonarr it lands on, whether Seerr
+      takes whole series only), reading Sonarr's downloads, history and files again at that moment (never what it had in
+      memory): if any of that has changed since the page was shown (your permissions, an episode that has arrived or that
+      Sonarr has just started downloading, Seerr's partial-request setting), nothing is sent, the buttons are drawn again
+      for what you can do now and a short message says so; if it can't be checked right now (Sonarr doesn't answer), nothing
+      is sent and the message says that. Only the Sonarrs a press depends on are checked like that (the one it lands on and
+      the ones that hold the same edition): a 4K button still works while the standard Sonarr is down, and the other way
+      round; a Sonarr whose download list moved while it was read counts as not answering. The same holds on the page of a season that isn't in your library yet. A button
+      pressed twice (on an episode's row and in its dialog, say) sends one request, and if the answer to a press is lost and
+      your browser sends it again, you get the answer the first press had (even if the episode has arrived since); the same retry for a different button
+      is refused. What is sent is exactly what the server checked: an ask is recorded for its episodes and edition at the
+      Sonarr it was checked for (a request that names another Sonarr, a root folder or a quality profile is refused), and a
+      **Search** (an administrator's, or the household's) searches exactly its episodes as that Sonarr numbers them at that
+      moment, never anything else the request might say. A 4K copy's buttons show that copy's own requests (a standard
+      request waiting for an OK never hides **Get it in 4K**) and follow the 4K edition's own permission and pause (a full
+      drive for standard downloads doesn't hide **Get it in 4K**, and a full 4K drive says so on the 4K copy's episodes), and
+      a download of a copy you can't open, or that might be one you can't open because which Radarr's copy is which can't be
+      told, is never shown to you. A copy plays an episode only when it has a file Jellyfin can play: a placeholder or stub file
+      (such as a *.disc* stub) is never *Ready*, in this copy or another, on its season page, its own episode page, its
+      card or a movie's page, a download of it is that episode on its way (not a better copy), and its arrival is never
+      announced. The same rule holds everywhere something is said to be there: a movie by title (the Requests page, cards
+      by title, the Seerr modal), an administrator's line for another copy (a 4K copy that is only a stub is not *Ready*),
+      a whole series asked for with no seasons named, *Open in library*, Discover's *In your library*, a collection's
+      missing movies, a family **Search** (a stubbed episode is searched), and the automatic requests (two versions of one
+      episode count as one, a two-part file as both episodes, and the next season is asked for unless every one of its
+      episodes plays). A *.strm* shortcut plays its remote file as its own item, so a 2160p one is a 4K copy. A season
+      card without Sonarr's episode list never counts an episode twice (a file Sonarr has and the queue's import of it).
     - **What happens after a tap** is said plainly on the row: *Waiting for OK* when the ask needs someone's OK (Kids
       always; Members over their allowance or house rules), *Asked!* when it went straight through, *Someone asked* when
       another person in the household already asked for it. Anything else (over the week's allowance, not allowed,
@@ -1394,6 +1452,9 @@ Approved requests go out through the request handling the administrator chose: s
       while it isn't in the library, say) is known by its TVDB id only; Jellyfin Enhanced finds its TMDB id on TMDB
       (through the shared TMDB cache, so it needs the TMDB API key) and sends it under that. Without one it waits
       (`title_not_found`).
+    - Seerr picks the server a request goes to (its default for the edition); Jellyfin Enhanced never names one. Buttons
+      that act on one copy of a title (**Get them in 4K** on a 4K copy's season, an administrator's **Search in 4K**) need
+      the Jellyfin Enhanced request backend and aren't offered in Seerr mode; Seerr's standard and 4K requests work as usual.
     - `is4k` is always sent. Who may ask for 4K comes from Seerr: its 4K server setting and the person's own Seerr 4K
       permission (Seerr's Admin permission includes it). Jellyfin administrator status doesn't bypass it.
     - Seerr's partial-request setting is read at send time and treated as on, off or *unknown* (anything that isn't a

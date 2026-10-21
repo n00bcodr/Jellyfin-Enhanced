@@ -428,7 +428,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
         private DateTime? MovieArrival(TitleKey key, StatusViewer viewer, bool only4k, JfCopy visible)
         {
             DateTime? first = null;
-            var copies = Status.View.Copies(key, viewer, Status.Aliases.Of(key)).Where(c => c.Visible).ToList();
+            var copies = Status.View.Copies(key, viewer, Status.Aliases.Of(key)).Display.Where(c => c.Visible).ToList();
             if (copies.Count == 0) copies.Add(visible);
             foreach (var copy in copies)
             {
@@ -487,12 +487,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
             var seasonSet = seasons?.ToHashSet();
             if (seasonSet is { Count: 0 }) seasonSet = null;
             NewEpisode? best = null;
-            foreach (var copy in Status.View.Copies(key, viewer, Status.Aliases.Of(key)).Where(c => c.Visible))
+            foreach (var copy in Status.View.Copies(key, viewer, Status.Aliases.Of(key)).Display.Where(c => c.Visible))
             {
                 var seriesKey = _library.Item(copy.ItemId)?.SeriesKey;
                 foreach (var e in Status.View.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
                 {
-                    if (e.Virtual || e.Hidden || e.ItemId == Guid.Empty) continue;
+                    if (!EditionAvailability.Plays(e) || e.Hidden || e.ItemId == Guid.Empty) continue;
                     if (only4k && _library.Item(e.ItemId) is not { FourK: true }) continue;
                     if (e.DateCreated is not DateTime created) continue;
                     var last = Math.Min(Math.Max(e.Episode, e.EpisodeEnd ?? e.Episode), e.Episode + 49);

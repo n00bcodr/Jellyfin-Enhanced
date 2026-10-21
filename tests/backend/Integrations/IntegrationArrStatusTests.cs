@@ -26,7 +26,18 @@ public class IntegrationArrStatusTests
     private static readonly TitleKey MovieKey = TitleKey.Parse("movie:tmdb:693134")!;
     private static readonly TitleKey ShowKey = TitleKey.Parse("tv:tvdb:279121")!;
 
-    private static ComposeContext Ctx(StatusViewer? viewer = null) => new(viewer ?? Member, Now, 24);
+    /// <summary>
+    /// A context for the viewer. <paramref name="plays"/>: every series copy plays an episode for them (the availability
+    /// predicate's answer the service gives the composer; without it no copy is credited as in the library).
+    /// </summary>
+    private static ComposeContext Ctx(StatusViewer? viewer = null, bool plays = false) => Plays(new(viewer ?? Member, Now, 24), plays);
+
+    /// <summary>Gives a context the availability predicate's answer "every series copy plays" (set by name: builds against a plugin without it).</summary>
+    private static ComposeContext Plays(ComposeContext c, bool plays = true)
+    {
+        if (plays) typeof(ComposeContext).GetProperty("Holds")?.SetValue(c, (Func<Guid, bool>)(_ => true));
+        return c;
+    }
 
     private static ArrMovieEntry Movie(bool monitored = true, bool hasFile = false, bool available = true, DateTime? added = null, DateTime? cinemas = null, DateTime? digital = null, string path = "/data/movies/Dune Part Two (2024)")
         => new()
@@ -116,9 +127,9 @@ public class IntegrationArrStatusTests
         Assert.True(RowsWithProgress.Contains(scenario) == (status.Progress != null), $"{scenario}: progress {status.Progress?.Percent}");
         Assert.Null(status.Admin);
         // The Overview's Needs attention list reads the same rows by the same table.
-        if (copy?.Queue.Count > 0)
+        if (copy?.Radarr().Queue.Count > 0)
         {
-            var q = copy.Queue[0];
+            var q = copy.Radarr().Queue[0];
             Assert.True(row.Attention == (NeedsAttention.ProblemOf(q.TrackedDownloadState, q.TrackedDownloadStatus, q.Status) != null), $"{scenario}: Needs attention disagrees");
         }
     }
@@ -193,7 +204,7 @@ public class IntegrationArrStatusTests
         var series = new ArrSeriesEntry { Id = 3, TvdbId = 279121, Title = "Show", Monitored = true };
         var episodes = new ArrEpisodesSnapshot(3, new[] { new ArrEpisodeEntry { Id = 31, SeasonNumber = 1, EpisodeNumber = 1, AirDateUtc = Now.AddDays(-3), Monitored = true } });
         var sonarr = new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes, QueueUnknown = true };
-        Assert.Equal(StatusReasonCode.ServiceDown, StatusComposer.EpisodeFromArr(sonarr, 1, 1, episodes.Find(1, 1), Ctx()).Reason);
+        Assert.Equal(StatusReasonCode.ServiceDown, StatusComposer.EpisodeFromArr(sonarr.Through(HiddenParts.None), 1, 1, episodes.Find(1, 1), Ctx()).Reason);
     }
 
     [Fact]
@@ -201,9 +212,9 @@ public class IntegrationArrStatusTests
     {
         var row = new ArrQueueEntry { Id = 1, Status = "downloading", TrackedDownloadState = "downloading", TrackedDownloadStatus = "ok", Size = 100, SizeLeft = 75, TimeLeft = "00:10:00", MovieId = 7 };
         var read4MinAgo = new ArrCopyFacts(Radarr) { Movie = Movie(), QueueLoadedAt = Now.AddMinutes(-4) };
-        Assert.Equal(360L, StatusComposer.Progress(row, Ctx(), read4MinAgo)!.EtaSeconds);
+        Assert.Equal(360L, StatusComposer.Progress(row, Ctx(), read4MinAgo.Radarr())!.EtaSeconds);
         var stale = new ArrCopyFacts(Radarr) { Movie = Movie(), QueueLoadedAt = Now.AddMinutes(-4), QueueStale = true };
-        var progress = StatusComposer.Progress(row, Ctx(), stale)!;
+        var progress = StatusComposer.Progress(row, Ctx(), stale.Radarr())!;
         Assert.Equal((25, (long?)null), (progress.Percent, progress.EtaSeconds));
     }
 
@@ -524,16 +535,17 @@ public class IntegrationArrStatusTests
         var e4 = new ArrEpisodeEntry { Id = 104, SeasonNumber = 1, EpisodeNumber = 4, AirDateUtc = Now.AddDays(-300), Monitored = true };
         var e5 = new ArrEpisodeEntry { Id = 105, SeasonNumber = 1, EpisodeNumber = 5, AirDateUtc = Now.AddDays(-293), Monitored = true };
         var copy = new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, new[] { e4, e5 }) };
-        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 4, e4, Ctx()).Reason);
+        var read = copy.Through(HiddenParts.None);
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(read, 1, 4, e4, Ctx()).Reason);
         var oneEpisode = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, 4, Now.AddMinutes(-10)) } };
-        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(copy, 1, 4, e4, Ctx(), oneEpisode).Reason);
-        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, Ctx(), oneEpisode).Reason);
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(read, 1, 4, e4, Ctx(), oneEpisode).Reason);
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(read, 1, 5, e5, Ctx(), oneEpisode).Reason);
         Assert.Equal(new[] { StatusReasonCode.Looking, StatusReasonCode.NoReleaseYet },
-            StatusComposer.EpisodeStates(copy, 1, null, Ctx(), null, oneEpisode).Select(r => r.State.Reason).ToArray());
+            StatusComposer.EpisodeStates(read, 1, null, Ctx(), oneEpisode).Select(r => r.State.Reason).ToArray());
         // A season request covers its episodes until the looking hours have passed since it went out.
         var season = new RequestFacts { Sent = new[] { new RequestSentPart(false, 1, null, Now.AddHours(-23)) } };
-        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, Ctx(), season).Reason);
-        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(copy, 1, 5, e5, new ComposeContext(Member, Now.AddHours(2), 24), season).Reason);
+        Assert.Equal(StatusReasonCode.Looking, StatusComposer.EpisodeFromArr(read, 1, 5, e5, Ctx(), season).Reason);
+        Assert.Equal(StatusReasonCode.NoReleaseYet, StatusComposer.EpisodeFromArr(read, 1, 5, e5, new ComposeContext(Member, Now.AddHours(2), 24), season).Reason);
         // The series page's whole-series state and a season page read the request too.
         var show = new TitleFacts(ShowKey) { Request = season };
         show.Copies.Add(copy);
@@ -577,7 +589,8 @@ public class IntegrationArrStatusTests
     [Fact]
     public void AFinishedRequestIsNeverOverdueOnATitleThatIsHere()
     {
-        var ctx = new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) };
+        // The series copy below plays an episode (the availability predicate's answer).
+        var ctx = Plays(new ComposeContext(Admin, Now, 24) { HandoffGrace = TimeSpan.FromMinutes(15) });
         var approved = Now.AddDays(-2);
         // The movie is in Jellyfin; the standard Radarr JE watches (read) no longer holds it (removed
         // after import, or Seerr sent it to a Radarr JE doesn't watch). Seerr marked the request done.
@@ -586,12 +599,12 @@ public class IntegrationArrStatusTests
         var facts = MovieFacts();
         facts.Checked.Add(Radarr);
         facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Completed, 5) }, Admin.UserId);
-        var ready = StatusComposer.Movie(facts, null, new[] { hd }, ctx, false);
+        var ready = StatusComposer.Movie(facts, null, new[] { hd }, ctx, false, qualifying: new[] { hd.ItemId });
         Assert.Equal(StatusStage.Ready, ready.Stage);
         Assert.Null(ready.Admin!.ApprovedNotInArrSince);
         // Available in Seerr while the request still reads "OK'd": done too.
         facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 5) }, Admin.UserId);
-        Assert.Null(StatusComposer.Movie(facts, null, new[] { hd }, ctx, false).Admin!.ApprovedNotInArrSince);
+        Assert.Null(StatusComposer.Movie(facts, null, new[] { hd }, ctx, false, qualifying: new[] { hd.ItemId }).Admin!.ApprovedNotInArrSince);
         // Not here and not done (Seerr still processing it): the line is about a real stuck handoff.
         facts.Request = SeerrRequestReadModel.FactsOf(new[] { Record(SeerrRequestStatus.Approved, 3) }, Admin.UserId);
         var stuck = StatusComposer.Movie(facts, null, Array.Empty<JfCopy>(), ctx, false);
@@ -640,8 +653,8 @@ public class IntegrationArrStatusTests
         var (seerr, seerrArrived, seerrShown) = StatusComposer.Requested4k(facts, placeholder, new[] { uhd }, Ctx());
         Assert.Equal((StatusStage.Ready, uhd.ItemId), (seerr.Stage, seerrShown!.ItemId));
         Assert.Equal(uhd.DateCreated, seerrArrived);
-        // The whole title still counts the HD copy (it is there).
-        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false).Stage);
+        // The whole title still counts the HD copy (it plays).
+        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false, qualifying: new[] { hd.ItemId }).Stage);
     }
 
     [Fact]
@@ -688,16 +701,17 @@ public class IntegrationArrStatusTests
         };
         var show = new TitleFacts(ShowKey);
         show.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = new ArrEpisodesSnapshot(3, list) });
+        var read = show.Copies[0].Through(HiddenParts.None);
         var jf = new List<JfEpisode> { new() { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, DateCreated = day.AddDays(-6) } };
         var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "series", Key = ShowKey };
         var airing = StatusComposer.Series(show, item, jf, null, new ComposeContext(Member, early, 24), detail: false);
         Assert.Equal("2026-10-13", airing.NextDay);
         Assert.Equal(0, airing.Summary!.Missing);
-        var episode = StatusComposer.EpisodeFromArr(show.Copies[0], 1, 2, list[1], new ComposeContext(Member, early, 24));
+        var episode = StatusComposer.EpisodeFromArr(read, 1, 2, list[1], new ComposeContext(Member, early, 24));
         Assert.Equal((StatusReasonCode.NotAired, "2026-10-13"), (episode.Reason, episode.Day));
         // Once the day is over everywhere: aired, and wanted.
         var later = new ComposeContext(Member, day.AddHours(37), 24);
-        Assert.Equal(StatusStage.Looking, StatusComposer.EpisodeFromArr(show.Copies[0], 1, 2, list[1], later).Stage);
+        Assert.Equal(StatusStage.Looking, StatusComposer.EpisodeFromArr(read, 1, 2, list[1], later).Stage);
         Assert.Equal(1, StatusComposer.Series(show, item, jf, null, later, detail: false).Summary!.Missing);
     }
 
@@ -706,7 +720,10 @@ public class IntegrationArrStatusTests
     {
         var facts = MovieFacts(Copy(Movie(hasFile: true)));
         var visible = new JfCopy { ItemId = Guid.NewGuid(), Visible = true, Path = "/media/movies/Dune Part Two (2024)/Dune.mkv", LibraryName = "Movies", DateCreated = Now.AddDays(-30) };
-        Assert.Equal((StatusStage.Ready, StatusReasonCode.Ready, false), Of(StatusComposer.Movie(facts, null, new[] { visible }, Ctx(), false)));
+        Assert.Equal((StatusStage.Ready, StatusReasonCode.Ready, false), Of(StatusComposer.Movie(facts, null, new[] { visible }, Ctx(), false, qualifying: new[] { visible.ItemId })));
+        // A copy they can open that plays nothing (a ".disc" stub: not in what the availability predicate holds) is not
+        // Ready: where Radarr has got to.
+        Assert.Equal((StatusStage.AlmostReady, StatusReasonCode.LibraryPending, false), Of(StatusComposer.Movie(facts, null, new[] { visible }, Ctx(), false)));
 
         // The only copy is in a library the viewer can't open: treated as not here for them (the
         // answer of a title nobody has), "grant access" for an admin.
@@ -828,8 +845,8 @@ public class IntegrationArrStatusTests
         Assert.NotEqual(StatusStage.Ready, status.Stage);
         Assert.Null(arrived);
         Assert.Null(shown);
-        // The whole title still counts the HD copy (it is there).
-        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false).Stage);
+        // The whole title still counts the HD copy (it plays).
+        Assert.Equal(StatusStage.Ready, StatusComposer.Movie(facts, null, new[] { hd }, Ctx(), false, qualifying: new[] { hd.ItemId }).Stage);
     }
 
     [Fact]
@@ -872,10 +889,9 @@ public class IntegrationArrStatusTests
         // The library was read after it left and still has no file (removed, not imported): looking again.
         Assert.Equal((StatusStage.Looking, StatusReasonCode.Looking, false), Of(StatusComposer.Movie(MovieFacts(Departed(Now)), null, Array.Empty<JfCopy>(), Ctx(), false)));
 
-        var (facts, _) = FlashSeason(virtualRows: true);
-        var copy = facts.Copies[0];
+        var (flashSeries, flashEpisodes, _) = FlashSeasonArr();
         var withDeparture = new TitleFacts(ShowKey);
-        withDeparture.Copies.Add(new ArrCopyFacts(Sonarr) { Series = copy.Series, Episodes = copy.Episodes, EpisodesLoadedAt = Now.AddMinutes(-5), LeftQueue = (m, e) => e == 902 ? left : null });
+        withDeparture.Copies.Add(new ArrCopyFacts(Sonarr) { Series = flashSeries, Episodes = flashEpisodes, EpisodesLoadedAt = Now.AddMinutes(-5), LeftQueue = (m, e) => e == 902 ? left : null });
         var episode = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "episode", Key = ShowKey.WithEpisode(9, 2), SeriesId = SeriesItem, Season = 9, Episode = 2, Virtual = true };
         Assert.Equal((StatusStage.AlmostReady, StatusReasonCode.Importing, false), Of(StatusComposer.Episode(withDeparture, episode, Ctx(), false)));
     }
@@ -952,6 +968,9 @@ public class IntegrationArrStatusTests
 
     private static readonly Guid SeriesItem = Guid.NewGuid();
 
+    /// <summary>The card's own series copy, in the standard Sonarr's folder: a card reads the Sonarr that owns its copy.</summary>
+    private static readonly JfCopy[] SeriesItemCopy = { new() { ItemId = SeriesItem, Visible = true, Path = "/data/tv/The Flash (2014)" } };
+
     private static ArrSeriesEntry Series(bool monitored = true, string path = "/data/tv/The Flash (2014)") => new()
     {
         Id = 3, TvdbId = 279121, Title = "The Flash", Monitored = monitored, Path = path, Added = Now.AddDays(-400), EpisodeFileCount = 9, EpisodeCount = 12,
@@ -972,19 +991,9 @@ public class IntegrationArrStatusTests
     /// </summary>
     private static (TitleFacts Facts, List<JfEpisode> Jf) FlashSeason(bool virtualRows)
     {
-        var episodes = new ArrEpisodesSnapshot(3, new[]
-        {
-            Ep(8, 1, Now.AddDays(-400), true), Ep(8, 2, Now.AddDays(-393), true),
-            Ep(9, 1, Now.AddDays(-30), true), Ep(9, 2, Now.AddDays(-23)), Ep(9, 3, Now.AddDays(-16)), Ep(9, 4, Now.AddDays(-9), true),
-            Ep(9, 5, Now.AddDays(-2)), Ep(9, 6, Now.AddDays(-1), monitored: false), Ep(9, 7, Now.AddDays(3)),
-        });
-        var queue = new[]
-        {
-            Row(episodeId: 903, season: 9, episode: 3, left: 400),
-            Row(status: "completed", state: "importBlocked", tracked: "warning", episodeId: 905, season: 9, episode: 5, messages: new[] { "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible." }),
-        };
+        var (series, episodes, queue) = FlashSeasonArr();
         var facts = new TitleFacts(ShowKey);
-        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = Series(), Episodes = episodes, Queue = queue });
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes, Queue = queue });
         var jf = new List<JfEpisode>
         {
             new() { ItemId = Guid.NewGuid(), Season = 8, Episode = 1, DateCreated = Now.AddDays(-300) },
@@ -997,6 +1006,23 @@ public class IntegrationArrStatusTests
             jf.Add(new JfEpisode { ItemId = Guid.NewGuid(), Season = 9, Episode = 7, Virtual = true });
         }
         return (facts, jf);
+    }
+
+    /// <summary>The Sonarr side of <see cref="FlashSeason"/> (series, episodes, queue), for copies built from the same facts.</summary>
+    private static (ArrSeriesEntry Series, ArrEpisodesSnapshot Episodes, ArrQueueEntry[] Queue) FlashSeasonArr()
+    {
+        var episodes = new ArrEpisodesSnapshot(3, new[]
+        {
+            Ep(8, 1, Now.AddDays(-400), true), Ep(8, 2, Now.AddDays(-393), true),
+            Ep(9, 1, Now.AddDays(-30), true), Ep(9, 2, Now.AddDays(-23)), Ep(9, 3, Now.AddDays(-16)), Ep(9, 4, Now.AddDays(-9), true),
+            Ep(9, 5, Now.AddDays(-2)), Ep(9, 6, Now.AddDays(-1), monitored: false), Ep(9, 7, Now.AddDays(3)),
+        });
+        var queue = new[]
+        {
+            Row(episodeId: 903, season: 9, episode: 3, left: 400),
+            Row(status: "completed", state: "importBlocked", tracked: "warning", episodeId: 905, season: 9, episode: 5, messages: new[] { "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible." }),
+        };
+        return (Series(), episodes, queue);
     }
 
     [Fact]
@@ -1049,20 +1075,23 @@ public class IntegrationArrStatusTests
         Assert.False(status.Quiet);
 
         // The poster card for the series only reads the queue.
-        var card = StatusComposer.SeriesCard(facts, item, Ctx());
+        var card = StatusComposer.SeriesCard(facts, item, Ctx(), copies: SeriesItemCopy);
         Assert.Equal((StatusStage.Downloading, 1, 1, true), (card.Stage, card.Summary!.Downloading, card.Summary.AlmostReady, card.Attention));
     }
 
     [Fact]
     public void ASeasonCardWithoutEpisodesInMemoryUsesSonarrsStatistics()
     {
-        var (facts, jf) = FlashSeason(virtualRows: false);
-        var copy = facts.Copies[0];
+        var (_, jf) = FlashSeason(virtualRows: false);
+        var (flashSeries, _, flashQueue) = FlashSeasonArr();
         var noEpisodes = new TitleFacts(ShowKey);
-        noEpisodes.Copies.Add(new ArrCopyFacts(Sonarr) { Series = copy.Series, Queue = copy.Queue });
+        noEpisodes.Copies.Add(new ArrCopyFacts(Sonarr) { Series = flashSeries, Queue = flashQueue });
         var card = StatusComposer.Season(noEpisodes, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(9), Season = 9, SeriesId = SeriesItem }, jf, Ctx(), detail: false);
-        // Sonarr: 6 aired-monitored, 3 files; Jellyfin has 1; queue: 1 downloading, 1 import blocked.
-        Assert.Equal((6, 1, 1, 3, 1), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady, card.Summary.Attention));
+        // Sonarr: 6 aired-monitored, 3 files; Jellyfin has 1; queue: 1 downloading, 1 import blocked. Sonarr's two files
+        // Jellyfin doesn't play yet name no episodes, so they may be the queue's two (edition round 19 part B: never counted
+        // twice): almost ready is the blocked import alone, and the summary stays within the aired episodes.
+        Assert.Equal((6, 1, 1, 1, 1), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady, card.Summary.Attention));
+        Assert.True(card.Summary.Ready + card.Summary.Downloading + card.Summary.AlmostReady + card.Summary.Missing <= card.Summary.Aired);
         Assert.Null(card.Episodes);
         var complete = StatusComposer.Season(noEpisodes, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Key = ShowKey.WithSeason(8), Season = 8, SeriesId = SeriesItem }, jf, Ctx(), detail: false);
         Assert.Equal((StatusStage.Ready, 2, 2), (complete.Stage, complete.Summary!.Ready, complete.Summary.Aired));
@@ -1174,10 +1203,13 @@ public class IntegrationArrStatusTests
 
         // From Sonarr's statistics (no episodes in memory): the hidden episode is not pending either.
         var noEpisodes = new TitleFacts(ShowKey);
-        noEpisodes.Copies.Add(new ArrCopyFacts(Sonarr) { Series = facts.Copies[0].Series, Queue = facts.Copies[0].Queue });
+        var (flashSeries, _, flashQueue) = FlashSeasonArr();
+        noEpisodes.Copies.Add(new ArrCopyFacts(Sonarr) { Series = flashSeries, Queue = flashQueue });
         var card = StatusComposer.Season(noEpisodes, seasonItem, withHidden, Ctx(), detail: false);
-        // 6 aired, 3 files, one of them hidden: 5 aired, 1 ready, 1 downloading, 1 (+1 blocked) almost ready.
-        Assert.Equal((5, 1, 1, 2), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady));
+        // An episode of the season is hidden and Sonarr's episode list isn't in memory: its statistics can't be vouched for
+        // (D53, edition round 15), so the card says only what is visibly here or on its way: 1 ready, 1 downloading, 1 import
+        // blocked (3 "aired"); the hidden episode's file is never pending.
+        Assert.Equal((3, 1, 1, 1), (card.Summary!.Aired, card.Summary.Ready, card.Summary.Downloading, card.Summary.AlmostReady));
     }
 
     [Fact]
@@ -1222,7 +1254,7 @@ public class IntegrationArrStatusTests
 
         var page = StatusComposer.Series(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, jf, null, Ctx(Admin), detail: true);
         Assert.Contains(page.Admin!.Variants, v => v.Instance == "Sonarr 4K (lab)" && v.Scope == "S08E02");
-        var card = StatusComposer.SeriesCard(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, Ctx(Admin));
+        var card = StatusComposer.SeriesCard(facts, new JfItemRef { ItemId = SeriesItem, Kind = "series", Key = ShowKey }, Ctx(Admin), copies: SeriesItemCopy);
         Assert.Contains(card.Admin!.Variants, v => v.Instance == "Sonarr 4K (lab)" && v.Scope == "S08E02");
         Assert.True(card.Attention);
         var byKey = StatusComposer.SeriesByKey(facts, Array.Empty<JfCopy>(), Ctx(Admin));
@@ -1274,6 +1306,15 @@ public class IntegrationArrStatusTests
     /// <summary>Season 1: E1 on disk, E2 aired without a file. Season 3: E1 aired without a file. Both E2 and S3E1 downloading.</summary>
     private static TitleFacts TwoSeasonsDownloading()
     {
+        var (series, episodes, queue) = TwoSeasonsDownloadingArr();
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(new ArrCopyFacts(Sonarr) { Series = series, Episodes = episodes, Queue = queue });
+        return facts;
+    }
+
+    /// <summary>The Sonarr side of <see cref="TwoSeasonsDownloading"/>.</summary>
+    private static (ArrSeriesEntry Series, ArrEpisodesSnapshot Episodes, ArrQueueEntry[] Queue) TwoSeasonsDownloadingArr()
+    {
         var series = new ArrSeriesEntry
         {
             Id = 3, TvdbId = 279121, Title = "Show", Monitored = true, Path = "/data/tv/Show", Added = Now.AddDays(-400), EpisodeFileCount = 1, EpisodeCount = 3,
@@ -1283,14 +1324,9 @@ public class IntegrationArrStatusTests
                 new ArrSeasonEntry { SeasonNumber = 3, Monitored = true, EpisodeCount = 1, EpisodeFileCount = 0, TotalEpisodeCount = 1 },
             },
         };
-        var facts = new TitleFacts(ShowKey);
-        facts.Copies.Add(new ArrCopyFacts(Sonarr)
-        {
-            Series = series,
-            Episodes = new ArrEpisodesSnapshot(3, new[] { Ep(1, 1, Now.AddDays(-60), true), Ep(1, 2, Now.AddDays(-53)), Ep(3, 1, Now.AddDays(-5)) }),
-            Queue = new[] { Row(episodeId: 102, season: 1, episode: 2, left: 500), Row(episodeId: 301, season: 3, episode: 1, left: 300) },
-        });
-        return facts;
+        return (series,
+            new ArrEpisodesSnapshot(3, new[] { Ep(1, 1, Now.AddDays(-60), true), Ep(1, 2, Now.AddDays(-53)), Ep(3, 1, Now.AddDays(-5)) }),
+            new[] { Row(episodeId: 102, season: 1, episode: 2, left: 500), Row(episodeId: 301, season: 3, episode: 1, left: 300) });
     }
 
     [Fact]
@@ -1320,20 +1356,22 @@ public class IntegrationArrStatusTests
         var visibleCopy = new JfCopy { ItemId = SeriesItem, Visible = true, Path = "/media/tv/Show" };
         // S1E2 is hidden (in Jellyfin with its own tag: an upgrade) and season 3 too.
         var (_, hidden) = StatusComposer.SplitHidden(new[] { new JfEpisode { Season = 1, Episode = 2, Hidden = true } }, new[] { new JfSeason { Season = 3, Hidden = true } });
-        var card = StatusComposer.SeriesCard(facts, item, Ctx(), hidden);
+        var card = StatusComposer.SeriesCard(facts, item, Ctx(), hidden, new[] { visibleCopy });
         Assert.Equal((StatusStage.Ready, true, 0), (card.Stage, card.Quiet, card.Summary!.Downloading));
         Assert.Null(card.Progress);
-        var byKey = StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(), hidden);
+        var byKey = StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(plays: true), hidden);
         Assert.Equal((StatusStage.Ready, StatusReasonCode.Ready), (byKey.Stage, byKey.Reason.Code));
         Assert.Null(byKey.Progress);
 
         // Only season 3 hidden: E2's download still counts.
         var (_, season3) = StatusComposer.SplitHidden(null, new[] { new JfSeason { Season = 3, Hidden = true } });
-        var partly = StatusComposer.SeriesCard(facts, item, Ctx(), season3);
+        var partly = StatusComposer.SeriesCard(facts, item, Ctx(), season3, new[] { visibleCopy });
         Assert.Equal((StatusStage.Downloading, 1, 50), (partly.Stage, partly.Summary!.Downloading, partly.Progress!.Percent));
-        Assert.Equal(StatusStage.Downloading, StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(), season3).Stage);
+        Assert.Equal(StatusStage.Downloading, StatusComposer.SeriesByKey(facts, new[] { visibleCopy }, Ctx(plays: true), season3).Stage);
         // Nothing hidden: both.
-        Assert.Equal(2, StatusComposer.SeriesCard(facts, item, Ctx()).Summary!.Downloading);
+        Assert.Equal(2, StatusComposer.SeriesCard(facts, item, Ctx(), copies: new[] { visibleCopy }).Summary!.Downloading);
+        // A card whose copy is unknown reads no Sonarr's queue (never the primary one by default).
+        Assert.Equal((StatusStage.Ready, 0), (StatusComposer.SeriesCard(facts, item, Ctx()).Stage, StatusComposer.SeriesCard(facts, item, Ctx()).Summary!.Downloading));
     }
 
     [Fact]
@@ -1354,9 +1392,9 @@ public class IntegrationArrStatusTests
         // Series by key: a hidden 4K copy matched to the 4K Sonarr; the standard Sonarr is downloading.
         var sonarr4k = new ArrConnection { Id = "6d0b7d1c-0000-4000-8000-0000000000a4", Kind = ArrKind.Sonarr, Name = "Sonarr 4K (lab)", Url = "http://sonarr4k.lan:8989", Role = "4k" };
         var show = TwoSeasonsDownloading();
-        var standard = show.Copies[0];
-        var noFiles = new ArrSeriesEntry { Id = standard.Series!.Id, TvdbId = 279121, Title = "Show", Monitored = true, Path = "/data/tv/Show", Seasons = standard.Series.Seasons };
-        show.Copies[0] = new ArrCopyFacts(Sonarr) { Series = noFiles, Queue = standard.Queue };
+        var (standardSeries, _, standardQueue) = TwoSeasonsDownloadingArr();
+        var noFiles = new ArrSeriesEntry { Id = standardSeries.Id, TvdbId = 279121, Title = "Show", Monitored = true, Path = "/data/tv/Show", Seasons = standardSeries.Seasons };
+        show.Copies[0] = new ArrCopyFacts(Sonarr) { Series = noFiles, Queue = standardQueue };
         show.Copies.Add(new ArrCopyFacts(sonarr4k) { Series = new ArrSeriesEntry { Id = 9, TvdbId = 279121, Title = "Show", Monitored = true, Path = "/data/tv4k/Show", EpisodeFileCount = 3 } });
         var hiddenShow = new JfCopy { ItemId = Guid.NewGuid(), Visible = false, Path = "/media/tv4k/Show", LibraryName = "TV 4K" };
         Assert.Equal(StatusStage.Downloading, StatusComposer.SeriesByKey(show, new[] { hiddenShow }, Ctx()).Stage);
@@ -1378,7 +1416,7 @@ public class IntegrationArrStatusTests
         Assert.True(hidden.WithFile.Contains((1, 60)));
         Assert.False(hidden.Hides(1, 61));
         var copy = new ArrCopyFacts(Sonarr) { Series = new ArrSeriesEntry { Id = 1, TvdbId = 100, Title = "Show" } };
-        var states = StatusComposer.EpisodeStates(copy, 1,
+        var states = StatusComposer.EpisodeStates(copy.Through(HiddenParts.None), 1,
             new[] { new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 1, EpisodeEnd = 60 } }, Ctx());
         Assert.Equal(60, states.Count);
         Assert.Equal(StatusStage.Ready, Assert.Single(states, row => row.Episode == 55).State.Stage);
@@ -1414,7 +1452,7 @@ public class IntegrationArrStatusTests
                 new ArrEpisodeEntry { Id = 5000, SeasonNumber = 1, EpisodeNumber = 5000, Monitored = true },
             }),
         });
-        Assert.Empty(StatusComposer.EpisodeStates(facts.Copies[0], 1, visible, Ctx(), hidden));
+        Assert.Empty(StatusComposer.EpisodeStates(facts.Copies[0].Through(hidden), 1, visible, Ctx()));
         var item = new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Season = 1, Key = ShowKey.WithSeason(1) };
         var status = StatusComposer.Season(facts, item, jf, Ctx(), detail: true);
         Assert.Empty(status.Episodes!);
@@ -1439,19 +1477,20 @@ public class IntegrationArrStatusTests
             new JfEpisode { Season = 1, Episode = 1, EpisodeEnd = end, Hidden = true },
         }).ToArray(), null);
         Assert.False(hidden.Hides(1, 5000));
-        var copy = new ArrCopyFacts(Sonarr) { Series = new ArrSeriesEntry { Id = 1, TvdbId = 279121, Title = "Show" } };
-        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes, StatusComposer.EpisodeStates(copy, 1, jf, Ctx()).Count);
+        var showSeries = new ArrSeriesEntry { Id = 1, TvdbId = 279121, Title = "Show" };
+        var copy = new ArrCopyFacts(Sonarr) { Series = showSeries };
+        Assert.Equal(EpisodeRange.MaxSyntheticEpisodes, StatusComposer.EpisodeStates(copy.Through(HiddenParts.None), 1, jf, Ctx()).Count);
         var facts = new TitleFacts(ShowKey);
         facts.Copies.Add(copy);
         var card = StatusComposer.Season(facts,
             new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Season = 1, Key = ShowKey.WithSeason(1) },
             jf, Ctx(), detail: false);
         Assert.Equal(end, card.Summary!.Ready); // statistics count intervals, never synthetic rows
-        copy = new ArrCopyFacts(Sonarr) { Series = copy.Series, Episodes = new ArrEpisodesSnapshot(1, new[]
+        copy = new ArrCopyFacts(Sonarr) { Series = showSeries, Episodes = new ArrEpisodesSnapshot(1, new[]
         {
             new ArrEpisodeEntry { Id = 5000, SeasonNumber = 1, EpisodeNumber = 5000, Monitored = true },
         }) };
-        var rows = StatusComposer.EpisodeStates(copy, 1, jf, Ctx());
+        var rows = StatusComposer.EpisodeStates(copy.Through(HiddenParts.None), 1, jf, Ctx());
         Assert.Equal(StatusStage.Ready, Assert.Single(rows, r => r.Episode == 5000).State.Stage);
         Assert.Equal(EpisodeRange.MaxSyntheticEpisodes + 1, rows.Count);
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));

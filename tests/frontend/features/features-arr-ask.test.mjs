@@ -338,6 +338,219 @@ test('banner mode (missing episodes not shown as rows): states per episode and G
   assert.match(h.document.querySelector('.je-ask-banner-action').textContent, /E4 · Waiting for OK/);
 });
 
+/** A status whose episodes in `gaps` another copy the viewer can open plays (the server's copyGap: this page's copy role). */
+function withGaps(status, gaps, role = 'standard') {
+  return { ...status, episodes: status.episodes.map(e => (gaps.includes(e.episode) ? { ...e, copyGap: role } : e)) };
+}
+
+test('a gap another copy plays is that copy\'s gap: the banner, Get them and the row chip name the copy; others stay plainly Missing', async t => {
+  // E2 plays in the 4K copy right beside this standard copy's rows; nobody has E4.
+  const h = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const banner = h.document.querySelector('.je-arr-banner');
+  same([...banner.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing: E4', 'Missing in the standard copy: E2']);
+  const btn = banner.querySelector('.je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in standard');
+  assert.equal(btn.getAttribute('aria-label'), 'Get the episodes missing in the standard copy: E2, E4');
+  btn.click();
+  await settle(20);
+  same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
+
+  // Only a copy's gap left: no title-wide "Missing" at all; one episode names it too. A 4K page says 4K; another role "this copy".
+  const only = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsByEdition({ displayMissing: false, requests4k: { 2: 'waiting' } }) } });
+  await only.open();
+  const b = only.document.querySelector('.je-arr-banner');
+  same([...b.querySelectorAll('.je-arr-banner-title')].map(n => n.textContent), ['Missing in the 4K copy: E2, E4']);
+  assert.equal(b.querySelector('.je-ask-get').textContent, 'downloadGet E4 in 4K');
+  // A custom copy: no request names it (D53, edition round 15), so nothing is offered under its name.
+  const custom = setup(t, { status: withCopy(season(), [2, 4], 'custom', { variant: null, ask: false, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await custom.open();
+  same([...custom.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in this copy: E2, E4']);
+  assert.equal(custom.document.querySelector('.je-arr-banner .je-ask-get'), null);
+
+  // Rows mode: the JE row of a copy's gap says so; the others keep "Missing".
+  const rows = setup(t, { status: withCopy(season(), [2], 'standard', { variant: 'standard', ask: true, search: true }) });
+  await rows.open();
+  assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, 'Missing in standard');
+  assert.equal(rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
+  // Phase 1 alone (no asking): the chips say it the same way.
+  assert.equal(rows.JE.arrStatus.chipText({ stage: 'looking', reason: { code: 'no_release_yet' }, copyGap: 'standard' }), 'Missing in standard');
+});
+
+/** A status whose gaps are the page copy's (`role`), with the server's binding of that copy (null: an older server, none). */
+function withCopy(status, gaps, role, copy) {
+  const next = withGaps(status, gaps, role);
+  return copy ? { ...next, copy: { role, ...copy } } : next;
+}
+
+const KID_4K = { role: 'kid', canRequest: true, contact: 'Dad', asksFirst: true, can4kSeries: true };
+
+test('one binding decides wording and action: Get them in 4K asks for the 4K edition; a copy no ask reaches gets no button under its name', async t => {
+  // The 4K page: E2 and E4 are its gaps (the standard copy plays them); a 4K request lands on its Sonarr.
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  btn.click();
+  await settle(20);
+  same({ variant: h.posts[0].body.input.variant, episodes: h.posts[0].body.input.episodes }, { variant: '4k', episodes: [{ season: 1, episode: 2 }, { season: 1, episode: 4 }] }, 'the 4K edition, as the button says');
+
+  // Rows mode: the row's Get it beside "Missing in 4K" asks for the 4K edition too.
+  const rows = setup(t, { status: withCopy(season(), [2], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K } });
+  await rows.open();
+  const two = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-arr-chip').textContent, 'Missing in 4K');
+  assert.equal(two.querySelector('.je-ask-get').getAttribute('aria-label'), 'Get episode 2 for the 4K copy: Two');
+  two.querySelector('.je-ask-get').click();
+  await settle(20);
+  assert.equal(rows.posts[0].body.input.variant, '4k');
+  // A title-wide gap on the same page keeps its plain Get it (a standard ask).
+  rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  await settle(20);
+  same({ variant: rows.posts[1].body.input.variant, label: rows.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent }, { variant: 'standard', label: 'Waiting for OK' });
+
+  // Someone who may not ask for 4K: nothing under the 4K copy's name.
+  const no4k = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { rows: () => rowsBody({ displayMissing: false }) } });
+  await no4k.open();
+  assert.equal(no4k.document.querySelector('.je-arr-banner .je-ask-get'), null);
+  // A copy no request reaches (an anime Sonarr: asks go to the standard one), or a server that names no binding: no button either.
+  for (const copy of [{ variant: null, ask: false, search: false }, null]) {
+    const h2 = setup(t, { status: withCopy(season(), [2, 4], 'anime', copy), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+    await h2.open();
+    assert.equal(h2.document.querySelector('.je-arr-banner .je-ask-get'), null, `binding ${JSON.stringify(copy)}`);
+    same([...h2.document.querySelectorAll('.je-arr-banner .je-arr-banner-title')].map(n => n.textContent), ['Missing in the anime copy: E2, E4'], 'the words stay');
+  }
+});
+
+test('one binding decides Search: an administrator searches the copy\'s own instance; a household Search that can\'t reach it asks for that copy\'s edition', async t => {
+  const fourK = { variant: '4k', ask: true, search: false };
+  const admin = setup(t, {
+    status: { ...withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...fourK, instanceId: 'son4k' }) },
+    config: { ArrManageDrawerEnabled: true },
+    server: { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) }
+  });
+  await admin.open();
+  const btn = admin.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search in 4K');
+  btn.click();
+  await settle(20);
+  same({ path: admin.posts[0].path, instanceId: admin.posts[0].body.instanceId }, { path: '/arr/admin/manage/search', instanceId: 'son4k' }, 'the 4K Sonarr, never the standard one');
+
+  // A Kid's Search runs on standard copies only: under the 4K name the button asks for the 4K edition instead.
+  const kid = setup(t, { status: withCopy(longMissing(), [2, 4], '4k', fourK), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await kid.open();
+  const get = kid.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(get.querySelector('.je-ask-get-text').textContent, 'Get them in 4K');
+  get.click();
+  await settle(20);
+  same(kid.searches, [], 'no household Search (it would search the standard copy)');
+  assert.equal(kid.posts[0].body.input.variant, '4k');
+  // Its rows too.
+  const rows = setup(t, { status: withCopy(longMissing(), [2], '4k', fourK), server: { me: KID_4K } });
+  await rows.open();
+  const row = rows.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(row.querySelector('.je-ask-get-text').textContent, 'Get it');
+  row.click();
+  await settle(20);
+  same({ searches: rows.searches.length, variant: rows.posts[0].body.input.variant }, { searches: 0, variant: '4k' });
+
+  // The standard copy: a household Search reaches it (its request target), as before.
+  const standard = setup(t, {
+    status: withCopy(longMissing(), [2, 4], 'standard', { variant: 'standard', ask: true, search: true }),
+    server: { rows: () => rowsBody({ displayMissing: false }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) }
+  });
+  await standard.open();
+  const search = standard.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(search.querySelector('.je-ask-get-text').textContent, 'Search in standard');
+  search.click();
+  await settle(30);
+  same(standard.searches.map(x => x.body.key), ['tv:tvdb:1:s1']);
+});
+
+const MEMBER_4K = { role: 'member', canRequest: true, contact: 'Dad', asksFirst: false, can4kSeries: true };
+
+test('check at click: "Search in 4K" for a 4K copy no ask reaches, after a permission change, refreshes the controls and sends nothing', async t => {
+  // An administrator's page of a second 4K Sonarr's copy: a 4K ask goes to the default 4K Sonarr (another copy), so the
+  // binding offers only the administrator's Search on the copy's own instance.
+  const bound = { variant: '4k', ask: false, search: false };
+  const server = { me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
+  const h = setup(t, { status: withCopy(longMissing({ admin: true }), [2, 4], '4k', { ...bound, instanceId: 'son4kB' }), config: { ArrManageDrawerEnabled: true }, server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search in 4K');
+  // They are no longer an administrator: the server names no instance now, and their capabilities are read again.
+  server.me = MEMBER_4K;
+  h.setStatus(withCopy(longMissing(), [2, 4], '4k', bound));
+  await h.JE.arrAsk.me(true);
+  btn.click();
+  await settle(40);
+  same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
+  const now = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.ok(!now || now.querySelector('.je-ask-get-text').textContent !== 'Search in 4K', 'the controls are drawn again for what is allowed now');
+  assert.equal(h.toasts.at(-1), translate('arr_ask_changed'), 'and the person is told why nothing happened');
+});
+
+test('check at click: a row\'s Search for that copy, after a permission change, sends nothing', async t => {
+  const bound = { variant: '4k', ask: false, search: false };
+  const server = { me: ADMIN_ME, post: () => ({ status: 200, body: { status: 'Succeeded', found: null } }) };
+  const h = setup(t, { status: withCopy(longMissing({ admin: true }), [2], '4k', { ...bound, instanceId: 'son4kB' }), config: { ArrManageDrawerEnabled: true }, server });
+  await h.open();
+  const row = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  assert.equal(row.dataset.mode, 'search');
+  server.me = MEMBER_4K;
+  h.setStatus(withCopy(longMissing(), [2], '4k', bound));
+  await h.JE.arrAsk.me(true);
+  row.click();
+  await settle(40);
+  same({ posts: h.posts, searches: h.searches }, { posts: [], searches: [] }, 'nothing sent: no ask for the default 4K Sonarr in place of the Search');
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-search'), null, 'no Search under the copy\'s name any more');
+});
+
+test('check at click: "Get them in 4K" asks only while the 4K ask is still allowed and still reaches the copy', async t => {
+  // The 4K permission is taken away after the page was drawn.
+  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  server.me = { ...KID_4K, can4kSeries: false };
+  btn.click();
+  await settle(40);
+  same(h.posts, [], 'no 4K ask once it is no longer allowed');
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-get'), null, 'nothing under the 4K copy\'s name any more');
+
+  // The binding changed: a 4K ask no longer lands on this copy (the default 4K Sonarr is now another one).
+  const moved = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await moved.open();
+  moved.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
+  moved.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(40);
+  same(moved.posts, [], 'no ask for a copy it no longer reaches');
+
+  // Nothing changed: it asks for exactly what it says.
+  const kept = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await kept.open();
+  kept.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(40);
+  assert.equal(kept.posts[0]?.body.input.variant, '4k');
+});
+
+test('the season summary counts a copy\'s own gaps as the rows do ("1 missing" and "1 missing in standard")', t => {
+  const h = setup(t);
+  const pieces = h.JE.arrStatus.summaryPieces({ kind: 'season', summary: { aired: 4, ready: 2, missing: 2, longMissing: 2, missingInCopy: 1 }, copy: { role: 'standard' } }).map(p => p.text);
+  assert.ok(pieces.includes('1 missing') && pieces.includes('1 missing in standard'), pieces.join(' | '));
+  const all = h.JE.arrStatus.summaryPieces({ kind: 'season', summary: { aired: 4, ready: 2, missing: 2, longMissing: 2, missingInCopy: 2 }, copy: { role: '4k' } }).map(p => p.text);
+  assert.ok(all.includes('2 missing in 4K') && !all.some(x => /^\d+ missing$/.test(x)), all.join(' | '));
+});
+
+test('phones: a chip on a row\'s thumbnail stays inside the thumbnail (it wraps), never over Jellyfin\'s title', t => {
+  const h = setup(t);
+  const css = [...h.document.querySelectorAll('style')].map(s => s.textContent).join('\n');
+  const rule = /\.je-arr-chip-overlay\s*\{([^}]*)\}/.exec(css)?.[1] || '';
+  assert.match(rule, /max-width:\s*calc\(100% - 12px\)/, rule);
+  assert.match(rule, /white-space:\s*normal/, rule);
+});
+
 test('a season that is not in the library at all: the banner lists it and leaves asking to Get Season N', async t => {
   const absent = {
     key: 'tv:tvdb:1:s1', itemId: SEASON_ID, kind: 'season', stage: 'notHere', reason: { code: 'not_in_arr' }, summary: { aired: 2 },
@@ -1163,4 +1376,384 @@ test('Seerr mode: a server refusal of single episodes reads in plain words', t =
   const refused = h.JE.arrAsk.interpret(409, { outcome: 'blocked', reason: 'seerr_whole_season_only' });
   assert.equal(refused.state, 'blocked', 'not "busy": asking again would be refused the same way');
   assert.equal(h.JE.arrAsk.describe(refused, SEERR_MEMBER, null).text, "Seerr takes whole seasons, so single episodes can't be asked for. Ask for the season instead.");
+});
+
+// ------------------------------------------------------------------ edition round 19: one press protocol, the server decides
+
+/** The rows answer with each edition's request states: `requests` (standard asks) and `requests4k` (4K asks). */
+function rowsByEdition({ requests = {}, requests4k = {}, displayMissing = true } = {}) {
+  const body = rowsBody({ displayMissing, requests });
+  for (const e of body.rows.episodes) e.request4k = requests4k[e.episode] || null;
+  return body;
+}
+
+test('press: Seerr turning to whole-series after "Get Season 1" was drawn never sends the whole series; nothing is widened behind the label', async t => {
+  const server = { me: SEERR_MEMBER, rows: () => rowsBody({ displayMissing: false }) };
+  const h = setup(t, { server });
+  h.JE.core.api.plugin = async (path) => (String(path).startsWith('/acquire/status?keys=')
+    ? { items: [{ key: 'tv:tvdb:1', kind: 'series', seasons: [{ season: 0 }, { season: 1 }, { season: 2 }] }] }
+    : { contact: 'Dad', items: [season()] });
+  await h.open();
+  await settle();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-banner-action .je-ask-get');
+  assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
+  // Seerr's partial-request setting is turned off after the page was drawn.
+  server.me = { ...SEERR_MEMBER, seerrWholeSeries: true };
+  btn.click();
+  await settle(40);
+  assert.ok(h.posts.every(p => JSON.stringify(p.body.input.seasons) === '[1]'), `posted ${JSON.stringify(h.posts.map(p => p.body.input))}`);
+  assert.ok(h.posts.every(p => p.body.expect?.whole === false), 'whatever goes says what it was drawn as, so the server can refuse it');
+  assert.ok(h.toasts.length > 0, 'the person is told');
+});
+
+test('press: a capabilities read that fails at the press sends nothing and says so', async t => {
+  let fail = false;
+  const server = { me: MEMBER_ME, rows: () => rowsBody({ displayMissing: false }), meGate: () => (fail ? Promise.reject(new Error('offline')) : Promise.resolve()) };
+  const h = setup(t, { server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.ok(btn, 'Get them drawn');
+  fail = true;
+  btn.click();
+  await settle(40);
+  same(h.posts, [], 'nothing sent on a failed check');
+  assert.equal(h.toasts.at(-1), translate('arr_ask_check_failed'));
+});
+
+test('press: the episode dialog\'s Search and its row\'s Search for one episode run one search', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const server = { me: ADMIN_ME, post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) };
+  const h = setup(t, { status: longMissing({ admin: true }), config: { ArrManageDrawerEnabled: true }, server });
+  await h.open();
+  const row = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
+  const { get } = openDialog(h, 2);
+  assert.ok(get && row, 'both offer Search for E2');
+  // Both presses are checked while the first check's capability read is still out.
+  server.meGate = () => gate;
+  get.click();
+  row.click();
+  release();
+  await settle(60);
+  assert.equal(h.posts.filter(p => p.path === '/arr/admin/manage/search').length, 1, `posts ${JSON.stringify(h.posts.map(p => p.path))}`);
+});
+
+test('press: the same season read again while the press is checked still acts on what was drawn (never a silent drop)', async t => {
+  let release;
+  let held = false;
+  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }), meGate: () => (held ? new Promise(resolve => { release = resolve; }) : Promise.resolve()) };
+  const status = withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' });
+  const h = setup(t, { status, server });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  held = true;
+  btn.click();
+  await settle(5);
+  // The status of the same season is read again (a live update): a new state object, the same facts.
+  h.setStatus(JSON.parse(JSON.stringify(status)));
+  await h.JE.internals.arrStatusDetails.update(true);
+  await settle();
+  release();
+  await settle(40);
+  assert.ok(h.posts.length === 1 || h.toasts.length > 0, 'it acts, or says why not');
+  assert.equal(h.posts.length, 1, 'nothing about the press changed: it is sent');
+  assert.equal(h.posts[0].body.input.variant, '4k');
+});
+
+test('press: a refused press moves the focus to the control that replaced it, or a stable place on the page, never to nothing', async t => {
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await h.open();
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  btn.focus();
+  // The binding moved after the page was drawn: a 4K ask no longer lands on this copy.
+  h.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
+  btn.click();
+  await settle(40);
+  same(h.posts, []);
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active), `focus on ${active?.tagName}.${active?.className}`);
+  assert.ok(active.closest('#itemDetailPage'), 'on the season page');
+});
+
+test('press: a 4K copy\'s control reads the 4K asks; a standard ask never blocks a 4K gap', async t => {
+  const status = withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' });
+  const h = setup(t, { status, server: { me: KID_4K, rows: () => rowsByEdition({ requests: { 2: 'waiting' }, requests4k: { 4: 'waiting' } }) } });
+  await h.open();
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"]');
+  assert.ok(two.querySelector('.je-ask-get'), 'E2: only a standard ask waits; the 4K gap can still be asked for');
+  assert.match(two.querySelector('.je-ask-get').getAttribute('aria-label'), /4K/);
+  assert.equal(four.querySelector('.je-arr-chip').textContent, translate('arr_ask_chip_waiting'), 'E4: its 4K ask waits for an OK');
+  assert.equal(four.querySelector('.je-ask-get'), null);
+});
+
+test('press: an administrator\'s banner Search for E2 and E4 searches exactly E2 and E4', async t => {
+  const h = setup(t, { status: longMissing({ admin: true }), config: { ArrManageDrawerEnabled: true }, server: {
+    me: ADMIN_ME, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } })
+  } });
+  await h.open();
+  const button = h.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.match(button.getAttribute('aria-label'), /E2, E4/);
+  button.click();
+  await settle(24);
+  assert.equal(h.posts.length, 1);
+  assert.equal(h.posts[0].path, '/arr/admin/manage/search');
+  same(h.posts[0].body.episodes, [2, 4], 'the episodes it names, never the whole season');
+});
+
+test('press: every season-page control sends what it was drawn to do, and a server refusal redraws and says so', async t => {
+  // Row Get it (title-wide).
+  const a = setup(t);
+  await a.open();
+  a.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(20);
+  same(a.posts[0].body.expect, { item: SEASON_ID, mode: 'get', episodes: [2], copy: null, variant: 'standard', dest: null, instance: null, whole: false, seasons: null });
+  // Banner Get them in 4K (a copy's binding, with where the request lands).
+  const b = setup(t, { status: withCopy(season(), [2, 4], '4k', { variant: '4k', ask: true, search: false, dest: 'd4k' }), server: { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) } });
+  await b.open();
+  b.document.querySelector('.je-arr-banner .je-ask-get').click();
+  await settle(20);
+  same(b.posts[0].body.expect, { item: SEASON_ID, mode: 'get', episodes: [2, 4], copy: '4k', variant: '4k', dest: 'd4k', instance: null, whole: false, seasons: null });
+  // An administrator's row Search (the instance it runs on).
+  const c = setup(t, { status: longMissing({ admin: true }), config: { ArrManageDrawerEnabled: true }, server: { me: ADMIN_ME, post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) } });
+  await c.open();
+  c.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(20);
+  same({ mode: c.posts[0].body.expect?.mode, instance: c.posts[0].body.expect?.instance, episodes: c.posts[0].body.expect?.episodes }, { mode: 'search', instance: 'son1', episodes: [2] });
+  // A household Search.
+  const d = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household' } }), search: () => ({ status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched.', found: false } }) } });
+  await d.open();
+  d.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(20);
+  same({ mode: d.searches[0].body.expect?.mode, episodes: d.searches[0].body.expect?.episodes, item: d.searches[0].body.expect?.item }, { mode: 'search', episodes: [2], item: SEASON_ID });
+  // The server refuses a press that no longer matches: the page is drawn again and the person told, nothing claimed as asked.
+  const e = setup(t, { server: { post: () => ({ status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } }) } });
+  await e.open();
+  e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  await settle(30);
+  assert.equal(e.toasts.at(-1), translate('arr_ask_changed'));
+  assert.notEqual(e.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-arr-chip').textContent, translate('arr_ask_chip_asked'));
+});
+
+// ------------------------------------------------------------------ edition round 20: per-edition capabilities, focus, Seerr mode
+
+/** The rows answer with each edition's own policy answer: the standard edition's (`canRequest`, `blocked`) and the 4K one's. */
+function rowsPerEdition({ canRequest = true, blocked = null, canRequest4k = true, blocked4k = null, displayMissing = true } = {}) {
+  const body = rowsBody({ displayMissing, canRequest, blocked });
+  body.rows.canRequest4k = canRequest4k;
+  body.rows.blocked4k = blocked4k;
+  return body;
+}
+
+const FOUR_K_COPY = { variant: '4k', ask: true, search: false, dest: 'd4k' };
+
+test('per edition: a 4K copy\'s Get it is offered while only the standard edition is paused (its drive is full)', async t => {
+  const rows = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest: false, blocked: FULL }) } });
+  await rows.open();
+  for (const n of [2, 4]) {
+    const row = rows.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    const get = row.querySelector('.je-ask-get');
+    assert.ok(get, `E${n}: the 4K gap can be asked for in 4K`);
+    assert.match(get.getAttribute('aria-label'), /4K/);
+    assert.equal(row.querySelector('.je-ask-paused'), null, `E${n}: the standard edition's pause is not this control's`);
+  }
+  const banner = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest: false, blocked: FULL, displayMissing: false }) } });
+  await banner.open();
+  const btn = banner.document.querySelector('.je-arr-banner .je-ask-get');
+  assert.ok(btn, 'Get them in 4K drawn');
+  assert.equal(btn.textContent, 'downloadGet them in 4K');
+  btn.click();
+  await settle(20);
+  assert.equal(banner.posts.length, 1);
+  assert.equal(banner.posts[0].body.input.variant, '4k');
+});
+
+test('per edition: a 4K copy\'s gap says the 4K edition\'s pause, and no 4K Get it, while the standard edition may still ask', async t => {
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest4k: false, blocked4k: FULL }) } });
+  await h.open();
+  for (const n of [2, 4]) {
+    const row = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${n}"]`);
+    assert.equal(row.querySelector('.je-ask-get'), null, `E${n}: no 4K ask while the 4K edition is paused`);
+    assert.equal(row.querySelector('.je-ask-paused')?.textContent, 'Paused: storage full', `E${n}: the 4K edition's own pause`);
+    assert.equal(row.querySelector('.je-ask-paused')?.title, FAMILY_TEXT);
+  }
+  // The 4K edition's own refusal is what the banner says too.
+  const banner = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server: { me: KID_4K, rows: () => rowsPerEdition({ canRequest4k: false, blocked4k: FULL, displayMissing: false }) } });
+  await banner.open();
+  const action = banner.document.querySelector('.je-arr-banner .je-ask-banner-action');
+  assert.equal(action?.querySelector('.je-ask-get') ?? null, null, 'no Get them in 4K');
+  assert.equal(action?.querySelector('.je-ask-paused-title')?.textContent, 'Paused: storage full');
+});
+
+test('focus: a refused press keeps the focus on the page however long the redraw after it takes', async t => {
+  let release = null;
+  const server = { me: KID_4K, rows: () => rowsBody({ displayMissing: false }) };
+  const h = setup(t, { status: withCopy(season(), [2, 4], '4k', FOUR_K_COPY), server });
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    // The server refuses (the binding moved), and the season's status read again is slow to come back.
+    h.setStatus(withCopy(season(), [2, 4], '4k', { variant: '4k', ask: false, search: false }));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const btn = h.document.querySelector('.je-arr-banner .je-ask-get');
+  btn.focus();
+  btn.click();
+  await settle(40);
+  assert.ok(release, 'the press reached the server');
+  // Five seconds pass before the status read comes back and the page is drawn without the button.
+  const realNow = h.window.Date.now;
+  h.window.Date.now = () => realNow() + 5000;
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.querySelector('.je-arr-banner .je-ask-get'), null, 'the 4K button is gone after the redraw');
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active), `focus on ${active?.tagName}.${active?.className}`);
+  assert.ok(active.closest('#itemDetailPage'), 'on the season page');
+});
+
+test('focus: a Get it refused from the episode dialog on a TV keeps the focus on the page after its row is gone', async t => {
+  let release;
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    // The episode arrived meanwhile: the server refuses, and the status read that redraws the page is slow.
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  assert.ok(release, 'the press reached the server');
+  assert.equal(h.document.activeElement.dataset.jeAskEpisode, '2', 'the dialog gave the focus back to its row');
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]'), null, 'the row is gone after the redraw');
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active) && active.closest('#itemDetailPage'),
+    `focus after the refusal and redraw: ${active?.tagName}.${active?.className}`);
+});
+
+test('focus: on a TV, a Get it refused after a live redraw removed its row while the dialog was open lands next to that row', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => ({ status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } });
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  const get = h.document.querySelector('.je-ask-dialog .je-ask-get');
+  assert.ok(get, 'the dialog offers Get it');
+  // The episode arrives and the page is drawn again (a live update) while the dialog is still open: its row goes.
+  h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+  await h.JE.internals.arrStatusDetails.update(true);
+  await settle(20);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(20);
+  assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]'), null, 'the row is gone before the press');
+  assert.ok(h.document.querySelector('.je-ask-dialog .je-ask-get'), 'the dialog is still open');
+  get.focus();
+  get.click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const active = h.document.activeElement;
+  assert.ok(active && active !== h.document.body && h.document.contains(active) && active.closest('#itemDetailPage'),
+    `focus after the refusal: ${active?.tagName}.${active?.className}`);
+});
+
+test('focus: when the host draws the list again under the recovered focus and moves it to the top, the next redraw puts it back by the row', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const row = recovered?.closest?.('.listItem');
+  assert.ok(row && row.dataset.jeAskEpisode !== '2', `recovered next to the row: ${recovered?.className}`);
+  // The host refreshes its page by itself: its focus manager takes the page's first button (no key or click of the person's),
+  // then its list is drawn again (the row that had the focus is replaced).
+  const page = h.document.querySelector('#itemDetailPage');
+  const top = h.document.createElement('button');
+  top.className = 'btnPlay';
+  page.prepend(top);
+  top.focus();
+  row.replaceWith(row.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const active = h.document.activeElement;
+  assert.notEqual(active, top, 'not left on the top button');
+  assert.equal(active?.closest?.('.listItem')?.dataset?.jeAskEpisode, row.dataset.jeAskEpisode, 'back by the row');
+});
+
+test('focus: a refused press never takes the focus back from where the person moved it', async t => {
+  let release;
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  const plugin = h.JE.core.api.plugin;
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    const gate = new Promise(resolve => { release = resolve; });
+    h.JE.core.api.plugin = async (...args) => { await gate; return plugin(...args); };
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus();
+  two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  // The person moves on to another row before the redraw.
+  const other = h.list().querySelector('.je-ask-row:not([data-je-ask-episode="2"])') || h.list().firstElementChild;
+  if (other.tagName !== 'BUTTON' && !other.hasAttribute('tabindex')) other.tabIndex = -1;
+  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  other.focus();
+  release();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.ok(h.document.contains(other), 'the row the person moved to is still there');
+  assert.equal(h.document.activeElement, other, 'the deliberate move stands');
+});
+
+test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an older server says about its binding', async t => {
+  const status = withCopy(season(), [2], '4k', FOUR_K_COPY);
+  const h = setup(t, { status, server: { me: { ...SEERR_MEMBER, can4kSeries: true } } });
+  await h.open();
+  await settle();
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  assert.equal(two.querySelector('.je-ask-get'), null, 'no "Get it in 4K" for the 4K copy in Seerr mode');
+  // The title-wide control (an episode no copy plays) is Seerr's ordinary season request.
+  const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get');
+  assert.ok(four, 'the ordinary Seerr ask stays');
+  assert.equal(four.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
+  four.click();
+  await settle(20);
+  assert.equal(h.posts.length, 1);
+  same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
 });

@@ -13,6 +13,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Model.Jellyseerr;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Automation;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Arr;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 {
@@ -22,6 +23,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// <param name="Movie4k">A 4K Radarr is set up in Seerr.</param>
     /// <param name="Series4k">A 4K Sonarr is set up in Seerr.</param>
     public sealed record SeerrRequestSettings(bool? Partial, bool Specials, bool Movie4k, bool Series4k);
+
+    /// <summary>
+    /// What a season page's title-wide Seerr ask is checked against when it is pressed (D53, edition round 19). Seerr picks the
+    /// server a request goes to (D80, edition round 20: Seerr mode is out of scope for edition awareness): Jellyfin Enhanced
+    /// never names one, proves one, nor offers a copy-qualified ask in Seerr mode.
+    /// </summary>
+    public interface ISeerrRequestSettings
+    {
+        /// <summary>
+        /// Whether Seerr takes whole-series requests only now (its partial-request setting off, or not a real on/off), read
+        /// again now; null when it can't be read.
+        /// </summary>
+        /// <param name="ct">Cancellation.</param>
+        /// <returns>True, false, or null (unknown).</returns>
+        Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct);
+    }
 
     /// <summary>A series' seasons as Seerr describes them (see <see cref="SeerrBackend.SeasonFactsAsync"/>).</summary>
     /// <param name="Started">Regular seasons that have started, ascending.</param>
@@ -63,7 +80,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
     /// administrator Seerr options, only by requests at the chosen server, profile and root folder (else it is held).
     /// A created request (and a read-back) with options counts only when every season asked for is covered there.
     /// </summary>
-    public sealed class SeerrBackend : IRequestBackend
+    public sealed class SeerrBackend : IRequestBackend, ISeerrRequestSettings
     {
         /// <summary>How long prepared identity facts may be used for policy decisions.</summary>
         internal static readonly TimeSpan PreparedFor = TimeSpan.FromMinutes(10);
@@ -544,6 +561,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var held = Volatile.Read(ref _settings);
             if (source == null || held == null || held.Source != source || _now() - held.At > FourKKnownFor) return null;
             return movie ? held.Settings.Movie4k : held.Settings.Series4k;
+        }
+
+        // ---------------- the whole-series setting ----------------
+
+        /// <inheritdoc />
+        public async Task<bool?> WholeSeriesOnlyAsync(CancellationToken ct)
+        {
+            var config = _config();
+            var source = config == null ? null : _model.SourceOf(config);
+            if (config == null || source == null) return null;
+            var settings = await SettingsAsync(config, source, fresh: true, ct).ConfigureAwait(false);
+            return settings == null ? null : settings.Partial != true;
         }
 
         private async Task<SeerrRequestSettings?> SettingsAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)

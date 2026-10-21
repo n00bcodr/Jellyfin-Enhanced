@@ -90,16 +90,19 @@
 
     /**
      * The request state shown for an episode: an optimistic one right after an ask, else the server's
-     * (the episode's own ask first, then an ask for the whole season).
+     * (the episode's own ask first, then an ask for the whole season), in the edition of the control's own binding
+     * (D53, edition round 19: a 4K copy's control reads the 4K asks, never a standard ask, and the other way round).
      * @param {number} episode Episode number.
+     * @param {string|null} [variant] The edition (default standard).
      * @returns {string|null} waiting, asked, declined, household or null.
      */
-    function requestState(episode) {
+    function requestState(episode, variant) {
         const optimistic = local.get(episode);
         if (optimistic) return optimistic.state;
         const rows = season?.rows;
         if (!rows) return null;
         const entry = (rows.episodes || []).find(e => e.episode === episode);
+        if (variant === '4k') return entry?.request4k || rows.seasonRequest4k || null;
         return entry?.request || rows.seasonRequest || null;
     }
 
@@ -115,7 +118,7 @@
      * @returns {string|null} waiting, asked, declined, household or null.
      */
     function shownState(ep) {
-        const state = requestState(ep.episode);
+        const state = requestState(ep.episode, bindingOf([ep])?.variant);
         if (state !== 'asked' && state !== 'household') return state;
         const mine = local.get(ep.episode);
         if (mine && !(mine.search && Date.now() - mine.at > SEARCHED_TTL_MS)) return state;
@@ -138,11 +141,28 @@
     }
 
     /**
-     * True when this page can offer Get it (feature on, rows loaded, the viewer may ask).
+     * True when this page can offer Get it for an edition (feature on, rows loaded, the viewer may ask: the caller's
+     * capabilities, once read, don't say otherwise, and that edition's own policy answer allows it). D53, edition round 20
+     * (per-edition capabilities): a 4K control reads the 4K edition's answer (`canRequest4k`, the caller's 4K permission),
+     * never the standard edition's, and the other way round: a full standard drive never hides a 4K ask.
+     * @param {'standard'|'4k'} [variant] The edition (default standard).
      * @returns {boolean} Can ask.
      */
-    function canAsk() {
-        return !!(JE.arrAsk?.enabled() && season?.rows?.canRequest);
+    function canAsk(variant) {
+        const rows = season?.rows;
+        if (!(JE.arrAsk?.enabled() && rows && season.caps?.canRequest !== false && season.caps?.canRequestSeries !== false)) return false;
+        if (variant === '4k') return (rows.canRequest4k ?? rows.canRequest) === true && season.caps?.can4kSeries === true;
+        return !!rows.canRequest;
+    }
+
+    /**
+     * The edition the control for these episodes asks in: its copy binding's (a 4K copy's gap: 4K), else standard.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {'standard'|'4k'} Edition.
+     */
+    function editionOf(eps, status) {
+        return bindingOf(eps, status)?.variant === '4k' ? '4k' : 'standard';
     }
 
     /**
@@ -150,20 +170,324 @@
      * policy says (monitored, missing for a long while, the Manage drawer on and an instance holding it):
      * the arr's own search needs no request.
      * @param {Object} ep Episode status.
+     * @param {Object|null} [status] Season status (default: the one shown).
      * @returns {boolean} Search offered.
      */
-    function adminSearchable(ep) {
+    function adminSearchable(ep, status) {
         if (!JE.arrAsk?.enabled() || !season?.rows || !JE.arrStatus?.searchable?.(ep)) return false;
-        return !!JE.arrAsk.searchInstance?.(season.caps, season.statusRef, ep.key);
+        return !!adminInstance([ep], status || null, ep.key);
     }
 
     /**
-     * True when the episode gets a button (Get it, or Search).
+     * The one copy binding a control for these episodes acts on (D53, edition round 15: one binding decides wording and
+     * action). Null when none of them is a gap of this page's copy only: the control is title-wide (plain words, a standard
+     * ask). For a copy's gap, the season's `copy` from the server: the edition a request names and whether that request
+     * reaches the copy's Sonarr, whether a household Search does, and (administrators) the copy's instance. A server that
+     * names none for that copy: nothing reaches it.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {{role: string, variant: string|null, ask: boolean, search: boolean, instanceId?: string}|null} Binding.
+     */
+    function bindingOf(eps, status) {
+        const gap = eps.find(ep => ep?.copyGap)?.copyGap;
+        if (!gap) return null;
+        const copy = (status || season?.statusRef)?.copy;
+        return copy && copy.role === gap ? copy : { role: gap, variant: null, ask: false, search: false };
+    }
+
+    /**
+     * The instance an administrator's Search for these episodes runs on: the copy's own Sonarr under a copy's binding, else
+     * the title's (JE.arrAsk.searchInstance). Null when the caller can't run one.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} status Season status (null: the one shown).
+     * @param {string} key Title key in scope.
+     * @param {Object|null} [caps] Capabilities (default: the season's).
+     * @returns {string|null} Instance id.
+     */
+    function adminInstance(eps, status, key, caps) {
+        const who = caps || season?.caps;
+        const binding = bindingOf(eps, status);
+        if (!binding) return JE.arrAsk.searchInstance?.(who, status || season?.statusRef, key) || null;
+        if (who?.role !== 'admin' || JE.pluginConfig?.ArrManageDrawerEnabled !== true) return null;
+        return binding.instanceId || null;
+    }
+
+    /**
+     * What a control under a copy's binding may do: 'search' when its Search reaches the copy (an administrator's on the
+     * copy's own Sonarr, a household Search on its request target), else 'get' when an ask for the copy's edition reaches it
+     * (and the viewer may ask for that edition), else null: nothing is offered under the copy's name. A title-wide control
+     * keeps its mode.
+     * @param {Object|null} binding Binding ({@link bindingOf}).
+     * @param {'get'|'search'} mode The mode the episodes would have.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status.
+     * @returns {'get'|'search'|null} Mode.
+     */
+    function reach(binding, mode, eps, status) {
+        if (!binding) return mode;
+        // Seerr mode is out of scope for edition awareness (D80): Seerr picks the server, so nothing acts under a copy's name.
+        if (JE.arrAsk?.seasonsOnly?.(season?.caps)) return null;
+        if (mode === 'search' && (adminInstance(eps, status || null, eps[0]?.key) || (binding.search && canAsk('standard')))) return 'search';
+        // An ask in the copy's edition needs that edition's own permission and policy answer (its target and drive).
+        if (binding.ask && canAsk(binding.variant === '4k' ? '4k' : 'standard')) return 'get';
+        return null;
+    }
+
+    /**
+     * True when the episode gets a button (Get it, or Search) that reaches what its chip names.
      * @param {Object} ep Episode status.
+     * @param {Object|null} [status] Season status (default: the one shown).
      * @returns {boolean} Offered.
      */
-    function offered(ep) {
-        return canAsk() || adminSearchable(ep);
+    function offered(ep, status) {
+        return (canAsk(editionOf([ep], status)) || adminSearchable(ep, status)) && modeOf(ep, status) !== null;
+    }
+
+    /**
+     * What a control for these episodes does, exactly (D53, edition round 19: the server decides every press): the season page
+     * it sits on, its mode, the episodes, the copy binding it acts for, the edition, where an ask lands (the server's opaque
+     * token) or the instance an administrator's Search runs on, and, for an ask Seerr takes as whole seasons, the whole-series
+     * policy it is drawn under and the seasons it names. The press sends it (`expect`) and the server works it out again and
+     * refuses any difference; the page compares it too, at the press, as a courtesy. Null for no control.
+     * @param {'get'|'search'|null} mode Mode.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} status Season status.
+     * @param {string} key Title key in scope (the episode's, or the season's for several).
+     * @returns {Object|null} The press intent.
+     */
+    function pressOf(mode, eps, status, key) {
+        if (!mode || !eps.length) return null;
+        const binding = bindingOf(eps, status);
+        const instance = mode === 'search' ? adminInstance(eps, status, key) : null;
+        if (!instance && !canAsk(binding?.variant === '4k' ? '4k' : 'standard')) return null;
+        const round = mode === 'get' && rounded();
+        const whole = round && !!JE.arrAsk.wholeSeriesOnly?.(season?.caps);
+        return {
+            item: normalize(status?.itemId || season?.itemId),
+            mode,
+            episodes: eps.map(ep => ep.episode).sort((a, b) => a - b),
+            copy: binding ? binding.role : null,
+            variant: binding?.variant || 'standard',
+            dest: binding && mode === 'get' ? (binding.dest || null) : null,
+            instance: instance || null,
+            whole,
+            // The seasons a rounded ask names: this season; the whole series' seasons are known only when it is sent.
+            seasons: round && !whole && Number.isInteger(season?.rows?.season) ? [season.rows.season] : null
+        };
+    }
+
+    /**
+     * {@link pressOf} as one comparable string (empty for no control): a control's signature, and what the press compares.
+     * @param {'get'|'search'|null} mode Mode.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} status Season status.
+     * @param {string} key Title key in scope.
+     * @returns {string} Intent.
+     */
+    function intentOf(mode, eps, status, key) {
+        const press = pressOf(mode, eps, status, key);
+        return press ? JSON.stringify(press) : '';
+    }
+
+    /** Presses being checked or sent, by season and episode: one press per episode at a time, whichever control it came from. */
+    const pressing = new Map();
+
+    /**
+     * Reserves a press for these episodes of a season, synchronously, before anything is awaited (D53, edition round 19: one
+     * press protocol): the episode dialog's button, its row's, the banner's, a keyboard or a remote all share it, so a second
+     * press of the same episode while the first is out does nothing. Null when one is out already; else the release.
+     * @param {string} itemId Season item id.
+     * @param {number[]} numbers Episode numbers.
+     * @returns {(function(): void)|null} Release.
+     */
+    function reserve(itemId, numbers) {
+        const keys = [...new Set(numbers)].map(n => `${itemId}|${n}`);
+        if (!keys.length || keys.some(k => pressing.has(k))) return null;
+        const token = {};
+        keys.forEach(k => pressing.set(k, token));
+        return () => keys.forEach((k) => { if (pressing.get(k) === token) pressing.delete(k); });
+    }
+
+    /**
+     * After a press that was not carried out (refused, or couldn't be checked) the page is read and drawn again, the person is
+     * told why, and the focus moves to the control that took the pressed one's place, else the nearest stable place (its row's
+     * title or chip, the banner), never to nothing (keyboard and TV users stay in place).
+     * @param {string} text What to say.
+     * @param {HTMLElement|null} button The control pressed.
+     * @param {string|null} [key] The season's key to read again.
+     * @returns {void}
+     */
+    function refused(text, button, key) {
+        // A control inside the episode dialog acts for the row that opened it (D53, edition round 21): the dialog gives the
+        // focus back to that row when it closes, so the row is where the person still is, and its place is what recovers.
+        const origin = button ? origins.get(button) || null : null;
+        const active = document.activeElement;
+        const hadFocus = !!button && (active === button || !active || active === document.body || (!!origin && (active === origin.el || origin.el.contains(active))));
+        const from = origin && document.contains(origin.el) ? origin.el : button;
+        const place = from?.closest?.('.listItem, .je-arr-banner') || null;
+        // Kept until the page has been drawn again from the season's status read after this (D53, edition round 20: tied to the
+        // pending redraw, never to a timer: that read may take any time), and dropped with the season. Its neighbours are
+        // remembered too: the row itself may be gone after the redraw (the episode arrived).
+        pendingFocus = hadFocus ? {
+            focusKey: button.dataset?.jeFocus || null,
+            originKey: origin?.focusKey || null,
+            place,
+            // The opener's row may already be gone (a live redraw while the dialog was open): its neighbours as they were then.
+            neighbours: place ? neighboursOf(place) : origin?.neighbours || [],
+            episode: button.dataset?.jeAskEpisode || origin?.episode || null,
+            drawn: season,
+            itemId: season?.itemId || null,
+            // Where the focus is now (the pressed control, or the row the dialog gave it back to); null: nowhere.
+            placed: active && active !== document.body ? active : null,
+            moved: false,
+            input: false
+        } : null;
+        const seasonKey = key || season?.statusRef?.key;
+        const reading = seasonKey ? JE.arrStatus.refresh([seasonKey]) > 0 : false;
+        JE.internals?.arrStatusEpisodes?.apply?.();
+        announce(text);
+        JE.arrAsk.toast(text);
+        focusStable();
+        // Nothing will draw the season again (no status read follows): the focus placed now is the last word.
+        if (!reading) pendingFocus = null;
+    }
+
+    /** Where the focus goes after a press that wasn't carried out (see {@link refused}), until the redraw after it. */
+    let pendingFocus = null;
+
+    /** What opened the episode dialog a control sits in (its row, that row's episode, focus key and neighbours): the control's origin. */
+    const origins = new WeakMap();
+
+    /**
+     * The rows next to a row (after it, then before it), by what a redraw keeps: an episode number or Jellyfin's item id.
+     * @param {Element|null} place Row.
+     * @returns {Array<{episode?: string, id?: string}>} Neighbours.
+     */
+    function neighboursOf(place) {
+        if (!place) return [];
+        return [place.nextElementSibling, place.previousElementSibling]
+            .map(n => n?.dataset?.jeAskEpisode ? { episode: n.dataset.jeAskEpisode } : n?.dataset?.id ? { id: n.dataset.id } : null).filter(Boolean);
+    }
+
+    /**
+     * Moves the focus, after a refused press, to the control that took the pressed one's place (the same focus key), else its
+     * row's title or chip, else the row next to where it was, else the banner; only while nothing else has the focus or the
+     * element it was put on went with a redraw, and until the person moves the focus themselves (or the season changes).
+     * @returns {void}
+     */
+    function focusStable() {
+        const want = pendingFocus;
+        if (!want) return;
+        // Another season is shown: the focus went with its page.
+        if (!season || (want.itemId && season.itemId !== want.itemId)) {
+            pendingFocus = null;
+            return;
+        }
+        // The person moved the focus themselves: it stays where they put it, and the recovery is over.
+        if (want.moved) {
+            pendingFocus = null;
+            return;
+        }
+        // The focus is where the recovery (or the dialog closing) put it, on something still on the page: nothing to do. When that
+        // element went with a redraw (the page's own list drawn again, the episode arrived), the focus fell to the page or the
+        // host moved it on its own; that was no move of the person's, so it is placed again (D53, edition round 21: the recovery
+        // lasts through the redraws, never a timer, and ends at the person's own move or with the season).
+        const active = document.activeElement;
+        const vanished = !!want.placed && !document.contains(want.placed);
+        if (active && active !== document.body && document.contains(active) && !vanished) return;
+        const page = document.querySelector('#itemDetailPage:not(.hide)') || document;
+        const byKey = key => (key ? page.querySelector(`[data-je-focus="${key}"]:not([disabled])`) : null);
+        const rowOf = n => page.querySelector(`.listItem[data-je-ask-episode="${n}"]`);
+        const replacement = byKey(want.focusKey) || byKey(want.originKey);
+        const row = want.place && document.contains(want.place) ? want.place : want.episode ? rowOf(want.episode) : null;
+        // The row is gone (the episode arrived): the row next to where it was, as the redraw has it.
+        const neighbour = row ? null : (want.neighbours || []).map(n => n.episode
+            ? rowOf(n.episode)
+            : [...page.querySelectorAll('[data-id]')].find(e => e.dataset.id === n.id)).find(Boolean) || null;
+        const stable = replacement
+            || (row && !row.classList.contains('je-arr-banner') ? row.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || row : null)
+            || (neighbour ? neighbour.querySelector('.je-ask-get:not([disabled]), .je-ask-row-title, .je-arr-chip') || neighbour : null)
+            || page.querySelector('.je-arr-banner .je-ask-get:not([disabled]), .je-arr-banner .je-arr-chip, .je-arr-banner-title, .je-arr-banner');
+        if (!stable) return;
+        if (stable.tagName !== 'BUTTON' && !stable.hasAttribute('tabindex')) stable.tabIndex = -1;
+        want.placed = stable;
+        want.input = false;
+        stable.focus();
+    }
+
+    // The person's own move: a focus change that follows their own input (a TV remote's key, Tab, a click or a touch) while the
+    // recovery's element is still on the page. The recovery ends there (see focusStable). A focus the host moves by itself (its
+    // page refresh focusing its first button) follows no input of theirs and ends nothing.
+    const input = () => { if (pendingFocus) pendingFocus.input = true; };
+    document.addEventListener('keydown', input, true);
+    document.addEventListener('pointerdown', input, true);
+    document.addEventListener('mousedown', input, true);
+    document.addEventListener('focusin', (e) => {
+        const want = pendingFocus;
+        if (want && want.input && want.placed && e.target !== want.placed && document.contains(want.placed)) want.moved = true;
+    }, true);
+
+    /**
+     * Check at the press (D53, edition rounds 16 and 19): reads the caller's capabilities and the season's status again and lets
+     * the control act only while it would still be drawn to do exactly what it was drawn to do. The same season read again
+     * meanwhile is the same season (compared by its key, never by the state object); a read that fails fails closed (nothing
+     * sent, and the person is told it couldn't be checked); a difference sends nothing, draws the page again and says why.
+     * The server works the press out again in any case.
+     * @param {Object} target The season state the control was drawn for.
+     * @param {string} drawn The control's intent ({@link intentOf}) when drawn.
+     * @param {function(Object): string} now The control's intent from a season status read now.
+     * @param {HTMLElement|null} button The control pressed.
+     * @returns {Promise<Object|null>} The press intent to send, or null to send nothing.
+     */
+    async function checkAtClick(target, drawn, now, button) {
+        if (!drawn) return null;
+        const started = JE.arrAsk.epoch();
+        let caps = null;
+        let answer = null;
+        try {
+            [caps, answer] = await Promise.all([JE.arrAsk.me(true), JE.arrStatus.fetchItem(target.itemId)]);
+        } catch (err) {
+            if (err?.name === 'AbortError') return null;
+        }
+        // Another person signed in, or another season is shown now: the control is gone with its page.
+        if (JE.arrAsk.epoch() !== started || !season || season.itemId !== target.itemId) return null;
+        const fresh = (answer?.items || []).find(s => normalize(s?.itemId) === target.itemId) || null;
+        if (!caps || !fresh) {
+            refused(tr('arr_ask_check_failed'), button, target.statusRef?.key);
+            return null;
+        }
+        season.caps = caps;
+        const intent = now(fresh);
+        if (intent && intent === drawn) return JSON.parse(intent);
+        // No longer what it was drawn to do: drawn again for what is allowed now, and the person is told why nothing happened
+        // (Seerr mode: that it takes whole seasons, when the control now asks for the season instead).
+        const was = drawn ? JSON.parse(drawn) : null;
+        const is = intent ? JSON.parse(intent) : null;
+        const roundedNow = !!is && is.mode === 'get' && !was?.seasons && !was?.whole && (is.seasons || is.whole);
+        refused(roundedNow ? JE.arrAsk.describe({ ok: false, state: 'blocked', reason: 'seerr_whole_season_only' }, caps, null).text : tr('arr_ask_changed'), button, fresh.key);
+        return null;
+    }
+
+    /**
+     * Runs a control's press: reserves its episodes before anything is awaited ({@link reserve}), checks it
+     * ({@link checkAtClick}), and runs its action with the intent the server is sent.
+     * @param {HTMLButtonElement} button The control.
+     * @param {Array<number>} numbers The episodes it acts on (a rounded ask: every episode of the season).
+     * @param {function(Object): string} now The control's intent from a season status read now.
+     * @param {function(Object): Promise<void>} run Its action, given the press intent.
+     * @returns {Promise<void>}
+     */
+    async function act(button, numbers, now, run) {
+        const target = season;
+        if (!target) return;
+        const release = reserve(target.itemId, numbers);
+        if (!release) return;
+        try {
+            const intent = await checkAtClick(target, button.dataset.intent || '', now, button);
+            if (intent) await run(intent);
+        } finally {
+            release();
+        }
     }
 
     /**
@@ -186,13 +510,29 @@
     }
 
     /**
-     * The words of the season's request block (the viewer's role may ask, the policy can't take an ask
-     * now: "Paused: storage full"), or null.
+     * The words of an edition's request block (the viewer's role may ask, that edition's policy can't take an ask now:
+     * "Paused: storage full"), or null. A 4K copy's gap says the 4K edition's block (`blocked4k`), never the standard one's.
+     * @param {'standard'|'4k'} [variant] The edition (default standard).
      * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
      */
-    function blockedWords() {
-        if (!JE.arrAsk?.enabled() || canAsk() || !season?.rows?.blocked) return null;
-        return JE.arrAsk.blockWords ? JE.arrAsk.blockWords(season.rows.blocked, season.caps) : null;
+    function blockedWords(variant) {
+        const block = variant === '4k' ? season?.rows?.blocked4k : season?.rows?.blocked;
+        if (!JE.arrAsk?.enabled() || canAsk(variant) || !block) return null;
+        return JE.arrAsk.blockWords ? JE.arrAsk.blockWords(block, season.caps) : null;
+    }
+
+    /**
+     * The block words of the first of these episodes whose edition can't take an ask now (see {@link blockedWords}), or null.
+     * @param {Array<Object>} eps Episode statuses.
+     * @param {Object|null} [status] Season status.
+     * @returns {{reason: string, chip: string, text: string, detail: string}|null} Words.
+     */
+    function blockedWordsOf(eps, status) {
+        for (const ep of eps) {
+            const words = blockedWords(editionOf([ep], status));
+            if (words) return words;
+        }
+        return null;
     }
 
     /**
@@ -207,7 +547,9 @@
         const byState = chipForState(shownState(ep));
         if (byState) return byState;
         if (!offerable(ep)) return null;
-        return offered(ep) || blockedWords() ? { text: tr('arr_chip_missing'), tone: 'notOut' } : null;
+        if (!offered(ep) && !blockedWords(editionOf([ep]))) return null;
+        // Another copy the viewer can open plays it: this copy's gap (the chip names the copy).
+        return { text: ep.copyGap ? tr('arr_chip_missing_in_copy', { copy: JE.arrStatus.copyName(ep.copyGap) }) : tr('arr_chip_missing'), tone: 'notOut' };
     }
 
     /**
@@ -268,6 +610,7 @@
         if (season && season.itemId === itemId && (season.loading || season.statusRef === status)) return;
         const fresh = !season || season.itemId !== itemId;
         if (fresh) {
+            pendingFocus = null;
             local.clear();
             searched.clear();
             bannerSearched = null;
@@ -352,6 +695,8 @@
         syncDrawnRows(page, status, ctx, list, season?.rows?.displayMissing ? (parts.drawn || new Set()) : new Set(), byNumber);
         decorateBanner(parts.banner, status);
         syncNote(page, parts.banner ? null : list, status);
+        // A refused press's focus survives the page being drawn again.
+        focusStable();
     }
 
     /**
@@ -364,7 +709,7 @@
      * @returns {void}
      */
     function syncNote(page, list, status) {
-        const words = list && (status.episodes || []).some(ep => offerable(ep) && !shownState(ep)) ? blockedWords() : null;
+        const words = list ? blockedWordsOf((status.episodes || []).filter(ep => offerable(ep) && !shownState(ep)), status) : null;
         const existing = page.querySelector('.je-ask-season-note');
         const signature = words ? `${words.chip}|${words.detail || words.text}` : '';
         if (existing && (!words || existing.dataset.sig !== signature || existing.nextElementSibling !== list)) existing.remove();
@@ -441,12 +786,12 @@
         const want = placeable && !outcome;
         const existing = scope.querySelector(`.je-ask-get[data-je-ask-episode="${ep?.episode}"]`) || scope.querySelector('.je-ask-get');
         syncSearched(chipEl, scope, outcome);
-        syncPaused(chipEl, scope, open && !placeable ? blockedWords() : null);
+        syncPaused(chipEl, scope, open && !placeable ? blockedWords(editionOf([ep])) : null);
         if (!want) {
             if (existing && !busy.has(Number(existing.dataset.jeAskEpisode))) existing.remove();
             return;
         }
-        if (existing && existing.previousElementSibling === chipEl && existing.dataset.mode === modeOf(ep) && existing.dataset.label === labelOf(modeOf(ep))) {
+        if (existing && existing.previousElementSibling === chipEl && existing.dataset.mode === modeOf(ep) && existing.dataset.label === labelOf(modeOf(ep)) && existing.dataset.intent === rowIntent(ep)) {
             setBusyLook(existing, busy.has(ep.episode));
             return;
         }
@@ -456,16 +801,30 @@
 
     /**
      * Whether an episode's button asks for it (Get it) or searches for it (Search: monitored and
-     * missing for a long while, see JE.arrStatus.searchable).
+     * missing for a long while, see JE.arrStatus.searchable); null for a copy's gap nothing reaches.
      * @param {Object} ep Episode status.
-     * @returns {'get'|'search'} Mode.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {'get'|'search'|null} Mode.
      */
-    function modeOf(ep) {
-        if (!JE.arrStatus?.searchable?.(ep)) return 'get';
+    function modeOf(ep, status) {
+        let mode = 'search';
+        if (!JE.arrStatus?.searchable?.(ep)) mode = 'get';
         // Seerr mode: someone else's Search that would turn into an ask (nothing sent for the episode yet) asks for the
         // season instead, and its button says so.
-        if (rounded() && !adminSearchable(ep) && ep?.reason?.params?.sent !== '1') return 'get';
-        return 'search';
+        else if (rounded() && !adminSearchable(ep, status) && ep?.reason?.params?.sent !== '1') mode = 'get';
+        // A copy's own gap: only what reaches that copy (null: no button).
+        return reach(bindingOf([ep], status), mode, [ep], status);
+    }
+
+    /**
+     * What an episode's own button does ({@link intentOf}); empty when it gets none.
+     * @param {Object|undefined} ep Episode status.
+     * @param {Object|null} [status] Season status (default: the one shown).
+     * @returns {string} Intent.
+     */
+    function rowIntent(ep, status) {
+        if (!ep || !offerable(ep) || !offered(ep, status)) return '';
+        return intentOf(modeOf(ep, status), [ep], status || season?.statusRef || null, ep.key);
     }
 
     /**
@@ -537,6 +896,17 @@
     }
 
     /**
+     * The episodes a press reserves: its own, or every episode of the season for an ask Seerr takes as the whole season.
+     * @param {number[]} numbers The control's episodes.
+     * @param {HTMLElement} button The control.
+     * @returns {number[]} Episode numbers.
+     */
+    function pressScope(numbers, button) {
+        if (button?.dataset.rounded !== '1') return numbers;
+        return [...new Set([...numbers, ...(season?.rows?.episodes || []).map(e => e.episode)])];
+    }
+
+    /**
      * A Get it button for one episode.
      * @param {Object} ep Episode status.
      * @returns {HTMLButtonElement} Button.
@@ -544,11 +914,13 @@
     function getItButton(ep) {
         const S = JE.arrStatus;
         const mode = modeOf(ep);
+        const binding = bindingOf([ep]);
         const btn = S.el('button', `je-ask-get${mode === 'search' ? ' je-ask-search' : ''}`);
         btn.type = 'button';
         btn.dataset.jeAskEpisode = String(ep.episode);
         btn.dataset.jeFocus = `ask-get-${ep.episode}`;
         btn.dataset.mode = mode;
+        btn.dataset.intent = rowIntent(ep);
         btn.dataset.label = labelOf(mode);
         if (mode === 'search') btn.dataset.busyLabel = tr('arr_ask_searching');
         btn.appendChild(S.icon(mode === 'search' ? 'search' : 'add', 'je-ask-get-icon'));
@@ -561,17 +933,22 @@
             btn.dataset.rounded = '1';
             btn.title = words.note;
             btn.setAttribute('aria-label', `${words.label}. ${words.note}`);
+        } else if (binding) {
+            btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_in_copy_label' : 'arr_ask_get_it_in_copy_label', { episode: ep.episode, title, copy: S.copyPhrase(binding.role) }));
         } else {
             btn.setAttribute('aria-label', tr(mode === 'search' ? 'arr_ask_search_label' : 'arr_ask_get_it_label', { episode: ep.episode, title }));
         }
         // The button asks for this season's episode only, even if another season is shown by the
-        // time it is pressed (a dialog left open across a navigation).
+        // time it is pressed (a dialog left open across a navigation); a copy's gap in that copy's edition.
         const scope = season?.itemId || null;
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (mode === 'search') searchEpisode(ep, btn, scope);
-            else getEpisodes([ep.episode], btn, false, scope);
+            if (scope && season?.itemId !== scope) return;
+            // Checked at the press: the episode's button as the server and the caller's capabilities say now; the server is sent
+            // what it was drawn to do and works it out again.
+            const now = fresh => rowIntent((fresh.episodes || []).find(x => x.episode === ep.episode), fresh);
+            act(btn, pressScope([ep.episode], btn), now, intent => (mode === 'search' ? searchEpisode(ep, btn, scope, intent) : getEpisodes([ep.episode], btn, false, scope, binding?.variant, intent)));
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -599,31 +976,40 @@
      * @param {Object} ep Episode status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
+     * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope) {
+    async function searchEpisode(ep, button, scope, intent) {
         const target = season;
         if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
-        if (JE.arrAsk.epoch() !== started || season !== target) return;
-        const instanceId = JE.arrAsk.searchInstance(caps, target.statusRef, ep.key);
+        // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
+        if (JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
+        const binding = bindingOf([ep], target.statusRef);
+        const instanceId = intent ? intent.instance : adminInstance([ep], target.statusRef, ep.key, caps);
         const place = button?.closest('.listItem') || null;
         busy.add(ep.episode);
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : await JE.arrAsk.familySearch(ep.key);
+            // A household Search runs on the standard request target: never for a copy it doesn't reach. Under a copy's
+            // binding without its administrator's instance or a household Search that reaches it, nothing runs (no other
+            // edition or instance in its place): the controls are drawn again.
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { expect: intent }) : (!binding || binding.search) ? await JE.arrAsk.familySearch(ep.key, { expect: intent }) : null;
         } finally {
             busy.delete(ep.episode);
         }
         if (JE.arrAsk.epoch() !== started) return;
+        if (result && pressRefusal(result, button)) return;
         if (!result) {
-            // Nothing sent for it yet (or not missing for long enough): ask for it like Get it.
+            // Nothing sent for it yet (or not missing for long enough): a household Search asks for it like Get it, in the
+            // edition of its binding, only while that ask reaches the copy.
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes([ep.episode], button, true, target.itemId);
+            if (!instanceId && (!binding || (binding.search && binding.ask))) await getEpisodes([ep.episode], button, true, target.itemId, binding?.variant, intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null);
+            else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
@@ -650,9 +1036,12 @@
      * @param {HTMLButtonElement} button The button pressed (focus goes to the new chip after).
      * @param {boolean} [search] The ask is a Search (its state then shows for a while only).
      * @param {string|null} [scope] The season the button was made for (nothing is asked on another).
+     * @param {string|null} [variant] The edition asked for (a copy's binding; default standard).
+     * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): the ask is exactly that (a whole-series
+     * ask only when it was drawn as one, never widened at the press), and the server is sent it to work out again.
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope) {
+    async function getEpisodes(episodes, button, search, scope, variant, intent) {
         const target = season;
         const rows = target?.rows;
         if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
@@ -666,21 +1055,26 @@
         let result = null;
         try {
             const caps = await JE.arrAsk.me();
-            let input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })));
+            let input = JE.arrAsk.episodesInput(rows.series, episodes.map(episode => ({ season: rows.season, episode })), variant || 'standard');
             if (JE.arrAsk.seasonsOnly?.(caps)) {
-                if (season === target && !target.caps) target.caps = caps;
-                // Seerr takes whole seasons: only a button that said so asks for the season; any other (a Search that
-                // would turn into an ask, a button drawn before the caller's capabilities were known) asks for nothing
-                // and says why, and the page's buttons are drawn again with the season on them.
-                input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season]) : null;
-                if (!input) result = { ok: false, state: button?.dataset.rounded === '1' ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
+                if (season?.itemId === target.itemId && !season.caps) season.caps = caps;
+                // Seerr takes whole seasons: only a button that said so asks for the season, and for exactly what it was drawn
+                // to ask for (this season, or the whole series when it was drawn as that: never widened by what Seerr says at
+                // the press, which the server checks); any other (a Search that would turn into an ask, a button drawn before the
+                // caller's capabilities were known) asks for nothing and says why, and the buttons are drawn again.
+                const rounded = button?.dataset.rounded === '1';
+                const whole = intent ? !!intent.whole : JE.arrAsk.wholeSeriesOnly?.(caps);
+                input = !rounded ? null : whole ? await JE.arrAsk.wholeSeriesInput(rows.series, variant || 'standard') : JE.arrAsk.seasonsInput(rows.series, [rows.season], variant || 'standard');
+                if (!input) result = { ok: false, state: rounded ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
-            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input);
+            const expect = intent ? { ...intent, mode: 'get', episodes: [...episodes].sort((a, b) => a - b), seasons: input?.scope === 'seasons' ? input.seasons : intent.seasons } : null;
+            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input, expect ? { expect } : undefined);
         } finally {
             affected.forEach(n => busy.delete(n));
         }
         // Answered after a sign-out: the next person is not told about it.
         if (!result || result.stale || JE.arrAsk.epoch() !== started) return;
+        if (pressRefusal(result, button)) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota('tv') : null;
         const words = JE.arrAsk.describe(result, caps, allowance);
@@ -707,6 +1101,19 @@
             }
             // The server's truth is read again through JE.arrAsk.onChange (see initialize).
         }
+    }
+
+    /**
+     * The server refused a press (D53, edition round 19): it no longer does what it was drawn to do, or it couldn't be checked.
+     * Nothing was sent: the page is drawn again and the person told. False for any other answer.
+     * @param {Object} result The answer ({@link JE.arrAsk.ask}, adminSearch or familySearch).
+     * @param {HTMLElement|null} button The control pressed.
+     * @returns {boolean} It was a press refusal.
+     */
+    function pressRefusal(result, button) {
+        if (result?.reason !== 'press_changed' && result?.reason !== 'press_unverified') return false;
+        refused(tr(result.reason === 'press_unverified' ? 'arr_ask_check_failed' : 'arr_ask_changed'), button);
+        return true;
     }
 
     /**
@@ -1009,6 +1416,39 @@
     }
 
     /**
+     * What the banner offers for a season status: its missing episodes, their shown states, the ones left open, and the
+     * button's episodes, copy binding and mode (null: no button). The banner is drawn from it, and its button checked
+     * against it again at click ({@link checkAtClick}).
+     * @param {Object} status Season status.
+     * @returns {{missingEps: Array<Object>, states: Map<number, string|null>, lookingEps: Array<Object>, openEps: Array<Object>, offerEps: Array<Object>, binding: Object|null, mode: 'get'|'search'|null, intent: string}} Plan.
+     */
+    function bannerPlan(status) {
+        const missingEps = JE.internals.arrStatusEpisodes.bannerEntries(status).missing.filter(isMissing);
+        const states = new Map(missingEps.map(ep => [ep.episode, shownState(ep)]));
+        // Monitored episodes the arr is looking for right now: nothing to ask for, the banner says so.
+        const lookingEps = missingEps.filter(ep => !states.get(ep.episode) && !offerable(ep));
+        const openEps = missingEps.filter(ep => !states.get(ep.episode) && offerable(ep));
+        // What the button is for: every episode left when the viewer may ask; otherwise an administrator's Search
+        // for the ones missing for a long while (it runs whatever the request policy says).
+        const candidates = openEps.filter(ep => canAsk(editionOf([ep], status)) || adminSearchable(ep, status));
+        // Some of them another copy the viewer can open plays: the button acts for that copy, says which, and is offered under
+        // its name only when its action reaches it (one binding decides wording and action); otherwise only the episodes no
+        // copy has get the plain button.
+        let offerEps = candidates;
+        let binding = bindingOf(offerEps, status);
+        const modes = eps => (eps.length > 0 && eps.every(ep => modeOf(ep, status) === 'search') ? 'search' : 'get');
+        let mode = offerEps.length ? reach(binding, modes(offerEps), offerEps, status) : null;
+        if (binding && !mode) {
+            offerEps = candidates.filter(ep => !ep.copyGap);
+            binding = null;
+            mode = offerEps.length ? modes(offerEps) : null;
+        }
+        if (!mode) offerEps = [];
+        const key = offerEps.length === 1 ? offerEps[0].key : status.key;
+        return { missingEps, states, lookingEps, openEps, offerEps, binding, mode, intent: intentOf(mode, offerEps, status, key) };
+    }
+
+    /**
      * The banner (viewer doesn't show missing episodes as rows): the request state of each missing
      * episode already asked for ("E4 · Waiting for OK"), and Get them (or "Get E8" for one) for the rest.
      * @param {HTMLElement|null} banner Banner.
@@ -1018,33 +1458,29 @@
     function decorateBanner(banner, status) {
         if (!banner) return;
         const S = JE.arrStatus;
-        const missingEps = JE.internals.arrStatusEpisodes.bannerEntries(status).missing.filter(isMissing);
+        const plan = bannerPlan(status);
+        const { missingEps, states, lookingEps, openEps, offerEps, binding } = plan;
         const missing = missingEps.map(ep => ep.episode);
-        const states = new Map(missingEps.map(ep => [ep.episode, shownState(ep)]));
-        // Monitored episodes the arr is looking for right now: nothing to ask for, the banner says so.
-        const lookingEps = missingEps.filter(ep => !states.get(ep.episode) && !offerable(ep));
-        const openEps = missingEps.filter(ep => !states.get(ep.episode) && offerable(ep));
         const open = openEps.map(ep => ep.episode);
         const looking = lookingEps.map(ep => ep.episode);
         const asked = missing.filter(n => states.get(n));
-        // What the button is for: every episode left when the viewer may ask; otherwise an administrator's Search
-        // for the ones missing for a long while (it runs whatever the request policy says).
-        const offerEps = canAsk() ? openEps : openEps.filter(adminSearchable);
         const offer = offerEps.map(ep => ep.episode);
-        // Every episode offered is monitored and missing for a long while: the button searches.
-        const search = offer.length > 0 && offerEps.every(ep => modeOf(ep) === 'search');
+        // Every episode offered is monitored and missing for a long while (and the Search reaches them): the button searches.
+        const search = plan.mode === 'search';
         // Seerr mode: Get them asks for the whole season, and says so.
         const seasonWords = !search && rounded() ? roundedWords() : null;
+        const gap = binding?.role || null;
+        const copy = gap ? { name: S.copyName(gap), phrase: S.copyPhrase(gap) } : null;
         if (bannerSearched && (bannerSearched.itemId !== normalize(status.itemId) || Date.now() - bannerSearched.at > SEARCHED_TTL_MS)) bannerSearched = null;
         const outcome = search ? bannerSearched : null;
         // Asking can't be done now: the banner says why (administrators: where and how much is free).
-        const words = open.length ? blockedWords() : null;
+        const words = open.length ? blockedWordsOf(openEps, status) : null;
         // A season of a title that isn't in the library (native details) with every aired episode
         // still open: its page's "Get Season N" asks for exactly that, so the banner doesn't repeat it.
         const wholeSeason = !search && !asked.length && open.length > 0 && open.length === (status.summary?.aired || -1)
             && !!JE.titleDetails?.isSynthetic?.(status.itemId);
         let action = banner.querySelector('.je-ask-banner-action');
-        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk()}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}`;
+        const signature = `${open.join(',')}|${looking.join(',')}|${offer.join(',')}|${asked.map(n => `${n}:${states.get(n)}`).join(',')}|${canAsk('standard')}:${canAsk('4k')}|${missing.some(n => busy.has(n))}|${search}|${outcome?.chip || ''}|${words ? words.chip + (words.detail || words.text) : ''}|${wholeSeason}|${seasonWords?.label || ''}|${gap || ''}:${binding?.variant || ''}:${binding?.ask ? 1 : 0}:${binding?.search ? 1 : 0}:${binding?.instanceId || ''}|${plan.intent}`;
         if (action && action.dataset.sig === signature) return;
         if (action) action.remove();
         if (!missing.length) return;
@@ -1066,13 +1502,17 @@
             btn.type = 'button';
             btn.dataset.jeFocus = 'ask-get-them';
             if (search) {
-                btn.dataset.label = offer.length === 1 ? tr('arr_ask_search_one', { episode: offer[0] }) : tr('arr_ask_search');
+                btn.dataset.label = copy
+                    ? (offer.length === 1 ? tr('arr_ask_search_one_in_copy', { episode: offer[0], copy: copy.name }) : tr('arr_ask_search_in_copy', { copy: copy.name }))
+                    : (offer.length === 1 ? tr('arr_ask_search_one', { episode: offer[0] }) : tr('arr_ask_search'));
                 btn.dataset.busyLabel = tr('arr_ask_searching');
             } else if (seasonWords) {
                 btn.dataset.label = seasonWords.label;
                 btn.dataset.rounded = '1';
             } else {
-                btn.dataset.label = offer.length === 1 ? tr('arr_ask_get_one', { episode: offer[0] }) : tr('arr_ask_get_them');
+                btn.dataset.label = copy
+                    ? (offer.length === 1 ? tr('arr_ask_get_one_in_copy', { episode: offer[0], copy: copy.name }) : tr('arr_ask_get_them_in_copy', { copy: copy.name }))
+                    : (offer.length === 1 ? tr('arr_ask_get_one', { episode: offer[0] }) : tr('arr_ask_get_them'));
             }
             btn.appendChild(S.icon(search ? 'search' : 'download', 'je-ask-get-icon'));
             btn.appendChild(S.el('span', 'je-ask-get-text', btn.dataset.label));
@@ -1080,11 +1520,19 @@
             if (seasonWords) {
                 btn.title = seasonWords.note;
                 btn.setAttribute('aria-label', `${seasonWords.label}. ${seasonWords.note}`);
+            } else if (copy) {
+                btn.setAttribute('aria-label', tr(search ? 'arr_ask_search_them_in_copy_label' : 'arr_ask_get_them_in_copy_label', { copy: copy.phrase, list }));
             } else {
                 btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
             }
             const scope = normalize(status.itemId);
-            btn.addEventListener('click', () => (search ? searchBanner(offerEps, status, btn) : getEpisodes(offer, btn, false, scope)));
+            btn.dataset.intent = plan.intent;
+            // Checked at the press: the banner's button as the server and the caller's capabilities say now; the server is sent
+            // what it was drawn to do and works it out again.
+            btn.addEventListener('click', () => {
+                if (season?.itemId !== scope) return;
+                act(btn, pressScope(offer, btn), fresh => bannerPlan(fresh).intent, intent => (search ? searchBanner(offerEps, status, btn, intent) : getEpisodes(offer, btn, false, scope, binding?.variant, intent)));
+            });
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
         }
@@ -1102,34 +1550,43 @@
      * @param {Array<Object>} eps Episode statuses.
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
+     * @param {Object|null} [intent] What the press was drawn to do ({@link pressOf}): sent for the server to work out again.
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button) {
+    async function searchBanner(eps, status, button, intent) {
         const target = season;
         const numbers = eps.map(ep => ep.episode);
         if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
         const key = eps.length === 1 ? eps[0].key : status.key;
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
-        if (JE.arrAsk.epoch() !== started || season !== target) return;
-        const instanceId = key ? JE.arrAsk.searchInstance(caps, status, key) : null;
+        // The same season read again meanwhile is the same season (by its key); another one shown: the control is gone.
+        if (JE.arrAsk.epoch() !== started || season?.itemId !== target.itemId) return;
+        const binding = bindingOf(eps, status);
+        const instanceId = intent ? intent.instance : key ? adminInstance(eps, status, key, caps) : null;
         numbers.forEach(n => busy.add(n));
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         let toAsk = [];
         try {
             if (instanceId) {
-                result = await JE.arrAsk.adminSearch(key, instanceId);
+                // Exactly the episodes it names (one EpisodeSearch for several, never the whole season).
+                result = await JE.arrAsk.adminSearch(key, instanceId, { episodes: eps.length > 1 ? numbers : undefined, expect: intent });
+            } else if (binding && !binding.search) {
+                // Neither its administrator's instance nor a household Search reaches this copy: nothing runs (no ask in
+                // another edition or on another instance in its place); the controls are drawn again below.
+                result = null;
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key) : null;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { expect: intent }) : null;
                 if (JE.arrAsk.epoch() !== started) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key) : null;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { expect: intent ? { ...intent, episodes: [ep.episode] } : undefined }) : null;
                     if (JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);
+                    if (one && (one.reason === 'press_changed' || one.reason === 'press_unverified')) break;
                 }
                 result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
             }
@@ -1137,13 +1594,19 @@
             numbers.forEach(n => busy.delete(n));
         }
         if (JE.arrAsk.epoch() !== started) return;
+        if (result && pressRefusal(result, button)) return;
+        // A household Search asks for what no request sent yet (like Get them), in the edition of its binding, only while
+        // that ask reaches the copy.
+        const mayAsk = !instanceId && (!binding || (binding.search && binding.ask));
+        const asks = intent ? { ...intent, mode: 'get', dest: binding?.dest || null, instance: null } : null;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes(numbers, button, true, target.itemId);
+            if (mayAsk) await getEpisodes(numbers, button, true, target.itemId, binding?.variant, asks);
+            else JE.internals?.arrStatusEpisodes?.apply?.();
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId);
+        if (mayAsk && toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, binding?.variant, asks);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
         announce(result.text);
@@ -1195,8 +1658,8 @@
         if (meta.overview && !spoiler) dialog.appendChild(S.el('p', 'je-ask-dialog-overview', meta.overview));
         const actions = S.el('div', 'je-ask-dialog-actions');
         // Why it can't be asked for now, above the buttons (an administrator's Search stays below it).
-        if (offerable(ep) && !shownState(ep) && blockedWords()) {
-            const note = pausedNote(blockedWords(), '');
+        if (offerable(ep) && !shownState(ep) && blockedWords(editionOf([ep]))) {
+            const note = pausedNote(blockedWords(editionOf([ep])), '');
             note.id = `${titleId}-paused`;
             dialog.appendChild(note);
             // Read out with the dialog's name (focus lands on a button; the reason is plain text).
@@ -1207,6 +1670,10 @@
             // Seerr mode: why the button asks for the whole season, in words above it.
             if (get.dataset.rounded === '1') dialog.appendChild(S.el('p', 'je-ask-dialog-note', roundedWords().note));
             get.classList.add('je-ask-get-large');
+            if (opener && opener !== document.body) {
+                const row = opener.closest?.('.listItem, .je-arr-banner') || null;
+                origins.set(get, { el: opener, episode: opener.dataset?.jeAskEpisode || row?.dataset?.jeAskEpisode || null, focusKey: opener.dataset?.jeFocus || null, neighbours: neighboursOf(row) });
+            }
             get.addEventListener('click', () => close());
             actions.appendChild(get);
         }
@@ -1303,6 +1770,8 @@
     JE.session?.onUserChange?.('arr-ask-episodes', () => {
         closeDialog();
         season = null;
+        pendingFocus = null;
+        pressing.clear();
         local.clear();
         searched.clear();
         bannerSearched = null;

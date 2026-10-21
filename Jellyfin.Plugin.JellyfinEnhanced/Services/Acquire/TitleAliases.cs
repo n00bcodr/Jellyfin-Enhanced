@@ -108,10 +108,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>
         /// Jellyfin's provider queries for a title and its aliases: one value of each provider per
-        /// query, at most four queries, shared by copy lookup and the feed's batched privacy checks.
+        /// query. Privacy checks default to at most four queries. Copy lookup asks for the complete set
+        /// (<paramref name="maxQueries"/> null) so an unsearched alias cannot be mistaken for absence.
         /// </summary>
-        internal static IReadOnlyList<Dictionary<string, string>> ProviderQueries(TitleKey key, IEnumerable<TitleKey> aliases)
-            => AllProviderQueries(key, aliases).Take(4).ToList();
+        internal static IReadOnlyList<Dictionary<string, string>> ProviderQueries(TitleKey key, IEnumerable<TitleKey> aliases, int? maxQueries = 4)
+            => maxQueries is int max ? AllProviderQueries(key, aliases).Take(max).ToList() : AllProviderQueries(key, aliases);
 
         /// <summary>
         /// Every provider query a title and its aliases need (one value of each provider per query, no cap): what a complete

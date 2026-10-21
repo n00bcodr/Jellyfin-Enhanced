@@ -90,7 +90,7 @@ public sealed class TitleActionsController : ControllerBase
             var scope = episode is int requestedEpisode ? key.WithEpisode(requestedSeason, requestedEpisode) : key.WithSeason(requestedSeason);
             return _status.ScopeItem(statusViewer, scope) is { } copy && !(episode != null && copy.Virtual) ? copy.ItemId : null;
         }
-        return _status.CopiesOf(key, statusViewer).FirstOrDefault(copy => copy.Visible)?.ItemId;
+        return _status.CopiesOf(key, statusViewer).SeenOpenable?.ItemId;
     }
 
 }

@@ -1026,12 +1026,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Rows read from here on are only written back to the same database (not a restored one).
             var generation = _store.Generation;
             var scopes = interest.Scope != null ? new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = interest.Scope } : null;
+            using var bound = CopyLookupBound.Track();
             var composed = (await _status.ComposeForAsync(viewer, new[] { key }, scopes, cancellationToken).ConfigureAwait(false)).FirstOrDefault();
+            // A copy lookup that reached its scan bound is not "not here": nothing is remembered from it (the next look reads again).
+            if (bound.Reached) return;
             // Decided after that await: the person's interest as it is now (nothing written when it is gone).
             if (Current(key, interest) is not { } current) return;
             interest = current;
             var stage = composed?.Status.Stage ?? "hidden";
             var scopeName = interest.Scope?.Only4k == true ? "m4k" : "m";
+            // An interest in one edition (a request): the copies that played anything at the last look, so a copy that turns into
+            // that edition in place is an arrival of it dated by the transition (D53, edition round 20), not by the copy's date.
+            // An upgrade in place is a change of what backs the item (round 21): the sources each of those copies had then, as
+            // Jellyfin holds them for anyone, so a version the viewer only now may open is no arrival.
+            var hadPlaying = interest.Scope == null ? null : PlayingBefore(viewer, key, scopeName);
+            var hadSources = interest.Scope == null ? null : SourcesBefore(viewer, key, scopeName);
+            if (interest.Scope != null)
+            {
+                var playing = _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList();
+                RememberPlaying(viewer, key, scopeName, playing, generation);
+                RememberSources(viewer, key, scopeName, _status.Editions.HeldSources(playing), generation);
+            }
             var mark = "ready|" + key + "|" + scopeName;
             var itemId = composed?.Visible?.ItemId;
             // The same Jellyfin item is one event however many ids the title is known by.
@@ -1070,9 +1085,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
             }
+            var upgraded = itemId is Guid shown && hadPlaying?.Contains(shown) == true
+                && NewSource(_status.Editions.Item(viewer, shown, EditionAvailability.Of(interest.Scope!.Only4k)).Select(h => h.Source), hadSources);
             var p = TitleParams(key, itemId);
             if (interest.Scope?.Only4k == true) p["variant"] = "4k";
             if (interest.HasRequest) p["requested"] = "1";
+            // The edition the arrival was judged by, so a delivery held for quiet hours is judged again by the same rule.
+            p["edition"] = EditionName(interest.Scope == null ? Edition.Any : EditionAvailability.Of(interest.Scope.Only4k));
             // One event per interest: a title asked for again after it was removed (its state forgotten,
             // a new watch baseline) is a new event; the marks keep a flapping upgrade to one.
             var eventKey = mark + "|" + baseline.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
@@ -1080,8 +1099,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // before its send). The kind switched off, an arrival too old to announce, a title they can't open or hid (Hidden
             // Content, on any copy of it): handled with no notification. Hidden Content that can't be read now, or notifications
             // switched off meanwhile: nothing written, looked at again (when they are back on, the first sweep looks again).
-            // Its origin: when the copy arrived; unknown, this look (it became ready now).
-            var since = arrived is DateTime at ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)) : now;
+            // Its origin: when the copy arrived; unknown, this look (it became ready now). A copy upgraded in place to the asked
+            // edition arrived by that transition, this look (D53, edition round 20), not by the copy's own date.
+            var since = arrived is DateTime at && !upgraded ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc)) : now;
             var final = _dispatcher.Final(Alert(viewer.UserId, NotifyKind.Ready, eventKey, key.ToString(), itemId?.ToString("N", CultureInfo.InvariantCulture), p, since));
             switch (final.Effect)
             {
@@ -1138,14 +1158,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var inSeries = new Dictionary<(int Season, int Episode), List<Guid>>();
             Guid? seriesItem = null;
             var seriesItems = new HashSet<string>(StringComparer.Ordinal);
-            var files = new List<(Guid Series, JfEpisode Episode)>();
-            foreach (var copy in SeriesCopies(key, viewer, interest.Only4k))
+            using var bound = CopyLookupBound.Track();
+            var edition = EditionOf(interest);
+            // Every copy the viewer opens, each episode by its own sources in its own series item, through the one availability
+            // predicate (D53, edition round 19 part B): a file's own dimensions decide its edition, never the Sonarr whose folder
+            // it sits in (an HD file in the 4K folder is no 4K arrival and consumes no 4K mark; a real 4K file in the standard
+            // folder is the 4K request's arrival), and a stub plays nothing.
+            var (seriesCopies, files) = Arrived(key, viewer, edition);
+            // An edition that became available on an item the viewer already played in another edition (a file replaced in
+            // place: Jellyfin keeps the item and its date) is an arrival dated by the observed transition (D53, edition round
+            // 20), never by the item's date: the items that played at the last look are remembered for an interest in one edition.
+            // Round 21: an upgrade in place is a change of the item's backing source (its version, path or quality), judged against
+            // the sources those items had at the last look as Jellyfin holds them for anyone (an access-only change is no arrival).
+            var hadPlaying = edition == Edition.Any ? null : PlayingBefore(viewer, key, scope);
+            var hadSources = edition == Edition.Any ? null : SourcesBefore(viewer, key, scope);
+            var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToHashSet();
+            // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
+            if (bound.Reached) return;
+            if (playingNow != null)
             {
-                seriesItem ??= copy.ItemId;
-                if (copy.ItemId != Guid.Empty) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
-                files.AddRange(_view.Episodes(copy.ItemId, null, viewer, includeVirtual: false)
-                    .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).Select(e => (copy.ItemId, e)));
+                RememberPlaying(viewer, key, scope, playingNow, generation);
+                RememberSources(viewer, key, scope, _status.Editions.HeldSources(playingNow, seriesCopies), generation);
             }
+            seriesItem = files.Select(f => (Guid?)f.Series).FirstOrDefault() ?? seriesCopies.FirstOrDefault()?.ItemId;
+            foreach (var copy in seriesCopies.Where(c => c.ItemId != Guid.Empty)) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
             foreach (var (series, e) in files)
             {
@@ -1197,16 +1233,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                         fresh &= tx.TryMark(viewer.UserId, NotifyTransaction.EpisodeItemMark(series, interest.Only4k, number), now);
                     }
                     if (!fresh) continue;
-                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor) continue;
-                    // Its own arrival travels with it to the flush (4f round 10): when Jellyfin added it, else this look.
-                    var arrival = added is DateTime when && when <= now.UtcDateTime ? new DateTimeOffset(DateTime.SpecifyKind(when, DateTimeKind.Utc)) : now;
+                    var upgraded = hadPlaying?.Contains(id) == true && NewSource(_status.Editions.Item(viewer, id, edition).Select(h => h.Source), hadSources);
+                    if (added is DateTime at && now.UtcDateTime - at > ArrivalFreshFor && !upgraded) continue;
+                    // Its own arrival travels with it to the flush (4f round 10): when Jellyfin added it, else this look; an
+                    // upgrade in place arrived by that transition, this look (D53, edition round 20).
+                    var arrival = !upgraded && added is DateTime when && when <= now.UtcDateTime ? new DateTimeOffset(DateTime.SpecifyKind(when, DateTimeKind.Utc)) : now;
                     wanted.Add((number.Season, number.Episode, id, arrival));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
                 if (wanted.Count > 0 && prefs.Episodes)
                 {
                     var first = wanted[0];
-                    AddToBatch(tx, viewer.UserId, MergeOpenBatches(tx, viewer.UserId, BatchKey(key, interest.Only4k), interest.Only4k, seriesItems), key, interest.Only4k, seriesItems, wanted, inSeries.TryGetValue((first.Season, first.Episode), out var items) && items.Count > 0 ? items[0] : seriesItem, now, minutes);
+                    AddToBatch(tx, viewer.UserId, MergeOpenBatches(tx, viewer.UserId, BatchKey(key, interest.Only4k), interest.Only4k, seriesItems), key, interest.Only4k, seriesItems, wanted, inSeries.TryGetValue((first.Season, first.Episode), out var items) && items.Count > 0 ? items[0] : seriesItem, now, minutes, edition);
                 }
                 return true;
             }, false);
@@ -1230,42 +1268,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             return numbers;
         }
 
-        // The viewer's copies of a series an interest counts: every copy they can open, or for a 4K
-        // request the copies of the 4K Sonarr instances. With none of those (or no 4K Sonarr set up),
-        // only the copy Seerr matched the request to, as the Requests page does: never the standard copy.
-        private List<JfCopy> SeriesCopies(TitleKey key, StatusViewer viewer, bool only4k)
+        /// <summary>
+        /// The items that played for the viewer (any edition) at the last look of an interest in one edition (see
+        /// <see cref="RememberPlaying"/>); null when none was remembered yet (no evidence of an upgrade in place).
+        /// </summary>
+        private HashSet<Guid>? PlayingBefore(StatusViewer viewer, TitleKey key, string scope)
+            => _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known is { } known
+                ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Guid.TryParseExact(x, "N", out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToHashSet()
+                : null;
+
+        /// <summary>Remembers the items that play for the viewer now (any edition), when that changed (see <see cref="PlayingBefore"/>).</summary>
+        private void RememberPlaying(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, long generation)
         {
-            var copies = _view.Copies(key, viewer, _aliases.Of(key));
-            if (!only4k) return copies.Where(c => c.Visible).ToList();
-            var fourK = (FourKSeriesCopies(key, copies) ?? Array.Empty<JfCopy>()).Where(c => c.Visible).ToList();
-            if (fourK.Count == 0 && SeerrFourKItem(key, viewer.UserId) is Guid seerr) fourK = copies.Where(c => c.Visible && c.ItemId == seerr).ToList();
-            return fourK;
+            var known = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
+            if (_store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known == known) return;
+            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, known, _now()); return true; }, false);
         }
 
-        /// <summary>The Jellyfin item Seerr matched a user's 4K request for the title to (null: none, or not a 4K-only request).</summary>
-        private Guid? SeerrFourKItem(TitleKey key, Guid user)
+        /// <summary>The watch scope suffix of the items that played in any edition (see <see cref="PlayingBefore"/>).</summary>
+        private const string PlayingSuffix = "|playing";
+
+        /// <summary>The watch scope suffix of the sources those items had (see <see cref="SourcesBefore"/>).</summary>
+        private const string SourcesSuffix = "|sources";
+
+        /// <summary>
+        /// The backing sources the playing items had at the last look of an interest in one edition, as Jellyfin holds them for
+        /// anyone (see <see cref="RememberSources"/>): each source's identity (its version item and path) with its quality (the
+        /// video size, "-" while unread); null when none were remembered yet (no evidence of an upgrade in place).
+        /// </summary>
+        private Dictionary<string, HashSet<string>>? SourcesBefore(StatusViewer viewer, TitleKey key, string scope)
+            => _store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known is { } known
+                ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => x.Split(':')).Where(x => x.Length == 2)
+                    .GroupBy(x => x[0], StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Select(x => x[1]).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal)
+                : null;
+
+        /// <summary>Remembers the backing sources of the items that play now (library context: whoever may open them), when that changed.</summary>
+        private void RememberSources(StatusViewer viewer, TitleKey key, string scope, IEnumerable<JfSource> sources, long generation)
         {
-            // The 4K edition's own requests (a standard request of the same person doesn't hide Seerr's 4K match).
-            var mine = RequestsFor(key).Where(r => r.RequestedBy == user && r.Is4k).ToList();
-            return mine.Count > 0 ? RequestsHubService.ScopeOf(mine, user).JellyfinItemId : null;
+            var known = string.Join(",", sources.Select(s => SourceIdentity(s) + ":" + SourceQuality(s)).Distinct().OrderBy(x => x, StringComparer.Ordinal));
+            if (_store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known == known) return;
+            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, known, _now()); return true; }, false);
         }
 
         /// <summary>
-        /// The Jellyfin copies of a series that belong to its 4K Sonarr copies (matched like the status
-        /// does: linked libraries, path mappings, folder names); null when no 4K Sonarr is set up.
-        /// From memory only.
+        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes):
+        /// a version or path not held then, or one whose known quality changed (a file replaced in place). A source that was
+        /// there and only became visible to the viewer is not new. Nothing remembered: no evidence, no.
         /// </summary>
-        private IReadOnlyList<JfCopy>? FourKSeriesCopies(TitleKey key, IReadOnlyList<JfCopy> copies)
+        private static bool NewSource(IEnumerable<JfSource> qualifying, Dictionary<string, HashSet<string>>? before)
+            => before != null && qualifying.Any(s => !before.TryGetValue(SourceIdentity(s), out var qualities)
+                || !(qualities.Contains(SourceQuality(s)) || qualities.Contains("-") || SourceQuality(s) == "-"));
+
+        // A source's identity: the item behind the version and its file (never Jellyfin's source id: 10.11 changes it while grouping).
+        private static string SourceIdentity(JfSource source)
+            => MutationInput.Hash(source.BackingItemId.ToString("N", CultureInfo.InvariantCulture) + "|" + (source.Path ?? string.Empty))[..16];
+
+        // A source's quality as Jellyfin read it ("-" while unread).
+        private static string SourceQuality(JfSource source)
+            => source.Width > 0 || source.Height > 0 ? (source.Width ?? 0).ToString(CultureInfo.InvariantCulture) + "x" + (source.Height ?? 0).ToString(CultureInfo.InvariantCulture) : "-";
+
+        /// <summary>
+        /// The edition an interest is told about: a 4K request's 4K; a standard request's standard (with "Standard requests
+        /// need a non-4K copy", a non-4K source); a follow (alone or with a request) hears of whatever plays.
+        /// </summary>
+        private static Edition EditionOf(Interest interest)
+            => interest.Only4k ? Edition.FourK : interest.HasRequest && !interest.HasFollow ? Edition.Standard : Edition.Any;
+
+        /// <summary>The payload name of an edition (a delivery held for quiet hours is judged again by it).</summary>
+        internal static string EditionName(Edition edition) => edition switch { Edition.FourK => "4k", Edition.Standard => "standard", _ => "any" };
+
+        /// <summary>
+        /// The episodes of a series the viewer has an accessible playable source of <paramref name="edition"/> for, across every
+        /// copy they open (each episode by its own sources in its own series item: the folders automatic grouping shows with
+        /// it never lend it one), with those copies; one episode item each, dated when its first qualifying source arrived.
+        /// </summary>
+        private (List<JfCopy> Copies, List<(Guid Series, JfEpisode Episode)> Files) Arrived(TitleKey key, StatusViewer viewer, Edition edition)
         {
-            var instances = _arr.Instances(ArrKind.Sonarr);
-            if (!instances.Any(i => i.Role == "4k")) return null;
-            var arr = new List<ArrCopyFacts>();
-            foreach (var instance in instances)
+            // What a finished lookup found (the callers' watches keep everything as it was when one couldn't finish).
+            var copies = _view.Copies(key, viewer, _aliases.Of(key)).Display.Where(c => c.Visible).DistinctBy(c => c.ItemId).ToList();
+            var hits = _status.Editions.Episodes(viewer, copies, edition, null).Hits.Where(h => h.ItemId != Guid.Empty);
+            var files = hits.GroupBy(h => (h.CopyId, h.ItemId)).Select(g => (g.Key.CopyId, new JfEpisode
             {
-                if (SonarrSeries(instance, key) is { } series) arr.Add(new ArrCopyFacts(instance) { Series = series });
-            }
-            // Positive matches only: "the only copy there is" may be the standard one.
-            return arr.Where(x => x.Instance.Role == "4k").SelectMany(x => StatusComposer.MatchCopies(x, copies, arr, soleFallback: false)).Distinct().ToList();
+                ItemId = g.Key.ItemId,
+                Season = g.First().Season!.Value,
+                Episode = g.First().Episode!.Value,
+                EpisodeEnd = g.First().EpisodeEnd,
+                DateCreated = g.Select(h => h.Source.DateCreated).Where(d => d.HasValue).DefaultIfEmpty(null).Min(),
+            })).ToList();
+            return (copies, files);
         }
 
         private ArrSeriesEntry? SonarrSeries(ArrConnection instance, TitleKey key)
@@ -1307,6 +1397,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
             /// <summary>Failed attempts at sending it so far.</summary>
             public int F { get; set; }
+
+            /// <summary>
+            /// The edition a batch that isn't 4K was batched under ("standard": a standard request's, judged with "Standard
+            /// requests need a non-4K copy"; null or "any": whatever plays). Batches merged into one keep the stricter.
+            /// </summary>
+            public string? Ed { get; set; }
         }
 
         // A stored batch, read with its own row's start (4f round 11): a member stored before round 10 has no arrival and takes
@@ -1358,6 +1454,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 }
                 merged.Series ??= batch.State.Series;
                 merged.F = Math.Max(merged.F, batch.State.F);
+                if (batch.State.Ed == EditionName(Edition.Standard)) merged.Ed = batch.State.Ed;
                 if (batch.FirstAt < first) first = batch.FirstAt;
                 if (batch.DueAt < due) due = batch.DueAt;
             }
@@ -1371,10 +1468,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         }
 
         // Keep every series item the interest sees and any joining id needed to check its copies at send time.
-        private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id, DateTimeOffset At)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes)
+        private static void AddToBatch(NotifyTransaction tx, Guid user, string batchKey, TitleKey key, bool only4k, HashSet<string> seriesItems, List<(int Season, int Episode, Guid Id, DateTimeOffset At)> episodes, Guid? seriesItem, DateTimeOffset now, int minutes, Edition edition)
         {
             var existing = tx.Batch(user, batchKey);
             var state = existing is { } b ? ReadBatch(b.Episodes, b.FirstAt) ?? new BatchState() : new BatchState();
+            if (edition == Edition.Standard) state.Ed = EditionName(edition);
             foreach (var item in seriesItems)
             {
                 if (!state.Items.Contains(item, StringComparer.Ordinal)) state.Items.Add(item);
@@ -1489,15 +1587,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // it was batched while it is still visible, else the copy that still is) and, where their Hidden Content can be read,
             // one they haven't hidden. Whether anything of it may be told is the final gate's.
             var viewer = _view.Viewer(user);
-            var copies = viewer == null ? new List<JfCopy>() : SeriesCopies(title, viewer, only4k);
+            using var bound = CopyLookupBound.Track();
+            // The batch's episodes are judged again by the edition they were batched under (D53, edition round 19 part B: the
+            // one availability predicate at delivery): an episode whose qualifying source went (replaced by another edition's
+            // file, turned into a stub, no longer theirs to open) is left out, and the rest is told as it is now.
+            var edition = only4k ? Edition.FourK : state.Ed == EditionName(Edition.Standard) ? Edition.Standard : Edition.Any;
+            var (copies, found) = viewer == null ? (new List<JfCopy>(), new List<(Guid Series, JfEpisode Episode)>()) : Arrived(title, viewer, edition);
             foreach (var joined in state.Keys)
             {
-                if (viewer != null && TitleKey.Parse(joined) is { } k) copies.AddRange(SeriesCopies(k, viewer, only4k));
+                if (viewer == null || TitleKey.Parse(joined) is not { } k) continue;
+                var (more, theirs) = Arrived(k, viewer, edition);
+                copies.AddRange(more);
+                found.AddRange(theirs);
             }
+            // A copy lookup that reached its scan bound: the batch is kept for the next round, never dropped as gone.
+            if (bound.Reached) return false;
             copies = copies.DistinctBy(c => c.ItemId).ToList();
             var open = new Dictionary<(int, int), HashSet<Guid>>();
-            var files = viewer == null ? new List<JfEpisode>() : copies.SelectMany(copy => _view.Episodes(copy.ItemId, null, viewer, includeVirtual: false))
-                .Where(e => !e.Hidden && !e.Virtual && e.ItemId != Guid.Empty).ToList();
+            var files = found.Select(f => f.Episode).DistinctBy(e => e.ItemId).ToList();
             var coverage = new EpisodeCoverage(files);
             // A pending batch already supplies every number we need. Check full membership rather
             // than expanding a combined file (even when its metadata claims billions of episodes).
@@ -1533,11 +1640,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             p["seasons"] = string.Join(", ", seasons);
             // Each episode with its own arrival (4f round 10; one stored before, its batch's start as read with it): the gate
             // holds each to the catch-up limit, and drops only those past it.
-            static DateTimeOffset Arrived(BatchEntry x) => DateTimeOffset.FromUnixTimeMilliseconds(x.A!.Value);
-            p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E) { At = Arrived(x) }));
+            static DateTimeOffset ArrivalOf(BatchEntry x) => DateTimeOffset.FromUnixTimeMilliseconds(x.A!.Value);
+            p["episodeItems"] = JsonSerializer.Serialize(episodes.Select(x => new NotifyEpisode(Guid.Parse(x.I!), x.S, x.E) { At = ArrivalOf(x) }));
             // The batch's origin: its newest episode's arrival (it is too old to tell only when every episode is).
-            var since = episodes.Count > 0 ? episodes.Max(Arrived) : firstAt;
+            var since = episodes.Count > 0 ? episodes.Max(ArrivalOf) : firstAt;
             if (only4k) p["variant"] = "4k";
+            p["edition"] = EditionName(edition);
             if (episodes.Count == 1)
             {
                 p["mode"] = "single";
@@ -1550,7 +1658,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 // A whole season arriving together (a season pack) collapses to one line.
                 p["mode"] = "season";
                 p["season"] = seasons[0].ToString(CultureInfo.InvariantCulture);
-                itemId = _view.Seasons(series, viewer).FirstOrDefault(x => !x.Hidden && x.Season == seasons[0] && x.ItemId != Guid.Empty)?.ItemId.ToString("N", CultureInfo.InvariantCulture) ?? itemId;
+                itemId = _view.SeriesFolder(series, viewer).Seasons.FirstOrDefault(x => !x.Hidden && x.Season == seasons[0] && x.ItemId != Guid.Empty)?.ItemId.ToString("N", CultureInfo.InvariantCulture) ?? itemId;
             }
             else
             {
@@ -1795,7 +1903,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 foreach (var k in keys)
                 {
-                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Select(c => c.ItemId).Where(id => id != Guid.Empty));
+                    // Every copy the lookup saw (finished or not): forgetting the marks of more items only tells them again.
+                    if (TitleKey.Parse(k) is { } parsed) items.AddRange(_view.Copies(parsed, viewer, _aliases.Of(parsed)).Seen.Select(c => c.ItemId).Where(id => id != Guid.Empty));
                 }
             }
             // Read before a restore (generation given): not written into the restored data.
