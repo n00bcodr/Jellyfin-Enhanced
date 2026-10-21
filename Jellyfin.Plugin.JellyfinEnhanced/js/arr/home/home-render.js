@@ -51,6 +51,20 @@
     }
 
     /**
+     * A plain div with jellyfin-web's itemsContainer class. jellyfin-web's home tab calls pause() on every
+     * .itemsContainer in the home sections when the person leaves home (and resume(), when there is one, on
+     * return), which emby-itemscontainer elements have; ours get no-op ones so leaving home cannot throw.
+     * @param {string} cls Classes (including itemsContainer).
+     * @returns {HTMLElement} Container.
+     */
+    function itemsContainer(cls) {
+        const e = el('div', cls);
+        e.pause = () => {};
+        e.resume = () => Promise.resolve();
+        return e;
+    }
+
+    /**
      * A material icon hidden from assistive technology (the words carry the meaning).
      * @param {string} name Icon name.
      * @param {string} [cls] Extra class.
@@ -423,7 +437,7 @@
         const scroller = el('div', 'padded-top-focusscale padded-bottom-focusscale emby-scroller je-home-scroller');
         scroller.dataset.horizontal = 'true';
         scroller.dataset.centerfocus = 'card';
-        const items = el('div', 'itemsContainer scrollSlider focuscontainer-x je-home-items');
+        const items = itemsContainer('itemsContainer scrollSlider focuscontainer-x je-home-items');
         for (const card of cards) items.appendChild(buildCard(spec.id, card));
         scroller.appendChild(items);
         section.appendChild(scroller);
@@ -493,7 +507,7 @@
     }
 
     Object.assign(R, {
-        ROWS, tr, el, icon, normalizeId, freeCorner, cardDate, shortDate, episodeCode, stateWord, lineText, overlay,
+        ROWS, tr, el, itemsContainer, icon, normalizeId, freeCorner, cardDate, shortDate, episodeCode, stateWord, lineText, overlay,
         posterUrl, openCard, buildCard, buildRow, buildOps, fill
     });
 })(window.JellyfinEnhanced);

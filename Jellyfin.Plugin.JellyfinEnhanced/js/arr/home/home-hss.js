@@ -120,7 +120,7 @@
                 if (!section) continue;
                 let items = section.querySelector('.itemsContainer');
                 if (!items) {
-                    items = R.el('div', 'itemsContainer');
+                    items = R.itemsContainer('itemsContainer');
                     section.appendChild(items);
                 }
                 const byId = new Map();

@@ -447,3 +447,30 @@ for (const change of ['empty', 'opt-out', 'reorder']) {
     assert.equal(h.document.querySelector('.je-home-rows'), null);
   });
 }
+
+// jellyfin-web 12.2 homeSections.pause (run by the home tab's onPause when the person leaves home) calls
+// pause() on every .itemsContainer without a guard; resume() is guarded. Same loops as the bundle.
+function leaveHome(container) {
+  for (const items of container.querySelectorAll('.itemsContainer')) items.pause();
+}
+function returnHome(container) {
+  const pending = [];
+  Array.prototype.forEach.call(container.querySelectorAll('.itemsContainer'), e => { if (e.resume) pending.push(e.resume({})); });
+  return Promise.all(pending);
+}
+
+test('jellyfin-web pausing the home tab with JE rows still there does not throw', async t => {
+  const h = setup(t, { routes: path => (path === '/acquire/home' ? ok(answer()) : null) });
+  await until(() => h.rows().length === 3);
+  assert.equal(h.container().querySelectorAll('.je-home-row .itemsContainer').length, 3);
+  assert.doesNotThrow(() => leaveHome(h.container()));
+  await returnHome(h.container());
+});
+
+test('jellyfin-web pausing the home tab does not throw on JE-built HSS sections and item containers', async t => {
+  const h = setup(t, { home: '<div class="verticalSection MyMedia" data-page="1">My Media</div><div class="verticalSection JellyfinEnhancedJustArrived" data-page="1"></div>',
+    config: { ArrHomeHssSections: true }, routes: path => (path === '/acquire/home' ? ok(answer({ hss: true })) : null) });
+  await until(() => h.document.querySelector('.je-home-hss-section.JellyfinEnhancedYourRequests') && h.document.querySelector('.JellyfinEnhancedJustArrived .itemsContainer'));
+  assert.doesNotThrow(() => leaveHome(h.container()));
+  await returnHome(h.container());
+});
