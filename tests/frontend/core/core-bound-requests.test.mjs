@@ -346,12 +346,14 @@ test('two bindings of the same cache key: a binding never reads another binding\
  const {h,sent}=setup(t,{route:()=>jsonResponse({n:++n})});
  const api=h.JE.core.api;
  const a={session:api.session(),current:()=>true};
- assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k'})).n,1,'an unbound read fills the shared cache');
- assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:a})).n,2,'a binding reads for itself');
- assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:a})).n,2,'and keeps its own answer');
- assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k',bound:{session:api.session(),current:()=>true}})).n,3,'another binding reads for itself');
- assert.equal((await api.plugin('/tmdb/x',{cacheKey:'k'})).n,1,'the shared cache still holds the unbound answer');
- assert.equal(sent.length,3);
+ // A key whose answer is the same for everyone (core user-change caches: only those are ever kept).
+ assert.equal((await api.plugin('/awards/x',{cacheKey:'awards:k'})).n,1,'an unbound read fills the shared cache');
+ assert.equal((await api.plugin('/awards/x',{cacheKey:'awards:k',bound:a})).n,2,'a binding reads for itself');
+ // A bound answer is its owner's: never kept (core: an answer kept per person would outlive a change to their access).
+ assert.equal((await api.plugin('/awards/x',{cacheKey:'awards:k',bound:a})).n,3,'and reads again, never keeping it');
+ assert.equal((await api.plugin('/awards/x',{cacheKey:'awards:k',bound:{session:api.session(),current:()=>true}})).n,4,'another binding reads for itself');
+ assert.equal((await api.plugin('/awards/x',{cacheKey:'awards:k'})).n,1,'the shared cache still holds the unbound answer');
+ assert.equal(sent.length,4);
 });
 
 test('control: one binding asking twice for the same URL shares its own in-flight request',async t=>{

@@ -213,11 +213,13 @@ test('a filmography scrolled after a restriction draws no restricted title, and 
 
 test('a prefetched Discover page is used, not asked for twice, and never after the access revision moved', async t => {
   const asked = [];
+  // The server announces the access it holds now (it moves with the person's access).
+  let serverRevision = 'a=a1;hc=h1;sg=s1';
   const h = createHarness({
     fetch: async url => {
       const u = new URL(String(url));
       asked.push(u.pathname + u.search);
-      return revised({ results: [{ id: asked.length, mediaType: 'movie' }], totalPages: 9 }, 'a=a1;hc=h1;sg=s1');
+      return revised({ results: [{ id: asked.length, mediaType: 'movie' }], totalPages: 9 }, serverRevision);
     }
   });
   t.after(() => h.close());
@@ -230,7 +232,8 @@ test('a prefetched Discover page is used, not asked for twice, and never after t
   await page(3);
   assert.equal(asked.length, 3, `each page is asked for once: ${asked.join(', ')}`);
   // The access moves: a kept page is never drawn for it.
-  h.JE.core.revision?.noteRevision?.('a=a2;hc=h1;sg=s1');
+  serverRevision = 'a=a2;hc=h1;sg=s1';
+  h.JE.core.revision?.noteRevision?.(serverRevision);
   await page(2);
   assert.equal(asked.length, 4);
 });

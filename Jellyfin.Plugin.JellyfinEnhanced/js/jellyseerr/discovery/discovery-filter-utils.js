@@ -362,21 +362,51 @@
     }
 
     /**
-     * Managed fetch helper using request manager when available
+     * Managed fetch of a discover page through the core transport (it owns submission, queueing, retry, body parsing,
+     * dedup and publication for every reader).
      * @param {string} path - API path
      * @param {string} cachePrefix - Cache key prefix (e.g., 'genre', 'network')
-     * @param {object} [options] - Fetch options including signal
+     * @param {object} [options] - Fetch options including signal and the caller's binding
      * @returns {Promise<any>}
      */
     async function fetchWithManagedRequest(path, cachePrefix, options = {}) {
-        // Keep personalized native feeds fresh while the core owns submission,
-        // queueing, retry, body parsing, dedup and publication for every reader.
-        const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
-        return JE.core.api.fetch(ApiClient.getUrl(path), {
-            signal: options.signal,
-            bound: options.bound,
-            ...(keep ? { cacheKey: `${cachePrefix}:${path}` } : { skipCache: true })
-        });
+        // Every row is filtered for the viewer's current policy (the native feeds and Seerr's rows alike). A page of Seerr's
+        // rows is kept under the access revision it was asked under (keptPages) and used again only while it holds; the
+        // server's native feeds are never kept, and a bound read (an owner's) keeps nothing here. Identical reads in flight
+        // share one request only under the same access: a call made after the access moved never joins a read before it.
+        const keep = !path.startsWith('/JellyfinEnhanced/native-details/') && !options.bound;
+        const cacheKey = `${cachePrefix}:${path}`;
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        const hit = keep ? keptPage(cacheKey, requestEpoch) : null;
+        if (hit) return hit;
+        // The access moved while the read ran (a move is announced; learning the first revision is not one): read once more
+        // under the new one; moved again, nothing is drawn.
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const revision = accessRevision();
+            const startedAt = Date.now();
+            let moved = false;
+            const onMove = () => { moved = true; };
+            document.addEventListener('je-access-revision', onMove);
+            let data;
+            try {
+                data = await JE.core.api.fetch(ApiClient.getUrl(path), {
+                    signal: options.signal,
+                    bound: options.bound,
+                    skipCache: true,
+                    ...(keep ? { cacheKey: `${cachePrefix}:${revision ?? ''}:${path}` } : {})
+                });
+            } finally {
+                document.removeEventListener('je-access-revision', onMove);
+            }
+            if (JE.session && !JE.session.isCurrent(requestEpoch)) throw new DOMException('User changed during request', 'AbortError');
+            if (moved) continue;
+            if (keep) {
+                if (keptPages.size >= KEPT_PAGES_MAX) keptPages.delete(keptPages.keys().next().value);
+                keptPages.set(cacheKey, { data, revision: accessRevision(), epoch: requestEpoch, at: startedAt });
+            }
+            return data;
+        }
+        throw new DOMException('The access moved during the request', 'AbortError');
     }
 
     // The TMDB genre lists ({id, name} per genre, one list for TV and one for
