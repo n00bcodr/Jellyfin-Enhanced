@@ -77,7 +77,8 @@ test('without the shared surface registry a portal is not registered and must no
   const o = origin(s);
   const root = s.document.createElement('div');
   let closed = 0;
-  assert.equal(s.JE.openSurface, undefined, 'the shared registry is not on this base');
+  // A host without the shared surface registry (the play edge has it: D46's JE.openSurface).
+  s.JE.openSurface = undefined;
   assert.equal(o.register(root, () => { closed++; }), null, 'unavailable, not imitated');
   assert.equal(o.registrable(), false);
   assert.equal(closed, 0);

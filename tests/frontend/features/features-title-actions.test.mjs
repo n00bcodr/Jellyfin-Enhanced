@@ -16,6 +16,8 @@ function setup(t, extra = {}) {
     }, apiClient: { getCurrentUserId: () => user },
   });
   t.after(() => { h.JE.titleActions?.dispose?.(); h.close(); });
+  // The bundle's write queues (core/mutation-queue.js) load before every feature module that writes (Follow: notify-core).
+  h.load('core/mutation-queue.js');
   h.load('arr/actions/title-actions.js');
   h.load('arr/actions/title-actions-sheet.js');
   return { ...h, get NATIVE() { return h.NATIVE; }, calls, actions: h.JE.titleActions, switchUser: () => { user = 'user-b'; } };

@@ -54,7 +54,7 @@ function setup(t) {
   });
   h.allowConsoleError(/./);
   t.after(() => { h.JE.titleActions?.dispose?.(); h.JE.arrManage?.close?.(); h.JE.arrAskSheet?.close?.(); h.close(); });
-  for (const m of ['navigation', 'session', 'api-client']) h.load('core/' + m + '.js');
+  for (const m of ['navigation', 'session', 'mutation-queue', 'api-client']) h.load('core/' + m + '.js');
   // Every call into the transport, with whether it carries a binding (the write reached the queue, and how).
   const entered = [];
   for (const name of ['plugin', 'pluginResponse', 'ajax']) {
@@ -105,8 +105,12 @@ const OWNERS = {
   'Report (POST /jellyseerr/issue)': {
     path: '/jellyseerr/issue',
     load: h => h.load('jellyseerr/api.js'),
-    // The record read is already cached (the Report form read it when it opened), so the POST is the queued request.
-    ready: async h => { await h.JE.jellyseerrAPI.reportContext(603, 'movie'); },
+    // The report reads its record under its owner first (D46S2 audit S3; the core transport keeps no copy of it), so the
+    // pool fills the moment that read has been answered: the POST is then the queued request.
+    ready: async h => {
+      h.hooks.answer = (method, path) => { if (method === 'GET' && path.startsWith('/jellyseerr/movie/603') && !h.release) h.release = h.holdPool(); };
+    },
+    holdsItself: true,
     submit: (h, op) => h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'x', 0, 0, op),
     sent: h => h.writes('POST', '/jellyseerr/issue').length,
   },

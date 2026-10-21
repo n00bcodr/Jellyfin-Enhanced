@@ -96,7 +96,7 @@ test('JE write helpers all enter the core transport',()=>{
  assert.deepEqual(readers,[],'legacy reader transports must use core fetch for body/publication binding');
 });
 test('the settings saver retains its unavailable-ApiClient failure contract',async t=>{
- const h=createHarness();t.after(()=>h.close());h.load('enhanced/config.js');h.window.ApiClient=undefined;
+ const h=createHarness();t.after(()=>h.close());h.load('core/mutation-queue.js');h.load('enhanced/config.js');h.window.ApiClient=undefined;
  h.expectConsoleError(/ApiClient not available/);
  await h.JE.saveUserSettings('settings.json',{});
  await assert.rejects(h.JE.saveUserSettings('settings.json',{}, {throwOnError:true}),/ApiClient not available/);

@@ -86,8 +86,9 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
   // Planted constructs (D46S2-R9): a module named in `plants` loads through its transform, now or whenever a test loads it.
   const load = h.load;
   h.load = m => load(m, plants[m]);
-  // Production order: navigation, session, session-action (after session: it registers its user-change handler), the transport.
-  for (const m of ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/lifecycle.js', 'core/api-client.js']) h.load(m);
+  // Production order: navigation, session, session-action (after session: it registers its user-change handler), each
+  // document's write queue, the transport.
+  for (const m of ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/mutation-queue.js', 'core/lifecycle.js', 'core/api-client.js']) h.load(m);
   const manager = h.JE.core.api.manager;
   manager.CONFIG.retry.baseDelayMs = 1; manager.CONFIG.retry.maxDelayMs = 2;
   for (const m of ['jellyseerr/seerr-status.js', 'jellyseerr/api.js', 'jellyseerr/modal.js', 'jellyseerr/ui/ui-icons.js', 'jellyseerr/ui/ui-quota.js',

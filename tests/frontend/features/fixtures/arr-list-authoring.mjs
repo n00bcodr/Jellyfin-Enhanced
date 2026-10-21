@@ -149,7 +149,8 @@ export function setupAuthoring(t, { route, config = {}, JE = {}, authoring = tru
     }
   });
   t.after(() => h.close());
-  if (strict) h.JE.strictOwners = true;
+  // Production unless strict: the harness makes owner refusals throw by default (D46S2-R6); here they are logged.
+  h.JE.strictOwners = strict ? true : false;
   const spy = installDomWriteSpy(h.window);
   t.after(() => {
     assert.equal(spy.violations.length, 0, 'list DOM writes outside paint(): ' + JSON.stringify(spy.violations.slice(0, 2)));
