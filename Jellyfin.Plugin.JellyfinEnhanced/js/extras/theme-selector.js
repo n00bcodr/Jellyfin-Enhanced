@@ -16,6 +16,7 @@
         'Jellyflix': 'jellyflix.css',
         'Jellypurple': 'jellypurple.css',
         'Lavender': 'lavender.css',
+        'Liquid Glass': 'liquidglass.css',
         'Midnight': 'midnight.css',
         'Mint': 'mint.css',
         'Ocean': 'ocean.css',

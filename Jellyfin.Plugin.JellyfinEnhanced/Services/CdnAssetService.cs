@@ -218,6 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("jellyfish", "colors/jellyflix.css"),
             ("jellyfish", "colors/jellypurple.css"),
             ("jellyfish", "colors/lavender.css"),
+            ("jellyfish", "colors/liquidglass.css"),
             ("jellyfish", "colors/midnight.css"),
             ("jellyfish", "colors/mint.css"),
             ("jellyfish", "colors/ocean.css"),
