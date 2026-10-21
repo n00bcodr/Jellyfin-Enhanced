@@ -12,7 +12,7 @@
 
     // Late-bound cross-module references (defined in the later-loaded
     // hidden-content-save/dialogs/filter modules).
-    const debouncedSave = (...args) => internal.debouncedSave(...args);
+    const persist = (...args) => internal.persist(...args);
     const showUndoToast = (...args) => internal.showUndoToast(...args);
     const refreshNativeCardVisibility = (...args) => internal.refreshNativeCardVisibility(...args);
 
@@ -199,17 +199,37 @@
         button.jeHideButtonLive = true;
         return button;
     }
+    /** A hidden-content document with both of its parts. */
+    const withParts = doc => ({ ...(doc || {}), items: { ...((doc && doc.items) || {}) }, settings: { ...((doc && doc.settings) || {}) } });
 
     /**
-     * Returns the in-memory hidden-content data object, lazily initialised
-     * from `JE.userConfig.hiddenContent`.
+     * The person's hidden-content.json as the settings store shows it (the server's document as last read or answered,
+     * plus this page's queued changes). Every change this module makes is an item or settings operation on it
+     * (see persist); this copy and the lookup sets follow each publication of the document (followStore).
      * @returns {{ items: Object, settings: Object }}
      */
     function getHiddenData() {
         if (!hiddenData) {
-            hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+            hiddenData = withParts(JE.internals.userDocument ? JE.internals.userDocument('hidden-content.json').document : JE.userConfig?.hiddenContent);
         }
         return hiddenData;
+    }
+
+    /**
+     * Takes a publication of the store's document: the copy, the lookup sets, the page (cards no longer hidden come back;
+     * newly hidden ones go) and the management views.
+     * @param {Object} doc The document as the store shows it now.
+     * @param {string} [reason] Why it was published ('observed' for the registration itself).
+     */
+    function followStore(doc, reason) {
+        const before = new Set(hiddenIdSet);
+        hiddenData = withParts(doc);
+        rebuildSets();
+        if (reason === 'observed') return;
+        const restored = new Set([...before].filter(id => !hiddenIdSet.has(id)));
+        emitChange();
+        if (restored.size) restoreNativeCardsForIds(restored);
+        refreshNativeCardVisibility();
     }
 
     /**
@@ -302,25 +322,10 @@
         }
     }
 
-    // Re-fetch from server and replace local cache. Don't call immediately after a server-direct write from THIS tab — use markScopedHidden().
+    // Reads the document again through the store (its answer publishes it; one queued change of this page keeps it).
     async function refresh() {
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         try {
-            const userId = ApiClient.getCurrentUserId();
-            if (!userId) return false;
-            const fresh = await JE.core.api.ajax({
-                type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
-                dataType: 'json'
-            });
-            if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
-            const camelCased = (typeof JE.toCamelCase === 'function') ? JE.toCamelCase(fresh) : fresh;
-            JE.userConfig = JE.userConfig || {};
-            JE.userConfig.hiddenContent = camelCased || { items: {}, settings: {} };
-            hiddenData = JE.userConfig.hiddenContent;
-            rebuildSets();
-            emitChange();
-            return true;
+            return await JE.readUserSettings('hidden-content.json');
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: Failed to refresh hidden-content', e);
             return false;
@@ -351,9 +356,11 @@
         return ra >= rb ? la : lb;
     }
 
-    // Local-cache mirror of a server-side hide write — preserves existing metadata + merges scopes via mergeCwScope.
-    // Looks up under hyphenated AND N-format keys (server canonical is hyphenated; some callers pass N-format from data-id).
-    function markScopedHidden(itemId, scope) {
+    // The answer of a server-side hide write (the home-row removal) as part of the store's document — preserves existing
+    // metadata + merges scopes via mergeCwScope, as the server did. Looks up under hyphenated AND N-format keys (server
+    // canonical is hyphenated; some callers pass N-format from data-id). `revision`: the document's revision the route
+    // answered (the store orders it with its own saves' answers).
+    function markScopedHidden(itemId, scope, revision) {
         if (!itemId) return;
         const _scope = (scope || 'continuewatching').toLowerCase();
         const data = getHiddenData();
@@ -391,14 +398,8 @@
             episodeNumber: existing?.episodeNumber ?? null,
             hideScope: finalScope,
         };
-        const nextItems = { ...items, [itemId]: merged };
-        if (hyphenated !== itemId) delete nextItems[hyphenated];
-        if (noHyphen !== itemId) delete nextItems[noHyphen];
-        hiddenData = { ...data, items: nextItems };
-        JE.userConfig = JE.userConfig || {};
-        JE.userConfig.hiddenContent = hiddenData;
-        rebuildSets();
-        emitChange();
+        const remove = [hyphenated, noHyphen].filter(key => key !== itemId && items[key]);
+        JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { [itemId]: merged }, remove }, revision);
     }
 
     // ============================================================
@@ -452,8 +453,8 @@
     function hideItem({ itemId, name, type, tmdbId, posterPath, seriesId, seriesName, seasonNumber, episodeNumber, hideScope }, owner = JE.NATIVE) {
         const provider = titleData({ itemId, name, type, tmdbId, posterPath });
         if ((!itemId || JE.titleDetails?.isSynthetic?.(itemId)) && provider) return saveTitleRule(provider, true, owner).catch(() => false);
+        // Synthetic ids (titles not in the library, shown on a native details page) are never stored.
         if (JE.titleDetails?.isSynthetic?.(itemId) || JE.titleDetails?.isSynthetic?.(seriesId)) return;
-        const data = getHiddenData();
         const key = itemId || `tmdb-${tmdbId}`;
         const newItem = {
             itemId: itemId || '',
@@ -469,16 +470,8 @@
             hideScope: hideScope || 'global'
         };
 
-        hiddenData = {
-            ...data,
-            items: { ...data.items, [key]: newItem }
-        };
-        JE.userConfig.hiddenContent = hiddenData;
-        rebuildSets();
-        debouncedSave();
-        emitChange();
+        persist({ upsert: { [key]: newItem } });
         showUndoToast(name || 'Item', key);
-        refreshNativeCardVisibility();
     }
 
     /**
@@ -499,49 +492,29 @@
         const title = titleData({ ...(metadata || entry), itemId });
         if (title && hiddenTmdbIdSet.has(title.key)) {
             // Old detail hides sometimes stored only the Jellyfin id. Remove those exact-item
-            // global aliases before the atomic provider delete; the queue flush preserves ordering.
+            // global aliases (one PATCH on the document queue) before the atomic provider delete.
             const wanted = normalizeId(metadata?.Id || metadata?.itemId || entry?.itemId || itemId);
-            const items = { ...data.items };
-            let changed = false;
-            for (const key of Object.keys(items)) {
-                if (items[key].itemId && normalizeId(items[key].itemId) === wanted &&
-                    (items[key].hideScope || 'global') === 'global' && !titleKey(items[key].type, items[key].tmdbId)) {
-                    delete items[key]; changed = true;
-                }
-            }
-            if (changed) {
-                hiddenData = { ...data, items };
-                JE.userConfig.hiddenContent = hiddenData;
-                rebuildSets();
-                debouncedSave();
-            }
+            const aliases = Object.keys(data.items || {}).filter(key => data.items[key].itemId && normalizeId(data.items[key].itemId) === wanted &&
+                (data.items[key].hideScope || 'global') === 'global' && !titleKey(data.items[key].type, data.items[key].tmdbId));
+            if (aliases.length) persist({ remove: aliases });
             return saveTitleRule(title, false, owner).catch(() => false);
         }
-        const newItems = { ...data.items };
-
+        const items = getHiddenData().items;
         // Try direct key match first (covers storage keys like "tmdb-12345")
-        if (newItems[itemId]) {
-            delete newItems[itemId];
-        } else {
+        let key = items[itemId] ? itemId : undefined;
+        if (!key) {
             // Fallback: itemId might be a Jellyfin ID — find the matching storage key.
             // Compared canonically: the caller usually has an undashed ID off a card, while a
             // server-written entry stores it dashed, and a raw comparison would silently no-op.
             // Guarded against an empty/unusable argument, which would otherwise normalise to ''
             // and match the first TMDB-only entry (those carry no itemId).
             const wanted = normalizeId(itemId);
-            const matchingKey = wanted
-                ? Object.keys(newItems).find(k => normalizeId(newItems[k].itemId) === wanted)
-                : undefined;
-            if (matchingKey) delete newItems[matchingKey];
+            key = wanted ? Object.keys(items).find(k => normalizeId(items[k].itemId) === wanted) : undefined;
         }
-
-        hiddenData = { ...data, items: newItems };
-        JE.userConfig.hiddenContent = hiddenData;
-        rebuildSets();
-        debouncedSave();
-        emitChange();
-        // The filter shows the item's cards again unless another rule still hides them.
-        refreshNativeCardVisibility();
+        // The server also removes the same item stored under another spelling of its id (another tab may have hidden it so).
+        persist({ remove: [key || itemId].filter(Boolean) });
+        // Cards of a scoped hide (not in the global lookup set) come back too.
+        if (itemId && !String(itemId).startsWith('tmdb-')) restoreNativeCardsForIds(new Set([itemId]));
     }
 
     /**
@@ -578,15 +551,7 @@
      */
     function updateSettings(partial) {
         rulesGeneration++;
-        const data = getHiddenData();
-        hiddenData = {
-            ...data,
-            settings: { ...data.settings, ...partial }
-        };
-        JE.userConfig.hiddenContent = hiddenData;
-        debouncedSave();
-        emitChange();
-        refreshNativeCardVisibility();
+        persist({ set: { ...partial } });
     }
 
     /**
@@ -673,26 +638,21 @@
     }
 
     /**
-     * Unhides all items, restoring full visibility.  Clears the entire items map.
+     * Unhides every item this page shows (an item another tab or device hid since its answer stays hidden).
      */
     function unhideAll() {
-        const data = getHiddenData();
-        hiddenData = { ...data, items: {} };
-        JE.userConfig.hiddenContent = hiddenData;
-        rebuildSets();
-        debouncedSave();
-        emitChange();
-        refreshNativeCardVisibility();
+        const keys = Object.keys(getHiddenData().items);
+        if (keys.length) persist({ remove: keys });
     }
 
     /**
-     * Split shim: performs JE.initializeHiddenContent's data reset (formerly
-     * the inline `hiddenData = …; rebuildSets();` lines) inside the module
-     * that owns the hiddenData closure variable.
+     * Takes the store's document again (initialization, a new person's data) and follows its publications from here on.
      */
     function resetFromUserConfig() {
-        hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+        hiddenData = null;
+        getHiddenData();
         rebuildSets();
+        JE.internals.observeUserDocument?.('hidden-content.json', 'hidden-content-data', followStore);
     }
 
     // Hidden-content data is per-user. Clear the local mirror the moment the

@@ -10,7 +10,7 @@ import { createHarness, jsRoot } from '../helpers/harness.mjs';
 import { fakeClock } from '../helpers/fake-clock.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
-const MODULES = ['arr/status/status-core.js', 'arr/notify/notify-core.js', 'arr/notify/notify-follow.js', 'arr/notify/notify-bell.js', 'arr/notify/notify-panel.js', 'arr/notify/notify-styles.js'];
+const MODULES = ['core/mutation-queue.js', 'arr/status/status-core.js', 'arr/notify/notify-core.js', 'arr/notify/notify-follow.js', 'arr/notify/notify-bell.js', 'arr/notify/notify-panel.js', 'arr/notify/notify-styles.js'];
 const USER = '0123456789abcdef0123456789abcdef';
 const plain = v => JSON.parse(JSON.stringify(v));
 

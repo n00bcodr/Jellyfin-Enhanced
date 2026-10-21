@@ -2,21 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness, loadKeyCombo, plain } from '../helpers/harness.mjs';
 
+/** The settings store's shortcuts.json, as the editor uses it: an operation changes the document and its published view. */
+function shortcutStore(saves) {
+  const store = { document: { Shortcuts: [] } };
+  store.patch = (file, op) => {
+    saves.push([file, plain(op)]);
+    const list = store.document.Shortcuts.filter(s => !(op.remove || []).includes(s.Name));
+    for (const [name, record] of Object.entries(op.upsert || {})) {
+      const index = list.findIndex(s => s.Name === name);
+      if (index >= 0) list[index] = { ...record, Name: name }; else list.push({ ...record, Name: name });
+    }
+    store.document = { Shortcuts: list };
+    store.view.Shortcuts = plain(list);
+    return Promise.resolve();
+  };
+  return store;
+}
+
 function setup(t, disabled = false) {
   const actions = [], saves = [];
+  const store = shortcutStore(saves);
   const h = createHarness({ html: '<video></video><input id="typing"><div id="help"><div><kbd tabindex="0" class="shortcut-key" data-action="CycleAudioTracks">A</kbd></div><div></div></div>',
     JE: { pluginConfig: { DisableAllShortcuts: disabled }, currentSettings: {}, state: { activeShortcuts: { CycleAudioTracks: 'A', CycleSubtitleTracks: 'S', GoToHome: 'H', JumpToPercentage: '' } },
-      userConfig: { shortcuts: { Shortcuts: [] } }, t: key => key, saveUserSettings: (...args) => saves.push(args),
+      userConfig: { shortcuts: { Shortcuts: [] } }, t: key => key, patchUserSettings: (...args) => store.patch(...args),
+      internals: { userDocument: () => ({ document: plain(store.document), read: true }) },
       isVideoPage: () => true, cycleAudioTrack: () => actions.push('audio'), cycleSubtitleTrack: () => actions.push('subtitle'),
       showEnhancedPanel: () => actions.push('panel'),
       injectGlobalStyles() {}, addPluginMenuButton() {}, addUserMenuLink() {}, addRandomButton() {}, applySavedStylesWhenReady() {},
       helpers: { createObserver() {}, throttle: fn => fn, onBodyMutation() {} } } });
   t.after(() => h.close());
+  store.view = h.JE.userConfig.shortcuts;
   loadKeyCombo(h); h.load('enhanced/events.js'); h.load('enhanced/settingspanel/ui-panel-shortcut-editor.js');
   h.JE.internals.enhancedUi.wireShortcutEditor({ help: h.document.getElementById('help'), pluginShortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }], primaryAccentColor: 'blue', kbdBackground: 'black' });
   const key = h.document.querySelector('kbd');
   const press = (target, name, modifiers = {}) => { const event = new h.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...modifiers }); target.dispatchEvent(event); return event; };
-  return { ...h, actions, saves, key, press };
+  return { ...h, actions, saves, store, key, press };
 }
 
 for (const [key, modifiers] of [['k', {}], ['ArrowLeft', {}], [' ', {}], ['Enter', {}], ['n', { shiftKey: true }]]) {
@@ -40,10 +60,10 @@ test('editor rejects conflicts and modifier-only input, disables with Delete and
 for (const [label, press, expected] of [['rebinding', 'q', 'Q'], ['disabling', 'Delete', '']]) {
   test(`shortcut ${label} saved by the editor overrides the plugin default after a reload`, t => {
     const h = setup(t); h.key.focus(); h.press(h.key, press);
-    const [file, saved] = h.saves.at(-1); assert.equal(file, 'shortcuts.json');
-    const reloaded = createHarness({ JE: { pluginConfig: { Shortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }, { Name: 'GoToHome', Key: 'H' }] }, userConfig: { shortcuts: plain(saved) } } });
+    const [file] = h.saves.at(-1); assert.equal(file, 'shortcuts.json');
+    const reloaded = createHarness({ JE: { pluginConfig: { Shortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }, { Name: 'GoToHome', Key: 'H' }] }, userConfig: { shortcuts: plain(h.store.document) } } });
     t.after(() => reloaded.close());
-    reloaded.load('enhanced/config.js'); reloaded.JE.initializeShortcuts();
+    reloaded.load('core/mutation-queue.js'); reloaded.load('enhanced/config.js'); reloaded.JE.initializeShortcuts();
     assert.equal(reloaded.JE.state.activeShortcuts.CycleAudioTracks, expected);
     assert.equal(reloaded.JE.state.activeShortcuts.GoToHome, 'H', 'bindings the user never changed keep the plugin default');
   });

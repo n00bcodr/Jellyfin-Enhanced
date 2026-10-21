@@ -14,6 +14,13 @@
     const enabledPendingTmdb = new Set();
 
     let userPrefs = {};
+    // The override saves not answered yet, in order (each a { Set } of preferences), and the preferences' one queue, bound to
+    // the signed-in session (core/mutation-queue.js): saves go out one at a time (a change made back while one is out
+    // reaches the server after it), the session is checked right before each is sent, and an account switch cancels the
+    // previous person's saves unsent. Its revision moves on with every save queued or answered (and the switch), so a state
+    // read that began before one doesn't take its Prefs.
+    let pendingPrefs = [];
+    const prefsQueue = JE.core.mutationQueue('spoiler-prefs');
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -292,8 +299,15 @@
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
+    // Play edge: the rebuild's PATCH (only the preferences that differ; the server applies them to what it holds now)
+    // sent through D46's owner-bound mutateState.
     internal.setUserPrefs = function(next, owner) {
-        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true }, () => { userPrefs = { ...(next || {}) }; }, owner)
+        const set = {};
+        for (const [key, value] of Object.entries(next || {})) {
+            if (JSON.stringify(value) !== JSON.stringify(userPrefs?.[key])) set[key] = value;
+        }
+        if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
+        return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, () => { userPrefs = { ...(userPrefs || {}), ...set }; }, owner)
             .then(() => internal.getUserPrefs());
     };
 
@@ -320,5 +334,8 @@
         // The outgoing viewer's native toggles show their state; the next page view draws the incoming one.
         document.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
         refreshControls();
+        // The previous person's saves are not this person's: the queue cancels those not sent yet (its own reset), their
+        // answers are dropped (epoch), and nothing waits on them.
+        pendingPrefs = [];
     });
 })(window.JellyfinEnhanced);

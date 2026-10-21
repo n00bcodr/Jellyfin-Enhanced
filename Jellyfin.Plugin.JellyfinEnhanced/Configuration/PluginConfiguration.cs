@@ -505,6 +505,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string MaintenanceScheduleAction { get; set; } = "none";
 
         // Jellyfin Enhanced Settings
+        /// <summary>
+        /// The configuration's generation: every write of the configuration moves it on (JellyfinEnhanced.SaveConfiguration).
+        /// It travels with the document Jellyfin's plugin-configuration route hands out and takes back, so a whole
+        /// configuration built on an earlier one is told apart and refused (JellyfinEnhanced.UpdateConfiguration). Never
+        /// set by a configuration page save.
+        /// </summary>
+        public long ConfigurationGeneration { get; set; }
+
         public int ToastDuration { get; set; }
         public int HelpPanelAutocloseDelay { get; set; }
         public bool EnableCustomSplashScreen { get; set; }

@@ -114,7 +114,7 @@
                 await internal.whenLoaded();
                 if (!action.current()) return;
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
-                const prefs = internal.getUserPrefs();
+                // Only this override: the others are as the server holds them (or will, once their saves are answered).
                 const key = changed.dataset.pref;
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
                 await internal.setUserPrefs(prefs, JE.NATIVE);

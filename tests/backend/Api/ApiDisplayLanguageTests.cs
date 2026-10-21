@@ -46,7 +46,7 @@ public class ApiDisplayLanguageTests
     {
         using var f = new ApiPluginFixture();
         var person = Guid.NewGuid();
-        Assert.IsType<OkObjectResult>(Controller(f, person).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = sent!, ShowFileSizes = true }));
+        Assert.IsType<OkObjectResult>(Controller(f, person).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = sent!, ShowFileSizes = true }));
         Assert.Equal(stored, Stored(f, person).DisplayLanguage);
         Assert.True(Stored(f, person).ShowFileSizes);
     }
@@ -93,14 +93,14 @@ public class ApiDisplayLanguageTests
         switch (path)
         {
             case "save":
-                Assert.IsType<OkObjectResult>(Controller(f, person).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = raw }));
+                Assert.IsType<OkObjectResult>(Controller(f, person).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = raw }));
                 break;
             case "seed":
                 f.Plugin.Configuration.DefaultLanguage = raw;
                 Assert.IsType<OkObjectResult>(Controller(f, person).GetUserSettingsSettings(person.ToString("N")));
                 break;
             default:
-                Assert.IsType<OkObjectResult>(Controller(f, person).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = "fr" }));
+                Assert.IsType<OkObjectResult>(Controller(f, person).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { DisplayLanguage = "fr" }));
                 f.Plugin.Configuration.DefaultLanguage = raw;
                 Assert.IsType<OkObjectResult>(admin.ResetAllUsersSettings());
                 break;

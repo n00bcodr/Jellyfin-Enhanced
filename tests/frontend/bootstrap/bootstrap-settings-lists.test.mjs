@@ -28,7 +28,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
     apiClient: { ajax: async request => { if (request.type === 'POST' || request.type === 'PATCH') writes.push(request); return []; } }
   });
   tt.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -76,7 +76,8 @@ test('choosing saves Hide as false, household as null and swap-in Yes as true; u
   const h = panel(t, { config: lists });
   h.wire();
   await h.choose('listStatusSelect', 'off');
-  let saved = JSON.parse(h.writes.at(-1).data);
+  // Round 7: a display save is a PATCH of its own field ({ Set }); a consent goes through the consent operation.
+  let saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.listStatus, false);
   assert.ok(!('listPlaceholders' in saved) && !('listSwapIn' in saved));
   assert.deepEqual(h.toasts, [tr('toast_list_settings_saved')]);
@@ -92,7 +93,7 @@ test('choosing saves Hide as false, household as null and swap-in Yes as true; u
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.equal(h.document.getElementById('listSwapInSelect').selectedIndex, 0, 'false renders the existing No option');
   await h.choose('listStatusSelect', '');
-  assert.equal(JSON.parse(h.writes.at(-1).data).listStatus, null);
+  assert.equal(JSON.parse(h.writes.at(-1).data).Set.listStatus, null);
   assert.equal(h.writes.length, 4);
 });
 
@@ -114,7 +115,7 @@ test('translated list labels are escaped', t => {
 test('a stale display document reconciles the server consent without restoring it locally', async t => {
   const h = panel(t, { config: lists, settings: { listSwapIn: true } });
   h.window.ApiClient.ajax = async request => {
-    if (request.type === 'POST') {
+    if (request.type === 'PATCH' && !request.url.endsWith('/consent')) {
       h.writes.push(request);
       const response = { consents: { ListSwapIn: false } };
       return request.dataType === 'json' ? response : JSON.stringify(response);
@@ -134,7 +135,7 @@ for (const consentSucceeds of [false, true]) test(`explicit revocation followed 
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
-    if (request.type === 'PATCH') return new Promise((resolve, reject) => {
+    if (request.url.endsWith('/consent')) return new Promise((resolve, reject) => {
       release = () => consentSucceeds ? resolve({ consents: { ListSwapIn: false } }) : reject(new Error('consent refused'));
     });
     return Promise.resolve({ consents: { ListSwapIn: consentSucceeds ? false : true } });
@@ -149,7 +150,8 @@ for (const consentSucceeds of [false, true]) test(`explicit revocation followed 
   await new Promise(done => setImmediate(done));
   assert.equal(h.JE.currentSettings.listSwapIn, !consentSucceeds);
   assert.equal(h.JE.currentSettings.showFileSizes, true);
-  assert.deepEqual(h.writes.map(x => x.type), ['PATCH', 'POST']);
+  assert.deepEqual(h.writes.map(x => x.url.split('/').pop()), ['consent', 'settings.json']);
+  assert.deepEqual(JSON.parse(h.writes[1].data), { Set: { showFileSizes: true } }, 'the stale document sends only what it changed');
 });
 
 test('a consent operation never retains a display save that failed ahead of it', async t => {
@@ -158,7 +160,7 @@ test('a consent operation never retains a display save that failed ahead of it',
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);
-    if (request.type === 'POST') return new Promise((_, reject) => { fail = () => reject(new Error('display refused')); });
+    if (!request.url.endsWith('/consent')) return new Promise((_, reject) => { fail = () => reject(new Error('display refused')); });
     return Promise.resolve({ consents: { ListSwapIn: true } });
   };
   h.wire();
@@ -181,13 +183,13 @@ test('a failed explicit consent rolls back and never announces success', async t
 test('session change cancels a consent queued behind an in-flight display save', async t => {
   const h = panel(t, { config: lists });let epoch = 1, release;
   h.JE.session = { getEpoch: () => epoch, isCurrent: n => n === epoch };
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);return new Promise(resolve => { release = resolve; });
   };
   h.wire();await h.choose('listStatusSelect', 'off');await h.choose('listSwapInSelect', 'on');
-  epoch++;h.JE.userConfig.settings = { listSwapIn: false };h.JE.currentSettings = h.JE.loadSettings();
+  epoch++;h.JE.userConfig = { ...h.JE.userConfig, settings: { listSwapIn: false } };h.JE.currentSettings = h.JE.loadSettings();
   release({ consents: { ListSwapIn: false } });await new Promise(done => setImmediate(done));
   assert.equal(h.writes.length, 1);
   assert.equal(h.JE.currentSettings.listSwapIn, false);

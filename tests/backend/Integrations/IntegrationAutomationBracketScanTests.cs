@@ -633,7 +633,10 @@ public class IntegrationAutomationBracketScanTests
     // another source file, outside the bracket. The helper's destination is its parameter: the scan follows it to the
     // argument every caller passes (the person's settings path) and finds the write unbracketed.
     private const string Publisher = "\nnamespace Jellyfin.Plugin.JellyfinEnhanced.Configuration { internal static class SettingsPublisher { public static void Publish(string source, string destination) => System.IO.File.Move(source, destination, true); } }";
-    private const string BracketedMove = "VersionOf(userId, fileName).Mutate(() =>\n                {\n                    File.Move(tempPath, configPath, overwrite: true);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });";
+    private const string BracketedMove = "VersionOf(userId, fileName).Mutate(() =>\n                {\n                    File.Move(tempPath, configPath, overwrite: true);\n"
+        + "                    // The revision moves on once the new document is what readers see (a reader that took the revision\n"
+        + "                    // before then hands out the older one: refused, never allowed, by a whole write built on it).\n"
+        + "                    Advance(configPath);\n                    Moved?.Invoke(Normalized(userId), fileName);\n                });";
 
     private static WriteGateWalk Published(string replacement) => WriteGateWalk.Plugin
         .With(Users, source =>

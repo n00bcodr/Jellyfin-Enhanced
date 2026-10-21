@@ -42,6 +42,13 @@
     /** Dismiss timers of the toasts on screen (cancelled when a toast goes). */
     const toastTimers = new Map();
 
+    // The person's notification settings have one queue, bound to the signed-in session (core/mutation-queue.js): changes
+    // go out one at a time in the order they were made (each a change of the fields it names, applied by the server to
+    // what it holds then), the session is checked right before each is sent, and an account switch cancels the previous
+    // person's. Its revision moves on with every change queued or answered: a settings read that began before one is not
+    // taken over it.
+    const prefsQueue = JE.core.mutationQueue('arr-notify-prefs');
+
     /**
      * True when the server has notifications on (master, phase 1, phase 2 and the notifications switch).
      * @returns {boolean} Enabled.
@@ -306,6 +313,7 @@
     async function loadPrefs(force) {
         if (state.prefs && !force) return { prefs: state.prefs, channels: state.channels, contact: state.contact, admin: state.admin };
         const identity = state.identity;
+        const revision = prefsQueue.revision;
         let body = null;
         try {
             body = await api('/acquire/notify/prefs');
@@ -314,7 +322,8 @@
         }
         // Another user signed in meanwhile: this answer (their topic, their address) isn't theirs.
         if (identity !== state.identity) return null;
-        applyPrefs(body);
+        // A change was queued or answered since this read began: the read may hold less than the page does.
+        if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);
         return { prefs: state.prefs, channels: state.channels, contact: state.contact, admin: state.admin };
     }
 
@@ -345,11 +354,12 @@
     async function prefsCall(path, method, body) {
         const identity = state.identity;
         try {
-            const res = await api(path, { method, body });
+            const res = await prefsQueue.send(() => api(path, { method, body }));
             if (identity !== state.identity) return { ok: false, code: 'user_changed' };
             if (res && res.prefs) applyPrefs(res);
             return { ok: true, body: res };
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
             const code = err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed');
             return { ok: false, code, status: err?.status };
         }

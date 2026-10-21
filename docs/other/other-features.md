@@ -668,7 +668,7 @@ Warn users during server work, optionally restrict non-admin accounts or remote 
 
 !!! warning "Saving can restrict access immediately"
 
-    The default manual action disables non-admin accounts. Leave both **Action** boxes unchecked for a banner/notification-only window. Administrators are excluded from policy changes. An empty specific-user selection means all eligible non-admin users; **Deselect All** does not mean “affect nobody.”
+    The default manual action disables non-admin accounts. Leave both **Action** boxes unchecked for a banner/notification-only window. Administrators are excluded from policy changes. **Select specific users** needs at least one ticked user: the page refuses to save it with nobody ticked (the server would read an empty selection as every eligible non-admin user), and says so. Choose **All non-admin users** to affect everyone.
 
 ### Settings
 

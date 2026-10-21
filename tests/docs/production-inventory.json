@@ -35,6 +35,10 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -144,6 +148,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs",
+      "category": "Controllers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ConfigurationPatchController.cs",
       "category": "Controllers"
     },
     {
@@ -1199,6 +1207,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientBuildFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientReloadNotice.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
       "category": "Services"
     },
@@ -1216,6 +1232,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostConfigurationRouteFilter.cs",
       "category": "Services"
     },
     {
@@ -1924,6 +1944,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/mutation-queue.js",
       "category": "js"
     },
     {
@@ -3469,6 +3493,18 @@
       ]
     },
     {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/configuration",
+      "method": "Patch",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/ConfigurationPatchController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(MaxPatchBytes)",
+        "ProducesResponseType(StatusCodes.Status200OK)",
+        "ProducesResponseType(StatusCodes.Status400BadRequest)"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/admin/backup/export",
       "method": "Export",
@@ -4322,6 +4358,61 @@
       ]
     },
     {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/settings.json",
+      "method": "PatchUserSettingsSettings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/bookmark.json",
+      "method": "PatchUserBookmark",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/ddd-triggers.json",
+      "method": "PatchUserSettingsDdd",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/shortcuts.json",
+      "method": "PatchUserSettingsShortcuts",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/elsewhere.json",
+      "method": "PatchUserSettingsElsewhere",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/user-settings/{userId}/shortcuts.json",
       "method": "SaveUserSettingsShortcuts",
@@ -4420,6 +4511,17 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/hidden-content.json",
+      "method": "PatchUserHiddenContent",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "BodyLimit(UserDocumentPatchBytes)",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
       ]
     },
     {
@@ -4555,6 +4657,18 @@
       "following_attributes": [
         "Authorize",
         "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "PATCH",
+      "path": "/JellyfinEnhanced/spoiler-blur/user-prefs",
+      "method": "PatchSpoilerBlurUserPrefs",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")",
+        "Consumes(\"application/json\")",
+        "RequestSizeLimit(8 * 1024)"
       ]
     },
     {
@@ -5415,6 +5529,70 @@
   ],
   "configuration_properties": [
     {
+      "class": "ConfigurationPatch",
+      "name": "Set",
+      "type": "Dictionary<string, JsonElement>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "ConfigurationPatch",
+      "name": "Instances",
+      "type": "Dictionary<string, InstanceListPatch>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceListPatch",
+      "name": "ResetUnreadable",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceListPatch",
+      "name": "Add",
+      "type": "List<JsonElement>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceListPatch",
+      "name": "Remove",
+      "type": "List<string>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceListPatch",
+      "name": "Change",
+      "type": "List<InstanceChange>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceChange",
+      "name": "Id",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
+      "class": "InstanceChange",
+      "name": "Set",
+      "type": "Dictionary<string, JsonElement>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/ConfigurationPatch.cs"
+    },
+    {
       "class": "Shortcut",
       "name": "Name",
       "type": "string",
@@ -5548,6 +5726,14 @@
       "type": "string",
       "initializer": "\"none\"",
       "constructor_assignment": "\"none\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ConfigurationGeneration",
+      "type": "long",
+      "initializer": null,
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -10889,8 +11075,32 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
     },
     {
+      "literal": "ddd-triggers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "elsewhere.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "shortcuts.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/config.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-data.js"
+    },
+    {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-save.js"
     },
     {
       "literal": "settings.json",
@@ -11117,10 +11327,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 660,
-    "routes": 299,
-    "configuration_properties": 642,
-    "storage_references": 96,
+    "files": 666,
+    "routes": 307,
+    "configuration_properties": 651,
+    "storage_references": 102,
     "scheduled_tasks": 15,
     "locales": 33
   }

@@ -35,13 +35,77 @@ export const REGIONS = '# code\tname\nUS\tUnited States\nDE\tGermany\nNZ\tNew Ze
 
 const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
+// What a configuration patch never sets (the server's ConfigurationPatcher.NotSettable): server-minted fields and the
+// fields derived from the instance lists.
+const NOT_SETTABLE = new Set(['AnalyticsInstallId', 'AnalyticsInstallSecret', 'AnalyticsLastReportedAt', 'AnalyticsLastPayloadJson',
+  'AnalyticsLastReportedPluginVersion', 'AnalyticsLastReportedJellyfinTarget', 'AnalyticsLastReportedJellyfinVersion',
+  'AnalyticsForbiddenSinceLastSuccess', 'ArrServerOwnedSeen', 'ConfigurationGeneration', 'SonarrInstances', 'RadarrInstances', 'SonarrUrl', 'SonarrApiKey',
+  'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings']);
+
+/**
+ * The scripted server's PATCH /JellyfinEnhanced/configuration: the same rules as the plugin's ConfigurationPatcher (set
+ * the named fields; instance lists: remove, change, add by id; the first instance mirrored into the single-instance
+ * fields). The plugin's own tests cover the C# side.
+ * @returns {{ next: object, applied: string[], ignored: string[], skipped: string[] }}
+ */
+export function applyConfigPatch(config, patch) {
+  const next = clone(config) || {};
+  const applied = [], ignored = [], skipped = [];
+  for (const [field, value] of Object.entries(patch?.Set || {})) {
+    if (NOT_SETTABLE.has(field)) { ignored.push(field); continue; }
+    next[field] = clone(value);
+    applied.push(field);
+  }
+  for (const [list, ops] of Object.entries(patch?.Instances || {})) {
+    if (list !== 'SonarrInstances' && list !== 'RadarrInstances') { ignored.push(list); continue; }
+    let readable;
+    try { readable = JSON.parse(next[list] || '[]'); } catch { readable = null; }
+    if (!Array.isArray(readable)) readable = null;
+    let changed = false;
+    // A confirmed reset replaces only a list that is still unreadable (the server's rule); otherwise nothing of it applies.
+    if (ops.ResetUnreadable && readable) { skipped.push(`${list} reset (the stored list is readable)`); continue; }
+    if (!ops.ResetUnreadable && !readable) throw Object.assign(new Error(`The stored ${list} can't be read`), { status: 400 });
+    const items = ops.ResetUnreadable ? [] : readable;
+    if (ops.ResetUnreadable) { applied.push(`${list} reset`); changed = true; }
+    const indexOf = id => id ? items.findIndex(x => x && String(x.Id || '').toLowerCase() === String(id).toLowerCase()) : -1;
+    for (const id of ops.Remove || []) {
+      const i = indexOf(id);
+      if (i < 0) { skipped.push(`${list}[${id}] remove`); continue; }
+      items.splice(i, 1); changed = true;
+    }
+    for (const change of ops.Change || []) {
+      const i = indexOf(change?.Id);
+      if (i < 0) { skipped.push(`${list}[${change?.Id}] change`); continue; }
+      for (const [path, value] of Object.entries(change.Set || {})) {
+        const [head, sub] = path.split('.');
+        if (sub === undefined) items[i][head] = clone(value);
+        else items[i][head] = { ...(items[i][head] && typeof items[i][head] === 'object' ? items[i][head] : {}), [sub]: clone(value) };
+        changed = true;
+      }
+    }
+    for (const added of ops.Add || []) {
+      if (!added?.Id || indexOf(added.Id) >= 0) { skipped.push(`${list}[${added?.Id}] add`); continue; }
+      items.push(clone(added)); changed = true;
+    }
+    if (!changed) continue;
+    next[list] = JSON.stringify(items);
+    const prefix = list === 'SonarrInstances' ? 'Sonarr' : 'Radarr';
+    next[prefix + 'Url'] = items[0]?.Url || '';
+    next[prefix + 'ApiKey'] = items[0]?.ApiKey || '';
+    next[prefix + 'UrlMappings'] = items[0]?.UrlMappings || '';
+  }
+  return { next, applied, ignored, skipped };
+}
+
 /**
  * Loads the page. Routes: name -> [match(kind, url, request), answer(request)]; the answer may return a value or a
  * promise, or throw. `net.hold(name)` holds the next request to that route; the returned gate settles it.
  */
-export function configPage(t, { config = {}, overrides = {}, before } = {}) {
-  const server = { config: clone(config) };
+export function configPage(t, { config = {}, overrides = {}, before, server: shared } = {}) {
+  // Two pages (two admin tabs) can share one server.
+  const server = shared || { config: clone(config) };
   const saves = [];
+  const patches = [];
   const posts = [];
   const alerts = [];
   const requests = [];
@@ -59,7 +123,30 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
     radarrDetails: [(kind, url) => /\/jellyseerr\/radarr\/\d+$/.test(url), () => clone(RADARR_DETAILS)],
     addOptions: [(kind, url) => url.includes('/arr/admin/manage/add-options'), () => clone(ADD_OPTIONS)],
     regions: [(kind, url) => url.includes('elsewhere-res/regions.txt'), () => ({ ok: true, text: async () => REGIONS })],
+    // The page's save: only the administrator's changes, applied to what the server holds now.
+    configPatch: [(kind, url, request) => request?.type === 'PATCH' && /\/JellyfinEnhanced\/configuration$/.test(url), async request => {
+      const patch = JSON.parse(request.data);
+      patches.push(patch);
+      await writeGate();
+      server.beforeWrite?.(server);
+      const { next, applied, ignored, skipped } = applyConfigPatch(server.config, patch);
+      server.config = next;
+      saves.push(JSON.stringify(next));
+      return { success: true, applied, ignored, skipped, configuration: clone(next) };
+    }],
     ...overrides
+  };
+  // A test can hold the next configuration write (server.holdWrite()) or make writes fail (server.failWrites), whichever
+  // way the page writes (whole configuration or patch).
+  server.holdWrite = () => {
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    server.writeHold = held;
+    return () => { server.writeHold = null; release(); };
+  };
+  const writeGate = async () => {
+    if (server.writeHold) await server.writeHold;
+    if (server.failWrites) throw Object.assign(new Error('configuration write failed'), { status: 500 });
   };
   const routeOf = (kind, url, request) => Object.keys(routes).find(name => routes[name][0](kind, url, request));
 
@@ -69,6 +156,7 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
     const queue = name && holds.get(name);
     if (queue && queue.length) {
       const gate = queue.shift();
+      gate.request = request;
       gate.arrived(request);
       return gate.promise;
     }
@@ -85,6 +173,9 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
       getPluginConfiguration: () => answer('getPluginConfiguration', 'plugin-config', { type: 'GET' }),
       updatePluginConfiguration: async (id, value) => {
         const bytes = JSON.stringify(value);
+        await writeGate();
+        // Another writer (administrator, tab or server write) lands between the page's read and this write.
+        server.beforeWrite?.(server);
         saves.push(bytes);
         server.config = JSON.parse(bytes);
         return {};
@@ -102,7 +193,8 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
     globals: {
       Dashboard: {
         showLoadingMsg() {}, hideLoadingMsg() {}, processPluginConfigurationUpdateResult() {},
-        alert(message) { alerts.push(message); }
+        alert(message) { alerts.push(message); },
+        confirm(message, title, callback) { callback(true); }
       },
       confirm: () => true
     }
@@ -129,7 +221,7 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
 
   const $ = selector => h.document.querySelector(selector);
   const page = {
-    ...h, server, saves, posts, alerts, requests, $,
+    ...h, server, saves, patches, posts, alerts, requests, $,
     /** Holds the next request to a route until the gate settles it. */
     hold(name) {
       let resolveFn, rejectFn, arrived;
@@ -138,7 +230,7 @@ export function configPage(t, { config = {}, overrides = {}, before } = {}) {
       promise.catch(() => {});
       const gate = {
         promise, reached, arrived,
-        resolve: value => { resolveFn(value === undefined ? routes[name][1]({}) : value); return page.flush(); },
+        resolve: value => { resolveFn(value === undefined ? routes[name][1](gate.request || {}) : value); return page.flush(); },
         reject: (error = Object.assign(new Error(`${name} unavailable`), { status: 503 })) => { rejectFn(error); return page.flush(); }
       };
       if (!holds.has(name)) holds.set(name, []);

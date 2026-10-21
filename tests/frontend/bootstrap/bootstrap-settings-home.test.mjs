@@ -25,10 +25,10 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none',
       arrHome: { refresh: options => { refreshes.push(options); return Promise.resolve(); } }
     },
-    apiClient: { ajax: async request => { if (request.type === 'POST') writes.push(request); return []; } }
+    apiClient: { ajax: async request => { if (request.type === 'PATCH' && !request.url.endsWith('/consent')) writes.push(request); return []; } }
   });
   tt.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -75,18 +75,19 @@ test('choosing saves Hide as false and Follow as null, leaves untouched rows unw
   const h = panel(t, { config: home, settings: { isAdmin: true } });
   h.wire();
   await h.choose('homeRowArrivedSelect', 'off');
-  let saved = JSON.parse(h.writes.at(-1).data);
+  let saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.homeRowArrived, false);
   assert.ok(!('homeRowRequests' in saved) && !('homeRowSoon' in saved) && !('homeOpsStrip' in saved));
   assert.deepEqual(h.toasts, [tr('panel_settings_home_saved')]);
   assert.equal(h.refreshes.length, 1);
   assert.deepEqual({ ...h.refreshes[0] }, { fresh: true });
   await h.choose('homeOpsStripSelect', 'off');
-  assert.equal(JSON.parse(h.writes.at(-1).data).homeOpsStrip, false);
+  assert.equal(JSON.parse(h.writes.at(-1).data).Set.homeOpsStrip, false);
   await h.choose('homeRowArrivedSelect', '');
-  saved = JSON.parse(h.writes.at(-1).data);
+  saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.homeRowArrived, null);
-  assert.equal(saved.homeOpsStrip, false);
+  assert.ok(!('homeOpsStrip' in saved), 'a save sends only its own field (round 7)');
+  assert.equal(h.JE.currentSettings.homeOpsStrip, false);
   assert.equal(h.writes.length, 3);
   assert.equal(h.refreshes.length, 3);
 });

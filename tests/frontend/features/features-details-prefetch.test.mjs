@@ -152,7 +152,7 @@ test('no people/info prefetch without people tags, after leaving, or on another 
 test('the real settings store restores failed file-size visibility through the details dispatcher', async t => {
  const h=setup(t,{settings:{showFileSizes:true,showWatchProgress:false},config:{}});
  h.JE.userConfig={settings:{...h.JE.currentSettings}};
- h.load('enhanced/config.js');h.JE.currentSettings=h.JE.loadSettings();
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.JE.currentSettings=h.JE.loadSettings();
  h.viewshow();await h.resolveItem();await placeChips(h);
  assert.ok(h.row.querySelector('.mediaInfoItem-fileSize'));
  const held=deferred();h.window.ApiClient.ajax=()=>held.promise;

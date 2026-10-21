@@ -492,7 +492,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                     File.WriteAllBytes(temp, bytes);
                     // People's settings files among them: put in place inside their version's bracket (the automatic-write
                     // check reads consents from them).
-                    UserConfigurationManager.AllSettingsVersion.Mutate(() => File.Move(temp, target, overwrite: true));
+                    void Place() => UserConfigurationManager.AllSettingsVersion.Mutate(() => File.Move(temp, target, overwrite: true));
+                    // A person's document is put in place under the lock every writer of it holds, and its revision moves on:
+                    // a save that read it before the restore waits or is refused, never written over the restored one.
+                    if (PersonalDocument(relative) is { } document) UserConfigurationManager.PlaceUserFile(document.Person, document.File, target, Place);
+                    else Place();
                 }
                 finally
                 {
@@ -500,6 +504,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
                 }
                 written++;
             }
+
+            // Every revision handed out before the restore is spent (documents of people's folders, and any other file put
+            // in place): a whole write built on a read from before it is refused.
+            if (written > 0) UserConfigurationManager.NewIncarnation();
 
             if (secrets != null && secrets.Count > 0)
             {
@@ -882,6 +890,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Backup
         }
 
         private static bool IsUserFolderName(string name) => name.Length == 32 && name.All(Uri.IsHexDigit);
+
+        // "<person's folder>/<file>": a person's own document (their folder: the canonical id or another spelling of it).
+        private static (string Person, string File)? PersonalDocument(string relative)
+        {
+            var parts = relative.Split('/');
+            return parts.Length == 2 && UserConfigurationManager.IsPersonFolderName(parts[0]) ? (parts[0], parts[1]) : null;
+        }
 
         // "<person's folder>/settings.json": the canonical id, or another spelling of it that the start-up migration puts in
         // place as the person's (so a restore can't bring one in ungated that way).

@@ -29,7 +29,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
     apiClient: { ajax: async request => { if (request.type === 'POST' || request.type === 'PATCH') writes.push(request); return []; } }
   });
   tt.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -139,7 +139,7 @@ test('an unrelated setting saved by someone who never chose keeps both choices u
   h.document.getElementById('showFileSizesToggle').checked = true;
   h.document.getElementById('showFileSizesToggle').dispatchEvent(new h.window.Event('change', { bubbles: true }));
   await new Promise(done => setImmediate(done));
-  const saved = JSON.parse(h.writes.at(-1).data);
+  const saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.showFileSizes, true);
   assert.ok(!('autoSeasonRequests' in saved) && !('autoMovieRequests' in saved));
 });

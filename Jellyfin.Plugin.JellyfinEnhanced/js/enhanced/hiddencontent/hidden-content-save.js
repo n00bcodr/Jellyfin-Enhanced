@@ -1,6 +1,6 @@
 /**
- * @file Hidden Content — debounced persistence, the bounded retry ladder,
- * and the admin cross-user endpoints.
+ * @file Hidden Content — saving changes (item and settings operations through
+ * the settings store) and the admin cross-user endpoints.
  * Split from hidden-content.js (code motion; bodies verbatim).
  */
 (function (JE) {
@@ -9,41 +9,36 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.hiddenContent = JE.internals.hiddenContent || {};
 
-    const { getHiddenData } = internal;
+    // Every change is an item or settings operation on the person's hidden-content.json, queued in the settings store:
+    // the server applies it to the document it holds then (PATCH, under the person's file lock) and answers the document,
+    // so what another tab or device hid, unhid or changed meanwhile stays. The store shows the change at once; a change the
+    // server refuses is shown undone, and said so.
 
-    let saveTimeout = null;
-
-    /** Debounce interval for persisting hidden-content data. */
-    const SAVE_DEBOUNCE_MS = 500;
-
-    /**
-     * Persists the hidden-content data to the server after a debounce.
-     * Coalesces rapid writes (e.g. bulk-unhide) into a single save.
-     */
-    // Bumped on every user switch: a save/retry timer scheduled under the
-    // previous user must not fire under the new one — it would serialize the
-    // reset (empty) store to the NEW user's file and erase their data.
+    // Bumped on every user switch: an answer for the previous person is not reported to the next one.
     let saveGeneration = 0;
 
-    function debouncedSave() {
-        const action = JE.createSessionAction();
-        if (saveTimeout) clearTimeout(saveTimeout);
-        const scheduledGeneration = saveGeneration;
-        saveTimeout = setTimeout(async () => {
-            saveTimeout = null;
-            if (!action.current() || scheduledGeneration !== saveGeneration) return;
-            try {
-                // Route through directSaveHiddenContent (not JE.saveUserSettings) so a successful save can
-                // reconcile against any in-flight retry and a failure can re-enter the retry ladder.
-                // JE.saveUserSettings swallows errors, which would leave a pending retry firing later and
-                // clobbering server state.
-                const sent = await directSaveHiddenContent();
-                if (action.current()) reconcileAfterSave(sent, scheduledGeneration);
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: debouncedSave failed; scheduling background retry', e);
-                if (action.current() && pendingRetryHandle == null) scheduleFlushRetry(0, scheduledGeneration);
+    /**
+     * Saves one change to the person's hidden content.
+     * @param {{upsert?: Object, remove?: string[], set?: Object}} operation Items by key to add or replace, item keys to
+     *   remove, settings to set.
+     * @returns {Promise<boolean>} Whether the server stored it.
+     */
+    function persist(operation) {
+        const generation = saveGeneration;
+        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true }).then(() => true, error => {
+            if (generation !== saveGeneration) return false;
+            // A change refused because the document couldn't be read was already reported by the store.
+            if (!error?.settingsNotRead) {
+                console.warn('🪼 Jellyfin Enhanced: hidden-content change not saved', error);
+                try { JE.toast?.(JE.t('hidden_content_save_failed_persistent'), 5000); } catch (_) { /* best effort */ }
             }
-        }, SAVE_DEBOUNCE_MS);
+            return false;
+        });
+    }
+
+    /** Settles once every hidden-content change queued so far has been answered (before a server-side hide write). */
+    function flushPendingSave() {
+        return JE.internals.userDocumentSettled ? JE.internals.userDocumentSettled('hidden-content.json') : Promise.resolve();
     }
 
     // ── Admin-only cross-user visibility ──
@@ -148,147 +143,10 @@
         }
     }
 
-    // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
-    // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
-    // whether the success acknowledgement still represents the latest local intent.
-    function directSaveHiddenContent() {
-        const userId = ApiClient.getCurrentUserId();
-        const action = JE.createSessionAction();
-        return internal.enqueuePersistence(async () => {
-            if (!action.current()) throw new Error('user changed');
-            if (!userId) throw new Error('no current user');
-            const snapshot = JSON.stringify(getHiddenData());
-            const reply = await JE.core.api.ajax({
-                type: 'POST',
-                dataType: 'json',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-                data: snapshot,
-                contentType: 'application/json'
-            });
-            const revision = reply?.revision || reply?.Revision;
-            const sent = JSON.parse(snapshot);
-            if (revision && action.current()) {
-                getHiddenData().revision = revision;
-                sent.revision = revision;
-            }
-            return JSON.stringify(sent);
-        });
-    }
-
-    // After a successful save, decide whether the server is caught up.
-    // - Match: cancel any pending (non-in-flight) retry — server has the latest.
-    // - Mismatch: state moved during the await; schedule another save.
-    // The retry-timer body explicitly clears RETRY_INFLIGHT before calling this so a same-state mismatch
-    // doesn't leave the sentinel stuck; cancelPendingRetry refuses to clear an in-flight retry from another path.
-    // `generation` is the saveGeneration captured BEFORE the POST that
-    // produced `snapshotSent` — a save spanning a user switch must not
-    // reschedule itself under the new user (it would serialize the reset
-    // store to the incoming user's file).
-    function reconcileAfterSave(snapshotSent, generation) {
-        if (generation !== saveGeneration) return;
-        if (snapshotSent === JSON.stringify(getHiddenData())) {
-            cancelPendingRetry();
-        } else {
-            debouncedSave();
-        }
-    }
-
-    // Bounded background retry of a failed flush. Cancelled on a successful save anywhere else so a
-    // server-side auto-clear (PlaybackStart consumer, ItemRemoved hook) isn't overwritten by a stale retry.
-    const FLUSH_RETRY_DELAYS_MS = [1000, 5000, 15000];
-    const RETRY_INFLIGHT = -1; // sentinel: retry timer fired and POST is in flight (handle no longer cancelable)
-    let pendingRetryHandle = null;
-
-    function cancelPendingRetry() {
-        // Don't unset RETRY_INFLIGHT — the timer body whose POST is in flight needs to manage its own
-        // lifecycle. Clearing it here would let a follow-up debouncedSave failure spawn a parallel ladder.
-        if (pendingRetryHandle === RETRY_INFLIGHT) return;
-        if (pendingRetryHandle != null) clearTimeout(pendingRetryHandle);
-        pendingRetryHandle = null;
-    }
-
-    function scheduleFlushRetry(attempt, generation) {
-        if (attempt >= FLUSH_RETRY_DELAYS_MS.length) {
-            console.error('🪼 Jellyfin Enhanced: hidden-content save retries exhausted; local change may be lost on reload');
-            // User-visible toast — the bulk-save endpoint is genuinely down at this point.
-            try {
-                if (typeof JE?.toast === 'function') {
-                    JE.toast(JE.t('hidden_content_save_failed_persistent'), 5000);
-                }
-            } catch (_) { /* toast helper unavailable, console.error above is best-effort */ }
-            pendingRetryHandle = null;
-            return;
-        }
-        if (generation !== saveGeneration) return; // save chain belongs to a previous user
-        const action = JE.createSessionAction();
-        pendingRetryHandle = setTimeout(async () => {
-            if (!action.current()) { pendingRetryHandle = null; return; }
-            if (generation !== saveGeneration) { pendingRetryHandle = null; return; } // user switched since scheduling
-            pendingRetryHandle = RETRY_INFLIGHT; // mark in-flight so a concurrent debouncedSave failure doesn't spawn a parallel ladder
-            // Guard for ApiClient teardown / signed-out state during the window.
-            if (typeof ApiClient === 'undefined' || typeof ApiClient.getCurrentUserId !== 'function' || !ApiClient.getCurrentUserId()) {
-                console.error('🪼 Jellyfin Enhanced: abandoning hidden-content retry; ApiClient unavailable');
-                pendingRetryHandle = null;
-                return;
-            }
-            try {
-                const sent = await directSaveHiddenContent();
-                // Retry succeeded — clear the in-flight sentinel BEFORE reconcile so a state-mismatch
-                // reschedule via debouncedSave doesn't leave the sentinel stuck (cancelPendingRetry from
-                // other code paths intentionally refuses to clear RETRY_INFLIGHT).
-                if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
-                if (action.current()) reconcileAfterSave(sent, generation);
-            } catch (err) {
-                if (pendingRetryHandle === RETRY_INFLIGHT) pendingRetryHandle = null;
-                console.warn(`🪼 Jellyfin Enhanced: hidden-content save retry ${attempt + 1} failed`, err);
-                if (action.current()) scheduleFlushRetry(attempt + 1, generation);
-            }
-        }, FLUSH_RETRY_DELAYS_MS[attempt]);
-    }
-
-    // Flush pending debouncedSave so a following server-direct write sees the latest local state.
-    // On failure: re-throw so the caller aborts, AND start a bounded background retry so the local mutation isn't lost.
-    async function flushPendingSave() {
-        const action = JE.createSessionAction();
-        const generation = saveGeneration;
-        // Reconcile edits made during a flush before an atomic write takes its base. Bound churn.
-        for (let attempt = 0; attempt < 3; attempt++) {
-            if (!saveTimeout && pendingRetryHandle == null) return;
-            if (saveTimeout) clearTimeout(saveTimeout);
-            saveTimeout = null;
-            cancelPendingRetry();
-            try {
-                const sent = await directSaveHiddenContent();
-                if (!action.current() || generation !== saveGeneration) throw new Error('user changed');
-                if (action.current()) reconcileAfterSave(sent, generation);
-                if (!saveTimeout && pendingRetryHandle == null) return;
-            } catch (e) {
-                console.warn('🪼 Jellyfin Enhanced: flushPendingSave failed; scheduling background retry', e);
-                if (action.current() && generation === saveGeneration && pendingRetryHandle == null) scheduleFlushRetry(0, generation);
-                throw e;
-            }
-        }
-        // The pending debounce retains the latest edit; the atomic control stays retryable.
-        throw new Error('hidden-content edits changed during flush');
-    }
-
-    // Cancel pending retries on tab teardown so a stale snapshot can't overwrite server state after navigation.
-    // Only pagehide — visibilitychange fires on backgrounded tabs the user may return to within the retry window.
-    try {
-        window.addEventListener('pagehide', cancelPendingRetry);
-    } catch (_) { /* non-browser env, harmless */ }
-
-    // Invalidate every scheduled save/retry on a user switch (the generation
-    // guard in the timer bodies covers the in-flight sentinel this
-    // cancellation cannot reach).
-    window.JellyfinEnhanced.session?.onUserChange('hidden-content-save', () => {
-        saveGeneration++;
-        if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
-        cancelPendingRetry();
-    });
+    window.JellyfinEnhanced.session?.onUserChange('hidden-content-save', () => { saveGeneration++; });
 
     Object.assign(internal, {
-        debouncedSave,
+        persist,
         flushPendingSave,
         fetchHiddenContentUsers,
         fetchUserHiddenItemsForAdmin,

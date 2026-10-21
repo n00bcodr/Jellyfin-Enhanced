@@ -12,6 +12,7 @@ function setup(t, plugin = async () => ({})) {
     session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (key, fn) => listeners.set(key, fn) },
   }});
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('enhanced/spoilerguard/ids.js');
   h.load('enhanced/spoilerguard/state.js');
   return { ...h, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
