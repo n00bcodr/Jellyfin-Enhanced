@@ -11,6 +11,10 @@
  * still the one shown (session, page show, route, list); the confirmation's outcome only while the session is the same.
  * What it draws (the button's busy state, toasts, the sheet) goes through the paint gate with the page's ticket; the
  * button is enabled again through erase (it only gives back what JE took).
+ * A press owns what it holds (its in-flight entry and the button it disabled) for its page show only: when that ticket
+ * ends (the page is left, or the whole document is: a pagehide) the press gives both back at once, so Back on the page
+ * jellyfin-web kept, or the browser restoring the document, can press again while the old preview is still on its way;
+ * a later press starts its own, and the old one's cleanup only ever removes what is still its own.
  */
 (function (JE) {
     'use strict';
@@ -18,8 +22,14 @@
     JE.internals = JE.internals || {};
     const lp = JE.internals.arrListPages = JE.internals.arrListPages || {};
 
-    /** @type {Set<string>} "listId|placeholderId" asks being prepared (a second tap does nothing). */
-    const busy = new Set();
+    /**
+     * "listId|placeholderId" → the press preparing that ask ({rule}: its page's ticket). A second tap on the same page
+     * show does nothing; a press whose page show is over holds nothing.
+     * @type {Map<string, {rule: Object}>}
+     */
+    const busy = new Map();
+    /** @type {WeakMap<HTMLElement, Object>} Request button → the press that disabled it (only that press enables it). */
+    let holders = new WeakMap();
 
     /**
      * The words for a preview that can't be asked for here.
@@ -107,13 +117,29 @@
     async function open(list, ph, opener) {
         const tr = lp.render.tr;
         const key = `${list.listId}|${ph.id}`;
-        if (busy.has(key) || !JE.arrLists || !JE.arrAskSheet?.open || !JE.arrAsk?.interpret) return null;
+        if (!JE.arrLists || !JE.arrAskSheet?.open || !JE.arrAsk?.interpret) return null;
         // The page's ticket (session, page show, route, list) for the preview and what it draws; the session's for
         // the outcome.
         const rule = typeof list.ticket === 'function' ? list.ticket() : null;
+        if (busy.get(key)?.rule.current()) return null;
         const session = JE.arrLists.ticket(list.listId);
         if (!lp.gate.paint(rule, () => { if (opener) opener.disabled = true; }, 'request')) return null;
-        busy.add(key);
+        const mine = { rule };
+        busy.set(key, mine);
+        if (opener) holders.set(opener, mine);
+        /** Enables the button again while this press still holds it. */
+        const giveBack = () => {
+            if (!opener || holders.get(opener) !== mine) return;
+            holders.delete(opener);
+            lp.gate.erase(() => { opener.disabled = false; });
+        };
+        /** Gives back everything this press still holds (its in-flight entry and its button), nothing else. */
+        const release = () => {
+            if (busy.get(key) === mine) busy.delete(key);
+            giveBack();
+        };
+        // Leaving the page ends this press's hold at once, while its preview may still be on its way.
+        const off = typeof rule.onRevoke === 'function' ? rule.onRevoke(release) : null;
         /** @param {string} text Toast words (drawn only for the page's current ticket). */
         const toast = text => lp.gate.paint(rule, () => JE.arrAsk.toast?.(text), 'toast');
         try {
@@ -154,7 +180,7 @@
                 year: Number.isInteger(ph.year) ? ph.year : undefined,
                 poster: typeof ph.posterPath === 'string' ? ph.posterPath : undefined
             };
-            lp.gate.erase(() => { if (opener) opener.disabled = false; });
+            giveBack();
             let sheet = null;
             lp.gate.paint(rule, () => {
                 sheet = JE.arrAskSheet.open(title, {
@@ -179,13 +205,14 @@
             if (result) list.onDone?.();
             return result;
         } finally {
-            busy.delete(key);
-            if (opener && document.contains(opener)) lp.gate.erase(() => { opener.disabled = false; });
+            off?.();
+            release();
         }
     }
 
     JE.session?.onUserChange?.('arr-list-request', () => {
         busy.clear();
+        holders = new WeakMap();
         JE.arrAskSheet?.close?.();
     });
 
