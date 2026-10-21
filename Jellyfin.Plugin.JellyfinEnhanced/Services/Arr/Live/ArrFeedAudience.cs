@@ -172,18 +172,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                     titles.Add(change);
                 }
             }
-            if (isAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || _view.Viewer(userId)?.HasParentalLimit != true)) return own.Concat(titles.Select(c => c.Key)).ToList();
+            // One read of the user decides everything below (and keys what is cached): never a second read by id, which a
+            // policy change can land between.
+            var user = Helpers.ArrCaller.Find(userId, _userManager);
+            if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return isAdmin ? own.Concat(titles.Select(c => c.Key)).ToList() : own;
+            if (isAdmin && (!ArrInstanceLibraries.AbsentParentalEnabled || !Acquire.ArrJellyfinView.HasParentalLimit(user))) return own.Concat(titles.Select(c => c.Key)).ToList();
             if (titles.Count == 0) return own;
             changes = titles;
-            var user = Helpers.ArrCaller.Find(userId, _userManager);
-            if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return own;
             if (_cache.Count > MaxCacheEntries) _cache.Clear();
             if (_series.Count > MaxCacheEntries) _series.Clear();
             if (_seasons.Count > MaxCacheEntries) _seasons.Clear();
 
             var now = _now();
-            // What every answer depends on besides the key: a change to any of it decides afresh.
-            var stamp = (_view.Viewer(userId)?.PolicyRevision ?? string.Empty)
+            // What every answer depends on besides the key: a change to any of it decides afresh. The policy revision
+            // is the one of the user the answers are decided with (not another read, which a change could land
+            // between: answers decided with the old user would be kept under the new revision).
+            var stamp = Acquire.ArrJellyfinView.PolicyRevisionOf(user)
                 + "|" + _view.Revision.ToString(CultureInfo.InvariantCulture)
                 + "|" + RegistryStamp()
                 + "|" + _libraries.Revision
@@ -267,7 +271,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr.Live
                 return Verdict.Hidden;
             }
             // Absent titles require a verified rating before ownership can grant destination access.
-            var viewer = _view.Viewer(user.Id) ?? new StatusViewer { UserId = user.Id, HasParentalLimit = !Unrestricted(user), Handle = user };
+            // The viewer as the user this answer is decided with (and keyed by), not another read of them.
+            var viewer = Acquire.ArrJellyfinView.ViewerOf(user);
             var parentalKey = new[] { title }.Concat(_aliases.Of(title)).FirstOrDefault(k => k.Provider == "tmdb") ?? title;
             if (ArrInstanceLibraries.AbsentParentalEnabled && !_libraries.MaySeeAbsent(viewer, parentalKey)) return Verdict.Hidden;
             // Not in Jellyfin: ownership grants the destination exception.

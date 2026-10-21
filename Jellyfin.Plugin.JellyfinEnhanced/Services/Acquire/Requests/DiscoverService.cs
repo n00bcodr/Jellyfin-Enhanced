@@ -180,7 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private UserConfigurationManager? _userConfig;
         private ILibraryManager? _library;
         private readonly TitleAliases? _aliases;
-        private readonly Func<string, int, Guid, CancellationToken, Task<bool>> _maySeeAbsent;
+        private readonly Func<string, int, StatusViewer, CancellationToken, Task<bool>> _maySeeAbsent;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
         private readonly Func<StatusViewer, int, IReadOnlyList<RecentTitle>> _recent;
         private readonly Func<Guid, HiddenTitles> _hidden;
@@ -190,7 +190,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
         public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig, SpoilerPresentation? presentation = null)
             : this(requests, aliases,
-                (kind, id, user, ct) => parental.MaySeeAbsentAsync(kind, id, user.ToString("N", CultureInfo.InvariantCulture), ct),
+                ParentalCheck(parental),
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
                 (viewer, max) => RecentlyWatched(library, viewer, max),
                 user => ReadHidden(userConfig, library, user),
@@ -201,7 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
         internal DiscoverService(RequestService requests, TitleAliases? aliases,
-            Func<string, int, Guid, CancellationToken, Task<bool>> maySeeAbsent,
+            Func<string, int, StatusViewer, CancellationToken, Task<bool>> maySeeAbsent,
             Func<string, string, CancellationToken, Task<string?>> tmdb,
             Func<StatusViewer, int, IReadOnlyList<RecentTitle>> recent,
             Func<Guid, HiddenTitles> hidden,
@@ -215,6 +215,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _hidden = hidden;
             _now = now;
         }
+
+        /// <summary>
+        /// The absent-title rating check of the production service: decided with the policy of the viewer as the request
+        /// read them (<see cref="StatusViewer.Handle"/>, the same read its answer is keyed by), never a later read of the
+        /// person by id, which a policy change can land between (a widened then restored limit would file a title the
+        /// narrow limit hides under the narrow limit's key). A restricted viewer with no read user is refused.
+        /// </summary>
+        /// <param name="parental">The parental filter.</param>
+        /// <returns>The check.</returns>
+        internal static Func<string, int, StatusViewer, CancellationToken, Task<bool>> ParentalCheck(SeerrParentalFilter parental)
+            => (kind, id, viewer, ct) => viewer.Handle is not User person
+                ? Task.FromResult(false)
+                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.MaySeeAbsentAsync(kind, id, policy, ct) : Task.FromResult(true);
 
         /// <summary>Hidden Content's per-user file.</summary>
         internal const string HiddenContentFile = "hidden-content.json";
@@ -364,7 +377,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             {
                 // A copy Jellyfin hides from them (rating, tags or library) hides the title; an absent
                 // title needs a verified rating they may see.
-                if (copies.Count > 0 ? open == null : !await MaySeeAsync(row.Kind, row.TmdbId, viewer.UserId, ct).ConfigureAwait(false)) return null;
+                // Decided with the viewer the answer is keyed by (its policy as read), never another read of them.
+                if (copies.Count > 0 ? open == null : !await MaySeeAsync(row.Kind, row.TmdbId, viewer, ct).ConfigureAwait(false)) return null;
             }
             var itemId = open?.ItemId.ToString("N", CultureInfo.InvariantCulture);
             if (itemId != null && hidden.Contains(itemId)) return null;
@@ -387,12 +401,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
         }
 
-        private async Task<bool> MaySeeAsync(string kind, int tmdbId, Guid user, CancellationToken ct)
+        private async Task<bool> MaySeeAsync(string kind, int tmdbId, StatusViewer viewer, CancellationToken ct)
         {
             await ParentalSlots.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                return await _maySeeAbsent(kind, tmdbId, user, ct).ConfigureAwait(false);
+                return await _maySeeAbsent(kind, tmdbId, viewer, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

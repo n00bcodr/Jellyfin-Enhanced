@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace JE.Tests;
 
 /// <summary>An in-memory <see cref="IStampLibrary"/>: items, access and user data per (user, item), and events to raise.</summary>
-internal sealed class FakeStampLibrary : IStampLibrary
+internal sealed class FakeStampLibrary : IStampLibrary, IStampLibraryAccess
 {
     public Dictionary<Guid, StampItem> Items { get; } = new();
 
@@ -76,6 +76,13 @@ internal sealed class FakeStampLibrary : IStampLibrary
         Check();
         CanOpenCalls++;
         return Items.ContainsKey(itemId) && !Denied.Contains((userId, itemId));
+    }
+
+    // Access is read afresh on every call: the version before that read is the one the answer was decided under.
+    public (bool CanOpen, Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority.Stamp Read) CanOpenAsRead(Guid userId, Guid itemId)
+    {
+        var read = Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserAuthority.Take(userId);
+        return (CanOpen(userId, itemId), read);
     }
 
     public (bool Played, DateTime? LastPlayed)? UserData(Guid userId, Guid itemId)

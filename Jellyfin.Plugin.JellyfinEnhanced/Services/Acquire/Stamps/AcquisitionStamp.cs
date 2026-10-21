@@ -239,6 +239,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Stamps
     /// <param name="At">When the arr imported it (UTC).</param>
     public sealed record StampUpgradeImport(string Source, string Path, DateTime At);
 
+    /// <summary>
+    /// Whether the person may open an item, with the person's version the user it was decided with was READ under: what
+    /// a cached answer is filed under (a version taken after that read could be newer than the user the answer saw, e.g.
+    /// a request's own earlier read across a policy save). A library without it isn't cached.
+    /// </summary>
+    internal interface IStampLibraryAccess
+    {
+        /// <summary>Whether the person may open the item, and the version their user was read under.</summary>
+        /// <param name="userId">Person.</param>
+        /// <param name="itemId">Item.</param>
+        /// <returns>The answer and the version.</returns>
+        (bool CanOpen, Helpers.UserAuthority.Stamp Read) CanOpenAsRead(Guid userId, Guid itemId);
+    }
+
     /// <summary>The library facts the stamp code reads (Jellyfin in production, fakes in tests). No network I/O.</summary>
     public interface IStampLibrary
     {

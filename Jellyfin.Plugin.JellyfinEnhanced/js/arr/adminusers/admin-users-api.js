@@ -9,6 +9,7 @@
             headers: { Authorization: `MediaBrowser Token="${ApiClient.accessToken()}"`, Accept: 'application/json', 'Content-Type': 'application/json' },
             body: body === undefined ? undefined : JSON.stringify(body)
         });
+        JE.core?.revision?.noteResponse(response);
         const value = await response.json();
         if (epoch !== JE.session?.getEpoch?.()) throw { stale: true };
         if (!response.ok) throw { status: response.status, reason: value.reason || value.code };

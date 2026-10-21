@@ -224,6 +224,19 @@
         /** @type {Array<any>} */
         let currentPagedResults = [];
         let renderedCount = 0;
+        // The titles of the client-paged list already drawn (or passed over by the card filters), so a list read
+        // again continues after them whatever its new order.
+        const consumed = new Set();
+        // The person's access revision (core/access-revision.js) the client-paged list was read under, taken before the
+        // read; listStale: it moved since. The list is read again before anything more is drawn from it, and the cards
+        // the new access no longer has are taken away (the others stay as they are).
+        /** @type {string|null} */
+        let listRevision = null;
+        let listStale = false;
+        /** @type {string|null} */
+        let listId = null;
+        /** @type {Promise<boolean>|null} */
+        let revalidating = null;
         // Bumped whenever the client-paged list is re-rendered from the top
         // (filter / sort change): a chunk still being built is dropped.
         let renderEpoch = 0;
@@ -239,6 +252,70 @@
          */
         const fetchWithManagedRequest = (path, options) =>
             JE.discoveryFilter.fetchWithManagedRequest(path, key, options);
+
+        const accessRevision = () => JE.core?.revision?.access?.() ?? null;
+        /** @param {any} item @returns {string} */
+        const titleKey = (item) => `${item.mediaType}-${item.id}`;
+        document.addEventListener('je-access-revision', () => { if (clientListActive) listStale = true; });
+
+        /** @returns {boolean} The client-paged list was read under an access the person may no longer have. */
+        function listIsStale() {
+            return isClientPaged && clientListActive && (listStale || listRevision !== accessRevision());
+        }
+
+        /**
+         * Reads the client-paged list again (its access revision moved) and brings the section in line in place: the
+         * cards of titles the list no longer holds are taken away, the rest stay, and paging continues after the titles
+         * already drawn.
+         * @param {AbortSignal} [signal]
+         * @returns {Promise<boolean>} False when superseded or the list couldn't be read (nothing more is drawn then).
+         */
+        function revalidateList(signal) {
+            if (revalidating) return revalidating;
+            const epoch = renderEpoch;
+            revalidating = (async () => {
+                try {
+                    const revision = accessRevision();
+                    listStale = false;
+                    const resolved = await spec.resolveItems({ id: /** @type {string} */ (listId), signal: /** @type {AbortSignal} */ (signal) });
+                    if (signal?.aborted || epoch !== renderEpoch || !clientListActive) return false;
+                    listRevision = revision;
+                    if (accessRevision() !== revision) listStale = true;
+                    const items = resolved?.items || [];
+                    cachedAllResults = items;
+                    const allowed = new Set(items.map(titleKey));
+                    for (const k of [...consumed]) if (!allowed.has(k)) consumed.delete(k);
+                    document.querySelectorAll(`${sectionSelector} .itemsContainer [data-je-title-key]`).forEach(card => {
+                        if (!allowed.has(card.getAttribute('data-je-title-key') || '')) card.remove();
+                    });
+                    const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
+                    currentPagedResults = getPagedResultsForMode(filterMode);
+                    hasMorePages = currentPagedResults.some(item => !consumed.has(titleKey(item)));
+                    return true;
+                } catch (error) {
+                    if (error?.name !== 'AbortError') console.warn(`${logPrefix} could not read the list again:`, error);
+                    listStale = true;
+                    return false;
+                } finally {
+                    revalidating = null;
+                }
+            })();
+            return revalidating;
+        }
+
+        /**
+         * The next titles of the client-paged list to draw: the first `chunkSize` not drawn yet.
+         * @param {number} chunkSize
+         * @returns {Array<any>}
+         */
+        function nextUnconsumed(chunkSize) {
+            const chunk = [];
+            for (const item of currentPagedResults) {
+                if (chunk.length >= chunkSize) break;
+                if (!consumed.has(titleKey(item))) chunk.push(item);
+            }
+            return chunk;
+        }
 
         /**
          * Whether the module is enabled by plugin config (or the spec enables it for this page).
@@ -494,10 +571,11 @@
                 JE.jellyseerrUI?.releasePosters?.(itemsContainer);
                 while (itemsContainer.firstChild) itemsContainer.removeChild(itemsContainer.firstChild);
                 renderedCount = 0;
+                consumed.clear();
             }
 
             currentPagedResults = getPagedResultsForMode(mode);
-            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + chunkSize);
+            const nextChunk = nextUnconsumed(chunkSize);
             if (nextChunk.length === 0) {
                 hasMorePages = false;
                 return;
@@ -509,7 +587,8 @@
             }
 
             renderedCount += nextChunk.length;
-            hasMorePages = renderedCount < currentPagedResults.length;
+            nextChunk.forEach(item => consumed.add(titleKey(item)));
+            hasMorePages = currentPagedResults.some(item => !consumed.has(titleKey(item)));
         }
 
         /**
@@ -529,7 +608,7 @@
             if (!itemsContainer) return;
 
             currentPagedResults = getPagedResultsForMode(mode);
-            const nextChunk = currentPagedResults.slice(renderedCount, renderedCount + chunkSize);
+            const nextChunk = nextUnconsumed(chunkSize);
             if (nextChunk.length === 0) {
                 hasMorePages = false;
                 return;
@@ -542,7 +621,8 @@
             // the pagination state now.
             if (!isCurrent()) return;
             renderedCount += nextChunk.length;
-            hasMorePages = renderedCount < currentPagedResults.length;
+            nextChunk.forEach(item => consumed.add(titleKey(item)));
+            hasMorePages = currentPagedResults.some(item => !consumed.has(titleKey(item)));
         }
 
         /**
@@ -560,6 +640,9 @@
                 isLoading = true;
                 const epoch = renderEpoch;
                 try {
+                    // Read under an access the person may no longer have: read the list again before drawing more of it.
+                    if (listIsStale() && !(await revalidateList(currentAbortController?.signal))) return;
+                    if (!hasMorePages || epoch !== renderEpoch) return { pages: 1, rendered: 0 };
                     const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
                     const itemsContainer = /** @type {HTMLElement|null} */ (
                         document.querySelector(`${sectionSelector} .itemsContainer`));
@@ -771,6 +854,11 @@
             if (isClientPaged) {
                 const filterMode = JE.discoveryFilter?.getFilterMode(key) || 'mixed';
                 if (!itemsContainer) return;
+                // Never redrawn from a list read under an older access.
+                if (listIsStale()) {
+                    if (await revalidateList(currentAbortController?.signal)) handleSortChange();
+                    return;
+                }
 
                 renderChunk(itemsContainer, filterMode, true);
                 cleanupScrollObserver();
@@ -894,6 +982,11 @@
             if (!itemsContainer) return;
 
             if (isClientPaged) {
+                // Never redrawn from a list read under an older access.
+                if (listIsStale()) {
+                    revalidateList(currentAbortController?.signal).then(ok => { if (ok) handleFilterChange(newMode); });
+                    return;
+                }
                 // Non-paginated endpoint: rebuild the visible list for the
                 // selected mode and reset client-side paging.
                 renderChunk(itemsContainer, newMode, true);
@@ -1180,6 +1273,8 @@
          * @param {string} pageKey
          */
         async function renderClientPaged(id, signal, pageKey) {
+            // Taken before the read: the list is kept under it (and read again once it moves).
+            const revision = accessRevision();
             const resolved = await spec.resolveItems({ id, signal });
             if (signal.aborted) return;
             if (!resolved || !resolved.items || resolved.items.length === 0) return;
@@ -1187,6 +1282,9 @@
             // Store all results for filter switching
             cachedAllResults = resolved.items;
             clientListActive = true;
+            listId = id;
+            listRevision = revision;
+            listStale = accessRevision() !== revision;
 
             // Check if we have both media types
             const hasBoth = JE.discoveryFilter?.resultHasBothTypes(cachedAllResults) || false;
@@ -1233,6 +1331,8 @@
             itemsContainer.appendChild(fragment);
             currentPagedResults = displayResults;
             renderedCount = initialItems.length;
+            consumed.clear();
+            initialItems.forEach(item => consumed.add(titleKey(item)));
             hasMorePages = renderedCount < currentPagedResults.length;
 
             detailSection.appendChild(section);
@@ -1396,6 +1496,10 @@
             clientListActive = false;
             currentPagedResults = [];
             renderedCount = 0;
+            consumed.clear();
+            listRevision = null;
+            listStale = false;
+            listId = null;
 
             currentRenderingPageKey = null;
 

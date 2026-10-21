@@ -53,4 +53,13 @@ The privacy model's fixtures are the hosts' real answers: `tests/fixtures/host-s
 ```sh
 id=$(docker create jellyfin/jellyfin:12.2) && docker cp "$id":/jellyfin/jellyfin-web ./web-12.2 && docker rm "$id"
 node tests/host/web-bundle/extract.mjs ./web-12.2 tests/fixtures/host-web/12.2 jellyfin/jellyfin:12.2
+## Host user types
+
+`tests/fixtures/host-users/user-fields-<version>.tsv` lists every property of Jellyfin's user, permission, preference, access-schedule, user policy and user configuration types, and every `PermissionKind` and `PreferenceKind` member, as the pinned 12.2 and 10.11.11 servers have them (`tests/backend/Support/jellyfin-api.json`). `Helpers/UserAuthorityFields.cs` classifies each one as deciding access or not; the access fingerprint JE's user caches compare is derived from that classification, and `UserAuthorityFieldsTests` fails on a listed property nobody classified and on a classified name neither host has. Regenerate the lists from the pinned images (for a new Jellyfin release, update the pins first):
+
+```sh
+python3 tests/backend/jellyfin_api.py --target all
+for t in jf12 jf10; do
+  JE_USER_FIELDS_WRITE=$PWD/tests/fixtures/host-users dotnet test tests/backend/JE.Tests.csproj -c Release -p:JellyfinTarget=$t --filter "FullyQualifiedName~TheCheckedInListIsThePinnedHostsOwn"
+done
 ```

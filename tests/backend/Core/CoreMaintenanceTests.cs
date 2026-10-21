@@ -69,6 +69,25 @@ public class CoreMaintenanceTests
     }
 
     [Fact]
+    public async Task MaintenanceDisableAndRestoreReachCachedReviewAuthorsAtOnce()
+    {
+        // The policy save publishes no event on 10.11: a review author cached before maintenance must still show as
+        // disabled on the next lookup, and as enabled again after the restore (before: up to the cache's 15 s TTL).
+        using var f = new Fixture();
+        User Read(Guid id)
+        {
+            var user = new User("alice", "default", "default") { Id = id };
+            user.SetPermission(PermissionKind.IsDisabled, f.Policies[id].IsDisabled);
+            return user;
+        }
+        Assert.False(ReviewAuthorCache.Resolve(f.Alice.Id, Read)!.HasPermission(PermissionKind.IsDisabled));
+        await f.Service.EnableAsync("maintenance", 0, "disable_accounts", null);
+        Assert.True(ReviewAuthorCache.Resolve(f.Alice.Id, Read)!.HasPermission(PermissionKind.IsDisabled));
+        await f.Reopen().DisableAsync();
+        Assert.False(ReviewAuthorCache.Resolve(f.Alice.Id, Read)!.HasPermission(PermissionKind.IsDisabled));
+    }
+
+    [Fact]
     public async Task SelectionReconciliationRestoresPreviousActionAndInvalidIdsDoNotTargetEveryone()
     {
         using var f = new Fixture();

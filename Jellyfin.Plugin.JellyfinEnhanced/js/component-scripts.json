@@ -18,6 +18,8 @@
     "// mutation-queue.js: each server document's one write queue, bound to the session",
     "// (session.js); before every module that writes a document at load or later.",
     "core/mutation-queue.js",
+    "// access-revision.js: after session.js and navigation.js (it follows both at eval time).",
+    "core/access-revision.js",
     "core/lifecycle.js",
     "core/dom-observer.js",
     "core/ui-kit.js",

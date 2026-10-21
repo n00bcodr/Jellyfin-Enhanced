@@ -74,7 +74,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
     // Tag-cache responses are filtered by a per-user access set cached for up
     // to a minute; a policy change (libraries, parental limits, tags) must
     // apply to the very next request, because clients keep their copy and the
-    // response's filterRevision is derived from that same set.
+    // response's filterRevision is derived from that same set. The set is also
+    // keyed by the user's policy as each request reads it (UserAuthority), so
+    // a change no event announces (10.11's policy save, UpdateUserAsync on both
+    // versions) applies too; this drops every set at once on the events.
     public sealed class TagCacheAccessInvalidator : IEventConsumer<UserUpdatedEventArgs>, IEventConsumer<UserDeletedEventArgs>
     {
         private readonly TagCacheService _tagCache;
@@ -101,7 +104,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.EventHandlers
     // the author still existing, and ReviewAuthorCache keeps resolved authors
     // across requests: drop them the moment any user is updated (policy,
     // rename), locked out (failed logins disable the account) or deleted, so
-    // the change applies to the next request.
+    // the change applies to the next request. Changes with no event (10.11's
+    // policy save) reach it through the author's Jellyfin user version, which
+    // every entry is stamped with (see ReviewAuthorCache).
     public sealed class ReviewAuthorCacheInvalidator : IEventConsumer<UserUpdatedEventArgs>, IEventConsumer<UserDeletedEventArgs>, IEventConsumer<UserLockedOutEventArgs>
     {
         public Task OnEvent(UserUpdatedEventArgs eventArgs)

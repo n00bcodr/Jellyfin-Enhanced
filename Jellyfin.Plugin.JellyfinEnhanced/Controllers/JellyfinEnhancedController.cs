@@ -100,6 +100,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
 
+        // Moves on every drop of the Seerr response and TMDB enrichment caches (a settings save, a request that changes a
+        // title), before the drop and under the cache's lock: a read that began under an older value isn't stored.
+        private static long _seerrResponseGeneration;
+
         // Throttle for manual user import
         private static DateTime _lastManualImport = DateTime.MinValue;
         private static readonly object _importThrottleLock = new();
@@ -119,10 +123,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return cached.Value;
             }
 
+            // Taken before the probe: a settings save while it runs (another Seerr) doesn't keep its answer, and the answer
+            // lives from the probe's start.
+            var generation = Interlocked.Read(ref _seerrResponseGeneration);
+            var probedAt = DateTime.UtcNow;
             bool active = await ProbeJellyseerrStatusAsync();
             lock (_seerrStatusCacheLock)
             {
-                _seerrStatusCache = (active, DateTime.UtcNow);
+                if (generation == Interlocked.Read(ref _seerrResponseGeneration)) _seerrStatusCache = (active, probedAt);
             }
             return active;
         }
@@ -337,21 +345,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
+            => (await GetJellyseerrUserRead(jellyfinUserId, bypassCache, allowAutoImport)).User;
+
+        // The Seerr user and when the read that found them began (a held answer's own read): a cache that keeps something
+        // worked out from it (the account id) ends when this read does, never later.
+        private async Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserRead(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
         {
+            // Taken before anything is read: the generation fences a store after a clear, the instant starts the lifetime.
+            var generation = Interlocked.Read(ref _userCacheGeneration);
+            var readAt = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
-                return null;
+                return (null, readAt);
             }
 
             // Skip blocked users entirely — no lookup, no import, no API calls
             if (IsJellyseerrImportBlocked(jellyfinUserId, config))
             {
-                return null;
+                return (null, readAt);
             }
 
-            var generation = Interlocked.Read(ref _userCacheGeneration);
             bool cacheEnabled = !config.JellyseerrDisableCache && !bypassCache;
             if (cacheEnabled)
             {
@@ -364,7 +379,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var ttl = cached.User == null ? TimeSpan.FromSeconds(60) : GetUserIdCacheTtl();
                         if (DateTime.UtcNow - cached.CachedAt < ttl)
                         {
-                            return cached.User;
+                            return (cached.User, cached.CachedAt);
                         }
                     }
                 }
@@ -407,10 +422,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 lock (_userCacheLock)
                                 {
                                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                        _userCache[jellyfinUserId] = (user, readAt);
                                 }
                             }
-                            return user;
+                            return (user, readAt);
                         }
                         _logger.Info($"No matching Jellyfin User ID found in the {users?.Count ?? 0} users from {trimmedUrl}");
                     }
@@ -441,11 +456,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         lock (_userCacheLock)
                         {
                             if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                                _userCache[jellyfinUserId] = (importedUser, readAt);
                         }
                     }
 
-                    return importedUser;
+                    return (importedUser, readAt);
                 }
             }
 
@@ -457,12 +472,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userCacheLock)
                 {
                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
+                        _userCache[jellyfinUserId] = (null, readAt);
                 }
             }
 
             _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)} after checking all URLs.");
-            return null;
+            return (null, readAt);
         }
 
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
@@ -589,6 +604,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Seerr was just read and links <paramref name="seerrUserId"/> (null: no account) to the person: a lookup this
+        /// proxy holds for them that names another account ends now, and lookups running now aren't kept (the generation
+        /// moves), so the proxy never acts in Seerr as an account that is no longer the person's for the rest of its own
+        /// lifetime.
+        /// </summary>
+        /// <param name="jellyfinUserId">The person.</param>
+        /// <param name="seerrUserId">Their Seerr account as just read.</param>
+        internal static void ForgetSeerrAccountOtherThan(Guid jellyfinUserId, int? seerrUserId)
+        {
+            var person = jellyfinUserId.ToString("N");
+            static bool Same(string key, string person) => string.Equals(key.Replace("-", string.Empty), person, StringComparison.OrdinalIgnoreCase);
+            var id = seerrUserId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            lock (_userCacheLock)
+            {
+                var stale = _userCache.Where(e => Same(e.Key, person) && e.Value.User?.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) != id).Select(e => e.Key).ToList();
+                if (stale.Count > 0)
+                {
+                    Interlocked.Increment(ref _userCacheGeneration);
+                    foreach (var key in stale) _userCache.Remove(key);
+                }
+            }
+
+            lock (_userIdCacheLock)
+            {
+                var stale = _userIdCache.Where(e => Same(e.Key, person) && e.Value.JellyseerrUserId != id).Select(e => e.Key).ToList();
+                if (stale.Count > 0)
+                {
+                    Interlocked.Increment(ref _userCacheGeneration);
+                    foreach (var key in stale) _userIdCache.Remove(key);
+                }
+            }
+        }
+
         /// <summary>Clears Seerr answers and user lookups when its settings are saved.</summary>
         public static void ClearAllSeerrCachesOnConfigChange()
         {
@@ -596,16 +645,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             SeerrAskedProofCache.Shared.Clear();
             lock (_responseCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _responseCache.Clear();
             }
             lock (_tmdbEnrichmentCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _tmdbEnrichmentCache.Clear();
             }
             // Avatar cache may reference the OLD Seerr URL — clear it too.
             _avatarCache.Clear();
             // also flush the cached status probe so admins see fresh
-            // reachability immediately after fixing config.
+            // reachability immediately after fixing config (a probe running now is fenced by the generation above).
             lock (_seerrStatusCacheLock) { _seerrStatusCache = null; }
             // Arr queue/history/calendar/links come from ArrStateStore, which starts over by itself
             // for an instance whose URL or key changed (its client is rebuilt).
@@ -637,10 +688,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
+            // Taken before anything is read (a clear after it fences the store below).
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             var config = JellyfinEnhanced.Instance?.Configuration;
             bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
 
-            var generation = Interlocked.Read(ref _userCacheGeneration);
             // Check cache first (unless disabled)
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId != null)
@@ -648,7 +700,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return cachedId;
             }
 
-            var user = await GetJellyseerrUser(jellyfinUserId);
+            // The id lives from the read of the user it came from (a held one may be nearly as old as its own limit).
+            var (user, readAt) = await GetJellyseerrUserRead(jellyfinUserId);
             var jellyseerrUserId = user?.Id.ToString();
 
             if (!string.IsNullOrEmpty(jellyseerrUserId) && cacheEnabled)
@@ -656,7 +709,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userIdCacheLock)
                 {
                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, readAt);
                 }
             }
 
@@ -763,6 +816,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var subPathInfix = $":/api/v1/{mediaType}/{mediaId}/";
                 lock (_responseCacheLock)
                 {
+                    Interlocked.Increment(ref _seerrResponseGeneration);
                     var keys = _responseCache.Keys
                         .Where(k =>
                             k.EndsWith(bareSuffix, StringComparison.Ordinal)
@@ -1055,6 +1109,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // issues) must run to completion even if the browser goes away.
             var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
 
+            // Taken before the first read (the configuration, the person's Seerr account): a drop while this runs means its
+            // answer may come from the configuration before the change; the answer lives from here.
+            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);
+            var requestStart = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
@@ -1315,7 +1373,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             lock (_responseCacheLock)
                             {
-                                _responseCache[cacheKey] = (json, DateTime.UtcNow);
+                                if (responseGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _responseCache[cacheKey] = (json, requestStart);
 
                                 if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
@@ -4282,6 +4340,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // UserConfigurationManager expects folder names in N format (without dashes),
             // matching AuthorizeUserConfigAccess.
             var authorizedUserId = userId.Value.ToString("N");
+            // The person's revisions as the filter took them before this action read their documents (else taken now, still
+            // before the reads below): the client keeps the mirrors it loads from here under them.
+            var revision = Response.Headers.TryGetValue(Helpers.AccessRevision.Header, out var taken) && taken.Count > 0
+                ? taken.ToString()
+                : _userManager == null ? null : Helpers.AccessRevision.For(_userManager, userId.Value);
 
             IReadOnlyList<string>? componentScripts = null;
             try
@@ -4312,6 +4375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Lets the client confirm the payload belongs to the user it expects
                 // (a token swap during a user switch must never be applied silently).
                 UserId = authorizedUserId,
+                Revision = revision,
                 PublicConfig = BuildPublicConfig(config),
                 PrivateConfig = isAdmin ? BuildPrivateConfig(config) : null,
                 // Same name checks the client used to run against GET /Plugins.
@@ -11380,6 +11444,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             take = Math.Clamp(take, 1, 200);
             skip = Math.Max(0, skip);
 
+            // Taken before the configuration is read: the TMDB enrichment kept below is fenced by it and lives from here.
+            var enrichmentGeneration = Interlocked.Read(ref _seerrResponseGeneration);
+            var requestStart = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
@@ -11566,7 +11633,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
-                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.GetJellyseerrApiKey());
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.GetJellyseerrApiKey(), enrichmentGeneration, requestStart);
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
@@ -12385,8 +12452,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public int? EpisodeNumber { get; set; }
         }
 
-        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey)
+        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey, long enrichmentGeneration, DateTime requestStart)
         {
+            // enrichmentGeneration and requestStart: taken by the request before it read the configuration that named
+            // jellyseerrUrl and apiKey (a drop since then means they may be the old Seerr's).
             var cacheKey = $"{(type == "movie" ? "movie" : "tv")}:{tmdbId}";
             var cacheTtl = GetTmdbEnrichmentCacheTtl();
             var cacheEnabled = !(JellyfinEnhanced.Instance?.Configuration?.JellyseerrDisableCache ?? false);
@@ -12515,14 +12584,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             TmdbEnrichmentResult result;
             if (cacheEnabled)
             {
-                var fetchTask = _tmdbEnrichmentInFlight.GetOrAdd(cacheKey, _ => FetchEnrichmentAsync());
+                // Shared only with reads of the same generation (one that began before a drop never answers a later one).
+                var flightKey = cacheKey + "@" + enrichmentGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var fetchTask = _tmdbEnrichmentInFlight.GetOrAdd(flightKey, _ => FetchEnrichmentAsync());
                 try
                 {
                     result = await fetchTask;
                 }
                 finally
                 {
-                    _tmdbEnrichmentInFlight.TryRemove(cacheKey, out _);
+                    _tmdbEnrichmentInFlight.TryRemove(new KeyValuePair<string, Task<TmdbEnrichmentResult>>(flightKey, fetchTask));
                 }
 
                 // don't cache empty enrichment
@@ -12538,7 +12609,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     lock (_tmdbEnrichmentCacheLock)
                     {
-                        _tmdbEnrichmentCache[cacheKey] = (result!, DateTime.UtcNow);
+                        if (enrichmentGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _tmdbEnrichmentCache[cacheKey] = (result!, requestStart);
 
                         if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
                         {
@@ -12662,6 +12733,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
                 client.Timeout = TimeSpan.FromSeconds(10);
+                // The avatar lives from when its read began.
+                var readAt = DateTime.UtcNow;
 
                 using var avatarRequest = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"{jellyseerrUrl}{avatarPath}");
                 // explicit User-Agent + Accept so Cloudflare's bot
@@ -12699,7 +12772,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
                 // Store in server-side cache and evict expired entries periodically
-                _avatarCache[cacheKey] = (content, contentType, etag, DateTime.UtcNow);
+                _avatarCache[cacheKey] = (content, contentType, etag, readAt);
                 if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
                 {
                     foreach (var key in _avatarCache

@@ -85,8 +85,9 @@
         state.promise = call('/acquire/requests/me').then((answer) => {
             const value = answer.status === 200 && answer.body?.me ? answer.body.me : null;
             if (meState === state) {
+                // Kept for a minute from when it was ASKED (state.at): a reply that took long to arrive was decided
+                // then, not when it came in.
                 state.value = value;
-                state.at = Date.now();
                 state.promise = null;
             }
             return value;
@@ -798,6 +799,12 @@
     JE.session?.onUserChange?.('arr-ask', () => {
         meState = null;
         openIds.clear();
+        checks.clear();
+    });
+    // The person's access moved (the server's access revision, core/access-revision.js): what they may ask for and the
+    // title checks were worked out for the old access (a read in flight is dropped too: its state is no longer meState).
+    document.addEventListener('je-access-revision', () => {
+        meState = null;
         checks.clear();
     });
 

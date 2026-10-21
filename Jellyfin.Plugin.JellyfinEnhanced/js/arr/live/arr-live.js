@@ -206,6 +206,7 @@
         priming = (async () => {
             try {
                 const response = await fetch(ApiClient.getUrl(ROUTE), { method: 'POST', headers, body: '{}', cache: 'no-store' });
+                JE.core?.revision?.noteResponse(response);
                 if (!response.ok) return null;
                 const body = await response.json();
                 if (myIdentity !== identityEpoch || !body || typeof body.cursor !== 'number' || typeof body.epoch !== 'string') return null;
@@ -347,6 +348,8 @@
                 signal: controller.signal,
                 cache: 'no-store'
             });
+            // Every answer of the feed carries the person's revisions: a change reaches an idle page within one wait.
+            JE.core?.revision?.noteResponse(response);
             if (response.ok) body = await response.json();
         } catch (_) {
             response = null;

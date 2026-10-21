@@ -87,6 +87,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private Task<IReadOnlySet<(int TmdbId, string MediaType)>?> Run(Entry entry, Func<Task<IReadOnlySet<(int TmdbId, string MediaType)>?>> read)
         {
             var generation = Interlocked.Read(ref _generation);
+            // The answer lives from the start of its read (not from when Seerr's reply came in).
+            var startedAt = _now();
             // Outlives the request that started it: no request state flows into it.
             using (ExecutionContext.SuppressFlow())
             {
@@ -108,12 +110,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                         if (value != null)
                         {
                             entry.Value = value;
-                            entry.At = _now();
+                            entry.At = startedAt;
                             entry.FailedAt = null;
                         }
                         else
                         {
-                            entry.FailedAt = _now();
+                            entry.FailedAt = startedAt;
                         }
                     }
                     return value;

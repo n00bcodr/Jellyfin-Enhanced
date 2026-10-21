@@ -1,0 +1,193 @@
+# Every browser cache of a server answer in the production client (tests/frontend/helpers/browser-caches.mjs finds them:
+# a value kept across calls (module state, or state a closure holds: a factory's arrays and maps), or browser storage,
+# written in a function that awaits a read) and how it follows the signed-in person's access. Columns: file (under js/),
+# name, class, reason. Classes: uncached = only a read in flight is shared; revisioned = kept under the person's access
+# revision (core/access-revision.js: the X-JE-Revision every JE answer carries, the bootstrap's, and a probe on every
+# navigation and when the tab comes back into view, whatever features are on) and read again, in place, when it moves
+# ('je-access-revision'), and on a user switch; document = a mirror of one of the person's documents that decides what
+# is hidden or protected (Hidden Content, Spoiler Guard), kept under that document's revision and read again in place
+# when it moves ('je-document-revision': another tab or device saved it); revalidated = the server is asked every time
+# and the kept copy only answers an unchanged reply; shared = the same for everyone; own = the person's own display
+# preference, changed by themselves (no access or protection decision rests on it; another tab's change shows at the
+# next page load); item = Jellyfin's own answer about an item, drawn only on that item's own page or player, which
+# Jellyfin authorizes on every visit; account = the person's Seerr account link or the page bootstrap, which the server
+# checks again on every read and request; state = not an answer (timers, controllers, positions, UI state, bookkeeping).
+# The core response cache (js/core/api-client.js) keeps only the prefixes in its SHARED_CACHE_PREFIXES.
+arr/adminusers/admin-users.js	authorization	state	the administrator's admission ticket for the open user page (which check is current), not an answer
+arr/adminusers/admin-users.js	request	state	the abort controller of the read in flight
+arr/adminusers/admin-users.js	summary	state	an administrator's own page (the users list it draws), read when the page opens and cleared when it closes or the route changes; the server refuses every read and save once they are no longer an administrator
+arr/arr-links.js	slugCache	shared	arr title slugs and instance matches by id: the arr's own data, the same for every viewer (the links are an administrator's only)
+arr/arr-tag-links.js	processedItems	state	items whose links were drawn this visit (DOM bookkeeping), not an answer
+arr/ask/ask-collection.js	answered	state	which collection this page has an answer for (the answer itself is drawn, not kept)
+arr/ask/ask-collection.js	intent	state	which open collection page may show an answer (a request intent), not an answer
+arr/ask/ask-core.js	checks	revisioned	title checks, 30 s: dropped when the server's access revision moves; the server decides every ask again
+arr/ask/ask-core.js	meState	revisioned	what the person may ask for: dropped when the server's access revision moves (and on a user switch); the server decides every ask again
+arr/ask/ask-core.js	openIds	state	client request ids of asks in flight (idempotency), not an answer
+arr/ask/ask-episodes.js	bannerSearched	state	outcome of the administrator's own Search press
+arr/ask/ask-episodes.js	busy	state	episodes with a Search press running
+arr/ask/ask-episodes.js	local	state	optimistic states after the person's own ask, until the server agrees
+arr/ask/ask-episodes.js	searched	state	outcomes of the administrator's own Search presses, shown as chips
+arr/ask/ask-sheet.js	current	state	the sheet being shown (its read is made on each open)
+arr/ask/ask-sheet.js	inflight	uncached	reads in flight only (removed when they settle)
+arr/ask/ask-sheet.js	local	state	words of this page's last ask, until the status catches up (the person's own action)
+arr/ask/ask-sheet.js	pendingOpens	state	sheet opens waiting for their read
+arr/lists/list-api.js	views	revalidated	every read asks the server with the kept ETag; the kept view is used only for a 304 of that read
+arr/lists/list-grid.js	inflight	uncached	ids being read (in flight only)
+arr/lists/list-grid.js	known	revisioned	each list's missing count: dropped (and read again) when the server's access revision moves, on a user switch and on list changes
+arr/lists/list-grid.js	queue	state	ids waiting for the next read
+arr/lists/list-grid.js	retries	state	retry counters
+arr/lists/list-grid.js	timer	state	a timer
+arr/lists/list-pages.js	controllers	state	abort controllers of reads in flight
+arr/lists/list-pages.js	lastOpened	state	the list page last opened (navigation), not an answer
+arr/live/arr-live.js	cursor	state	the live feed's position (cursor)
+arr/live/arr-live.js	epoch	state	the live feed's position (epoch); every change is read from the server
+arr/live/arr-live.js	inflight	uncached	the read in flight only
+arr/live/arr-live.js	priming	uncached	the priming read in flight only
+arr/notify/notify-bell.js	opener	state	what opened the panel
+arr/notify/notify-bell.js	panel	state	the open panel element
+arr/requests/requests-page-data.js	pageSizeResizeTimer	state	a timer
+arr/requests/requests-page-render-cards.js	externalLinksLookup	uncached	the arr links read for the cards being drawn, dropped when it settles
+arr/status/status-cards.js	cache	revisioned	status and badge per card, 60 s: everything is dropped and read again when the server's access revision moves (and on a user switch); a live change re-reads its titles
+arr/status/status-cards.js	flushTimer	state	a timer
+arr/status/status-cards.js	inFlight	uncached	cards being read (in flight only)
+arr/status/status-details.js	current	state	the details panel being drawn (its read is made on each open)
+core/access-revision.js	probing	uncached	the revision probe in flight (one at a time); its answer is the revision itself
+elsewhere/elsewhere.js	availableProviders	shared	TMDB's watch providers of the region, the same for everyone
+elsewhere/elsewhere.js	availableRegions	shared	TMDB's watch regions, the same for everyone
+elsewhere/elsewhere.js	seasonFallbackInFlight	state	season pages whose fallback lookup is running (in-flight bookkeeping)
+elsewhere/elsewhere.js	tmdbSeasonNumbersCache	shared	TMDB's season numbers of a series, the same for everyone
+enhanced/bookmarks/bookmarks.js	itemDetailsCache	item	the open item's details (Jellyfin's own answer), for that item's page visit only (owner, epoch and item checked)
+enhanced/bookmarks/bookmarks.js	mutationQueues	state	queued bookmark writes
+enhanced/events.js	autoPipVideo	state	the video element auto Picture-in-Picture opened, not an answer
+enhanced/events.js	localStorage:'jellyfinEnhancedLastCleared'	state	when the administrator's "clear local storage" was last applied
+enhanced/features-random-button.js	fallbackNotice	state	a notice shown once
+enhanced/helpers.js	avatarFetchPromises	uncached	avatar reads in flight only
+enhanced/helpers.js	avatarObjectUrlCache	shared	avatar images (the same for everyone)
+enhanced/helpers.js	itemCache	item	Jellyfin item lookups (Jellyfin's own answer, which it authorizes on every page that shows the item)
+enhanced/hiddencontent/hidden-content-data.js	hiddenData	document	the person's own Hidden Content list, read again in place when its document revision moves (another tab or device saved it)
+enhanced/hiddencontent/hidden-content-data.js	loadedRevision	state	the document revision the rules were read under (compared with every revision seen; a move reads the rules again)
+enhanced/hiddencontent/hidden-content-data.js	revalidating	uncached	the read of the rules after a document revision, in flight only
+enhanced/hiddencontent/hidden-content-filter.js	parentSeriesCache	item	an episode's series id (Jellyfin's own item structure)
+enhanced/hiddencontent/hidden-content-filter.js	parentSeriesRequestMap	uncached	series lookups in flight only
+enhanced/hiddencontent/hidden-content-save.js	pendingRetryHandle	state	a retry timer
+enhanced/homeremoval/features-remove-home.js	configuredSectionsCache	state	sections already configured on a page element
+enhanced/homeremoval/features-remove-home.js	homeSectionPrefs	own	the person's own home-section settings
+enhanced/homeremoval/features-remove-home.js	homeSectionPrefsUserId	own	whose settings those are
+enhanced/homeremoval/features-remove-home.js	sectionSurfaceCache	state	which home section a page element is
+enhanced/itemdetails/features-details-media-info.js	audioLanguageCache	item	the open item's audio languages (Jellyfin's own answer) for its details page
+enhanced/itemdetails/features-details-media-info.js	fileSizeCache	item	the open item's file size (Jellyfin's own answer) for its details page
+enhanced/itemdetails/features-details-media-info.js	languageTagNameCache	shared	language names by code (the same for everyone)
+enhanced/itemdetails/features-details-media-info.js	watchProgressCache	item	the open item's watch progress (Jellyfin's own answer) for its details page
+enhanced/itemdetails/features-details-page.js	hideButtons	state	buttons hidden on a page element
+enhanced/itemdetails/features-details-page.js	itemTypeFetch	uncached	the item type read in flight
+enhanced/itemdetails/features-details-page.js	lastDetailsDefaultSourceId	state	its default source
+enhanced/itemdetails/features-details-page.js	lastDetailsItemId	state	the details page last drawn
+enhanced/itemdetails/features-details-page.js	lastDetailsItemType	state	its type
+enhanced/itemdetails/features-details-page.js	visit	state	the current details visit
+enhanced/itemdetails/features-release-dates.js	releaseDateCache	item	release dates of a Jellyfin item, drawn only on that item's own details page, which Jellyfin authorizes on every visit
+enhanced/itemdetails/features-release-dates.js	releaseLookups	uncached	release lookups in flight only
+enhanced/player/auto-skip.js	segments	item	the playing item's media segments from Jellyfin, read for that item on its player (Jellyfin authorizes the item when it plays)
+enhanced/player/osd-rating.js	pendingRatings	uncached	rating reads in flight only
+enhanced/player/osd-rating.js	ratingCache	item	the playing item's rating (Jellyfin's own answer) for its player
+enhanced/player/playback-rating-badge.js	infoCache	item	the playing item's facts (Jellyfin's own answer) for its player
+enhanced/player/playback-rating-badge.js	lastSeenId	state	the item last seen
+enhanced/player/playback-rating-badge.js	lastShownId	state	the item last shown
+enhanced/player/playback-rating-badge.js	seriesCache	item	the playing episode's series (Jellyfin's own answer)
+enhanced/player/playback.js	_fallbackFpsWarned	state	warnings already logged
+enhanced/player/playback.js	_fpsCache	item	a playing item's frame rate (Jellyfin's own media info)
+enhanced/player/playback.js	_fpsInflight	uncached	frame-rate reads in flight only
+enhanced/player/playback.js	playbackInfoTimer	state	a timer
+enhanced/player/playback.js	segmentCache	item	a playing item's media segments (Jellyfin's own answer)
+enhanced/settingspanel/ui-panel-language.js	cultureMap	shared	Jellyfin's culture list, the same for everyone
+enhanced/settingspanel/ui-panel-language.js	localeSet	shared	the locales JE ships, the same for everyone
+enhanced/spoilerguard/state.js	enabledCollections	document	the person's own Spoiler Guard list (collections): read again in place when the document revision moves
+enhanced/spoilerguard/state.js	enabledMovies	document	the person's own Spoiler Guard list (movies): read again in place when the document revision moves
+enhanced/spoilerguard/state.js	enabledPendingTmdb	document	the person's own pending Spoiler Guard entries: read again in place when the document revision moves
+enhanced/spoilerguard/state.js	enabledSeries	document	the person's own Spoiler Guard list (series), read again in place when its document revision moves (another tab or device saved it)
+enhanced/spoilerguard/state.js	loadedRevision	state	the document revision the state was read under (compared with every revision seen; a move reads the state again)
+enhanced/spoilerguard/state.js	statePromise	document	the read of the person's Spoiler Guard state (memoized): replaced when the document revision moves (another tab or device saved it) or a change of this tab ran across it
+enhanced/spoilerguard/state.js	tmdbToJellyfin	document	the Jellyfin ids of the person's own pending Spoiler Guard entries: read again in place when the document revision moves
+enhanced/spoilerguard/state.js	userPrefs	document	the person's own Spoiler Guard preferences: read again in place when the document revision moves
+enhanced/translations.js	localStorage:`JE_translation_en_${pluginVersion}`	shared	the shipped English translations of this plugin version
+enhanced/translations.js	localStorage:`JE_translation_ts_en_${pluginVersion}`	state	when those were stored
+enhanced/translations.js	localStorage:cacheKey	shared	a language's translations for this plugin version (the same for everyone)
+enhanced/translations.js	localStorage:timestampKey	state	when they were stored
+extras/active-streams.js	_lastUpdated	state	when the list was last drawn
+extras/activity-page.js	activeStreamsPollTimer	state	a timer
+extras/plugin-icons.js	customPluginsCache	shared	the server's installed plugins (administrators only, the same for each)
+jellyseerr/api.js	_lastRequestSettings	account	Seerr's request settings for the person's account; the server decides every request again
+jellyseerr/api.js	cachedOverrideRules	shared	the administrator's Seerr override rules (the same for everyone)
+jellyseerr/api.js	cachedUserStatus	account	whether the person has a Seerr account (a link, not access): the server checks the account again on every Seerr read and request
+jellyseerr/discovery/collection-discovery.js	boxsetInfoCache	item	a Jellyfin collection's facts (Jellyfin's own answer) for its page
+jellyseerr/discovery/discovery-base.js	cachedAllResults	revisioned	a client-paged list (filmography, collection, keyword): kept under the access revision it was read under; when it moves the list is read again before anything more is drawn from it, and the cards the new access no longer has are taken away
+jellyseerr/discovery/discovery-base.js	cachedMovieResults	state	the movie cards already drawn (dedup history); nothing is drawn again from it, as for cachedTvResults
+jellyseerr/discovery/discovery-base.js	cachedTvResults	state	the series cards already drawn (dedup history); nothing is drawn again from it: a sort change reads page 1 again and every further page is a fresh read or a page kept under the current access revision
+jellyseerr/discovery/discovery-base.js	consumed	state	titles of the client-paged list already drawn (so a list read again continues after them)
+jellyseerr/discovery/discovery-base.js	currentAbortController	state	the abort controller of the section's reads
+jellyseerr/discovery/discovery-base.js	currentFeeds	state	which feeds (network, genre, studio ids) the page shows, from its route; every page of them is read under the access revision (discovery-filter-utils keptPages)
+jellyseerr/discovery/discovery-base.js	currentPagedResults	revisioned	the client-paged list in the current sort and filter (from cachedAllResults): recomputed when the list is read again after an access revision
+jellyseerr/discovery/discovery-base.js	currentRenderingPageKey	state	the page being drawn (re-entry guard)
+jellyseerr/discovery/discovery-base.js	itemDeduplicator	state	ids already drawn in the section (dedup), not an answer
+jellyseerr/discovery/discovery-base.js	listId	state	the page id the client-paged list was read for
+jellyseerr/discovery/discovery-base.js	listRevision	state	the access revision the client-paged list was read under
+jellyseerr/discovery/discovery-base.js	processedPages	state	pages this discovery section was drawn on (render bookkeeping), not an answer
+jellyseerr/discovery/discovery-base.js	revalidating	uncached	the read of the client-paged list after an access revision, in flight only
+jellyseerr/discovery/discovery-filter-utils.js	keptPages	revisioned	Discover pages (a load's prefetched pages, a page shown again), kept under the access revision they were asked under and the user: used only while both still hold (checked at use), dropped when the revision moves, 2 minutes at most from the request
+jellyseerr/discovery/discovery-filter-utils.js	sessionStorage:storageKey	shared	TMDB's genre list (the same for everyone)
+jellyseerr/discovery/genre-discovery.js	tmdbGenreCache	shared	TMDB's genre list (the same for everyone)
+jellyseerr/discovery/tag-discovery.js	keywordIdCache	shared	TMDB keyword ids by name (the same for everyone)
+jellyseerr/issue-reporter.js	cachedUserCanReport	account	whether the person's Seerr account may report issues; the server checks it again on every report
+jellyseerr/item-details.js	currentAbortController	state	an abort controller
+jellyseerr/item-details.js	processedRequestMoreItems	state	page elements already handled
+jellyseerr/item-details.js	requestMoreAbortController	state	an abort controller
+jellyseerr/jellyseerr.js	batchRendering	state	the batch of cards being built (render bookkeeping)
+jellyseerr/jellyseerr.js	fetchingQuery	state	the query whose first page is in flight
+jellyseerr/jellyseerr.js	lastProcessedQuery	state	the search query last drawn (input bookkeeping)
+jellyseerr/jellyseerr.js	searchDeduplicator	state	ids already drawn in the search row (dedup), not an answer
+jellyseerr/jellyseerr.js	searchSignal	state	the abort signal of the search's reads
+jellyseerr/moreinfo/more-info-modal-actions.js	open4k	state	the 4K menu that is open (UI state)
+jellyseerr/nativedetails/native-details.js	current	state	the details page being drawn (read on each visit)
+jellyseerr/nativedetails/native-details.js	fellBackFrom	state	the page it fell back from
+jellyseerr/recommendations/recommendations-category.js	categoryDeduplicator	state	titles already drawn on this page
+jellyseerr/recommendations/recommendations-category.js	stopStickyTracking	state	a cleanup function
+jellyseerr/recommendations/recommendations-render.js	stopTitleTracking	state	a cleanup function
+jellyseerr/ui/ui-badges.js	providerFlushTimer	state	a timer
+jellyseerr/ui/ui-badges.js	queuedLookups	state	watch-provider lookups waiting for the next batch (a queue; the answers are per call)
+jellyseerr/ui/ui-buttons.js	requestHandlers	state	handlers attached to page elements
+jellyseerr/ui/ui-season-modal.js	airDateCache	shared	TMDB's air dates of the open series' seasons, the same for everyone
+jellyseerr/ui/ui-season-modal.js	refreshModalInterval	state	a timer
+others/doesthedogdie.js	picked	own	the person's own Does the Dog Die topic picks (their document), changed by themselves
+others/letterboxd-links.js	lastVisibleItemId	state	the item page shown (DOM bookkeeping)
+others/letterboxd-links.js	processedItemIds	state	items whose links were drawn (DOM bookkeeping)
+plugin.js	bootstrapPromise	account	the page-load bootstrap for the signed-in person (read again on a user switch); every answer in it is read again by its own feature
+plugin.js	bootstrapUserId	account	whose bootstrap that is
+plugin.js	documents	state	built per call (a new object for each read of the person's documents), not kept
+plugin.js	localStorage:'JE_translation_clear_ts'	state	when the translation cache was last cleared
+plugin.js	prefetched	account	the page-load bootstrap's answers, handed out once each within seconds of the load, then read by their own features
+plugin.js	privateConfigKeys	account	the keys of an administrator's private config merged into the page config (removed on a user switch so they never reach a non-administrator's session)
+tags/ageratingtags.js	colourCssPromise	shared	the tag colour stylesheet
+tags/peopletags.js	lastProcessedItemId	state	the item page whose cast was tagged (DOM bookkeeping)
+tags/peopletags.js	localStorage:CACHE_KEY	shared	people facts (birth and death dates, places) by person: public metadata, the same for everyone
+tags/peopletags.js	prefetches	item	cast facts (birth, death, ages) a details visit asked for before its cards were drawn, kept for that visit's item only and drawn only on its page
+tags/qualitytags.js	jellyfinAudioPreference	own	the person's own audio-language preference
+tags/qualitytags.js	jellyfinAudioPreferencePromise	own	the person's own audio-language preference
+tags/qualitytags.js	jellyfinAudioPreferencePromiseUserId	own	whose preference that is
+tags/qualitytags.js	jellyfinAudioPreferenceUserId	own	whose preference that is
+tags/tag-pipeline.js	deltaIds	state	ids changed by the last delta
+tags/tag-pipeline.js	fetchTimer	state	a timer
+tags/tag-pipeline.js	firstEpisodeCache	item	a series' first episode (Jellyfin's own item structure)
+tags/tag-pipeline.js	loadInFlight	uncached	the load in flight only
+tags/tag-pipeline.js	openStoreGate	state	the stored copy's write gate
+tags/tag-pipeline.js	parentSeriesCache	item	an episode's series (Jellyfin's own item structure)
+tags/tag-pipeline.js	serverCache	revisioned	the tag data the server projected for the person: kept under the filter revision every tag answer carries (access + Spoiler Guard) and replaced when it moves
+tags/tag-pipeline.js	serverFilterRevision	revisioned	the filter revision the kept tag data was made under (from the server's answers)
+tags/tag-pipeline.js	storeGate	state	the stored copy's write gate
+tags/tag-pipeline.js	storeMisses	state	ids the stored copy lacked
+tags/tag-pipeline.js	storeScope	revisioned	which person, server and filter revision the stored copy belongs to
+tags/userreviewtags.js	_batchControllers	state	abort controllers of batches in flight
+tags/userreviewtags.js	_failedUntil	state	back-off after a failed read
+tags/userreviewtags.js	_flushTimer	state	a timer
+tags/userreviewtags.js	_inFlight	uncached	reads in flight only
+tags/userreviewtags.js	_queue	uncached	lookups waiting for the next batch
+tags/userreviewtags.js	_reviewCache	revalidated	review averages by title: superseded by the ratings map every tag answer carries (an entry older than the latest map is dropped)
+tags/userreviewtags.js	_reviewCacheAt	revalidated	when each average was read (compared with the latest tag answer's map)

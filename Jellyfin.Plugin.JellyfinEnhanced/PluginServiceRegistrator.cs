@@ -169,6 +169,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 // Every answer of JE's routes names the server's JE build: a page loaded from another build asks to be reloaded.
                 o.Filters.Add(new Services.ClientBuildFilter());
             });
+            // Core (user-change caches): whom an action of unknown person (a sign-in by name) turned out to be about, so JE's
+            // user caches read again only that person's entries (Helpers.UserAuthority).
+            serviceCollection.AddSingleton<Helpers.UserChangeAttribution>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Helpers.UserChangeAttribution>());
+            // Core (user-change caches, round 5): every JE answer carries the person's access and document revisions, taken
+            // before the action reads anything (Helpers.AccessRevision), so a browser tab can tell its kept answers are old.
+            serviceCollection.AddSingleton<Helpers.AccessRevisionFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Helpers.AccessRevisionFilter>());
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();

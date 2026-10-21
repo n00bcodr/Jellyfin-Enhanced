@@ -33,6 +33,9 @@
     let recoveryTimer = null;
     // Titles whose state an accepted write established while the full state is unavailable.
     const confirmed = new Map();
+    // Core user-change caches (play edge join): the document revision the state was read under, and whether a newer one was seen.
+    let loadedRevision = null;
+    let stale = false;
 
     /** Tell current detail-page consumers to discard topic content after a policy change. */
     function notifyPolicyChanged() {
@@ -213,6 +216,15 @@
         return startLoad();
     };
 
+    // Another tab or device saved this person's Spoiler Guard state (its document revision moved): read it again now
+    // when it is in use, else on the next use. The state shown stays until the new one is in (only changes are drawn).
+    document.addEventListener('je-document-revision', function(e) {
+        const detail = e.detail || {};
+        if (detail.document !== 'spoiler-guard' || detail.revision === loadedRevision) return;
+        stale = true;
+        if (loaded && JE.pluginConfig?.SpoilerBlurEnabled === true) internal.loadState();
+    });
+
     internal.whenLoaded = function() {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return Promise.resolve();
         if (loaded && loadOk) return Promise.resolve();
@@ -326,6 +338,8 @@
         confirmed.clear();
         loaded = false;
         loadOk = false;
+        loadedRevision = null;
+        stale = false;
         enabledSeries.clear();
         enabledMovies.clear();
         enabledCollections.clear();

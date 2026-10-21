@@ -60,5 +60,9 @@
     <None Include="Api/ArrRoutes.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- The Jellyfin releases whose Jellyfin.Api.dll the coverage tests read (fetched by jellyfin_api.py). -->
     <None Include="Support/jellyfin-api.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The pinned hosts' user types, classified in Helpers/UserAuthorityFields.cs (tests/host/README.md). -->
+    <None Include="../fixtures/host-users/*.tsv" Link="fixtures/host-users/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Every cache the plugin keeps and why it can't serve an answer from before a user's access changed (Users/UserCacheScan.cs). -->
+    <None Include="../fixtures/user-caches/*.tsv" Link="fixtures/user-caches/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

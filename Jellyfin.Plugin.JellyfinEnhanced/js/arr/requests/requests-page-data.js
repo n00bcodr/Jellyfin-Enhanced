@@ -66,6 +66,8 @@
     issueMediaCache.clear();
   });
 
+  // Seerr media details of the issues on screen, shared while a read is in flight only: the answer is per person
+  // (Seerr request state, parental limits) and a restriction applies to the next read.
   const issueMediaCache = new Map();
 
   /**
@@ -304,18 +306,22 @@
     return issue;
   }
 
-  async function fetchIssueMediaDetails(mediaType, tmdbId) {
-    if (!mediaType || !tmdbId) return null;
+  function fetchIssueMediaDetails(mediaType, tmdbId) {
+    if (!mediaType || !tmdbId) return Promise.resolve(null);
     const cacheKey = `${mediaType}:${tmdbId}`;
     if (issueMediaCache.has(cacheKey)) return issueMediaCache.get(cacheKey);
+    const read = readIssueMediaDetails(mediaType, tmdbId).finally(() => {
+      if (issueMediaCache.get(cacheKey) === read) issueMediaCache.delete(cacheKey);
+    });
+    issueMediaCache.set(cacheKey, read);
+    return read;
+  }
 
+  async function readIssueMediaDetails(mediaType, tmdbId) {
     const path = mediaType === "tv"
       ? `/JellyfinEnhanced/jellyseerr/tv/${tmdbId}`
       : `/JellyfinEnhanced/jellyseerr/movie/${tmdbId}`;
 
-    // Seerr media details carry per-user request state — don't let a
-    // response spanning a user switch repopulate the reset cache.
-    const epoch = captureEpoch();
     try {
       const data = await ApiClient.ajax({
         type: "GET",
@@ -323,10 +329,8 @@
         dataType: "json",
         headers: { "X-Jellyfin-User-Id": ApiClient.getCurrentUserId() },
       });
-      if (epochCurrent(epoch)) issueMediaCache.set(cacheKey, data || null);
       return data || null;
     } catch (error) {
-      if (epochCurrent(epoch)) issueMediaCache.set(cacheKey, null);
       return null;
     }
   }

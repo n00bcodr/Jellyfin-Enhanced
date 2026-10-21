@@ -329,7 +329,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         private bool _stopped;
         private long _refreshes;
         private long _found;
-        private (DateTimeOffset At, IReadOnlyList<BridgeMissing> Value)? _missing;
+        // The "not in Jellyfin" list with the generation it was read under: a refresh that changes it bumps the generation,
+        // and a list read before that (under an older one) is never served, even if it is stored after.
+        private (DateTimeOffset At, IReadOnlyList<BridgeMissing> Value, long Generation)? _missing;
+        private long _missingGeneration;
         private (DateTimeOffset At, BridgeMissingTitles Value)? _titles;
 
         /// <summary>The bridge (DI).</summary>
@@ -725,7 +728,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 work = next;
             }
-            lock (_lock) _missing = null;
+            lock (_lock) { _missingGeneration++; _missing = null; }
         }
 
         /// <summary>The new folder directly inside the plan's folder that holds the file (null when the file sits in that folder).</summary>
@@ -894,7 +897,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 {
                     Interlocked.Increment(ref _found);
                     Record(instance, arrPath, file, BridgePaths.Parent(file), null, outcome, true, 0, null);
-                    lock (_lock) _missing = null;
+                    lock (_lock) { _missingGeneration++; _missing = null; }
                 }
                 if (plan.Outcome != RefreshOutcome.Refresh || plan.AncestorId == folderId || _stop.IsCancellationRequested) return;
                 // An import's follow-through needs targeted refresh on; Scan now's needs phase 2 on.
@@ -913,7 +916,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var has = _library.FindByPath(file) != null;
                 if (has) Interlocked.Increment(ref _found);
                 Record(instance, arrPath, file, plan.Ancestor, plan.AncestorKind, error == null ? outcome : "failed", has, ms, error);
-                lock (_lock) _missing = null;
+                lock (_lock) { _missingGeneration++; _missing = null; }
                 if (has || error != null) return;
                 if (pending != null) FollowThrough(pending, plan.AncestorId!.Value, instance, arrPath, file, levels - 1, outcome, manual);
                 else if (levels > 1 && NextLevel(plan) != null) await FollowThroughAsync(plan.AncestorId!.Value, instance, arrPath, file, levels - 1, outcome, manual).ConfigureAwait(false);
@@ -1251,14 +1254,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     }
                     if (found) Interlocked.Increment(ref _found);
                     Record(instance, arrPath, file, plan.Ancestor, plan.AncestorKind, switchedOff ? SwitchedOff : error == null ? "scan_now" : "failed", found, ms, error);
-                    lock (_lock) _missing = null;
+                    lock (_lock) { _missingGeneration++; _missing = null; }
                     return new BridgeScanResult { Outcome = "refreshed", Library = plan.Library?.Name, Folder = plan.Ancestor, Found = found };
                 }
                 default:
                 {
                     var queued = plan.Library != null && _library.QueueLibraryScan(plan.Library.Id);
                     Record(instance, arrPath, file, plan.Ancestor, plan.AncestorKind, queued ? "library_scan" : "failed", false, 0, queued ? null : "The library could not be found.");
-                    lock (_lock) _missing = null;
+                    lock (_lock) { _missingGeneration++; _missing = null; }
                     return queued
                         ? new BridgeScanResult { Outcome = "library", Library = plan.Library!.Name, Folder = plan.Ancestor }
                         : new BridgeScanResult { Outcome = "refused", Reason = "no_library" };
@@ -1275,9 +1278,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public IReadOnlyList<BridgeMissing> NotInJellyfin()
         {
             var now = _now();
+            long generation;
             lock (_lock)
             {
-                if (_missing is { } cached && now - cached.At < MissingCacheFor) return cached.Value;
+                if (_missing is { } cached && cached.Generation == _missingGeneration && now - cached.At < MissingCacheFor) return cached.Value;
+                generation = _missingGeneration;
             }
             var libraries = _library.Libraries();
             var list = new List<BridgeMissing>();
@@ -1321,7 +1326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
             }
             var result = list.OrderBy(x => x.ImportedAt).ToList();
-            lock (_lock) _missing = (now, result);
+            lock (_lock) _missing = (now, result, generation);
             return result;
         }
 

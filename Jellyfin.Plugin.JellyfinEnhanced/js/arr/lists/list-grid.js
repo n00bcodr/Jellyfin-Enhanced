@@ -199,6 +199,8 @@
                 body: JSON.stringify({ listIds: ids }),
                 cache: 'no-store'
             });
+            // The answer carries the person's revisions (core/access-revision.js).
+            JE.core?.revision?.noteResponse(response);
             if (!rule.current()) return;
             answer = response.ok ? await response.json() : null;
             if (!rule.current()) return;
@@ -314,6 +316,17 @@
         paintTicket?.revoke();
         paintTicket = null;
     }
+
+    // The person's access moved (core/access-revision.js): each list's missing count was worked out for the old access,
+    // so it is read again. The same person is still signed in: a read running now is fenced (a new generation), each
+    // count is kept only to stay on its card until the new answer replaces it (no mark comes off and back on).
+    document.addEventListener('je-access-revision', () => {
+        if (!observing) return;
+        const shown = [...known].map(([id, entry]) => [id, { missing: entry.missing, at: 0 }]);
+        reset();
+        for (const [id, entry] of shown) known.set(id, entry);
+        scan();
+    });
 
     /**
      * A list changed (its entries or who sees them): refresh its visible cards, including changes during a batch.

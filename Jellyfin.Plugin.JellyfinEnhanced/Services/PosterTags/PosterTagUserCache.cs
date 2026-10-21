@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Concurrent;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
@@ -13,37 +13,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     // and metadata stamping paid it per DTO, making a 100-item /Items response
     // ~400 ms slower.
     //
-    // Safe because the users are only read: library access and parental
-    // rating (GetItemById<BaseItem>(id, user)), the admin flag, and the
-    // hidden/disabled flags that decide review visibility. A policy change
-    // takes effect within the TTL. Jellyfin's image endpoints are anonymous
+    // The users are only read: library access and parental rating
+    // (GetItemById<BaseItem>(id, user)), the admin flag, and the
+    // hidden/disabled flags that decide review visibility. Each entry keeps
+    // the user's Jellyfin user version as stamped before the lookup
+    // (UserAuthority.ReadOncePerRequest) and is served only while UserAuthority.Unchanged,
+    // so a policy change applies to the next request: the version moves on the
+    // Jellyfin user actions JE brackets for the person (the Dashboard's policy
+    // save, which 10.11 makes without an event), on JE's own changes to them
+    // (maintenance mode) and on Jellyfin's events about them. A change whose
+    // person isn't known before it runs (sign-in by name) counts, once it has
+    // run, only for the person it turned out to be about
+    // (UserChangeAttribution). A miss reads the user once per request
+    // (UserAuthority.ReadOncePerRequest), never sharing a read with another
+    // request. The TTL only bounds a change made by other code with no event
+    // (another plugin's direct save). Jellyfin's image endpoints are anonymous
     // anyway; this only decides whose tag data is drawn. Null results are
-    // cached too, so a deleted review author is not looked up again on every
-    // poster.
+    // cached too (Jellyfin never reuses a user id), so a deleted review author
+    // is not looked up again on every poster.
     public sealed class PosterTagUserCache
     {
         private const int MaxEntries = 4096;
         private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(30);
 
         private readonly IUserManager _userManager;
-        private readonly ConcurrentDictionary<Guid, (JUser? User, DateTime At)> _cache = new();
+        private readonly UserAccessCache<Guid, JUser?> _cache = new(Ttl, MaxEntries, final: user => user == null);
 
         public PosterTagUserCache(IUserManager userManager)
         {
             _userManager = userManager;
         }
 
-        /// <summary>The user, or null when there is none (either answer is cached for the TTL).</summary>
-        public JUser? Get(Guid userId)
-        {
-            if (userId == Guid.Empty) return null;
-            var now = DateTime.UtcNow;
-            if (_cache.TryGetValue(userId, out var hit) && now - hit.At < Ttl) return hit.User;
+        /// <summary>The user, or null when there is none (either answer is cached for the TTL while the user is unchanged).</summary>
+        public JUser? Get(Guid userId) => GetStamped(userId).User;
 
-            var user = _userManager.GetUserById(userId);
-            if (_cache.Count >= MaxEntries) _cache.Clear();
-            _cache[userId] = (user, now);
-            return user;
+        /// <summary>
+        /// The user and the person's version they were read under: what an answer decided with this user must be kept
+        /// under (a version taken after the read could be newer than the user, e.g. the request's own earlier read).
+        /// </summary>
+        internal (JUser? User, UserAuthority.Stamp Stamp) GetStamped(Guid userId)
+        {
+            // No user: nothing to read, but the answer is still filed under a version taken before it.
+            if (userId == Guid.Empty) return UserAuthority.ReadOncePerRequest(userId, _ => null);
+            // Stamped before the read, so a change landing during it is never served later.
+            return _cache.GetHeldStamped(userId, userId, () => UserAuthority.ReadOncePerRequest(userId, _userManager.GetUserById));
         }
     }
 }

@@ -335,6 +335,32 @@
         return header;
     }
 
+    // Discover pages this tab read (a load's prefetched pages, a page shown again after a sort or filter change), kept
+    // under the person's access revision (core/access-revision.js) they were asked under: used only while that revision
+    // is still the one known and the user the same, and dropped when it moves, so a prefetched page is never drawn for
+    // an access the person no longer has, and an unchanged access never asks twice for the same page.
+    /** @type {Map<string, {data: any, revision: string|null, epoch: number, at: number}>} */
+    const keptPages = new Map();
+    const KEPT_PAGE_TTL_MS = 2 * 60 * 1000;
+    const KEPT_PAGES_MAX = 200;
+    const accessRevision = () => JE.core?.revision?.access?.() ?? null;
+    document.addEventListener('je-access-revision', () => keptPages.clear());
+    JE.session?.onUserChange?.('discovery-kept-pages', () => keptPages.clear());
+
+    /**
+     * A kept page, when it may still be used (same user, same access revision, not too old).
+     * @param {string} cacheKey
+     * @param {number} epoch
+     * @returns {any|null}
+     */
+    function keptPage(cacheKey, epoch) {
+        const kept = keptPages.get(cacheKey);
+        if (!kept) return null;
+        if (kept.epoch === epoch && kept.revision === accessRevision() && Date.now() - kept.at < KEPT_PAGE_TTL_MS) return kept.data;
+        keptPages.delete(cacheKey);
+        return null;
+    }
+
     /**
      * Managed fetch helper using request manager when available
      * @param {string} path - API path
@@ -665,6 +691,8 @@
 
         // Add media type for fast CSS-based filtering
         card.setAttribute('data-media-type', item.mediaType);
+        // The title the card draws (a list read again after an access change takes away the cards it no longer has).
+        card.setAttribute('data-je-title-key', `${item.mediaType}-${item.id}`);
 
         const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
         if (jellyfinMediaId) {

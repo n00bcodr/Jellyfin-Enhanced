@@ -19,49 +19,12 @@
     let overrideRulesCachedAt = 0;
     const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
 
-    // Collection membership per movie (TMDB id -> collection, or null for
-    // none) as answered by the batched lookup, for the signed-in user. Kept
-    // as long as the core client kept the per-movie detail responses it
-    // replaces, so a movie seen again (the same query retyped, a later page)
-    // costs no request.
-    /** @type {Map<number, {collection: Object|null, at: number}>} */
-    const movieCollections = new Map();
-    const MOVIE_COLLECTIONS_TTL_MS = 30 * 60 * 1000;
-    const MOVIE_COLLECTIONS_MAX_ENTRIES = 1000;
     // Ids per request: the server answers up to 100 (MovieCollectionsBatch.MaxIds),
     // but 40 keep the query string under ~330 bytes, inside even strict proxy
     // query-length limits (e.g. 512); a search page (20 results) is one request.
+    // The answers aren't kept between calls: they are per person (Seerr user,
+    // parental limits), and a restriction applies to the next lookup.
     const MOVIE_COLLECTIONS_IDS_PER_REQUEST = 40;
-    JE.session?.onUserChange('jellyseerr-movie-collections', () => movieCollections.clear());
-
-    /**
-     * Looks up a remembered collection answer.
-     * @param {number} tmdbId - TMDB movie id.
-     * @returns {Object|null|undefined} The movie's collection, null when it is
-     *   in none, undefined when not known (never asked, or expired).
-     */
-    function recallMovieCollection(tmdbId) {
-        const entry = movieCollections.get(tmdbId);
-        if (!entry) return undefined;
-        if (Date.now() - entry.at >= MOVIE_COLLECTIONS_TTL_MS) {
-            movieCollections.delete(tmdbId);
-            return undefined;
-        }
-        return entry.collection;
-    }
-
-    /**
-     * Remembers a collection answer, evicting the oldest one at capacity.
-     * @param {number} tmdbId - TMDB movie id.
-     * @param {Object|null} collection - The movie's collection, null for none.
-     */
-    function rememberMovieCollection(tmdbId, collection) {
-        movieCollections.delete(tmdbId);
-        if (movieCollections.size >= MOVIE_COLLECTIONS_MAX_ENTRIES) {
-            movieCollections.delete(movieCollections.keys().next().value);
-        }
-        movieCollections.set(tmdbId, { collection, at: Date.now() });
-    }
 
     // Set once Seerr refuses this account's issue reads (no VIEW_ISSUES, or no account); cleared on a user switch.
     let issuesRefused = false;
@@ -405,9 +368,9 @@
     /**
      * Adds collection membership information to movie items in search results.
      * One batched server lookup (jellyseerr/movie-collections) covers every
-     * movie not already answered this session; it reads Seerr's movie detail,
-     * then TMDB's when Seerr names no collection, exactly as
-     * fetchMovieCollection does per movie.
+     * movie of the call; it reads Seerr's movie detail, then TMDB's when Seerr
+     * names no collection, exactly as fetchMovieCollection does per movie.
+     * Nothing is kept for later calls (the answer is per person).
      * @param {Array} results
      * @param {{signal?: AbortSignal|null}} [options]
      * @returns {Promise<Array>} A copy with `collection` set on member movies.
@@ -421,20 +384,17 @@
         const unknown = new Set();
         results.forEach(item => {
             const id = Number(item.id);
-            if (item.mediaType === 'movie' && Number.isInteger(id) && id > 0 && recallMovieCollection(id) === undefined) {
+            if (item.mediaType === 'movie' && Number.isInteger(id) && id > 0) {
                 unknown.add(id);
             }
         });
         const ids = Array.from(unknown);
 
-        // Answers that land after a user switch belong to the previous user
-        // (Seerr permissions, parental gating): use them, never keep them.
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const answered = new Map();
         try {
             for (let c = 0; c < ids.length; c += MOVIE_COLLECTIONS_IDS_PER_REQUEST) {
                 const chunk = ids.slice(c, c + MOVIE_COLLECTIONS_IDS_PER_REQUEST);
-                // skipCache: answers are kept per movie below rather than per id set.
+                // skipCache: a per-person answer, never kept by the browser.
                 const data = await get(`/movie-collections?ids=${chunk.join(',')}`, { signal, skipCache: true });
                 Object.entries(data?.results || {}).forEach(([id, collection]) => answered.set(Number(id), collection || null));
             }
@@ -443,14 +403,10 @@
             // didn't answer just get no collection this time.
             if (e?.name !== 'AbortError') console.debug(`${logPrefix} Collection lookup failed:`, e);
         }
-        if (!JE.session || JE.session.isCurrent(requestEpoch)) {
-            answered.forEach((collection, id) => rememberMovieCollection(id, collection));
-        }
-
         results.forEach((item, i) => {
             if (item.mediaType !== 'movie') return;
             const id = Number(item.id);
-            const collection = answered.has(id) ? answered.get(id) : recallMovieCollection(id);
+            const collection = answered.get(id);
             if (collection) out[i] = { ...item, collection };
         });
         return out;

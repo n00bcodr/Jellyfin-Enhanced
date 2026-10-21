@@ -12,6 +12,9 @@ using Moq;
 
 namespace JE.Tests;
 
+// The author cache's entries are stamped with each author's Jellyfin user version, so its lookup counts run with the other
+// tests that move those versions (a global bracket elsewhere would add a lookup).
+[Collection("Jellyfin user versions")]
 public class ReviewActivityVisibilityTests
 {
     private static User User(Guid? id = null) => new("author", "default", "default") { Id = id ?? Guid.NewGuid() };

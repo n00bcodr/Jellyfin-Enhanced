@@ -562,6 +562,36 @@ test('the collection section follows the server order (release date, TBA last), 
   assert.equal(page.querySelector('.je-list-section'), null, 'and the section went at once');
 });
 
+test('a moved access revision reads each list count again in place: a mark stays until its new answer, and goes only if the answer says so', async t => {
+  const ids = [ITEM(0x2000), ITEM(0x2001)];
+  let restricted = false;
+  let asked = 0;
+  const h = setup(t, {
+    views: () => [null, 404],
+    summaries: () => { asked++; return [{ lists: ids.map((listId, i) => ({ listId, listKind: 'playlist', missing: restricted && i === 1 ? 0 : 3 })), pending: [] }]; }
+  });
+  const grid = h.document.createElement('div');
+  grid.className = 'page libraryPage';
+  grid.innerHTML = '<div class="itemsContainer vertical-wrap">' + ids.map(id => `<div class="card" data-id="${id}" data-type="Playlist"><div class="cardImageContainer"><div class="cardIndicators"></div></div></div>`).join('') + '</div>';
+  h.document.body.appendChild(grid);
+  h.window.location.hash = '#/list?parentId=x';
+  await h.start();
+  for (let i = 0; i < 100 && grid.querySelectorAll('.je-list-grid-indicator').length < 2; i++) await sleep(20);
+  const [first, second] = [...grid.querySelectorAll('.je-list-grid-indicator')];
+  assert.ok(first && second);
+  const removed = [];
+  new h.window.MutationObserver(records => records.forEach(r => r.removedNodes.forEach(n => removed.push(n)))).observe(grid, { subtree: true, childList: true });
+  restricted = true;
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision', { detail: { before: 'a1', revision: 'a2' } }));
+  assert.ok(first.isConnected && second.isConnected, 'the marks stay while their counts are read again');
+  for (let i = 0; i < 100 && asked < 2; i++) await sleep(20);
+  await h.settle(100);
+  assert.equal(asked, 2, 'the counts are read again');
+  assert.equal(grid.querySelector(`.card[data-id="${ids[0]}"] .je-list-grid-indicator`), first, 'an unchanged mark is the same element');
+  assert.equal(removed.filter(n => n === first).length, 0);
+  assert.equal(grid.querySelector(`.card[data-id="${ids[1]}"] .je-list-grid-indicator`), null, 'a count the new access changes goes');
+});
+
 test('the Playlists grid asks about 170 cards in two calls (the first cards first), marks incomplete lists instead of the played check, and re-decorates a re-used card', async t => {
   const ids = Array.from({ length: 170 }, (_, i) => ITEM(0x1000 + i));
   const asked = [];

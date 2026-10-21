@@ -68,12 +68,12 @@ test('downloads stale issue denial does not deny the new account',async t=>{
   const pending=deferred();const h=setup(t,{ajax:()=>pending.promise});h.expectConsoleError('Requests Page: Failed to fetch issues:');
   const run=h.P.fetchIssues();h.switchUser();pending.reject({status:403});await run;assert.equal(h.P.state.issuesPermissionDenied,false);assert.equal(h.notices.length,0);
 });
-test('downloads issues hydrate alternate metadata shapes and reuse cache only within account',async t=>{
+test('downloads issues hydrate alternate metadata shapes and read the media details again on every load (a per-person answer)',async t=>{
   const calls=[];const h=setup(t,{ajax:async options=>{calls.push(options);return options.url.includes('/issue')?{results:[{id:1,media:{mediaType:'tv',tmdbId:42}}],pageInfo:{pages:2}}:{id:42,name:'Series',poster_path:'/poster.jpg',first_air_date:'2020-01-01'};}});
-  await h.P.fetchIssues();await h.P.fetchIssues();assert.equal(calls.length,3);
+  await h.P.fetchIssues();await h.P.fetchIssues();assert.equal(calls.length,4);
   assert.equal(h.P.state.issues[0].media.title,'Series');assert.equal(h.P.state.issues[0].media.posterPath,'/poster.jpg');assert.equal(h.P.state.issuesTotalPages,2);
   assert.equal(calls[0].headers['X-Jellyfin-User-Id'],'user-a');
-  h.switchUser();await h.P.fetchIssues();assert.equal(calls.length,5);
+  h.switchUser();await h.P.fetchIssues();assert.equal(calls.length,6);
 });
 // History goes through JE.core.api.plugin (h.calls); issues through ApiClient.ajax, counted separately.
 for(const enabled of [false,true]){

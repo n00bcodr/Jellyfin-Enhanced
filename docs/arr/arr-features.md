@@ -1721,10 +1721,43 @@ at run time, code outside Jellyfin's server (another plugin's own code, another 
 .NET's own code calls back on an object Jellyfin handed it (a stream's `Write` during a copy .NET makes; a delegate
 handed to .NET counts as run there). A user change made there
 through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
-covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
-that person's version when it does, so the next check reads the change. A check already deciding in the moment between
-the change being saved and Jellyfin's announcement can still use what it read before. A change written straight into
-Jellyfin's database, bypassing Jellyfin, isn't covered.
+covered afterwards only when Jellyfin announces it, and Jellyfin doesn't announce every change:
+
+- Announced on both versions: a user deleted, a user locked out by failed sign-ins, a user renamed; on 12.2 also a
+  policy save. Jellyfin Enhanced moves that person's version when Jellyfin announces the change, so the next check reads
+  it. A check already deciding in the moment between the change being saved and the announcement can still use what it
+  read before.
+- Not announced: a user save (`UpdateUserAsync`) on both versions (sign-in activity, profile images, the start-up
+  wizard's user, and on 12.2 a library rename rewriting users' library access), and a policy save (`UpdatePolicyAsync`)
+  on 10.11 (administrator, disabled, parental limits, tags, libraries, schedules). Made through one of the bracketed
+  actions above (the Dashboard's user pages, Jellyfin's user and start-up API) or by Jellyfin Enhanced itself
+  (maintenance mode), such a save is covered all the same: the bracket moves the version whether or not Jellyfin
+  announces anything. Made by other code outside those actions (another plugin calling Jellyfin's user manager
+  directly), it doesn't move the version, so a check that was already deciding when it landed can use the facts it read
+  before. Checks that start afterwards read the new facts.
+
+A change written straight into Jellyfin's database, bypassing Jellyfin, isn't covered by the check (the caches below
+see it on their next read).
+
+Jellyfin Enhanced's own caches of what a user may see don't wait for an announcement. What they compare is every
+property of the user, its permissions and its preferences that decides access (libraries, channels, Live TV, parental
+limits, tags, schedules, the role, disabled and hidden), worked out from a classification of Jellyfin's own user types
+that the tests check against the 12.2 and 10.11.11 servers, so a property a newer Jellyfin adds counts until it is
+classified, and is written so that no tag or other value can pass for another (two different users never compare
+equal). The tag cache's per-user filter, native details' artwork grants, Spoiler Guard's next episode and its season
+artwork (whether an episode you may see was watched) follow the user as each request reads them and the person's
+version, so any access change applies to the next request however it was made, a save by other code and a change
+written straight into the database included. Review authors (hidden or disabled), poster tags and acquisition badges'
+4K check hold the user (or what was read through it) and follow the person's version: the next request after a
+bracketed or announced change. An answer worked out while a change lands is never reused afterwards: a request that read
+the user before a save may finish with what it read, and what it worked out from that read is kept with that read, so the
+next request works it out again (a 4K badge included). Every cache Jellyfin
+Enhanced keeps is listed in its tests with what it depends on, so a new one that depends on a user's access can't be
+missed. Someone else signing in doesn't count as a change to them: once a sign-in by name (or a new user)
+has run, only the person it was about is read again; only when that can't be told is every cached review author or
+poster user read again once. A save by other code that moves nothing reaches review authors, poster tags and the 4K
+badge when their entry expires (15, 30 and 30 seconds, counted from when it was read); until then a review by an author who was just hidden or disabled
+can still be counted, and a 4K badge can stay on a poster.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic

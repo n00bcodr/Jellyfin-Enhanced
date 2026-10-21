@@ -41,7 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly object _requestsCacheLock = new();
         private readonly object _subscriptionLock = new();
         private bool _subscribed;
-        private readonly ConcurrentDictionary<string, Task<List<RequestItemWithUser>?>> _requestsInFlight = new();
+        // A read in flight and when it began (what it answers lives from then, also for the requests that joined it).
+        private readonly ConcurrentDictionary<string, (Task<List<RequestItemWithUser>?> Task, DateTime StartedAt)> _requestsInFlight = new();
 
         public WatchlistMonitor(
             ILibraryManager libraryManager,
@@ -467,22 +468,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            var fetchTask = _requestsInFlight.GetOrAdd(cacheKey, _ => FetchAsync());
+            var flight = _requestsInFlight.GetOrAdd(cacheKey, _ =>
+            {
+                var startedAt = DateTime.UtcNow;
+                return (FetchAsync(), startedAt);
+            });
             try
             {
-                var items = await fetchTask;
+                var items = await flight.Task;
                 if (items != null)
                 {
                     lock (_requestsCacheLock)
                     {
-                        _requestsCache[cacheKey] = (items, DateTime.UtcNow);
+                        _requestsCache[cacheKey] = (items, flight.StartedAt);
                     }
                 }
                 return items;
             }
             finally
             {
-                _requestsInFlight.TryRemove(cacheKey, out _);
+                _requestsInFlight.TryRemove(new KeyValuePair<string, (Task<List<RequestItemWithUser>?>, DateTime)>(cacheKey, flight));
             }
         }
 

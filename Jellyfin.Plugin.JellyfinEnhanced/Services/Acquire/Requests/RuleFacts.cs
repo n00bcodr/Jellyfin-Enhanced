@@ -166,7 +166,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 foreach (var old in _cache.OrderBy(p => p.Value.TriedAt).Take(MaxEntries / 4).ToList()) _cache.TryRemove(old.Key, out _);
             }
 
-            _cache[key] = (facts, _now());
+            // Tried when the read began (now, taken before it).
+            _cache[key] = (facts, now);
         }
 
         private async Task<RuleFactSet> ReadAsync(TitleKey title, CancellationToken ct)
