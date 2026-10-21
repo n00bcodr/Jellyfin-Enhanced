@@ -101,8 +101,10 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     try { dispatchTrusted(this, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 })); }
     finally { clicking.delete(this); }
   };
-  // Deferred feature actions use the shared identity primitive in the real bundle.
+  // Deferred feature actions use the shared identity primitive in the real bundle, and every document a feature writes
+  // has its session-bound write queue (core/mutation-queue.js loads before every feature module in the bundle).
   load('core/session-action.js');
+  load('core/mutation-queue.js');
   window.addEventListener('error', event => errors.push(event.error || new Error(event.message)));
   window.addEventListener('unhandledrejection', event => errors.push(event.reason));
   return {

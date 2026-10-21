@@ -55,9 +55,13 @@ function revisionViolations(src) {
     if (!/_writes/.test(revisionOf) || !/_incarnation/.test(revisionOf)) found.push('a revision is not "{incarnation}.{writes}"');
     if (/SHA256|HashData|Serialize|GetUserConfiguration/.test(revisionOf)) found.push('a revision is derived from the document');
   }
-  if (/static string DocumentRevision\(/.test(src.manager)) found.push('a content revision of a document exists');
+  // Core's DocumentRevision (the access revision's per-document part) counts versions; one derived from the content is
+  // the R10-4 shape.
+  const documentRevision = member(src.manager, /static string DocumentRevision\(/);
+  if (documentRevision && /SHA256|HashData|Serialize|GetUserConfiguration/.test(documentRevision)) found.push('a content revision of a document exists');
   const save = member(src.manager, /public void SaveUserConfiguration\(/);
-  if (!save || !/File\.Move\(tempPath, configPath, overwrite: true\);\s*(\/\/[^\n]*\n\s*)*Advance\(configPath\);/.test(save)) found.push('a save does not move the revision on once the file is in place');
+  // (D46's privacy save epoch may move between the two, inside the same bracket.)
+  if (!save || !/File\.Move\(tempPath, configPath, overwrite: true\);\s*(Interlocked\.Increment\(ref _saveEpoch\);\s*)?(\/\/[^\n]*\n\s*)*Advance\(configPath\);/.test(save)) found.push('a save does not move the revision on once the file is in place');
   const quarantine = member(src.manager, /private void BackupCorruptFile\(/);
   if (!quarantine || (quarantine.match(/Advance\(filePath\)/g) || []).length < 2) found.push('a quarantined file keeps its revision');
   for (const [name, signature] of [['the start-up folder migration', /private void MigrateCaseVariantUserDirs\(/], ['a removed folder', /public bool DeleteUserData\(/]]) {

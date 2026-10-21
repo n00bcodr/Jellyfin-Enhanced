@@ -104,7 +104,9 @@ for (const operation of ['enableForTmdb','setUserPrefs']) {
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
     const pending=operation==='enableForTmdb'?h.state.enableForTmdb('movie',42, undefined, h.NATIVE):h.state.setUserPrefs({secret:true}, h.NATIVE);
-    await Promise.resolve(); await Promise.resolve();h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending;
+    // The request is out (a preference save goes through its session queue first): then the user switches.
+    for(let i=0;i<50&&!resolve;i++) await new Promise(r=>setImmediate(r));
+    h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending.catch(()=>{});
     assert.equal(h.state.hasAnyState(),false);
     assert.equal(Object.keys(h.state.getUserPrefs()).length,0);
   });

@@ -128,8 +128,10 @@
                 if (titleKey(items[key].type, items[key].tmdbId) === title.key && (items[key].hideScope || 'global') === 'global') delete items[key];
             }
             if (hidden) items[title.key] = typeof JE.toCamelCase === 'function' ? JE.toCamelCase(reply?.item || reply?.Item || item) : item;
-            hiddenData = { ...current, items, revision: authoritative ? reply?.revision || reply?.Revision || current.revision : current.revision };
-            JE.userConfig.hiddenContent = hiddenData;
+            const next = { ...current, items, revision: authoritative ? reply?.revision || reply?.Revision || current.revision : current.revision };
+            JE.userConfig.hiddenContent = next;
+            // Taken as a publication of the document (the copy, the lookup sets, the page), as the store's are.
+            followStore(next, 'rule');
             // The settings store holds the person's document too (its next publication replaces this copy): it takes what
             // the answer established, the server's rule base (when the route answered it) with this rule applied, so a
             // later item change doesn't show the title again until its own answer arrives.
@@ -148,9 +150,6 @@
                 JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: established, remove: [...removed] },
                     authoritative ? (reply?.revision || reply?.Revision || undefined) : undefined);
             }
-            rebuildSets();
-            emitChange();
-            refreshNativeCardVisibility();
             if (hidden) showUndoToast(item.name, title.key);
             return true;
         }));
@@ -717,10 +716,8 @@
                 if (JSON.stringify(next) === JSON.stringify(before)) return true;
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.hiddenContent = next;
-                hiddenData = next;
-                rebuildSets();
-                emitChange();
-                refreshNativeCardVisibility();
+                // Taken as a publication of the document (the copy, the lookup sets, the page), as the store's are.
+                followStore(next, 'revalidated');
                 return true;
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: Failed to read hidden-content again after a revision', e);

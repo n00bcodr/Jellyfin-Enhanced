@@ -75,7 +75,6 @@ enhanced/helpers.js	itemCache	item	Jellyfin item lookups (Jellyfin's own answer,
 enhanced/hiddencontent/hidden-content-buttons.js	checkedTitleIds	state	which cards' title identity (Jellyfin's provider ids of an item) this tab resolved, under the native decision scope it was resolved in (cleared on a user switch and when the scope moves): bookkeeping, no access answer
 enhanced/hiddencontent/hidden-content-buttons.js	titlesInFlight	state	the identity batch in flight (shared by later passes), cleared on a user switch
 enhanced/hiddencontent/hidden-content-buttons.js	titlesRetryAt	state	when a failed identity batch may be asked again (a back-off, cleared on a user switch)
-enhanced/hiddencontent/hidden-content-data.js	hiddenData	document	the person's own Hidden Content list, read again in place when its document revision moves (another tab or device saved it)
 enhanced/hiddencontent/hidden-content-data.js	loadedRevision	state	the document revision the rules were read under (compared with every revision seen; a move reads the rules again)
 enhanced/hiddencontent/hidden-content-data.js	revalidating	uncached	the read of the rules after a document revision, in flight only
 enhanced/hiddencontent/hidden-content-data.js	ruleWrites	state	title rule writes in flight per title (each waits for the one before), not an answer

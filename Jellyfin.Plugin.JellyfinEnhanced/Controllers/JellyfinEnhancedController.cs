@@ -6368,26 +6368,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, code = "invalid_title_rule" });
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                // One rule applied to the document the server holds now, under its file lock (an operation: no revision of the
+                // writer's to compare), through the operation helper; the answer carries the document's revision.
+                IActionResult? refused = null;
+                UserHiddenContent? stored = null;
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json", data =>
                 {
-                    var data = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(authorizedUserId, "hidden-content.json");
                     var aliases = data.Items.Where(p => (Services.HiddenContentPolicy.TitleIdentity(p.Value.Type, p.Value.TmdbId)
                         ?? Services.HiddenContentPolicy.CanonicalTitle(p.Key)) == canonical && (p.Value.HideScope is "global" or ""))
                         .Select(p => p.Key).ToArray();
                     if (item != null)
                     {
-                        if (data.Items.Count >= 10000 && aliases.Length == 0) return BadRequest(new { success = false, code = "too_many_rules" });
+                        if (data.Items.Count >= 10000 && aliases.Length == 0)
+                        {
+                            refused = BadRequest(new { success = false, code = "too_many_rules" });
+                            return 0;
+                        }
+
                         var oldest = aliases.Select(k => data.Items[k].HiddenAt).Where(v => !string.IsNullOrEmpty(v)).OrderBy(v => v, StringComparer.Ordinal).FirstOrDefault();
                         item.HiddenAt = oldest ?? DateTimeOffset.UtcNow.ToString("O");
                         foreach (var alias in aliases) data.Items.Remove(alias);
                         data.Items[canonical] = item;
                     }
                     else foreach (var alias in aliases) data.Items.Remove(alias);
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", data);
-                    Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
-                    Response.Headers["Cache-Control"] = "private, no-store";
-                    return Ok(new { success = true, key = canonical, hidden = item != null, item, items = data.Items, revision = Services.HiddenContentPolicy.RulesRevision(data) });
-                }
+                    stored = data;
+                    return 1;
+                });
+                if (refused != null) return refused;
+                Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
+                Response.Headers["Cache-Control"] = "private, no-store";
+                // The document's revision (it counts writes, like every document route's): the client's settings store orders
+                // this answer with its own saves' answers by it (a content hash can't be ordered).
+                AnswerRevision(revision);
+                return Ok(new { success = true, key = canonical, hidden = item != null, item, items = stored!.Items, revision });
             }
             catch (Exception ex) when (ex is IOException or Newtonsoft.Json.JsonException)
             {

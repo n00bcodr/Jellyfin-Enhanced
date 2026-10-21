@@ -222,6 +222,7 @@ for (const [label, name, rules, anchor, line] of PLANTS) {
 // ---- Scan 2: no whole-document writer ----
 const ROUTES = /user-settings\/|\/spoiler-blur\/user-prefs/;
 const WHOLE_METHODS = /^(POST|PUT)$/i;
+const RULE_ROUTE = /\/hidden-content\/rule\//;
 const DOCUMENT_FILES = [...read('enhanced/config.js').matchAll(/^\s*'([a-z-]+\.json)': \{ kind:/gm)].map(m => m[1]);
 
 /** Text of every string literal and template quasi under `node`. */
@@ -257,7 +258,9 @@ function wholeWriters(files) {
       // The route: in the call's own arguments or anywhere in the function that builds the request.
       const { fn } = enclosingName(ancestors);
       const scope = strings({ type: 'X', a: node.arguments, f: fn?.body });
-      if (ROUTES.test(scope)) found.push(`${name}: ${callee} sends a whole per-user document (${scope.match(ROUTES)[0]})`);
+      // (A title rule's own route changes one rule: the server applies it under the document's lock through the operation
+      // helper, which scan 4 holds it to.)
+      if (ROUTES.test(scope) && !RULE_ROUTE.test(scope)) found.push(`${name}: ${callee} sends a whole per-user document (${scope.match(ROUTES)[0]})`);
     });
   }
   return found;
@@ -287,9 +290,9 @@ const WHOLE_PLANTS = [
     "ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${ApiClient.getCurrentUserId()}/hidden-content.json`), data: JSON.stringify(getHiddenData()) });"],
   ['a whole POST whose URL is built apart', 'enhanced/config.js', 'const queueOperation = async (fileName, operation, options = {}) => {',
     "const wholeUrl = ApiClient.getUrl(`/JellyfinEnhanced/user-settings/u/${fileName}`); ApiClient.ajax({ type: options.whole ? 'POST' : 'PATCH', url: wholeUrl });"],
-  ['Spoiler Guard\'s old whole preferences POST', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next) {',
+  ['Spoiler Guard\'s old whole preferences POST', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner) {',
     "request('/spoiler-blur/user-prefs', { method: 'POST', body: next, skipRetry: true });"],
-  ['a whole save of a file without operations', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next) {',
+  ['a whole save of a file without operations', 'enhanced/spoilerguard/state.js', 'internal.setUserPrefs = function(next, owner) {',
     "JE.saveUserSettings('spoilerblur.json', next);"],
   ['the configuration page saving the whole configuration', 'configPage.html', 'function saveConfig(e) {',
     'ApiClient.updatePluginConfiguration(pluginId, jeFormConfig(_jeBase));']

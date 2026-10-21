@@ -79,6 +79,8 @@ export const FORWARDERS = {
   'enhanced/catchup/catchup-core.js::jf': 'local',
   'enhanced/player/pausescreen.js::fetchWithRetry': 'local',
   'enhanced/spoilerguard/state.js::request': 'local',
+  // Play r21c: a preference save forwards its owner's binding to the preferences' session queue.
+  'enhanced/spoilerguard/state.js::setUserPrefs': /(^|\.)setUserPrefs$/,
   'jellyseerr/api.js::managedFetch': 'local',
   'jellyseerr/api.js::post': 'local',
   'jellyseerr/api.js::tmdbGet': 'local',
@@ -116,7 +118,7 @@ export const SITES = {
   'enhanced/player/playback-rating-badge.js': 2, 'enhanced/player/playback.js': 4,
   'enhanced/settingspanel/ui-panel-language.js': 3, 'enhanced/settingspanel/ui-panel-settings.js': 4,
   'enhanced/settingspanel/ui-release-notes.js': 1,
-  'enhanced/spoilerguard/state.js': 3, 'enhanced/spoilerguard/watched-refresh.js': 6, 'enhanced/translations.js': 8,
+  'enhanced/spoilerguard/state.js': 4, 'enhanced/spoilerguard/watched-refresh.js': 6, 'enhanced/translations.js': 8,
   'extras/active-streams.js': 2, 'extras/activity-page.js': 2, 'extras/plugin-icons.js': 1, 'jellyseerr/api.js': 33,
   'jellyseerr/discovery/collection-discovery.js': 1, 'jellyseerr/discovery/discovery-filter-utils.js': 1,
   'jellyseerr/discovery/genre-discovery.js': 1, 'jellyseerr/discovery/network-discovery.js': 1,
@@ -138,6 +140,8 @@ export const SITES = {
   // Play r21c: core user-change caches' revision probe (a read of the person's revisions). The Hidden Content save
   // module's whole-document POST left with the join (changes go through the settings store's PATCH queue: 4 sites).
   'core/access-revision.js': 1,
+  // Play r21c: the Spoiler Guard panel's override save (setUserPrefs, a pinned forwarder) with the viewer's own owner.
+  'enhanced/spoilerguard/settings-tab.js': 1,
 };
 
 /**

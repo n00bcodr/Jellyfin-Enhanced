@@ -20,6 +20,9 @@
     // previous person's saves unsent. Its revision moves on with every save queued or answered (and the switch), so a state
     // read that began before one doesn't take its Prefs.
     let pendingPrefs = [];
+    // The preferences' one session-bound write queue (core/mutation-queue.js): a read began before a save queued or answered
+    // since doesn't take its Prefs.
+    const prefsQueue = JE.core.mutationQueue('spoiler-prefs');
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -58,8 +61,16 @@
     let mutationQueue = Promise.resolve();
     let generation = 0;
 
+    /**
+     * The preferences a state read brought: taken only when no preference save was queued or answered since the read began
+     * (`readRevision`: the queue's revision then), else the page keeps the newer ones it has (read again after the save).
+     */
+    function stateRead(value, readRevision) {
+        if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};
+    }
+
     /** Replaces every mirror from the same complete server document; removed copies and mappings disappear. */
-    function adoptState(data) {
+    function adoptState(data, readRevision) {
         const value = data || {};
         enabledSeries.clear();
         enabledMovies.clear();
@@ -70,7 +81,7 @@
         Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
         Object.keys(value.ProviderTitles || {}).forEach(key => enabledPendingTmdb.add(String(key).replace(':tmdb:', ':').toLowerCase()));
         Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
-        userPrefs = value.Prefs || {};
+        stateRead(value, readRevision);
         loaded = true;
         loadOk = true;
         recoveryAttempt = 0;
@@ -136,7 +147,7 @@
      * owner ended (accepted), reconciles this session's state from the server (a reread and the policy event) and
      * resolves with the answer; a failure rejects. Page effects are the caller's, only while its owner is current.
      */
-    function mutateState(path, options, project, owner) {
+    function mutateState(path, options, project, owner, transmit) {
         const action = JE.createSessionAction();
         const submitted = JE.createSessionAction({ owner });
         const task = mutationQueue.catch(() => {}).then(async () => {
@@ -145,7 +156,8 @@
             if (!action.current() || bound.current() !== true) return UNSENT;
             // The transport checks the owner again right before the bytes go out (after the core queue).
             let response;
-            try { response = await request(path, { ...options, bound }); }
+            // A document with its own session queue (the preferences) sends through it (transmit).
+            try { response = await (transmit ? transmit(bound) : request(path, { ...options, bound })); }
             catch (err) {
                 const { outcome, answer, sessionChanged } = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
                 if (outcome === 'unsent') return UNSENT;
@@ -158,9 +170,10 @@
             generation++;
             JE.core.api.manager?.invalidatePresentation?.();
             try {
+                const readRevision = prefsQueue.revision;
                 const value = await readState();
                 if (!action.current()) return response;
-                adoptState(value);
+                adoptState(value, readRevision);
                 statePromise = Promise.resolve();
             } catch (err) {
                 if (!action.current()) return response;
@@ -196,11 +209,12 @@
         const requestGeneration = generation;
         // Taken before the read (core user-change caches): the state as read is at least this new.
         const revision = knownRevision();
+        const readRevision = prefsQueue.revision;
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
         statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : readState())
             .then(function(data) {
                 if (!action.current() || requestGeneration !== generation) return;
-                adoptState(data);
+                adoptState(data, readRevision);
                 // A revision that moved while this read ran may or may not be in it: read again on the next use.
                 const now = knownRevision();
                 loadedRevision = now === revision ? revision : null;
@@ -360,7 +374,18 @@
         pendingPrefs.push(set);
         const queue = pendingPrefs;
         const settled = () => { const i = queue.indexOf(set); if (i !== -1) queue.splice(i, 1); };
-        return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, () => { userPrefs = { ...(userPrefs || {}), ...set }; }, owner)
+        // The person this change is made for: an answer that comes after another person signed in is not theirs to show.
+        const madeIn = JE.createSessionAction();
+        // The server's answer is the preferences it holds now (else this change applied to the ones known).
+        function acknowledged(response) {
+            settled();
+            if (!madeIn.current()) return;
+            userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
+        }
+        // Sent on the preferences' session queue, with its owner's binding (checked again as the bytes go out).
+        return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, acknowledged, owner,
+            bound => prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound }))
+                .then(response => { acknowledged(response); return response; }))
             .then(result => {
                 settled();
                 // Never sent (its owner ended first): the caller is told, as for a failed save (the panel puts its box back).

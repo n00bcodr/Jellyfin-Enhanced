@@ -238,8 +238,8 @@ const CHANGE_PLANTS = [
   ['Spoiler Guard: the state read takes Prefs whatever changed meanwhile', 'enhanced/spoilerguard/state.js',
     'if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};', 'userPrefs = value.Prefs || {};'],
   ['Spoiler Guard: a save sent outside the session queue (the R10-1 shape)', 'enhanced/spoilerguard/state.js',
-    "const save = prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }));",
-    "const save = request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true });"],
+    "prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound }))",
+    "request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, bound })"],
   ['notifications: a change sent outside the session queue (the R10-8 shape)', 'arr/notify/notify-core.js',
     'const res = await prefsQueue.send(() => api(path, { method, body }));', 'const res = await api(path, { method, body });'],
   ['notifications: a read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
@@ -369,8 +369,8 @@ test('scan 4: every server route that replaces a per-user document whole checks 
 const CONTROLLER = 'Controllers/JellyfinEnhancedController.cs';
 const FENCE_PLANTS = [
   ['the old Hidden Content POST (the R9-2 shape)', CONTROLLER,
-    'var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome);',
-    '_userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration); IActionResult? refused = null; var outcome = UserConfigurationManager.DocumentWrite.Saved;'],
+    'var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome, static (posted, stored) =>',
+    '_userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration); IActionResult? refused = null; var outcome = UserConfigurationManager.DocumentWrite.Saved; Action<UserHiddenContent, UserHiddenContent> prepare = (static (posted, stored) =>'],
   ['a whole-preferences POST without the check', CONTROLLER,
     ': !UserConfigurationManager.IfMatchAllows(expected, current))', ': false)'],
   ['a settings POST that sends no revision to the gate', CONTROLLER,
