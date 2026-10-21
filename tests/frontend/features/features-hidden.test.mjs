@@ -2,10 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
 // Hidden Content keeps its document in the settings store (config.js): every change is an operation the server answers.
-const patching=ajax=>async request=>request.type==='PATCH'?{success:true}:ajax(request);
-function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
+// A test's own `patch` answers the store's PATCHes (else at once).
+const patching=(ajax,patch)=>async request=>request.type==='PATCH'?(patch?patch(request):{success:true}):ajax(request);
+function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]}),patch}={}){
  let epoch=0; const handlers=new Map();const frames=[];
- const h=createHarness({html,apiClient:{ajax:patching(ajax)},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
+ const h=createHarness({html,apiClient:{ajax:patching(ajax,patch)},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
  t.after(()=>h.close());
  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
@@ -121,6 +122,7 @@ test('absent title cards save only typed provider identity and report failed sav
  await api.unhideItem('movie:tmdb:42');assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
  fail=true;await h.viewerPress(btn);
  assert.deepEqual(Object.keys(api.getHiddenData().items),[]);assert.equal(btn.textContent,'hidden_content_save_failed_persistent');
+});
 test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',async t=>{
  const SYN='4a45ad11000a938e00000000f9c67720',REAL='0123456789abcdef0123456789abcdef';
  const html=`<div class="card" data-id="${SYN}" data-type="Movie"><div class="cardBox"></div></div><div class="card" data-id="${REAL}" data-type="Movie"><div class="cardBox"></div></div>`;
@@ -185,7 +187,8 @@ test('a shared card control evaluates its mounted surface and preserves that fil
  await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),true);
  await h.api.unhideItem('movie:tmdb:42');h.flush();
- h.api.getHiddenData().settings.filterDiscovery=false;
+ // The setting changes as the panel changes it (through the settings store).
+ h.api.updateSettings({filterDiscovery:false});await new Promise(r=>setImmediate(r));
  await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),false);
 });
@@ -216,76 +219,12 @@ test('failed provider Undo keeps translated failure and retry control until conf
  assert.equal(button.disabled,false);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
  fail=false;button.click();await new Promise(r=>setImmediate(r));assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
 });
-test('bulk save and atomic rule share acknowledgement ordering',async t=>{
- const bulk=deferred(),put=deferred();const requests=[];
- const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:put.promise;}});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const saving=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
- const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
- assert.equal(requests.filter(o=>o.type==='PUT').length,0,'rule must wait for pending bulk persistence');
- bulk.resolve({success:true});await saving;await new Promise(r=>setImmediate(r));
- assert.equal(requests.filter(o=>o.type==='PUT').length,1);put.resolve({success:true});assert.equal(await hiding,true);
- assert.equal(requests.find(o=>o.type==='POST').dataType,'json');assert.equal(requests.find(o=>o.type==='PUT').dataType,'json');
-});
-
-test('atomic acknowledgement refreshes its full rule base without losing newer local edits',async t=>{
- const put=deferred(),requests=[];const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='PUT'?put.promise:Promise.resolve({success:true,revision:'bulk'});}});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
- h.api.getHiddenData().items.local={itemId:'local',type:'Movie'};
- put.resolve({success:true,revision:'rules',items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'},'tv:tmdb:51':{type:'Series',tmdbId:'51'}}});await hiding;
- assert.equal(h.api.isHiddenByTmdbId(51,'tv'),true,'another tab rule accompanies the new base revision');
- assert.equal(h.api.getHiddenData().items.local.itemId,'local');
- h.api.updateSettings({filterSearch:true});await h.api.flushPendingSave();const body=JSON.parse(requests.find(o=>o.type==='POST').data);
- assert.ok(body.items['tv:tmdb:51']);assert.ok(body.items.local);assert.equal(body.revision,'rules');
-});
 
 
-test('atomic write flushes edits made before its debounce starts, including removals',async t=>{
- const requests=[];let server={native:{itemId:'native',type:'Movie'},kept:{itemId:'kept'}};
- const h=setup(t,{items:JSON.parse(JSON.stringify(server)),ajax:async o=>{
-  requests.push(o);
-  if(o.type==='POST')server=JSON.parse(o.data).items;
-  else if(o.type==='PUT')server['movie:tmdb:42']=JSON.parse(o.data);
-  return {success:true,revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
- }});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- await h.api.unhideItem('native');
- h.api.getHiddenData().items.added={itemId:'added'};h.api.debouncedSave();
- await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);
- assert.deepEqual(requests.map(o=>o.type),['POST','PUT']);
- assert.equal(h.api.getHiddenData().items.native,undefined);
- assert.ok(h.api.getHiddenData().items.added);assert.ok(server.added);assert.equal(server.native,undefined);
- await h.api.flushPendingSave();assert.equal(server.native,undefined);
-});
 
 
-test('same-title atomic writes cannot overtake a pending flush and deadlock the queue',async t=>{
- const bulk=deferred(),requests=[];
- const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:Promise.resolve({success:true});}});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();
- const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
- const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false, h.NATIVE);
- await new Promise(r=>setImmediate(r));bulk.resolve({success:true});
- await Promise.race([Promise.all([first,second]),new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence queue deadlocked')),500))]);
- assert.deepEqual(requests.map(o=>o.type),['POST','PUT','DELETE']);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
-});
 
-test('edits made while a pending bulk flush awaits are saved before the atomic base',async t=>{
- const first=deferred(),requests=[];let server={};
- const h=setup(t,{ajax:async o=>{
-  requests.push(o);
-  if(o.type==='POST'){if(requests.length===1)await first.promise;server=JSON.parse(o.data).items;}
-  else server['movie:tmdb:42']=JSON.parse(o.data);
-  return {revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
- }});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
- await new Promise(r=>setImmediate(r));h.api.getHiddenData().items.late={itemId:'late'};h.api.debouncedSave();first.resolve();
- await pending;assert.ok(h.api.getHiddenData().items.late);assert.ok(server.late);
- assert.deepEqual(requests.map(o=>o.type),['POST','POST','PUT']);
-});
+
 
 test('disabling the master restores provider-only cards and expires their scan scope',t=>{
  const h=setup(t,{items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'}},html:'<div class="card" data-id="synthetic" data-type="Movie"></div>'});
@@ -296,17 +235,79 @@ test('disabling the master restores provider-only cards and expires their scan s
  h.api.getHiddenData().settings.enabled=true;h.api.filterNativeCards();h.flush();assert.equal(card.classList.contains('je-hidden'),true,'re-enabled ordinary scan re-decides the retained node');
 });
 
-for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing edits':'accepts the final acknowledged base'}`,async t=>{
- const gates=[deferred(),deferred(),deferred()],requests=[];
- const h=setup(t,{ajax:async o=>{requests.push(o);if(o.type==='POST')await gates[requests.filter(x=>x.type==='POST').length-1].promise;return {success:true};}});
- h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE).then(value=>({value}),error=>({error}));
- for(let i=0;i<3;i++){
-  await new Promise(r=>setImmediate(r));
-  if(i<2||churn){h.api.getHiddenData().items['late'+i]={itemId:'late'+i};h.api.debouncedSave();}
-  gates[i].resolve();
- }
- const result=await outcome;
- if(churn){assert.ok(result.error);assert.equal(requests.some(o=>o.type==='PUT'),false);}
- else {assert.equal(result.value,true);assert.deepEqual(requests.map(o=>o.type),['POST','POST','POST','PUT']);}
+// Ported from D46's bulk-save tests (the play join replaced its debounced whole-document POST with the settings store's
+// PATCH queue; title rules keep their own PUT/DELETE route): one ordered write path, no lost edits, no deadlock.
+const tick=()=>new Promise(r=>setImmediate(r));
+const settle=async(n=10)=>{for(let i=0;i<n;i++)await tick();};
+/** A server model: PATCH applies the store's operation, PUT/DELETE a title rule; every answer carries the whole document. */
+function modelSetup(t,{items={},hold={}}={}){
+ const requests=[];let server=JSON.parse(JSON.stringify(items));let revision=1;
+ const answer=()=>({success:true,revision:String(++revision),items:JSON.parse(JSON.stringify(server))});
+ const h=setup(t,{items,
+  patch:async o=>{requests.push(o);const op=JSON.parse(o.data);const n=requests.filter(r=>r.type==='PATCH').length;if(hold.patch?.[n-1])await hold.patch[n-1].promise;
+   for(const key of op.Remove||op.remove||[])delete server[key];Object.assign(server,JSON.parse(JSON.stringify(op.Upsert||op.upsert||{})));return answer();},
+  ajax:async o=>{if(o.type!=='PUT'&&o.type!=='DELETE')return {Items:[]};requests.push(o);if(hold.rule)await hold.rule.promise;
+   const key=decodeURIComponent(o.url.split('/').pop());if(o.type==='PUT')server[key]=JSON.parse(o.data);else delete server[key];return answer();}});
+ h.JE.t=k=>k;Object.assign(h.api,{showUndoToast:()=>{}});
+ return {h,requests,server:()=>server};
+}
+
+test('a title rule goes out only after the item changes queued before it are answered',async t=>{
+ const patch=deferred();const {h,requests}=modelSetup(t,{hold:{patch:[patch]}});
+ h.api.hideItem({itemId:'item1',name:'Item',type:'Movie'});await settle();
+ const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true,h.NATIVE);await settle();
+ assert.equal(requests.filter(o=>o.type==='PUT').length,0,'the rule waits for the item change queued before it');
+ patch.resolve();assert.equal(await hiding,true);
+ assert.deepEqual(requests.map(o=>o.type),['PATCH','PUT']);
+ assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
+});
+
+test('same-title rule writes after a queued item change neither overtake it nor deadlock',async t=>{
+ const patch=deferred();const {h,requests}=modelSetup(t,{hold:{patch:[patch]}});
+ h.api.hideItem({itemId:'item1',name:'Item',type:'Movie'});await settle();
+ const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true,h.NATIVE);
+ const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false,h.NATIVE);
+ await settle();patch.resolve();
+ await Promise.race([Promise.all([first,second]),new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence queue deadlocked')),2000))]);
+ assert.deepEqual(requests.map(o=>o.type),['PATCH','PUT','DELETE']);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
+});
+
+test('a rule answer keeps the server\'s rule base and every local change through the store\'s later publications',async t=>{
+ const rule=deferred();const {h,requests,server}=modelSetup(t,{items:{'tv:tmdb:51':{type:'Series',tmdbId:'51'}},hold:{rule}});
+ const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true,h.NATIVE);await settle();
+ // An item hidden while the rule's answer is out (its PATCH is answered first).
+ h.api.hideItem({itemId:'local',name:'Local',type:'Movie'});await settle();
+ rule.resolve();assert.equal(await hiding,true);await settle();
+ assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true,'the new rule');
+ assert.equal(h.api.isHiddenByTmdbId(51,'tv'),true,'the server\'s rule base');
+ assert.ok(h.api.getHiddenData().items.local,'the local change');
+ // A later item change: the store's next publication still has the rule (before: the store's copy lacked it and the title
+ // was shown again until that change's own answer).
+ const later=deferred();
+ h.window.ApiClient.ajax=(prev=>async o=>{if(o.type==='PATCH'){await later.promise;}return prev(o);})(h.window.ApiClient.ajax);
+ h.api.hideItem({itemId:'later',name:'Later',type:'Movie'});await settle();
+ assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true,'still hidden while the later change is out');
+ later.resolve();await settle();
+ assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);assert.ok(server()['movie:tmdb:42']);assert.ok(server().local);assert.ok(server().later);
+ assert.deepEqual(requests.map(o=>o.type),['PUT','PATCH','PATCH']);
+});
+
+test('edits made before a rule, removals included, are all saved before it and none is lost',async t=>{
+ const {h,requests,server}=modelSetup(t,{items:{native:{itemId:'native',type:'Movie'},kept:{itemId:'kept'}}});
+ await h.api.unhideItem('native');
+ h.api.hideItem({itemId:'added',name:'Added',type:'Movie'});
+ await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true,h.NATIVE);await settle();
+ assert.deepEqual(requests.map(o=>o.type),['PATCH','PATCH','PUT']);
+ assert.equal(h.api.getHiddenData().items.native,undefined);assert.ok(h.api.getHiddenData().items.added);
+ assert.equal(server().native,undefined);assert.ok(server().added);assert.ok(server().kept);assert.ok(server()['movie:tmdb:42']);
+});
+
+test('a rule waits only for the item changes queued before it: later ones never hold it',async t=>{
+ const first=deferred(),second=deferred();const {h,requests}=modelSetup(t,{hold:{patch:[first,second]}});
+ h.api.hideItem({itemId:'one',name:'One',type:'Movie'});await settle();
+ const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42},true,h.NATIVE);
+ h.api.hideItem({itemId:'two',name:'Two',type:'Movie'});await settle();
+ first.resolve();assert.equal(await hiding,true);
+ assert.equal(requests.filter(o=>o.type==='PUT').length,1,'the rule went out while the later change is still out');
+ second.resolve();await settle();assert.ok(h.api.getHiddenData().items.two);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),true);
 });

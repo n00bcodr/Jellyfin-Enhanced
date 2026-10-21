@@ -130,6 +130,24 @@
             if (hidden) items[title.key] = typeof JE.toCamelCase === 'function' ? JE.toCamelCase(reply?.item || reply?.Item || item) : item;
             hiddenData = { ...current, items, revision: authoritative ? reply?.revision || reply?.Revision || current.revision : current.revision };
             JE.userConfig.hiddenContent = hiddenData;
+            // The settings store holds the person's document too (its next publication replaces this copy): it takes what
+            // the answer established, the server's rule base (when the route answered it) with this rule applied, so a
+            // later item change doesn't show the title again until its own answer arrives.
+            if (typeof JE.internals?.acknowledgeUserDocumentChange === 'function') {
+                const sameTitle = (key, value) => titleKey(value?.type, value?.tmdbId) === title.key && (value?.hideScope || 'global') === 'global';
+                const established = {};
+                const removed = new Set();
+                if (authoritative) {
+                    const base = typeof JE.toCamelCase === 'function' ? JE.toCamelCase(authoritative) : authoritative;
+                    for (const [key, value] of Object.entries(base)) if (!sameTitle(key, value)) established[key] = value;
+                    for (const key of Object.keys(beforeRules)) if (!(key in base)) removed.add(key);
+                }
+                for (const [key, value] of Object.entries(beforeRules)) if (sameTitle(key, value)) removed.add(key);
+                if (hidden) established[title.key] = items[title.key];
+                for (const key of Object.keys(established)) removed.delete(key);
+                JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: established, remove: [...removed] },
+                    authoritative ? (reply?.revision || reply?.Revision || undefined) : undefined);
+            }
             rebuildSets();
             emitChange();
             refreshNativeCardVisibility();
