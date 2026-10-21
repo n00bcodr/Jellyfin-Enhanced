@@ -102,7 +102,8 @@ function spoilerTab(t, server) {
   return h;
 }
 const wire = h => h.JE.internals.spoilerGuard.wireSettings({ help: h.document.getElementById('help'), resetAutoCloseTimer() {} });
-const toggle = (h, pref) => { const box = h.document.getElementById(`sbPref${pref}`); box.checked = !box.checked; box.dispatchEvent(new h.window.Event('change')); };
+// The viewer's own change (a trusted event: D46 mints the panel's owner only from the viewer's gestures).
+const toggle = (h, pref) => { const box = h.document.getElementById(`sbPref${pref}`); box.checked = !box.checked; h.trusted(box, new h.window.Event('change')); };
 
 test('R9-1 Spoiler Guard: an override changed and changed back while the first save is out: the server ends with the second', async t => {
   const server = settingsServer(documents());
@@ -111,9 +112,9 @@ test('R9-1 Spoiler Guard: an override changed and changed back while the first s
   const sg = h.JE.internals.spoilerGuard;
   await sg.loadState();
   const held = server.hold('spoiler-prefs', 'PATCH');
-  const first = sg.setUserPrefs({ HideTags: false });
+  const first = sg.setUserPrefs({ HideTags: false }, h.NATIVE);
   await held.reached;
-  const second = sg.setUserPrefs({ HideTags: null });
+  const second = sg.setUserPrefs({ HideTags: null }, h.NATIVE);
   held.release();
   await Promise.allSettled([first, second]);
   await settle();
@@ -130,7 +131,7 @@ test('R9-1 Spoiler Guard: a panel toggle while another override\'s save is out s
   await sg.loadState();
   await settle();
   const held = server.hold('spoiler-prefs', 'PATCH');
-  const other = sg.setUserPrefs({ HideCast: false }); // another surface of this page
+  const other = sg.setUserPrefs({ HideCast: false }, h.NATIVE); // another surface of this page
   await held.reached;
   toggle(h, 'HideTags');
   held.release();
@@ -269,7 +270,7 @@ test('R9-3 Spoiler Guard: a state read that began before an override\'s save was
   const read = server.hold('spoiler-state', 'GET');
   const loading = sg.loadState();
   await read.reached;
-  await sg.setUserPrefs({ HideTags: false });
+  await sg.setUserPrefs({ HideTags: false }, h.NATIVE);
   read.release();
   await loading;
   assert.equal(sg.getUserPrefs().HideTags, false);

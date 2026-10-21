@@ -137,7 +137,9 @@ export function route(server, request) {
   return { success: true, file, document: structuredClone(document), revision: server.revision(file) };
 }
 
-const modules = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'enhanced/config.js'];
+// The bundle's core modules the settings store sends through (component-scripts.json order): the session-bound action and
+// the core transport (D46: a document's PATCH goes out through JE.core.api.ajax with the action's binding).
+const modules = ['core/navigation.js', 'core/session.js', 'core/session-action.js', 'core/mutation-queue.js', 'core/access-revision.js', 'core/lifecycle.js', 'core/api-client.js', 'enhanced/config.js'];
 
 /** Waits (bounded) until `predicate` holds. */
 export async function until(predicate) {
@@ -157,10 +159,10 @@ export async function until(predicate) {
  */
 export async function tab(t, server, { unread = [], extra = [], publicConfig = {}, items, ajax, html = '', build = '1.2.3', fetch = async () => { throw new Error('offline'); } } = {}) {
   const list = [...modules, ...extra];
-  const h = createHarness({
-    html: '<script plugin="Jellyfin Enhanced" version="1.2.3"></script>' + html,
-    fetch,
-    apiClient: { ajax: async request => {
+  // The settings documents' writes leave through the session-bound core transport (window.fetch since D46), the rest of
+  // the page's JE calls through ApiClient.ajax: both reach the same fake server (and the test's ajax hook). A refusal
+  // carries its status; an answer that fails without one is a network failure.
+  const serve = async request => {
       const path = new URL(request.url).pathname;
       if (path.endsWith('/bootstrap')) {
         const UserSettings = {};
@@ -179,7 +181,26 @@ export async function tab(t, server, { unread = [], extra = [], publicConfig = {
       if (items && path.includes('/Items')) return items(request);
       const answer = route(server, request);
       return answer === undefined ? {} : answer;
-    } }
+  };
+  const documentsFetch = async (url, init = {}) => {
+    const href = String(url?.url ?? url);
+    const request = { type: (init.method || 'GET').toUpperCase(), url: href, data: init.body };
+    const documents = /\/JellyfinEnhanced\/(user-settings|spoiler-blur)\//.test(new URL(href, 'http://localhost').pathname);
+    try {
+      // Another JE route reaches the fake server only when the test's own hook answers it (else the window's fetch).
+      const hooked = !documents && ajax ? await ajax(request) : undefined;
+      if (!documents && hooked === undefined) return fetch(url, init);
+      const answer = documents ? await serve(request) : hooked;
+      return new Response(JSON.stringify(answer ?? {}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      if (!error?.status) throw error;
+      return new Response(JSON.stringify({ message: error.message }), { status: error.status, headers: { 'Content-Type': 'application/json' } });
+    }
+  };
+  const h = createHarness({
+    html: '<script plugin="Jellyfin Enhanced" version="1.2.3"></script>' + html,
+    fetch: documentsFetch,
+    apiClient: { ajax: serve }
   });
   h.allowConsoleError(/./);
   t.after(() => h.close());

@@ -45,9 +45,9 @@ for (const switched of [true, false]) {
   test(`R10-1: queued Spoiler Guard preferences stay with the person who chose them (account switch: ${switched})`, async t => {
     const s = mockedSession(t);
     await s.sg.whenLoaded();
-    const first = s.sg.setUserPrefs({ HideTags: false });
+    const first = s.sg.setUserPrefs({ HideTags: false }, s.h.NATIVE);
     await until(() => s.writes.length === 1);
-    const second = s.sg.setUserPrefs({ HideCast: false });
+    const second = s.sg.setUserPrefs({ HideCast: false }, s.h.NATIVE);
     if (switched) { s.switchTo('b'); await s.sg.whenLoaded(); }
     s.held.resolve();
     await Promise.allSettled([first, second]);
@@ -66,9 +66,9 @@ for (const switched of [true, false]) {
 test('R10-1: a save queued by the previous person is refused, not sent, and its caller is told', async t => {
   const s = mockedSession(t);
   await s.sg.whenLoaded();
-  const first = s.sg.setUserPrefs({ HideTags: false });
+  const first = s.sg.setUserPrefs({ HideTags: false }, s.h.NATIVE);
   await until(() => s.writes.length === 1);
-  const second = s.sg.setUserPrefs({ HideCast: false });
+  const second = s.sg.setUserPrefs({ HideCast: false }, s.h.NATIVE);
   s.switchTo('b');
   s.held.resolve();
   const outcome = await Promise.allSettled([first, second]);
@@ -76,7 +76,7 @@ test('R10-1: a save queued by the previous person is refused, not sent, and its 
   assert.equal(s.writes.length, 1);
   // The next person's own choice goes out at once (it doesn't wait behind the previous person's queue).
   await s.sg.whenLoaded();
-  await s.sg.setUserPrefs({ HideCast: true });
+  await s.sg.setUserPrefs({ HideCast: true }, s.h.NATIVE);
   assert.equal(s.prefs.b.HideCast, true);
   assert.deepEqual(s.writes.map(w => w.user), ['a', 'b']);
 });
@@ -104,9 +104,9 @@ test('R10-1: with the real session and API client, a queued preference is never 
   for (const path of ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'core/api-client.js', 'enhanced/spoilerguard/state.js']) h.load(path);
   const sg = h.JE.internals.spoilerGuard;
   await sg.whenLoaded();
-  const first = sg.setUserPrefs({ HideTags: false });
+  const first = sg.setUserPrefs({ HideTags: false }, h.NATIVE);
   await until(() => writes.length === 1);
-  const second = sg.setUserPrefs({ HideCast: false });
+  const second = sg.setUserPrefs({ HideCast: false }, h.NATIVE);
   user = 'b';
   h.JE.session.checkNow('account switch');
   await sg.whenLoaded();

@@ -183,7 +183,8 @@ function spoilerTab(t, server) {
   h.JE.internals.spoilerGuard.wireSettings({ help: h.document.getElementById('help'), resetAutoCloseTimer() {} });
   return h;
 }
-const toggle = (h, pref) => { const box = h.document.getElementById(`sbPref${pref}`); box.checked = !box.checked; box.dispatchEvent(new h.window.Event('change')); };
+// The viewer's own change (a trusted event: D46 mints the panel's owner only from the viewer's gestures).
+const toggle = (h, pref) => { const box = h.document.getElementById(`sbPref${pref}`); box.checked = !box.checked; h.trusted(box, new h.window.Event('change')); };
 
 // Found by the whole-document writer scan (round 8): Spoiler Guard's panel overrides were posted whole.
 test('Spoiler Guard overrides changed in two tabs are both kept', async t => {
