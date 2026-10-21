@@ -473,14 +473,16 @@ public class ListsSwapTests
         Assert.Contains(collection ? seasonItem : e1, h.Host.Resolved(list.Info.Id));
         Assert.Null(h.Swap.GetPendingMatch(access.ListIdN, season.Id));
 
-        h.Swap.SettleDelay = TimeSpan.FromSeconds(5);
+        // The pending state lasts the settle delay: long enough that a loaded host's worker maps the burst well inside it (the
+        // test was flaky with a 5 s delay and a 2 s wait: the worker hadn't mapped the events when the wait ended).
+        h.Swap.SettleDelay = TimeSpan.FromSeconds(30);
         h.Swap.Start();
         try
         {
             var arrived = h.Host.AddItem(tmdb: 55);
             h.Swap.NotifyItemChanged(collection ? seasonItem : e1);
             h.Swap.NotifyItemChanged(arrived);
-            for (var i = 0; i < 200 && h.Swap.GetPendingMatch(access.ListIdN, movie.Id) == null; i++)
+            for (var i = 0; i < 2000 && h.Swap.GetPendingMatch(access.ListIdN, movie.Id) == null; i++)
             {
                 await Task.Delay(10);
             }
