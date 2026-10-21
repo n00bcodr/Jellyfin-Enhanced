@@ -84,7 +84,11 @@ public class ListsImportControllerTests
                 services.AddRouting();
                 services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, HeaderAuthentication>("test", _ => { });
                 services.AddAuthorization();
-                services.AddControllers().AddApplicationPart(typeof(AcquireListImportController).Assembly);
+                // The production MVC wiring the review needs: the privacy commit (PluginServiceRegistrator's outermost
+                // filter) hands a review that left through the delivery gate to the client; without it the held answer is
+                // withheld at the start (503), which no production request sees.
+                services.AddControllers(o => o.Filters.Add(new Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyCommitFilter()))
+                    .AddApplicationPart(typeof(AcquireListImportController).Assembly);
                 services.AddSingleton<IControllerActivator>(new Activator(type => type == typeof(AcquireListImportController)
                     ? new AcquireListImportController(H.Lists.Users.Object, H.Access, H.ImportResolver, H.Sources, H.Plugin.Core.Logger)
                     : throw new InvalidOperationException("Unexpected controller " + type)));
@@ -374,5 +378,41 @@ public class ListsImportControllerTests
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         var entry = (await Body(ok)).GetProperty("entries")[0];
         Assert.Equal(("season", 1001), (entry.GetProperty("prepared").GetProperty("kind").GetString(), entry.GetProperty("sourceKeys").GetArrayLength()));
+    }
+
+    [Fact]
+    public async Task AReviewLeavesThroughTheDeliveryGateAndIsBuiltAgainWhenAPrivacyInputChangesWhileItRuns()
+    {
+        // The review marks and strips titles by the viewer's privacy policies, so it is a protected answer: a privacy
+        // setting changed while it was built makes it be built again (one fetch more), and one that keeps changing withholds
+        // it (bounded, 503 privacy_changed) instead of answering with titles judged by stale rules.
+        using var f = new Fixture();
+        using var viewer = f.Client(f.Viewer);
+        var config = f.H.Plugin.Plugin.Configuration;
+        var changes = 1;
+        f.H.Fetcher.OnFetch = () =>
+        {
+            if (changes-- > 0) config.SpoilerBlurIntensity++;
+            return Task.CompletedTask;
+        };
+        using (var ok = await viewer.PostAsync(Source, Json("{\"url\":\"https://mdblist.com/lists/a/b\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            Assert.Equal(49521, (await Body(ok)).GetProperty("entries")[0].GetProperty("ids").GetProperty("tmdb").GetInt32());
+        }
+
+        Assert.Equal(2, f.H.Fetcher.Calls.Count);
+
+        f.H.Fetcher.Calls.Clear();
+        f.H.Fetcher.OnFetch = () =>
+        {
+            config.SpoilerBlurIntensity++;
+            return Task.CompletedTask;
+        };
+        using var withheld = await viewer.PostAsync(Source, Json("{\"url\":\"https://mdblist.com/lists/a/b\"}"));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, withheld.StatusCode);
+        Assert.Equal("privacy_changed", (await Body(withheld)).GetProperty("code").GetString());
+        Assert.True(withheld.Headers.CacheControl is { Private: true, NoStore: true }, withheld.Headers.CacheControl?.ToString());
+        Assert.Equal(Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyDelivery.Attempts, f.H.Fetcher.Calls.Count);
     }
 }
