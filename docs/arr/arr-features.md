@@ -1983,6 +1983,73 @@ list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/ad
 changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
 left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
 
+**Importing lists (review).** With *Import lists* on (off by default, under *Adding and editing list entries*), the
+server can read a pasted list, a CSV file or a list URL and match each line to a title, without changing any list:
+
+- **What it reads.** Pasted titles (`Title (Year)`, `S01E01-E05`, numbered guides, tables), CSV and JSON exports from
+  Letterboxd, IMDb and Trakt, and, with *Import from a list URL* and each site's own switch, MDBList public lists,
+  TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
+  as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
+  people are pointed to an MDBList mirror or a CSV export.
+- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+  says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
+  already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
+  or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
+  exist" needs every one of them to say so).
+- **Privacy.** A person with parental limits gets only titles whose rating is verified to be within them, and source
+  counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
+  Guard on, overviews and episode titles of guarded titles are left out. A title, season or episode the library holds
+  in a library the person can't open is never offered as missing, whichever id the library knows it by (TMDB, TVDB or
+  IMDb): when some library items lack a TMDB id, the title's other ids are looked up first, up to 4 at a time and for
+  at most 30 seconds per list review. A title whose ids weren't found in that time is left out with the counts hidden;
+  reviewing the list again goes on from the lookups already made.
+- **Whole lists only.** A list read counts as complete only when the site itself says it ended and its page and item
+  counts add up (no empty page in the middle, no error). Each row's own type is checked before it counts as a title:
+  a person, game or adult title in a list that mixes types is counted and skipped; a type JE doesn't know, a missing
+  type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
+  Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
+  Only a complete read is kept for the next few minutes (so preview, apply and link read the list once); a partial or
+  cut-off one is read again, so a list fixed at the source shows up at once. A read made of several requests (an IMDb
+  watchlist found through a `p.` profile, then its pages; a list's pages) is complete only when every one of them
+  answered cleanly: an error IMDb reports next to the profile it found makes the whole read partial, and an answer
+  whose error list isn't one JE can read is a failed read. A page's counts must make sense too: a
+  negative page count or total, a different page than the one asked for, or a total below the rows read makes the read
+  partial. Through Seerr, each configured Seerr address is tried in turn: a whole answer is used; a partial one is kept
+  only until another address answers in full; an error, a timeout or an answer for something else moves on to the next
+  address; and a list only counts as "not found" when every address says so. Seerr answers every failure behind it (an
+  id TMDB doesn't know included) with the same error, so that is shown as "Seerr couldn't read this", never as "not found".
+- **Answers to another question.** Every answer is checked against what was asked: details for another title or media
+  type, a season holding another season's episodes (or the same episode twice, or another show's), a TMDB or IMDb list
+  page of another list, a Chronolists page of another watch order, a search by id that answers another id, a poster read
+  that doesn't name the title or season asked for, or a search row of a media type Jellyfin Enhanced doesn't know is
+  never used, remembered, or allowed to clear anything an entry already has. An answer that doesn't say what it is (a
+  list page without its id, a season without its number) is used at most as partial, never remembered. With more than
+  one Seerr address, the next one is asked instead.
+- **"Not found" only when the site says so.** A list is "not found" (or a title "doesn't exist") only from the site's own
+  answer for that: TMDB's not-found reply, IMDb's not-found or private error for that list, MDBList's or Trakt's own
+  status. IMDb's error has to be about the list itself: a not-found error about a title inside the list (IMDb leaves the
+  whole list out then) is "couldn't read", not "private or missing". A proxy's error page, an IMDb internal error, an
+  empty answer or any Seerr error is shown as "couldn't read", so nothing is treated as missing because a site had a bad
+  moment. An empty search result counts as "no titles" only when the site says its total is 0.
+- **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
+  number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
+  it and the answer isn't remembered. An MDBList ratings answer counts only when it is the title's whole record: the
+  title and type asked for, and its ratings list with values in range (an empty list or a rating without a value is
+  fine). Anything else (no TMDB id, another title or type, a missing ratings list, a score of 999) is a failed lookup
+  that is retried, never "no ratings" for days, and it never clears ratings already stored. A scheduled batch is used
+  only when every row is one of the titles asked for, of the type asked for, once.
+- **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
+  for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
+  its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so
+  imports and ratings together never go below the quota's safety margin. The quota is tracked per API key: after the
+  key is changed, the new key's balance is read from MDBList before its first request. Every
+  request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
+  its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
+  redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
+  details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
+- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
+  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
+
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 
 With *Poster badges: New for you, Upgraded, 4K* on (under phase 4, off by default), a poster card can carry one small

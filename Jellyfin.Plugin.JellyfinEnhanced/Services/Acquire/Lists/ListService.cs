@@ -390,7 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.Debug($"[Lists] Request status for list {access.ListIdN} failed: {ex.Message}");
+                _logger.Debug($"[Lists] Request status for list {access.ListIdN} failed: {UpstreamDiagnostics.Code(ex)}");
                 return null;
             }
         }
@@ -2083,7 +2083,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                             return ListOutcome.Error(409, "create_uncertain", "An earlier attempt may already have created this list. Check your lists, or create it again as a new request.");
                         }
 
-                        _logger.Info($"[Lists] Continuing with {kind} \"{name}\" ({made.Id:N}), created by an earlier attempt that wasn't recorded.");
+                        _logger.Info($"[Lists] Continuing with {kind} {made.Id:N}, created by an earlier attempt that wasn't recorded.");
                         state.ListId = made.Id;
                         list = made;
                     }
@@ -2111,7 +2111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                         ? await ListContinuation.Await(() => _host.CreatePlaylistAsync(_gate.CreateWrite(user, kind), markedName, isPublic)).ConfigureAwait(false)
                         : await ListContinuation.Await(() => _host.CreateCollectionAsync(_gate.CreateWrite(user, kind), markedName, state.Marker)).ConfigureAwait(false);
                     state.ListId = id;
-                    _logger.Info($"[Lists] {user.Username} created {kind} \"{name}\" ({id:N}).");
+                    _logger.Info($"[Lists] {user.Username} created {kind} {id:N}.");
                     if (operation != null && !_operations!.ClaimList(operation.Id, id.ToString("N", CultureInfo.InvariantCulture), Now()))
                     {
                         // Another operation recorded this list first: it isn't this create's to fill.

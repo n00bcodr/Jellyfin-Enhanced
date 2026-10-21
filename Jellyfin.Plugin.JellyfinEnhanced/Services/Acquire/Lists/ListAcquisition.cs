@@ -212,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    _logger.Warning($"[Lists] Asking for \"{placeholder.Title}\" from list {access.ListIdN} failed: {ex.Message}");
+                    _logger.Warning($"[Lists] Asking for entry {placeholder.Id} from list {access.ListIdN} failed: {UpstreamDiagnostics.Code(ex)}");
                     outcome = RequestOutcome.Refused("server_error", 503, "failed");
                 }
 
@@ -224,7 +224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     }
                     catch (Exception ex)
                     {
-                        _logger.Debug($"[Lists] Recording the request link of \"{placeholder.Title}\" failed: {ex.Message}");
+                        _logger.Debug($"[Lists] Recording the request link of entry {placeholder.Id} failed: {ex.Message}");
                     }
                 }
 

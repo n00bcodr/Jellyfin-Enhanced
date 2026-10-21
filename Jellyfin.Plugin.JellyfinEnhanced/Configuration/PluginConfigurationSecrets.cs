@@ -32,6 +32,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             nameof(BackupPassphrase),
             nameof(ArrNtfyToken),
             nameof(ArrSmtpPassword),
+            // Phase 4c2: list sources
+            nameof(ArrListTraktApiKey),
         };
 
         /// <summary>The real Seerr API key.</summary>
@@ -45,6 +47,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The real DoesTheDogDie API key.</summary>
         public string GetDoesTheDogDieApiKey() => GetSecret(nameof(DoesTheDogDieApiKey));
+        /// <summary>The real Trakt client id for list sources (Phase 4c2).</summary>
+        public string GetListTraktApiKey() => GetSecret(nameof(ArrListTraktApiKey));
 
         /// <summary>The real Shoko API key.</summary>
         public string GetShokoApiKey() => GetSecret(nameof(ShokoApiKey));

@@ -116,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     chunkNumber++;
 
                     var remaining = mdblistService.RemainingQuota() ?? 0;
-                    if (remaining <= reserve)
+                    if (remaining <= Math.Max(reserve, MdblistService.SafetyMargin))
                     {
                         logger.Info($"MDBList Ratings Fetch: Only {remaining} requests remaining (stopping at {reserve}) after fetching {fetchedCount}/{totalCandidates} candidates. Remaining items will be picked up on the next run.");
                         stopped = true;
@@ -125,7 +125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
                     var chunkIds = groupIds.Skip(i).Take(ChunkSize).ToList();
 
-                    var results = await mdblistService.GetMediaBatchAsync(mediaType, chunkIds, cancellationToken).ConfigureAwait(false);
+                    // The batch reserves its request against the reserve itself (the check above is only the early stop).
+                    var results = await mdblistService.GetMediaBatchAsync(mediaType, chunkIds, cancellationToken, reserve).ConfigureAwait(false);
                     await Task.Delay(RequestPacing, cancellationToken).ConfigureAwait(false);
 
                     if (results == null)

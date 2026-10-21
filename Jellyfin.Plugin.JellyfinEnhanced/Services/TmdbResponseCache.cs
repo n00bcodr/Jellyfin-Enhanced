@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
@@ -72,9 +73,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // entries go first when it fills.
         private const long MaxCacheBytes = 24L * 1024 * 1024;
         private const long EntryOverheadBytes = 200;
-        // Upstream bodies larger than this fail the request (exception path).
-        private const long MaxResponseBytes = 8L * 1024 * 1024;
-        private static readonly TimeSpan UpstreamTimeout = TimeSpan.FromSeconds(30);
+        // Upstream bodies larger than BoundedBody.MaxBytes (8 MiB) fail the request (exception path).
+        /// <summary>How long one upstream call may take (its own timeout: no caller's token ever stops it).</summary>
+        internal static readonly TimeSpan UpstreamTimeout = TimeSpan.FromSeconds(30);
         // TMDB's soft limit is about 50 requests/s; a lookup takes ~0.3 s once
         // the connection is warm, so 20 in flight is comfortably below it.
         private const int MaxUpstreamConcurrency = 20;
@@ -184,8 +185,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// details-page sub-resources fetches the whole set in one upstream call
         /// (see the class remarks); callers that only ever want one resource
         /// for many titles (the watch-providers batch) leave it off.
+        /// With <paramref name="refresh"/> (Phase 4c2, list sources), a cached copy is never returned: the
+        /// response comes from upstream (joining a call already in flight) and is stored as usual, for callers
+        /// that must see the current data (a linked TMDB list, which the 6 h lookup TTL would hide).
         /// </summary>
-        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false)
+        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool refresh = false)
         {
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (target.HasValue)
@@ -205,7 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var keyPrefix = GetKeyHash(apiKey) + "|";
                 key = keyPrefix + upstreamUrl;
-                if (TryGetFreshLocked(key, out var cached))
+                if (!refresh && TryGetFreshLocked(key, out var cached))
                 {
                     return Task.FromResult(cached);
                 }
@@ -272,6 +276,122 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return shared.WaitAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Phase 4c2 (list imports, review round 7, 4c2-R7-5): <see cref="GetAsync"/> for a caller that paces its upstream
+        /// calls with a limiter. A fresh cached answer, or an upstream call for the same URL already in flight, is joined
+        /// without an admission. Otherwise one admission is taken with <paramref name="admit"/> (cancelling while it waits
+        /// takes none), and the upstream call it starts OWNS it: the lease is released only when that call has ended
+        /// (answered, failed, or its own <see cref="UpstreamTimeout"/>), never when a caller stops waiting. A caller that finds
+        /// the answer cached or in flight once admitted gives the lease back at once.
+        /// </summary>
+        /// <param name="apiPath">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="apiKey">The key the request carries.</param>
+        /// <param name="admit">Takes one admission (a lease, disposed by the upstream call when it ends).</param>
+        /// <param name="cancellationToken">Stops this caller waiting (for its admission or the answer).</param>
+        /// <returns>The response.</returns>
+        public async Task<TmdbResponse> GetAdmittedAsync(string apiPath, string query, string apiKey, Func<CancellationToken, Task<IDisposable>> admit, CancellationToken cancellationToken)
+        {
+            var upstreamUrl = UpstreamUrl(apiPath, query);
+            if (Joined(apiKey, upstreamUrl, out var joined))
+            {
+                return await joined.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var lease = await admit(cancellationToken).ConfigureAwait(false);
+            Task<TmdbResponse> shared;
+            TaskCompletionSource<TmdbResponse>? owner = null;
+            string key;
+            lock (_lock)
+            {
+                key = GetKeyHash(apiKey) + "|" + upstreamUrl;
+                if (TryGetFreshLocked(key, out var cached))
+                {
+                    shared = Task.FromResult(cached);
+                }
+                else if (_inFlight.TryGetValue(key, out var pending))
+                {
+                    shared = pending;
+                }
+                else
+                {
+                    owner = new TaskCompletionSource<TmdbResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    shared = owner.Task;
+                    _inFlight[key] = shared;
+                }
+            }
+
+            if (owner == null)
+            {
+                lease.Dispose(); // answered meanwhile: no request of ours
+            }
+            else
+            {
+                _ = FetchAsync(key, AppendApiKey(upstreamUrl, apiKey), GetTtl(apiPath), owner, lease);
+            }
+
+            return await shared.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // A fresh cached answer or the upstream call in flight for this URL, if there is one.
+        private bool Joined(string apiKey, string upstreamUrl, out Task<TmdbResponse> joined)
+        {
+            lock (_lock)
+            {
+                var key = GetKeyHash(apiKey) + "|" + upstreamUrl;
+                if (TryGetFreshLocked(key, out var cached))
+                {
+                    joined = Task.FromResult(cached);
+                    return true;
+                }
+
+                if (_inFlight.TryGetValue(key, out var pending))
+                {
+                    joined = pending;
+                    return true;
+                }
+            }
+
+            joined = null!;
+            return false;
+        }
+
+        /// <summary>
+        /// Phase 4c2 (list imports): the fresh cached answer for <c>{apiPath}{query}</c>, without any upstream call (false
+        /// when there is none), so a caller that paces its own upstream calls takes a turn only for a real one.
+        /// </summary>
+        /// <param name="apiPath">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="apiKey">The key the answer was read with.</param>
+        /// <param name="response">The cached answer.</param>
+        /// <returns>True when a fresh answer is cached.</returns>
+        public bool TryGetCached(string apiPath, string query, string apiKey, out TmdbResponse response)
+        {
+            lock (_lock)
+            {
+                return TryGetFreshLocked(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out response);
+            }
+        }
+
+        /// <summary>
+        /// Phase 4c2 (list imports): drops the cached answer for <c>{apiPath}{query}</c>, for a caller that found it
+        /// unusable (malformed, or not a whole answer), so the next read asks TMDB again instead of keeping it for the TTL.
+        /// </summary>
+        /// <param name="apiPath">TMDB path.</param>
+        /// <param name="query">"" or a query starting with '?', without the key.</param>
+        /// <param name="apiKey">The key the answer was read with.</param>
+        public void Forget(string apiPath, string query, string apiKey)
+        {
+            lock (_lock)
+            {
+                if (_entries.TryGetValue(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out var node))
+                {
+                    RemoveNode(node);
+                    ScheduleDebouncedSave();
+                }
+            }
         }
 
         private static string UpstreamUrl(string apiPath, string query) => $"https://api.themoviedb.org/3/{apiPath}{query}";
@@ -370,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return false;
         }
 
-        private async Task FetchAsync(string key, string requestUri, TimeSpan ttl, TaskCompletionSource<TmdbResponse> owner)
+        private async Task FetchAsync(string key, string requestUri, TimeSpan ttl, TaskCompletionSource<TmdbResponse> owner, IDisposable? lease = null)
         {
             // Awaited through WhenAny, which never throws, so every outcome of the
             // upstream call (a response, any failure, the upstream timeout) reaches
@@ -378,6 +498,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // waiter is released. Only a generic catch clause could promise that.
             var upstream = FetchUpstreamAsync(requestUri);
             await Task.WhenAny(upstream).ConfigureAwait(false);
+            lease?.Dispose(); // the admission this call owned (GetAdmittedAsync) ends with it
             lock (_lock)
             {
                 _inFlight.Remove(key);
@@ -586,7 +707,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var httpClient = _httpClientFactory.CreateClient();
-                httpClient.MaxResponseContentBufferSize = MaxResponseBytes;
                 using var request = new HttpRequestMessage(HttpMethod.Get, requestUri)
                 {
                     // TMDB speaks HTTP/2; parallel lookups then share one
@@ -594,8 +714,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Version = HttpVersion.Version20,
                     VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
                 };
-                using var response = await httpClient.SendAsync(request, timeout.Token).ConfigureAwait(false);
-                var content = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+                // Phase 4c2 (review round 11, 4c2-R11-3): the lists' one bounded reader (headers first, then at most its cap of
+                // the body, a success's or an error's; over it: ResponseTooLargeException, an HttpRequestException as before).
+                using var response = await BoundedBody.SendAsync(httpClient, request, timeout.Token).ConfigureAwait(false);
+                var content = await BoundedBody.ReadAsync(response, timeout.Token).ConfigureAwait(false);
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
                 var isJson = mediaType != null
                     && (mediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
