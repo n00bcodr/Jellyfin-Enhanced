@@ -30,7 +30,7 @@ public class ReadyAdminUsersTests
         config.ArrPhase4ReadyPlaylistEnabled = true;
         var host = new FakeReadyPlaylistHost();
         var store = new ReadyPlaylistStore(r.Db);
-        var editions = new EditionAvailability(r.View, () => config, (k, v) => r.View.Copies(k, v));
+        var editions = new EditionAvailability(r.View, () => config, (k, v) => r.View.Copies(k, v).Display);
         var ready = new ReadyPlaylistService(store, host, new FakeReadyInterests(), new ReadyCopySelector(editions, new FakeReadyLibrary(), null), new FakeReadyPrivacy(), r.View, () => config, () => r.Now, "server-a", null);
         var service = new AdminUserSettingsService(r.Service, users.Object, files.Manager, r.Audit, _ => { }, ready: ready);
         JsonElement Read() => JsonDocument.Parse(JsonSerializer.Serialize(service.Read(r.Member).Body)).RootElement.GetProperty("ready");

@@ -185,7 +185,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Func<StatusViewer, int, IReadOnlyList<RecentTitle>> _recent;
         private readonly Func<Guid, HiddenTitles> _hidden;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<string, (DateTimeOffset At, DiscoverAnswer Answer)> _cache = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (DateTimeOffset At, Prepared Page)> _cache = new(StringComparer.Ordinal);
+        private readonly ResponseGate _gate;
 
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
         public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig, SpoilerPresentation? presentation = null)
@@ -214,6 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _recent = recent;
             _hidden = hidden;
             _now = now;
+            _gate = new ResponseGate(requests.View, () => requests.Policy.Configuration);
         }
 
         /// <summary>Hidden Content's per-user file.</summary>
@@ -229,18 +231,73 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// One page of a Discover list for the viewer, or null when TMDB could not answer (not set up,
         /// failed). "because" answers groups (empty when the viewer has watched nothing with a TMDB id).
         /// </summary>
-        public async Task<DiscoverAnswer?> DiscoverAsync(StatusViewer viewer, string list, string type, int page, string? language, CancellationToken ct)
+        public Task<DiscoverAnswer?> DiscoverAsync(StatusViewer viewer, string list, string type, int page, string? language, CancellationToken ct)
         {
             var lang = Lang(language);
-            var hidden = Hidden(viewer.UserId);
-            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
-            var cacheKey = CacheKey(viewer, list + "|" + type + "|" + page + "|" + lang + "|" + spoilerRevision, hidden);
-            if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
+            return PublishAsync(viewer, list + "|" + type + "|" + page + "|" + lang, false, (v, hidden) => PrepareDiscoverAsync(v, list, type, page, lang, hidden, ct), ct);
+        }
 
-            DiscoverAnswer? answer;
+        /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
+        public Task<DiscoverAnswer?> SearchAsync(StatusViewer viewer, string query, int page, string? language, CancellationToken ct)
+        {
+            var lang = Lang(language);
+            return PublishAsync(viewer, "search|" + page + "|" + lang + "|" + query, true, (v, hidden) => PrepareSearchAsync(v, query, page, lang, hidden, ct), ct);
+        }
+
+        /// <summary>
+        /// A Discover or search answer through the response gate (D53, edition round 19: every response proven fresh at
+        /// publication). The TMDB pages and the rating checks of absent titles await; after the last await every card is built
+        /// again from Jellyfin as it is now, for the viewer as they are now: their copies, what Jellyfin hides from them, what
+        /// Hidden Content hides (a card for a copy they lost meanwhile never names it). A viewer whose policy or Hidden Content
+        /// changed meanwhile gets the page prepared again for them as they are now, at most <see cref="ResponseGate.Attempts"/>
+        /// times, then nothing (fail closed). An answer is cached only under a stamp that held from the start to publication.
+        /// </summary>
+        private async Task<DiscoverAnswer?> PublishAsync(StatusViewer viewer, string what, bool search, Func<StatusViewer, HiddenTitles, Task<Prepared?>> prepare, CancellationToken ct)
+        {
+            // Cards whose copy lookup reached its scan bound read "not in the library" for this answer only (see Store).
+            using var bound = CopyLookupBound.Track();
+            for (var attempt = 0; attempt < ResponseGate.Attempts; attempt++)
+            {
+                var hidden = Hidden(viewer.UserId);
+                var stamp = _gate.Take(viewer, hidden.Stamp);
+                var cacheKey = CacheKey(viewer, what, hidden);
+                Prepared? prepared;
+                if (Cached(cacheKey) is { } cached) prepared = cached;
+                else
+                {
+                    prepared = await prepare(viewer, hidden).ConfigureAwait(false);
+                    if (prepared == null) return null;
+                }
+                var paused = await _requests.StoragePausesAsync(viewer.UserId, prepared.Keys, false, ct).ConfigureAwait(false);
+                // Publication: no await from here on.
+                var nowHidden = Hidden(viewer.UserId);
+                if (_gate.Current(stamp, nowHidden.Stamp, rereadsLibrary: true) is not { } now)
+                {
+                    if (_requests.View.Viewer(viewer.UserId) is not { } changed) return null;
+                    viewer = changed;
+                    continue;
+                }
+                var before = _gate.Take(now, nowHidden.Stamp);
+                // The final Hidden Content and Spoiler Guard projection (D46), at publication, under the presentation revision it read.
+                var revision = _presentation?.Load(now.UserId).Revision;
+                var answer = Present(now, Project(now, prepared, search ? nowHidden.Search : nowHidden.Discovery, paused), nowHidden);
+                if (!ResponseGate.SameViewer(before, _gate.Take(now, Hidden(now.UserId).Stamp)) || _presentation?.Load(now.UserId).Revision != revision)
+                {
+                    viewer = now;
+                    continue;
+                }
+                // Only what held from start to finish is kept for the next read.
+                if (ResponseGate.Same(stamp, before)) Store(cacheKey, prepared);
+                return answer;
+            }
+            return null;
+        }
+
+        private async Task<Prepared?> PrepareDiscoverAsync(StatusViewer viewer, string list, string type, int page, string? lang, HiddenTitles hidden, CancellationToken ct)
+        {
             if (list == "because")
             {
-                var groups = new List<DiscoverGroup>();
+                var groups = new List<PreparedGroup>();
                 foreach (var seed in _recent(viewer, MaxSeeds).Take(MaxSeeds))
                 {
                     var kind = seed.Movie ? "movie" : "tv";
@@ -249,71 +306,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     var seedKey = kind + ":tmdb:" + seed.TmdbId.ToString(CultureInfo.InvariantCulture);
                     if (hidden.Discovery.Contains(seedKey)) continue;
                     var (rows, _) = Parse(json, kind);
-                    var cards = await ProjectAsync(viewer, rows.Where(r => r.Key != seedKey), hidden.Discovery, ct).ConfigureAwait(false);
-                    if (cards.Count > 0) groups.Add(new DiscoverGroup { BasedOn = seed.Title.Length > 200 ? seed.Title[..200] : seed.Title, Key = seedKey, Results = cards });
+                    var kept = Page(rows.Where(r => r.Key != seedKey), hidden.Discovery);
+                    groups.Add(new PreparedGroup(seed.Title.Length > 200 ? seed.Title[..200] : seed.Title, seedKey, kept));
                 }
-                answer = new DiscoverAnswer { List = list, Type = "all", Page = 1, TotalPages = 1, Groups = groups };
+                return new Prepared("because", "all", 1, 1, Array.Empty<Row>(), groups, await RatingsAsync(viewer, groups.SelectMany(g => g.Rows), ct).ConfigureAwait(false));
             }
-            else
+            var path = list switch
             {
-                var path = list switch
-                {
-                    "trending" => $"trending/{type}/week",
-                    "upcoming" => type == "movie" ? "movie/upcoming" : "tv/on_the_air",
-                    _ => $"{type}/popular",
-                };
-                var json = await Read(path, Query(page, lang), ct).ConfigureAwait(false);
-                if (json == null) return null;
-                var (rows, total) = Parse(json, type);
-                var cards = await ProjectAsync(viewer, rows, hidden.Discovery, ct).ConfigureAwait(false);
-                answer = new DiscoverAnswer { List = list, Type = type, Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
-            }
-            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
-            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
-            var current = Hidden(viewer.UserId);
-            delivered = Present(viewer, delivered, current);
-            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
-            return delivered;
+                "trending" => $"trending/{type}/week",
+                "upcoming" => type == "movie" ? "movie/upcoming" : "tv/on_the_air",
+                _ => $"{type}/popular",
+            };
+            var page1 = await Read(path, Query(page, lang), ct).ConfigureAwait(false);
+            if (page1 == null) return null;
+            var (found, total) = Parse(page1, type);
+            var pageRows = Page(found, hidden.Discovery);
+            return new Prepared(list, type, page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, ct).ConfigureAwait(false));
         }
 
-        /// <summary>One page of free-text search (movies and series only), or null when TMDB could not answer.</summary>
-        public async Task<DiscoverAnswer?> SearchAsync(StatusViewer viewer, string query, int page, string? language, CancellationToken ct)
+        private async Task<Prepared?> PrepareSearchAsync(StatusViewer viewer, string query, int page, string? lang, HiddenTitles hidden, CancellationToken ct)
         {
-            var lang = Lang(language);
-            var hidden = Hidden(viewer.UserId);
-            var spoilerRevision = _presentation?.Load(viewer.UserId).Revision;
-            var cacheKey = CacheKey(viewer, "search|" + page + "|" + lang + "|" + query + "|" + spoilerRevision, hidden);
-            if (Cached(cacheKey) is { } cached) return await WithPausesAsync(viewer, cached, ct).ConfigureAwait(false);
             var json = await Read("search/multi", Query(page, lang) + "&include_adult=false&query=" + Uri.EscapeDataString(query), ct).ConfigureAwait(false);
             if (json == null) return null;
-            var (rows, total) = Parse(json, null);
-            var cards = await ProjectAsync(viewer, rows, hidden.Search, ct).ConfigureAwait(false);
-            var answer = new DiscoverAnswer { List = "search", Type = "all", Page = page, TotalPages = Math.Clamp(total, 1, MaxPage), Results = cards };
-            var delivered = await WithPausesAsync(viewer, answer, ct).ConfigureAwait(false);
-            // The final gate and insertion are synchronous. An in-flight old snapshot never enters this cache.
-            var current = Hidden(viewer.UserId);
-            delivered = Present(viewer, delivered, current);
-            if (current.Stamp == hidden.Stamp && _presentation?.Load(viewer.UserId).Revision == spoilerRevision) Store(cacheKey, delivered);
-            return delivered;
+            var (found, total) = Parse(json, null);
+            var pageRows = Page(found, hidden.Search);
+            return new Prepared("search", "all", page, Math.Clamp(total, 1, MaxPage), pageRows, null, await RatingsAsync(viewer, pageRows, ct).ConfigureAwait(false));
         }
 
-        /// <summary>
-        /// The answer with each card the caller can't ask for right now because of storage marked (see
-        /// <see cref="DiscoverCard.Blocked"/>), title by title: a title Sonarr/Radarr already has is measured on its own
-        /// folder's drive, a new one on the default root's. Worked out from what is in memory on every answer (cached
-        /// ones too); facts not read yet are only started, so a browse never waits for them.
-        /// </summary>
-        private async Task<DiscoverAnswer> WithPausesAsync(StatusViewer viewer, DiscoverAnswer answer, CancellationToken ct)
-        {
-            var cards = answer.Results.Concat(answer.Groups?.SelectMany(g => g.Results) ?? Enumerable.Empty<DiscoverCard>());
-            var paused = await _requests.StoragePausesAsync(viewer.UserId, cards.Select(c => c.Key), false, ct).ConfigureAwait(false);
-            DiscoverCard Mark(DiscoverCard card) => card with { Blocked = paused.TryGetValue(card.Key, out var block) ? block : null };
-            return Present(viewer, answer with
-            {
-                Results = answer.Results.Select(Mark).ToList(),
-                Groups = answer.Groups?.Select(g => g with { Results = g.Results.Select(Mark).ToList() }).ToList(),
-            }, Hidden(viewer.UserId));
-        }
+        /// <summary>The rows of a page that Hidden Content doesn't hide by key, at most <see cref="MaxResults"/>.</summary>
+        private static List<Row> Page(IEnumerable<Row> rows, IReadOnlySet<string> hidden) => rows.Where(r => !hidden.Contains(r.Key)).Take(MaxResults).ToList();
 
         /// <summary>Final caller projection for cache hits, inserts and byte serialization; never awaits.</summary>
         public DiscoverAnswer Present(StatusViewer viewer, DiscoverAnswer answer) => Present(viewer, answer, Hidden(viewer.UserId));
@@ -342,31 +363,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>A parsed TMDB row before the caller's checks.</summary>
         internal sealed record Row(string Key, string Kind, int TmdbId, string Title, int? Year, string? Poster, string? Overview);
 
-        /// <summary>
-        /// The rows the viewer may see, with library and request flags: parental checks run in
-        /// parallel (bounded), the order of the page is kept.
-        /// </summary>
-        private async Task<IReadOnlyList<DiscoverCard>> ProjectAsync(StatusViewer viewer, IEnumerable<Row> rows, IReadOnlySet<string> hidden, CancellationToken ct)
+        /// <summary>A page prepared ahead of publication: its rows (or "because" groups) and the rating checks of absent titles.</summary>
+        internal sealed record Prepared(string List, string Type, int Page, int TotalPages, IReadOnlyList<Row> Rows, IReadOnlyList<PreparedGroup>? Groups, IReadOnlyDictionary<string, bool> Ratings)
         {
-            var list = rows.Where(r => !hidden.Contains(r.Key)).ToList();
-            var tasks = list.Select(row => CardAsync(viewer, row, hidden, ct)).ToList();
-            var cards = await Task.WhenAll(tasks).ConfigureAwait(false);
-            return cards.Where(c => c != null).Select(c => c!).Take(MaxResults).ToList();
+            /// <summary>Every title key of the page.</summary>
+            public IEnumerable<string> Keys => Rows.Concat(Groups?.SelectMany(g => g.Rows) ?? Enumerable.Empty<Row>()).Select(r => r.Key);
         }
 
-        private async Task<DiscoverCard?> CardAsync(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, CancellationToken ct)
+        /// <summary>One "because you watched" group, prepared.</summary>
+        internal sealed record PreparedGroup(string BasedOn, string Key, IReadOnlyList<Row> Rows);
+
+        /// <summary>
+        /// For a viewer with parental limits, the rating checks of the titles Jellyfin proves absent for them now (an absent
+        /// title needs a verified rating they may see): run in parallel, bounded. Others need none.
+        /// </summary>
+        private async Task<IReadOnlyDictionary<string, bool>> RatingsAsync(StatusViewer viewer, IEnumerable<Row> rows, CancellationToken ct)
+        {
+            var result = new Dictionary<string, bool>(StringComparer.Ordinal);
+            if (!viewer.HasParentalLimit) return result;
+            var absent = rows.DistinctBy(r => r.Key).Where(r => Lookup(viewer, r) is { Seen.Count: 0, IsProvenAbsent: true }).ToList();
+            var checks = await Task.WhenAll(absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer.UserId, ct))).ConfigureAwait(false);
+            for (var i = 0; i < absent.Count; i++) result[absent[i].Key] = checks[i];
+            return result;
+        }
+
+        private CopyLookup Lookup(StatusViewer viewer, Row row)
         {
             var key = TitleKey.Parse(row.Key)!;
-            var aliases = _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>();
-            var copies = _requests.View.Copies(key, viewer, aliases);
-            var open = copies.FirstOrDefault(c => c.Visible);
+            return _requests.View.Copies(key, viewer, _aliases?.Of(key) ?? (IReadOnlyList<TitleKey>)Array.Empty<TitleKey>());
+        }
+
+        /// <summary>The answer for the viewer as they are now, from Jellyfin as it is now (no I/O beyond Jellyfin and the ledger).</summary>
+        private DiscoverAnswer Project(StatusViewer viewer, Prepared prepared, IReadOnlySet<string> hidden, IReadOnlyDictionary<string, RequestBlock> paused)
+        {
+            List<DiscoverCard> Cards(IEnumerable<Row> rows) => rows.Where(r => !hidden.Contains(r.Key)).Select(r => Card(viewer, r, hidden, prepared.Ratings)).Where(c => c != null)
+                .Select(c => paused.TryGetValue(c!.Key, out var block) ? c with { Blocked = block } : c!).Take(MaxResults).ToList();
+            if (prepared.Groups != null)
+            {
+                var groups = prepared.Groups.Select(g => new DiscoverGroup { BasedOn = g.BasedOn, Key = g.Key, Results = Cards(g.Rows) }).Where(g => g.Results.Count > 0).ToList();
+                return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = 1, TotalPages = 1, Groups = groups };
+            }
+            return new DiscoverAnswer { List = prepared.List, Type = prepared.Type, Page = prepared.Page, TotalPages = prepared.TotalPages, Results = Cards(prepared.Rows) };
+        }
+
+        private DiscoverCard? Card(StatusViewer viewer, Row row, IReadOnlySet<string> hidden, IReadOnlyDictionary<string, bool> ratings)
+        {
+            var key = TitleKey.Parse(row.Key)!;
+            var lookup = Lookup(viewer, row);
+            // The card shows what a finished lookup found (one that couldn't finish reads as not in the library). In the library
+            // means a copy they open plays (D53, edition round 19 part B: the one availability predicate): a movie whose copy
+            // is only a ".disc" stub, or a series whose copies list only stubs or missing episodes, is still askable.
+            var shown = lookup.Display.FirstOrDefault(c => c.Visible);
+            var playing = shown == null ? null : new EditionAvailability(_requests.View, () => null, (_, _) => lookup.Display).Holding(viewer, lookup.Display, key.IsMovie, Edition.Any);
+            var open = playing == null ? null : lookup.Display.FirstOrDefault(c => c.Visible && playing.Contains(c.ItemId));
             if (viewer.HasParentalLimit)
             {
-                // A copy Jellyfin hides from them (rating, tags or library) hides the title; an absent
-                // title needs a verified rating they may see.
-                if (copies.Count > 0 ? open == null : !await MaySeeAsync(row.Kind, row.TmdbId, viewer.UserId, ct).ConfigureAwait(false)) return null;
+                // A copy Jellyfin hides from them (rating, tags or library) hides the title unless one they can open
+                // was seen too; an absent title needs a verified rating they may see, and only a proven absence is one (a
+                // title no rating was checked for, absent only now, is left out: never shown on an unchecked rating).
+                var seen = lookup.Seen;
+                if (seen.Count > 0 ? lookup.SeenOpenable == null : !lookup.IsProvenAbsent || !ratings.TryGetValue(row.Key, out var may) || !may) return null;
             }
             var itemId = open?.ItemId.ToString("N", CultureInfo.InvariantCulture);
+            // Hidden Content keyed by a copy's item id hides the title whether or not that copy plays.
+            if (shown != null && hidden.Contains(shown.ItemId.ToString("N", CultureInfo.InvariantCulture))) return null;
             if (itemId != null && hidden.Contains(itemId)) return null;
             var flags = Flags(key, viewer.UserId);
             return new DiscoverCard
@@ -636,11 +696,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 _requests.View.Revision.ToString(CultureInfo.InvariantCulture), ledger.ToString(CultureInfo.InvariantCulture), hidden.Stamp, what);
         }
 
-        private DiscoverAnswer? Cached(string key)
-            => _cache.TryGetValue(key, out var entry) && _now() - entry.At < CacheTtl ? entry.Answer : null;
+        private Prepared? Cached(string key)
+            => _cache.TryGetValue(key, out var entry) && _now() - entry.At < CacheTtl ? entry.Page : null;
 
-        private void Store(string key, DiscoverAnswer answer)
+        // Not an answer composed from a copy lookup that reached its bound: the next read looks again.
+        private void Store(string key, Prepared answer)
         {
+            if (CopyLookupBound.Reached) return;
             var now = _now();
             if (_cache.Count >= MaxCacheEntries)
             {

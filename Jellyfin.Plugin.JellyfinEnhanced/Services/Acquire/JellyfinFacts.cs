@@ -1,8 +1,125 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
+    /// <summary>
+    /// Copy lookups (<see cref="IArrJellyfinView.Copies"/>) that reached their scan bound in the current flow: an
+    /// HTTP read, a notification round, a recipe run. Such a lookup is <see cref="CopyLookupOutcome.Incomplete"/>: whatever
+    /// is composed from it is never cached or stored (the next read scans again), and a background decision that would
+    /// act on absence waits for a conclusive read. Work that keeps or acts on lookups starts a <see cref="Track"/> watch
+    /// around them; the lookup calls <see cref="Note"/>.
+    /// </summary>
+    public static class CopyLookupBound
+    {
+        private static readonly AsyncLocal<Watch?> Current = new();
+
+        /// <summary>True when a lookup reached its bound in the current flow since the innermost watch began.</summary>
+        public static bool Reached => Current.Value?.Reached == true;
+
+        /// <summary>Starts a watch for this flow (and the work it awaits); dispose it when the work is done.</summary>
+        /// <returns>The watch.</returns>
+        public static Watch Track()
+        {
+            var watch = new Watch(Current.Value);
+            Current.Value = watch;
+            return watch;
+        }
+
+        /// <summary>A lookup reached its bound: every watch of the flow sees it.</summary>
+        internal static void Note()
+        {
+            for (var watch = Current.Value; watch != null; watch = watch.Parent) watch.Reached = true;
+        }
+
+        /// <summary>One watch over a piece of work.</summary>
+        public sealed class Watch : IDisposable
+        {
+            private int _reached;
+
+            internal Watch(Watch? parent) => Parent = parent;
+
+            internal Watch? Parent { get; }
+
+            /// <summary>True when a lookup of the work reached its bound.</summary>
+            public bool Reached
+            {
+                get => Volatile.Read(ref _reached) == 1;
+                internal set => Volatile.Write(ref _reached, value ? 1 : 0);
+            }
+
+            /// <summary>Ends the watch (the enclosing one, if any, is current again).</summary>
+            public void Dispose()
+            {
+                if (ReferenceEquals(Current.Value, this)) Current.Value = Parent;
+            }
+        }
+    }
+
+    /// <summary>What a copy lookup established (<see cref="CopyLookup"/>).</summary>
+    public enum CopyLookupOutcome
+    {
+        /// <summary>The scan finished and found at least one copy (one the viewer can open or not).</summary>
+        Found,
+
+        /// <summary>The scan finished and found none: the title is proven absent.</summary>
+        ProvenAbsent,
+
+        /// <summary>The scan stopped with rows or queries unread (a bound, the page ceiling, the copy budget): the copies it saw are facts, absence is not proven.</summary>
+        Incomplete,
+    }
+
+    /// <summary>
+    /// The answer of <see cref="IArrJellyfinView.Copies"/>: a value, never a list, so each reader states its policy.
+    /// A page that only shows the title reads <see cref="Display"/> (an incomplete lookup shows as "not found", is
+    /// never cached and never makes anything Ready or fulfilled). Anything that asserts absence (the absent-title
+    /// rules, "since removed", "declined", a missing title offered or asked for, an alert's "can no longer open") acts
+    /// only on <see cref="IsProvenAbsent"/>; on an incomplete lookup it fails closed. The copies the scan did see
+    /// (<see cref="Seen"/>) are acted on either way: one the viewer can't open keeps the title hidden from them, one they
+    /// can open counts as present.
+    /// </summary>
+    public sealed class CopyLookup
+    {
+        private CopyLookup(CopyLookupOutcome outcome, IReadOnlyList<JfCopy> seen)
+        {
+            Outcome = outcome;
+            Seen = seen;
+        }
+
+        /// <summary>The finished scan that found nothing.</summary>
+        public static CopyLookup Absent { get; } = new(CopyLookupOutcome.ProvenAbsent, Array.Empty<JfCopy>());
+
+        /// <summary>A finished scan: found, or proven absent when it found nothing.</summary>
+        /// <param name="copies">Every copy it found.</param>
+        /// <returns>The lookup.</returns>
+        public static CopyLookup Complete(IReadOnlyList<JfCopy> copies) => copies.Count == 0 ? Absent : new(CopyLookupOutcome.Found, copies);
+
+        /// <summary>A scan that stopped before it had read everything.</summary>
+        /// <param name="seen">The copies it saw before (in the order a finished scan lists them first).</param>
+        /// <returns>The lookup.</returns>
+        public static CopyLookup Incomplete(IReadOnlyList<JfCopy> seen) => new(CopyLookupOutcome.Incomplete, seen);
+
+        /// <summary>What the scan established.</summary>
+        public CopyLookupOutcome Outcome { get; }
+
+        /// <summary>The scan finished (found, or proven absent).</summary>
+        public bool IsComplete => Outcome != CopyLookupOutcome.Incomplete;
+
+        /// <summary>The scan finished and found no copy: the only answer the absent-title rules accept.</summary>
+        public bool IsProvenAbsent => Outcome == CopyLookupOutcome.ProvenAbsent;
+
+        /// <summary>The copies the scan saw: every copy when it finished, the first ones otherwise.</summary>
+        public IReadOnlyList<JfCopy> Seen { get; }
+
+        /// <summary>A copy the viewer can open that the scan saw (present, finished or not), or null.</summary>
+        public JfCopy? SeenOpenable => Seen.FirstOrDefault(c => c.Visible);
+
+        /// <summary>The copies a page shows: every copy of a finished scan; none of an incomplete one ("not found").</summary>
+        public IReadOnlyList<JfCopy> Display => IsComplete ? Seen : Array.Empty<JfCopy>();
+    }
+
     /// <summary>
     /// Who is asking for a status: the Jellyfin user and everything about them that changes what
     /// they may see (role, library access, parental limits, "show missing episodes"), condensed
@@ -65,6 +182,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>A virtual (missing) episode or season: no file.</summary>
         public bool Virtual { get; init; }
+
+        /// <summary>
+        /// A movie or episode Jellyfin lists but that plays nothing: a stub file such as a ".disc" one (Jellyfin's
+        /// IsPlaceHolder), or no file path. Never true for a virtual one.
+        /// </summary>
+        public bool Placeholder { get; init; }
+
+        /// <summary>
+        /// Jellyfin plays it (D53, edition round 16: one item reference carries every fact): not missing (virtual) and not
+        /// a placeholder, the same fact as <see cref="JfEpisode.Playable"/>. Every reader of "the viewer has this item's
+        /// file" (pages, cards, arrivals, queued downloads as upgrades, versions) reads this, never <see cref="Virtual"/>.
+        /// </summary>
+        public bool Playable => !Virtual && !Placeholder;
 
         /// <summary>File or folder path (server-side matching only; never sent).</summary>
         public string? Path { get; init; }
@@ -185,6 +315,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>Virtual (missing) episode.</summary>
         public bool Virtual { get; init; }
 
+        /// <summary>
+        /// A placeholder: Jellyfin lists the episode (a stub file such as a ".disc" one, or no file path) but it plays nothing.
+        /// </summary>
+        public bool Placeholder { get; init; }
+
+        /// <summary>
+        /// Jellyfin plays it (D53, edition round 15: playable means playable): not missing (virtual) and not a placeholder.
+        /// </summary>
+        public bool Playable => !Virtual && !Placeholder;
+
         /// <summary>When Jellyfin added it (UTC).</summary>
         public DateTime? DateCreated { get; init; }
 
@@ -194,6 +334,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// composer can leave it out instead of reading it as "not in the library".
         /// </summary>
         public bool Hidden { get; init; }
+    }
+
+    /// <summary>One physical Jellyfin series folder as one viewer reads it (<see cref="IArrJellyfinView.SeriesFolder"/>).</summary>
+    public sealed class JfSeriesFolder
+    {
+        /// <summary>Nothing (a series the viewer can't open).</summary>
+        public static JfSeriesFolder Empty { get; } = new();
+
+        /// <summary>The folder's episodes the viewer can see, missing (virtual) ones included, and the hidden ones' numbers.</summary>
+        public IReadOnlyList<JfEpisode> Episodes { get; init; } = Array.Empty<JfEpisode>();
+
+        /// <summary>The folder's seasons the viewer can see (missing ones only when they show missing episodes), and the hidden ones' numbers.</summary>
+        public IReadOnlyList<JfSeason> Seasons { get; init; } = Array.Empty<JfSeason>();
+
+        /// <summary>
+        /// The episodes of one season (or all), the visible missing ones only when asked: what a page of the folder lists. Hidden
+        /// numbers stay, missing or not (a hidden missing episode is still not the viewer's to be told about).
+        /// </summary>
+        /// <param name="season">The season, or null for all.</param>
+        /// <param name="includeVirtual">Include visible missing episodes.</param>
+        /// <returns>The episodes.</returns>
+        public IReadOnlyList<JfEpisode> EpisodesOf(int? season, bool includeVirtual)
+            => Episodes.Where(e => (season == null || e.Season == season) && (includeVirtual || e.Hidden || !e.Virtual)).ToList();
     }
 
     /// <summary>One Jellyfin season of a series, as the viewer sees it.</summary>
@@ -230,11 +393,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         JfItemRef? Resolve(Guid itemId, StatusViewer viewer);
 
         /// <summary>
+        /// Whether an item exists at all, for anyone (D53, edition round 19: deleted, denied and unknown are distinct): true
+        /// while Jellyfin has it, false once it is deleted, null when that can't be told. <see cref="Resolve"/> answering null
+        /// says only that this viewer can't open it now, never that it is gone.
+        /// </summary>
+        /// <param name="itemId">Item id.</param>
+        /// <returns>True, false or null (unknown).</returns>
+        bool? ItemExists(Guid itemId) => null;
+
+        /// <summary>
         /// Every Jellyfin movie (or series) carrying the key's provider id, or any of its
         /// <paramref name="aliases"/> (the title's other ids, <see cref="TitleAliases"/>), in any
-        /// library: the key's kind only, once per item.
+        /// current library: the key's kind only, once per item, up to twenty eligible copies. Native
+        /// query limits apply after current-library membership, with bounded paging. Only a scan that read every query
+        /// to its end is complete; one that stops first (a bound, the page ceiling, a twenty-first eligible copy) is
+        /// <see cref="CopyLookupOutcome.Incomplete"/> with the copies it saw, and tells <see cref="CopyLookupBound"/>.
         /// </summary>
-        IReadOnlyList<JfCopy> Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
+        CopyLookup Copies(TitleKey titleKey, StatusViewer viewer, IReadOnlyCollection<TitleKey>? aliases = null);
 
         /// <summary>
         /// Every physical copy of a title (each Jellyfin movie or series carrying the key's provider id, or any of its
@@ -247,15 +422,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <summary>
         /// The series' episodes the viewer can see (one season, or all when null), virtual ones included
         /// when asked; for a viewer with parental limits also the episodes (real or virtual) Jellyfin
-        /// hides from them, marked <see cref="JfEpisode.Hidden"/> (numbers only).
+        /// hides from them, marked <see cref="JfEpisode.Hidden"/> (numbers only). Jellyfin's own list, as its pages
+        /// present it: with automatic series grouping it also holds the grouped folders' episodes, so it is never read
+        /// for a Sonarr copy (<see cref="SeriesFolder"/> is).
         /// </summary>
         IReadOnlyList<JfEpisode> Episodes(Guid seriesItemId, int? season, StatusViewer viewer, bool includeVirtual);
 
         /// <summary>
         /// The series' seasons the viewer can see; for a viewer with parental limits also the seasons
-        /// Jellyfin hides from them, marked <see cref="JfSeason.Hidden"/> (numbers only).
+        /// Jellyfin hides from them, marked <see cref="JfSeason.Hidden"/> (numbers only). Jellyfin's own (grouped) list,
+        /// like <see cref="Episodes"/>.
         /// </summary>
         IReadOnlyList<JfSeason> Seasons(Guid seriesItemId, StatusViewer viewer);
+
+        /// <summary>
+        /// Exactly one physical series folder as the viewer reads it, in one read: the episodes (missing ones included,
+        /// marked <see cref="JfEpisode.Virtual"/>) and seasons whose own series item is this one (its folder's ancestry),
+        /// never another series item Jellyfin's automatic series grouping presents with it (which <see cref="Episodes"/>
+        /// and <see cref="Seasons"/> follow, as the native pages list them), and never a second version of an episode as
+        /// an item of its own. For a viewer with parental limits also what Jellyfin hides from them in that folder, as
+        /// numbers only (<see cref="JfEpisode.Hidden"/>, <see cref="JfSeason.Hidden"/>). Every read of a Sonarr copy's
+        /// Jellyfin copy goes through this (D53, edition round 13). Empty when the viewer can't open the series.
+        /// </summary>
+        JfSeriesFolder SeriesFolder(Guid seriesItemId, StatusViewer viewer);
 
         /// <summary>
         /// The ids of exactly this series item's season <paramref name="season"/> (<paramref name="episode"/> null),

@@ -177,6 +177,18 @@ function actions(t){
   h.P.renderPage=()=>{};h.P.syncPageModeClasses=()=>{};h.P.updateDisplayModeButtons=()=>{};h.P.toggleSidebarCollapsed=()=>{};
   h.load('arr/calendar/calendar-page-actions.js');return {...h,saved};
 }
+test('Play of an episode the server found by its number opens that episode, not the series', async t => {
+  const h = actions(t);
+  // The server answers with the playable episode item it found (by season and episode number) as the event's Play target.
+  h.P.state.events = [{ id: 'by-number', type: 'Series', hasFile: true, itemId: 'series-id', itemEpisodeId: 'episode-id',
+    tvdbId: 501, episodeTvdbId: 9042, seasonNumber: 1, episodeNumber: 1 }];
+  h.JE.core.api.plugin = async () => null;
+  h.document.body.innerHTML = '<button class="je-calendar-play-btn" data-event-id="by-number"></button>';
+  h.document.body.addEventListener('click', h.P.handleEventClick);
+  h.document.querySelector('button').click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.window.location.hash, '#/details?id=episode-id');
+});
 test('calendar view and display controls persist user preferences without redundant saves',async t=>{
   const h=actions(t);h.P.setDisplayMode('grid');h.P.setDisplayMode('grid');assert.equal(h.saved.length,1);assert.equal(h.saved[0].settings.calendarDisplayMode,'grid');
   h.P.setViewMode('week');h.P.setViewMode('week');await new Promise(resolve=>setImmediate(resolve));

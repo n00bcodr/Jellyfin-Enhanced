@@ -1010,7 +1010,7 @@ public class IntegrationNotificationsTests
     }
 
     /// <summary>Adds a 4K Sonarr (role 4k) holding Severance in its own folder, before anything is read.</summary>
-    private static FakeArr.Host FourKSonarr(Rig r)
+    internal static FakeArr.Host FourKSonarr(Rig r)
     {
         var host = r.Arr.Add("sonarr4k.lan", "Sonarr");
         r.Arr.Configure(
@@ -1056,6 +1056,8 @@ public class IntegrationNotificationsTests
         var episode = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/media/tv4k/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();
@@ -1063,6 +1065,129 @@ public class IntegrationNotificationsTests
         var told = Assert.Single(rig.Inbox(rig.Emma));
         var p = Params(told.Payload);
         Assert.Equal(("single", "2", "1", "4k", episode.ToString("N")), (p["mode"], p["season"], p["episode"], p["variant"], told.ItemId));
+    }
+
+    [Fact]
+    public async Task UnderSeriesGroupingAFourKSeasonRequestIsNeverToldAboutTheStandardFoldersEpisodes()
+    {
+        // Edition round 13 (physical reads): the standard and 4K folders of Severance in one library, which Jellyfin's
+        // automatic series grouping shows as one show; its grouped lists of the 4K series item hold the standard folder's
+        // episodes too. Emma asks for Season 2 in 4K; the 4K watch reads the 4K folder alone.
+        using var rig = await Started(r =>
+        {
+            FourKSonarr(r);
+            r.Request(30, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }, is4k: true);
+        });
+        var key = TitleKey.Parse(Severance)!;
+        var old = rig.Arr.Now.UtcDateTime.AddDays(-30);
+        var hd = Guid.NewGuid();
+        var uhd = Guid.NewGuid();
+        rig.View.AddCopy(key, new JfCopy { ItemId = hd, Path = "/media/tv/Severance", LibraryName = "Shows", DateCreated = old });
+        rig.View.AddCopy(key, new JfCopy { ItemId = uhd, Path = "/media/tv4k/Severance", LibraryName = "Shows", DateCreated = old });
+        rig.View.GroupSeries(hd, uhd);
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = old });
+        await rig.Step(Severance);
+        Assert.NotNull(rig.NotifyStore.Watch(rig.Emma.UserId, Severance, "eps4k"));
+
+        // A standard episode arrives in the standard folder: not what she asked for.
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        Assert.Empty(rig.Inbox(rig.Emma));
+
+        // The 4K folder's S2E1 arrives (the standard folder had S2E1 all along): told once, linked to the 4K episode.
+        var episode = Guid.NewGuid();
+        rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        await rig.Step(Severance);
+        var told = Assert.Single(rig.Inbox(rig.Emma));
+        var p = Params(told.Payload);
+        Assert.Equal(("single", "2", "1", "4k", episode.ToString("N")), (p["mode"], p["season"], p["episode"], p["variant"], told.ItemId));
+    }
+
+    [Fact]
+    public async Task UnderOneLinkedLibraryAFourKSeasonRequestIsToldOnlyAboutTheFourKSonarrsOwnFolder()
+    {
+        // Edition round 13, found live: one library holds both folders and both Sonarrs are linked to it, each mapped to its
+        // own folder (the same title folder name in each). The 4K watch follows the copy the 4K Sonarr owns, its exact
+        // mapped folder (as the status does), never every copy of its linked library.
+        const string library = "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e";
+        using var rig = await Started(r =>
+        {
+            FourKSonarr(r);
+            var rows = JsonNode.Parse(r.Config.SonarrInstances)!.AsArray();
+            foreach (var row in rows)
+            {
+                var fourK = (string?)row!["Role"] == "4k";
+                row["LinkedLibraryIds"] = new JsonArray(library);
+                row["PathMappings"] = new JsonArray(new JsonObject { ["ArrPath"] = fourK ? "/data/tv4k" : "/data/tv", ["JellyfinPath"] = fourK ? "/media/shared/uhd" : "/media/shared/tv" });
+            }
+            r.Config.SonarrInstances = rows.ToJsonString();
+            r.Request(30, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }, is4k: true);
+        });
+        var key = TitleKey.Parse(Severance)!;
+        var old = rig.Arr.Now.UtcDateTime.AddDays(-30);
+        var hd = Guid.NewGuid();
+        var uhd = Guid.NewGuid();
+        rig.View.AddCopy(key, new JfCopy { ItemId = hd, Path = "/media/shared/tv/Severance", LibraryId = library, LibraryName = "Shared", DateCreated = old });
+        rig.View.AddCopy(key, new JfCopy { ItemId = uhd, Path = "/media/shared/uhd/Severance", LibraryId = library, LibraryName = "Shared", DateCreated = old });
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = old });
+        await rig.Step(Severance);
+
+        // The standard folder's S2E2 arrives: not what she asked for.
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        Assert.Empty(rig.Inbox(rig.Emma));
+
+        // The 4K folder's S2E1 arrives: told, linked to the 4K episode.
+        var episode = Guid.NewGuid();
+        rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
+        await rig.Step(Severance);
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        await rig.Step(Severance);
+        var told = Assert.Single(rig.Inbox(rig.Emma));
+        Assert.Equal(("1", "4k", episode.ToString("N")), (Params(told.Payload)["episode"], Params(told.Payload)["variant"], told.ItemId));
+    }
+
+    [Fact]
+    public async Task UnderSeriesGroupingAFourKArrivalGoneBeforeItsBatchIsSentIsNeverToldAsTheStandardFoldersEpisode()
+    {
+        // The 4K folder's S2E2 arrives and is batched for Emma's 4K request; before the batch goes out the 4K file is gone
+        // and the grouped standard folder gets its own S2E2. The batch checks the 4K folder alone: nothing to tell.
+        using var rig = await Started(r =>
+        {
+            FourKSonarr(r);
+            r.Request(30, 95396, r.Emma, type: "tv", tvdb: 371980, seasons: new[] { 2 }, is4k: true);
+        });
+        var key = TitleKey.Parse(Severance)!;
+        var old = rig.Arr.Now.UtcDateTime.AddDays(-30);
+        var hd = Guid.NewGuid();
+        var uhd = Guid.NewGuid();
+        rig.View.AddCopy(key, new JfCopy { ItemId = hd, Path = "/media/tv/Severance", LibraryName = "Shows", DateCreated = old });
+        rig.View.AddCopy(key, new JfCopy { ItemId = uhd, Path = "/media/tv4k/Severance", LibraryName = "Shows", DateCreated = old });
+        rig.View.GroupSeries(hd, uhd);
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 1, DateCreated = old });
+        await rig.Step(Severance);
+        rig.View.AddEpisode(uhd, new JfEpisode { ItemId = Guid.NewGuid(), Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        await rig.Step(Severance);
+
+        rig.View.EpisodesBySeries[uhd].RemoveAll(e => e.Episode.Season == 2 && e.Episode.Episode == 2);
+        var standard = Guid.NewGuid();
+        rig.View.AddEpisode(hd, new JfEpisode { ItemId = standard, Season = 2, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
+        await rig.Step();
+        Assert.DoesNotContain(rig.Inbox(rig.Emma), n => n.ItemId == standard.ToString("N") || Params(n.Payload).GetValueOrDefault("episodeItems")?.Contains(standard.ToString()) == true);
+        Assert.Empty(rig.Inbox(rig.Emma));
     }
 
     [Fact]
@@ -1092,7 +1217,8 @@ public class IntegrationNotificationsTests
     public async Task AFourKSeasonRequestWithNoFourKSonarrIsToldOnlyAboutTheCopySeerrMatchedItTo()
     {
         // Jellyfin Enhanced watches only a standard Sonarr; Seerr sends 4K requests to one it doesn't
-        // watch. Emma asks for Season 2 of Severance in 4K; Seerr names the Jellyfin item of the 4K copy.
+        // watch. Emma asks for Season 2 of Severance in 4K; Seerr names the Jellyfin item of the 4K copy. Only a file with
+        // 4K dimensions is her arrival (edition round 19 part B), wherever it is; the HD copy's files are not.
         var uhd = Guid.NewGuid();
         using var rig = await Started(r =>
         {
@@ -1116,6 +1242,8 @@ public class IntegrationNotificationsTests
         var episode = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/srv/uhd/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();

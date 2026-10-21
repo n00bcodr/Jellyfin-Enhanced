@@ -37,6 +37,9 @@ public class IntegrationNotifyHardeningTests
         rig.Phones(rig.Emma);
         var series = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse("tv:tvdb:371980")!, new JfCopy { ItemId = series });
+        // Adapted in edition round 20: an older alert is checked by its scope too, so Season 2 plays two episodes for her.
+        rig.View.AddEpisodeFile(series, TitleKey.Parse("tv:tvdb:371980")!, 2, 1, 1920, 1080, rig.Arr.Now.UtcDateTime);
+        rig.View.AddEpisodeFile(series, TitleKey.Parse("tv:tvdb:371980")!, 2, 2, 1920, 1080, rig.Arr.Now.UtcDateTime);
         var id = rig.NotifyStore.Add(rig.Emma.UserId, "older-episode-batch", NotifyKind.Episodes, "tv:tvdb:371980", series.ToString("N"),
             new Dictionary<string, string> { ["title"] = "Severance", ["mode"] = "many", ["count"] = "2", ["seasons"] = "2" },
             new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);
@@ -628,7 +631,13 @@ public class IntegrationNotifyHardeningTests
         rig.View.Rev++;
         await rig.Step(tvdb, tmdb, imdb);
         Assert.Empty(rig.Inbox(rig.Emma));
-        foreach (var season in new[] { 1, 2 }) rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = season, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        foreach (var season in new[] { 1, 2 })
+        {
+            var id = Guid.NewGuid();
+            rig.View.AddEpisode(series, new JfEpisode { ItemId = id, Season = season, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+            // The "/srv/uhd" copy's files are 2160p (a 4K request's arrival is a file with 4K dimensions, D44).
+            rig.View.AddSource(id, 3840, 2160);
+        }
         await rig.Step(imdb, tmdb, tvdb);
         rig.Open();
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);

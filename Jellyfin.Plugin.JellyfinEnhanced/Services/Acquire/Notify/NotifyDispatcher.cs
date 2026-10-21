@@ -294,6 +294,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         // ================================================================== the final gate (4f round 9)
 
+        /// <summary>How long an alert whose check met a copy lookup's scan bound waits before it is looked at again.</summary>
+        internal static readonly TimeSpan BoundRetry = TimeSpan.FromMinutes(15);
+
         // What the final gate reads, all at once, when it is called: the configuration, the recipient's preferences and the
         // clock. A ref struct: the compiler won't let it live across an await, so nothing a decision reads can be carried
         // from before one into it.
@@ -349,6 +352,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (QuietHours.EndsAt(read.Prefs, read.Now) is { } end) return NotifyFinal.Wait(alert, read.Now, "The recipient's quiet hours.", end);
             var payload = new Dictionary<string, string>(alert.Payload);
             var verdict = Suppression(in read, alert, payload, outbound: true, out var itemId);
+            // A copy lookup that reached its scan bound proves nothing gone: the alert stays pending and is looked at again later.
+            // One that may go out on what the lookup did see (a copy the recipient can open) goes out.
+            if (verdict.Bound) return NotifyFinal.Wait(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound)", read.Now + BoundRetry);
             // The recipient's Hidden Content (or the request, or the title's rating) can't be read now: nothing is sent until it
             // can (looked at again shortly), for a day at most.
             if (verdict.Wait && read.Now - alert.Queued <= WaitAtMost) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
@@ -391,6 +397,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
 
             var verdict = Suppression(in read, alert, payload, outbound: false, out var itemId);
+            // As for a delivery: a copy lookup that reached its scan bound proves nothing gone (looked at again later).
+            if (verdict.Bound) return NotifyFinal.Wait(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound)", read.Now + BoundRetry);
             if (verdict.Wait) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
             if (verdict.Why is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
             return NotifyFinal.Tell(alert, read.Now, payload, itemId, Deliveries(in read, alert.Kind));
@@ -708,13 +716,78 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             if (NotifyKind.IsAdminKind(alert.Kind))
             {
                 if (!_users.Admins().Contains(alert.User)) return new AlertVerdict("The recipient is no longer an administrator.");
-                if (alert.Kind is NotifyKind.Approval or NotifyKind.Remind && !NotificationService.MaySeeAsk(_policy, alert.User, alert.TitleKey, payload, _ledger, alert.EventKey))
-                    return new AlertVerdict("The recipient can no longer see this title.");
+                if (alert.Kind is NotifyKind.Approval or NotifyKind.Remind)
+                {
+                    // A visibility check that met a copy lookup's scan bound proves nothing gone: looked at again later.
+                    using var bound = CopyLookupBound.Track();
+                    if (!NotificationService.MaySeeAsk(_policy, alert.User, alert.TitleKey, payload, _ledger, alert.EventKey))
+                        return new AlertVerdict("The recipient can no longer see this title.", Bound: bound.Reached);
+                }
                 return !outbound || prefs.AdminAlerts ? default : new AlertVerdict("The recipient switched administrators' alerts to phone and e-mail off.");
             }
             if (_view == null || alert.Kind is not (NotifyKind.Ready or NotifyKind.Episodes or NotifyKind.Declined or NotifyKind.Approved)) return default;
             if (_view.Viewer(alert.User) is not { } viewer) return new AlertVerdict("The recipient no longer exists or is disabled.");
             return Check(alert.User, viewer).Decide(alert.Kind, alert.TitleKey, payload, ref itemId, alert.EventKey);
+        }
+
+        /// <summary>
+        /// An announced episode's item is still that episode (see <see cref="Suppression"/>): an episode item of the alert's
+        /// title in the announced season whose number range, as Jellyfin has it now, covers the announced number.
+        /// </summary>
+        private bool StillIs(StatusViewer viewer, NotifyEpisode announced, TitleKey? title)
+        {
+            if (_view!.Resolve(announced.ItemId, viewer) is not { Kind: "episode", Season: int season, Episode: int first } item || season != announced.Season) return false;
+            if (!new EpisodeRange(first, item.EpisodeEnd).Contains(announced.Episode)) return false;
+            if (title == null || item.Key?.Title is not { } its) return true;
+            return its.Equals(title) || _aliases?.Of(title).Any(k => k.Title.Equals(its)) == true;
+        }
+
+        /// <summary>
+        /// An older episode alert (no episode items): why it must not go out, or null. It names one episode (<c>single</c>) or a
+        /// count over seasons: the episode must still play the edition for the recipient, or each season named must still hold at
+        /// least that many episodes playing it together; with nothing to check (no seasons named), it is not sent.
+        /// </summary>
+        private static string? LegacyEpisodesGone(StatusViewer viewer, TitleKey? title, Dictionary<string, string> payload, EditionAvailability editions, Edition edition)
+        {
+            const string Gone = "The recipient can no longer play these episodes in the edition announced.";
+            if (title == null) return Gone;
+            if (payload.TryGetValue("mode", out var mode) && mode == "single")
+            {
+                return payload.TryGetValue("season", out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var season)
+                    && payload.TryGetValue("episode", out var e) && int.TryParse(e, NumberStyles.Integer, CultureInfo.InvariantCulture, out var episode)
+                    && editions.Available(viewer, title.WithEpisode(season, episode), edition) ? null : Gone;
+            }
+            var seasons = (payload.TryGetValue("seasons", out var list) ? list : string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => int.TryParse(x, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : -1).Distinct().ToList();
+            if (seasons.Count == 0 || seasons.Any(n => n < 0)) return Gone;
+            // Counted by the episodes the files cover (one interval-coverage helper), never by their starting numbers.
+            var each = seasons.Select(n => editions.EpisodeCount(viewer, title, n, edition)).ToList();
+            var count = payload.TryGetValue("count", out var c) && int.TryParse(c, NumberStyles.Integer, CultureInfo.InvariantCulture, out var announced) ? announced : 1;
+            return each.All(n => n > 0) && each.Sum() >= count ? null : Gone;
+        }
+
+        /// <summary>
+        /// Where a rebuilt episode alert links (see <see cref="Suppression"/>): its item while it still opens for the recipient,
+        /// else the series item its surviving episodes are in (one series), else its first survivor.
+        /// </summary>
+        private string? Relinked(StatusViewer viewer, string? original, IEnumerable<Guid> survivors)
+        {
+            if (Guid.TryParse(original, out var item) && item != Guid.Empty && _view!.Resolve(item, viewer) != null) return original;
+            var items = survivors.Where(id => id != Guid.Empty).Select(id => _view!.Resolve(id, viewer)).OfType<JfItemRef>().ToList();
+            var series = items.Select(i => i.SeriesId).Distinct().ToList();
+            var target = series is [Guid one] && _view!.Resolve(one, viewer) != null ? one : items.FirstOrDefault()?.ItemId;
+            return target?.ToString("N", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>An older episode alert's link when its item no longer opens: the series copy that plays its scope.</summary>
+        private static string? LegacyTarget(StatusViewer viewer, TitleKey title, Dictionary<string, string> payload, EditionAvailability editions, Edition edition)
+        {
+            var scope = payload.TryGetValue("mode", out var mode) && mode == "single"
+                && payload.TryGetValue("season", out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var season)
+                && payload.TryGetValue("episode", out var e) && int.TryParse(e, NumberStyles.Integer, CultureInfo.InvariantCulture, out var episode)
+                ? title.WithEpisode(season, episode) : title;
+            var hit = editions.Scope(viewer, scope, edition).FirstOrDefault();
+            return (scope.Episode != null ? hit?.Source.ItemId : hit?.SeriesId)?.ToString("N", CultureInfo.InvariantCulture);
         }
 
         /// <summary>The event key prefix of a Jellyfin Enhanced ask waiting for an OK (followed by the request id).</summary>
@@ -785,7 +858,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>A verdict on one alert: <see cref="Why"/> null to tell it; <see cref="Wait"/> when the recipient's Hidden Content (or the title's copies) can't be read now.</summary>
         /// <param name="Why">Why the alert may not be told now, or null.</param>
         /// <param name="Wait">True when only unreadable Hidden Content stops it: never sent, looked at again later.</param>
-        internal readonly record struct AlertVerdict(string? Why, bool Wait = false);
+        /// <param name="Bound">True when it can no longer be opened or played only as far as a copy lookup that reached its scan
+        /// bound saw: that proves nothing gone, so it stays pending and is looked at again later.</param>
+        internal readonly record struct AlertVerdict(string? Why, bool Wait = false, bool Bound = false);
 
         /// <summary>
         /// Whether one recipient may be told about alerts now, decided for the whole title from the current state: they can
@@ -883,23 +958,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             {
                 if (kind is NotifyKind.Declined or NotifyKind.Approved) return Outcome(titleKey, payload, eventKey);
                 if (kind is not (NotifyKind.Ready or NotifyKind.Episodes) || _owner._view is not { } view) return default;
+                // What it announces is judged again by the one availability predicate (D53, edition round 19 part B), for the
+                // edition it was judged by when it was created: an item it names must still have an accessible playable source of
+                // that edition for the recipient (a 4K file replaced by an HD one, or a file that became a stub, is no longer the
+                // arrival it announced). Older alerts name no edition: a 4K one is 4K, any other whatever plays.
+                using var bound = CopyLookupBound.Track();
+                AlertVerdict Gone(string why) => new(why, Bound: bound.Reached);
+                var editions = EditionAvailability.Over(view, _owner._config, _owner._aliases);
+                var edition = payload.TryGetValue("variant", out var variant) && variant == "4k" ? Edition.FourK
+                    : payload.TryGetValue("edition", out var named) && named == NotificationService.EditionName(Edition.Standard) ? Edition.Standard
+                    : Edition.Any;
                 List<NotifyEpisode>? episodes = null;
                 List<NotifyEpisode>? open = null;
                 var item = Guid.Empty;
-                if (kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
+                if (kind == NotifyKind.Episodes)
                 {
-                    try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
-                    catch (JsonException) { episodes = null; }
-                    open = episodes?.Where(e => e.ItemId != Guid.Empty && view.Resolve(e.ItemId, _viewer) != null).ToList();
-                    if (open is not { Count: > 0 }) return new AlertVerdict("The recipient can no longer open these episodes.");
+                    // An episode alert is re-validated episode by episode against what each item IS now (D53, edition round 20:
+                    // arrivals are observed transitions with current identity): an announced number survives only while its item
+                    // is still an episode of this title and season whose current range covers it (a rescan can renumber a file, or
+                    // narrow a combined one) and still plays the edition; the text is rebuilt from the survivors. An older alert
+                    // without its episode items is checked by its scope (the episode or seasons it names), or not told.
+                    var title = TitleKey.Parse(titleKey)?.Title;
+                    if (payload.TryGetValue("episodeItems", out var json))
+                    {
+                        try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
+                        catch (JsonException) { episodes = null; }
+                        open = episodes?.Where(e => e.ItemId != Guid.Empty && _owner.StillIs(_viewer, e, title) && editions.Item(_viewer, e.ItemId, edition).Count > 0).ToList();
+                        if (open is not { Count: > 0 }) return Gone("The recipient can no longer play these episodes in the edition announced.");
+                    }
+                    else
+                    {
+                        if (LegacyEpisodesGone(_viewer, title, payload, editions, edition) is { } gone) return Gone(gone);
+                        // An older alert passed by its scope: it links to its item while that still opens, else to a copy that plays it.
+                        itemId = Guid.TryParse(itemId, out var older) && older != Guid.Empty && view.Resolve(older, _viewer) != null
+                            ? itemId
+                            : title == null ? null : LegacyTarget(_viewer, title, payload, editions, edition);
+                        if (!Guid.TryParse(itemId, out item)) item = Guid.Empty;
+                    }
                 }
                 else if (Guid.TryParse(itemId, out item) && item != Guid.Empty)
                 {
-                    if (view.Resolve(item, _viewer) == null) return new AlertVerdict("The recipient can no longer open this title.");
+                    if (view.Resolve(item, _viewer) == null) return Gone("The recipient can no longer open this title.");
+                    // A movie's own item must still play the edition.
+                    if (editions.Item(_viewer, item, edition).Count == 0) return new AlertVerdict("The recipient's copy no longer plays the edition announced.");
                 }
-                else if (TitleKey.Parse(titleKey) is not { } key || !view.Copies(key, _viewer, _owner._aliases?.Of(key)).Any(c => c.Visible))
+                else if (TitleKey.Parse(titleKey) is not { } key)
                 {
-                    return new AlertVerdict("The recipient can no longer open this title.");
+                    return Gone("The recipient can no longer open this title.");
+                }
+                else
+                {
+                    var seen = view.Copies(key, _viewer, _owner._aliases?.Of(key)).Seen;
+                    var plays = key.IsMovie ? editions.Movie(_viewer, seen, edition).Count > 0 : editions.Episodes(_viewer, seen, edition, null).Hits.Count > 0;
+                    if (!plays) return Gone("The recipient can no longer play this title in the edition announced.");
                 }
 
                 if (Hides(titleKey) is not { } hidden) return new AlertVerdict("The recipient's Hidden Content or the title's copies can't be read now.", true);
@@ -908,7 +1019,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
                 if (visible.Count == 0) return new AlertVerdict("The recipient hid these episodes (Hidden Content).");
                 var seasons = visible.Select(e => e.Season).Distinct().ToList();
-                payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
+                payload["count"] = new EpisodeCoverage(visible.Select(e => new JfEpisode { Season = e.Season, Episode = e.Episode })).Count.ToString(CultureInfo.InvariantCulture);
                 payload["seasons"] = string.Join(", ", seasons);
                 if (visible.Count == 1)
                 {
@@ -917,12 +1028,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     payload["episode"] = visible[0].Episode.ToString(CultureInfo.InvariantCulture);
                     itemId = visible[0].ItemId.ToString("N", CultureInfo.InvariantCulture);
                 }
-                else if (visible.Count != episodes!.Count)
+                else
                 {
-                    // Not every episode of the batch is still visible: don't announce it as a complete season.
-                    payload["mode"] = "many";
-                    payload.Remove("season");
-                    payload.Remove("episode");
+                    if (visible.Count != episodes!.Count)
+                    {
+                        // Not every episode of the batch is still visible: don't announce it as a complete season.
+                        payload["mode"] = "many";
+                        payload.Remove("season");
+                        payload.Remove("episode");
+                    }
+                    // Checked and linked as a whole against what it was rebuilt for (D53, edition round 21): the item it names now
+                    // is one of its survivors (or what holds them), never the original item a rescan may have deleted.
+                    itemId = _owner.Relinked(_viewer, itemId, visible.Select(e => e.ItemId));
                 }
                 return default;
             }

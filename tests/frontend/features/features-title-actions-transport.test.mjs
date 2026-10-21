@@ -209,7 +209,7 @@ test('natively (no operation) the same writes are unbound: a page change while q
 const WRITES = {
   'jellyseerr/api.js': [/async function post\(path, body, bound\)[\s\S]*?JE\.core\.api\.plugin\(`\/jellyseerr\$\{path\}`, \{ method: 'POST', body, skipRetry: true, bound \}\)/,
     /post\('\/issue', body, submitted\.bound\(\)\)/, /post\('\/request', body, bound\)/],
-  'arr/ask/ask-core.js': [/call\('\/acquire\/requests', \{ method: 'POST', body: \{ clientRequestId, input \}, signal: options\?\.signal, bound: options\?\.bound \}\)/],
+  'arr/ask/ask-core.js': [/call\('\/acquire\/requests', \{ method: 'POST', body: options\?\.expect \? \{ clientRequestId, input, expect: options\.expect \} : \{ clientRequestId, input \}, signal: options\?\.signal, bound: options\?\.bound \}\)/],
   'arr/ask/ask-sheet.js': [/JE\.arrAsk\.ask\(input, \{ bound: state\.submitted\.bound\(\) \}\)/],
   'arr/manage/manage-drawer.js': [/JE\.core\.api\.plugin\(path, \{ \.\.\.options, bound: state\.action\.bound\(/],
   'arr/notify/notify-core.js': [/api\('\/acquire\/follows', \{ method: 'PUT', body: \{ key, on \}, bound: submitted\.bound\(\) \}\)/],

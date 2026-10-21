@@ -847,6 +847,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/PressIntent.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/RequestBackends.cs",
       "category": "Services"
     },
@@ -948,6 +952,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/RequestsHubService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/ResponseGate.cs",
       "category": "Services"
     },
     {
@@ -11117,7 +11125,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 660,
+    "files": 662,
     "routes": 299,
     "configuration_properties": 642,
     "storage_references": 96,

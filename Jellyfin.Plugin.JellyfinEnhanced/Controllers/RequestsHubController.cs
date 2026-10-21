@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -22,6 +24,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>One key per click (a repeated click gets the first outcome).</summary>
         [JsonPropertyName("idempotencyKey")] public string? IdempotencyKey { get; set; }
+
+        /// <summary>
+        /// A season key's episodes to search (a season page's banner names some of them): exactly those, one EpisodeSearch,
+        /// never the whole season (D53, edition round 19). Null: the key's whole scope.
+        /// </summary>
+        [JsonPropertyName("episodes")] public int[]? Episodes { get; set; }
+
+        /// <summary>From a season page: what the control was drawn to do; the server works it out again before searching.</summary>
+        [JsonPropertyName("expect")] public Services.Acquire.Requests.PressIntent? Expect { get; set; }
     }
 
     /// <summary>
@@ -135,8 +146,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 // The audit line keeps the user id either way.
             }
-            var result = await _manage.SearchCheckedAsync(viewer, userName, request.InstanceId, key, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
+            if (request.Episodes is { Length: > 0 } && (key.IsMovie || key.Season == null || key.Episode != null || request.Episodes.Length > 1000 || request.Episodes.Any(n => n < 1)))
+                return BadRequest(new { code = "invalid_request" });
+            // A season page's press: the check returns the command, and only that command runs (D53, edition round 21); the
+            // Manage drawer's own Search (no press) still needs an administrator then.
+            var expect = request.Expect;
+            Services.Acquire.ManageSearchResult result;
+            if (expect != null)
+            {
+                // The request's own routing fields (instance, key, episodes) must name the press; anything else runs nothing.
+                if (Services.Acquire.Requests.PressChecks.AdminCommand(expect, request.InstanceId, key, request.Episodes) is not { } named
+                    || Services.Acquire.Requests.PressChecks.RequestFingerprint(expect, Services.Acquire.Requests.PressChecks.Admin, named.Season, null) is not { } fingerprint)
+                {
+                    var refused = _manage.RefusePress(viewer, userName, request.InstanceId, key, Services.Acquire.Requests.PressChecks.Changed);
+                    return StatusCode(409, new { code = refused.Refusal, status = refused.Outcome.Status, message = refused.Outcome.Message, auditId = refused.Outcome.AuditId });
+                }
+                var pages = HttpContext?.RequestServices?.GetService(typeof(Services.Acquire.IAbsentTitlePages)) as Services.Acquire.IAbsentTitlePages;
+                result = await _manage.SearchCommandAsync(viewer, userName, named.Instance, named.Season, request.IdempotencyKey, fingerprint,
+                    token => _manage.Status.PressAsync(viewer, expect, Services.Acquire.Requests.PressChecks.Admin, null, named.Season, token, pages), cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                IReadOnlyList<int>? episodes = request.Episodes is { Length: > 0 } numbers ? numbers : null;
+                result = await _manage.SearchPressAsync(viewer, userName, request.InstanceId, key, episodes, request.IdempotencyKey,
+                    token => Task.FromResult(Viewer(_manage.Status) is { IsAdmin: true } still && still.PolicyRevision == viewer.PolicyRevision ? null : Services.Acquire.Requests.PressChecks.Changed),
+                    cancellationToken).ConfigureAwait(false);
+            }
             var outcome = result.Outcome;
+            if (result.Refusal is { } refusal)
+                return StatusCode(409, new { code = refusal, status = outcome.Status, message = outcome.Message, auditId = outcome.AuditId });
             return Ok(new
             {
                 found = result.Found,

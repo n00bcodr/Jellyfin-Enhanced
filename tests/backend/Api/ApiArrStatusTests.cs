@@ -493,16 +493,19 @@ public class ApiArrStatusTests
 
         var card = Items(await Batch(rig, rig.Kid, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
         Assert.Equal(2, card.Count);
-        foreach (var status in card)
-        {
-            Assert.Equal("ready", status.GetProperty("stage").GetString());
-            Assert.False(status.TryGetProperty("progress", out _));
-        }
-        Assert.True(card[0].GetProperty("quiet").GetBoolean());
-        // The admin (who sees E1) gets the upgrade on both.
+        foreach (var status in card) Assert.False(status.TryGetProperty("progress", out _));
+        // The series item's own poster card reads only the queue (quiet when nothing is under way). By key, the kid plays no
+        // episode at all (E1, the only file, is hidden from them): never "in the library" (edition round 19 part B, the one
+        // availability predicate), but where Sonarr has got to with what they may see, and still no download of E1.
+        Assert.Equal(("ready", true), (card[0].GetProperty("stage").GetString(), card[0].GetProperty("quiet").GetBoolean()));
+        Assert.NotEqual("ready", card[1].GetProperty("stage").GetString());
+        Assert.NotEqual("downloading", card[1].GetProperty("stage").GetString());
+        // The admin plays E1, so its download is an upgrade: Ready on both, as the series page says (edition r11, D53). For
+        // the kid, who doesn't play it, only the hidden-parts rule keeps it from reading as a download.
         var admin = Items(await Batch(rig, rig.Admin, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
-        Assert.Equal(75, admin[0].GetProperty("progress").GetProperty("percent").GetInt32());
-        Assert.Equal("downloading", admin[1].GetProperty("stage").GetString());
+        Assert.Equal(("ready", true), (admin[0].GetProperty("stage").GetString(), admin[0].GetProperty("quiet").GetBoolean()));
+        Assert.False(admin[0].TryGetProperty("progress", out _));
+        Assert.Equal("ready", admin[1].GetProperty("stage").GetString());
     }
 
     /// <summary>Absent-title pages by id (the native details resolver of the Jellyfin 12 build).</summary>
@@ -968,6 +971,10 @@ public class ApiArrStatusTests
         // An episode with a file opens it; a missing (virtual) one the library lists is no copy: its native page.
         Assert.Equal((200, $$"""{"itemId":"{{rig.Episode1:N}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 1));
         Assert.Equal((200, $$"""{"id":"{{Syn(Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.SyntheticId.EpisodeOf(1437, 1, 3))}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 3));
+        // A stub (a ".disc" file: listed, plays nothing) is no copy either.
+        rig.View.Placeholders.Add(rig.Episode1);
+        rig.View.Rev++;
+        Assert.Equal((200, $$"""{"id":"{{Syn(Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails.SyntheticId.EpisodeOf(1437, 1, 1))}}"}"""), await Resolve(rig.Member, "tv:tvdb:78874", season: 1, episode: 1));
         // Bad input, no person, switched off.
         Assert.Equal(400, (await Resolve(rig.Member, "nonsense")).Status);
         Assert.Equal(400, (await Resolve(rig.Member, "movie:tmdb:1", season: 1)).Status);
@@ -1208,10 +1215,12 @@ public class ApiArrStatusTests
         Assert.Equal(other.ToString("N"), Items(await Item(rig, rig.Member, missing))[0].GetProperty("openItemId").GetString());
         Assert.Equal(other.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, key, null, copy)));
 
-        // A season only the other folder has: never the rig copy's successor.
+        // A season only the other folder has: never the rig copy's successor. (Adapted in edition round 20: a season is an
+        // arrival only once its copy plays an episode of it, so the other folder's Season 2 has one.)
         var season2 = Guid.NewGuid();
         rig.View.AddSeason(copy, new JfSeason { ItemId = season2, Season = 2 });
         rig.View.AddItem(new JfItemRef { ItemId = season2, Kind = "season", Key = TitleKey.Parse("tv:tvdb:78874:s2"), SeriesId = copy, Season = 2 });
+        AddEpisodeFile(rig, copy, 2, 1);
         rig.View.Rev++;
         Assert.Null(ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, rig.Firefly)));
         Assert.Equal(season2.ToString("N"), ArrivedId(await Arrival(rig, rig.Member, "tv:tvdb:78874:s2", null, copy)));

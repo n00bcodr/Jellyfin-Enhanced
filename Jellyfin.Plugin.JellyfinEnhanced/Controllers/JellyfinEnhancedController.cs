@@ -194,6 +194,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private readonly Services.Acquire.ArrInstanceLibraries? _instanceLibraries;
         private readonly Services.Acquire.TitleAliases? _titleAliases;
 
+        // The server's Jellyfin view: the one availability rule's facts (the calendar's Available and Play).
+        private readonly Services.Acquire.IArrJellyfinView? _arrView;
+
         public JellyfinEnhancedController(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -229,9 +232,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             Services.Arr.ArrStateStore arrState,
             Services.Arr.Live.IArrFeedAudience feedAudience,
             Services.Acquire.ArrInstanceLibraries instanceLibraries,
-            Services.Acquire.TitleAliases titleAliases, Services.SpoilerPresentation? presentation = null)
+            Services.Acquire.TitleAliases titleAliases,
+            Services.Acquire.IArrJellyfinView arrView, Services.SpoilerPresentation? presentation = null)
         {
             _presentation = presentation;
+            _arrView = arrView;
             _instanceLibraries = instanceLibraries;
             _titleAliases = titleAliases ?? (arrState != null ? new Services.Acquire.TitleAliases(arrState, null) : null);
             _arrClientFactory = arrClientFactory;
@@ -11740,6 +11745,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 events = events.Where(e => !hiddenCalendar.IsHidden(Services.HiddenContentPolicy.TitleIdentity(
                     e.Source == nameof(ArrType.Radarr) ? "movie" : "tv", e.TmdbId?.ToString()), null, null, "calendar")).ToList();
             }
+            // "Available" (the filter, the Play button, the time pill) is the one availability rule's answer for the caller (D53,
+            // edition round 21): the shared viewer-aware boundary across every copy of the event's title the caller may open
+            // (current library membership and location included), and Play opens the qualifying movie or episode item it found.
+            // The arr's (or Shoko's) own file only chose between instances above; nothing here judges an item "plays" by itself.
+            var calendarViewer = calendarPerson != null ? _arrView?.Viewer(calendarPerson.Id) : null;
+            var editions = _arrView == null ? null : Services.Acquire.EditionAvailability.Over(_arrView, () => config, _titleAliases);
+            // One look per movie, and per season of a series, however many events name it.
+            var movies = new Dictionary<Services.Acquire.TitleKey, IReadOnlyList<Services.Acquire.EditionHit>>();
+            var seasons = new Dictionary<(Services.Acquire.TitleKey, int), Services.Acquire.EpisodeEditions>();
+            bool CalendarPlays(ArrItem evt)
+            {
+                if (calendarViewer == null || editions == null) return false;
+                var movie = evt.Type == "Movie";
+                var title = Services.Acquire.TitleAliases.FromProviderIds(movie, evt.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    evt.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture), evt.ImdbId).FirstOrDefault();
+                IReadOnlyList<Services.Acquire.EditionHit> hits;
+                if (title != null && movie)
+                {
+                    if (!movies.TryGetValue(title, out var found))
+                        movies[title] = found = editions.Movie(calendarViewer, _arrView!.Copies(title, calendarViewer, _titleAliases?.Of(title)).Display, Services.Acquire.Edition.Any);
+                    hits = found;
+                }
+                else if (title != null && evt.SeasonNumber is int season && evt.EpisodeNumber is int number)
+                {
+                    // An episode by its number in any copy (a multi-episode file covers its range).
+                    if (!seasons.TryGetValue((title, season), out var played))
+                        seasons[(title, season)] = played = editions.Episodes(calendarViewer, _arrView!.Copies(title, calendarViewer, _titleAliases?.Of(title)).Display, Services.Acquire.Edition.Any, season);
+                    hits = played.For(season, number);
+                }
+                else if ((movie ? evt.ItemId : evt.ItemEpisodeId) is Guid item && item != Guid.Empty)
+                    hits = editions.Item(calendarViewer, item, Services.Acquire.Edition.Any);
+                else return false;
+                if (hits.Count == 0) return false;
+                // Play opens the qualifying item (the movie, or the episode in its series).
+                var hit = hits[0];
+                if (movie) evt.ItemId = hit.Source.ItemId;
+                else
+                {
+                    evt.ItemEpisodeId = hit.Source.ItemId;
+                    if (hit.SeriesId is Guid series) evt.ItemId = series;
+                }
+                return true;
+            }
+            foreach (var evt in events) evt.HasFile = CalendarPlays(evt);
+
             var calendarPresentation = _presentation?.Load(UserHelper.GetCurrentUserId(User) ?? Guid.Empty, HttpContext);
             if (calendarPresentation != null)
             {

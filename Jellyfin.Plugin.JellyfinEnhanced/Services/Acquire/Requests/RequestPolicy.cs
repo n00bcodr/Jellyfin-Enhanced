@@ -196,7 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var viewer = _view.Viewer(userId);
             if (TitleKey.Parse(input.Key) is not { } key) return;
-            if (viewer is { HasParentalLimit: true } && _view.Copies(key, viewer, _aliases.Of(key)).Count == 0)
+            if (viewer is { HasParentalLimit: true } && _view.Copies(key, viewer, _aliases.Of(key)).IsProvenAbsent)
             {
                 var tmdb = _aliases.Of(key).Append(key).FirstOrDefault(k => k.Provider == "tmdb")?.NumericId ?? 0;
                 await _parental.MaySeeAbsentAsync(key.IsMovie ? "movie" : "tv", tmdb, userId.ToString("N"), ct).ConfigureAwait(false);
@@ -292,7 +292,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             SeerrParentalFilter.AbsentSignature? signature = null;
             if (viewer != null)
             {
-                var copies = _view.Copies(key, viewer, _aliases.Of(key));
+                // The copies the lookup saw decide (finished or not); the absent-title rule needs a proven absence, so a
+                // lookup that couldn't finish and saw nothing fails closed.
+                var lookup = _view.Copies(key, viewer, _aliases.Of(key));
+                var copies = lookup.Seen;
                 var source = targetKey == null ? binding.Source : RequestDestination.SeerrSource(targetKey);
                 var target = Landing(input, key, instance, source);
                 // Administrators may handle an unknown destination. Resolved libraries and parental visibility
@@ -303,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 {
                     visible = copies.Any(c => c.Visible && NativeScopeAllowed(input, c, viewer)) && destinationVisible;
                 }
-                else
+                else if (lookup.IsProvenAbsent)
                 {
                     visible = destinationVisible;
                     if (viewer.HasParentalLimit)

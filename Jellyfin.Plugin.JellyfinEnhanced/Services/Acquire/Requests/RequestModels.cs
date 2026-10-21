@@ -238,10 +238,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         bool Follower = false, bool WouldSend = false, bool New = false, MutationInput? Owned = null, string? InstanceId = null);
     /// <summary>A single episode coordinate.</summary>
     public sealed record RequestEpisode(int Season, int Episode);
-    /// <summary>Family Search payload: the title key in scope (a movie, or a series alone, with a season, or with a season and an episode) and one idempotency key per press.</summary>
-    public sealed record RequestSearchBody(string? Key, string? IdempotencyKey);
-    /// <summary>Create payload; the id is scoped to the signed-in requester.</summary>
-    public sealed record CreateRequest(string ClientRequestId, MutationInput Input);
+    /// <summary>
+    /// Family Search payload: the title key in scope (a movie, or a series alone, with a season, or with a season and an episode),
+    /// one idempotency key per press, and (from a season page) what the control was drawn to do (<see cref="PressIntent"/>).
+    /// </summary>
+    public sealed record RequestSearchBody(string? Key, string? IdempotencyKey, PressIntent? Expect = null);
+    /// <summary>
+    /// Create payload; the id is scoped to the signed-in requester. <c>Expect</c>: from a season page, what the control was
+    /// drawn to do; the server works it out again right before recording the ask and refuses any difference (409 <c>press_changed</c>).
+    /// </summary>
+    public sealed record CreateRequest(string ClientRequestId, MutationInput Input, PressIntent? Expect = null);
     /// <summary>Approval edits; omitted input preserves the confirmed scope.</summary>
     public sealed record ApproveRequest(MutationInput? Input = null);
     /// <summary>A decline explanation shown to the requester as plain text.</summary>

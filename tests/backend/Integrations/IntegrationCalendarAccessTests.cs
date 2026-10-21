@@ -30,7 +30,7 @@ public class IntegrationCalendarAccessTests
 {
     // ------------------------------------------------------------------ the resolver
 
-    private sealed class ResolverRig : IDisposable
+    internal sealed class ResolverRig : IDisposable
     {
         public FakeArr Arr { get; } = new();
         public FakeLibraryAccess Library { get; } = new();
@@ -159,8 +159,11 @@ public class IntegrationCalendarAccessTests
         Assert.Equal(75, row.GetProperty("progress").GetProperty("percent").GetInt32());
         // Family rendering independently hides unfinished 4K variants. Check the composer's input
         // as well, so a destination-gate regression cannot be masked by that rendering rule.
-        var gather = (Task)typeof(ArrStatusService).GetMethod("GatherAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(status, new object?[] { viewer, new[] { key }, null, null, CancellationToken.None })!;
+        var gatherMethod = typeof(ArrStatusService).GetMethod("GatherAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        // Its optional parameters (a press's fresh read) at their defaults.
+        var gatherArgs = new object?[] { viewer, new[] { key }, null, null, CancellationToken.None }
+            .Concat(gatherMethod.GetParameters().Skip(5).Select(p => p.DefaultValue)).ToArray();
+        var gather = (Task)gatherMethod.Invoke(status, gatherArgs)!;
         await gather;
         var gathered = gather.GetType().GetProperty("Result")!.GetValue(gather)!;
         var gatheredFacts = (Dictionary<TitleKey, TitleFacts>)gathered.GetType().GetProperty("Facts")!.GetValue(gathered)!;
@@ -613,7 +616,7 @@ public class IntegrationCalendarAccessTests
 
     // ------------------------------------------------------------------ the Calendar route
 
-    private sealed class CalendarRig : IDisposable
+    internal sealed class CalendarRig : IDisposable
     {
         public ResolverRig R { get; } = new();
         public FakeArr.Host Tv { get; }
@@ -626,6 +629,9 @@ public class IntegrationCalendarAccessTests
         public User Member { get; }
         public User Kid { get; }
         public TitleAliases? Aliases { get; set; }
+
+        /// <summary>The Jellyfin view the route's availability answer reads (the server's own; tests set a fake one).</summary>
+        public IArrJellyfinView? View { get; set; }
 
         public CalendarRig()
         {
@@ -659,7 +665,7 @@ public class IntegrationCalendarAccessTests
 
         public JellyfinEnhancedController Controller(ClaimsPrincipal caller)
         {
-            var controller = ApiAssetTests.Controller(R.Arr.Plugin.Core, R.Arr.Transport, R.Store, R.Arr.Factory, Database, Callers.Users.Object, Library.Object, UserData.Object, R.Resolver, Aliases!);
+            var controller = ApiAssetTests.Controller(R.Arr.Plugin.Core, R.Arr.Transport, R.Store, R.Arr.Factory, Database, Callers.Users.Object, Library.Object, UserData.Object, R.Resolver, Aliases!, View!);
             controller.HttpContext.User = caller;
             controller.Request.QueryString = new QueryString("?start=2026-10-12&end=2026-10-31");
             return controller;

@@ -328,7 +328,7 @@ internal sealed class ReadyWorld : IDisposable
 
     public ReadyWorld()
     {
-        Editions = new EditionAvailability(View, () => Config, (key, viewer) => View.Copies(key, viewer));
+        Editions = new EditionAvailability(View, () => Config, (key, viewer) => View.Copies(key, viewer).Display);
         Host.Now = () => Now;
         Reopen();
     }

@@ -187,7 +187,7 @@ public class ApiArrRouteMatrixTests
         private AcquireReadyController Ready()
         {
             var store = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyPlaylistStore(N.Db);
-            var editions = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.EditionAvailability(N.View, () => N.Config, (k, v) => N.View.Copies(k, v));
+            var editions = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.EditionAvailability(N.View, () => N.Config, (k, v) => N.View.Copies(k, v).Display);
             var service = new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyPlaylistService(store, new FakeReadyPlaylistHost(), new FakeReadyInterests(),
                 new Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Ready.ReadyCopySelector(editions, new FakeReadyLibrary(), null), new FakeReadyPrivacy(), N.View, () => N.Config, () => N.Arr.Now, "server-a", null);
             return new AcquireReadyController(service, store, N.NotifyStore, N.View) { Config = () => N.Config, Now = () => N.Arr.Now };

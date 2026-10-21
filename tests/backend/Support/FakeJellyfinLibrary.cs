@@ -20,6 +20,8 @@ internal static class FakeJellyfinLibrary
     public static ArrJellyfinView Over(FakeJellyfinView view, Func<bool>? fail = null)
     {
         var library = new Mock<ILibraryManager>();
+        // One current library holding every copy (the production lookup counts only items under a current library location).
+        var root = new Folder { Id = Guid.NewGuid(), Path = "/" };
         List<BaseItem> Query(InternalItemsQuery q)
         {
             if (fail?.Invoke() == true) throw new InvalidOperationException("library query failed");
@@ -30,7 +32,7 @@ internal static class FakeJellyfinLibrary
                 foreach (var (copy, _) in list)
                 {
                     if (!items.TryGetValue(copy.ItemId, out var item))
-                        items[copy.ItemId] = item = key.IsMovie ? new Movie { Id = copy.ItemId, Path = copy.Path } : new Series { Id = copy.ItemId, Path = copy.Path };
+                        items[copy.ItemId] = item = key.IsMovie ? new Movie { Id = copy.ItemId, Path = copy.Path ?? "/copies/" + copy.ItemId.ToString("N") } : new Series { Id = copy.ItemId, Path = copy.Path ?? "/copies/" + copy.ItemId.ToString("N") };
                     item.ProviderIds[TitleAliases.ProviderName(key)] = key.Id;
                 }
             }
@@ -47,7 +49,8 @@ internal static class FakeJellyfinLibrary
 
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Query(q));
         library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Query(q).Select(i => i.Id).ToList());
-        library.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder>());
+        library.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder> { root });
+        library.Setup(l => l.GetVirtualFolders()).Returns(() => new List<MediaBrowser.Model.Entities.VirtualFolderInfo> { new() { ItemId = root.Id.ToString("N"), Locations = new[] { "/" } } });
         return new ArrJellyfinView(library.Object, Mock.Of<IUserManager>());
     }
 }

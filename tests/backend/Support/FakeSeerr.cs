@@ -67,6 +67,16 @@ internal sealed class FakeSeerr : IDisposable
     /// <summary>True: a request POST is created without the server, profile and root folder it named (Seerr ignoring them).</summary>
     public bool DropAdvanced { get; set; }
 
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/sonarr</c> (Seerr's Sonarr servers; else the rows of <see cref="Services"/>).</summary>
+    public JsonArray? SonarrServers { get; set; }
+
+    /// <summary>Non-null: the body of <c>GET /api/v1/settings/radarr</c> (else the rows of <see cref="Services"/>).</summary>
+    public JsonArray? RadarrServers { get; set; }
+
+    /// <summary>One of Seerr's Sonarr/Radarr server rows (the fields its settings route answers with).</summary>
+    public static JsonObject Server(int id, string host, int port, bool is4k, bool isDefault, string baseUrl = "", bool ssl = false)
+        => new() { ["id"] = id, ["name"] = host, ["hostname"] = host, ["port"] = port, ["useSsl"] = ssl, ["baseUrl"] = baseUrl, ["is4k"] = is4k, ["isDefault"] = isDefault, ["activeProfileId"] = 1, ["activeDirectory"] = "/tv", ["apiKey"] = "ARR-KEY" };
+
     /// <summary>Non-null: the body of <c>GET /api/v1/settings/main</c> (else 404).</summary>
     public JsonObject? MainSettings { get; set; }
 
@@ -135,6 +145,8 @@ internal sealed class FakeSeerr : IDisposable
                 return user == null ? IntegrationTransport.Response("{\"message\":\"User not found.\"}", 404) : IntegrationTransport.Response(user.ToJsonString());
             }
         }
+        if (path == "/api/v1/settings/sonarr" && SonarrServers != null) return IntegrationTransport.Response(SonarrServers.ToJsonString());
+        if (path == "/api/v1/settings/radarr" && RadarrServers != null) return IntegrationTransport.Response(RadarrServers.ToJsonString());
         if (path.StartsWith("/api/v1/service/", StringComparison.Ordinal))
         {
             var rest = path["/api/v1/service/".Length..];

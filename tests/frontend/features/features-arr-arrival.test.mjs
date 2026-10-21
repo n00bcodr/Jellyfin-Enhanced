@@ -321,7 +321,10 @@ test('reloads of one page are spaced out: a burst of arrivals gets one more relo
   await sleep(10);
   h.S.refresh(['tv:tvdb:75932:s1']);
   assert.ok(await until(() => h.host.shows.length === 2, 3000), 'the burst reloads once more');
-  assert.ok(at[1] - at[0] >= 295, `not again within the gap (${Math.round(at[1] - at[0])} ms apart)`);
+  // The module times the gap from the start of each reload; its synchronous redraw before each viewshow can take a
+  // few ms on a loaded host (seen: 292 ms apart under the full suite). A reload inside the gap comes ~10 ms after the
+  // burst, so 250 still tells the two apart.
+  assert.ok(at[1] - at[0] >= 250, `not again within the gap (${Math.round(at[1] - at[0])} ms apart)`);
   await sleep(400);
   assert.equal(h.host.shows.length, 2, 'the burst is one more reload');
 });

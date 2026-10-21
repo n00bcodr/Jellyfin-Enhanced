@@ -58,18 +58,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// Asked after the preparation reads, right before the ledger write: a reason stops the create (nothing is
         /// recorded). Automatic callers re-read there the rules they decided under.
         /// </param>
-        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null)
+        /// <param name="press">
+        /// A season page's press (D53, edition round 19: the server decides every press): worked out again after every other
+        /// await, right before the ask is recorded; a refusal records nothing (409).
+        /// </param>
+        public async Task<RequestOutcome> CreateAsync(Guid user, CreateRequest? body, CancellationToken ct, RequestOrigin? origin = null, Func<string?>? recheck = null, Func<MutationInput, CancellationToken, Task<PressProof>>? press = null)
         {
             var input = Normalize(body?.Input);
             if (body == null || input == null) return RequestOutcome.Refused("invalid_input", 400);
             if (!Enabled) return RequestOutcome.Refused("feature_disabled");
             if (!_ledger.Database.Available) return RequestOutcome.Refused("database_unavailable", 503, "unavailable");
             if (!_policy.IsAdmin(user) && RequestLedger.HasRouting(input)) return RequestOutcome.Refused("admin_required");
+            // A season page's press is a press of exactly that page (D53, edition round 21): it can be told apart from any other
+            // press (its fingerprint), and it never routes (a quality profile or a root folder could land it outside its copy).
+            if (press != null && (body.Expect is not { } expect || PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, input) == null || input.ProfileId != null || input.RootFolder != null))
+                return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
+            // A retry of an ask already recorded (its answer was lost) gets that receipt before anything about it is worked out
+            // again (D53, edition round 20: replay before revalidation); the caller's own checks (a person who may ask, the
+            // feature, the database) were made above and by the route.
+            if (_ledger.Replay(user, body with { Input = input }) is { } recorded) return recorded;
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
             {
                 foreach (var pending in _ledger.ForTitle(input.Key).Where(w => w.Status == "pending" && w.Input.Variant == input.Variant))
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
+            }
+            string? target = null;
+            if (press != null)
+            {
+                // The last await: what is recorded below (no await in between) is the command this check returns, or nothing
+                // (D53, edition round 21): its episodes or seasons and edition, at the destination it proved; an instance the
+                // request names that isn't that destination is refused.
+                var proof = await press(input, ct).ConfigureAwait(false);
+                var refusal = proof.Refusal;
+                MutationInput? command = null;
+                if (refusal == null)
+                {
+                    command = proof.Command is { } checkedPress && (input.InstanceId == null || string.Equals(input.InstanceId, checkedPress.Instance, StringComparison.OrdinalIgnoreCase))
+                        ? Normalize(checkedPress.AskInput()) : null;
+                    if (command == null || PressChecks.RequestFingerprint(body.Expect!, PressChecks.Ask, null, command) != proof.Command!.Fingerprint) refusal = PressChecks.Changed;
+                }
+                if (refusal != null) return RequestOutcome.Refused(refusal, 409, "conflict") with { Message = PressChecks.Message(refusal) };
+                input = command!;
+                target = proof.Command!.Instance;
             }
             // Automatic work under the engine: a kill switch on now (against the target the request would go to) records
             // nothing, so killed work never piles up to go out when the switch is released. Evaluated first: it can read
@@ -80,7 +111,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 && AutomationSendGuard.Killed(config, origin.Recipe, AutomationSendGuard.Target(_policy.Evaluate(user, input)));
             if (recheck?.Invoke() is { } changed) return RequestOutcome.Refused(changed, 409, "blocked");
             if (killed) return RequestOutcome.Refused(AutomationHolds.Killed, 409, "blocked");
-            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin);
+            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, target);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;

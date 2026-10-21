@@ -250,8 +250,10 @@ public class ReadyExactEvidenceTests
         for (var i = 0; i < 45; i++) view.AddCopy(key, new JfCopy { ItemId = Extra(i), Path = "/m/" + i });
         var failing = false;
         using var production = FakeJellyfinLibrary.Over(view, () => failing);
-        // Display uses keep their cap (presentation only); the privacy lookup is complete.
-        Assert.Equal(20, production.Copies(key, StatusViewer.Library).Count);
+        // Display uses keep their cap (presentation only: past it the lookup is incomplete); the privacy lookup is complete.
+        var shown = production.Copies(key, StatusViewer.Library);
+        Assert.Equal(20, shown.Seen.Count);
+        Assert.False(shown.IsComplete);
         var all = production.TitleCopyIds(key);
         Assert.NotNull(all);
         Assert.Equal(Enumerable.Range(0, 45).Select(Extra).OrderBy(g => g), all!.OrderBy(g => g));
@@ -374,8 +376,10 @@ public class ReadyExactEvidenceTests
 
         if (rule == "none")
         {
-            Assert.Single(a.Rig.Inbox(a.Rig.Emma), r => r.Kind == NotifyKind.Ready);
-            Assert.True(a.Told("Dune"));
+            // Twenty-one copies are past the copy lookup's budget (edition round 21): the lookup is incomplete, so nothing is
+            // remembered or told from it (looked at again), whatever the rules say.
+            Assert.DoesNotContain(a.Rig.Inbox(a.Rig.Emma), r => r.Kind == NotifyKind.Ready);
+            Assert.False(a.Told("Dune"));
             return;
         }
 
@@ -458,8 +462,10 @@ public class ReadyExactEvidenceTests
         await w.Service.SetPlaylistAsync(emma.UserId, true);
         await w.Service.ReconcileAsync(emma.UserId);
         var playlist = Assert.Single(w.Host.Playlists.Values);
-        if (rule == "none") Assert.Equal(new[] { versions[0] }, playlist.Entries);
-        else Assert.Empty(playlist.Entries);
+        // Twenty-one copies are past the copy lookup's budget (edition round 21): an incomplete lookup never makes anything
+        // Ready, so the title stays out with or without a rule.
+        _ = versions;
+        Assert.Empty(playlist.Entries);
     }
 
     [Fact]

@@ -84,7 +84,17 @@ public class PrivacyOperationalProjectionTests
             """[{"id":9,"tvdbId":9001,"seasonNumber":2,"episodeNumber":3,"title":"secret episode","overview":"secret plot","airDateUtc":"2026-10-10T12:00:00Z","hasFile":true,"monitored":true,"series":{"id":1,"tmdbId":42,"tvdbId":123,"title":"Series","images":[{"coverType":"poster","remoteUrl":"/poster.jpg"},{"coverType":"fanart","remoteUrl":"/secret-art.jpg"}]}}]""")));
         using var store = new ArrStateStore(new ArrClientFactory(transport, new ArrInstanceRegistry()), null, null,
             () => new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero), null);
-        var controller = ApiAssetTests.Controller(f.Core, f.Core.Manager, transport, database, store, spoilers);
+        // "Available" is Jellyfin's availability rule for the caller (edition round 21): a copy of the series they open whose
+        // episode plays, and Play opens that episode item.
+        var callers = new TestCallers();
+        callers.Register(user, admin: true);
+        var view = new FakeJellyfinView();
+        view.Users[user] = new StatusViewer { UserId = user, IsAdmin = true, PolicyRevision = "admin" };
+        var copy = Guid.NewGuid();
+        var seriesKey = TitleKey.Parse("tv:tmdb:42")!;
+        foreach (var key in new[] { seriesKey, TitleKey.Parse("tv:tvdb:123")! }) view.AddCopy(key, new JfCopy { ItemId = copy });
+        episode = view.AddEpisodeFile(copy, seriesKey, 2, 3, 1920, 1080);
+        var controller = ApiAssetTests.Controller(f.Core, f.Core.Manager, transport, database, store, spoilers, callers.Users.Object, view);
         controller.HttpContext.User = TestCallers.Principal(user, true);
         controller.Request.QueryString = new QueryString("?start=2026-10-01&end=2026-11-01");
         var result = Final(f, spoilers, user, "arr/calendar", await controller.GetCalendarEvents());

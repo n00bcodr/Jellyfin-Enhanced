@@ -481,7 +481,11 @@
         const known = missing - unknown;
         const long = typeof s.longMissing === 'number' ? Math.min(known, Math.max(0, s.longMissing)) : known;
         if (known - long > 0) pieces.push({ text: tr('arr_summary_looking', { n: known - long }), tone: 'looking', icon: 'search' });
-        if (long > 0) pieces.push({ text: tr('arr_summary_missing', { n: long }), tone: 'looking', icon: 'search' });
+        // Of those, the page copy's own gaps (another copy the viewer opens plays them) say so, as their rows do.
+        const role = status.copy?.role || (status.episodes || []).find(e => e?.copyGap)?.copyGap || null;
+        const inCopy = role ? Math.min(long, Math.max(0, s.missingInCopy || 0)) : 0;
+        if (long - inCopy > 0) pieces.push({ text: tr('arr_summary_missing', { n: long - inCopy }), tone: 'looking', icon: 'search' });
+        if (inCopy > 0) pieces.push({ text: tr('arr_summary_missing_in_copy', { n: inCopy, copy: copyName(role) }), tone: 'looking', icon: 'search' });
         const attention = (s.attention || 0) + unknown;
         if (attention > 0) pieces.push({ text: tr('arr_summary_attention', { n: attention }), tone: 'attention', icon: 'schedule' });
         return pieces;
@@ -524,7 +528,29 @@
         if (code === 'unmonitored') return tr('arr_chip_not_fetched');
         // Monitored and wanted a moment ago: the arr is on it (missing for a long while reads Missing).
         if (ep.stage === 'looking' && !searchable(ep)) return tr('arr_chip_looking');
-        return tr('arr_chip_missing');
+        // Another copy the viewer can open plays it: this copy's gap, not the title's.
+        return ep.copyGap ? tr('arr_chip_missing_in_copy', { copy: copyName(ep.copyGap) }) : tr('arr_chip_missing');
+    }
+
+    /** Copy roles with their own words (others read "this copy"). */
+    const COPY_ROLES = new Set(['standard', '4k', 'anime']);
+
+    /**
+     * The short name of a copy by its role, for a chip or a button ("standard", "4K"; "this copy" for any other).
+     * @param {string} role Copy role (an episode's copyGap).
+     * @returns {string} Name.
+     */
+    function copyName(role) {
+        return tr(`arr_copy_name_${COPY_ROLES.has(role) ? role : 'other'}`);
+    }
+
+    /**
+     * A copy by its role as a phrase, for a banner or a label ("the standard copy"; "this copy" for any other role).
+     * @param {string} role Copy role.
+     * @returns {string} Phrase.
+     */
+    function copyPhrase(role) {
+        return tr(`arr_copy_phrase_${COPY_ROLES.has(role) ? role : 'other'}`);
     }
 
     /**
@@ -985,6 +1011,8 @@
         searchable,
         summaryPieces,
         chipText,
+        copyName,
+        copyPhrase,
         adminLines,
         adminReasonText,
         formatDate,
