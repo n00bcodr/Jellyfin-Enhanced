@@ -411,42 +411,57 @@ internal static partial class PrivacyTokens
 
     private static string RouteRoot(string root) => root.ToLowerInvariant() switch { "audio" => "Audio", "items" => "Items", _ => "Videos" };
 
-    [GeneratedRegex(@"^(\d{1,2}) channels$")]
-    private static partial Regex ChannelCount();
+    // Compiled once, not source-generated: the plugin compiles without generators (the scan walks compile its sources
+    // with Roslyn alone).
+    private static readonly Regex _channelCount = new(@"^(\d{1,2}) channels$", RegexOptions.Compiled);
 
-    [GeneratedRegex("^[0-9a-fA-F]{32}$")]
-    private static partial Regex HexId();
+    private static Regex ChannelCount() => _channelCount;
 
-    [GeneratedRegex(@"^(sb-[0-9a-f]{8}-)?([0-9a-fA-F]{6,64}(-jeu[0-9a-f]{1,32})?|na1\.[0-9a-f]{2,1800}\.[0-9a-f]{32})$")]
-    private static partial Regex ImageTag();
+    private static readonly Regex _hexId = new("^[0-9a-fA-F]{32}$", RegexOptions.Compiled);
 
-    [GeneratedRegex(@"^\d{1,5}(\.\d{1,4})?:\d{1,5}(\.\d{1,4})?$")]
-    private static partial Regex RatioPattern();
+    private static Regex HexId() => _hexId;
 
-    [GeneratedRegex(@"^\d{1,12}/\d{1,12}$")]
-    private static partial Regex RationalPattern();
+    private static readonly Regex _imageTag = new(@"^(sb-[0-9a-f]{8}-)?([0-9a-fA-F]{6,64}(-jeu[0-9a-f]{1,32})?|na1\.[0-9a-f]{2,1800}\.[0-9a-f]{32})$", RegexOptions.Compiled);
 
-    [GeneratedRegex(@"^\d{1,10}([.\- ]\d{1,10}){0,3}$")]
-    private static partial Regex NumberPattern();
+    private static Regex ImageTag() => _imageTag;
 
-    [GeneratedRegex(@"^([A-Za-z0-9]{4}|0x[0-9a-fA-F]{1,8}|(\[\d{1,3}\]){1,4})$")]
-    private static partial Regex FourCcPattern();
+    private static readonly Regex _ratioPattern = new(@"^\d{1,5}(\.\d{1,4})?:\d{1,5}(\.\d{1,4})?$", RegexOptions.Compiled);
 
-    [GeneratedRegex(@"^\d{1,2}:\d{2}( ?[AaPp][Mm])?$")]
-    private static partial Regex TimePattern();
+    private static Regex RatioPattern() => _ratioPattern;
 
-    [GeneratedRegex(@"^[A-Za-z]{0,4}\d{1,20}([._-]\d{1,20}){0,3}$")]
-    private static partial Regex IdShapedPattern();
+    private static readonly Regex _rationalPattern = new(@"^\d{1,12}/\d{1,12}$", RegexOptions.Compiled);
 
-    [GeneratedRegex(@"^([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\d{0,12}$")]
-    private static partial Regex UserDataKeyPattern();
+    private static Regex RationalPattern() => _rationalPattern;
 
-    [GeneratedRegex(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Subtitles/(?<index>\d{1,4})(/(?<ticks>\d{1,20}))?/(?<file>[^/?]{1,200})\.(?<format>[A-Za-z0-9]{1,16})(\?(?<query>[^?]{0,1024}))?$", RegexOptions.IgnoreCase)]
-    private static partial Regex SubtitleRoute();
+    private static readonly Regex _numberPattern = new(@"^\d{1,10}([.\- ]\d{1,10}){0,3}$", RegexOptions.Compiled);
 
-    [GeneratedRegex(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Attachments/(?<index>\d{1,4})$", RegexOptions.IgnoreCase)]
-    private static partial Regex AttachmentRoute();
+    private static Regex NumberPattern() => _numberPattern;
 
-    [GeneratedRegex(@"^/(?<kind>videos|audio)/(?<item>[0-9a-fA-F-]{32,36})/(?<file>[A-Za-z0-9_.]{1,40})(\?(?<query>[^?#]{0,8000}))?$", RegexOptions.IgnoreCase)]
-    private static partial Regex TranscodingRoute();
+    private static readonly Regex _fourCcPattern = new(@"^([A-Za-z0-9]{4}|0x[0-9a-fA-F]{1,8}|(\[\d{1,3}\]){1,4})$", RegexOptions.Compiled);
+
+    private static Regex FourCcPattern() => _fourCcPattern;
+
+    private static readonly Regex _timePattern = new(@"^\d{1,2}:\d{2}( ?[AaPp][Mm])?$", RegexOptions.Compiled);
+
+    private static Regex TimePattern() => _timePattern;
+
+    private static readonly Regex _idShapedPattern = new(@"^[A-Za-z]{0,4}\d{1,20}([._-]\d{1,20}){0,3}$", RegexOptions.Compiled);
+
+    private static Regex IdShapedPattern() => _idShapedPattern;
+
+    private static readonly Regex _userDataKeyPattern = new(@"^([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\d{0,12}$", RegexOptions.Compiled);
+
+    private static Regex UserDataKeyPattern() => _userDataKeyPattern;
+
+    private static readonly Regex _subtitleRoute = new(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Subtitles/(?<index>\d{1,4})(/(?<ticks>\d{1,20}))?/(?<file>[^/?]{1,200})\.(?<format>[A-Za-z0-9]{1,16})(\?(?<query>[^?]{0,1024}))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static Regex SubtitleRoute() => _subtitleRoute;
+
+    private static readonly Regex _attachmentRoute = new(@"^/(?<root>Videos|Audio|Items)/(?<item>[0-9a-fA-F-]{32,36})/(?<source>[0-9a-fA-F_-]{1,200})/Attachments/(?<index>\d{1,4})$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static Regex AttachmentRoute() => _attachmentRoute;
+
+    private static readonly Regex _transcodingRoute = new(@"^/(?<kind>videos|audio)/(?<item>[0-9a-fA-F-]{32,36})/(?<file>[A-Za-z0-9_.]{1,40})(\?(?<query>[^?#]{0,8000}))?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static Regex TranscodingRoute() => _transcodingRoute;
 }
