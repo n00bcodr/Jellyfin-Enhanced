@@ -86,7 +86,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static bool IsUserStateCachedForTest(string userIdN)
             => !string.IsNullOrEmpty(userIdN) && _userStateCache.TryGet(userIdN, out _);
 
-        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At)> _providerTitles = new();
+        // An item's typed TMDB key (a library fact, the same for every viewer), with when it was read and the input tick it
+        // was read at: used only while the input log shows no library change of the item since then.
+        private readonly ConcurrentDictionary<Guid, (string? Key, DateTime At, long Since)> _providerTitles = new();
         private readonly UserConfigurationManager _userConfigManager;
         private readonly ILibraryManager _libraryManager;
         private readonly RequestIdentityService _identity;
@@ -101,9 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _userConfigManager = userConfigManager;
             _libraryManager = libraryManager;
             _identity = identity;
-            libraryManager.ItemAdded += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
-            libraryManager.ItemUpdated += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
-            libraryManager.ItemRemoved += (sender, e) => _providerTitles.TryRemove(e.Item.Id, out _);
+            PrivacyInputs.Observe(libraryManager, null);
             _logger = logger;
         }
 
@@ -240,12 +240,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (state.ProviderTitles.Count + state.PendingTmdb.Count == 0) return false;
             if (providers != null) return ProviderGuarded(state, kind, providers.FirstOrDefault(p => p.Key.Equals("Tmdb", StringComparison.OrdinalIgnoreCase)).Value);
-            if (!_providerTitles.TryGetValue(id, out var hit) || DateTime.UtcNow - hit.At > TimeSpan.FromSeconds(30))
+            // A remembered key holds while nothing changed the item since it was read; the answer records it as of then, so
+            // the delivery gate sees a change after that too. A key read while the item changed is not remembered.
+            if (_providerTitles.TryGetValue(id, out var hit) && DateTime.UtcNow - hit.At <= TimeSpan.FromSeconds(30)
+                && (PrivacyInputs.Now == hit.Since || PrivacyInputs.LibraryChangesSince(hit.Since) is { } moved && !moved.Contains(id)))
             {
+                PrivacyReadSet.Current?.Library(id, hit.Since);
+            }
+            else
+            {
+                var since = PrivacyInputs.Now;
                 var item = PrivacyReads.Item(_libraryManager, id);
-                hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow);
-                if (_providerTitles.Count >= 8192) _providerTitles.Clear();
-                _providerTitles[id] = hit;
+                hit = (HiddenContentPolicy.TitleIdentity(kind, item?.GetProviderId(MetadataProvider.Tmdb)), DateTime.UtcNow, since);
+                if (PrivacyInputs.LibraryChangesSince(since) is { } changed && !changed.Contains(id))
+                {
+                    if (_providerTitles.Count >= 8192) _providerTitles.Clear();
+                    _providerTitles[id] = hit;
+                }
+                else _providerTitles.TryRemove(id, out _);
             }
             return hit.Key != null && (state.ProviderTitles.ContainsKey(hit.Key) || state.PendingTmdb.ContainsKey(hit.Key.Replace(":tmdb:", ":", StringComparison.Ordinal)));
         }
