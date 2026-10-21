@@ -17,12 +17,13 @@
     const tmdbToJellyfin = new Map();
 
     let userPrefs = {};
-    // The override saves not answered yet, in order (each a { Set } of preferences), the chain they go out on (one at a
-    // time, so a change made back while one is out reaches the server after it), and the preferences' revision: every
-    // change source (a save queued or answered) moves it on, so a state read that began before one doesn't take its Prefs.
+    // The override saves not answered yet, in order (each a { Set } of preferences), and the preferences' one queue, bound to
+    // the signed-in session (core/mutation-queue.js): saves go out one at a time (a change made back while one is out
+    // reaches the server after it), the session is checked right before each is sent, and an account switch cancels the
+    // previous person's saves unsent. Its revision moves on with every save queued or answered (and the switch), so a state
+    // read that began before one doesn't take its Prefs.
     let pendingPrefs = [];
-    let prefsChain = Promise.resolve();
-    let prefsRevision = 0;
+    const prefsQueue = JE.core.mutationQueue('spoiler-prefs');
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -44,7 +45,7 @@
         // The page-load bootstrap carries this user's state (same body as the
         // endpoint); it is handed out once, so later loads ask the server.
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
-        const readRevision = prefsRevision;
+        const readRevision = prefsQueue.revision;
         statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
             .then(function stateRead(data) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
@@ -59,7 +60,7 @@
                 Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
                 Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
                 // The Prefs only if no override save was queued or answered since this read began (it may hold less).
-                if (readRevision === prefsRevision && !pendingPrefs.length) userPrefs = value.Prefs || {};
+                if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};
                 loaded = true;
                 loadOk = true;
                 // If tag renderers already ran fail-closed while this request was
@@ -258,27 +259,24 @@
             if (JSON.stringify(value) !== JSON.stringify(expected[key])) set[key] = value;
         }
         if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
-        // Sent at once when no other save is out, else after the last one is answered.
-        const idle = pendingPrefs.length === 0;
         pendingPrefs.push(set);
-        prefsRevision++;
         const queue = pendingPrefs;
         const settled = () => { const i = queue.indexOf(set); if (i !== -1) queue.splice(i, 1); };
-        const send = () => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true });
-        const save = idle ? new Promise(resolve => resolve(send())) : prefsChain.then(send);
-        prefsChain = save.catch(() => {});
+        // Sent at once when no other save is out, else after the last one is answered; never once the person changed.
+        const save = prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }));
         return save
             .then(function acknowledged(response) {
                 settled();
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 userPrefs = response?.prefs && typeof response.prefs === 'object' ? Object.assign({}, response.prefs) : Object.assign({}, userPrefs, set);
-                prefsRevision++;
                 notifyPolicyChanged();
                 return Object.assign({}, userPrefs);
             })
             .catch(function(err) {
                 settled();
-                console.error(`${logPrefix} setUserPrefs failed:`, err);
+                // A save the previous person queued, cancelled by the account switch, is not a failure to report.
+                if (err?.sessionChanged) console.warn(`${logPrefix} a preference save of the previous account was not sent.`);
+                else console.error(`${logPrefix} setUserPrefs failed:`, err);
                 throw err;
             });
     };
@@ -297,9 +295,8 @@
         enabledPendingTmdb.clear();
         tmdbToJellyfin.clear();
         userPrefs = {};
-        // The previous person's saves are not this person's: their answers are dropped (epoch), and nothing waits on them.
+        // The previous person's saves are not this person's: the queue cancels those not sent yet (its own reset), their
+        // answers are dropped (epoch), and nothing waits on them.
         pendingPrefs = [];
-        prefsChain = Promise.resolve();
-        prefsRevision++;
     });
 })(window.JellyfinEnhanced);

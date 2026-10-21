@@ -38,7 +38,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr, policy = 'serve
   // production). Without it: 'blocked' (the script never loaded) or 'unserved' (the file as committed, no policy line).
   if (policy === 'served') h.load('enhanced/translations.js');
   else if (policy === 'unserved') h.window.eval(`[function () {\n${readFileSync(resolve(jsRoot, 'enhanced/translations.js'), 'utf8')}\n}][0]();`);
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -201,7 +201,7 @@ for (const sameUser of [false, true]) test(`session change cancels unsent saves 
   h.load('core/navigation.js');
   h.load('core/session.js');
   // Reload config after the real session module, matching the manifest order.
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.wire();
   const held = deferred();
@@ -372,7 +372,7 @@ for (const touch of [false, true]) for (const boundary of ['user switch', 'same-
     let epoch = 1, user = 'user-a';
     h.window.ApiClient.getCurrentUserId = () => user;
     h.JE.session = { getEpoch: () => epoch, getServerId: () => 'server-a', isCurrent: n => n === epoch };
-    h.load('enhanced/config.js');
+    h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
     h.wire();
     const grid = h.document.getElementById('subtitlePositionGrid');
     grid.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });

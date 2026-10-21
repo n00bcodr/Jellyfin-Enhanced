@@ -13,7 +13,7 @@ internal static class DocumentRevisions
     /// <summary>The writer read <paramref name="fileName"/> of <paramref name="userId"/> just now: its next write sends that revision.</summary>
     public static JellyfinEnhancedController HavingRead<T>(this JellyfinEnhancedController controller, UserConfigurationManager manager, string userId, string fileName) where T : new()
     {
-        controller.HttpContext.Request.Headers.IfMatch = "\"" + UserConfigurationManager.DocumentRevision(manager.GetUserConfiguration<T>(userId, fileName)) + "\"";
+        controller.HttpContext.Request.Headers.IfMatch = "\"" + manager.RevisionOf(userId, fileName) + "\"";
         return controller;
     }
 

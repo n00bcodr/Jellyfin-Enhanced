@@ -649,7 +649,7 @@ for (const hiding of [true, false]) test(`a delayed failed ${hiding ? 'Hide' : '
   h.JE.userConfig.shortcuts = { Shortcuts: [] };
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.window.ApiClient.ajax = () => saved.promise;
   h.JE.toast = () => assert.fail('a failed save must not claim success');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -699,7 +699,7 @@ for (const initial of [null, false]) for (const outcomes of [[false, false], [fa
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
     h.JE.pluginConfig.Shortcuts = [];
-    h.load('enhanced/config.js');
+    h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
     h.load('enhanced/settingspanel/ui-panel-template.js');
     h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
     h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -750,7 +750,7 @@ for (const initial of [null, false]) for (const nativeFirst of [false, true]) fo
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none', toast() {} });
     h.JE.pluginConfig.Shortcuts = [];
-    h.load('enhanced/config.js');
+    h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
     h.load('enhanced/settingspanel/ui-panel-template.js');
     h.document.body.innerHTML = cardsHtml(['Movie']) + h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
     h.load('enhanced/settingspanel/ui-panel-settings.js');

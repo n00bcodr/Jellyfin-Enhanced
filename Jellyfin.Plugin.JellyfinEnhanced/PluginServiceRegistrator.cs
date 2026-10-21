@@ -160,6 +160,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // JellyfinUserActions), and moved by its user events.
             serviceCollection.AddSingleton<Services.Acquire.Automation.JellyfinUserChangeBracket>();
             serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Automation.JellyfinUserChangeBracket>());
+            // Round 10: Jellyfin's plugin-configuration route for JE's configuration is fenced like every configuration writer
+            // (an earlier generation is refused with a visible 409; an earlier JE settings page is told to reload).
+            serviceCollection.AddSingleton<Services.HostConfigurationRouteFilter>();
+            serviceCollection.Configure<MvcOptions>(o =>
+            {
+                o.Filters.AddService<Services.HostConfigurationRouteFilter>();
+                // Every answer of JE's routes names the server's JE build: a page loaded from another build asks to be reloaded.
+                o.Filters.Add(new Services.ClientBuildFilter());
+            });
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();

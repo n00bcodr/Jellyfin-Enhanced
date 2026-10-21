@@ -12,6 +12,7 @@ function setup(t, plugin = async () => ({})) {
     session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (key, fn) => listeners.set(key, fn) },
   }});
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('enhanced/spoilerguard/ids.js');
   h.load('enhanced/spoilerguard/state.js');
   return { ...h, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
@@ -100,7 +101,8 @@ for (const operation of ['enableForTmdb','setUserPrefs']) {
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
     const pending=operation==='enableForTmdb'?h.state.enableForTmdb('movie',42):h.state.setUserPrefs({secret:true});
-    h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending;
+    // A save of the previous person may be cancelled unsent by the switch (round 10): either way nothing of it is shown.
+    h.switchUser(); resolve?.({promoted:'movie',jellyfinId:'secret'}); await pending.catch(()=>{});
     assert.equal(h.state.hasAnyState(),false);
     assert.equal(Object.keys(h.state.getUserPrefs()).length,0);
   });

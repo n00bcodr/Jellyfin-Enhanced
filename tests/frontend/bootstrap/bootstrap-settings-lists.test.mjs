@@ -28,7 +28,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
     apiClient: { ajax: async request => { if (request.type === 'POST' || request.type === 'PATCH') writes.push(request); return []; } }
   });
   tt.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
@@ -183,7 +183,7 @@ test('a failed explicit consent rolls back and never announces success', async t
 test('session change cancels a consent queued behind an in-flight display save', async t => {
   const h = panel(t, { config: lists });let epoch = 1, release;
   h.JE.session = { getEpoch: () => epoch, isCurrent: n => n === epoch };
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.window.ApiClient.ajax = request => {
     if (request.type === 'GET') return Promise.resolve([]);
     h.writes.push(request);return new Promise(resolve => { release = resolve; });

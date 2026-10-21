@@ -59,7 +59,8 @@ public class CoreConfigurationPatchTests
         var was = JsonNode.Parse(before)!.AsObject();
         foreach (var (name, value) in was)
         {
-            if (name is "ToastDuration" or "ShowFileSizes") continue;
+            // The generation counts writes (round 10): every save moves it on.
+            if (name is "ToastDuration" or "ShowFileSizes" or "ConfigurationGeneration") continue;
             Assert.True(JsonNode.DeepEquals(value, after[name]), name);
         }
     }
@@ -70,10 +71,12 @@ public class CoreConfigurationPatchTests
         using var fixture = new ApiPluginFixture();
         fixture.Plugin.Configuration.DefaultLanguage = "de";
         fixture.Plugin.Configuration.Shortcuts = new List<Shortcut> { new() { Name = "OpenSearch", Key = "/" } };
-        var before = JsonSerializer.Serialize(fixture.Plugin.Configuration);
+        // Every field but the generation (it counts writes, round 10).
+        string Fields() { var node = JsonNode.Parse(JsonSerializer.Serialize(fixture.Plugin.Configuration))!.AsObject(); node.Remove("ConfigurationGeneration"); return node.ToJsonString(); }
+        var before = Fields();
         var result = fixture.Plugin.PatchConfiguration(new ConfigurationPatch());
         Assert.Empty(result.Applied);
-        Assert.Equal(before, JsonSerializer.Serialize(fixture.Plugin.Configuration));
+        Assert.Equal(before, Fields());
     }
 
     [Fact]

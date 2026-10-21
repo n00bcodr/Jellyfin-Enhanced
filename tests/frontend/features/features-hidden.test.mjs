@@ -7,7 +7,7 @@ function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
  let epoch=0; const handlers=new Map();const frames=[];
  const h=createHarness({html,apiClient:{ajax:patching(ajax)},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
  t.after(()=>h.close());
- h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
  return {...h,api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
 }
@@ -72,7 +72,7 @@ test('titles that are not in the library (native details synthetic ids) never be
  let saves=0;
  const h=createHarness({html,apiClient:{ajax:async request=>{if(request.type==='PATCH')saves++;return {Items:[]};}},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
  t.after(()=>h.close());
- h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
  Object.assign(api,{showUndoToast:()=>{}});
  api.addLibraryHideButtons();

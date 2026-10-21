@@ -15,6 +15,7 @@
 //   JE.core.api.jf(path, options)    — same, path resolved via ApiClient.getUrl
 //   JE.core.api.plugin(path, options)— same, targeting /JellyfinEnhanced/ endpoints
 //   JE.core.api.manager              — the request manager (aliased as JE.requestManager)
+//   JE.core.build                    — the server's JE build vs the one this page booted against (reload notice)
 (function(JE) {
     'use strict';
 
@@ -215,6 +216,8 @@
 
             try {
                 const response = await fetch(url, options);
+                // Every JE answer names the server's build: another one than this page booted against asks for a reload.
+                build.noteAnswer(response);
 
                 if (response.ok) {
                     if (metrics.enabled) {
@@ -932,6 +935,65 @@
     function pluginFetch(path, options) {
         return jf(`/JellyfinEnhanced${path}`, options);
     }
+
+    // ---- The server's JE build (the version handshake) ----
+    // The server names its JE build (the client script's cache key, new with every build) in the bootstrap and on every
+    // answer of its routes (X-JE-Build). The first one this page sees is the build it booted against (JE.serverBuild, set
+    // from the bootstrap); an answer naming another means JE was updated on the server while this page kept its scripts:
+    // the page asks the person to reload (once), before a save can be lost to a contract this page doesn't know.
+    let reloadNotice = null;
+
+    /** Shows the reload notice (once per page). */
+    function showReloadNotice() {
+        if (reloadNotice?.isConnected || !document.body) return;
+        const text = (key, fallback) => {
+            const value = typeof JE.t === 'function' ? JE.t(key) : '';
+            return typeof value === 'string' && value && value !== key ? value : fallback;
+        };
+        const notice = document.createElement('div');
+        notice.className = 'je-reload-notice';
+        notice.setAttribute('role', 'alert');
+        notice.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100000;max-width:min(560px,calc(100vw - 32px));'
+            + 'box-sizing:border-box;display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:8px;'
+            + 'background:#202020;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:14px;line-height:1.4;';
+        const message = document.createElement('span');
+        message.textContent = text('reload_notice_text', 'Jellyfin Enhanced was updated on the server. Reload this page so your changes keep being saved.');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text('reload_notice_button', 'Reload');
+        button.style.cssText = 'flex:none;padding:6px 14px;border:0;border-radius:4px;background:#00a4dc;color:#fff;font:inherit;cursor:pointer;';
+        button.addEventListener('click', () => window.location.reload());
+        notice.append(message, button);
+        document.body.appendChild(notice);
+        reloadNotice = notice;
+        console.warn(`${logPrefix} the server runs another Jellyfin Enhanced build than this page: reload to keep saving.`);
+    }
+
+    const build = {
+        /**
+         * Compares a build the server named with the one this page booted against (the first it saw).
+         * @param {*} serverBuild - The server's build, as named in an answer.
+         * @returns {boolean} True when they differ (the reload notice is shown).
+         */
+        check(serverBuild) {
+            if (typeof serverBuild !== 'string' || !serverBuild) return false;
+            if (!JE.serverBuild) { JE.serverBuild = serverBuild; return false; }
+            if (serverBuild === JE.serverBuild) return false;
+            showReloadNotice();
+            return true;
+        },
+        /**
+         * Reads the build an answer names (a fetch Response, or the Response a failed ApiClient.ajax rejects with).
+         * @param {*} response
+         */
+        noteAnswer(response) {
+            try {
+                const named = response?.headers?.get?.('X-JE-Build');
+                if (named) build.check(named);
+            } catch { /* An answer without readable headers names no build. */ }
+        }
+    };
+    JE.core.build = build;
 
     JE.core.api = {
         fetch: coreFetch,

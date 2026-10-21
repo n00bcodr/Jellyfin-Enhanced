@@ -28,7 +28,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
     apiClient: { ajax: async request => { if (request.type === 'PATCH' && !request.url.endsWith('/consent')) writes.push(request); return []; } }
   });
   tt.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');

@@ -11,7 +11,7 @@ import { resolve } from 'node:path';
 import { createHarness, jsRoot } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
-const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
+const modules = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'enhanced/config.js'];
 const STORED = { DisplayLanguage: 'de', AutoPauseEnabled: false, QualityTagsEnabled: true, LastOpenedTab: 'settings' };
 
 async function until(predicate) {

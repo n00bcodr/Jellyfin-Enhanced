@@ -98,7 +98,7 @@ test('R7-6: trigger picks changed after the picks could not be read keep the sto
       core: { api: { manager: { clearCacheMatching() {} }, plugin: async path => path.startsWith('/ddd/topics') ? { Topics: topics } : entry } } } });
   h.allowConsoleError(/./);
   t.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   h.load('others/doesthedogdie.js');
   h.JE.initializeDoesTheDogDieScript();
   const settle = () => new Promise(r => setTimeout(r, 30));

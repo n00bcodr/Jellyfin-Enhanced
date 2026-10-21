@@ -370,6 +370,10 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 
 **Revisions.** Every GET of a document answers its revision in the `ETag` header. A POST that replaces a document whole must send that revision back in `If-Match`: the server replaces the document only while it is still that revision (checked under the document's lock), so a client that read an older document (another tab, device or client changed it since) can't put it back. A POST without `If-Match` goes ahead only where nothing can be lost: no document is stored yet, or it sends the document as stored. Otherwise nothing is written and the answer is `409 {"success":false,"code":"revision_conflict","file":"…","revision":"<current>","message":"…"}` (the current revision also in `ETag`): read the document again and make the change to what it holds now. A successful POST answers the new revision in `ETag`. To change part of a document, use its PATCH route (no revision needed: only what it names changes).
 
+A revision counts the writes of that document (`"<incarnation>.<writes>"`); it never comes from the content, so a document changed back, or restored from a backup, has a new revision and a revision read before is refused. Revisions are also spent when the server starts again, when a JE backup is restored and when a person's folder is removed: read again after any of those. `If-Match` takes entity tags as HTTP defines them: quoted (`If-Match: "018f3a2b4c5d.7"`), one or a list (`"a", "b"`: any of them current); a weak tag (`W/"…"`), an unquoted value or `*` names no revision. PATCH answers (and the consent route's) carry the revision they stored in `revision` (and `ETag`); a GET with `?withRevision=true` answers `{"document":…,"revision":"…"}` for clients that can't read headers.
+
+**Recovering from a 409.** Read the document again (GET, which hands out the current revision), apply your change to what it holds now, and send it again with that revision, or send only your change with the document's PATCH route, which needs no revision. A page of an earlier Jellyfin Enhanced (one that was open while JE was updated) is refused the same way; its signed-in session is also shown Jellyfin's own message asking to reload the page.
+
 | Method | Path | Document |
 |---|---|---|
 | GET | `user-settings/{userId}/settings.json` | Enhanced settings |
@@ -1222,10 +1226,12 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | Field | Shape |
 |---|---|
 | `Version`, `UserId` | Version string and caller's N-format ID. |
+| `Build` | The server's JE build (the client script's cache key, new with every build). Every answer of JE's routes names it in `X-JE-Build` too; the web client asks for a reload when it changes while a page is open. |
 | `PublicConfig` | Same field set as `public-config`, authenticated context. |
 | `PrivateConfig` | Curated admin object below; null/omitted for viewers. |
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
 | `UserSettings` | `{Settings,Shortcuts,Bookmark,Elsewhere,HiddenContent}` typed documents. |
+| `UserRevisions` | File name → revision of each document read (the GETs' `ETag` values, unquoted). |
 | `ComponentScripts` | Ordered component-script path array, nullable on manifest failure. |
 | `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions}`; standalone response shapes or null. |
 
@@ -1281,6 +1287,8 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
 Private configuration is `no-store`. Admin fields are strings `SonarrUrl`, `RadarrUrl`, `BazarrUrl`, `SonarrUrlMappings`, `RadarrUrlMappings`, `BazarrUrlMappings`, `ShokoUrl`, `ShokoUrlMappings`; arrays `SonarrInstances`, `RadarrInstances` of `{Name,Url,UrlMappings,Enabled}`; and booleans `SonarrInstancesCorrupt`, `RadarrInstancesCorrupt`. This is selected link configuration and diagnostics, rather than the complete saved model. The separate admin `jellyseerr/settings/{type}` endpoint can return upstream API keys.
+
+**Jellyfin's plugin-configuration route.** `GET /Plugins/{id}/Configuration` hands out JE's configuration with its `ConfigurationGeneration`, which every configuration write moves on (a configuration page save, a server write, a restore). `POST /Plugins/{id}/Configuration` with an API key applies a whole configuration only when it carries the generation stored now; one built on an earlier configuration is refused with `409 {"success":false,"code":"configuration_conflict","generation":<current>,"message":"…"}` and nothing is written: read it again, change it, and post it with the new generation. A signed-in page posting there is a JE settings page of an earlier version (the current page saves with `PATCH /JellyfinEnhanced/configuration`, which takes only the fields that changed): it is refused with `409 reload_required` and its session is asked to reload. Prefer `PATCH /JellyfinEnhanced/configuration` with `{"Set":{"ToastDuration":2000}}` for scripts.
 
 Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required.
 

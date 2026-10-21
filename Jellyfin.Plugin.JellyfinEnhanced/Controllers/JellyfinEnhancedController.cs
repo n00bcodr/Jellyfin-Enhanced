@@ -4268,10 +4268,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var isAdmin = IsAdminUser();
+            // Each document's revision, taken before it is read (the client orders later answers against it).
+            var userRevisions = new Dictionary<string, string>(StringComparer.Ordinal);
+            Func<object> Revisioned(string fileName, Func<object> read) => () =>
+            {
+                var (document, revision) = ReadWithRevision(authorizedUserId, fileName, read);
+                userRevisions[fileName] = revision;
+                return document;
+            };
 
             return new JsonResult(new
             {
                 Version = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown",
+                // The server's JE build (the client script's cache key): a page from another build asks to be reloaded.
+                Build = JellyfinEnhanced.Instance?.ScriptCacheKey,
                 // Lets the client confirm the payload belongs to the user it expects
                 // (a token swap during a user switch must never be applied silently).
                 UserId = authorizedUserId,
@@ -4282,12 +4292,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 HasPluginPages = IsPluginInstalled("Plugin Pages"),
                 UserSettings = new
                 {
-                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
-                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
-                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
-                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
-                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
+                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, Revisioned("settings.json", () => LoadUserSettingsDocument(authorizedUserId))),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, Revisioned("shortcuts.json", () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json"))),
+                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, Revisioned("bookmark.json", () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json"))),
+                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, Revisioned("elsewhere.json", () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json"))),
+                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, Revisioned("hidden-content.json", () => LoadUserHiddenContentDocument(authorizedUserId))),
                 },
+                UserRevisions = userRevisions,
                 ComponentScripts = componentScripts,
                 Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
@@ -5010,9 +5021,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null) return authorizationResult;
 
-            var triggers = _userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json");
-            AnswerRevision(UserConfigurationManager.DocumentRevision(triggers));
-            return Ok(triggers);
+            var (triggers, revision) = ReadWithRevision(authorizedUserId, "ddd-triggers.json",
+                () => _userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+            return DocumentAnswer(triggers, revision);
         }
 
         [HttpPost("user-settings/{userId}/ddd-triggers.json")]
@@ -5242,10 +5253,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (Response != null) Response.Headers.ETag = "\"" + revision + "\"";
         }
 
-        /// <summary>A whole-document write refused because the stored document isn't the one the writer read.</summary>
+        /// <summary>
+        /// Reads a per-user document with its revision. The revision is taken before the read, so a write landing in between
+        /// leaves the revision older than the document (a whole write built on it is refused, never allowed); a read that
+        /// itself wrote (a first read stores the defaults) reads once more behind the newer revision.
+        /// </summary>
+        private (T Document, string Revision) ReadWithRevision<T>(string authorizedUserId, string fileName, Func<T> read)
+        {
+            var revision = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
+            var document = read();
+            var after = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
+            return after == revision ? (document, revision) : (read(), after);
+        }
+
+        /// <summary>
+        /// A per-user document as a read answers it: its revision as the ETag and, when the client asked for it
+        /// (<c>?withRevision=true</c>, for clients that can't read headers), the document and its revision in the body.
+        /// </summary>
+        private IActionResult DocumentAnswer(object document, string revision)
+        {
+            AnswerRevision(revision);
+            var asked = Request?.Query["withRevision"].ToString();
+            return string.Equals(asked, "true", StringComparison.OrdinalIgnoreCase) ? Ok(new { document, revision }) : Ok(document);
+        }
+
+        /// <summary>
+        /// A whole-document write refused because the stored document isn't the one the writer read. One sent without any
+        /// revision from a signed-in page is a page of an earlier JE build (the current one never writes a document whole): its
+        /// session is also told to reload, so the change it couldn't save isn't lost silently (ClientReloadNotice).
+        /// </summary>
         private IActionResult RevisionConflict(string fileName, string revision)
         {
             AnswerRevision(revision);
+            if (RequestedRevision() == null) Services.ClientReloadNotice.Send(_sessionManager, User, Services.ClientReloadNotice.SettingsText, _logger);
             return StatusCode(409, new
             {
                 success = false,
@@ -5465,10 +5505,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var settings = LoadUserSettings(authorizedUserId);
-            // The revision of the settings as stored (before the read's own presentation below).
-            AnswerRevision(UserConfigurationManager.DocumentRevision(settings));
-            return Ok(SettingsDocument(settings));
+            var (settings, revision) = ReadWithRevision(authorizedUserId, UserConfigurationManager.SettingsFileName, () => LoadUserSettings(authorizedUserId));
+            return DocumentAnswer(SettingsDocument(settings), revision);
         }
 
         /// <summary>
@@ -5534,9 +5572,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "shortcuts.json",
+                () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
@@ -5550,9 +5588,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json");
-            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "elsewhere.json",
+                () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpPost("user-settings/{userId}/settings.json")]
@@ -5634,8 +5672,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "invalid_consent", message = "A consent field and value are required." });
             try
             {
-                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value);
-                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage });
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value, out var revision);
+                AnswerRevision(revision);
+                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, revision });
             }
             catch (ArgumentException)
             {
@@ -5691,10 +5730,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (authorizationResult != null) return authorizationResult;
             try
             {
-                var (settings, changes) = _userConfigurationManager.PatchUserSettings(authorizedUserId, patch?.Set,
+                var (settings, changes, revision) = _userConfigurationManager.PatchUserSettingsRevision(authorizedUserId, patch?.Set,
                     () => JellyfinEnhanced.Instance?.Configuration is { } c ? UserSettingsDefaults.Create(c) : new JellyfinEnhancedUserSettings());
                 if (changes.Count > 0) _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
-                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, document = SettingsDocument(settings) });
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, document = SettingsDocument(settings), revision });
             }
             catch (UserDocumentPatchException ex)
             {
@@ -5814,12 +5854,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 T? stored = null;
-                _userConfigurationManager.RmwUserConfiguration<T>(authorizedUserId, fileName, doc =>
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<T>(authorizedUserId, fileName, doc =>
                 {
                     stored = doc;
                     return apply(doc, patch);
                 });
-                return Ok(new { success = true, file = fileName, document = stored });
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = fileName, document = stored, revision });
             }
             catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
             {
@@ -5869,9 +5910,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json");
-            AnswerRevision(UserConfigurationManager.DocumentRevision(userConfig));
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "bookmark.json",
+                () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpPost("user-settings/{userId}/bookmark.json")]
@@ -6040,9 +6081,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var hidden = LoadUserHiddenContentDocument(authorizedUserId);
-            AnswerRevision(UserConfigurationManager.DocumentRevision(hidden));
-            return Ok(hidden);
+            var (hidden, revision) = ReadWithRevision(authorizedUserId, "hidden-content.json", () => LoadUserHiddenContentDocument(authorizedUserId));
+            return DocumentAnswer(hidden, revision);
         }
 
         /// <summary>
@@ -6169,13 +6209,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 UserHiddenContent? stored = null;
-                var changed = _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(authorizedUserId, "hidden-content.json", doc =>
+                var (changed, revision) = _userConfigurationManager.RmwUserDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json", doc =>
                 {
                     stored = doc;
                     return ApplyHiddenContentPatch(doc, patch);
                 });
                 if (changed > 0) Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
-                return Ok(new { success = true, file = "hidden-content.json", document = stored });
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = "hidden-content.json", document = stored, revision });
             }
             catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
             {
@@ -6256,10 +6297,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // file should still return the (empty) default rather than 503 — the
             // user-facing spoiler-blur endpoints already handle strict reads,
             // backups and corruption reporting.
-            var state = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
-                authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
-            AnswerRevision(UserConfigurationManager.DocumentRevision(state));
-            return Ok(state);
+            var (state, revision) = ReadWithRevision(authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName,
+                () => _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName));
+            return DocumentAnswer(state, revision);
         }
 
         // Hard cap per spoiler-list dict on the raw full-state save endpoint:
@@ -6885,19 +6925,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var userKey = userId.Value.ToString("N");
             var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
 
+            // The preferences' revision is their file's (spoilerblur.json): any write of it moves it on.
+            var revision = _userConfigurationManager.RevisionOf(userKey, fileName);
             if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
             {
-                var none = new SpoilerBlurUserPrefs();
-                AnswerRevision(UserConfigurationManager.DocumentRevision(none));
-                return Ok(none);
+                AnswerRevision(revision);
+                return Ok(new SpoilerBlurUserPrefs());
             }
             try
             {
                 var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                     userKey, fileName);
-                var prefs = state.Prefs ?? new SpoilerBlurUserPrefs();
-                AnswerRevision(UserConfigurationManager.DocumentRevision(prefs));
-                return Ok(prefs);
+                AnswerRevision(revision);
+                return Ok(state.Prefs ?? new SpoilerBlurUserPrefs());
             }
             catch (InvalidDataException strictEx)
             {
@@ -6934,13 +6974,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 SpoilerBlurUserPrefs? prefs = null;
-                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(userKey, fileName, state =>
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserSpoilerBlur>(userKey, fileName, state =>
                 {
                     state.Prefs = UserConfigurationManager.ApplyFieldChanges(state.Prefs ?? new SpoilerBlurUserPrefs(), patch.Set);
                     prefs = state.Prefs;
                     return 1;
                 });
-                return Ok(new { success = true, prefs });
+                AnswerRevision(revision);
+                return Ok(new { success = true, prefs, revision });
             }
             catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
             {
@@ -6979,11 +7020,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // file lock; without one only where nothing can be lost (no file yet, or the same preferences).
                 var expected = RequestedRevision();
                 var outcome = UserConfigurationManager.DocumentWrite.Unchanged;
-                var revision = string.Empty;
-                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserSpoilerBlur>(
                     userKey, fileName, state =>
                 {
-                    var current = UserConfigurationManager.DocumentRevision(state.Prefs ?? new SpoilerBlurUserPrefs());
+                    var current = _userConfigurationManager.RevisionOf(userKey, fileName);
                     var next = new SpoilerBlurUserPrefs
                     {
                         HideSeriesDescriptions = body.HideSeriesDescriptions,
@@ -7000,11 +7040,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
-                    revision = current;
-                    if (UserConfigurationManager.DocumentRevision(next) == current) return 0;
-                    if (expected == null
-                        ? _userConfigurationManager.UserConfigurationExists(userKey, fileName)
-                        : !UserConfigurationManager.SameRevision(expected, current))
+                    if (UserConfigurationManager.SameContent(next, state.Prefs ?? new SpoilerBlurUserPrefs())) return 0;
+                    if (expected == null ? _userConfigurationManager.UserConfigurationExists(userKey, fileName) : !UserConfigurationManager.IfMatchAllows(expected, current))
                     {
                         outcome = UserConfigurationManager.DocumentWrite.Conflict;
                         return 0;
@@ -7012,7 +7049,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                     state.Prefs = next;
                     outcome = UserConfigurationManager.DocumentWrite.Saved;
-                    revision = UserConfigurationManager.DocumentRevision(next);
                     return 1;
                 });
                 if (outcome == UserConfigurationManager.DocumentWrite.Conflict)
@@ -8030,7 +8066,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var preExistedHc = _userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json");
                 var hcDefaults = JellyfinEnhanced.Instance?.Configuration;
 
-                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserHiddenContent>(
                     authorizedUserId, "hidden-content.json", h =>
                     {
                         if (!preExistedHc && hcDefaults != null && h.Items.Count == 0)
@@ -8069,7 +8105,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return 1;
                     });
                 Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
-                return Ok(new { success = true, key, entry });
+                // The revision of hidden-content.json this hide left: a page orders it with its own saves' answers.
+                return Ok(new { success = true, key, entry, revision });
             }
             catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
             {

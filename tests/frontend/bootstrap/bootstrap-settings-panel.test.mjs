@@ -13,7 +13,7 @@ function setup(t, config = {}) {
     JE: { pluginConfig: config, userConfig: { settings: {}, shortcuts: { Shortcuts: [] } }, currentSettings: {},
       t: key => key, toast: message => toasts.push(message), pauseScreenInstance: {} }, apiClient: { ajax: async request => { writes.push(request); } } });
   t.after(() => h.close());
-  h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} });
   return { ...h, writes, toasts, async change(id, value) {

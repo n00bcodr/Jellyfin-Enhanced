@@ -27,7 +27,7 @@ async function setup(t, { id = 'library-movie', guarded = true, ajax = async () 
       } } }
     } });
   // The settings store first, as in production: the picks are its ddd-triggers.json document.
-  t.after(() => h.close()); h.load('enhanced/config.js'); h.load('others/doesthedogdie.js'); h.JE.initializeDoesTheDogDieScript();
+  t.after(() => h.close()); h.load('core/mutation-queue.js'); h.load('enhanced/config.js'); h.load('others/doesthedogdie.js'); h.JE.initializeDoesTheDogDieScript();
   const render = async () => { await view(null, h.document.getElementById('itemDetailPage'), h.window.location.hash); await new Promise(r => setTimeout(r, 30)); };
   if (firstRender) await render();
   return { ...h, calls, render, pending, change: () => { policy = 'p2'; guarded = true; h.window.dispatchEvent(new h.window.Event('je:spoiler-changed')); },

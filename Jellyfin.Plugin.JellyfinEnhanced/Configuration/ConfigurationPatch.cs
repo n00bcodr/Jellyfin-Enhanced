@@ -70,6 +70,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     }
 
     /// <summary>A patch that can't be applied: a value of the wrong type, or an instance list the server can't read.</summary>
+    /// <summary>
+    /// A whole configuration (Jellyfin's plugin-configuration route) built on an earlier generation than the one stored: it is
+    /// refused, nothing is written (see <see cref="PluginConfiguration.ConfigurationGeneration"/>).
+    /// </summary>
+    public sealed class ConfigurationConflictException : Exception
+    {
+        /// <summary>Creates the exception.</summary>
+        public ConfigurationConflictException(long sent, long current)
+            : base($"The Jellyfin Enhanced configuration has changed since this copy was read (generation {sent}, now {current}), so it was not saved. Read it again and make the change to what it holds now.")
+        {
+            Sent = sent;
+            Current = current;
+        }
+
+        /// <summary>The generation the refused configuration was built on.</summary>
+        public long Sent { get; }
+
+        /// <summary>The generation stored now.</summary>
+        public long Current { get; }
+    }
+
     public sealed class ConfigurationPatchException : Exception
     {
         /// <summary>Creates the exception.</summary>
@@ -96,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             nameof(PluginConfiguration.AnalyticsLastReportedAt), nameof(PluginConfiguration.AnalyticsLastPayloadJson),
             nameof(PluginConfiguration.AnalyticsLastReportedPluginVersion), nameof(PluginConfiguration.AnalyticsLastReportedJellyfinTarget),
             nameof(PluginConfiguration.AnalyticsLastReportedJellyfinVersion), nameof(PluginConfiguration.AnalyticsForbiddenSinceLastSuccess),
-            nameof(PluginConfiguration.ArrServerOwnedSeen),
+            nameof(PluginConfiguration.ArrServerOwnedSeen), nameof(PluginConfiguration.ConfigurationGeneration),
             nameof(PluginConfiguration.SonarrInstances), nameof(PluginConfiguration.RadarrInstances),
             nameof(PluginConfiguration.SonarrUrl), nameof(PluginConfiguration.SonarrApiKey), nameof(PluginConfiguration.SonarrUrlMappings),
             nameof(PluginConfiguration.RadarrUrl), nameof(PluginConfiguration.RadarrApiKey), nameof(PluginConfiguration.RadarrUrlMappings),

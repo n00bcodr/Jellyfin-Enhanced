@@ -178,6 +178,7 @@ function spoilerTab(t, server) {
     } } } } });
   h.allowConsoleError(/./);
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   for (const name of ['ids', 'state', 'settings-tab']) h.load(`enhanced/spoilerguard/${name}.js`);
   h.JE.internals.spoilerGuard.wireSettings({ help: h.document.getElementById('help'), resetAutoCloseTimer() {} });
   return h;

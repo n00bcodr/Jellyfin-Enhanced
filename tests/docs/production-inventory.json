@@ -1155,6 +1155,14 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientBuildFilter.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientReloadNotice.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ClientScriptBundle.cs",
       "category": "Services"
     },
@@ -1168,6 +1176,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostConfigurationRouteFilter.cs",
       "category": "Services"
     },
     {
@@ -1808,6 +1820,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/mutation-queue.js",
       "category": "js"
     },
     {
@@ -5516,6 +5532,14 @@
       "type": "string",
       "initializer": "\"none\"",
       "constructor_assignment": "\"none\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ConfigurationGeneration",
+      "type": "long",
+      "initializer": null,
+      "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -11065,9 +11089,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 630,
+    "files": 634,
     "routes": 300,
-    "configuration_properties": 646,
+    "configuration_properties": 647,
     "storage_references": 99,
     "scheduled_tasks": 15,
     "locales": 33

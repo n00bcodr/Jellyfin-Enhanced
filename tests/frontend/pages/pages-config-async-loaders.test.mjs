@@ -52,7 +52,7 @@ const PAGE_MANIFEST = [
   ["ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status'))", 'Spoiler Guard apply-to-existing progress display'],
   ['ApiClient.getJSON(previewUrl)', 'Spoiler Guard apply-to-existing preview (counts)'],
   ["ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog')", 'the list of tags to style: the saved overrides come from the stored JSON model (tagStyles.serialize), never from the list'],
-  ['ApiClient.getPluginConfiguration(pluginId).then((config) => {', 'the configuration read itself: until it succeeds no whole save runs (jeConfigSaveAllowed)'],
+  ['ApiClient.getPluginConfiguration(pluginId).then((read) => {', 'the configuration read itself: until it succeeds no whole save runs (jeConfigSaveAllowed)'],
   ['const fresh = await ApiClient.getPluginConfiguration(pluginId);\n                    CUSTOM_TAB_MANAGED_ENTRIES', 'Custom Tabs owned flags: cache rollback after a failed write'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Status'),", "the server's clock, shown under the maintenance window"],
   ["fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingStatus')", 'branding image previews (files, not configuration)'],

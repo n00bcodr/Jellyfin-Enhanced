@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using MediaBrowser.Common.Configuration;
 using Newtonsoft.Json;
@@ -55,7 +56,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Raised after the shared reviews.json was written (review added, edited or deleted).</summary>
         public event Action? ReviewsChanged;
 
-        public object GetUserFileLock(string userId, string fileName)
+        public object GetUserFileLock(string userId, string fileName) => FileLock(userId, fileName);
+
+        /// <summary>The lock every writer of a person's file holds (the same one <see cref="GetUserFileLock"/> hands out).</summary>
+        internal static object FileLock(string userId, string fileName)
         {
             var normalized = (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
             var key = normalized + "|" + (fileName ?? string.Empty);
@@ -297,8 +301,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             lock (UserSettingsLock(userId))
             {
                 var exists = UserConfigurationExists(userId, SettingsFileName);
+                var current = RevisionOf(userId, SettingsFileName);
                 var existing = GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName);
-                var current = DocumentRevision(existing);
                 KeepPersonalConsents(settings, existing);
                 // A display language JE stores is a tag of a shipped bundle, else Auto: never "undefined", "null", a malformed
                 // value or a language without a bundle the client would mirror into Jellyfin's shared language key (dashcrash
@@ -312,7 +316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     return (DocumentWrite.Unchanged, Array.Empty<string>(), current);
                 }
 
-                if (expectedRevision == null ? exists : !SameRevision(expectedRevision, current))
+                if (expectedRevision == null ? exists : !IfMatchAllows(expectedRevision, current))
                 {
                     return (DocumentWrite.Conflict, Array.Empty<string>(), current);
                 }
@@ -329,7 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 SaveUserConfiguration(userId, SettingsFileName, settings);
-                return (DocumentWrite.Saved, changes, DocumentRevision(GetUserConfigurationStrict<JellyfinEnhancedUserSettings>(userId, SettingsFileName)));
+                return (DocumentWrite.Saved, changes, RevisionOf(userId, SettingsFileName));
             }
         }
 
@@ -339,6 +343,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// other settings are taken from the caller. The controller must authorize the person themselves before calling this.
         /// </summary>
         public JellyfinEnhancedUserSettings SetPersonalConsent(string userId, string field, bool? value)
+            => SetPersonalConsent(userId, field, value, out _);
+
+        /// <summary>As <see cref="SetPersonalConsent(string, string, bool?)"/>, with the revision of the settings stored afterwards.</summary>
+        public JellyfinEnhancedUserSettings SetPersonalConsent(string userId, string field, bool? value, out string revision)
         {
             lock (UserSettingsLock(userId))
             {
@@ -354,6 +362,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // The stored document passes the display-language gate (SaveUserConfiguration); the answer says what it stored.
                 settings.DisplayLanguage = LanguageTags.Sanitize(settings.DisplayLanguage);
                 SaveUserConfiguration(userId, SettingsFileName, settings);
+                revision = RevisionOf(userId, SettingsFileName);
                 return settings;
             }
         }
@@ -369,6 +378,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <returns>The settings as stored afterwards, and what changed ("Name: old → new").</returns>
         public (JellyfinEnhancedUserSettings Settings, IReadOnlyList<string> Changes) PatchUserSettings(string userId, IReadOnlyDictionary<string, System.Text.Json.JsonElement>? set, Func<JellyfinEnhancedUserSettings> seed)
         {
+            var (settings, changes, _) = PatchUserSettingsRevision(userId, set, seed);
+            return (settings, changes);
+        }
+
+        /// <summary>As <see cref="PatchUserSettings"/>, with the revision of the settings stored afterwards (taken under the lock).</summary>
+        public (JellyfinEnhancedUserSettings Settings, IReadOnlyList<string> Changes, string Revision) PatchUserSettingsRevision(string userId, IReadOnlyDictionary<string, System.Text.Json.JsonElement>? set, Func<JellyfinEnhancedUserSettings> seed)
+        {
             lock (UserSettingsLock(userId))
             {
                 var exists = UserConfigurationExists(userId, SettingsFileName);
@@ -381,7 +397,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                 var newJson = System.Text.Json.JsonSerializer.Serialize(updated);
                 var changes = new List<string>();
-                if (exists && existingJson == newJson) return (updated, changes);
+                if (exists && existingJson == newJson) return (updated, changes, RevisionOf(userId, SettingsFileName));
                 var existingDoc = System.Text.Json.JsonDocument.Parse(existingJson).RootElement;
                 foreach (var prop in System.Text.Json.JsonDocument.Parse(newJson).RootElement.EnumerateObject())
                 {
@@ -392,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 }
 
                 SaveUserConfiguration(userId, SettingsFileName, updated);
-                return (updated, changes);
+                return (updated, changes, RevisionOf(userId, SettingsFileName));
             }
         }
 
@@ -649,6 +665,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Locked read-modify-write: holds GetUserFileLock, strict-reads, mutates, and saves when the mutator returns > 0.
         public int RmwUserConfiguration<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
+            => RmwUserDocument(userId, fileName, mutate).Changed;
+
+        /// <summary>
+        /// <see cref="RmwUserConfiguration{T}"/>, also answering the document's revision afterwards (taken under the lock, so it
+        /// is the revision of the document the mutator left).
+        /// </summary>
+        public (int Changed, string Revision) RmwUserDocument<T>(string userId, string fileName, Func<T, int> mutate) where T : class, new()
         {
             lock (GetUserFileLock(userId, fileName))
             {
@@ -658,33 +681,83 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 {
                     SaveUserConfiguration(userId, fileName, config);
                 }
-                return changed;
+                return (changed, RevisionOf(userId, fileName));
+            }
+        }
+
+        // ---- Revisions of per-user documents ----
+        // A document's revision counts the writes of that file ("{incarnation}.{writes}"): it moves on with every write, a
+        // quarantine, a restore and a removal, whatever the content (a document changed back, or restored to what it held, has a
+        // new revision). The counts live in memory; the incarnation names this run of them. It is new each time the server
+        // starts and each time documents are put in place past their writers (a JE backup restore, the start-up folder
+        // migration, a person's folder removed), and every incarnation sorts after the one before it, so a revision handed
+        // out earlier never comes back and revisions order by (incarnation, writes).
+        private static readonly ConcurrentDictionary<string, long> _writes = new(StringComparer.Ordinal);
+        private static readonly object _incarnationLock = new();
+        private static long _incarnationTicks;
+        private static string _incarnation = NextIncarnation();
+
+        private static string NextIncarnation()
+        {
+            lock (_incarnationLock)
+            {
+                // Milliseconds since the epoch, strictly after the previous incarnation (12 hex digits: sorts as text).
+                _incarnationTicks = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), _incarnationTicks + 1);
+                return _incarnationTicks.ToString("x12", System.Globalization.CultureInfo.InvariantCulture);
             }
         }
 
         /// <summary>
-        /// The revision of a per-user document: a hash of the document as read (its typed form). The read routes hand it out
-        /// (ETag) and a whole-document write sends it back (If-Match), so the server can tell whether the document it holds
-        /// is still the one the writer read.
+        /// Begins a new incarnation: every revision handed out before is spent. Called when documents were put in place past
+        /// their writers (a restore, the start-up folder migration, a removed folder); a server start begins one too.
         /// </summary>
-        public static string DocumentRevision(object? document)
+        internal static void NewIncarnation() => Volatile.Write(ref _incarnation, NextIncarnation());
+
+        /// <summary>The write count of one per-user file moves on (call after the file changed, before its lock is released).</summary>
+        private static void Advance(string path) => _writes.AddOrUpdate(Path.GetFullPath(path), 1, (_, n) => n + 1);
+
+        /// <summary>
+        /// The revision of a per-user document as stored now. A reader takes it before it reads the document: a write that
+        /// lands in between then makes the revision it hands out older than the document it read, so a whole write built on
+        /// that read is refused rather than allowed (the safe side).
+        /// </summary>
+        public string RevisionOf(string userId, string fileName)
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(document, document?.GetType() ?? typeof(object));
-            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json));
-            return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+            var incarnation = Volatile.Read(ref _incarnation);
+            var path = Path.GetFullPath(ResolveUserFile(userId, fileName));
+            return incarnation + "." + (_writes.TryGetValue(path, out var n) ? n : 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         /// <summary>
-        /// A revision a writer sent (an If-Match value: quoted or not, weak or not) is the given one. "*" and an empty value
-        /// name no revision.
+        /// Puts a per-user file in place past <see cref="SaveUserConfiguration"/> (a JE backup restore) under the same lock as
+        /// every writer of it, and moves its revision on: a writer that read before the restore can't put its copy over the
+        /// restored one, and its revision is spent.
         /// </summary>
-        public static bool SameRevision(string? sent, string current)
+        internal static void PlaceUserFile(string personFolder, string fileName, string path, Action place)
         {
-            var value = (sent ?? string.Empty).Trim();
-            if (value.StartsWith("W/", StringComparison.Ordinal)) value = value.Substring(2);
-            value = value.Trim().Trim('"');
-            return value.Length > 0 && value != "*" && string.Equals(value, current, StringComparison.OrdinalIgnoreCase);
+            lock (FileLock(personFolder, fileName))
+            {
+                place();
+                Advance(path);
+            }
         }
+
+        /// <summary>
+        /// Whether an If-Match value names the revision stored now (<paramref name="current"/>): a list of entity tags (RFC
+        /// 9110), each quoted, any of them the current revision. A weak tag never matches (a whole replacement needs the
+        /// exact revision), and "*", an empty value or anything that isn't a list of entity tags names no revision.
+        /// </summary>
+        public static bool IfMatchAllows(string? ifMatch, string current)
+        {
+            if (string.IsNullOrWhiteSpace(ifMatch)) return false;
+            if (!Microsoft.Net.Http.Headers.EntityTagHeaderValue.TryParseStrictList(new[] { ifMatch }, out var tags) || tags == null) return false;
+            var wanted = "\"" + current + "\"";
+            return tags.Any(tag => !tag.IsWeak && string.Equals(tag.Tag.Value, wanted, StringComparison.Ordinal));
+        }
+
+        /// <summary>Whether two documents of one type hold the same content (their typed forms serialize alike).</summary>
+        public static bool SameContent<T>(T a, T b)
+            => System.Text.Json.JsonSerializer.Serialize(a, typeof(T)) == System.Text.Json.JsonSerializer.Serialize(b, typeof(T));
 
         /// <summary>The outcome of a whole-document write (<see cref="ReplaceUserDocument{T}"/>).</summary>
         public enum DocumentWrite
@@ -713,15 +786,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             lock (GetUserFileLock(userId, fileName))
             {
                 var exists = UserConfigurationExists(userId, fileName);
+                var current = RevisionOf(userId, fileName);
                 // Strict: a corrupt stored document is never replaced (it is backed up and the caller is told).
                 var stored = GetUserConfigurationStrict<T>(userId, fileName);
-                var current = DocumentRevision(stored);
                 prepare?.Invoke(document, stored);
-                if (DocumentRevision(document) == current) return (DocumentWrite.Unchanged, current, stored);
-                if (expectedRevision == null ? exists : !SameRevision(expectedRevision, current)) return (DocumentWrite.Conflict, current, stored);
+                if (SameContent(document, stored)) return (DocumentWrite.Unchanged, current, stored);
+                if (expectedRevision == null ? exists : !IfMatchAllows(expectedRevision, current)) return (DocumentWrite.Conflict, current, stored);
                 SaveUserConfiguration(userId, fileName, document);
                 var saved = GetUserConfigurationStrict<T>(userId, fileName);
-                return (DocumentWrite.Saved, DocumentRevision(saved), saved);
+                return (DocumentWrite.Saved, RevisionOf(userId, fileName), saved);
             }
         }
 
@@ -760,6 +833,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 VersionOf(userId, fileName).Mutate(() =>
                 {
                     File.Move(tempPath, configPath, overwrite: true);
+                    // The revision moves on once the new document is what readers see (a reader that took the revision
+                    // before then hands out the older one: refused, never allowed, by a whole write built on it).
+                    Advance(configPath);
                     Moved?.Invoke(Normalized(userId), fileName);
                 });
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
@@ -856,6 +932,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff")
                     + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
                 _allSettingsVersion.Mutate(() => File.Move(filePath, backupPath));
+                Advance(filePath);
                 _logger.Warning($"Corrupt config quarantined to {backupPath} (store will reset to defaults on next read)");
             }
             catch (Exception ex)
@@ -864,7 +941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 // Last resort: if the move failed, delete the unreadable file so
                 // the 503-per-request loop still breaks. The content is already
                 // unparseable, and the failure is logged above for forensics.
-                try { _allSettingsVersion.Mutate(() => File.Delete(filePath)); }
+                try { _allSettingsVersion.Mutate(() => File.Delete(filePath)); Advance(filePath); }
                 catch (Exception delEx)
                 {
                     _logger.Error($"Also failed to delete corrupt config '{filePath}': {delEx.Message}");
@@ -1027,6 +1104,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             if (renamed + migrated + failed > 0)
             {
+                // Documents were put in place under other names: every revision handed out before is spent.
+                NewIncarnation();
                 if (failed > 0)
                 {
                     _logger.Warning($"User-dir case migration done with errors: {renamed} renamed, {migrated} merged, {failed} failed (source dirs left intact).");
@@ -1052,6 +1131,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 if (!Directory.Exists(userDir)) return false;
                 _settingsVersions.For(userId.ToString("N")).Mutate(() => Directory.Delete(userDir, recursive: true));
+                NewIncarnation();
                 return true;
             }
             catch (Exception ex)

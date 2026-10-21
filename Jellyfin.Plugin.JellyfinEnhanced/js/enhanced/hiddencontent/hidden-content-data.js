@@ -201,8 +201,9 @@
 
     // The answer of a server-side hide write (the home-row removal) as part of the store's document — preserves existing
     // metadata + merges scopes via mergeCwScope, as the server did. Looks up under hyphenated AND N-format keys (server
-    // canonical is hyphenated; some callers pass N-format from data-id).
-    function markScopedHidden(itemId, scope) {
+    // canonical is hyphenated; some callers pass N-format from data-id). `revision`: the document's revision the route
+    // answered (the store orders it with its own saves' answers).
+    function markScopedHidden(itemId, scope, revision) {
         if (!itemId) return;
         const _scope = (scope || 'continuewatching').toLowerCase();
         const data = getHiddenData();
@@ -241,7 +242,7 @@
             hideScope: finalScope,
         };
         const remove = [hyphenated, noHyphen].filter(key => key !== itemId && items[key]);
-        JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { [itemId]: merged }, remove });
+        JE.internals.acknowledgeUserDocumentChange('hidden-content.json', { upsert: { [itemId]: merged }, remove }, revision);
     }
 
     // ============================================================

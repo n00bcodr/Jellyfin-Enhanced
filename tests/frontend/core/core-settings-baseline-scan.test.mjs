@@ -69,6 +69,8 @@ function baselineViolations(source, rules) {
     else if (node.type === 'ObjectProperty' && node.key.name === 'persisted' && enclosingName(ancestors).name === 'bootDocument') { target = 'boot.persisted'; value = node.value; }
     // Round 9: a document handed to the store's one taking helper.
     else if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'takeDocument') { target = 'takeDocument()'; value = node.arguments[1]; }
+    // Round 10: an operation's answer taken (in the server's order) by settleAnswer.
+    else if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'settleAnswer') { target = 'settleAnswer()'; value = node.arguments[1]; }
     else return;
     for (const rule of rules) {
       if (!rule.target(target)) continue;
@@ -103,6 +105,15 @@ const fromBootRecord = (node, ancestors, fn, value) => {
   });
   return bound || 'not from the boot read record';
 };
+/** A member of a value bound, in the same function, to bootDocument's answer (`const boot = bootDocument(...)`; boot.persisted). */
+const fromBootObject = (node, ancestors, fn, value) => {
+  if (value?.type !== 'MemberExpression' || value.object.type !== 'Identifier') return 'not from the boot read record';
+  let bound = false;
+  walk(fn.body, inner => {
+    if (inner.type === 'VariableDeclarator' && calls(inner.init, 'bootDocument') && inner.id.type === 'Identifier' && inner.id.name === value.object.name) bound = true;
+  });
+  return bound || 'not from the boot read record';
+};
 /** The boot document comes from the read record (readRecords), never from the page's userConfig object as it is now. */
 const fromReadRecord = (node, ancestors, fn, value) => {
   let record = false, view = false;
@@ -128,12 +139,17 @@ const STORE_RULES = [{
 }, {
   target: path => path === 'takeDocument()',
   allowed: {
-    settingsDocument: fromBootRecord,
-    readUserSettings: insideIf(test => JSON.stringify(test).includes('"response"')),
+    // Round 10: a userConfig object's documents are adopted as it is assigned (adoptBootDocuments), from its read record.
+    adoptBootDocuments: fromBootObject,
+    readUserSettings: insideIf(test => JSON.stringify(test).includes('"read"')),
     noteSettingsRead: ok,
     acknowledgeUserDocumentChange: ok,
-    queueOperation: insideIf(test => test.type === 'Identifier' && test.name === 'succeeded')
+    // Round 10: an operation's answer, in the server's order; settleAnswer itself runs only behind the success (below).
+    settleAnswer: ok
   }
+}, {
+  target: path => path === 'settleAnswer()',
+  allowed: { queueOperation: insideIf(test => test.type === 'Identifier' && test.name === 'succeeded') }
 }];
 const PAGE_RULES = [{
   target: path => /^_jeBase(\.|\[|$)/.test(path) || /^_jeSent(\.|\[|$)/.test(path),
@@ -142,6 +158,8 @@ const PAGE_RULES = [{
     jeAcceptStored: ok,
     jeSaveNow: afterAwait('jePatchConfiguration'),
     jeRedrawSavedFields: afterAwait('getPluginConfiguration'),
+    // Round 10: a refresh keeps the baselines the page held for the fields the administrator hasn't saved.
+    keepBaselines: (node, ancestors, fn, value) => (value?.type === 'MemberExpression' && ['base', 'sent'].includes(value.object.name)) || 'not the baseline the page held',
     '*': clears
   }
 }, {
@@ -177,7 +195,7 @@ const PLANTS = [
   ['store: a whole-document caller\'s object as the baseline', 'enhanced/config.js', STORE_RULES,
     "const before = fileName === 'settings.json' ? resolveSettings(state.shown) : state.shown;", 'state.persisted = copyDocument(settings);'],
   ['store: an answer applied before its success', 'enhanced/config.js', STORE_RULES,
-    'const previousPersisted = state.persisted;\n                if (succeeded)', 'takeDocument(state, persistedAfter(state, entry, previousPersisted));'],
+    'const previousPersisted = state.persisted;\n                if (succeeded)', 'takeDocument(state, applyOperation(state.fileName, previousPersisted, entry));'],
   ['store: the page\'s object as the boot document (the R8-1 shape)', 'enhanced/config.js', STORE_RULES,
     'const bootDocument = fileName => {', 'const own = JE.userConfig?.[kindOf(fileName)?.view]; if (own) return { persisted: copyDocument(own), readOk: true };'],
   ['store: the page\'s object written into a document\'s state', 'enhanced/config.js', STORE_RULES,

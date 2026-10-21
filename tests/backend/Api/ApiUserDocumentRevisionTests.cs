@@ -232,8 +232,10 @@ public class ApiUserDocumentRevisionTests
         Assert.True(route.HasOwn(m, freshId), "a first document is stored");
     }
 
+    // If-Match is read as HTTP entity tags (round 10, RBS1-R10-9): the quoted current revision, alone or in a list, is
+    // accepted; a weak tag, an unquoted value and "*" name no revision.
     [Fact]
-    public void ARevisionWithoutQuotesOrWeakPrefixIsAcceptedAndAWildcardIsNotARevision()
+    public void OnlyTheQuotedCurrentRevisionIsAcceptedAndAWildcardIsNotARevision()
     {
         var route = Find("hidden-content.json");
         using var f = new ApiPluginFixture();
@@ -247,15 +249,18 @@ public class ApiUserDocumentRevisionTests
 
         var star = route.Document(m, id);
         route.Own(star);
-        Assert.Equal(409, Status(route.Write(Controller(f, person, "*"), id, star)));
-        Assert.False(route.HasOwn(m, id));
+        foreach (var refused in new[] { "*", "W/" + tag, bare })
+        {
+            Assert.Equal(409, Status(route.Write(Controller(f, person, refused), id, star)));
+            Assert.False(route.HasOwn(m, id));
+        }
 
-        Assert.Equal(200, Status(route.Write(Controller(f, person, "W/" + tag), id, star)));
+        Assert.Equal(200, Status(route.Write(Controller(f, person, "\"older\", " + tag), id, star)));
         var next = route.Document(m, id);
         ((UserHiddenContent)next).Items["d"] = new HiddenContentItem { ItemId = "d" };
         var reread = Controller(f, person);
-        var current = ETag(reread, route.Read(reread, id)).Trim('"');
-        Assert.NotEqual(bare, current);
+        var current = ETag(reread, route.Read(reread, id));
+        Assert.NotEqual(tag, current);
         Assert.Equal(200, Status(route.Write(Controller(f, person, current), id, next)));
         Assert.True(m.GetUserConfiguration<UserHiddenContent>(id, "hidden-content.json").Items.ContainsKey("d"));
     }

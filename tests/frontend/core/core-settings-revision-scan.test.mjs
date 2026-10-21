@@ -100,37 +100,71 @@ function storeViolations(source) {
   for (const a of assignments) {
     if (a.target === 'state.revision' && !['takeDocument', 'queueOperation'].includes(a.name)) found.push(`state.revision moved in ${a.name}`);
   }
-  // What each caller hands takeDocument: a read only behind the revision check it took before the request.
+  // What each caller hands takeDocument: a read only behind the revision check it took before the request (and, round 10,
+  // never older than the document held, in the server's order).
   const READS = { readUserSettings: 'revision === state.revision', noteSettingsRead: 'revision !== state.revision' };
   for (const c of calls.filter(c => c.callee === 'takeDocument')) {
     if (READS[c.name]) {
       const ok = c.name === 'noteSettingsRead'
         ? text(source, c.fn.body).indexOf(READS[c.name]) !== -1 && text(source, c.fn.body).indexOf(READS[c.name]) < c.node.start - c.fn.body.start
-        : guardedBy(source, READS[c.name])(c.node, c.ancestors);
+        : guardedBy(source, READS[c.name])(c.node, c.ancestors) && (c.name !== 'readUserSettings' || guardedBy(source, 'newerRevision(')(c.node, c.ancestors));
       if (!ok) found.push(`takeDocument in ${c.name}: a read taken without the revision check`);
-    } else if (!['settingsDocument', 'acknowledgeUserDocumentChange', 'queueOperation'].includes(c.name)) {
+    } else if (!['adoptBootDocuments', 'acknowledgeUserDocumentChange', 'settleAnswer'].includes(c.name)) {
       found.push(`takeDocument called from ${c.name}`);
     }
   }
-  // The new-userConfig rebase takes a boot document only while only boot documents were taken.
-  const rebase = calls.find(c => c.callee === 'takeDocument' && c.name === 'settingsDocument');
-  if (!rebase || !guardedBy(source, 'state.bootRevision')(rebase.node, rebase.ancestors)) found.push('a boot document taken over a newer read or answer');
+  // Round 10: a userConfig object's documents are adopted as it is assigned, in the server's order (newerRevision), or
+  // without revisions only while only boot documents were taken.
+  const rebase = calls.find(c => c.callee === 'takeDocument' && c.name === 'adoptBootDocuments');
+  const adopt = functions.get('adoptBootDocuments');
+  if (!rebase || !guardedBy(source, 'take')(rebase.node, rebase.ancestors) || !adopt
+    || !/state\.revision === state\.bootRevision/.test(text(source, adopt.body)) || !/newerRevision\(/.test(text(source, adopt.body))) {
+    found.push('a boot document taken over a newer read or answer');
+  }
+  if (!/set: value => \{[^}]*adoptBootDocuments\(\)/.test(source)) found.push('a new userConfig object is not adopted as it is assigned');
+  // Round 10: an operation's answer is taken whole only when nothing came from outside since it was sent, or when it is
+  // newer in the server's order; otherwise its operation is applied to the document held.
+  const settle = functions.get('settleAnswer');
+  if (!settle || !/state\.outsideTakes === entry\.outsideAt/.test(text(source, settle.body)) || !/newerRevision\(/.test(text(source, settle.body))) {
+    found.push('an answer taken whole whatever reached the store since it was sent');
+  }
   // Every revision step a module of the store's documents makes outside it: the home-row hide's answer is acknowledged.
   return found;
 }
 
-/** Spoiler Guard's preferences: answers move prefsRevision on; the state read takes Prefs only behind it. */
+/**
+ * Spoiler Guard's preferences (round 10): saves go out on the preferences' one session queue (its revision moves on with
+ * each save queued and answered); the state read takes Prefs only behind that revision.
+ */
 function spoilerViolations(source) {
   const found = [];
-  const { functions, assignments } = shape(source);
+  const { functions, assignments, calls } = shape(source);
   for (const a of assignments.filter(a => a.target === 'userPrefs' && !isClear(a.value))) {
     if (a.name === 'stateRead') {
-      if (!guardedBy(source, 'prefsRevision')(a.node, a.ancestors)) found.push('the state read takes Prefs without the revision check');
-    } else if (a.name === 'acknowledged') {
-      if (!bumps(source, a.fn, 'prefsRevision')) found.push('a save\'s answer taken without moving the revision on');
-    } else found.push(`userPrefs assigned in ${a.name}`);
+      if (!guardedBy(source, 'prefsQueue.revision')(a.node, a.ancestors)) found.push('the state read takes Prefs without the revision check');
+    } else if (a.name !== 'acknowledged') found.push(`userPrefs assigned in ${a.name}`);
   }
-  if (!bumps(source, functions.get('setUserPrefs'), 'prefsRevision')) found.push('a queued save does not move the revision on');
+  if (!/const prefsQueue = JE\.core\.mutationQueue\(/.test(source)) found.push('the preferences have no session queue');
+  const sends = calls.filter(c => c.callee === 'request' && c.name === 'setUserPrefs');
+  if (!sends.length || sends.some(c => !c.ancestors.some(a => a.type === 'CallExpression' && memberPath(a.callee) === 'prefsQueue.send'))) {
+    found.push('a preference save sent outside the session queue');
+  }
+  if (!functions.get('setUserPrefs')) found.push('setUserPrefs is missing');
+  return found;
+}
+
+/** Notification preferences (round 10): every change goes out on the person's session queue; a read is taken only behind it. */
+function notifyViolations(source) {
+  const found = [];
+  const { functions, calls } = shape(source);
+  if (!/const prefsQueue = JE\.core\.mutationQueue\(/.test(source)) found.push('the notification preferences have no session queue');
+  const sends = calls.filter(c => c.callee === 'api' && c.name === 'prefsCall');
+  if (!sends.length || sends.some(c => !c.ancestors.some(a => a.type === 'CallExpression' && memberPath(a.callee) === 'prefsQueue.send'))) {
+    found.push('a preference change sent outside the session queue');
+  }
+  const apply = calls.find(c => c.callee === 'applyPrefs' && c.name === 'loadPrefs');
+  if (!apply || !guardedBy(source, 'prefsQueue.revision')(apply.node, apply.ancestors)) found.push('a preference read taken whatever changed meanwhile');
+  if (!functions.get('prefsCall')) found.push('prefsCall is missing');
   return found;
 }
 
@@ -142,17 +176,28 @@ function pageViolations(source) {
   for (const name of takers) {
     if (!bumps(source, functions.get(name), '_jeConfigRevision')) found.push(`${name} takes what the server holds without moving the revision on`);
   }
-  // A configuration read is drawn only while the revision is the one it began with.
+  // A configuration read is drawn only while the revision is the one it began with and no save is out (round 10: a dropped
+  // read is read again after the saves; a save moves the revision on as it begins and as it ends, whatever its outcome).
   for (const c of calls.filter(c => /getPluginConfiguration$/.test(c.callee))) {
     if (c.name === 'loadConfig') {
       const then = c.ancestors.at(-2)?.type === 'CallExpression' ? c.ancestors.at(-2).arguments[0] : null;
-      if (!then || !text(source, then).includes('revision !== _jeConfigRevision')) found.push('loadConfig draws a read without the revision check');
+      if (!then || !text(source, then).includes('revision !== _jeConfigRevision') || !text(source, then).includes('jeSaveOutstanding()')) found.push('loadConfig draws a read without the revision check');
+      if (!then || !text(source, then).includes('_jeRefreshWanted = true')) found.push('a read dropped for overlapping a save is not read again');
+      if (!then || !text(source, then).includes('jeKeepUnsaved(')) found.push('a refresh draws over the administrator\'s unsaved changes');
     } else if (c.name === 'jeRedrawSavedFields') {
       if (!text(source, c.fn.body).includes('revision !== _jeConfigRevision')) found.push('the post-save redraw draws a read without the revision check');
     } else if (!['persistCustomTabsOwnedFlags', 'jeConfigReadRetry'].includes(c.name) && takers.has(c.name)) {
       found.push(`${c.name} reads the configuration and takes it`);
     }
   }
+  // The save's request is bracketed: the revision moves on in the finally of the try that awaits it (a failed save too).
+  let bracketed = false;
+  walk(functions.get('jeSaveNow')?.body, inner => {
+    if (inner.type === 'TryStatement' && inner.finalizer && text(source, inner.block).includes('jePatchConfiguration(')
+      && text(source, inner.finalizer).includes('_jeConfigRevision++')) bracketed = true;
+  });
+  if (!bracketed) found.push('a save (or a failed one) does not move the revision on when it ends');
+  if (!/addEventListener\('beforeunload'[\s\S]{0,200}jeSaveOutstanding\(\)/.test(source)) found.push('leaving the page does not warn while a save is out');
   return found;
 }
 
@@ -160,6 +205,7 @@ const pageSource = () => configPageParts().scripts.join('\n;\n');
 const CHANGE_SOURCES = [
   ['enhanced/config.js', () => read('enhanced/config.js'), storeViolations],
   ['enhanced/spoilerguard/state.js', () => read('enhanced/spoilerguard/state.js'), spoilerViolations],
+  ['arr/notify/notify-core.js', () => read('arr/notify/notify-core.js'), notifyViolations],
   ['configPage.html', pageSource, pageViolations]
 ];
 
@@ -175,21 +221,39 @@ const replace = (source, anchor, line) => {
 };
 const CHANGE_PLANTS = [
   ['store: an acknowledged write taken without the revision (the R9-3 shape)', 'enhanced/config.js',
-    'takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)));',
+    "takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, typeof serverRevision === 'string' ? serverRevision : undefined);",
     'state.persisted = applyOperation(fileName, previousPersisted, copyDocument(operation));'],
-  ['store: the helper no longer moves the revision on', 'enhanced/config.js', '        state.revision++;\n    };', '    };'],
+  ['store: the helper no longer moves the revision on', 'enhanced/config.js', '        state.revision++;\n        if (outside) state.outsideTakes++;', '        if (outside) state.outsideTakes++;'],
   ['store: a read taken whatever changed meanwhile', 'enhanced/config.js',
-    'if (response && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision) {',
-    'if (response) {'],
-  ['store: a boot document taken over a newer answer', 'enhanced/config.js', 'if (state.revision === state.bootRevision) {', 'if (true) {'],
+    'if (read && !hadPending && !state.pending.length && revision === state.revision && readRevision === state.readRevision',
+    'if (read'],
+  ['store: a read older than the document held taken (server order)', 'enhanced/config.js',
+    '            && newerRevision(state.serverRevision, readServerRevision) !== true) {', '            ) {'],
+  ['store: a boot document taken over a newer answer', 'enhanced/config.js',
+    'const take = order === undefined ? state.revision === state.bootRevision : order;', 'const take = true;'],
+  ['store: a new userConfig object adopted only when looked at (the R10-6 shape)', 'enhanced/config.js',
+    'set: value => { recordRead(value); userConfig = value; adoptBootDocuments(); }', 'set: value => { recordRead(value); userConfig = value; }'],
+  ['store: a late answer taken whole over an acknowledged write (the R10-5 shape)', 'enhanced/config.js',
+    '(state.outsideTakes === entry.outsideAt || order === true)', 'true'],
   ['Spoiler Guard: the state read takes Prefs whatever changed meanwhile', 'enhanced/spoilerguard/state.js',
-    'if (readRevision === prefsRevision && !pendingPrefs.length) userPrefs = value.Prefs || {};', 'userPrefs = value.Prefs || {};'],
-  ['Spoiler Guard: an answer taken without moving the revision on', 'enhanced/spoilerguard/state.js',
-    '                prefsRevision++;\n                notifyPolicyChanged();', '                notifyPolicyChanged();'],
+    'if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};', 'userPrefs = value.Prefs || {};'],
+  ['Spoiler Guard: a save sent outside the session queue (the R10-1 shape)', 'enhanced/spoilerguard/state.js',
+    "const save = prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }));",
+    "const save = request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true });"],
+  ['notifications: a change sent outside the session queue (the R10-8 shape)', 'arr/notify/notify-core.js',
+    'const res = await prefsQueue.send(() => api(path, { method, body }));', 'const res = await api(path, { method, body });'],
+  ['notifications: a read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
+    'if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);', 'applyPrefs(body);'],
   ['page: a value the server holds taken without moving the revision on', 'configPage.html',
     '            if (_jeSent) _jeSent[field] = value;\n            _jeConfigRevision++;', '            if (_jeSent) _jeSent[field] = value;'],
   ['page: a configuration read drawn whatever changed meanwhile', 'configPage.html',
-    'if (_jeConfigReadOk && (revision !== _jeConfigRevision || _jeInFlight)) {', 'if (false) {'],
+    'if (_jeConfigReadOk && (revision !== _jeConfigRevision || jeSaveOutstanding())) {', 'if (false) {'],
+  ['page: a failed save does not move the revision on (the R10-7 shape)', 'configPage.html',
+    '                    _jeInFlight = null;\n                    _jeConfigRevision++;', '                    _jeInFlight = null;'],
+  ['page: a dropped refresh is not read again (the R10-12 shape)', 'configPage.html', '                    _jeRefreshWanted = true;\n', ''],
+  ['page: a refresh draws over unsaved changes', 'configPage.html', 'const kept = _jeConfigReadOk ? jeKeepUnsaved(read) : null;', 'const kept = null;'],
+  ['page: leaving does not warn while a save is out (the R10-11 shape)', 'configPage.html',
+    "if (!jeSaveOutstanding() && !(saveDock && saveDock.classList.contains('je-dirty'))) return;", "if (!(saveDock && saveDock.classList.contains('je-dirty'))) return;"],
   ['page: the post-save redraw drawn whatever changed meanwhile', 'configPage.html',
     'if (revision !== _jeConfigRevision) return;', '']
 ];
@@ -238,19 +302,19 @@ function routes(files) {
 const DOCUMENT_ROUTE = /^(user-settings\/\{userId\}\/[a-z-]+\.json|spoiler-blur\/user-prefs)$/;
 // The gates: a whole replacement compares the revision sent (RequestedRevision) under the file lock.
 const FENCED = body => /FencedReplace\(|SaveUserSettings\([^;]*RequestedRevision\(\)/.test(body)
-  || (/RequestedRevision\(\)/.test(body) && /SameRevision\(/.test(body) && /RmwUserConfiguration/.test(body));
+  || (/RequestedRevision\(\)/.test(body) && /IfMatchAllows\(/.test(body) && /RmwUser(Configuration|Document)/.test(body));
 // An operation route changes only what it names, under the file lock.
-const OPERATION = body => /PatchUserDocument<|RmwUserConfiguration|PatchUserSettings\(|SetPersonalConsent\(/.test(body);
+const OPERATION = body => /PatchUserDocument<|RmwUser(Configuration|Document)|PatchUserSettings(Revision)?\(|SetPersonalConsent\(/.test(body);
 
 // Writers of a per-user document outside the routes, each with why it needs no revision.
 const SERVICE_WRITERS = {
   'Configuration/UserConfigurationManager.cs': {
-    SaveUserSettings: 'the settings gate: compares the revision sent (SameRevision) under the settings lock',
+    SaveUserSettings: 'the settings gate: compares the revision sent (IfMatchAllows) under the settings lock',
     SetPersonalConsent: 'an operation (one consent) under the settings lock',
-    PatchUserSettings: 'an operation (fields) under the settings lock',
+    PatchUserSettingsRevision: 'an operation (fields) under the settings lock',
     SeedUserSettings: 'writes only while the person has no settings (under the lock)',
     ResetUserSettings: 'the administrator\'s explicit "reset all users" (confirmed), under the lock',
-    RmwUserConfiguration: 'the operation helper: read, change and save under the file lock',
+    RmwUserDocument: 'the operation helper: read, change and save under the file lock',
     ReplaceUserDocument: 'the whole-document gate: compares the revision sent under the file lock',
     SaveProcessedWatchlistItems: 'server-owned watchlist bookkeeping; no client reads or writes it'
   },
@@ -283,7 +347,7 @@ function fenceViolations(files) {
   }
   // Every read route of a document hands its revision out.
   for (const [file, verb, template, name, body] of all) {
-    if (verb === 'GET' && DOCUMENT_ROUTE.test(template) && !/AnswerRevision\(/.test(body)) found.push(`${file} GET ${template} (${name}) hands out no revision`);
+    if (verb === 'GET' && DOCUMENT_ROUTE.test(template) && !/AnswerRevision\(|DocumentAnswer\(/.test(body)) found.push(`${file} GET ${template} (${name}) hands out no revision`);
   }
   for (const [file, member] of serviceWriters(files)) {
     if (!SERVICE_WRITERS[file]?.[member]) found.push(`${file}: ${member} writes a per-user document whole`);
@@ -308,14 +372,14 @@ const FENCE_PLANTS = [
     'var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome);',
     '_userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration); IActionResult? refused = null; var outcome = UserConfigurationManager.DocumentWrite.Saved;'],
   ['a whole-preferences POST without the check', CONTROLLER,
-    ': !UserConfigurationManager.SameRevision(expected, current))', ': false)'],
+    ': !UserConfigurationManager.IfMatchAllows(expected, current))', ': false)'],
   ['a settings POST that sends no revision to the gate', CONTROLLER,
     'SaveUserSettings(authorizedUserId, userConfiguration, RequestedRevision());', 'SaveUserSettings(authorizedUserId, userConfiguration);'],
   ['a read route that hands out no revision', CONTROLLER,
-    'AnswerRevision(UserConfigurationManager.DocumentRevision(triggers));', ''],
+    'return DocumentAnswer(triggers, revision);', 'return Ok(triggers);'],
   ['a new service writing a document whole', 'Configuration/UserConfigurationManager.cs',
-    'public static string DocumentRevision(object? document)',
-    'public void ImportDocument(string userId, string fileName, object doc) { SaveUserConfiguration(userId, fileName, doc); }\n        public static string DocumentRevision(object? document)'],
+    'public static bool IfMatchAllows(string? ifMatch, string current)',
+    'public void ImportDocument(string userId, string fileName, object doc) { SaveUserConfiguration(userId, fileName, doc); }\n        public static bool IfMatchAllows(string? ifMatch, string current)'],
   ['notification preferences stored apart from their read', 'Controllers/NotifyController.cs',
     'Store.ClearEmailCode(user);', 'Store.ClearEmailCode(user); Store.SavePrefs(user, Store.Prefs(user), now);']
 ];

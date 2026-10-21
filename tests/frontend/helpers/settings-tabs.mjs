@@ -18,7 +18,11 @@ const canonicalId = id => String(id || '').replace(/-/g, '').toLowerCase();
  * `spoilerPrefs`: the person's Spoiler Guard preferences (spoilerblur.json Prefs).
  */
 export function settingsServer(documents) {
-  const server = { documents: structuredClone(documents), writes: [], failGets: new Set(), failWrites: new Set(), spoilerPrefs: {}, holds: [] };
+  const server = { documents: structuredClone(documents), writes: [], failGets: new Set(), failWrites: new Set(), spoilerPrefs: {}, holds: [], counters: {} };
+  // Each document's revision counts its writes (the server's "{incarnation}.{writes}"); `restart()` begins a new incarnation.
+  server.incarnation = '000000000001';
+  server.revision = file => `${server.incarnation}.${server.counters[file] || 0}`;
+  server.restart = () => { server.incarnation = (parseInt(server.incarnation, 16) + 1).toString(16).padStart(12, '0'); };
   /**
    * Holds the next request of `type` (GET, PATCH, POST) to `file` ('spoiler-prefs', 'spoiler-state' for Spoiler Guard)
    * until `release()`: the server reads or applies it only then, so it answers what it holds at that moment.
@@ -36,6 +40,7 @@ export function settingsServer(documents) {
     const key = FILES[file];
     const doc = server.documents[key] || (server.documents[key] = {});
     server.writes.push({ file, type, body });
+    server.counters[file] = (server.counters[file] || 0) + 1;
     if (type === 'POST') {
       // The server reads a posted document into its type: property names in any case, dictionary keys as sent.
       const typed = record => Object.fromEntries(Object.entries(record || {}).map(([k, v]) => [pascal(k), structuredClone(v)]));
@@ -117,19 +122,22 @@ export function route(server, request) {
   const file = m[1];
   if (request.type === 'GET') {
     if (server.failGets.has(file)) throw new Error('offline');
-    return structuredClone(server.documents[FILES[file]] || {});
+    const document = structuredClone(server.documents[FILES[file]] || {});
+    // ?withRevision=true: the document with its revision (the ETag), for clients that can't read headers.
+    return new URL(request.url).searchParams.get('withRevision') === 'true' ? { document, revision: server.revision(file) } : document;
   }
   if (server.failWrites.has(file)) throw Object.assign(new Error('write failed'), { status: 500 });
   if (file === 'consent') {
     const { Field, Value } = JSON.parse(request.data);
     server.documents.Settings[Field] = Value;
-    return { success: true, consents: { [Field]: Value } };
+    server.counters['settings.json'] = (server.counters['settings.json'] || 0) + 1;
+    return { success: true, consents: { [Field]: Value }, revision: server.revision('settings.json') };
   }
   const document = server.apply(file, request.type, JSON.parse(request.data));
-  return { success: true, file, document: structuredClone(document) };
+  return { success: true, file, document: structuredClone(document), revision: server.revision(file) };
 }
 
-const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
+const modules = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'enhanced/config.js'];
 
 /** Waits (bounded) until `predicate` holds. */
 export async function until(predicate) {
@@ -145,9 +153,9 @@ export async function until(predicate) {
  * Boots one browser tab against `server`. `unread`: documents the boot read could not read (null in the bootstrap).
  * `extra`: more component scripts (feature modules), `publicConfig`: the plugin's public configuration, `ajax`: answers
  * for other routes (return undefined to fall through), `items`: answers for /Items, `fetch`: the window's fetch (default:
- * every request fails, as offline).
+ * every request fails, as offline), `build`: the server's build the bootstrap names (the page's script tag says 1.2.3).
  */
-export async function tab(t, server, { unread = [], extra = [], publicConfig = {}, items, ajax, html = '', fetch = async () => { throw new Error('offline'); } } = {}) {
+export async function tab(t, server, { unread = [], extra = [], publicConfig = {}, items, ajax, html = '', build = '1.2.3', fetch = async () => { throw new Error('offline'); } } = {}) {
   const list = [...modules, ...extra];
   const h = createHarness({
     html: '<script plugin="Jellyfin Enhanced" version="1.2.3"></script>' + html,
@@ -156,8 +164,13 @@ export async function tab(t, server, { unread = [], extra = [], publicConfig = {
       const path = new URL(request.url).pathname;
       if (path.endsWith('/bootstrap')) {
         const UserSettings = {};
-        for (const [file, key] of Object.entries(FILES)) if (key !== 'Ddd') UserSettings[key] = unread.includes(file) ? null : structuredClone(server.documents[key] || {});
-        return { UserId: 'user-a', Version: '1.2.3', PublicConfig: publicConfig, PrivateConfig: null, UserSettings, ComponentScripts: list };
+        const UserRevisions = {};
+        for (const [file, key] of Object.entries(FILES)) {
+          if (key === 'Ddd') continue;
+          UserSettings[key] = unread.includes(file) ? null : structuredClone(server.documents[key] || {});
+          if (!unread.includes(file)) UserRevisions[file] = server.revision(file);
+        }
+        return { UserId: 'user-a', Version: '1.2.3', Build: build, PublicConfig: publicConfig, PrivateConfig: null, UserSettings, UserRevisions, ComponentScripts: list };
       }
       if (path.endsWith('/component-scripts.json')) return list;
       if (path === '/Plugins') return [];

@@ -390,7 +390,7 @@
         }
 
         try {
-            await ApiClient.ajax({
+            const answer = await ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
                 data: '{}',
@@ -403,7 +403,7 @@
 
             // The server's answer: its entry becomes part of this page's Hidden Content document.
             try {
-                JE.hiddenContent?.markScopedHidden?.(itemId, surface);
+                JE.hiddenContent?.markScopedHidden?.(itemId, surface, answer?.revision ?? answer?.Revision);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
             }

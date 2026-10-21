@@ -349,6 +349,12 @@
         if (!payload || typeof payload !== 'object' || !payload.PublicConfig || typeof payload.PublicConfig !== 'object') {
             throw new Error('Unexpected bootstrap response');
         }
+        // The server's JE build: the first one is the build this page boots against; a later bootstrap naming another (JE
+        // was updated meanwhile) asks for a reload (js/core/api-client.js, JE.core.build).
+        if (typeof payload.Build === 'string' && payload.Build) {
+            if (JE.core?.build) JE.core.build.check(payload.Build);
+            else if (!JE.serverBuild) JE.serverBuild = payload.Build;
+        }
         return payload;
     }
 
@@ -983,14 +989,16 @@
      * @param {object} userConfig - The userConfig object
      * @param {string[]} [unread] - Server file names not read (default: all five)
      * @param {object} [read] - Server file name → the document as read
+     * @param {object} [revisions] - Server file name → the revision the server named for it (the store orders by them)
      * @returns {object} The same object
      */
-    function markUnreadDocuments(userConfig, unread, read) {
+    function markUnreadDocuments(userConfig, unread, read, revisions) {
         Object.defineProperty(userConfig, 'unreadDocuments', {
             value: unread || ['settings.json', 'shortcuts.json', 'bookmark.json', 'elsewhere.json', 'hidden-content.json'],
             enumerable: false, configurable: true, writable: true
         });
         Object.defineProperty(userConfig, 'readDocuments', { value: read || {}, enumerable: false, configurable: true, writable: true });
+        Object.defineProperty(userConfig, 'readRevisions', { value: revisions || {}, enumerable: false, configurable: true, writable: true });
         return userConfig;
     }
 
@@ -1002,12 +1010,13 @@
      * bootstrap payload so both build the object identically.
      * @param {object} documents - Map of document name (settings, shortcuts,
      *   bookmark, elsewhere, hiddenContent) to its parsed JSON, or null.
+     * @param {object} [revisions] - Server file name → the revision the server named for the document read.
      * @returns {object} A freshly-built userConfig object.
      */
-    function buildUserConfig(documents) {
+    function buildUserConfig(documents, revisions) {
         const userConfig = { settings: {}, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } };
-        const unread = [], read = {};
-        markUnreadDocuments(userConfig, unread, read);
+        const unread = [], read = {}, named = {};
+        markUnreadDocuments(userConfig, unread, read, named);
         for (const name of Object.keys(USER_CONFIG_DOCUMENTS)) {
             const value = documents ? documents[name] : null;
             if (!value || typeof value !== 'object') { unread.push(USER_CONFIG_DOCUMENTS[name]); continue; } // keep the default
@@ -1018,6 +1027,8 @@
                 userConfig[name] = value;
             }
             read[USER_CONFIG_DOCUMENTS[name]] = JSON.parse(JSON.stringify(userConfig[name]));
+            const revision = revisions?.[USER_CONFIG_DOCUMENTS[name]];
+            if (typeof revision === 'string' && revision) named[USER_CONFIG_DOCUMENTS[name]] = revision;
         }
         return userConfig;
     }
@@ -1026,9 +1037,10 @@
      * Builds the userConfig object from the bootstrap payload's UserSettings
      * block (the same five documents the standalone endpoints return).
      * @param {object} userSettings - `UserSettings` from the bootstrap payload.
+     * @param {object} [revisions] - `UserRevisions` from the bootstrap payload (file name → revision).
      * @returns {object} A freshly-built userConfig object.
      */
-    function buildUserConfigFromBootstrap(userSettings) {
+    function buildUserConfigFromBootstrap(userSettings, revisions) {
         const docs = userSettings && typeof userSettings === 'object' ? userSettings : {};
         return buildUserConfig({
             settings: docs.Settings,
@@ -1036,7 +1048,7 @@
             bookmark: docs.Bookmark,
             elsewhere: docs.Elsewhere,
             hiddenContent: docs.HiddenContent
-        });
+        }, revisions && typeof revisions === 'object' ? revisions : undefined);
     }
 
     /**
@@ -1075,7 +1087,7 @@
         });
         if (!isCurrent()) return false;
         if (bootstrap && bootstrapMatchesUser(bootstrap, userId)) {
-            JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+            JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings, bootstrap.UserRevisions);
             applyPrivateConfig(bootstrap.PrivateConfig);
             return true;
         }
@@ -1299,7 +1311,7 @@
 
             // User-specific settings (from the bootstrap, else fetched per file)
             JE.userConfig = bootstrap
-                ? buildUserConfigFromBootstrap(bootstrap.UserSettings)
+                ? buildUserConfigFromBootstrap(bootstrap.UserSettings, bootstrap.UserRevisions)
                 : await fetchUserScopedConfig(userId);
 
             // Initialize splash screen

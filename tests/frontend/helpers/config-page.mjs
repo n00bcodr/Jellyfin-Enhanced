@@ -39,7 +39,7 @@ const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringi
 // fields derived from the instance lists.
 const NOT_SETTABLE = new Set(['AnalyticsInstallId', 'AnalyticsInstallSecret', 'AnalyticsLastReportedAt', 'AnalyticsLastPayloadJson',
   'AnalyticsLastReportedPluginVersion', 'AnalyticsLastReportedJellyfinTarget', 'AnalyticsLastReportedJellyfinVersion',
-  'AnalyticsForbiddenSinceLastSuccess', 'ArrServerOwnedSeen', 'SonarrInstances', 'RadarrInstances', 'SonarrUrl', 'SonarrApiKey',
+  'AnalyticsForbiddenSinceLastSuccess', 'ArrServerOwnedSeen', 'ConfigurationGeneration', 'SonarrInstances', 'RadarrInstances', 'SonarrUrl', 'SonarrApiKey',
   'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings']);
 
 /**

@@ -4557,8 +4557,10 @@
             new MutationObserver(jeQueueDirtyIndicator).observe(form, { childList: true, subtree: true });
             setInterval(jeQueueDirtyIndicator, 1000);
 
+            // Leaving warns while the form holds unsaved changes, and while a save is still out (its changes aren't stored
+            // until it is answered; the marker compares the form with that save meanwhile, so it alone can't tell).
             window.addEventListener('beforeunload', (e) => {
-                if (!saveDock || !saveDock.classList.contains('je-dirty')) return;
+                if (!jeSaveOutstanding() && !(saveDock && saveDock.classList.contains('je-dirty'))) return;
                 e.preventDefault();
                 e.returnValue = '';
             });
@@ -8467,13 +8469,20 @@
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
             var revision = _jeConfigRevision;
-            ApiClient.getPluginConfiguration(pluginId).then((config) => {
-                // Once the form has been filled, a read that began before a save was answered (or while one is out), or
-                // before the page took a value the server holds now, may hold less than the page: it isn't drawn.
-                if (_jeConfigReadOk && (revision !== _jeConfigRevision || _jeInFlight)) {
+            ApiClient.getPluginConfiguration(pluginId).then((read) => {
+                // Once the form has been filled, a read that overlapped a save (one began or ended since this read began,
+                // whatever its outcome, or one is still out or waiting), or that began before the page took a value the server
+                // holds now, may hold less than the page: it isn't drawn. It is read again once the saves are done.
+                if (_jeConfigReadOk && (revision !== _jeConfigRevision || jeSaveOutstanding())) {
+                    _jeRefreshWanted = true;
+                    jeRefreshAfterSaves();
                     Dashboard.hideLoadingMsg();
                     return;
                 }
+                // A refresh keeps what the administrator changed and hasn't saved: those fields are drawn with the form's
+                // values and stay unsaved (their baseline stays as it was); every other field shows what the server holds now.
+                const kept = _jeConfigReadOk ? jeKeepUnsaved(read) : null;
+                const config = kept ? kept.config : read;
                 CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
                     _jeCustomTabOwnedCache[entry.ownedKey] = config[entry.ownedKey] === true;
                 });
@@ -9093,7 +9102,8 @@
 
                 Dashboard.hideLoadingMsg();
                 // The form now shows the saved settings: saves are allowed from here on, and send what changes from here.
-                jeConfigRead(config);
+                jeConfigRead(read);
+                if (kept) kept.restore();
                 _jeConfigReadOk = true;
                 jeConfigReadNotice(false);
                 jeUpdateDirtyIndicator();
@@ -9754,7 +9764,58 @@
         // holds, a redraw): a configuration read that began before one of them is not drawn over it (loadConfig,
         // jeRedrawSavedFields).
         var _jeConfigRevision = 0;
+        // A configuration read dropped because it overlapped a save: read again once the saves are done (jeRefreshAfterSaves).
+        var _jeRefreshWanted = false;
         var JE_ARR_INSTANCE_LISTS = ['SonarrInstances', 'RadarrInstances'];
+
+        /** Whether a save is out or waiting to go (its changes aren't stored until it is answered). */
+        function jeSaveOutstanding() {
+            return !!_jeInFlight || !!_jeSaveWaiting;
+        }
+
+        /** Reads the configuration again after the saves now out or waiting, when a read was dropped meanwhile. */
+        function jeRefreshAfterSaves() {
+            _jeSaveChain.then(function() {
+                if (!_jeRefreshWanted || jeSaveOutstanding()) return;
+                _jeRefreshWanted = false;
+                loadConfig();
+            });
+        }
+
+        /**
+         * For a refresh of a form the administrator changed: the configuration to draw (the read, with the form's values for
+         * every field they changed and haven't saved, unless the server now holds that same value) and `restore()`, run once
+         * the read was recorded (jeConfigRead), which keeps those fields' baselines so they stay unsaved and go with the next
+         * save, and keeps their asynchronously filled fields changed.
+         * @param {Object} read - The configuration read
+         * @returns {{config: Object, restore: Function}|null} null when nothing is unsaved
+         */
+        function jeKeepUnsaved(read) {
+            if (!_jeSent || !_jeBase) return null;
+            var form = jeFormConfig(_jeBase, true);
+            var patch = jeConfigPatch(_jeSent, form);
+            var fields = Object.keys(patch.Set).filter(function(field) { return JSON.stringify(form[field]) !== JSON.stringify(read[field]); })
+                .concat(Object.keys(patch.Instances));
+            if (!fields.length) return null;
+            var base = {}, sent = {};
+            fields.forEach(function(field) { base[field] = _jeBase[field]; sent[field] = _jeSent[field]; });
+            var async = jeAsyncFields().filter(function(field) { return field.changed && fields.indexOf(field.key) !== -1; });
+            var config = JSON.parse(JSON.stringify(read));
+            fields.forEach(function(field) { config[field] = form[field]; });
+            return {
+                config: config,
+                restore: function keepBaselines() {
+                    fields.forEach(function(field) { _jeBase[field] = base[field]; _jeSent[field] = sent[field]; });
+                    _jeConfigRevision++;
+                    // Drawn with the administrator's value, which is not what the server holds: still their change.
+                    async.forEach(function(field) {
+                        field.stored = read[field.key];
+                        field.hasStored = true;
+                        field.markChanged();
+                    });
+                }
+            };
+        }
         // Kept from each list's first instance by the server; never sent.
         var JE_ARR_MIRROR_FIELDS = ['SonarrUrl', 'SonarrApiKey', 'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings'];
 
@@ -9964,13 +10025,17 @@
                 const resets = Object.keys(_jeArrResetConfirmed).filter(function(type) { return _jeArrResetConfirmed[type]; });
                 const now = jeFormConfig(_jeBase);
                 let result;
-                // While it is out, the unsaved marker compares the form with this snapshot (what the server will hold).
+                // While it is out, the unsaved marker compares the form with this snapshot (what the server will hold). A save
+                // beginning and ending (whatever its outcome) moves the configuration revision on: a read that overlapped it
+                // isn't drawn (loadConfig reads again afterwards).
                 _jeInFlight = JSON.parse(JSON.stringify(now));
+                _jeConfigRevision++;
                 jeUpdateDirtyIndicator();
                 try {
                     result = await jePatchConfiguration(jeConfigPatch(_jeSent, now));
                 } finally {
                     _jeInFlight = null;
+                    _jeConfigRevision++;
                 }
                 // The answer: what this save sent is what the server holds (an edit made since still differs from it).
                 _jeBase = now;
@@ -10074,6 +10139,8 @@
                 return false;
             } finally {
                 saveBtns.forEach(function(b) { b.disabled = false; });
+                // A read dropped while this save was out is read again now (unless another save follows).
+                if (_jeRefreshWanted) jeRefreshAfterSaves();
             }
         }
 

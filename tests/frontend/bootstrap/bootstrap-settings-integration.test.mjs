@@ -27,7 +27,7 @@ function panel(tt, { config = {}, settings = {}, answer = () => [] } = {}) {
   });
   tt.after(() => h.close());
   h.load('enhanced/translations.js');
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   // A language change schedules a page reload after 1.5 s of real time; none of these tests is about it (and a reload
   // firing under load would end the page mid-test).
   h.JE.internals.scheduleReloadWhenIdle = () => {};

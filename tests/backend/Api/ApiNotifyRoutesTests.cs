@@ -443,7 +443,7 @@ public class ApiNotifyRoutesTests
             prefs.Ready = false;
             return true;
         }, rig.Arr.Now);
-        Assert.True(second!.Wait(5000));
+        await second!.WaitAsync(TimeSpan.FromSeconds(5));
         var stored = store.Prefs(user);
         Assert.False(stored.Ready);
         Assert.False(stored.Episodes);

@@ -173,7 +173,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/ConfigurationPatch.cs`, `Controllers/ConfigurationPatchController.cs` | The configuration page's save: only the fields the administrator changed (Sonarr/Radarr instances by id), applied by the server to the configuration it holds at that moment (`PATCH /JellyfinEnhanced/configuration`). |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
-| `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
+| `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. Each per-user document's revision counts its writes, with an incarnation that changes on start, restore, migration and removal (`RevisionOf`, `IfMatchAllows`). |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; holds the one copy of each per-user document every feature reads and writes, and sends changes as operations in order (`PATCH user-settings/{id}/{file}`: changed fields, or bookmarks, shortcuts, trigger picks and Hidden Content items added or removed), never whole documents. What a change is compared against is the document as the server last handed it out (the boot read's copy, a later read, or a save's answer), never the page's own copy. It does not store user settings in localStorage. |
 
@@ -240,7 +240,8 @@ These indexes group client modules and relevant supporting server files by web f
 
 | File | Responsibility |
 |---|---|
-| `api-client.js` | Shared managed HTTP layer, `JE.core.api.{fetch,jf,plugin}`: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct `ApiClient.ajax` or `fetch` requests. |
+| `api-client.js` | Shared managed HTTP layer, `JE.core.api.{fetch,jf,plugin}`: authentication, retry/backoff, caching, deduplication, concurrency limits and abort support. Persistence, translations and some features also issue direct `ApiClient.ajax` or `fetch` requests. `JE.core.build` compares the JE build every answer names (`X-JE-Build`, and the bootstrap's `Build`) with the one the page booted against and asks for a reload when they differ. |
+| `mutation-queue.js` | `JE.core.mutationQueue(name)`: each server document's one write queue (the per-user documents, Spoiler Guard preferences, notification preferences). Writes go out one at a time; the session is checked right before each is sent and an account switch cancels the previous person's writes; its revision fences reads that began before a write. |
 | `dom-observer.js` | One shared body MutationObserver with named subscribers, dedicated observers and `waitForElement`. |
 | `lifecycle.js` | Registers feature observers, timers and listeners for coordinated cleanup. |
 | `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`. |
@@ -471,6 +472,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `ReviewAuthorCache.cs` | Cached author lookups for review visibility, invalidated by user changes/deletion/lockout. |
 | `CdnAssetService.cs` | Local routes and disk caching for third-party static assets; separate from generated embedded poster assets. |
 | `ScriptInjectionStartupFilter.cs`, `BrandingAssetStartupFilter.cs` | Request-time loader injection and custom branding asset delivery. |
+| `HostConfigurationRouteFilter.cs`, `ClientReloadNotice.cs`, `ClientBuildFilter.cs` | Jellyfin's plugin-configuration route for JE's configuration (an earlier generation refused with a visible 409, a JE settings page of an earlier version asked to reload); the reload message for a page of an earlier JE build whose write was refused; the `X-JE-Build` header on JE's answers. |
 | `StartupService.cs`, `HostCompatibilityService.cs` | Scheduled startup initialization and build/host compatibility diagnostics. |
 | `WhatsNewService.cs` | Admin control-schema discovery and change-baseline persistence. |
 | `UsageEventCounterService.cs`, `AnalyticsReportingService.cs` | Usage counters and opt-in report construction/sending; see [Community Analytics](community-analytics.md). |
