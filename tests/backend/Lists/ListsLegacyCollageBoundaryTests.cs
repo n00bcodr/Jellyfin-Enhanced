@@ -27,7 +27,7 @@ namespace JE.Tests;
 
 // The pieces every delivery path shares: one projection (its wire form takes out exactly what its typed form does),
 // the library folder kinds a tile can belong to, the WebSocket socket (fragments, non-JSON, other frames) and its
-// registration, and the tile record's clock (a list that changed while nobody looked, a record JE can't read or write).
+// registration, and the tile record (what a composition proves, a record JE can't read or write).
 public class ListsLegacyCollageBoundaryTests : IDisposable
 {
     private const string Blur = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
@@ -43,6 +43,14 @@ public class ListsLegacyCollageBoundaryTests : IDisposable
         _dirs = LegacyCollageWithhold.MarkerDirectories(Path.Combine(_root, "configurations", "Jellyfin.Plugin.JellyfinEnhanced"));
         foreach (var dir in _dirs) Directory.CreateDirectory(dir);
         _library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => _items.GetValueOrDefault(id));
+        LegacyCollageComposing.Lists(_library, _items);
+    }
+
+    // The host composes the tile from these lists through the image processor the plugin wraps (recording into this owner).
+    private void Compose(LegacyCollageWithhold withhold, BaseItem tile, params BaseItem[] from)
+    {
+        var temp = Path.Combine(_root, "temp");
+        LegacyCollageComposing.Compose(LegacyCollageCompositions.Wrap(LegacyCollageComposing.Processor().Object, () => withhold, () => temp), tile, ImageType.Primary, from, _now.AddMinutes(5), temp);
     }
 
     public void Dispose()
@@ -368,46 +376,42 @@ public class ListsLegacyCollageBoundaryTests : IDisposable
         Assert.Equal(LegacyCollageVerdict.Collage, withhold.Classify(second));
     }
 
-    // ── the tile record's clock ──────────────────────────────────────────
+    // ── what a composition proves ────────────────────────────────────────
 
     [Fact]
-    public void AListThatChangedWhileNobodyLookedRestartsTheWaitForItsTiles()
+    public void OnlyWhatATileWasComposedFromDecidesItWhateverHappenedWhileNobodyLooked()
     {
         var list = Item(new Playlist(), Bytes(10));
         Marker(list, Bytes(11));
         var tile = Item(new CollectionFolder { CollectionType = CollectionType.playlists }, Bytes(12));
         var withhold = New();
-        // First look (history unknown): the old tile waits; the host regenerates it; served.
+        // First look (history unknown): the old tile waits; the host composes it from the list as it is; served.
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
-        Replace(tile, Bytes(13), _now.AddMinutes(5));
-        _now = _now.AddMinutes(10);
+        Compose(withhold, tile, list);
         Assert.False(withhold.Withholds(tile, ImageType.Primary));
 
-        // Unseen: the collage came back, the host rebuilt the tile from it, the owner set an image again.
-        Replace(tile, Bytes(14), _now.AddMinutes(1));
+        // Unseen by any answer: the collage came back, the host composed the tile from it, the owner set an image again.
+        Replace(list, Bytes(11), _now.AddMinutes(1));
+        Compose(withhold, tile, list);
         Replace(list, Bytes(15), _now.AddMinutes(2));
-        _now = _now.AddMinutes(3);
         Assert.Equal(LegacyCollageVerdict.Superseded, withhold.Classify(list));
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
         Assert.True(New().Withholds(tile, ImageType.Primary));
-        Replace(tile, Bytes(16), _now.AddMinutes(5));
-        _now = _now.AddMinutes(10);
-        Assert.False(New().Withholds(tile, ImageType.Primary));
 
-        // A tile written within the margin of the moment JE looked may straddle it: it waits too.
-        Replace(list, Bytes(17), _now);
+        // However its dates move; until the host composes it from the list as it is now.
+        Replace(tile, File.ReadAllBytes(tile.ImageInfos[0].Path), _now.AddHours(1));
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
-        Replace(tile, Bytes(18), _now + LegacyCollageTiles.RegenerationMargin);
-        Assert.True(withhold.Withholds(tile, ImageType.Primary));
-        Replace(tile, Bytes(19), _now + LegacyCollageTiles.RegenerationMargin + TimeSpan.FromSeconds(1));
+        Compose(withhold, tile, list);
         Assert.False(withhold.Withholds(tile, ImageType.Primary));
+        Assert.False(New().Withholds(tile, ImageType.Primary));
     }
 
     [Fact]
-    public void ARecordThatCantBeReadWithholdsEveryTileUntilRegeneratedEvenWithoutMarkers()
+    public void ARecordThatCantBeReadWithholdsEveryTileUntilComposedFromCleanListsEvenWithoutMarkers()
     {
         var playlists = Item(new CollectionFolder { CollectionType = CollectionType.playlists }, Bytes(20));
         var collections = Item(new CollectionFolder { CollectionType = CollectionType.boxsets }, Bytes(21));
+        var plain = Item(new Playlist(), Bytes(26));
         Assert.True(New().NoMarkers());
         Assert.False(New().Withholds(playlists, ImageType.Primary));
         File.WriteAllText(StatePath, "{ not a record");
@@ -418,7 +422,8 @@ public class ListsLegacyCollageBoundaryTests : IDisposable
         Assert.True(withhold.Withholds(collections, ImageType.Primary));
         Assert.Contains(_warnings, w => w.Contains("couldn't be read", StringComparison.Ordinal));
         Replace(playlists, Bytes(22), _now.AddMinutes(5));
-        _now = _now.AddMinutes(10);
+        Assert.True(withhold.Withholds(playlists, ImageType.Primary));
+        Compose(withhold, playlists, plain);
         Assert.False(withhold.Withholds(playlists, ImageType.Primary));
         Assert.True(withhold.Withholds(collections, ImageType.Primary));
     }

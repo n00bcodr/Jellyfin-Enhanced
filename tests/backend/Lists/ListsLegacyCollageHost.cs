@@ -21,6 +21,7 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Playlists;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -232,6 +233,10 @@ internal sealed class LegacyCollageScenario
     public required Dictionary<string, Guid> Names { get; init; }
     public Guid[] AllIds => Names.Values.ToArray();
 
+    /// <summary>Runs when the host's image action asks the image processor about an image (its path): the scenario can
+    /// change the evidence while the action runs.</summary>
+    public Action<string>? ImageAsked { get; set; }
+
     public static string Tag(BaseItem item, ItemImageInfo image) => Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes(image.Path + image.DateModified.Ticks))).ToLowerInvariant();
 
     // What the host's DtoService puts on an item's DTO for its images (tags, blur hashes, aspect).
@@ -291,12 +296,14 @@ public static partial class LegacyCollageHostEntry
         {
             try { Directory.Delete(root, recursive: true); } catch (IOException) { }
             try { Directory.Delete(root + "-sticky", recursive: true); } catch (IOException) { }
+            try { Directory.Delete(root + "-late", recursive: true); } catch (IOException) { }
         }
     }
 
     private static string RunIn(string root, string release)
     {
         var sticky = Sticky(root + "-sticky");
+        var late = LateImage(root + "-late");
         var scenario = Build(root);
         var before = Snapshot(root);
         var users = new { Viewer = Guid.NewGuid(), Admin = Guid.NewGuid() };
@@ -389,6 +396,7 @@ public static partial class LegacyCollageHostEntry
         report["socket"] = Socket(server, scenario, users.Viewer);
         report["filesUnchanged"] = Same(before, Snapshot(root));
         report["sticky"] = sticky;
+        report["lateImage"] = late;
         report["filters"] = new JsonArray(server.Services.GetRequiredService<IOptions<MvcOptions>>().Value.Filters
             .Select(f => (JsonNode?)(((f as ServiceFilterAttribute)?.ServiceType ?? f.GetType()).Name + "@" + ((f as IOrderedFilter)?.Order ?? 0))).ToArray());
         return report.ToJsonString();
@@ -594,22 +602,40 @@ public static partial class LegacyCollageHostEntry
     private static ILibraryManager Library(LegacyCollageScenario scenario) => LegacyHostFake.Of<ILibraryManager>((m, a) => m.Name switch
     {
         "GetItemById" when a.Length >= 1 && a[0] is Guid id => scenario.Items.TryGetValue(id, out var item) ? item : null,
+        // The lists (the sources of the playlist and collection library tiles).
+        "GetItemList" when a.Length == 1 && a[0] is InternalItemsQuery => (IReadOnlyList<BaseItem>)scenario.Items.Values.Where(i => i is Playlist or BoxSet).ToList(),
         _ => LegacyHostFake.Unhandled,
     });
 
     // The host processes images into its cache; here the original is the processed file (no resize needed), as the host
     // answers when the requested size and format match the source.
+    // Compositions (CreateImageCollage) write a file made from the bytes of the images they read, as the host's encoder does.
     private static IImageProcessor ImageProcessor(LegacyCollageScenario scenario) => LegacyHostFake.Of<IImageProcessor>((m, a) => m.Name switch
     {
         "ProcessImage" => ((Func<object>)(() =>
         {
             var options = (ImageProcessingOptions)a[0]!;
+            scenario.ImageAsked?.Invoke(options.Image.Path);
             return (options.Image.Path, (string?)"image/jpeg", File.GetLastWriteTimeUtc(options.Image.Path));
         }))(),
-        "GetImageCacheTag" when a.Length == 2 && a[0] is BaseItem item && a[1] is ItemImageInfo image => LegacyCollageScenario.Tag(item, image),
-        "GetImageCacheTag" when a.Length == 2 && a[0] is BaseItem item && a[1] is ImageType type => item.GetImageInfo(type, 0) is { } image ? LegacyCollageScenario.Tag(item, image) : null,
+        "GetImageCacheTag" when a.Length == 2 && a[0] is BaseItem item && a[1] is ItemImageInfo image => Asked(scenario, image.Path, LegacyCollageScenario.Tag(item, image)),
+        "GetImageCacheTag" when a.Length == 2 && a[0] is BaseItem item && a[1] is ImageType type => item.GetImageInfo(type, 0) is { } image ? Asked(scenario, image.Path, LegacyCollageScenario.Tag(item, image)) : null,
+        "get_SupportsImageCollageCreation" => true,
+        "CreateImageCollage" => ((Func<object?>)(() =>
+        {
+            var options = (ImageCollageOptions)a[0]!;
+            var read = options.InputPaths.Select(File.ReadAllBytes).SelectMany(SHA256.HashData).ToArray();
+            File.WriteAllBytes(options.OutputPath, Encoding.UTF8.GetBytes("composed:").Concat(SHA256.HashData(read)).ToArray());
+            return null;
+        }))(),
         _ => LegacyHostFake.Unhandled,
     });
+
+    private static string Asked(LegacyCollageScenario scenario, string path, string tag)
+    {
+        scenario.ImageAsked?.Invoke(path);
+        return tag;
+    }
 
     private static IServerApplicationPaths Paths(string root)
     {
@@ -906,6 +932,9 @@ public static partial class LegacyCollageHostEntry
         using (var server = Server(scenario, root))
         {
             Phase(server, "collage");
+            // The release's own provider composes the library tile while the list is its collage.
+            report["providerFromCollage"] = Regenerate(server, library, solo);
+            Phase(server, "composedFromCollage");
             // The owner sets an image on the list: the host writes a new file.
             Rewrite(solo, 42, DateTime.UtcNow);
             Phase(server, "listReplaced");
@@ -914,11 +943,107 @@ public static partial class LegacyCollageHostEntry
         using (var server = Server(scenario, root))
         {
             Phase(server, "restarted");
-            // The host regenerates the library tile from the lists as they are now.
+            // The tile's file is rewritten and both its dates move, but no composition says what it holds.
             Rewrite(library, 43, DateTime.UtcNow.AddMinutes(5));
+            Phase(server, "touched");
+            // The release's own provider composes the library tile from the lists as they are now.
+            report["providerClean"] = Regenerate(server, library, solo);
             Phase(server, "regenerated");
         }
 
+        return report;
+    }
+
+    // The release's own composition of a library tile: its CollectionFolderImageProvider (BaseDynamicImageProvider's
+    // FetchToFileInternal: CreateImage, CreateCollage, the image processor's CreateImageCollage, ProviderManager.SaveImage),
+    // with the image processor the server's container gives the host's providers. Returns what the provider says it did.
+    private static string Regenerate(TestServer server, BaseItem holder, params BaseItem[] from)
+    {
+        var type = LegacySocketHost.HostType("Emby.Server.Implementations", "Emby.Server.Implementations.Images.CollectionFolderImageProvider");
+        var saves = LegacyHostFake.Of<IProviderManager>((m, a) =>
+        {
+            if (m.Name != "SaveImage" || a.Length != 7 || a[0] is not BaseItem item || a[1] is not string source || a[3] is not ImageType imageType) return LegacyHostFake.Unhandled;
+            // The host saves the composed file as the item's image of that type.
+            var image = item.ImageInfos.First(i => i.Type == imageType);
+            File.Copy(source, image.Path, overwrite: true);
+            var now = DateTime.UtcNow;
+            File.SetLastWriteTimeUtc(image.Path, now);
+            image.DateModified = now;
+            return Task.CompletedTask;
+        });
+        object Service(Type parameter) => parameter == typeof(IProviderManager) ? saves : parameter == typeof(IFileSystem) ? LegacyHostFake.Of<IFileSystem>() : server.Services.GetRequiredService(parameter);
+        var constructor = type.GetConstructors().Single();
+        var provider = constructor.Invoke(constructor.GetParameters().Select(p => Service(p.ParameterType)).ToArray());
+        var fetch = type.BaseType!.GetMethod("FetchToFileInternal", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var task = (Task)fetch.Invoke(provider, new object[] { holder, (IReadOnlyList<BaseItem>)from, ImageType.Primary, CancellationToken.None })!;
+        task.GetAwaiter().GetResult();
+        return task.GetType().GetProperty("Result")!.GetValue(task)!.ToString()!;
+    }
+
+    // ── an image whose list becomes a collage while the host's image action runs ──
+
+    // A playlist with no marker; while the release's ImageController works out the answer (it asks the image processor
+    // for the image's tag or file), a marker naming that image appears. Whatever form the request takes, what goes out is
+    // the host's answer for an item without that image.
+    private static JsonObject LateImage(string root)
+    {
+        var pluginDir = Path.Combine(root, "plugins", "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
+        var copied = Path.Combine(pluginDir, "lists", "legacy-collages");
+        Directory.CreateDirectory(copied);
+        var late = new Playlist { Id = Guid.NewGuid(), Name = "late list" };
+        var path = Path.Combine(root, "metadata", late.Id.ToString("N"), "primary.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, Image(50));
+        File.SetLastWriteTimeUtc(path, new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        late.ImageInfos = new[] { new ItemImageInfo { Path = path, Type = ImageType.Primary, DateModified = File.GetLastWriteTimeUtc(path), Width = 600, Height = 600, BlurHash = Blur } };
+        var scenario = new LegacyCollageScenario
+        {
+            Root = root,
+            Items = new Dictionary<Guid, BaseItem> { [late.Id] = late },
+            Names = new Dictionary<string, Guid>(StringComparer.Ordinal) { ["late"] = late.Id },
+        };
+        var marker = Path.Combine(copied, late.Id.ToString("N") + ".json");
+        var armed = false;
+        scenario.ImageAsked = asked =>
+        {
+            if (armed && asked == path)
+            {
+                armed = false;
+                File.WriteAllText(marker, JsonSerializer.Serialize(new { listId = late.Id.ToString("N"), sha256 = Sha(File.ReadAllBytes(path)) }));
+            }
+        };
+
+        var tag = LegacyCollageScenario.Tag(late, late.ImageInfos[0]);
+        var report = new JsonObject();
+        using var server = Server(scenario, root);
+        using var client = server.CreateClient();
+        foreach (var (name, method, query, conditional) in new[]
+        {
+            ("get", HttpMethod.Get, string.Empty, false),
+            ("get-tagged", HttpMethod.Get, "?tag=" + tag, false),
+            ("head", HttpMethod.Head, string.Empty, false),
+            ("if-none-match", HttpMethod.Get, "?tag=" + tag, true),
+        })
+        {
+            File.Delete(marker);
+            armed = true;
+            var request = new HttpRequestMessage(method, "/Items/" + late.Id.ToString("N") + "/Images/Primary" + query);
+            request.Headers.Add("X-Test-User", Guid.NewGuid().ToString("N"));
+            if (conditional) request.Headers.TryAddWithoutValidation("If-None-Match", "\"" + tag + "\"");
+            var response = client.SendAsync(request).GetAwaiter().GetResult();
+            var body = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            report[name] = new JsonObject
+            {
+                ["status"] = (int)response.StatusCode,
+                ["markerAppeared"] = !armed && File.Exists(marker),
+                ["servedImage"] = body.Length > 0 && Sha(body) == Sha(File.ReadAllBytes(path)),
+                ["etag"] = response.Headers.ETag?.Tag,
+                ["contentType"] = response.Content.Headers.ContentType?.ToString(),
+                ["body"] = Encoding.UTF8.GetString(body),
+            };
+        }
+
+        File.Delete(marker);
         return report;
     }
 

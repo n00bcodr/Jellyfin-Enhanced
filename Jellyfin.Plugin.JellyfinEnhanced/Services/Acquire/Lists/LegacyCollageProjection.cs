@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +23,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         NotJson = 2,
     }
 
+    /// <summary>One change the projection makes to a payload: the bytes from <see cref="Start"/> to <see cref="End"/> are
+    /// dropped, or (<see cref="False"/>) replaced by <c>false</c>. Positions are in the payload's UTF-8 bytes.</summary>
+    internal readonly record struct LegacyCollageEdit(long Start, long End, bool False);
+
     /// <summary>
     /// The one projection that takes withheld legacy collages (and the library tiles built from them) out of whatever a
     /// client is sent as JSON, at the serialization boundary of every delivery path: MVC response bodies of any result
@@ -39,6 +44,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <item>A reference to another item's withheld image loses the reference, its tag and its blur hash:
     /// <c>ParentPrimaryImageItemId</c>/<c>ParentPrimaryImageTag</c>, <c>ParentThumbItemId</c>/<c>ParentThumbImageTag</c>,
     /// a search hint's <c>ThumbImageItemId</c>/<c>ThumbImageTag</c>.</item>
+    /// <item>It is incremental: one pass of the reader decides, object by object as each one closes, which bytes go
+    /// (<see cref="Decide(Stream, LegacyCollageView)"/>), keeping only the recognized members of the objects still open,
+    /// so a payload of any size is checked in bounded memory; a second pass copies it with those edits.</item>
     /// <item>It never throws on a payload: one that isn't JSON comes back as <see cref="LegacyCollageProjected.NotJson"/>
     /// and each caller decides (a JSON answer that can't be checked is not sent).</item>
     /// </list>
@@ -92,6 +100,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static readonly byte[][] HolderTypeNames = HolderKinds.Select(k => Encoding.UTF8.GetBytes(k.ToString())).ToArray();
         private static readonly byte[][] HolderCollectionTypes = { Encoding.UTF8.GetBytes(nameof(CollectionType.playlists)), Encoding.UTF8.GetBytes(nameof(CollectionType.boxsets)) };
+        private static readonly ImageType[] OwnTypes = { ImageType.Primary, ImageType.Thumb };
+        private static readonly byte[] Bom = { 0xEF, 0xBB, 0xBF };
 
         /// <summary>A recognized field.</summary>
         internal enum Field : byte
@@ -117,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         }
 
         /// <summary>
-        /// Projects one JSON payload (an answer body or a WebSocket message).
+        /// Projects one JSON payload held in memory (a WebSocket message).
         /// </summary>
         /// <param name="json">The payload's UTF-8 bytes.</param>
         /// <param name="view">This payload's view.</param>
@@ -126,198 +136,442 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         public static LegacyCollageProjected Project(ReadOnlySpan<byte> json, LegacyCollageView view, out byte[]? projected)
         {
             projected = null;
-            // A byte order mark is read past (a fetch() client does too) and kept.
-            var bom = json.StartsWith((ReadOnlySpan<byte>)new byte[] { 0xEF, 0xBB, 0xBF }) ? 3 : 0;
-            var output = new ArrayBufferWriter<byte>(Math.Max(json.Length, 1));
-            output.Write(json[..bom]);
-            json = json[bom..];
-            switch (Scan(json, view))
-            {
-                case null:
-                    return LegacyCollageProjected.NotJson;
-                case false:
-                    // Names no marked list, no library folder or view, and no withheld image: nothing to take out.
-                    return LegacyCollageProjected.Unchanged;
-            }
-
-            if (Parse(json) is not { } parsed)
+            if (Decide(json, view) is not { } edits)
             {
                 return LegacyCollageProjected.NotJson;
             }
 
-            if (parsed.Root == null || !Decide(json, parsed.Root, view))
+            if (edits.Count == 0)
             {
                 return LegacyCollageProjected.Unchanged;
             }
 
-            output.Write(json[..parsed.Root.Start]);
-            Emit(json, parsed.Root, output);
-            output.Write(json[parsed.Root.End..]);
+            var output = new ArrayBufferWriter<byte>(json.Length);
+            var at = 0;
+            foreach (var edit in edits)
+            {
+                output.Write(json[at..(int)edit.Start]);
+                if (edit.False)
+                {
+                    output.Write("false"u8);
+                }
+
+                at = (int)edit.End;
+            }
+
+            output.Write(json[at..]);
             projected = output.WrittenSpan.ToArray();
             return LegacyCollageProjected.Changed;
         }
 
-        // ── scan: one pass of the reader, no tree; whether any object could lose anything ─────
-
-        // Null when it isn't JSON. True when an object names an id that has a marker (any id while the markers can't be
-        // listed), says it is a library folder or view a tile can be composed for, or refers to a withheld image: the
-        // conditions the decision below starts from, so a false here means the decision would take nothing out.
-        private static bool? Scan(ReadOnlySpan<byte> json, LegacyCollageView view)
+        /// <summary>The edits for one payload held in memory, in order; null when it isn't JSON.</summary>
+        /// <param name="json">The payload's UTF-8 bytes.</param>
+        /// <param name="view">This payload's view.</param>
+        /// <returns>The edits (none: nothing withheld), or null.</returns>
+        internal static IReadOnlyList<LegacyCollageEdit>? Decide(ReadOnlySpan<byte> json, LegacyCollageView view)
         {
+            // A byte order mark is read past (a fetch() client does too) and kept.
+            var bom = json.StartsWith(Bom) ? 3 : 0;
+            var decider = new Decider(view);
+            return decider.Feed(json[bom..], bom, isFinalBlock: true, out _) ? decider.Edits() : null;
+        }
+
+        /// <summary>
+        /// The edits for one payload read from a stream (an answer body of any size), in order; null when it isn't JSON.
+        /// The stream is read once, to its end, in blocks; only the open objects' recognized members are kept meanwhile.
+        /// </summary>
+        /// <param name="utf8">The payload's UTF-8 bytes, from its first byte.</param>
+        /// <param name="view">This payload's view.</param>
+        /// <returns>The edits (none: nothing withheld), or null.</returns>
+        internal static IReadOnlyList<LegacyCollageEdit>? Decide(Stream utf8, LegacyCollageView view)
+        {
+            var decider = new Decider(view);
+            var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
             try
             {
-                var reader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = MaxDepth, CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false });
-                if (!reader.Read())
+                long consumedTotal = 0;
+                var filled = 0;
+                var first = true;
+                while (true)
                 {
-                    return null;
-                }
-
-                var hit = false;
-                var field = Field.None;
-                do
-                {
-                    if (reader.TokenType == JsonTokenType.PropertyName)
+                    var read = utf8.Read(buffer, filled, buffer.Length - filled);
+                    filled += read;
+                    var final = read == 0;
+                    var start = 0;
+                    if (first)
                     {
-                        field = hit ? Field.None : Match(ref reader);
+                        if (filled < 3 && !final)
+                        {
+                            continue;
+                        }
+
+                        first = false;
+                        if (buffer.AsSpan(0, filled).StartsWith(Bom))
+                        {
+                            start = 3;
+                            consumedTotal = 3;
+                        }
+                    }
+
+                    if (!decider.Feed(buffer.AsSpan(start, filled - start), consumedTotal, final, out var consumed))
+                    {
+                        return null;
+                    }
+
+                    if (final)
+                    {
+                        return decider.Edits();
+                    }
+
+                    consumedTotal += consumed;
+                    var left = filled - start - consumed;
+                    if (left > 0 && consumed + start == 0 && filled == buffer.Length)
+                    {
+                        // One token larger than the block: a bigger block (the token is held whole, nothing else is).
+                        var bigger = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
+                        buffer.AsSpan(0, filled).CopyTo(bigger);
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = bigger;
                         continue;
                     }
 
-                    if (field != Field.None && reader.TokenType == JsonTokenType.String)
-                    {
-                        var member = new Member { Field = field };
-                        Read(ref reader, ref member);
-                        hit = member.Field switch
-                        {
-                            Field.Id => member.Guid is { } id && view.ListCandidate(id),
-                            Field.Type or Field.CollectionType => member.Hint,
-                            Field.ParentPrimaryImageItemId => member.Guid is { } id && view.Image(id, ImageType.Primary),
-                            Field.ParentThumbItemId or Field.ThumbImageItemId => member.Guid is { } id && view.Image(id, ImageType.Thumb),
-                            _ => false,
-                        };
-                    }
-
-                    field = Field.None;
+                    buffer.AsSpan(start + consumed, left).CopyTo(buffer);
+                    filled = left;
                 }
-                while (reader.Read());
-
-                return hit;
             }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is IOException or DecoderFallbackException)
             {
+                // The bytes couldn't be read as text in their character set: nothing could be checked.
+                return null;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        // ── decide: one pass of the reader; each object is decided when it closes ───────────
+
+        // A container while it is open (and, for the maps an enclosing object may still edit, until that one closes): its
+        // recognized members, the members next to them (for the separators), and what is taken out of it.
+        private sealed class Node
+        {
+            public bool IsObject;
+            public long Start;
+            public long End;
+
+            // The field this container is the value of, in its parent object (None in an array).
+            public Field FieldInParent;
+
+            // A blur-hash map of one image type, keyed by tag: any member can go (its name is the tag).
+            public bool ByTag;
+            public int Count;
+            public long FirstStart;
+            public long LastValueEnd;
+            public List<Member> Members = new();
+            public HashSet<int>? Removed;
+            public HashSet<int>? Falsified;
+            public Member Pending;
+            public Member? Previous;
+
+            // Ready to be used again (containers are pooled: checking an answer allocates little beyond its depth).
+            public void Reset(bool isObject, long start, Field fieldInParent, bool byTag)
+            {
+                IsObject = isObject;
+                Start = start;
+                End = 0;
+                FieldInParent = fieldInParent;
+                ByTag = byTag;
+                Count = 0;
+                FirstStart = 0;
+                LastValueEnd = 0;
+                Members.Clear();
+                Removed = null;
+                Falsified = null;
+                Pending = default;
+                Previous = null;
+            }
+
+            public Member? At(int index)
+            {
+                foreach (var m in Members)
+                {
+                    if (m.Index == index)
+                    {
+                        return m;
+                    }
+                }
+
                 return null;
             }
         }
 
-        // ── parse: one pass of the reader, keeping each container's and property's byte range ──
-
-        private sealed class Parsed
-        {
-            public Node? Root { get; init; }
-        }
-
-        private sealed class Node
-        {
-            public bool IsObject;
-            public int Start;
-            public int End;
-            public List<Member> Members = new();
-            public HashSet<int>? Removed;
-            public HashSet<int>? Falsified;
-            public bool Edited;
-        }
-
         private struct Member
         {
+            public int Index;
             public Field Field;
-            public int NameStart;
-            public int NameEnd;
-            public int ValueStart;
-            public int ValueEnd;
+            public long NameStart;
+            public long ValueStart;
+            public long ValueEnd;
             public JsonTokenType Token;
             public Node? Child;
             public Guid? Guid;
             public bool Hint;
             public string? Text;
+            public string? Name;
+            public bool Kept;
         }
 
-        private static Parsed? Parse(ReadOnlySpan<byte> json)
+        private sealed class Decider
         {
-            try
+            private readonly LegacyCollageView _view;
+            private readonly List<Node> _stack = new();
+            private readonly List<LegacyCollageEdit> _edits = new();
+            private readonly Stack<Node> _free = new();
+            private JsonReaderState _state = new(new JsonReaderOptions { MaxDepth = MaxDepth, CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false });
+            private bool _done;
+
+            public Decider(LegacyCollageView view)
             {
-                var reader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = MaxDepth, CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false });
-                if (!reader.Read())
+                _view = view;
+            }
+
+            // Reads one block (positions offset by origin); false when the payload isn't JSON.
+            public bool Feed(ReadOnlySpan<byte> block, long origin, bool isFinalBlock, out int consumed)
+            {
+                consumed = 0;
+                try
+                {
+                    var reader = new Utf8JsonReader(block, isFinalBlock, _state);
+                    while (reader.Read())
+                    {
+                        Token(ref reader, origin);
+                    }
+
+                    _state = reader.CurrentState;
+                    consumed = (int)reader.BytesConsumed;
+                    return !isFinalBlock || _done;
+                }
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+                {
+                    return false;
+                }
+            }
+
+            // The edits in order, each once; null when they can't be applied faithfully (never happens for JSON).
+            public IReadOnlyList<LegacyCollageEdit>? Edits()
+            {
+                if (!_done)
                 {
                     return null;
                 }
 
-                if (reader.TokenType is not (JsonTokenType.StartObject or JsonTokenType.StartArray))
+                _edits.Sort((a, b) => a.Start.CompareTo(b.Start));
+                var result = new List<LegacyCollageEdit>(_edits.Count);
+                foreach (var edit in _edits)
                 {
-                    // A lone value holds no object; the reader still checks the rest is nothing but white space.
-                    while (reader.Read())
+                    if (result.Count > 0 && edit.Start < result[^1].End)
                     {
+                        // Inside a member that goes as a whole: nothing more to do there.
+                        if (edit.End <= result[^1].End && !result[^1].False)
+                        {
+                            continue;
+                        }
+
+                        return null;
                     }
 
-                    return new Parsed();
+                    result.Add(edit);
                 }
 
-                var stack = new Stack<(Node Node, Member Pending)>();
-                var root = new Node { IsObject = reader.TokenType == JsonTokenType.StartObject, Start = (int)reader.TokenStartIndex };
-                stack.Push((root, default));
-                while (stack.Count > 0 && reader.Read())
-                {
-                    var (node, pending) = stack.Peek();
-                    switch (reader.TokenType)
-                    {
-                        case JsonTokenType.PropertyName:
-                            var start = (int)reader.TokenStartIndex;
-                            stack.Pop();
-                            stack.Push((node, new Member { Field = Match(ref reader), NameStart = start, NameEnd = start + reader.ValueSpan.Length + 2 }));
-                            break;
-                        case JsonTokenType.StartObject:
-                        case JsonTokenType.StartArray:
-                            stack.Push((new Node { IsObject = reader.TokenType == JsonTokenType.StartObject, Start = (int)reader.TokenStartIndex }, default));
-                            break;
-                        case JsonTokenType.EndObject:
-                        case JsonTokenType.EndArray:
-                            node.End = (int)reader.TokenStartIndex + 1;
-                            stack.Pop();
-                            if (stack.Count > 0)
-                            {
-                                var (parent, member) = stack.Peek();
-                                member.ValueStart = node.Start;
-                                member.ValueEnd = node.End;
-                                member.Token = node.IsObject ? JsonTokenType.StartObject : JsonTokenType.StartArray;
-                                member.Child = node;
-                                parent.Members.Add(member);
-                            }
+                return result;
+            }
 
+            private void Token(ref Utf8JsonReader reader, long origin)
+            {
+                var at = origin + reader.TokenStartIndex;
+                var top = _stack.Count > 0 ? _stack[^1] : null;
+                switch (reader.TokenType)
+                {
+                    case JsonTokenType.PropertyName:
+                        top!.Pending = new Member
+                        {
+                            Index = top.Count,
+                            Field = Match(ref reader),
+                            NameStart = at,
+                            Name = top.ByTag ? Text(ref reader, 4096) : null,
+                        };
+                        break;
+                    case JsonTokenType.StartObject:
+                    case JsonTokenType.StartArray:
+                        var field = top is { IsObject: true } ? top.Pending.Field : Field.None;
+                        var opened = _free.Count > 0 ? _free.Pop() : new Node();
+                        opened.Reset(reader.TokenType == JsonTokenType.StartObject, at, field, top is { IsObject: true, FieldInParent: Field.ImageBlurHashes } && field is Field.Primary or Field.Thumb);
+                        _stack.Add(opened);
+                        break;
+                    case JsonTokenType.EndObject:
+                    case JsonTokenType.EndArray:
+                        var node = top!;
+                        _stack.RemoveAt(_stack.Count - 1);
+                        node.End = at + 1;
+                        if (node.IsObject)
+                        {
+                            DecideObject(node, _view);
+                        }
+
+                        // An enclosing object may still edit its maps (ImageTags, ImageBlurHashes and their per-type maps).
+                        var held = node.IsObject && (node.FieldInParent is Field.ImageTags or Field.ImageBlurHashes || node.ByTag);
+                        if (_stack.Count == 0)
+                        {
+                            Flush(node);
+                            Release(node);
+                            _done = true;
                             break;
-                        default:
-                            var valueStart = (int)reader.TokenStartIndex;
-                            var value = pending;
-                            value.ValueStart = valueStart;
-                            value.ValueEnd = valueStart + reader.ValueSpan.Length + (reader.TokenType == JsonTokenType.String ? 2 : 0);
+                        }
+
+                        var parent = _stack[^1];
+                        if (parent.IsObject)
+                        {
+                            var member = parent.Pending;
+                            member.ValueStart = node.Start;
+                            member.ValueEnd = node.End;
+                            member.Token = node.IsObject ? JsonTokenType.StartObject : JsonTokenType.StartArray;
+                            member.Child = held ? node : null;
+                            Close(parent, member);
+                        }
+
+                        if (!held)
+                        {
+                            Flush(node);
+                            Release(node);
+                        }
+
+                        break;
+                    default:
+                        if (top == null)
+                        {
+                            // A lone value holds no object; the reader still checks the rest is nothing but white space.
+                            _done = true;
+                            break;
+                        }
+
+                        if (top.IsObject)
+                        {
+                            var value = top.Pending;
+                            value.ValueStart = at;
+                            value.ValueEnd = at + reader.ValueSpan.Length + (reader.TokenType == JsonTokenType.String ? 2 : 0);
                             value.Token = reader.TokenType;
                             if (reader.TokenType == JsonTokenType.String)
                             {
                                 Read(ref reader, ref value);
                             }
 
-                            node.Members.Add(value);
-                            break;
+                            Close(top, value);
+                        }
+
+                        break;
+                }
+            }
+
+            // A member of an object is complete. Kept: every recognized one and every member of a per-tag map (they are what
+            // can go), and the members right before and after one (their bytes bound the separators).
+            private static void Close(Node node, Member member)
+            {
+                if (node.Count == 0)
+                {
+                    node.FirstStart = member.NameStart;
+                }
+
+                node.Count++;
+                node.LastValueEnd = member.ValueEnd;
+                member.Kept = node.ByTag || member.Field != Field.None || member.Child != null;
+                if (member.Kept)
+                {
+                    if (node.Previous is { Kept: false } previous && (node.Members.Count == 0 || node.Members[^1].Index != previous.Index))
+                    {
+                        node.Members.Add(previous);
+                    }
+
+                    node.Members.Add(member);
+                }
+                else if (node.Previous is { Kept: true })
+                {
+                    node.Members.Add(member);
+                }
+
+                node.Previous = member;
+            }
+
+            // The edits of a container (and of the maps it kept for itself) once nothing can edit it any more.
+            private void Flush(Node node)
+            {
+                foreach (var member in node.Members)
+                {
+                    if (member.Child is { } child && !IsRemoved(node, member.Index))
+                    {
+                        Flush(child);
                     }
                 }
 
-                // The reader checks nothing but white space follows the value.
-                while (reader.Read())
+                if (node.Removed is { Count: > 0 } removed)
                 {
+                    var runs = removed.OrderBy(i => i).ToList();
+                    for (var i = 0; i < runs.Count;)
+                    {
+                        var r = runs[i];
+                        var s = r;
+                        while (i + 1 < runs.Count && runs[i + 1] == s + 1)
+                        {
+                            s = runs[++i];
+                        }
+
+                        i++;
+                        long start;
+                        long end;
+                        if (r == 0)
+                        {
+                            // Leading members go with the separator after them.
+                            start = node.FirstStart;
+                            end = s == node.Count - 1 ? node.LastValueEnd : Start(node, node.At(s + 1)!.Value);
+                        }
+                        else
+                        {
+                            // Others go with the separator before them.
+                            start = node.At(r - 1)!.Value.ValueEnd;
+                            end = node.At(s)!.Value.ValueEnd;
+                        }
+
+                        _edits.Add(new LegacyCollageEdit(start, end, False: false));
+                    }
                 }
 
-                return new Parsed { Root = root };
+                if (node.Falsified != null)
+                {
+                    foreach (var index in node.Falsified)
+                    {
+                        if (!IsRemoved(node, index) && node.At(index) is { } member)
+                        {
+                            _edits.Add(new LegacyCollageEdit(member.ValueStart, member.ValueEnd, False: true));
+                        }
+                    }
+                }
             }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+
+            private static long Start(Node node, Member member) => node.IsObject ? member.NameStart : member.ValueStart;
+
+            // A flushed container (and the maps it kept) can be used again.
+            private void Release(Node node)
             {
-                return null;
+                foreach (var member in node.Members)
+                {
+                    if (member.Child is { } child)
+                    {
+                        Release(child);
+                    }
+                }
+
+                node.Members.Clear();
+                _free.Push(node);
             }
         }
 
@@ -367,7 +621,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             switch (member.Field)
             {
                 case Field.Id or Field.ParentPrimaryImageItemId or Field.ParentThumbItemId or Field.ThumbImageItemId:
-                    if (Text(ref reader, 256) is { } id && System.Guid.TryParse(id, out var guid) && guid != System.Guid.Empty)
+                    // Read from the bytes as written in the usual forms; any other (or an escaped one) as the client reads it.
+                    if ((Utf8Id(reader.ValueIsEscaped ? default : reader.ValueSpan) ?? (Text(ref reader, 256) is { } id && System.Guid.TryParse(id, out var parsed) ? parsed : System.Guid.Empty)) is var guid
+                        && guid != System.Guid.Empty)
                     {
                         member.Guid = guid;
                     }
@@ -383,6 +639,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     member.Hint = Any(ref reader, HolderCollectionTypes);
                     break;
             }
+        }
+
+        // A GUID in one of the forms Guid.TryParse takes (32 digits, with hyphens, braces or parentheses), the whole value.
+        private static System.Guid? Utf8Id(ReadOnlySpan<byte> value)
+        {
+            foreach (var format in "NDBP")
+            {
+                if (System.Buffers.Text.Utf8Parser.TryParse(value, out System.Guid guid, out var consumed, format) && consumed == value.Length)
+                {
+                    return guid;
+                }
+            }
+
+            return null;
         }
 
         private static string? Text(ref Utf8JsonReader reader, int maxBytes)
@@ -405,29 +675,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // A kind hint only decides whether the library is asked about an id, so it is compared leniently (any case).
         private static bool Any(ref Utf8JsonReader reader, byte[][] names)
-            => Text(ref reader, 64) is { } text && names.Any(n => string.Equals(Encoding.UTF8.GetString(n), text, StringComparison.OrdinalIgnoreCase));
-
-        // ── decide: which recognized fields of which objects go ─────────
-
-        private static bool Decide(ReadOnlySpan<byte> json, Node node, LegacyCollageView view)
         {
-            var edited = node.IsObject && DecideObject(json, node, view);
-            for (var i = 0; i < node.Members.Count; i++)
+            if (!reader.ValueIsEscaped)
             {
-                if (node.Members[i].Child is { } child && !IsRemoved(node, i))
+                foreach (var name in names)
                 {
-                    edited |= Decide(json, child, view);
+                    if (Ascii.EqualsIgnoreCase(reader.ValueSpan, name))
+                    {
+                        return true;
+                    }
+                }
+
+                // Not ASCII-equal: only a non-ASCII spelling could still match without regard to case.
+                if (Ascii.IsValid(reader.ValueSpan))
+                {
+                    return false;
                 }
             }
 
-            // Removals made in this node while its parent was decided count too.
-            node.Edited |= edited;
-            return node.Edited;
+            return Text(ref reader, 64) is { } text && AnyText(text, names);
         }
 
-        private static readonly ImageType[] OwnTypes = { ImageType.Primary, ImageType.Thumb };
+        private static bool AnyText(string text, byte[][] names)
+        {
+            foreach (var name in names)
+            {
+                if (string.Equals(Encoding.UTF8.GetString(name), text, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
 
-        private static bool DecideObject(ReadOnlySpan<byte> json, Node node, LegacyCollageView view)
+            return false;
+        }
+
+        // ── which recognized fields of an object go ─────────
+
+        private static void DecideObject(Node node, LegacyCollageView view)
         {
             var members = node.Members;
             var hinted = false;
@@ -442,10 +726,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (!named && !referring)
             {
-                return false;
+                return;
             }
 
-            var changed = false;
             foreach (var type in OwnTypes)
             {
                 // The library is asked about an id that has a marker (or any id while the markers can't be listed), or one
@@ -456,21 +739,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var typeKey = type == ImageType.Primary ? Field.Primary : Field.Thumb;
-                for (var i = 0; i < members.Count; i++)
+                foreach (var member in members)
                 {
-                    var member = members[i];
                     switch (member.Field)
                     {
                         case Field.ImageTags or Field.ImageBlurHashes when member.Child is { IsObject: true } map:
-                            changed |= RemoveWhere(map, m => m.Field == typeKey);
+                            foreach (var entry in map.Members)
+                            {
+                                if (entry.Field == typeKey)
+                                {
+                                    Remove(map, entry.Index);
+                                }
+                            }
+
                             break;
                         case Field.PrimaryImageAspectRatio or Field.PrimaryImageTag when type == ImageType.Primary:
-                            changed |= Remove(node, i);
+                            Remove(node, member.Index);
                             break;
                         case Field.HasPrimaryImage when type == ImageType.Primary && member.Token == JsonTokenType.True:
                         case Field.HasThumbImage when type == ImageType.Thumb && member.Token == JsonTokenType.True:
-                            (node.Falsified ??= new HashSet<int>()).Add(i);
-                            changed = true;
+                            (node.Falsified ??= new HashSet<int>()).Add(member.Index);
                             break;
                     }
                 }
@@ -484,47 +772,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
 
                 var tags = members.Where(m => m.Field == tagField && m.Text != null).Select(m => m.Text!).ToHashSet(StringComparer.Ordinal);
-                for (var i = 0; i < members.Count; i++)
+                foreach (var member in members)
                 {
-                    if (members[i].Field == idField || members[i].Field == tagField)
+                    if (member.Field == idField || member.Field == tagField)
                     {
-                        changed |= Remove(node, i);
+                        Remove(node, member.Index);
                     }
                 }
 
                 var typeKey = type == ImageType.Primary ? Field.Primary : Field.Thumb;
                 foreach (var hashes in members.Where(m => m.Field == Field.ImageBlurHashes && m.Child is { IsObject: true }).Select(m => m.Child!))
                 {
-                    for (var i = 0; i < hashes.Members.Count; i++)
+                    foreach (var entry in hashes.Members)
                     {
-                        if (hashes.Members[i].Field != typeKey || hashes.Members[i].Child is not { IsObject: true } byTag || IsRemoved(hashes, i))
+                        if (entry.Field != typeKey || entry.Child is not { IsObject: true } byTag || IsRemoved(hashes, entry.Index))
                         {
                             continue;
                         }
 
                         var removed = false;
-                        for (var j = 0; j < byTag.Members.Count; j++)
+                        foreach (var hash in byTag.Members)
                         {
-                            if (NameText(json, byTag.Members[j]) is { } name && tags.Contains(name))
+                            if (hash.Name is { } name && tags.Contains(name))
                             {
-                                removed |= Remove(byTag, j);
+                                removed |= Remove(byTag, hash.Index);
                             }
                         }
 
-                        if (removed)
+                        if (removed && byTag.Removed!.Count == byTag.Count)
                         {
-                            changed = true;
-                            hashes.Edited = true;
-                            if (Enumerable.Range(0, byTag.Members.Count).All(j => IsRemoved(byTag, j)))
-                            {
-                                Remove(hashes, i);
-                            }
+                            Remove(hashes, entry.Index);
                         }
                     }
                 }
             }
-
-            return changed;
         }
 
         private static bool OwnWithheld(List<Member> members, bool hinted, ImageType type, LegacyCollageView view)
@@ -555,101 +836,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         private static bool IsRemoved(Node node, int index) => node.Removed?.Contains(index) ?? false;
 
-        private static bool Remove(Node node, int index)
-        {
-            node.Removed ??= new HashSet<int>();
-            if (!node.Removed.Add(index))
-            {
-                return false;
-            }
-
-            node.Edited = true;
-            return true;
-        }
-
-        private delegate bool MemberTest(Member member);
-
-        private static bool RemoveWhere(Node map, MemberTest test)
-        {
-            var any = false;
-            for (var i = 0; i < map.Members.Count; i++)
-            {
-                if (test(map.Members[i]))
-                {
-                    any |= Remove(map, i);
-                }
-            }
-
-            return any;
-        }
-
-        private static string? NameText(ReadOnlySpan<byte> json, Member member)
-        {
-            try
-            {
-                var reader = new Utf8JsonReader(json[member.NameStart..member.NameEnd]);
-                return reader.Read() && reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
-            }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-            {
-                return null;
-            }
-        }
-
-        // ── emit: every byte as it was but the removed members (each with one separator) and the falsified flags ──
-
-        private static int MemberStart(Node node, Member member) => node.IsObject ? member.NameStart : member.ValueStart;
-
-        private static void Emit(ReadOnlySpan<byte> json, Node node, ArrayBufferWriter<byte> output)
-        {
-            if (!node.Edited || node.Members.Count == 0)
-            {
-                output.Write(json[node.Start..node.End]);
-                return;
-            }
-
-            var members = node.Members;
-            // The opening bracket and the white space after it.
-            output.Write(json[node.Start..MemberStart(node, members[0])]);
-            var previous = -1;
-            for (var i = 0; i < members.Count; i++)
-            {
-                if (IsRemoved(node, i))
-                {
-                    continue;
-                }
-
-                var member = members[i];
-                if (previous >= 0)
-                {
-                    // The separator as it stood before this member.
-                    output.Write(json[members[i - 1].ValueEnd..MemberStart(node, member)]);
-                }
-
-                if (node.IsObject)
-                {
-                    // The name, and the colon with its white space.
-                    output.Write(json[member.NameStart..member.ValueStart]);
-                }
-
-                if (node.Falsified?.Contains(i) == true)
-                {
-                    output.Write("false"u8);
-                }
-                else if (member.Child != null)
-                {
-                    Emit(json, member.Child, output);
-                }
-                else
-                {
-                    output.Write(json[member.ValueStart..member.ValueEnd]);
-                }
-
-                previous = i;
-            }
-
-            // The white space before the closing bracket, and the bracket.
-            output.Write(json[members[^1].ValueEnd..node.End]);
-        }
+        private static bool Remove(Node node, int index) => (node.Removed ??= new HashSet<int>()).Add(index);
     }
 }

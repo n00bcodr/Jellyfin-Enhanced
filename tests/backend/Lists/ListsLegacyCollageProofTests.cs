@@ -15,7 +15,7 @@ namespace JE.Tests;
 // What may let a legacy collage (or a library tile built from one) be served: only content proves an image isn't the
 // collage, only a listing proves a marker isn't there, a hash is exactly 64 lowercase hex characters, nothing JE judged
 // once is trusted after the file may have changed, and a library tile built while a list was a collage stays withheld
-// until the host has regenerated it, across a restart too.
+// until the host has composed it again from sources proven clean, across a restart too; its dates prove nothing.
 public class ListsLegacyCollageProofTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "je-legacy-proof-" + Guid.NewGuid().ToString("N"));
@@ -30,6 +30,25 @@ public class ListsLegacyCollageProofTests : IDisposable
         _dirs = LegacyCollageWithhold.MarkerDirectories(_plugin);
         foreach (var dir in _dirs) Directory.CreateDirectory(dir);
         _library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => _items.GetValueOrDefault(id));
+        LegacyCollageComposing.Lists(_library, _items);
+    }
+
+    // The host composes the tile again from these lists (as its dynamic image providers do), through the image processor
+    // the plugin wraps, recording into this owner.
+    private void Regenerate(LegacyCollageWithhold withhold, BaseItem tile, params BaseItem[] from) => Regenerate(withhold, tile, ImageType.Primary, from);
+
+    private void Regenerate(LegacyCollageWithhold withhold, BaseItem tile, ImageType type, params BaseItem[] from)
+    {
+        var temp = Path.Combine(_root, "temp");
+        var processor = LegacyCollageCompositions.Wrap(LegacyCollageComposing.Processor().Object, () => withhold, () => temp);
+        LegacyCollageComposing.Compose(processor, tile, type, from, DateTime.UtcNow.AddMinutes(10), temp);
+    }
+
+    // The tile's file rewritten and both its dates moved, with no composition JE saw.
+    private static void Touch(BaseItem tile, DateTime written)
+    {
+        File.SetLastWriteTimeUtc(tile.ImageInfos[0].Path, written);
+        tile.ImageInfos[0].DateModified = written;
     }
 
     public void Dispose()
@@ -292,9 +311,11 @@ public class ListsLegacyCollageProofTests : IDisposable
         Assert.Equal(LegacyCollageVerdict.Superseded, withhold.Classify(list));
         Assert.False(withhold.AnyWithheld(BaseItemKind.Playlist));
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
+        Touch(tile, DateTime.UtcNow.AddMinutes(10));
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
 
-        // The host regenerates the tile from the lists as they are now.
-        Replace(tile, Bytes(23), DateTime.UtcNow.AddMinutes(10));
+        // The host composes the tile from the lists as they are now.
+        Regenerate(withhold, tile, list);
         Assert.False(withhold.Withholds(tile, ImageType.Primary));
     }
 
@@ -312,7 +333,7 @@ public class ListsLegacyCollageProofTests : IDisposable
         Assert.True(restarted.Withholds(tile, ImageType.Primary));
         Assert.True(New().Withholds(tile, ImageType.Primary));
 
-        Replace(tile, Bytes(27), DateTime.UtcNow.AddMinutes(10));
+        Regenerate(restarted, tile, list);
         Assert.False(New().Withholds(tile, ImageType.Primary));
     }
 
@@ -334,8 +355,8 @@ public class ListsLegacyCollageProofTests : IDisposable
         Assert.False(withhold.Withholds(collections, ImageType.Primary));
         Assert.False(withhold.Withholds(movies, ImageType.Primary));
 
-        Replace(tile, Bytes(34), DateTime.UtcNow.AddMinutes(10));
-        Replace(view, Bytes(35), DateTime.UtcNow.AddMinutes(10));
+        Regenerate(withhold, tile, list);
+        Regenerate(withhold, view, ImageType.Thumb, list);
         Assert.False(withhold.Withholds(tile, ImageType.Primary));
         Assert.False(withhold.Withholds(view, ImageType.Thumb));
     }
@@ -348,8 +369,9 @@ public class ListsLegacyCollageProofTests : IDisposable
         var tile = Tile(CollectionType.playlists, 37);
         Assert.True(New().Withholds(tile, ImageType.Primary));
         Replace(list, Bytes(38), DateTime.UtcNow);
-        Replace(tile, Bytes(39), DateTime.UtcNow.AddMinutes(10));
-        Assert.False(New().Withholds(tile, ImageType.Primary));
+        var withhold = New();
+        Regenerate(withhold, tile, list);
+        Assert.False(withhold.Withholds(tile, ImageType.Primary));
 
         // Someone copies the old tile back (cp without -p): a new time, the collage's pixels.
         Replace(tile, Bytes(37), DateTime.UtcNow.AddMinutes(20));
@@ -391,10 +413,11 @@ public class ListsLegacyCollageProofTests : IDisposable
             Assert.True(withhold.Withholds(tile, ImageType.Primary));
         }
 
-        // The owner sets an image; the host regenerates the tile from the lists as they are now.
+        // The owner sets an image; the host composes the tile from the lists as they are now.
         Replace(list, Bytes(52), DateTime.UtcNow);
-        Replace(tile, Bytes(53), DateTime.UtcNow.AddMinutes(10));
-        Assert.False(New().Withholds(tile, ImageType.Primary));
+        var restarted = New();
+        Regenerate(restarted, tile, list);
+        Assert.False(restarted.Withholds(tile, ImageType.Primary));
         // The first tile built from the collage is put back with a new time: still known.
         Replace(tile, first, DateTime.UtcNow.AddMinutes(20));
         Assert.True(New().Withholds(tile, ImageType.Primary));
@@ -405,7 +428,7 @@ public class ListsLegacyCollageProofTests : IDisposable
     {
         var known = Enumerable.Range(0, LegacyCollageTiles.MaxTileHashes).Select(i => Sha(BitConverter.GetBytes(i))).ToList();
         var full = new LegacyCollageTiles.State();
-        full.Kinds["Playlist"] = new LegacyCollageTiles.KindRecord(false, Old);
+        full.History.Add("Playlist");
         foreach (var sha in known) full.Tiles.Add(sha);
         Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
         File.WriteAllBytes(StatePath, LegacyCollageTiles.Serialize(full));
@@ -419,11 +442,12 @@ public class ListsLegacyCollageProofTests : IDisposable
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
         Assert.Contains(_warnings, w => w.Contains("withheld from now on", StringComparison.Ordinal));
 
-        // Past capacity: no list is a collage any more and both tiles are regenerated, yet every tile stays withheld,
-        // and every proof the record held is still in it.
+        // Past capacity: no list is a collage any more and both tiles are composed from clean lists, yet every tile stays
+        // withheld, and every proof the record held is still in it.
         Replace(list, Bytes(63), DateTime.UtcNow);
-        Replace(tile, Bytes(64), DateTime.UtcNow.AddMinutes(10));
-        Replace(collections, Bytes(65), DateTime.UtcNow.AddMinutes(10));
+        var other = Item(new BoxSet(), Bytes(66));
+        Regenerate(withhold, tile, list);
+        Regenerate(withhold, collections, other);
         var restarted = New();
         Assert.True(restarted.Withholds(tile, ImageType.Primary));
         Assert.True(restarted.Withholds(collections, ImageType.Primary));
@@ -432,21 +456,36 @@ public class ListsLegacyCollageProofTests : IDisposable
         Assert.True(known.All(record.Tiles.Contains));
     }
 
+    private static string Composition(string verdict, string inputs, int omitted = 0)
+        => "{\"verdict\":\"" + verdict + "\",\"inputs\":[" + inputs + "],\"omitted\":" + omitted + "}";
+
+    private static string Input(string? sha, string verdict) => "{\"sha\":" + (sha == null ? "null" : "\"" + sha + "\"") + ",\"verdict\":\"" + verdict + "\"}";
+
+    private static readonly string A = new('a', 64);
+    private static readonly string B = new('b', 64);
+
+    public static IEnumerable<object[]> Malformed() => new[]
+    {
+        "{}",
+        "{\"version\":3}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{}}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{},\"saturated\":false,\"more\":1}",
+        "{\"version\":3,\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{},\"saturated\":false}",
+        "{\"version\":3,\"history\":[\"Movie\"],\"tiles\":[],\"compositions\":{},\"saturated\":false}",
+        "{\"version\":3,\"history\":[\"Playlist\",\"Playlist\"],\"tiles\":[],\"compositions\":{},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":[\"abc\"],\"compositions\":{},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":null,\"compositions\":{},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{\"" + A + "\":" + Composition("clean", Input(B, "contaminated")) + "},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{\"" + A + "\":" + Composition("clean", "") + "},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{\"" + A + "\":" + Composition("clean", Input(null, "clean")) + "},\"saturated\":false}",
+        "{\"version\":3,\"history\":[],\"tiles\":[],\"compositions\":{\"nope\":" + Composition("clean", Input(B, "clean")) + "},\"saturated\":false}",
+        "{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[],\"saturated\":false}",
+        "[]",
+        "null",
+    }.Select(r => new object[] { r });
+
     [Theory]
-    [InlineData("{}")]
-    [InlineData("{\"version\":1}")]
-    [InlineData("{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[]}")]
-    [InlineData("{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[],\"saturated\":false,\"more\":1}")]
-    [InlineData("{\"version\":2,\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{\"Playlist\":{\"dirty\":false}},\"lists\":{},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{\"Playlist\":{\"dirty\":false,\"cleanFrom\":null}},\"lists\":{},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{\"Movie\":{\"dirty\":true,\"cleanFrom\":null}},\"lists\":{},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{},\"lists\":{\"Playlist|nope\":\"x\"},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[\"abc\"],\"saturated\":false}")]
-    [InlineData("{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":null,\"saturated\":false}")]
-    [InlineData("{\"version\":3,\"kinds\":{},\"lists\":{},\"tiles\":[],\"saturated\":false}")]
-    [InlineData("[]")]
-    [InlineData("null")]
+    [MemberData(nameof(Malformed))]
     public void ARecordWithAnythingMissingExtraOrMalformedIsUnknownHistory(string record)
     {
         // No list has a marker any more; the tiles are old.
@@ -454,14 +493,19 @@ public class ListsLegacyCollageProofTests : IDisposable
         var collections = Tile(CollectionType.boxsets, 71);
         Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
         File.WriteAllText(StatePath, record);
+        Assert.Null(LegacyCollageTiles.Parse(Encoding.UTF8.GetBytes(record)));
         var withhold = New();
         Assert.False(withhold.Begin().Idle);
         Assert.True(withhold.Withholds(playlists, ImageType.Primary));
         Assert.True(withhold.Withholds(collections, ImageType.Primary));
+        // Dates prove nothing.
+        Touch(playlists, DateTime.UtcNow.AddMinutes(10));
+        Assert.True(withhold.Withholds(playlists, ImageType.Primary));
 
-        // Unknown history is temporary: the host regenerating a tile releases it.
-        Replace(playlists, Bytes(70), DateTime.UtcNow.AddMinutes(10));
+        // Unknown history is not contamination: a composition from clean lists releases the tile.
+        Regenerate(withhold, playlists, Item(new Playlist(), Bytes(72)));
         Assert.False(withhold.Withholds(playlists, ImageType.Primary));
+        Assert.True(withhold.Withholds(collections, ImageType.Primary));
     }
 
     [Fact]
@@ -469,7 +513,12 @@ public class ListsLegacyCollageProofTests : IDisposable
     {
         var playlists = Tile(CollectionType.playlists, 72);
         Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
-        File.WriteAllText(StatePath, "{\"version\":2,\"kinds\":{},\"lists\":{},\"tiles\":[],\"saturated\":false}");
+        var record = "{\"version\":3,\"history\":[\"BoxSet\"],\"tiles\":[\"" + B + "\"],\"compositions\":{\"" + A + "\":" + Composition("clean", Input(B, "clean") + "," + Input(null, "unresolved")) + "},\"saturated\":false}";
+        Assert.Null(LegacyCollageTiles.Parse(Encoding.UTF8.GetBytes(record)));
+        record = "{\"version\":3,\"history\":[\"BoxSet\"],\"tiles\":[\"" + B + "\"],\"compositions\":{\"" + A + "\":" + Composition("unresolved", Input(B, "clean") + "," + Input(null, "unresolved")) + "},\"saturated\":false}";
+        Assert.NotNull(LegacyCollageTiles.Parse(Encoding.UTF8.GetBytes(record)));
+        File.WriteAllText(StatePath, record);
+        // Only collections ever had a marker: the playlists tile is the host's business.
         Assert.False(New().Withholds(playlists, ImageType.Primary));
     }
 
@@ -479,7 +528,7 @@ public class ListsLegacyCollageProofTests : IDisposable
         var playlists = Tile(CollectionType.playlists, 73);
         Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
         File.WriteAllText(StatePath, "{\"tiles\":[\"" + Sha(Bytes(73)) + "\"]}");
-        // Regenerated long after, with those bytes: they were proven to hold a collage.
+        // Rewritten long after, with those bytes: they were proven to hold a collage.
         Replace(playlists, Bytes(73), DateTime.UtcNow.AddMinutes(10));
         Assert.True(New().Withholds(playlists, ImageType.Primary));
     }
@@ -497,10 +546,13 @@ public class ListsLegacyCollageProofTests : IDisposable
         File.SetUnixFileMode(StatePath, UnixFileMode.None);
         try
         {
-            // Meanwhile the owner sets an image (a change JE records), and JE looks at the tile again.
+            // Meanwhile the owner sets an image, and JE looks at the tile again.
             Replace(list, Bytes(82), DateTime.UtcNow);
             var blind = Warned();
             Assert.True(blind.Withholds(tile, ImageType.Primary));
+            // A composition JE sees meanwhile is kept in memory (the record isn't written over).
+            Regenerate(blind, tile, list);
+            Assert.False(blind.Withholds(tile, ImageType.Primary));
             Assert.Contains(_warnings, w => w.Contains("couldn't be opened", StringComparison.Ordinal));
         }
         finally
@@ -509,9 +561,7 @@ public class ListsLegacyCollageProofTests : IDisposable
         }
 
         Assert.Equal(saved, File.ReadAllBytes(StatePath));
-        // The proof it holds still counts: the collage-built tile put back after a regeneration is withheld.
-        Replace(tile, Bytes(83), DateTime.UtcNow.AddMinutes(10));
-        Assert.False(New().Withholds(tile, ImageType.Primary));
+        // The proof it holds still counts: the collage-built tile put back is withheld.
         Replace(tile, Bytes(81), DateTime.UtcNow.AddMinutes(20));
         Assert.True(New().Withholds(tile, ImageType.Primary));
     }
@@ -519,17 +569,23 @@ public class ListsLegacyCollageProofTests : IDisposable
     // ── unknown is not contaminated (COLLAGE-R2-5) ───────────────────────
 
     [Fact]
-    public void UnknownHistoryReleasesTheTileOnceTheHostRegeneratesItEvenWithTheSameBytes()
+    public void UnknownHistoryReleasesTheTileOnceTheHostComposesItFromCleanListsEvenWithTheSameBytes()
     {
-        // The owner replaced the collage before JE ever looked: when, is unknown.
+        // The owner replaced the collage before JE ever looked: when, is unknown. The tile was composed from the lists as
+        // they are now, while JE didn't watch.
         var list = Item(new Playlist(), Bytes(90));
         Write(0, list, Marker(list, Sha(Bytes(91))));
         var tile = Tile(CollectionType.playlists, 92);
-        Assert.True(New().Withholds(tile, ImageType.Primary));
+        LegacyCollageComposing.Compose(LegacyCollageComposing.Processor().Object, tile, ImageType.Primary, new[] { list }, Old, Path.Combine(_root, "temp"));
+        var before = File.ReadAllBytes(tile.ImageInfos[0].Path);
+        var withhold = New();
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
         Assert.True(New().Withholds(tile, ImageType.Primary));
 
-        // The host composes the tile again from the same list images: identical bytes, written now.
-        Replace(tile, Bytes(92), DateTime.UtcNow.AddMinutes(10));
+        // The host composes the tile again from the same list images while JE watches: identical bytes, now proven clean.
+        Regenerate(withhold, tile, list);
+        Assert.Equal(before, File.ReadAllBytes(tile.ImageInfos[0].Path));
+        Assert.False(withhold.Withholds(tile, ImageType.Primary));
         Assert.False(New().Withholds(tile, ImageType.Primary));
     }
 
@@ -542,44 +598,54 @@ public class ListsLegacyCollageProofTests : IDisposable
         var withhold = New();
         Assert.Equal(LegacyCollageVerdict.Unreadable, withhold.Classify(list));
         Assert.True(withhold.Withholds(tile, ImageType.Primary));
+        Assert.False(withhold.Tiles.Contaminated(Sha(Bytes(94))));
 
-        // The marker turns out to name another image (the owner's is served), and the host regenerates the tile from
-        // the same images: the old bytes, written after.
+        // A composition while its marker can't be read proves nothing either way: the tile stays withheld.
+        Regenerate(withhold, tile, list);
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
+        Assert.Equal(LegacyCollageSource.Unresolved, withhold.Tiles.CompositionOf(Sha(File.ReadAllBytes(tile.ImageInfos[0].Path))));
+
+        // The marker turns out to name another image (the owner's is served), and the host composes the tile again from
+        // the same images: the same bytes, proven clean now.
         Write(0, list, Marker(list, Sha(Bytes(95))));
         Assert.Equal(LegacyCollageVerdict.Superseded, withhold.Classify(list));
-        Replace(tile, Bytes(94), DateTime.UtcNow.AddMinutes(10));
+        Regenerate(withhold, tile, list);
         Assert.False(withhold.Withholds(tile, ImageType.Primary));
     }
 
     [Fact]
-    public void ATileWrittenBeforeTheCollageWasThereIsNotProvenToHoldIt()
+    public void ATileWrittenBeforeTheCollageWasThereIsNotSuspected()
     {
         // The collage became the list's image after the host last wrote the tile (seconds after are enough).
         var list = Item(new Playlist(), Bytes(110), written: Old.AddSeconds(10));
         Write(0, list, Marker(list, Sha(Bytes(110))));
         var tile = Tile(CollectionType.playlists, 111);
-        Assert.True(New().Withholds(tile, ImageType.Primary));
+        var withhold = New();
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
+        Assert.False(withhold.Tiles.Contaminated(Sha(Bytes(111))));
 
-        // The owner sets an image; the host composes the tile again from the same images as before: the old bytes.
-        Replace(list, Bytes(112), DateTime.UtcNow);
-        Replace(tile, Bytes(111), DateTime.UtcNow.AddMinutes(10));
-        Assert.False(New().Withholds(tile, ImageType.Primary));
+        // One written while it was there is.
+        Replace(tile, Bytes(112), Old.AddSeconds(20));
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
+        Assert.True(withhold.Tiles.Contaminated(Sha(Bytes(112))));
     }
 
     [Fact]
-    public void AFileTimeTheHostDidntRecordProvesNoRegeneration()
+    public void TheDatesOfATileProveNoRegeneration()
     {
         var list = Item(new Playlist(), Bytes(96));
         Write(0, list, Marker(list, Sha(Bytes(97))));
         var tile = Tile(CollectionType.playlists, 98);
-        Assert.True(New().Withholds(tile, ImageType.Primary));
+        var withhold = New();
+        Assert.True(withhold.Withholds(tile, ImageType.Primary));
 
-        // Someone touches the file: new time, but the host's own record of the image is the old one.
+        // Someone touches the file; then the host's record of the image moves too: neither says what the tile holds.
         File.SetLastWriteTimeUtc(tile.ImageInfos[0].Path, DateTime.UtcNow.AddMinutes(10));
         Assert.True(New().Withholds(tile, ImageType.Primary));
-
-        // The host saves the tile (its record of the image moves too).
         tile.ImageInfos[0].DateModified = DateTime.UtcNow.AddMinutes(10);
-        Assert.False(New().Withholds(tile, ImageType.Primary));
+        Assert.True(New().Withholds(tile, ImageType.Primary));
+
+        Regenerate(withhold, tile, list);
+        Assert.False(withhold.Withholds(tile, ImageType.Primary));
     }
 }

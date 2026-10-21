@@ -378,10 +378,13 @@ public class ListsLegacyCollageHostTests
         Assert.Equal(404, Status("collage", "list"));
         Assert.Equal(404, Status("collage", "tile"));
         Assert.False(TileTagged("collage"));
-        foreach (var phase in new[] { "listReplaced", "restarted" })
+        // The release's own provider composed the tile from the collage (it says it updated the image).
+        Assert.Equal("ImageUpdate", sticky["providerFromCollage"]!.GetValue<string>());
+        Assert.Equal("ImageUpdate", sticky["providerClean"]!.GetValue<string>());
+        foreach (var phase in new[] { "composedFromCollage", "listReplaced", "restarted", "touched" })
         {
-            Assert.Equal(200, Status(phase, "list"));
-            Assert.True(Status(phase, "tile") == 404, phase + ": the tile built from the collage was served");
+            Assert.Equal(phase == "composedFromCollage" ? 404 : 200, Status(phase, "list"));
+            Assert.True(Status(phase, "tile") == 404, phase + ": the tile was served");
             Assert.Equal(404, Status(phase, "tileTagged"));
             Assert.False(TileTagged(phase), phase);
         }
@@ -390,6 +393,38 @@ public class ListsLegacyCollageHostTests
         Assert.Equal(200, Status("regenerated", "tile"));
         Assert.Equal(200, Status("regenerated", "tileTagged"));
         Assert.True(TileTagged("regenerated"));
+    }
+
+    // ── an image that becomes withheld while the host's action runs (COLLAGE-R3-1) ──
+
+    [Fact]
+    public void AnImageWhoseListBecomesACollageWhileTheHostsActionRunsIsNotSentInAnyForm()
+    {
+        var late = LegacyCollageHost.Run()["lateImage"]!.AsObject();
+        Assert.Equal(4, late.Count);
+        foreach (var (name, row) in late)
+        {
+            var answer = row!.AsObject();
+            Assert.True(answer["markerAppeared"]!.GetValue<bool>(), name + ": the marker never appeared while the action ran");
+            Assert.True(answer["status"]!.GetValue<int>() == 404, name + ": answered " + answer["status"]);
+            Assert.False(answer["servedImage"]!.GetValue<bool>(), name);
+            Assert.Null(answer["etag"]);
+            if (name != "head") Assert.Equal("late list does not have an image of type Primary", S(answer, "body"));
+        }
+    }
+
+    // ── the action enumeration is MVC's own (control) ────────────────────
+
+    [Fact]
+    public void TheActionsTheBoundaryWasCheckedAgainstAreExactlyTheOnesMvcDiscovers()
+    {
+        var results = LegacyCollageHost.Run()["results"]!.AsObject();
+        string Key(JsonNode? d) => S(d!.AsObject(), "assembly") + ":" + S(d!.AsObject(), "action");
+        var declared = results["declared"]!.AsArray().Select(Key).ToHashSet(StringComparer.Ordinal);
+        var discovered = results["discovered"]!.AsArray().Select(Key).ToHashSet(StringComparer.Ordinal);
+        Assert.True(discovered.Count > 600, discovered.Count + " actions discovered");
+        Assert.Empty(discovered.Except(declared));
+        Assert.Empty(declared.Except(discovered));
     }
 
     // ── the answer body boundary: every result type (COLLAGE-R2-1) ───────

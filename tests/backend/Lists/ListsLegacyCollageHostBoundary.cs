@@ -16,8 +16,11 @@ using MediaBrowser.Controller.Net;
 using MediaBrowser.Controller.Net.WebSocketMessages;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Session;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -121,10 +124,13 @@ public static class LegacyResultTypes
         ["UnauthorizedObjectResult"] = (typeof(UnauthorizedObjectResult), c => new UnauthorizedObjectResult(c.Dtos), true, null),
         ["UnprocessableEntityObjectResult"] = (typeof(UnprocessableEntityObjectResult), c => new UnprocessableEntityObjectResult(c.Dtos), true, null),
         ["JsonResult"] = (typeof(JsonResult), c => new JsonResult(c.Dtos), true, null),
+        ["JsonResult-utf16"] = (typeof(JsonResult), c => new JsonResult(c.Dtos) { ContentType = "application/json; charset=utf-16" }, true, null),
+        ["ObjectResult-accept16"] = (typeof(ObjectResult), c => new ObjectResult(c.Dtos), true, null),
         ["ContentResult"] = (typeof(ContentResult), c => new ContentResult { Content = Encoding.UTF8.GetString(c.Json), ContentType = "application/json" }, true, c => c.Json),
         ["ContentResult-camel"] = (typeof(ContentResult), c => new ContentResult { Content = Encoding.UTF8.GetString(c.Camel), ContentType = "application/json; profile=\"CamelCase\"" }, true, c => c.Camel),
         ["ContentResult-text"] = (typeof(ContentResult), c => new ContentResult { Content = Encoding.UTF8.GetString(c.Json), ContentType = "text/plain" }, true, c => c.Json),
         ["ContentResult-untyped"] = (typeof(ContentResult), c => new ContentResult { Content = Encoding.UTF8.GetString(c.Json) }, true, c => c.Json),
+        ["ContentResult-utf16"] = (typeof(ContentResult), c => new ContentResult { Content = Encoding.UTF8.GetString(c.Json), ContentType = "application/json; charset=utf-16" }, true, c => c.Json),
         ["FileContentResult"] = (typeof(FileContentResult), c => new FileContentResult(c.Json, "application/json"), true, c => c.Json),
         ["FileStreamResult"] = (typeof(FileStreamResult), c => new FileStreamResult(new MemoryStream(c.Json), "application/json"), true, c => c.Json),
         ["PhysicalFileResult"] = (typeof(PhysicalFileResult), c => new PhysicalFileResult(c.File("answer.json"), "application/json"), true, c => c.Json),
@@ -209,6 +215,19 @@ public static partial class LegacyCollageHostEntry
             }
         }
 
+        // The actions MVC itself discovers on those controllers (the walk above must be exactly these).
+        var discovered = new JsonArray();
+        using (var discovery = new TestServer(new Microsoft.AspNetCore.Hosting.WebHostBuilder().ConfigureServices(services =>
+            {
+                var mvc = services.AddControllers().ConfigureApplicationPartManager(parts => parts.ApplicationParts.Clear());
+                foreach (var assembly in assemblies.Where(a => a.GetName().Name is "Jellyfin.Api" or "Jellyfin.Plugin.JellyfinEnhanced")) mvc.AddApplicationPart(assembly);
+            }).Configure(app => { app.UseRouting(); app.UseEndpoints(e => e.MapControllers()); })))
+        {
+            foreach (var action in discovery.Services.GetRequiredService<Microsoft.AspNetCore.Mvc.Infrastructure.IActionDescriptorCollectionProvider>().ActionDescriptors.Items
+                .OfType<ControllerActionDescriptor>().Select(a => a.MethodInfo).Distinct())
+                discovered.Add(new JsonObject { ["assembly"] = action.DeclaringType!.Assembly.GetName().Name, ["action"] = action.DeclaringType.Name + "." + action.Name });
+        }
+
         var runs = new JsonArray();
         foreach (var (variant, spec) in LegacyResultTypes.Variants)
         {
@@ -216,6 +235,12 @@ public static partial class LegacyCollageHostEntry
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, "/JeLegacyResults/" + variant + "/" + item);
                 request.Headers.Add("X-Test-User", viewer.ToString("N"));
+                if (variant.EndsWith("-accept16", StringComparison.Ordinal))
+                {
+                    // The answer is negotiated in UTF-16 (a client that asks for it, as /Search/Hints answers it).
+                    request.Headers.TryAddWithoutValidation("Accept", "application/json");
+                    request.Headers.TryAddWithoutValidation("Accept-Charset", "utf-16");
+                }
                 var row = new JsonObject { ["variant"] = variant, ["type"] = spec.Type.FullName, ["item"] = item, ["body"] = spec.Body };
                 try
                 {
@@ -224,7 +249,10 @@ public static partial class LegacyCollageHostEntry
                     row["contentType"] = response.Content.Headers.ContentType?.ToString();
                     row["contentLength"] = response.Content.Headers.ContentLength;
                     var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-                    row["text"] = Encoding.UTF8.GetString(bytes);
+                    // In the character set it says it is in.
+                    var charset = response.Content.Headers.ContentType?.CharSet;
+                    row["charset"] = charset;
+                    row["text"] = (string.IsNullOrEmpty(charset) ? Encoding.UTF8 : Encoding.GetEncoding(charset.Trim('"'))).GetString(bytes);
                     row["length"] = bytes.Length;
                 }
                 catch (Exception ex)
@@ -243,6 +271,7 @@ public static partial class LegacyCollageHostEntry
         {
             ["universe"] = new JsonArray(universe.Select(u => (JsonNode?)u).ToArray()),
             ["declared"] = declared,
+            ["discovered"] = discovered,
             ["runs"] = runs,
         };
     }

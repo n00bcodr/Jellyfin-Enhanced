@@ -623,6 +623,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageCompositions.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageProjection.cs",
       "category": "Services"
     },
@@ -10907,7 +10911,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 634,
+    "files": 635,
     "routes": 292,
     "configuration_properties": 638,
     "storage_references": 94,

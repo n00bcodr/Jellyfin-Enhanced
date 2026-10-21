@@ -162,6 +162,15 @@ public class ListsLegacyCollageWireTests : IDisposable
         Assert.Equal("{\"\\u0049d\":\"" + N(_legacy) + "\",\"Image\\u0054ags\":{}}", Encoding.UTF8.GetString(Assert.Single(await Through(message))));
     }
 
+    // Nested arrays, escaped recognized keys next to literal non-ASCII text, and numbers in unusual spellings: only the
+    // withheld tag goes, every other byte stays.
+    [Theory]
+    [InlineData("{\"Data\":[{\"Id\":\"{id}\",\"ImageTags\":{\"Primary\":\"p\"}}]}", "{\"Data\":[{\"Id\":\"{id}\",\"ImageTags\":{}}]}")]
+    [InlineData("{\"Data\":[{\"\\u0049d\":\"{id}\",\"Image\\u0054ags\":{\"Prim\\u0061ry\":\"p\"},\"Name\":\"é🦊\",\"Number\":-0.00e+1}]}", "{\"Data\":[{\"\\u0049d\":\"{id}\",\"Image\\u0054ags\":{},\"Name\":\"é🦊\",\"Number\":-0.00e+1}]}")]
+    [InlineData("{\"Data\":[[true,{},null,{\"Id\":\"{id}\",\"ImageTags\":{\"Primary\":\"p\"}}],[1,2]]}", "{\"Data\":[[true,{},null,{\"Id\":\"{id}\",\"ImageTags\":{}}],[1,2]]}")]
+    public async Task OnlyTheWithheldTagLeavesPayloadsWithNestingEscapesAndUnusualNumbers(string message, string expected)
+        => Assert.Equal(expected.Replace("{id}", N(_legacy), StringComparison.Ordinal), Encoding.UTF8.GetString(Assert.Single(await Through(message.Replace("{id}", N(_legacy), StringComparison.Ordinal)))));
+
     // ── never throws ─────────────────────────────────────────────────────
 
     [Fact]

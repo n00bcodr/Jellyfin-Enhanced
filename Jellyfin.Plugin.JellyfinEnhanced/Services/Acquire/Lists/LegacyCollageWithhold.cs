@@ -49,11 +49,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
     /// <item>Absence is a listing: a marker folder's markers come from a listing taken now; a folder that can't be opened
     /// counts as absent only when its parent lists without it. Anything JE can't list, read or understand counts as the
     /// collage (fail closed).</item>
-    /// <item>A library tile built while a list of its kind was (or may have been) a collage stays withheld until the host
-    /// regenerates it; one the host wrote while a list of its kind was proven to be a collage stays withheld for good
-    /// (<see cref="LegacyCollageTiles"/>, kept across restarts).</item>
+    /// <item>A library tile of a kind whose lists ever had a marker is served only once the host has composed that very
+    /// content from sources proven clean (<see cref="LegacyCollageCompositions"/>); one composed from a collage, or
+    /// written while a list of its kind was proven to be a collage, stays withheld (<see cref="LegacyCollageTiles"/>,
+    /// kept across restarts). Dates prove nothing.</item>
     /// </list>
-    /// Each answer, WebSocket message or image request gets its own <see cref="LegacyCollageView"/>.
+    /// Each answer, WebSocket message, image request or composition gets its own <see cref="LegacyCollageView"/>, taken
+    /// when its bytes are about to be written (and checked again before each further part of a long answer).
     /// </summary>
     public sealed class LegacyCollageWithhold
     {
@@ -106,7 +108,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         {
             _markerDirectories = markerDirectories.ToArray();
             Library = libraryManager;
-            Tiles = new LegacyCollageTiles(Path.Combine(Path.GetDirectoryName(_markerDirectories[0])!, TileStateFileName), utcNow, warn);
+            Tiles = new LegacyCollageTiles(Path.Combine(Path.GetDirectoryName(_markerDirectories[0])!, TileStateFileName), warn);
         }
 
         internal ILibraryManager Library { get; }
@@ -132,6 +134,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>True when the marker folders were listed now and hold no marker (tile records aside).</summary>
         /// <returns>Whether no marker exists.</returns>
         public bool NoMarkers() => Listing() is { Count: 0 };
+
+        /// <summary>True when there is nothing to withhold now: no marker listed and nothing in the tile record.</summary>
+        /// <returns>Whether nothing is withheld.</returns>
+        public bool Idle() => Listing() is { Count: 0 } && !Tiles.HasHistory;
 
         /// <summary>Classifies the list's current Primary image (any other item: <see cref="LegacyCollageVerdict.NoEvidence"/>).</summary>
         /// <param name="item">The item.</param>
@@ -343,7 +349,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         // Each list id with a marker entry (any kind of entry) and a bit per folder listing it, from listings (see Names);
         // null when a folder can't be listed and can't be shown absent either (then any list may have a marker).
-        private Dictionary<Guid, int>? Listing()
+        internal Dictionary<Guid, int>? Listing()
         {
             var ids = new Dictionary<Guid, int>();
             for (var i = 0; i < _markerDirectories.Length; i++)
@@ -454,6 +460,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         private readonly Dictionary<Guid, Judgement> _judgements = new();
         private readonly Dictionary<BaseItemKind, KindState> _kinds = new();
         private readonly Dictionary<(Guid, ImageType), bool> _images = new();
+        private readonly Dictionary<Guid, HashSet<string>?> _markers = new();
 
         internal LegacyCollageView(LegacyCollageWithhold owner, Dictionary<Guid, int>? listing)
         {
@@ -534,6 +541,110 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <returns>Whether it does.</returns>
         public bool AnyWithheld(BaseItemKind kind) => !Idle && Kind(kind).WithheldNow;
 
+        /// <summary>
+        /// True when everything this view decided still holds now: the markers list the same, there is still (or still
+        /// nothing) to withhold, and every image it was asked about gets the same answer from a view taken now. A long answer
+        /// asks before each further part is written.
+        /// </summary>
+        /// <returns>Whether it does.</returns>
+        internal bool StillCurrent()
+        {
+            var now = _owner.Begin();
+            if (now.Idle != Idle || !SameListing(_listing, now._listing))
+            {
+                return false;
+            }
+
+            foreach (var ((id, type), withheld) in _images)
+            {
+                if (now.Image(id, type) != withheld)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Every hash the listed markers recorded, and the lists whose marker couldn't be read (a source that is such a list's
+        /// image can't be told from its collage); null when the markers can't be listed.
+        /// </summary>
+        /// <returns>The hashes and the unreadable lists, or null.</returns>
+        internal (HashSet<string> Hashes, HashSet<Guid> Unreadable)? Collages()
+        {
+            if (_listing == null)
+            {
+                return null;
+            }
+
+            var hashes = new HashSet<string>(StringComparer.Ordinal);
+            var unreadable = new HashSet<Guid>();
+            foreach (var id in _listing.Keys)
+            {
+                if (Markers(id) is { } recorded)
+                {
+                    hashes.UnionWith(recorded);
+                }
+                else
+                {
+                    unreadable.Add(id);
+                }
+            }
+
+            return (hashes, unreadable);
+        }
+
+        private static bool SameListing(Dictionary<Guid, int>? a, Dictionary<Guid, int>? b)
+            => a == null ? b == null : b != null && a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var mask) && mask == p.Value);
+
+        // The hashes the list's markers recorded (every folder listing it), or null when one can't be read or understood.
+        private HashSet<string>? Markers(Guid id)
+        {
+            if (_markers.TryGetValue(id, out var known))
+            {
+                return known;
+            }
+
+            var listIdN = id.ToString("N");
+            var hashes = new HashSet<string>(StringComparer.Ordinal);
+            var mask = _listing![id];
+            for (var i = 0; i < _owner.Directories.Count; i++)
+            {
+                if ((mask & (1 << i)) == 0)
+                {
+                    continue;
+                }
+
+                byte[] bytes;
+                try
+                {
+                    // The listing named it: one that can't be opened now (gone, a folder, no permission) is unreadable.
+                    using var stream = new FileStream(Path.Combine(_owner.Directories[i], listIdN + ".json"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    if (stream.Length > LegacyCollageWithhold.MaxMarkerBytes)
+                    {
+                        return _markers[id] = null;
+                    }
+
+                    bytes = new byte[stream.Length];
+                    stream.ReadExactly(bytes);
+                }
+                catch (Exception ex) when (LegacyCollageWithhold.IsFileError(ex) || ex is EndOfStreamException)
+                {
+                    return _markers[id] = null;
+                }
+
+                if (LegacyCollageWithhold.ReadHashes(bytes, listIdN) is not { } recorded)
+                {
+                    return _markers[id] = null;
+                }
+
+                hashes.UnionWith(recorded);
+            }
+
+            return _markers[id] = hashes;
+        }
+
         private Judgement Judge(BaseItem item)
         {
             if (item is not (Playlist or BoxSet) || (_listing != null && !_listing.ContainsKey(item.Id)))
@@ -563,40 +674,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return new Judgement(LegacyCollageVerdict.Unreadable, "unlisted");
             }
 
-            var listIdN = item.Id.ToString("N");
-            var hashes = new HashSet<string>(StringComparer.Ordinal);
-            var mask = _listing[item.Id];
-            for (var i = 0; i < _owner.Directories.Count; i++)
+            if (Markers(item.Id) is not { } hashes)
             {
-                if ((mask & (1 << i)) == 0)
-                {
-                    continue;
-                }
-
-                byte[] bytes;
-                try
-                {
-                    // The listing named it: one that can't be opened now (gone, a folder, no permission) is unreadable.
-                    using var stream = new FileStream(Path.Combine(_owner.Directories[i], listIdN + ".json"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                    if (stream.Length > LegacyCollageWithhold.MaxMarkerBytes)
-                    {
-                        return new Judgement(LegacyCollageVerdict.Unreadable, "marker");
-                    }
-
-                    bytes = new byte[stream.Length];
-                    stream.ReadExactly(bytes);
-                }
-                catch (Exception ex) when (LegacyCollageWithhold.IsFileError(ex) || ex is EndOfStreamException)
-                {
-                    return new Judgement(LegacyCollageVerdict.Unreadable, "marker");
-                }
-
-                if (LegacyCollageWithhold.ReadHashes(bytes, listIdN) is not { } recorded)
-                {
-                    return new Judgement(LegacyCollageVerdict.Unreadable, "marker");
-                }
-
-                hashes.UnionWith(recorded);
+                return new Judgement(LegacyCollageVerdict.Unreadable, "marker");
             }
 
             var identity = new List<string>(images.Length);
@@ -631,7 +711,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             return new Judgement(collage ? LegacyCollageVerdict.Collage : LegacyCollageVerdict.Superseded, string.Join("|", identity)) { CollageSince = since };
         }
 
-        // What the lists of that kind look like now, and the moment from which a tile of that kind can be clean.
+        // What the lists of that kind look like now. A kind with a marked list (or a marked id no longer in the library,
+        // which may have been either) has history from then on: its tiles need proof.
         private KindState Kind(BaseItemKind kind)
         {
             if (_kinds.TryGetValue(kind, out var state))
@@ -641,10 +722,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             if (_listing == null)
             {
-                return _kinds[kind] = new KindState(true, null, null);
+                return _kinds[kind] = new KindState(true, null);
             }
 
-            var lists = new Dictionary<string, string>(StringComparer.Ordinal);
+            var marked = false;
             var withheld = false;
             DateTime? collageSince = null;
             foreach (var id in _listing.Keys)
@@ -653,12 +734,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 if (item == null)
                 {
                     // A list that is gone may have fed a tile of either kind before it went.
-                    lists[id.ToString("N")] = "missing";
+                    marked = true;
                 }
                 else if (item is Playlist or BoxSet && item.GetBaseItemKind() == kind)
                 {
+                    marked = true;
                     var judgement = Judge(item);
-                    lists[id.ToString("N")] = judgement.Verdict + ":" + judgement.Identity;
                     withheld |= LegacyCollageWithhold.IsWithheld(judgement.Verdict);
                     if (judgement.Verdict == LegacyCollageVerdict.Collage && judgement.CollageSince is { } since && (collageSince == null || since < collageSince))
                     {
@@ -667,7 +748,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 }
             }
 
-            return _kinds[kind] = new KindState(withheld, collageSince, _owner.Tiles.Observe(kind, withheld, lists));
+            if (marked)
+            {
+                _owner.Tiles.Observe(kind);
+            }
+
+            return _kinds[kind] = new KindState(withheld, collageSince);
         }
 
         private bool Tile(BaseItem holder, ImageType type, BaseItemKind kind)
@@ -695,7 +781,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                 return true;
             }
 
-            if (images.Length == 0 || (state.CleanFrom == null && !_owner.Tiles.HasHistory))
+            // A kind whose lists never had a marker, with nothing recorded about any tile: the host's business.
+            var history = _owner.Tiles.HasHistoryFor(kind);
+            if (images.Length == 0 || (!history && !_owner.Tiles.HasHistory))
             {
                 return false;
             }
@@ -704,28 +792,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             {
                 if (!image.IsLocalFile || string.IsNullOrEmpty(image.Path))
                 {
-                    return true;
+                    // Nothing to tell its content by.
+                    if (history)
+                    {
+                        return true;
+                    }
+
+                    continue;
                 }
 
                 try
                 {
-                    var info = new FileInfo(image.Path);
-                    if (!info.Exists)
+                    if (!File.Exists(image.Path))
                     {
                         return true;
                     }
 
-                    var written = info.LastWriteTimeUtc;
-                    if (_owner.Tiles.Contaminated(LegacyCollageWithhold.HashFile(image.Path)))
+                    var sha = LegacyCollageWithhold.HashFile(image.Path);
+                    switch (_owner.Tiles.CompositionOf(sha))
                     {
-                        // Proven: monotone, whatever the tile's time.
-                        return true;
+                        case LegacyCollageSource.Contaminated:
+                            // Composed from a collage: withheld for good.
+                            return true;
+                        case LegacyCollageSource.Unresolved:
+                            // Composed from a source JE couldn't tell from a collage: withheld until the host composes
+                            // these bytes from sources proven clean.
+                            return true;
+                        case LegacyCollageSource.Clean:
+                            // The host composed these very bytes from sources proven clean: whatever else was suspected
+                            // of them, they hold no collage.
+                            continue;
                     }
 
-                    // Unknown or replaced history waits, without suspecting the content, until the host proves it has
-                    // regenerated the tile since: its own record of the image and the file are both newer.
-                    if (state.CleanFrom is { } cleanFrom && !(written > cleanFrom + LegacyCollageTiles.RegenerationMargin && image.DateModified > cleanFrom + LegacyCollageTiles.RegenerationMargin))
+                    if (_owner.Tiles.Contaminated(sha) || history)
                     {
+                        // Written while a list of its kind was proven a collage, or nothing proves it clean: its dates
+                        // prove nothing either way.
                         return true;
                     }
                 }
@@ -769,6 +871,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             public static readonly Judgement None = new(LegacyCollageVerdict.NoEvidence, string.Empty);
         }
 
-        private sealed record KindState(bool WithheldNow, DateTime? CollageSince, DateTime? CleanFrom);
+        private sealed record KindState(bool WithheldNow, DateTime? CollageSince);
     }
 }
