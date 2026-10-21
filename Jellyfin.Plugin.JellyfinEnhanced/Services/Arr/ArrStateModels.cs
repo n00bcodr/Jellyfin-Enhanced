@@ -760,6 +760,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// (<see cref="Value"/>), but says nothing about now: what is downloading is unknown.
         /// </summary>
         public bool Expired { get; init; }
+
+        /// <summary>
+        /// The client (the connection) the value was read through: a press's facts are proven on one connection, and what it
+        /// sends goes through that same client (<see cref="ArrClientFactory.Bound(ArrClient, bool)"/>). Server-only.
+        /// </summary>
+        internal ArrClient? ReadBy { get; set; }
     }
 
     /// <summary>An instance's snapshots as a background reader got them (<see cref="ArrStateStore.ReadInBackgroundAsync"/>).</summary>

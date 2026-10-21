@@ -101,6 +101,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>A Search: the Sonarr episode ids it searches (exactly the episodes it names, or the subset it was asked to prove).</summary>
         public IReadOnlyList<int> EpisodeIds { get; init; } = Array.Empty<int>();
 
+        /// <summary>
+        /// The connection the check read <see cref="Instance"/> through (D53, edition round 22): the command is sent, recorded and
+        /// read back only on it (<see cref="Arr.ArrClientFactory.Bound(Arr.ArrClient, bool)"/>). Server-only; null for a Seerr ask.
+        /// </summary>
+        [JsonIgnore]
+        internal Arr.ArrClient? Connection { get; init; }
+
+        /// <summary>True while <see cref="Connection"/> is still the instance's connection (the final gate before a write).</summary>
+        [JsonIgnore]
+        internal Func<bool>? StillBound { get; init; }
+
         /// <summary>The press's identity for a retry key (see <see cref="PressChecks.Fingerprint"/>).</summary>
         public string Fingerprint => PressChecks.Fingerprint(Route, Page, Title, Seasons != null ? "seasons:" + string.Join(",", Seasons) : Scope(Season, Episodes), Copy, Edition, Declared);
 
@@ -271,6 +282,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (key == null || key.IsMovie || key.Season is not int searched) return null;
             return Fingerprint(route, page, key, PressCommand.Scope(searched, Numbers(key, intent)), intent.Copy, edition, route == Admin ? intent.Instance : null);
         }
+
+        /// <summary>
+        /// Every field of a press as one canonical text (D53, edition round 22: a retry key replays only the identical request):
+        /// the page, mode, episodes, copy, edition, destination, instance, whole-series policy and seasons, in a fixed form.
+        /// </summary>
+        public static string Canonical(PressIntent intent)
+            => string.Join("\n", "intent",
+                Guid.TryParseExact(intent.Item, "N", out var page) ? page.ToString("N") : (intent.Item ?? "-"),
+                intent.Mode ?? "-",
+                string.Join(",", (intent.Episodes ?? Array.Empty<int>()).Distinct().OrderBy(n => n)),
+                intent.Copy ?? "-",
+                intent.Variant ?? "-",
+                (intent.Dest ?? "-").ToLowerInvariant(),
+                (intent.Instance ?? "-").ToLowerInvariant(),
+                intent.Whole ? "whole" : "part",
+                intent.Seasons == null ? "-" : string.Join(",", intent.Seasons.Distinct().OrderBy(n => n)));
+
+        /// <summary>
+        /// The identity of a create request as it was made (see <see cref="CreateRequest.Identity"/>): a plain ask by its input
+        /// alone (as before), anything else by its operation, its whole input (instance, profile and root folder included) and
+        /// its whole press.
+        /// </summary>
+        public static string RequestIdentity(string? operation, PressIntent? intent, MutationInput normalized)
+            => operation == null && intent == null ? normalized.Fingerprint
+                : MutationInput.Hash(string.Join("\n", "request", operation ?? "ask", normalized.Canonical, intent == null ? "-" : Canonical(intent)));
 
         /// <summary>The episode numbers of a season a search key names (one episode), or the intent's for a season key.</summary>
         public static IReadOnlyList<int> Numbers(TitleKey key, PressIntent? intent)

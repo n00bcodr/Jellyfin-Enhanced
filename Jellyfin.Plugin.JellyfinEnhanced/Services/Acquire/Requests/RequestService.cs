@@ -28,6 +28,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             : this(ledger, policy, view, feed, () => DateTimeOffset.UtcNow, aliases) { Signal = signal; }
         /// <summary>Wakes the outbox when an outcome queues work (absent in tests that drive the outbox themselves).</summary>
         internal RequestOutboxSignal? Signal { get; set; }
+
+        /// <summary>
+        /// Whether the person's key is held by an audited arr action (D53, edition round 22: one key namespace per person): such a
+        /// key is a conflict here, never a second request.
+        /// </summary>
+        internal Func<Guid, string, bool>? KeyTakenElsewhere { get; set; }
         internal RequestService(RequestLedger ledger, IRequestPolicy policy, IArrJellyfinView view, ArrChangeFeed feed, Func<DateTimeOffset> now, TitleAliases? aliases = null)
         { _ledger = ledger; _policy = policy; View = view; _feed = feed; _now = now; _aliases = aliases; }
         /// <summary>Human caller resolver.</summary>
@@ -70,9 +76,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // press (its fingerprint), and it never routes (a quality profile or a root folder could land it outside its copy).
             if (press != null && (body.Expect is not { } expect || PressChecks.RequestFingerprint(expect, PressChecks.Ask, null, input) == null || input.ProfileId != null || input.RootFolder != null))
                 return RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) };
-            // A retry of an ask already recorded (its answer was lost) gets that receipt before anything about it is worked out
-            // again (D53, edition round 20: replay before revalidation); the caller's own checks (a person who may ask, the
-            // feature, the database) were made above and by the route.
+            // The request as it was made, complete (D53, edition round 22): every field of its input (routing included), of its
+            // press and its operation. A retry of an ask already recorded under the person's key (its answer was lost) gets that
+            // receipt before anything about it is worked out again (round 20: replay before revalidation), only when it is this
+            // same request; anything else under the key is a conflict, never the first receipt. The caller's own checks (a person
+            // who may ask, the feature, the database) were made above and by the route.
+            body = body with { Identity = PressChecks.RequestIdentity(body.Operation, body.Expect, input) };
+            if (KeyTakenElsewhere?.Invoke(user, body.ClientRequestId) == true)
+                return RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) };
             if (_ledger.Replay(user, body with { Input = input }) is { } recorded) return recorded;
             await _policy.PrepareAsync(user, input, ct).ConfigureAwait(false);
             if (_policy.Evaluate(user, input).CanCreate)
@@ -81,6 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     await _policy.PrepareAsync(pending.UserId, pending.Input, ct).ConfigureAwait(false);
             }
             string? target = null;
+            Func<bool>? bound = null;
             if (press != null)
             {
                 // The last await: what is recorded below (no await in between) is the command this check returns, or nothing
@@ -98,8 +110,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (refusal != null) return RequestOutcome.Refused(refusal, 409, "conflict") with { Message = PressChecks.Message(refusal) };
                 input = command!;
                 target = proof.Command!.Instance;
+                bound = proof.Command.StillBound;
             }
-            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, target);
+            var outcome = _ledger.Create(user, body with { Input = input }, _policy, _now(), origin, target, bound);
             if (outcome.RequestId != null) _feed.Bump(new[] { input.Key, ArrTitleKey.UserRequests(user), ArrTitleKey.RequestsState });
             if (outcome.Reason == "queued_outage") Signal?.Pulse();
             return outcome;

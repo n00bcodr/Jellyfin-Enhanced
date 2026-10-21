@@ -85,10 +85,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var key = TitleKey.Parse(job.Input.Key);
             if (key == null) return BackendResults.Maybe(job.WantId, "The request's title key can't be read back.", "invalid_input");
             // Read-back uses the original connection: a changed URL or key can't prove anything about it.
+            // The generation check and the client come from one registry read (D53, edition round 22): no window in which a save
+            // could hand the read-back a replacement's client after the check passed.
             var instance = _clients.Registry.Get(job.Authorization.InstanceId);
             if (instance == null || _clients.ConnectionGeneration(instance.Id) != job.Authorization.ConnectionGeneration)
                 return BackendResults.Maybe(job.WantId, "The instance this request was sent to has changed since; check it there.", "instance_changed");
-            var client = _clients.For(instance.Id, allowUnusable: true);
+            var client = _clients.Bound(instance.Id, job.Authorization.ConnectionGeneration, allowUnusable: true);
+            if (!client.Ok && client.Error!.Message == ArrClientFactory.ConnectionChanged)
+                return BackendResults.Maybe(job.WantId, "The instance this request was sent to has changed since; check it there.", "instance_changed");
             if (!client.Ok) return BackendResults.Maybe(job.WantId, "The instance can't be read right now.", "service_down");
             var verify = await VerifyAsync(client.Value!, job.Input, key, ct).ConfigureAwait(false);
             if (verify.Matched == null) return BackendResults.Maybe(job.WantId, verify.Message, "service_down");
@@ -199,7 +203,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 refusal = BackendResults.Hold("instance_changed", $"{instance.Name}'s address or API key changed after this request was approved.");
                 return null;
             }
-            var client = _clients.For(instance.Id);
+            // The client of exactly the approved connection, checked and acquired together (D53, edition round 22).
+            var client = _clients.Bound(instance.Id, job.Authorization.ConnectionGeneration);
+            if (!client.Ok && client.Error!.Message == ArrClientFactory.ConnectionChanged)
+            {
+                refusal = BackendResults.Hold("instance_changed", $"{instance.Name}'s address or API key changed after this request was approved.");
+                return null;
+            }
             if (!client.Ok)
             {
                 refusal = BackendResults.Retry("backend_unavailable", $"{instance.Name} can't be used right now: {client.Error!.Message}");

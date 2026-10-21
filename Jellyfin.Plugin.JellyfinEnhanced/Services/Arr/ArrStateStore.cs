@@ -222,15 +222,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// <returns>The read.</returns>
         internal Task<ArrSnapshotRead<ArrQueueSnapshot>> ReadQueueNowAsync(ArrConnection instance, CancellationToken cancellationToken)
             => StateFor(instance, out var notUsable) is { } state
-                ? ReadNowAsync(state.Queue, cancellationToken, queue => !queue.Truncated)
+                ? ReadNowAsync(state, state.Queue, cancellationToken, queue => !queue.Truncated)
                 : Task.FromResult(new ArrSnapshotRead<ArrQueueSnapshot> { Error = notUsable });
+
+        /// <summary>
+        /// The library index as the arr has it NOW, for a press (D53, edition round 22: discovery and ownership are part of the
+        /// press's fresh evidence): which series or movies the instance holds, their ids, paths, monitoring and season facts,
+        /// never the index held for pages (a moved series, a newly holding instance). See <see cref="ReadQueueNowAsync"/>.
+        /// </summary>
+        /// <param name="instance">The instance.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        /// <returns>The read.</returns>
+        internal Task<ArrSnapshotRead<ArrLibrarySnapshot>> ReadLibraryNowAsync(ArrConnection instance, CancellationToken cancellationToken)
+            => StateFor(instance, out var notUsable) is { } state
+                ? ReadNowAsync(state, state.Library, cancellationToken)
+                : Task.FromResult(new ArrSnapshotRead<ArrLibrarySnapshot> { Error = notUsable });
+
+        /// <summary>The clients the store reads through (a press binds its command to the one its facts were read through).</summary>
+        internal ArrClientFactory Clients => _factory;
 
         /// <summary>The recent history as the arr has it now (see <see cref="ReadQueueNowAsync"/>).</summary>
         /// <param name="instance">The instance.</param>
         /// <param name="cancellationToken">Cancellation.</param>
         /// <returns>The read.</returns>
         internal Task<ArrSnapshotRead<ArrHistorySnapshot>> ReadHistoryNowAsync(ArrConnection instance, CancellationToken cancellationToken)
-            => StateFor(instance, out var notUsable) is { } state ? ReadNowAsync(state.History, cancellationToken) : Task.FromResult(new ArrSnapshotRead<ArrHistorySnapshot> { Error = notUsable });
+            => StateFor(instance, out var notUsable) is { } state ? ReadNowAsync(state, state.History, cancellationToken) : Task.FromResult(new ArrSnapshotRead<ArrHistorySnapshot> { Error = notUsable });
 
         /// <summary>One Sonarr series' episodes (with their files) as Sonarr has them now (see <see cref="ReadQueueNowAsync"/>).</summary>
         /// <param name="instance">The Sonarr instance.</param>
@@ -243,9 +259,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Internal, "Episodes are read from Sonarr only.") });
             if (StateFor(instance, out var notUsable) is not { } state) return Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = notUsable });
             var slot = state.EpisodesFor(seriesId, _now());
+            EpisodeSlotPicked?.Invoke(seriesId);
             return slot == null
                 ? Task.FromResult(new ArrSnapshotRead<ArrEpisodesSnapshot> { Error = new ArrError(ArrErrorKind.Timeout, "Still loading other series from the instance; try again in a moment.") })
-                : ReadNowAsync(slot, cancellationToken);
+                : ReadNowAsync(state, slot, cancellationToken);
         }
 
         /// <summary>
@@ -254,7 +271,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         /// (kept behind a recent complete value, or published past it) or one <paramref name="complete"/> rejects (a queue
         /// longer than JE reads) is an error: it can't prove what it may have missed.
         /// </summary>
-        private async Task<ArrSnapshotRead<T>> ReadNowAsync<T>(ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, Func<T, bool>? complete = null)
+        private async Task<ArrSnapshotRead<T>> ReadNowAsync<T>(InstanceState state, ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, Func<T, bool>? complete = null)
+            where T : class
+        {
+            var read = await ReadNowCoreAsync(slot, cancellationToken, complete).ConfigureAwait(false);
+            read.ReadBy = state.Client;
+            return read;
+        }
+
+        private async Task<ArrSnapshotRead<T>> ReadNowCoreAsync<T>(ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, Func<T, bool>? complete)
             where T : class
         {
             var started = _now();
@@ -639,6 +664,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         private async Task<ArrSnapshotRead<T>> ReadSlotAsync<T>(InstanceState state, ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, bool background = false)
+            where T : class
+        {
+            var read = await ReadSlotCoreAsync(state, slot, cancellationToken, background).ConfigureAwait(false);
+            // Every value held in a slot was read through the client of its instance state (a changed URL or key starts a new
+            // state): the read carries that client, so a caller can keep later reads and sends on the same connection.
+            read.ReadBy = state.Client;
+            return read;
+        }
+
+        private async Task<ArrSnapshotRead<T>> ReadSlotCoreAsync<T>(InstanceState state, ArrSnapshotSlot<T> slot, CancellationToken cancellationToken, bool background)
             where T : class
         {
             var now = _now();

@@ -782,4 +782,32 @@ public class ApiArrLiveRoutesTests
         Assert.DoesNotContain(secret, audit);
         Assert.DoesNotContain(secret, rig.Logs());
     }
+    // A webhook set-up writes, reads back and tests on one connection (edition round 22): a save that points the instance at
+    // another server while it runs never makes the replacement's connections (or its test) stand for this one's.
+    [Fact]
+    public async Task AWebhookSetUpReadsBackOnTheConnectionItWroteTo()
+    {
+        using var rig = new Rig();
+        var id = rig.Instance.Id;
+        var twin = rig.Arr.Add("radarr-twin.invalid", "Radarr");
+        var moved = 0;
+        rig.Radarr.Before = (path, _) =>
+        {
+            if (path == "/api/v3/notification/schema" && Interlocked.Exchange(ref moved, 1) == 0)
+            {
+                var config = rig.Arr.Plugin.Plugin.Configuration;
+                var rows = JsonNode.Parse(config.RadarrInstances)!.AsArray();
+                var row = rows.First(r => (string?)r!["Name"] == "Movies")!;
+                row["Url"] = "http://radarr-twin.invalid:7878";
+                row["ApiKey"] = "synthetic-replacement-key";
+                config.RadarrInstances = rows.ToJsonString();
+            }
+            return Task.CompletedTask;
+        };
+        var done = Body(await rig.Controller().ProvisionWebhook(id, new ArrWebhookRequest { Consent = true, IdempotencyKey = "moved-click" }, default));
+        Assert.Equal(1, moved);
+        Assert.Single(rig.Radarr.Notifications);
+        Assert.True(rig.Arr.CallCount("radarr-twin.invalid") == 0, $"read back or tested on the replacement: {done}");
+        Assert.Equal("Succeeded", done.GetProperty("status").ToString());
+    }
 }

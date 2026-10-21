@@ -840,11 +840,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // Jellyfin holds them for anyone, so a version the viewer only now may open is no arrival.
             var hadPlaying = interest.Scope == null ? null : PlayingBefore(viewer, key, scopeName);
             var hadSources = interest.Scope == null ? null : SourcesBefore(viewer, key, scopeName);
+            // What this look saw, merged with what was known (an unprobed file keeps its last known quality); written only in the
+            // transaction that decides this look (D53, edition round 22: an event and the evidence it consumes commit together).
+            Action<NotifyTransaction> baselines = _ => { };
             if (interest.Scope != null)
             {
                 var playing = _status.Editions.Holding(viewer, _view.Copies(key, viewer, _aliases.Of(key)).Display, movie: true, Edition.Any).ToList();
-                RememberPlaying(viewer, key, scopeName, playing, generation);
-                RememberSources(viewer, key, scopeName, _status.Editions.HeldSources(playing), generation);
+                baselines = Baselines(viewer, key, scopeName, playing, _status.Editions.HeldSources(playing));
             }
             var mark = "ready|" + key + "|" + scopeName;
             var itemId = composed?.Visible?.ItemId;
@@ -863,13 +865,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 {
                     tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, stage == StatusStage.Ready ? ReadyItems(null, itemId) : null, now);
                     if (stage == StatusStage.Ready) foreach (var m in marks) tx.TryMark(viewer.UserId, m, now);
+                    baselines(tx);
                     return true;
                 }, false).Done);
                 return;
             }
             if (watch is { } seen && (stage != StatusStage.Ready || seen.Stage == StatusStage.Ready))
             {
-                if (stage != seen.Stage) Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, seen.Known, now); return true; }, false).Done);
+                // No event at this look: what it saw is recorded on its own (nothing pending consumes it).
+                Written(key, _store.InTransaction(generation, tx =>
+                {
+                    if (stage != seen.Stage) tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, seen.Known, now);
+                    baselines(tx);
+                    return true;
+                }, false).Done);
                 return;
             }
             // Became ready (or arrived after it was asked for, before its first look): the new stage, the "handled"
@@ -881,6 +890,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             bool Handle(NotifyTransaction tx)
             {
                 tx.SetWatch(viewer.UserId, key.ToString(), scopeName, stage, ReadyItems(known, itemId), now);
+                // The evidence the arrival was judged by is consumed with it: a notification that can't be written leaves it as it
+                // was, and the next look judges the same upgrade again.
+                baselines(tx);
                 var first = true;
                 foreach (var m in marks) first &= tx.TryMark(viewer.UserId, m, now);
                 return first;
@@ -960,11 +972,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             var playingNow = edition == Edition.Any ? null : Arrived(key, viewer, Edition.Any).Files.Select(f => f.Episode.ItemId).ToHashSet();
             // As for a movie: a lookup that reached its scan bound leaves the watch (what is here) as it was.
             if (bound.Reached) return;
-            if (playingNow != null)
-            {
-                RememberPlaying(viewer, key, scope, playingNow, generation);
-                RememberSources(viewer, key, scope, _status.Editions.HeldSources(playingNow, seriesCopies), generation);
-            }
+            // As for a movie (D53, edition round 22): what this look saw is merged with what was known and written only in the
+            // transaction that decides the look (the batch of its arrivals, or a look with nothing to tell).
+            Action<NotifyTransaction> baselines = _ => { };
+            if (playingNow != null) baselines = Baselines(viewer, key, scope, playingNow, _status.Editions.HeldSources(playingNow, seriesCopies));
             seriesItem = files.Select(f => (Guid?)f.Series).FirstOrDefault() ?? seriesCopies.FirstOrDefault()?.ItemId;
             foreach (var copy in seriesCopies.Where(c => c.ItemId != Guid.Empty)) seriesItems.Add(copy.ItemId.ToString("N", CultureInfo.InvariantCulture));
             var numbers = EpisodeNumbers(key, interest.Only4k, files.Select(f => f.Episode));
@@ -988,12 +999,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 known = present.Where(p => asked == null || p.Value.Added is not DateTime added || added <= asked).Select(p => p.Key).ToHashSet();
                 if (known.Count == present.Count)
                 {
-                    Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); return true; }, false).Done);
+                    Written(key, _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(present.Keys), now); baselines(tx); return true; }, false).Done);
                     return;
                 }
             }
             var arrivals = present.Where(p => !known.Contains(p.Key)).OrderBy(a => a.Key.Season).ThenBy(a => a.Key.Episode).ToList();
-            if (arrivals.Count == 0) return;
+            if (arrivals.Count == 0)
+            {
+                // Nothing new at this look: what it saw is recorded on its own (nothing pending consumes it).
+                Written(key, _store.InTransaction(generation, tx => { baselines(tx); return true; }, false).Done);
+                return;
+            }
             var prefs = _store.Prefs(viewer.UserId);
             foreach (var a in arrivals) known.Add(a.Key);
             var minutes = Math.Clamp(_config()?.ArrNotifyBatchMinutes ?? 10, 1, 60);
@@ -1023,6 +1039,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     wanted.Add((number.Season, number.Episode, id));
                 }
                 tx.SetWatch(viewer.UserId, key.ToString(), scope, null, SerializeKnown(known), now);
+                // The evidence the arrivals were judged by commits with their batch (a failed batch write leaves both as they were).
+                baselines(tx);
                 if (wanted.Count > 0 && prefs.Episodes)
                 {
                     var first = wanted[0];
@@ -1052,20 +1070,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// The items that played for the viewer (any edition) at the last look of an interest in one edition (see
-        /// <see cref="RememberPlaying"/>); null when none was remembered yet (no evidence of an upgrade in place).
+        /// <see cref="Baselines"/>); null when none was remembered yet (no evidence of an upgrade in place).
         /// </summary>
         private HashSet<Guid>? PlayingBefore(StatusViewer viewer, TitleKey key, string scope)
             => _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known is { } known
                 ? known.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Guid.TryParseExact(x, "N", out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToHashSet()
                 : null;
 
-        /// <summary>Remembers the items that play for the viewer now (any edition), when that changed (see <see cref="PlayingBefore"/>).</summary>
-        private void RememberPlaying(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, long generation)
+        /// <summary>
+        /// The writes of what a look of an interest in one edition saw (see <see cref="PlayingBefore"/> and
+        /// <see cref="SourcesBefore"/>), for the transaction that decides the look: the items that play now, and their backing
+        /// sources merged with what was known of them (<see cref="MergeSources"/>). Each is written only when it changed.
+        /// </summary>
+        private Action<NotifyTransaction> Baselines(StatusViewer viewer, TitleKey key, string scope, IReadOnlyCollection<Guid> playing, IEnumerable<JfSource> sources)
         {
-            var known = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
-            if (_store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known == known) return;
-            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, known, _now()); return true; }, false);
+            var playingText = string.Join(",", playing.Where(id => id != Guid.Empty).Distinct().Select(id => id.ToString("N", CultureInfo.InvariantCulture)).OrderBy(x => x, StringComparer.Ordinal));
+            var heldPlaying = _store.Watch(viewer.UserId, key.ToString(), scope + PlayingSuffix)?.Known;
+            var heldSources = _store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known;
+            var sourcesText = MergeSources(sources, SourcesBefore(viewer, key, scope));
+            var now = _now();
+            return tx =>
+            {
+                if (heldPlaying != playingText) tx.SetWatch(viewer.UserId, key.ToString(), scope + PlayingSuffix, null, playingText, now);
+                if (heldSources != sourcesText) tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, sourcesText, now);
+            };
         }
+
+        /// <summary>
+        /// What is known of the sources seen now (D53, edition round 22: evidence never becomes less informative): each source
+        /// (its version item and file) with the quality read now, or, while Jellyfin hasn't probed it ("-"), the last quality
+        /// known for that same source. Only sources seen now are kept: a removed one is forgotten (it comes back as new), and
+        /// a source holds one quality, the latest known (never every quality it ever had).
+        /// </summary>
+        private static string MergeSources(IEnumerable<JfSource> sources, Dictionary<string, HashSet<string>>? before)
+            => string.Join(",", sources.GroupBy(SourceIdentity, StringComparer.Ordinal)
+                .Select(g =>
+                {
+                    var quality = g.Select(SourceQuality).Where(q => q != "-").OrderBy(q => q, StringComparer.Ordinal).FirstOrDefault();
+                    if (quality == null && before != null && before.TryGetValue(g.Key, out var held))
+                        quality = held.Where(q => q != "-").OrderBy(q => q, StringComparer.Ordinal).FirstOrDefault();
+                    return g.Key + ":" + (quality ?? "-");
+                })
+                .OrderBy(x => x, StringComparer.Ordinal));
 
         /// <summary>The watch scope suffix of the items that played in any edition (see <see cref="PlayingBefore"/>).</summary>
         private const string PlayingSuffix = "|playing";
@@ -1075,7 +1121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
         /// <summary>
         /// The backing sources the playing items had at the last look of an interest in one edition, as Jellyfin holds them for
-        /// anyone (see <see cref="RememberSources"/>): each source's identity (its version item and path) with its quality (the
+        /// anyone (see <see cref="Baselines"/>): each source's identity (its version item and path) with its quality (the
         /// video size, "-" while unread); null when none were remembered yet (no evidence of an upgrade in place).
         /// </summary>
         private Dictionary<string, HashSet<string>>? SourcesBefore(StatusViewer viewer, TitleKey key, string scope)
@@ -1084,22 +1130,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     .GroupBy(x => x[0], StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Select(x => x[1]).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal)
                 : null;
 
-        /// <summary>Remembers the backing sources of the items that play now (library context: whoever may open them), when that changed.</summary>
-        private void RememberSources(StatusViewer viewer, TitleKey key, string scope, IEnumerable<JfSource> sources, long generation)
-        {
-            var known = string.Join(",", sources.Select(s => SourceIdentity(s) + ":" + SourceQuality(s)).Distinct().OrderBy(x => x, StringComparer.Ordinal));
-            if (_store.Watch(viewer.UserId, key.ToString(), scope + SourcesSuffix)?.Known == known) return;
-            _store.InTransaction(generation, tx => { tx.SetWatch(viewer.UserId, key.ToString(), scope + SourcesSuffix, null, known, _now()); return true; }, false);
-        }
-
         /// <summary>
-        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes):
-        /// a version or path not held then, or one whose known quality changed (a file replaced in place). A source that was
-        /// there and only became visible to the viewer is not new. Nothing remembered: no evidence, no.
+        /// Whether a qualifying source of an item is new since the last look (D53, edition round 21: arrivals are source changes;
+        /// round 22: compared with the last KNOWN quality): a version or path not held then, or one whose known quality differs
+        /// from the one known then (a file replaced in place). A source that was there and only became visible to the viewer is
+        /// not new; neither is one whose quality was never known before (an unprobed first look proves no upgrade) or isn't
+        /// known now. Nothing remembered: no evidence, no.
         /// </summary>
         private static bool NewSource(IEnumerable<JfSource> qualifying, Dictionary<string, HashSet<string>>? before)
-            => before != null && qualifying.Any(s => !before.TryGetValue(SourceIdentity(s), out var qualities)
-                || !(qualities.Contains(SourceQuality(s)) || qualities.Contains("-") || SourceQuality(s) == "-"));
+            => before != null && qualifying.Any(s =>
+            {
+                if (!before.TryGetValue(SourceIdentity(s), out var qualities)) return true;
+                var now = SourceQuality(s);
+                var known = qualities.Where(q => q != "-").ToList();
+                return now != "-" && known.Count > 0 && !known.Contains(now, StringComparer.Ordinal);
+            });
 
         // A source's identity: the item behind the version and its file (never Jellyfin's source id: 10.11 changes it while grouping).
         private static string SourceIdentity(JfSource source)

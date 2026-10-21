@@ -1757,3 +1757,68 @@ test('Seerr mode: a copy\'s gap gets no copy-qualified control, whatever an olde
   assert.equal(h.posts.length, 1);
   same({ variant: h.posts[0].body.input.variant, scope: h.posts[0].body.input.scope, copy: h.posts[0].body.expect?.copy ?? null }, { variant: 'standard', scope: 'seasons', copy: null });
 });
+
+// Any deliberate activation ends focus recovery (D53, edition round 22): a screen reader synthesizes the click (and the focus
+// it gives) without a key, pointer or mouse event first; a later row redraw must leave the focus where the person put it.
+test('focus: an assistive-technology click ends the recovery before a later row redraw', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus(); two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const priorRow = recovered.closest('.listItem');
+  assert.ok(priorRow, 'focus recovery ran');
+  const button = h.document.createElement('button');
+  button.textContent = 'Show options';
+  h.document.querySelector('#itemDetailPage').prepend(button);
+  button.addEventListener('click', () => button.focus());
+  button.click();
+  assert.equal(h.document.activeElement, button, 'the person deliberately activated another control');
+  priorRow.replaceWith(priorRow.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.activeElement, button, 'a later refresh must not take focus away from the new control');
+});
+
+// Activating the control the recovery put the focus on is deliberate too (it ends the recovery without any focus change):
+// when the host then moves the focus by itself and redraws the row, nothing pulls it back.
+test('focus: activating the recovered control itself ends the recovery', async t => {
+  const server = {};
+  const h = setup(t, { server });
+  h.document.documentElement.classList.add('layout-tv');
+  await h.open();
+  server.post = () => {
+    h.setStatus(withEpisode(season(), 2, 'ready', 'ready'));
+    return { status: 409, body: { outcome: 'conflict', reason: 'press_changed', certainty: 'Rejected', message: 'Changed.' } };
+  };
+  const two = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
+  two.focus(); two.click();
+  h.document.querySelector('.je-ask-dialog .je-ask-get').click();
+  await settle(40);
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  const recovered = h.document.activeElement;
+  const row = recovered.closest('.listItem');
+  assert.ok(row, 'focus recovery ran');
+  // The person activates the recovered control (Enter on a TV remote synthesizes this click; no focus change follows).
+  recovered.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  h.document.querySelectorAll('.je-ask-dialog').forEach(d => d.remove());
+  const top = h.document.createElement('button');
+  top.className = 'btnPlay';
+  h.document.querySelector('#itemDetailPage').prepend(top);
+  top.focus();
+  row.replaceWith(row.cloneNode(true));
+  h.JE.internals.arrStatusEpisodes.apply();
+  await settle(10);
+  assert.equal(h.document.activeElement, top, 'the recovery ended at the activation; the later focus stands');
+});

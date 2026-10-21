@@ -72,6 +72,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 return (RequestOutcome.Refused("invalid_input", 400), null);
             if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 64)
                 return (RequestOutcome.Refused("invalid_input", 400), null);
+            // The request's whole identity (D53, edition round 22): a season page's press by its fingerprint, else this route and
+            // its key. It is the person's key, shared with every other route (no namespace of the household's own), and it has
+            // one owner at a time from here on: an identical request meanwhile claims nothing and gets the owner's answer.
+            string identity;
+            string? fingerprint = null;
+            if (expect != null)
+            {
+                fingerprint = PressChecks.RequestFingerprint(expect, PressChecks.Household, scope, null);
+                if (fingerprint == null) return (RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) }, null);
+                identity = fingerprint;
+            }
+            else identity = ArrActionRunner.Identity("search:household", "-", scope.ToString());
+            return await _manage.Runner.SingleFlightAsync(viewer.UserId, idempotencyKey, identity,
+                token => SearchOwnedAsync(viewer, scope, idempotencyKey, identity, fingerprint, token, expect, pages),
+                () => (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, (bool?)null), ct).ConfigureAwait(false);
+        }
+
+        // The owner of the person's key (see SearchAsync): replay, checks, candidates, claims and the one command.
+        private async Task<(RequestOutcome Outcome, bool? Found)> SearchOwnedAsync(StatusViewer viewer, TitleKey scope, string idempotencyKey, string identity, string? fingerprint, CancellationToken ct, PressIntent? expect, IAbsentTitlePages? pages)
+        {
             var many = !scope.IsMovie && scope.Episode == null;
             var hours = Math.Clamp(_requests.Policy.Configuration.ArrStatusLookingHours, 1, 720);
             var now = _now();
@@ -90,21 +110,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var probe = Input(null);
             if (probe == null) return (RequestOutcome.Refused("invalid_input", 400), null);
             await _requests.Policy.PrepareAsync(viewer.UserId, probe, ct).ConfigureAwait(false);
-            // A season page's press is known by its fingerprint (D53, edition round 21): a retry of the identical press whose search
-            // already ran (its answer was lost) gets that outcome before anything is checked again (round 20: replay before
-            // revalidation; the route's own checks were made); the same key used for another press is refused.
-            string? fingerprint = null;
-            if (expect != null)
+            // A retry of the identical request whose search already ran (its answer was lost) gets that outcome before anything is
+            // checked again or claimed (round 20: replay before revalidation; the route's own checks were made); the same key used
+            // for anything else is refused (D53, edition rounds 21-22).
+            if (await _manage.ReplayPressAsync(viewer.UserId, idempotencyKey, identity, ct).ConfigureAwait(false) is { } replayed)
             {
-                fingerprint = PressChecks.RequestFingerprint(expect, PressChecks.Household, scope, null);
-                if (fingerprint == null) return (RequestOutcome.Refused(PressChecks.Changed, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Changed) }, null);
-                if (await _manage.ReplayPressAsync(viewer.UserId, "family-" + idempotencyKey, fingerprint, ct).ConfigureAwait(false) is { } replayed)
-                {
-                    if (replayed.Conflict) return (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, null);
-                    if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
-                        return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
-                    return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
-                }
+                if (replayed.Conflict) return (RequestOutcome.Refused(PressChecks.Conflict, 409, "conflict") with { Message = PressChecks.Message(PressChecks.Conflict) }, null);
+                if (replayed.Status is ArrActionStatus.Succeeded or ArrActionStatus.Unknown)
+                    return (new RequestOutcome { Reason = "searched", HttpStatus = 200, Message = "Searched for it." }, null);
+                return (RequestOutcome.Refused("search_failed", 502, "unavailable") with { Message = "Couldn't search right now. Try again later." }, null);
             }
             // A season page's press that no longer matches is refused before anything else (nothing claimed, nothing asked for
             // instead); it is worked out again right before the command too.
@@ -197,10 +211,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             try
             {
                 result = expect != null
-                    ? await _manage.SearchCommandAsync(viewer, null, instanceId, scope, "family-" + idempotencyKey, fingerprint!, check, ct).ConfigureAwait(false)
+                    ? await _manage.SearchCommandAsync(viewer, null, instanceId, scope, idempotencyKey, fingerprint!, check, ct, owned: true).ConfigureAwait(false)
                     : part != null
-                    ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false)
-                    : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, "family-" + idempotencyKey, recheck, ct).ConfigureAwait(false);
+                    ? await _manage.SearchEpisodesPressAsync(viewer, null, instanceId, scope, claimed.Select(p => p.Id!.Value).ToArray(), idempotencyKey, recheck, ct, owned: true, identity: identity).ConfigureAwait(false)
+                    : await _manage.SearchPressAsync(viewer, null, instanceId, scope, null, idempotencyKey, recheck, ct, owned: true, identity: identity).ConfigureAwait(false);
             }
             catch
             {

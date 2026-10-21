@@ -1910,7 +1910,8 @@ public class IntegrationRequestBackendsTests
         var outcome = await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = instance.Id, Key = "movie:tmdb:961", IdempotencyKey = "sheet-1" }, default);
         Assert.Equal((201, "queued_outage"), (outcome.HttpStatus, outcome.Reason));
         var want = rig.Ledger.Find(outcome.RequestId!)!;
-        Assert.Equal(("4k", instance.Id, "je-add-sheet-1"), (want.Input.Variant, want.Input.InstanceId, want.ClientRequestId));
+        // The administrator's own key (one namespace per person; an add is told apart by its operation, not a key prefix).
+        Assert.Equal(("4k", instance.Id, "sheet-1"), (want.Input.Variant, want.Input.InstanceId, want.ClientRequestId));
         // The same sheet tapped again is the same request.
         var replay = await add.AddAsync(rig.Admin, new ManageAddRequest { InstanceId = instance.Id, Key = "movie:tmdb:961", IdempotencyKey = "sheet-1" }, default);
         Assert.Equal((200, outcome.RequestId), (replay.HttpStatus, replay.RequestId));

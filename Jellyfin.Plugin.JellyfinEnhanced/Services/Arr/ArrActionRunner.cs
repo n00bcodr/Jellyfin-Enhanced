@@ -87,11 +87,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         public TimeSpan? Timeout { get; init; }
 
         /// <summary>
-        /// A season page's press (D53, edition round 21: a retry key replays only the identical press): its fingerprint. With
-        /// it the action is kept under the user and the idempotency key alone, whatever it runs and where, and the same key
-        /// with another fingerprint is refused (<see cref="ArrActionOutcome.Conflict"/>), never answered with the first outcome.
+        /// The complete identity of the request (D53, edition rounds 21-22: a retry key replays only the identical request): a
+        /// season page's press fingerprint, or the caller's own description of what it asked (route, operation, instance,
+        /// target, options). Every action is kept under the user and the idempotency key alone, whatever it runs and where;
+        /// the same key with another identity is refused (<see cref="ArrActionOutcome.Conflict"/>), never answered with the
+        /// first outcome and never run again. Without one, the action, instance and target stand for it.
         /// </summary>
         public string? Fingerprint { get; init; }
+
+        /// <summary>
+        /// The connection a destructive action's confirmation must have been issued for (an opaque tag of the connection the
+        /// action was checked on): a token confirmed on another connection is refused. Null: the target alone.
+        /// </summary>
+        public string? Binding { get; init; }
     }
 
     /// <summary>The result shown to the admin.</summary>
@@ -136,7 +144,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         private readonly ArrAuditLog _audit;
         private readonly ArrConfirmationTokens _tokens;
         private readonly Func<DateTimeOffset> _now;
-        private readonly ConcurrentDictionary<string, (Task<ArrActionOutcome> Task, DateTimeOffset At, string? Fingerprint)> _recent = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (Task<ArrActionOutcome> Task, DateTimeOffset At, string Fingerprint)> _recent = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (Task<object?> Task, string Identity)> _flights = new(StringComparer.Ordinal);
 
         /// <summary>Creates the runner.</summary>
         public ArrActionRunner(ArrAuditLog audit, ArrConfirmationTokens tokens)
@@ -150,6 +159,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             _audit = audit;
             _tokens = tokens;
             _now = now ?? (() => DateTimeOffset.UtcNow);
+        }
+
+        /// <summary>
+        /// Whether the person's key is held by a recorded request (an ask or an add; D53, edition round 22: one key namespace per
+        /// person): such a key is a conflict here, never another action.
+        /// </summary>
+        internal Func<Guid, string, bool>? KeyTakenElsewhere { get; set; }
+
+        /// <summary>Whether an action holds the person's key (running, or remembered within the idempotency window).</summary>
+        internal bool Holds(Guid userId, string idempotencyKey)
+        {
+            var key = PressKey(userId, idempotencyKey);
+            return _flights.ContainsKey(key) || (_recent.TryGetValue(key, out var entry) && _now() - entry.At <= IdempotencyWindow);
         }
 
         /// <summary>The audit log the runner writes (refusals before the runner are written there too).</summary>
@@ -173,12 +195,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
                 _recent.TryRemove(stale, out _);
             }
 
-            var key = request.Fingerprint != null ? PressKey(request.UserId, request.IdempotencyKey) : Key(request.UserId, request.Action, request.InstanceId, request.IdempotencyKey);
+            // One namespace: the person and their key (D53, edition round 22). What the request is (its identity) is compared,
+            // never used to pick another slot: another action, route, instance or a request without its press under a used
+            // key is a conflict.
+            var key = PressKey(request.UserId, request.IdempotencyKey);
+            var identity = IdentityOf(request);
+            if (KeyTakenElsewhere?.Invoke(request.UserId, request.IdempotencyKey) == true) return Conflicting(request);
             var created = new TaskCompletionSource<ArrActionOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var entry = _recent.GetOrAdd(key, _ => (created.Task, now, request.Fingerprint));
+            var entry = _recent.GetOrAdd(key, _ => (created.Task, now, identity));
             if (!ReferenceEquals(entry.Task, created.Task))
             {
-                if (!string.Equals(entry.Fingerprint, request.Fingerprint, StringComparison.Ordinal)) return Conflicting(request);
+                if (!string.Equals(entry.Fingerprint, identity, StringComparison.Ordinal)) return Conflicting(request);
                 return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
             }
 
@@ -200,16 +227,65 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         }
 
         /// <summary>
-        /// The outcome of an earlier (or still running) action with the same user, action, instance and
-        /// idempotency key within the idempotency window, as a replay; null when there is none. Callers
-        /// that check changing state before running an action (is the download still in the queue?)
-        /// ask this first, so a retry of a click that already succeeded gets that outcome back instead
-        /// of a refusal.
+        /// The identity of an action that carries none of its own: its action, instance and target (callers that check
+        /// changing state first use <see cref="Identity"/> for the same text).
         /// </summary>
-        public async Task<ArrActionOutcome?> ReplayAsync(Guid userId, string action, string instanceId, string idempotencyKey, CancellationToken cancellationToken = default)
+        private static string IdentityOf(ArrActionRequest request)
+            => request.Fingerprint ?? Identity(request.Action, request.InstanceId, request.Target);
+
+        /// <summary>The identity of an action by its name, instance and what it acts on (plus any options that change it).</summary>
+        public static string Identity(string action, string instanceId, string target, params string?[] options)
+            => string.Join("\n", new[] { "action", action, instanceId.ToLowerInvariant(), target }.Concat(options.Select(o => o ?? "-")));
+
+        /// <summary>
+        /// One owner for a person's key at a time (D53, edition round 22: single-flight before anything is claimed): the first
+        /// caller runs <paramref name="owner"/>; an identical request (<paramref name="identity"/>) arriving meanwhile claims
+        /// nothing of its own and gets the owner's result, and another request under the key is <paramref name="conflict"/>.
+        /// When the owner's caller goes away before it finished (cancelled), a waiting identical request becomes the owner.
+        /// </summary>
+        internal async Task<T> SingleFlightAsync<T>(Guid userId, string idempotencyKey, string identity, Func<CancellationToken, Task<T>> owner, Func<T> conflict, CancellationToken cancellationToken)
         {
-            if (!_recent.TryGetValue(Key(userId, action, instanceId, idempotencyKey), out var entry) || _now() - entry.At > IdempotencyWindow) return null;
-            return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
+            var key = PressKey(userId, idempotencyKey);
+            if (KeyTakenElsewhere?.Invoke(userId, idempotencyKey) == true) return conflict();
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var mine = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var entry = _flights.GetOrAdd(key, (mine.Task, identity));
+                if (!ReferenceEquals(entry.Task, mine.Task))
+                {
+                    if (!string.Equals(entry.Identity, identity, StringComparison.Ordinal)) return conflict();
+                    try
+                    {
+                        return (T)(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false))!;
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // The owner's caller went away before its action ran: this identical request takes it over.
+                        continue;
+                    }
+                }
+                try
+                {
+                    var result = await owner(cancellationToken).ConfigureAwait(false);
+                    mine.SetResult(result);
+                    return result;
+                }
+                catch (OperationCanceledException)
+                {
+                    mine.TrySetCanceled();
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    mine.TrySetException(ex);
+                    throw;
+                }
+                finally
+                {
+                    _flights.TryRemove(new KeyValuePair<string, (Task<object?>, string)>(key, entry));
+                }
+            }
         }
 
         /// <summary>
@@ -229,8 +305,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
             return Replay(await entry.Task.WaitAsync(cancellationToken).ConfigureAwait(false));
         }
 
-        private static string Key(Guid userId, string action, string instanceId, string idempotencyKey)
-            => string.Join("\n", userId.ToString("N"), action, instanceId.ToLowerInvariant(), idempotencyKey);
+        /// <summary>What a destructive action's confirmation is bound to: its target, on the connection it was checked on.</summary>
+        public static string ConfirmationTarget(string target, string? binding) => binding == null ? target : target + "@" + binding;
 
         private static string PressKey(Guid userId, string idempotencyKey)
             => string.Join("\n", userId.ToString("N"), "press", string.Empty, idempotencyKey);
@@ -257,7 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Arr
         {
             var auditId = Guid.NewGuid().ToString("N");
             if (request.Tier == ArrActionTier.Destructive
-                && !_tokens.TryConsume(request.ConfirmationToken, request.UserId, request.Action, request.InstanceId, request.Target, out var reason))
+                && !_tokens.TryConsume(request.ConfirmationToken, request.UserId, request.Action, request.InstanceId, ConfirmationTarget(request.Target, request.Binding), out var reason))
             {
                 return Finish(request, auditId, ArrActionStatus.Rejected, "This action deletes data and needs a fresh confirmation.", null, null, 0, reason);
             }

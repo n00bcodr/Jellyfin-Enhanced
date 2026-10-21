@@ -422,6 +422,11 @@
     document.addEventListener('keydown', input, true);
     document.addEventListener('pointerdown', input, true);
     document.addEventListener('mousedown', input, true);
+    document.addEventListener('touchstart', input, { capture: true, passive: true });
+    // Any activation is deliberate and ends the recovery at once (D53, edition round 22): a click with no key, pointer or mouse
+    // event before it (a screen reader's, or a TV remote's Enter turned into a click) included, and one on the very control the
+    // recovery placed the focus on (no focus change follows it). The recovery itself only focuses, it never clicks.
+    document.addEventListener('click', () => { pendingFocus = null; }, true);
     document.addEventListener('focusin', (e) => {
         const want = pendingFocus;
         if (want && want.input && want.placed && e.target !== want.placed && document.contains(want.placed)) want.moved = true;
