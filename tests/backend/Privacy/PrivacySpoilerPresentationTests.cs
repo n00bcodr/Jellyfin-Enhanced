@@ -207,11 +207,13 @@ public class PrivacyD46RoundOneTests
         f.Core.Manager.SaveUserConfiguration(viewer.ToString("N"), "spoilerblur.json", state);
         var users = new Moq.Mock<MediaBrowser.Controller.Library.IUserManager>(); users.Setup(u => u.GetUserById(viewer)).Returns(person);
         var library = new Moq.Mock<MediaBrowser.Controller.Library.ILibraryManager>();
+        // The host's item cache (read without a lookup) holds none of them.
+        library.As<IPrivacyItemMemory>();
         library.Setup(l => l.GetItemList(Moq.It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))
             .Returns((MediaBrowser.Controller.Entities.InternalItemsQuery q) => q.ItemIds.Select(id => (MediaBrowser.Controller.Entities.BaseItem)new MediaBrowser.Controller.Entities.TV.Series { Id = id, ProviderIds = new Dictionary<string,string> { ["Tmdb"] = (Array.IndexOf(ids,id)+1).ToString() } }).ToList());
         var context = new SpoilerPresentation(f.Core.Manager, library.Object, users.Object, Moq.Mock.Of<MediaBrowser.Controller.Library.IUserDataManager>()).Load(viewer);
-        // Reads only: the delivery gate's input log subscribes to the library's item events (no read).
-        var reads = library.Invocations.Where(call => !call.Method.IsSpecialName).ToList();
+        // Library reads only: the delivery gate's input log subscribes to the library's item events (no read).
+        var reads = library.Invocations.Where(call => !call.Method.IsSpecialName && call.Method.DeclaringType == typeof(MediaBrowser.Controller.Library.ILibraryManager)).ToList();
         Assert.True(context.Guarded("tv:tmdb:2001")); Assert.Equal(2, reads.Count);
         Assert.All(reads, call => Assert.InRange(((MediaBrowser.Controller.Entities.InternalItemsQuery)call.Arguments[0]).ItemIds.Length, 1, 2000));
     }

@@ -613,23 +613,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private async Task<bool> WatchedPastAsync(ActionExecutingContext context, BaseItem item, JUser user, bool chapter)
         {
-            var data = PrivacyReads.UserData(_userDataManager, user, item, progress: true);
-            if (data == null || data.Played || data.PlaybackPositionTicks <= 0) return data?.Played == true && chapter;
-            var position = data.PlaybackPositionTicks;
+            // The decision consumes one predicate of the viewer's position (watched past the chapter's start, or past the
+            // sheet's end): that predicate is the recorded value, so a progress save that leaves it as it was changes nothing.
             if (chapter)
             {
                 if (!TryGetImageIndex(context, out var index)) return false;
+                long? start;
                 try
                 {
-                    return PrivacyReads.Chapter(_chapterManager, item.Id, index) is { } start && start.StartPositionTicks < position;
+                    start = PrivacyReads.Chapter(_chapterManager, item.Id, index)?.StartPositionTicks;
                 }
                 catch (Exception ex)
                 {
                     _resolver.WarnRateLimited("image-chapter-lookup:" + ex.GetType().FullName, $"Spoiler Guard: chapter lookup failed for {item.Id} idx {index}: {ex.Message}");
                     return false;
                 }
+                // A watched item: every chapter; else a chapter that starts before the resume point.
+                static bool Past(UserItemData? data, long? start)
+                    => data != null && (data.Played || data.PlaybackPositionTicks > 0 && start is { } at && at < data.PlaybackPositionTicks);
+                var data = PrivacyReads.UserData(_userDataManager, user, item, "past-chapter:" + index.ToString(System.Globalization.CultureInfo.InvariantCulture), d => Past(d, start) ? "1" : "0");
+                return Past(data, start);
             }
-            return await TrickplayTileFullyWatchedAsync(context, item.Id, position).ConfigureAwait(false);
+            long? end;
+            try
+            {
+                end = await TryGetTrickplayTileEndTicksAsync(context, item.Id).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _resolver.WarnRateLimited(
+                    "image-trickplay-lookup:" + ex.GetType().FullName,
+                    $"Spoiler Guard: trickplay lookup failed for {item.Id}: {ex.Message}");
+                return false;
+            }
+            // A sheet whose whole range ends at or before the resume point (an item marked watched keeps its protection).
+            static bool Covered(UserItemData? data, long? end)
+                => data is { Played: false, PlaybackPositionTicks: > 0 } && end is { } until && until <= data.PlaybackPositionTicks;
+            var sheet = PrivacyReads.UserData(_userDataManager, user, item, "past-sheet:" + (end?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"), d => Covered(d, end) ? "1" : "0");
+            return Covered(sheet, end);
         }
 
         // When an item that SHOULD be considered for blur (user has the
@@ -812,27 +833,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return endMs * TimeSpan.TicksPerMillisecond;
         }
 
-        // True when the requested trickplay tile sheet's timeline range lies
-        // ENTIRELY at or before the user's resume point — i.e. every thumbnail
-        // in it is a scene already watched, so it's safe to pass through
-        // unblurred. Fail-CLOSED (returns false → blur) on any lookup failure
-        // or a tile that straddles / is ahead of the resume point.
-        private async Task<bool> TrickplayTileFullyWatchedAsync(ActionExecutingContext context, Guid itemId, long watchedThroughTicks)
-        {
-            try
-            {
-                var tileEnd = await TryGetTrickplayTileEndTicksAsync(context, itemId).ConfigureAwait(false);
-                return tileEnd.HasValue && tileEnd.Value <= watchedThroughTicks;
-            }
-            catch (Exception ex)
-            {
-                _resolver.WarnRateLimited(
-                    "image-trickplay-lookup:" + ex.GetType().FullName,
-                    $"Spoiler Guard: trickplay lookup failed for {itemId}: {ex.Message}");
-                return false;
-            }
-        }
-
         // Query params Jellyfin's image controller uses to shape the
         // output (resize / re-encode). Two clients requesting the same
         // episode at different sizes must NOT share the same cached
@@ -897,6 +897,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public required DateTime ExpiresAt { get; init; }
             /// <summary>The input tick the episodes' watched state was read at.</summary>
             public long ReadAt { get; init; }
+
+            /// <summary>The facts the determination consumed (replayed by every answer that reuses it).</summary>
+            public required PrivacyReadSet.Evidence Evidence { get; init; }
         }
 
         private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
@@ -938,72 +941,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Which episodes the season holds depends on the host's specials setting: part of the memo's key.
             var key = user.Id.ToString("N") + ":" + season.Id.ToString("N") + ":" + PrivacyReads.HostSpecials();
             var now = DateTime.UtcNow;
-            // The user's watched state over the season's episodes, recorded as of when it was read.
-            PrivacyReads.WatchedIn(user.Id, season.Id);
+            // A remembered determination replays the facts it consumed (the season's watched evidence and the host's
+            // specials setting), compared with the live query at every check; a check that finds them changed drops it.
             if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now && !PrivacyInputs.ScopeChangedSince(hit.ReadAt, user.Id, season.Id))
             {
-                PrivacyReadSet.Current?.Watched(user.Id, season.Id, hit.ReadAt);
-                PrivacyReadSet.Current?.ChildrenOf(season.Id, hit.ReadAt);
+                PrivacyReadSet.ReplayCurrent(hit.Evidence, () => _watchedCache.TryRemove(key, out _));
                 return hit.AnyWatched;
             }
             var readAt = PrivacyInputs.Now;
 
-            bool anyWatched = false;
-            bool determinationFailed = false;
-            // Diagnostic counters kept for the commented _logger.Info below —
-            // uncomment to troubleshoot unexpected blur/passthrough decisions.
-            int total = 0, withUd = 0;
+            bool? anyWatched;
+            PrivacyReadSet.Evidence evidence;
             try
             {
-                // `shouldIncludeMissingEpisodes: false` skips episodes Jellyfin
-                // has metadata for but no media file — they can't have been
-                // "played", so iterating them just wastes work.
-                foreach (var child in PrivacyReads.SeasonEpisodes(season, user))
-                {
-                    total++;
-                    if (child is not Episode ep) continue;
-                    var ud = PrivacyReads.UserData(_userDataManager, user, ep);
-                    if (ud != null) withUd++;
-                    if (ud?.Played == true)
-                    {
-                        anyWatched = true;
-                        break;
-                    }
-                }
-                // _logger.Info($"[seasondiag] season={season.Id} {season.Name} total={total} withUd={withUd} anyWatched={anyWatched}");
+                // The host's own listing of the season (specials placed by its setting and each special's placement) and
+                // the viewer's watched state of what it lists. A failed read is fail-CLOSED (assume not watched → BLUR) and
+                // records nothing: a protected image depends on no input. The user opted into spoiler protection for this
+                // series; a transient DB-contention exception (24 simultaneous season-image requests overwhelming
+                // GetEpisodes) must never pass the late seasons unblurred.
+                anyWatched = PrivacyReadSet.Capture(() => PrivacyReads.SeasonWatchedOrUnknown(_libraryManager, _userDataManager, user, season), out evidence);
             }
             catch (Exception ex)
             {
-                // Fail CLOSED (assume not watched → BLUR). The user opted
-                // into spoiler protection for this series; defaulting to
-                // pass-through on a transient DB-contention exception
-                // can produce a real bug pattern: 24 simultaneous
-                // season-image requests overwhelm GetEpisodes for the
-                // late seasons in the burst, exceptions cache as
-                // "watched" for 30s, and the user sees later seasons
-                // unblurred until the cache TTL expires. If the user
-                // enabled Spoiler Guard, they want blur on uncertainty,
-                // not exposure.
+                anyWatched = null;
+                evidence = null!;
                 _resolver.WarnRateLimited(
                     "season-watched:" + ex.GetType().FullName,
                     $"Spoiler Guard: HasWatchedAnyEpisodeInSeason failed for season {season.Id} — failing CLOSED (blur). {ex.Message}");
-                anyWatched = false;
-                determinationFailed = true;
             }
+            if (anyWatched == null) return false;
 
-            // Don't cache exception results. Caching a fail-open
-            // `anyWatched=true` for 30s would make one transient DB
-            // hiccup persist across the full TTL even after the
-            // contention subsided. Only cache successful determinations;
-            // let the next call retry, which under typical conditions
-            // succeeds.
-            if (!determinationFailed)
+            // Only a successful determination is remembered (one transient DB hiccup must not persist for the TTL).
+            if (evidence.Consistent)
             {
                 _watchedCache[key] = new WatchedCacheEntry
                 {
-                    AnyWatched = anyWatched,
+                    AnyWatched = anyWatched.Value,
                     ExpiresAt = now + SeasonWatchedCacheTtl,
                     ReadAt = readAt,
+                    Evidence = evidence,
                 };
             }
 
@@ -1020,7 +996,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return anyWatched;
+            return anyWatched.Value;
         }
 
         // Stock-card replacement path. Used when SpoilerBlurMode == "hide".

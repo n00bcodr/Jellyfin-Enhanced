@@ -60,6 +60,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private sealed record MemoEntry(TagCacheEntry? Entry, DateTime BuiltAt);
 
         private readonly TagCacheService _tagCache;
+        /// <summary>Records the item a poster is drawn for, and its owner, as the host serves them now (verdict inputs of the tags).</summary>
+        internal void Judge(BaseItem item)
+        {
+            if (PrivacyReads.Item(_libraryManager, item.Id) is { } current && PrivacyIdentities.ExtraOwner(_libraryManager, current) is var owner && owner != Guid.Empty)
+                PrivacyReads.Item(_libraryManager, owner);
+        }
+
         private readonly ILibraryManager _libraryManager;
         private readonly SpoilerTagDataStripper _stripper;
         private readonly SpoilerUserResolver _spoilerResolver;

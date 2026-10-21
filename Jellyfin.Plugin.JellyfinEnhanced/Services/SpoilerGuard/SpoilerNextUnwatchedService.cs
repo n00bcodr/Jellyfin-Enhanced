@@ -61,7 +61,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The next-unwatched episode's identity and position.</summary>
         public readonly record struct NextUnwatchedBoundary(Guid EpisodeId, int SeasonNumber, int EpisodeNumber);
 
-        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, long ReadAt);
+        private readonly record struct CacheSlot(NextUnwatchedBoundary? Boundary, long ExpiresAtTicks, PrivacyReadSet.Evidence Evidence, long ReadAt);
 
         // Boundary cache keyed (userId, seriesId). Worst case is
         // f(users × guarded series) but hard-capped at MaxCacheEntries slots of
@@ -134,27 +134,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // watched-state change, amortizing to O(1) per item.
             var now = ClockTicksForTest?.Invoke() ?? DateTime.UtcNow.Ticks;
             var key = (userId, seriesId);
-            // The boundary is the user's watched state over the series' episodes (and their numbering): recorded in the
-            // attempt's read-set, as of when it was computed.
-            var reads = PrivacyReadSet.Current;
-            reads?.Watched(userId, seriesId);
-            reads?.Library(seriesId);
-            reads?.ChildrenOf(seriesId);
-            // A remembered boundary holds while nothing it was read from changed (an episode added, moved, renumbered or
-            // removed, or the user's watched state in the series), not merely until its time runs out.
+            // The boundary is the result of the user's next-unwatched query over the series: a fact of the answer, compared
+            // with the same query at every check. A remembered boundary replays that fact (and is dropped when a check
+            // finds it no longer holds); events and its time only schedule a refresh.
             if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now && !PrivacyInputs.ScopeChangedSince(slot.ReadAt, userId, seriesId))
             {
-                // The remembered boundary's own inputs, as of when it was read (nothing else in the answer is backdated).
-                reads?.Watched(userId, seriesId, slot.ReadAt);
-                reads?.Library(seriesId, slot.ReadAt);
-                reads?.ChildrenOf(seriesId, slot.ReadAt);
+                PrivacyReadSet.ReplayCurrent(slot.Evidence, () => _cache.TryRemove(key, out _));
                 return slot.Boundary;
             }
 
             var readAt = PrivacyInputs.Now;
-            var boundary = BoundaryComputerForTest != null
-                ? BoundaryComputerForTest(userId, seriesId)
-                : ComputeBoundary(userId, seriesId);
+            var boundary = PrivacyReadSet.Capture(() => Read(userId, seriesId, BoundaryComputerForTest ?? ComputeBoundary), out var evidence);
 
             if (_cache.Count >= MaxCacheEntries)
             {
@@ -164,10 +154,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _cache.Clear();
             }
 
-            // A boundary read while its inputs changed is not remembered (the next ask reads it again).
-            if (PrivacyInputs.ScopeChangedSince(readAt, userId, seriesId)) _cache.TryRemove(key, out _);
-            else _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, readAt);
-            return boundary;
+            // Only a boundary that was read (not a failed computation) is remembered.
+            if (evidence.Consistent && boundary.Read && !PrivacyInputs.ScopeChangedSince(readAt, userId, seriesId)) _cache[key] = new CacheSlot(boundary.Boundary, now + CacheTtl.Ticks, evidence, readAt);
+            else _cache.TryRemove(key, out _);
+            return boundary.Boundary;
+        }
+
+        private static string Text(NextUnwatchedBoundary? boundary)
+            => boundary is { } b ? b.EpisodeId.ToString("N") + ":" + b.SeasonNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + b.EpisodeNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-";
+
+        /// <summary>
+        /// The boundary computed now, recorded as a fact (the query's result, with how to run it again); a failed computation
+        /// is the fail-closed null boundary (no reveal) and records nothing, since a full strip depends on no input.
+        /// </summary>
+        private static (NextUnwatchedBoundary? Boundary, bool Read) Read(Guid userId, Guid seriesId, Func<Guid, Guid, NextUnwatchedBoundary?> compute)
+        {
+            NextUnwatchedBoundary? boundary;
+            try { boundary = PrivacyReadSet.Unrecorded(() => compute(userId, seriesId)); }
+            catch (Exception) { return (null, false); }
+            PrivacyReads.Query("next:" + userId.ToString("N") + ":" + seriesId.ToString("N"), Text(boundary), () =>
+            {
+                try { return Text(compute(userId, seriesId)); }
+                catch (Exception) { return null; }
+            });
+            return (boundary, true);
         }
 
         /// <summary>
@@ -215,16 +225,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex)
             {
-                // Fail closed (null ⇒ full strip). Bounded logging so a
-                // persistent library fault can't flood the log from a hot
-                // request path.
+                // Fail closed (null ⇒ full strip; the caller records nothing for a failure). Bounded logging so a
+                // persistent library fault can't flood the log from a hot request path.
                 if (_computeFailureLogBudget > 0)
                 {
                     _computeFailureLogBudget--;
                     _logger.Warning($"Spoiler Guard next-unwatched boundary failed for series {seriesId}; falling back to full strip: {ex.Message}");
                 }
 
-                return null;
+                throw;
             }
         }
 
@@ -235,12 +244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public static NextUnwatchedBoundary? ComputeNow(ILibraryManager library, JUser user, Guid seriesId)
         {
             if (seriesId == Guid.Empty) return null;
-            var reads = PrivacyReadSet.Current;
-            reads?.Watched(user.Id, seriesId);
-            reads?.Library(seriesId);
-            reads?.ChildrenOf(seriesId);
-            try { return Compute(library, user, seriesId); }
-            catch (Exception) { return null; }
+            return Read(user.Id, seriesId, (_, series) => Compute(library, user, series)).Boundary;
         }
 
         private static NextUnwatchedBoundary? Compute(ILibraryManager libraryManager, JUser user, Guid seriesId)

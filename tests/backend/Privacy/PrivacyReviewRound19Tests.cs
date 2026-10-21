@@ -550,6 +550,10 @@ public class PrivacyReviewRound19Tests
             config.HiddenContentEnabled = true;
             config.SpoilerBlurEnabled = true; config.SpoilerReplaceTitle = true; config.SpoilerStripOverview = true; config.SpoilerStripRatings = true;
             config.SpoilerStripTags = stripTags;
+            // The host's item cache, which the privacy checks read without a library lookup (as on the real host): it holds
+            // the site's items.
+            Library.As<Jellyfin.Plugin.JellyfinEnhanced.Services.IPrivacyItemMemory>()
+                .Setup(m => m.Peek(It.IsAny<Guid>())).Returns((Guid id) => Items.GetValueOrDefault(id));
             var users = Users;
             users.Setup(x => x.GetUserById(Alice.Id)).Returns(Alice);
             Library.Setup(x => x.GetItemIds(It.IsAny<MediaBrowser.Controller.Entities.InternalItemsQuery>()))

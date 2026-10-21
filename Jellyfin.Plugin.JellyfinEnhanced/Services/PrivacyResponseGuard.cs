@@ -151,15 +151,15 @@ public sealed class PrivacyResponseGuard
     internal static PrivacyResponseGuard? Find(HttpContext http) => http.Items[GuardKey] as PrivacyResponseGuard;
 
     /// <summary>
-    /// Whether every read-set installed on the response still holds (the commit check; <paramref name="live"/>: the items
-    /// the decisions read are compared with the host's live items too, which the header-commit check a moment later skips).
+    /// Whether every read-set installed on the response still holds: every fact each one consumed compared with its live
+    /// source (the same complete check at the commit and at the header start, whatever the answer's size or stage).
     /// </summary>
-    public bool Holds(bool live = true)
+    public bool Holds()
     {
         PrivacyReadSet[] reads;
         lock (_lock) reads = _reads.ToArray();
         foreach (var set in reads)
-            if (!set.StillValid(live)) { PrivacyReadSet.Withheld(set); return false; }
+            if (!set.StillValid()) { PrivacyReadSet.Withheld(set); return false; }
         return true;
     }
 
@@ -180,7 +180,9 @@ public sealed class PrivacyResponseGuard
         lock (_lock) { committing = _committing; held = _body?.Held > 0; }
         // A protected answer whose writer never committed it: nothing of it leaves.
         if (!committing && held) { Stop(); return Task.CompletedTask; }
-        if (!Holds(live: !committing)) Stop();
+        // The last check before the headers leave, after every start callback registered after the guard (the answer's
+        // own, later filters'): complete, as at the commit (a callback can change an input between the two).
+        if (!Holds()) Stop();
         return Task.CompletedTask;
     }
 
@@ -205,10 +207,10 @@ public sealed class PrivacyResponseGuard
             lock (_lock) _committing = false;
         }
         if (Stopped) return false;
-        // A host without start callbacks (an in-process context) is checked here instead.
+        // A host without start callbacks (an in-process context) gets the same complete check here instead.
         bool checkedAtStart;
         lock (_lock) checkedAtStart = _startChecked;
-        if (!checkedAtStart && !Holds(live: false))
+        if (!checkedAtStart && !Holds())
         {
             Stop();
             return false;

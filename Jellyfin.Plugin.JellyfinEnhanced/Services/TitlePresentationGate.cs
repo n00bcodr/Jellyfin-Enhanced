@@ -388,14 +388,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
 
     private const string ConditionalHeader = "__JE_PRESENTATION_IF_NONE_MATCH";
 
-    private const string InputsMark = "__JE_PRESENTATION_INPUTS";
-
     /// <inheritdoc />
     public void OnResourceExecuting(ResourceExecutingContext context)
     {
-        // The input tick before the action reads anything: the host builds its answer (an item's user data, its owner) with
-        // the inputs of that moment, so the delivery gate compares from here.
-        context.HttpContext.Items[InputsMark] = PrivacyInputs.Now;
         if (Route(context) == null) return;
         // An action cannot answer 304 using bytes produced before the final policy read.
         context.HttpContext.Items[ConditionalHeader] = context.HttpContext.Request.Headers.IfNoneMatch.ToString();
@@ -429,16 +424,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         }
         try
         {
-            // The host built the answer with the inputs of the request's start (its own reads are marked there).
-            var inputs = context.HttpContext.Items.TryGetValue(InputsMark, out var mark) && mark is long tick ? tick : PrivacyInputs.Now;
             if (entry != null)
             {
-                DeliverNative(context, answer!, entry, viewer.Value, inputs);
+                DeliverNative(context, answer!, entry, viewer.Value);
                 return;
             }
             if (route == null)
             {
-                DeliverUnclassified(context, answer!.Value!, viewer.Value, inputs);
+                DeliverUnclassified(context, answer!.Value!, viewer.Value);
                 return;
             }
             var spec = route;
@@ -450,7 +443,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 _ => null
             };
             if (json == null) return;
-            var projected = DeliverJson(context.HttpContext, json, spec, viewer.Value, inputs, out var final);
+            var projected = DeliverJson(context.HttpContext, json, spec, viewer.Value, out var final);
             if (projected == null || final == null)
             {
                 Withhold(context);
@@ -476,9 +469,9 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// A title-carrying answer from an endpoint the registry does not classify, through the one delivery gate: delivered
     /// unprojected only while no policy applies to the viewer (a rule saved while the policy was read withholds it).
     /// </summary>
-    private void DeliverUnclassified(ResultExecutingContext context, object value, Guid viewer, long inputs)
+    private void DeliverUnclassified(ResultExecutingContext context, object value, Guid viewer)
     {
-        using (var scope = PrivacyReadSet.Begin(inputs))
+        using (var scope = PrivacyReadSet.Begin())
         {
             var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
             if (!PolicyApplies(final) && scope.Reads.Valid())
@@ -497,13 +490,13 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// gate, after the projection's lookups, finds it unchanged; else projected again from the same JSON (bounded). Null:
     /// withheld.
     /// </summary>
-    private string? DeliverJson(HttpContext http, string json, Schema spec, Guid viewer, long inputs, out TitlePresentationPolicy? final)
+    private string? DeliverJson(HttpContext http, string json, Schema spec, Guid viewer, out TitlePresentationPolicy? final)
     {
         for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
         {
             // A changed input: the same JSON is projected again from scratch under a new read-set.
             if (attempt > 0) PrivacyDelivery.Discard(http, viewer);
-            using var scope = PrivacyReadSet.Begin(attempt == 0 ? inputs : null);
+            using var scope = PrivacyReadSet.Begin();
             final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
             var rows = spec.Resource == "activity" ? ProjectActivity(json, final, viewer) : json;
             var projected = final.Project(rows, spec.Surface, spec.Title, spec.Resource, spec.Kind, spec.Scope, spec.Season, spec.Episode);
@@ -558,14 +551,14 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// <summary>
     /// Every response shape a registered native endpoint returns (host-verified on 12.2 and 10.11.11), through the one
     /// delivery gate: materialized once, those instances projected under one verdict identity (the viewer's policy
-    /// revisions, and the watched state and ownership of every item the answer names, from the start of the request: the host
-    /// built its answer with the inputs of that moment), and delivered only when the gate, after the projection's lookups,
-    /// finds that identity unchanged. A changed identity projects the projected value again under the new one (what was
+    /// revisions, and the watched state and ownership of every item the answer names, the watched state as the host built it
+    /// into the answer), and delivered only when the gate, after the projection's lookups, finds every one of those facts
+    /// unchanged in its live source. A changed identity projects the projected value again under the new one (what was
     /// removed or stripped stays so; the new rules apply on top), bounded; one that keeps changing is withheld.
     /// </summary>
-    private void DeliverNative(ResultExecutingContext context, ObjectResult result, PrivacySurface entry, Guid viewer, long inputs)
+    private void DeliverNative(ResultExecutingContext context, ObjectResult result, PrivacySurface entry, Guid viewer)
     {
-        var reads = NativeAttempts(context, result, entry, viewer, inputs, refresh: false);
+        var reads = NativeAttempts(context, result, entry, viewer, refresh: false);
         if (reads == null)
         {
             if (context.Result != result) return;
@@ -580,7 +573,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         delivered = PrivacyResponseGuard.Guarded(result, guard, () =>
         {
             context.Result = delivered!;
-            var again = NativeAttempts(context, delivered!, entry, viewer, null, refresh: true);
+            var again = NativeAttempts(context, delivered!, entry, viewer, refresh: true);
             if (again == null || context.Result != delivered) return false;
             PrivacyResponseGuard.Replace(context.HttpContext, reads, again);
             reads = again;
@@ -594,7 +587,7 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     /// start, the host's own reads), and the first whose set still holds is returned; null when none held or the answer was
     /// withheld.
     /// </summary>
-    private PrivacyReadSet? NativeAttempts(ResultExecutingContext context, ObjectResult result, PrivacySurface entry, Guid viewer, long? inputs, bool refresh)
+    private PrivacyReadSet? NativeAttempts(ResultExecutingContext context, ObjectResult result, PrivacySurface entry, Guid viewer, bool refresh)
     {
         for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
         {
@@ -602,10 +595,10 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
             // resolved identities and policies discarded), with the viewer's watched state as it is now (not as the host's
             // answer recorded it).
             if (attempt > 0 || refresh) PrivacyDelivery.Discard(context.HttpContext, viewer);
-            using var scope = PrivacyReadSet.Begin(attempt == 0 ? inputs : null);
+            using var scope = PrivacyReadSet.Begin();
             var final = TitlePresentationGate.Read(manager, spoilers, viewer, library);
             // The watched state the host built the answer with is an input it read: reconciled with what the log knows.
-            if (attempt == 0 && !refresh) ReconcileHostReads(result.Value, viewer, spoilers.UserDataStore);
+            if (attempt == 0 && !refresh) ReconcileHostReads(result.Value, viewer, library, spoilers.UserDataStore, spoilers.Users);
             else strip?.RefreshUserData(result, viewer);
             if (ProjectNative(context, result, final, entry, viewer) == null) return null;
             if (scope.Reads.Valid()) return scope.Reads;
@@ -615,16 +608,18 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
     }
 
     /// <summary>
-    /// The viewer's watched state the host put into the answer's items (their user data): the projection's verdict reads it,
-    /// so it is recorded in the attempt's read-set, and reconciled with the input log.
+    /// The viewer's watched state the host put into the answer's items (their user data): the projection's verdict reads it
+    /// for a movie or an episode, so it is a fact of the attempt (compared with the host's store at every check), and it is
+    /// reconciled with the input log.
     /// </summary>
-    private static void ReconcileHostReads(object? value, Guid viewer, IUserDataManager? store)
+    private static void ReconcileHostReads(object? value, Guid viewer, ILibraryManager library, IUserDataManager? store, IUserManager users)
     {
-        var reads = PrivacyReadSet.Current;
+        var user = store != null && PrivacyReadSet.Current != null ? users.GetUserById(viewer) : null;
         foreach (var dto in NativePrivacyProjection.Items(value))
             if (dto is { UserData: { } data } && dto.Id != Guid.Empty)
             {
-                reads?.Watched(viewer, dto.Id);
+                if (user != null && dto.Type is Jellyfin.Data.Enums.BaseItemKind.Movie or Jellyfin.Data.Enums.BaseItemKind.Episode)
+                    PrivacyReads.CarriedWatched(library, store!, user, dto.Id, data.Played);
                 PrivacyInputs.HostRead(store, viewer, dto.Id, data.Played, new[] { dto.SeasonId ?? Guid.Empty, dto.SeriesId ?? Guid.Empty });
             }
     }

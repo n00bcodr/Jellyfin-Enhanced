@@ -203,7 +203,8 @@ public class PrivacyReviewRound22Tests
         site.Library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) =>
         {
             if (q.IsPlayed != true) return [site.Movie, site.Episode, site.Season];
-            calls++;
+            // The builds' queries (the gate's checks ask the same query again, outside any attempt).
+            if (!Jellyfin.Plugin.JellyfinEnhanced.Services.PrivacyReadSet.Checking) calls++;
             site.SetPlayed(other, calls % 2 == 0);
             site.UserData.Raise(d => d.UserDataSaved += null, site.UserData.Object, new UserDataSaveEventArgs
             {
