@@ -5,7 +5,7 @@ function setup(t,html=''){
   let callback;let subscriptions=0;let releases=0;
   const h=createHarness({html,JE:{currentSettings:{},helpers:{onBodyMutation:(id,fn)=>{callback=fn;subscriptions++;return {unsubscribe(){releases++;}};}}}});
   t.after(()=>h.close());h.load('enhanced/player/subtitles.js');
-  return {...h, mutate:node=>callback([{addedNodes:[node]}]),counts:()=>({subscriptions,releases})};
+  return { ...h, get NATIVE() { return h.NATIVE; }, mutate:node=>callback([{addedNodes:[node]}]),counts:()=>({subscriptions,releases})};
 }
 for(const [color,expected] of [['transparent',{swatch:'#ffffff',alphaValue:0}],['#123456',{swatch:'#123456',alphaValue:255}],['#12345680',{swatch:'#123456',alphaValue:128}],[null,{swatch:'#ffffff',alphaValue:10}],['bad',{swatch:'#ffffff',alphaValue:10}]]){
   test(`subtitle color decoding ${color}`,t=>{const h=setup(t);assert.deepEqual(plain(h.JE.decodeSubtitleColor(color,{fallbackSwatch:'#ffffff',fallbackAlphaValue:10})),expected);});

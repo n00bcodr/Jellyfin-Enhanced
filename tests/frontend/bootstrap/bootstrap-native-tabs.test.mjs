@@ -33,7 +33,7 @@ function setup(t, { count = 0, hash = '#/home', configRequest } = {}) {
   const panel = (id = 'requests') => h.document.getElementById(`je-native-tab-panel-${id}`);
   const button = (id = 'requests') => h.document.getElementById(`je-native-tab-btn-${id}`);
   const reconcile = () => h.window.history.replaceState({}, '', h.window.location.href);
-  return { ...h, tabs, register, panel, button, mountCounts, reconcile, get refreshes() { return refreshes; }, get selections() { return selections; } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, tabs, register, panel, button, mountCounts, reconcile, get refreshes() { return refreshes; }, get selections() { return selections; } };
 }
 
 function assertAligned(h) {

@@ -102,9 +102,10 @@
      *   ticket, taken when Request is pressed).
      * @param {Object} ph The entry (as drawn).
      * @param {HTMLElement|null} opener The button (focus returns to it).
+     * @param {Object} owner The press's owner (JE.ownerOf(event), taken while it is dispatched): the sheet is its effect.
      * @returns {Promise<Object|null>} The result, or null when nothing was sent.
      */
-    async function open(list, ph, opener) {
+    async function open(list, ph, opener, owner) {
         const tr = lp.render.tr;
         const key = `${list.listId}|${ph.id}`;
         if (busy.has(key) || !JE.arrLists || !JE.arrAskSheet?.open || !JE.arrAsk?.interpret) return null;
@@ -159,9 +160,9 @@
             lp.gate.paint(rule, () => {
                 sheet = JE.arrAskSheet.open(title, {
                     opener,
-                    // A list page is a native entry point (D46S2-R6: the sheet takes its owner explicitly); the list
-                    // ticket ends the sheet when the page moves on.
-                    operation: JE.NATIVE,
+                    // A list page is a native entry point: the sheet takes the press's own owner explicitly (D46S2-R10);
+                    // the list ticket ends the sheet when the page moves on.
+                    operation: owner,
                     listTicket: rule,
                     variant: fourK ? '4k' : 'standard',
                     fixed: {

@@ -43,7 +43,7 @@ test('controls: Report submitted on the same session, route and mount posts once
 
 test('controls: the native Report form (no operation) still posts after navigating while reportContext is out', async t => {
   const h = setup(t);
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.JE.NATIVE); await settle();
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.NATIVE); await settle();
   const context = h.hold('GET', '/jellyseerr/movie/603');
   await submitReport(h);
   h.navigate();
@@ -97,16 +97,20 @@ test('controls: Request on the same session, route and mount opens the sheet, an
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
 
-test('controls: the native request sheet (no operation) still opens after navigating while me() is out', async t => {
+test('controls: the native request sheet (no operation) opens on its route; after navigating while me() is out it does not', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t);
   const me = h.hold('GET', '/acquire/requests/me');
-  const opened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.JE.NATIVE }); await settle();
+  const opened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.NATIVE }); await settle();
   h.navigate();
-  me.resolve(); await settle();
-  assert.ok(sheet(h), 'exactly as before');
+  me.resolve(); await settle(); await opened;
+  assert.equal(sheet(h), null, 'its page effect ended with its route');
+  const reopened = h.JE.arrAskSheet.open({ key: 'movie:tmdb:603', kind: 'movie', name: 'The Matrix' }, { operation: h.NATIVE }); await settle();
+  assert.ok(sheet(h), 'opened on the route it is on');
   sheet(h).querySelector('.je-sheet-primary').click(); await settle();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
-  await opened;
+  await reopened;
 });
 
 /** The page's own Request control (the ask mount) as the row's primary, pressed through the compact row. */
@@ -181,13 +185,18 @@ test('controls: Manage on the same session, route and mount reads the overview o
   assert.ok(drawer(h));
 });
 
-test('controls: the native Manage drawer (no operation) still reads after navigating while feedPosition is out', async t => {
+test('controls: the native Manage drawer (no operation) reads on its route; navigating while feedPosition is out closes it', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t);
   const feed = h.holdFeed();
-  const opened = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE }); await settle();
+  const opened = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await settle();
   h.navigate();
   feed.resolve({ epoch: 'e1', cursor: 1 }); await settle(); await opened;
-  assert.equal(h.sent('GET', '/arr/admin/manage?').length, 1, 'exactly as before');
+  assert.equal(h.sent('GET', '/arr/admin/manage?').length, 0);
+  assert.equal(drawer(h), null);
+  await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await settle();
+  assert.equal(h.sent('GET', '/arr/admin/manage?').length, 1);
   assert.ok(drawer(h));
 });
 
@@ -210,13 +219,17 @@ test('controls: Seerr request (More Info window) on the same route opens the win
   assert.ok(moreInfo(h));
 });
 
-test('controls: the native More Info window (no operation) still opens after navigating while its details are out', async t => {
+test('controls: the native More Info window (no operation) opens on its route; after navigating while its details are out it does not', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t, { asks: false, seerrMoreInfo: true });
   const details = h.hold('GET', '/jellyseerr/movie/603');
-  const opened = h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await settle();
+  const opened = h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await settle();
   h.navigate();
   details.resolve(); await settle(); await opened;
-  assert.ok(moreInfo(h), 'exactly as before');
+  assert.equal(moreInfo(h), null);
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await settle();
+  assert.ok(moreInfo(h));
 });
 
 for (const [name, end] of [['navigation', (h) => h.navigate()], ['remount/feature-off (the mount ends)', (_h, o) => o.end()], ['session switch', h => h.switchUser()]]) {
@@ -250,10 +263,11 @@ test('controls: Seerr requestMedia for a current operation, and natively after n
   await h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.JE.captureSubmitted(o.op).bound() });
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
   const rules = h.hold('GET', '/jellyseerr/overrideRule');
-  const native = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }); await settle();
+  // The viewer's own request: its binding is its session's (D46S2-R10-1: every request write carries an owner's binding).
+  const native = h.JE.jellyseerrAPI.requestMedia(603, 'movie', {}, false, { id: 603, originalLanguage: 'en' }, null, { bound: h.NATIVE.bound() }); await settle();
   h.navigate();
   rules.resolve(); await native;
-  assert.equal(h.sent('POST', '/jellyseerr/request').length, 2, 'natively exactly as before');
+  assert.equal(h.sent('POST', '/jellyseerr/request').length, 2, 'natively the viewer\'s write still goes out');
 });
 
 test('the shared Seerr modal opened for an operation: navigation, then its primary button → onSave never runs', async t => {
@@ -264,7 +278,7 @@ test('the shared Seerr modal opened for an operation: navigation, then its prima
   h.navigate();
   modal.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
   assert.equal(saved, 0);
-  const native = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: h.JE.NATIVE });
+  const native = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: '', onSave: () => { saved++; }, operation: h.NATIVE });
   native.show(); await settle();
   native.modalElement.querySelector('.jellyseerr-modal-button-primary').click(); await settle();
   assert.equal(saved, 1, 'a native modal saves as before');
@@ -279,7 +293,7 @@ function seasonSetup(t) {
   Object.assign(h.JE.jellyseerrAPI, { fetchRequestSettings: async () => ({ partialRequestsEnabled: true, enableSpecialEpisodes: false }),
     fetchTvShowDetails: async () => { if (details) await details.promise; return { name: 'Show', seasons: [{ seasonNumber: 1, episodeCount: 3, airDate: '2020-01-01' }], externalIds: { tvdbId: 1 } }; },
     fetchSonarrLookup: async () => [], fetchUserQuota: async () => null, fetchTvSeasonDetails: async () => ({}) });
-  return { ...h, holdDetails() { details = deferred(); return details; },
+  return { ...h, get NATIVE() { return h.NATIVE; }, holdDetails() { details = deferred(); return details; },
     modal: () => h.document.querySelector('.jellyseerr-season-modal'),
     async request() {
       const modal = h.document.querySelector('.jellyseerr-season-modal');
@@ -314,9 +328,12 @@ test('controls: the season modal for a current operation, and natively after nav
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
   h.modal()?.remove();
   const details = h.holdDetails();
-  const opened = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, h.JE.NATIVE); await settle();
+  const opened = h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, h.NATIVE); await settle();
   h.navigate(); details.resolve(); await opened; await settle();
-  assert.ok(h.modal(), 'natively the modal still opens');
+  // D46S2-R10 / audit S1: the viewer's opening ended with the route it was made on.
+  assert.equal(h.modal(), null, 'natively no modal on the newer route');
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(1399, 'tv', 'Show', null, false, h.NATIVE); await settle();
+  assert.ok(h.modal(), 'a native opening on the route it is on opens');
   await h.request();
-  assert.equal(h.sent('POST', '/jellyseerr/request').length, 2, 'and requests, exactly as before');
+  assert.equal(h.sent('POST', '/jellyseerr/request').length, 2, 'and requests');
 });

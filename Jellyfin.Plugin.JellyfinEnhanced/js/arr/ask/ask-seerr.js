@@ -67,6 +67,9 @@
         const variant = options?.variant === '4k' ? '4k' : 'standard';
         // The owner (required, D46S2-R6): the operation the Seerr control was pressed for, else where it was pressed.
         const operation = options?.owner;
+        // The opener shows the outcome through the publication of where it was pressed, taken before the sheet opens
+        // (D46S2-R8-2): only while it is still there, its owner current and no newer intent of it has started.
+        const publication = opener ? JE.publication({ owner: operation, surface: opener, identity: { tmdbId: title.tmdbId, mediaType: title.kind === 'movie' ? 'movie' : 'tv', is4k: variant === '4k' } }) : null;
         let result = null;
         try {
             result = title.kind === 'movie' && variant === 'standard'
@@ -77,19 +80,22 @@
             JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
-        if (result && (result.ok || result.state === 'unknown') && opener?.isConnected && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
+        // The opener changes only through the publication, checked as it does (D46S2-R9-5).
+        if (result && (result.ok || result.state === 'unknown') && publication && opener.matches?.('.jellyseerr-request-button, .discover-requestbutton')) {
             if (title.kind !== 'movie') {
                 // A season or an episode asked for leaves the rest to ask for: the button stays and reopens the sheet.
-                opener.textContent = JE.arrAsk.tr('arr_discover_request_more');
-                opener.classList.add('je-ask-seerr-asked');
-            } else if (variant === 'standard') {
+                publication.apply(opener, node => {
+                    node.textContent = JE.arrAsk.tr('arr_discover_request_more');
+                    node.classList.add('je-ask-seerr-asked');
+                });
+            } else if (variant === 'standard' && publication.current()) {
                 // (A 4K ask leaves the standard button as it is; the sheet said what happened.)
                 const said = JE.arrAsk.describe(result, await JE.arrAsk.me(), null);
-                if (said.chip) {
-                    opener.disabled = true;
-                    opener.textContent = said.chip;
-                    opener.classList.add('je-ask-seerr-asked');
-                }
+                if (said.chip) publication.apply(opener, node => {
+                    node.disabled = true;
+                    node.textContent = said.chip;
+                    node.classList.add('je-ask-seerr-asked');
+                });
             }
         }
         return result;
@@ -264,9 +270,11 @@
             backdropPath: details.backdropPath || details.backdrop_path,
             buttonText: JE.arrAsk.tr('jellyseerr_modal_request_selected_movies'),
             operation: submitted.owner,
-            onSave: async (modalEl, button, closeFn) => {
-                // Each ask of the loop is the picker's operation's (if any), checked by the transport before each send.
-                const bound = JE.captureSubmitted(modalEl).bound();
+            onSave: async (modalEl, button, closeFn, press) => {
+                // Each ask of the loop is the press's owner's (D46S2-R7-1): the picker's operation, checked by the
+                // transport before each send and before the summary is said.
+                const submitted = JE.captureSubmitted(press);
+                const bound = submitted.bound();
                 const ids = [...modalEl.querySelectorAll('.jellyseerr-collection-checkbox:checked:not(:disabled)')]
                     .map(cb => Number.parseInt(cb.dataset.tmdbId, 10)).filter(n => Number.isInteger(n) && n > 0);
                 if (!ids.length) {
@@ -291,6 +299,7 @@
                     if (result?.stale) return;
                     results.push(result || { ok: false, state: 'failed' });
                 }
+                if (!submitted.current()) return;
                 const line = JE.internals?.arrAskCollection?.summarize?.(results, caps);
                 if (line) JE.arrAsk.toast(line);
                 closeFn();
@@ -325,7 +334,7 @@
         if (popupItem) {
             // The popup is appended to <body>, not inside its card: the split button it was opened from says which title.
             const source = JE.internals?.jellyseerrUi?.fourKPopupSource?.(popupItem.closest('.jellyseerr-4k-popup')) || null;
-            const card = source?.buttonGroup?.closest?.('.jellyseerr-card') || popupItem.closest('.jellyseerr-card');
+            const card = source?.card || source?.buttonGroup?.closest?.('.jellyseerr-card') || popupItem.closest('.jellyseerr-card');
             const button = source?.buttonGroup?.querySelector?.('.jellyseerr-request-button') || card?.querySelector('.jellyseerr-request-button');
             const item = source?.item || parseItem(button?.dataset?.searchResultItem);
             const mediaType = String(popupItem.dataset.mediaType || item?.mediaType || 'movie').toLowerCase();

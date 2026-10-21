@@ -62,7 +62,7 @@ test('control: the 4K popup on the current operation requests once', async t => 
 test('the More Info window\'s own More sheet (JE requests off) offers no second Request: the window\'s Request is its primary', async t => {
   const h = setup(t, { asks: false });
   h.a.initialize(); await settle();
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   const more = moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more');
   assert.ok(more, 'the window has the action bar');
   more.click(); await settle();
@@ -72,14 +72,18 @@ test('the More Info window\'s own More sheet (JE requests off) offers no second 
   assert.ok(moreInfo(h).querySelector('.je-actions-row .je-actions-primary, .jellyseerr-request-button'), 'the window\'s own Request stays');
 });
 
-test('control: the native More Info window (no operation) keeps its popup and request after navigating, as before', async t => {
+test('control: the native More Info window (no operation) keeps its popup and request on its route; after navigating both are gone', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t, { asks: false });
-  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.JE.NATIVE); await delivered();
+  await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
-  await h.leave();
-  assert.ok(popup(h), 'natively the popup is the host page\'s own');
+  assert.ok(popup(h), 'natively the popup is the window\'s own');
   popup(h).querySelector('.je-4k-popup-item').click(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
+  moreInfo(h).querySelector('.jellyseerr-split-arrow')?.click(); await settle();
+  await h.leave();
+  assert.equal(popup(h), null);
 });
 
 // ---------------------------------------------------------------- D46S2-R5-4: the Collection modal (a nested owner)
@@ -320,13 +324,13 @@ test('one-tap ask: an old press settling never removes the replacement\'s entry 
   const h = setup(t);
   await h.JE.arrAsk.me();
   const aQuota = h.hold('GET', '/acquire/requests/quota');
-  const old = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE }); await settle();
+  const old = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE }); await settle();
   h.switchUser(); await settle();
   const bMe = h.hold('GET', '/acquire/requests/me');
-  const first = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE }); await settle();
+  const first = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE }); await settle();
   aQuota.resolve(); await old; await settle();
   // B taps again while the first tap is still out: it joins it (one request).
-  const second = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE });
+  const second = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE });
   bMe.resolve(); await delivered(); await first; await second;
   assert.deepEqual(h.sent('POST', '/acquire/requests').map(r => r[0]), ['user-b']);
 });
@@ -347,8 +351,8 @@ test('control: a native double tap (no operation) is one ask, as before', async 
   const h = setup(t);
   await h.JE.arrAsk.me();
   const quota = h.hold('GET', '/acquire/requests/quota');
-  const one = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE });
-  const two = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE });
+  const one = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE });
+  const two = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE });
   quota.resolve(); await delivered(); await one; await two;
   assert.equal(h.sent('POST', '/acquire/requests').length, 1);
 });
@@ -361,7 +365,7 @@ test('one-tap ask: a native tap never adopts an operation\'s in-flight work, nor
   const op = h.a.generation();
   const owned = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: op }); await settle();
   await h.leave(); await h.back();
-  const native = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.JE.NATIVE });
+  const native = h.JE.arrAskSheet.openOrAsk(TITLE, { operation: h.NATIVE });
   assert.notEqual(native, owned, 'the native tap starts its own work');
   quota.resolve(); await delivered();
   assert.equal(await owned, null, 'the ended operation sends nothing');

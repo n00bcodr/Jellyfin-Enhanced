@@ -41,7 +41,7 @@ function setup(t, kind) {
   h.load('enhanced/itemdetails/features-details-page.js');
   debounced[100]();
   for (const m of ['arr/actions/title-actions.js', 'arr/actions/title-actions-sheet.js', 'arr/actions/title-actions-hosts.js']) h.load(m);
-  return { ...h, writes, item };
+  return { ...h, get NATIVE() { return h.NATIVE; }, writes, item };
 }
 
 /**

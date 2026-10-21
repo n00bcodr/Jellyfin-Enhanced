@@ -32,72 +32,39 @@
         return m ? context({ mediaType: m[1], id: Number(m[2]), ...(m[3] != null ? { season: Number(m[3]) } : {}), ...(m[4] != null ? { episode: Number(m[4]) } : {}) }) : null;
     }
 
-    /** The route a continuation belongs to: the view, the shown item and a shared-title link. */
-    function routeKey(hash = window.location.hash) {
-        const [path, query] = hash.replace(/^#!?/, '').split('?');
-        const params = new URLSearchParams(query || '');
-        return [path, params.get('id') || '', params.get('jeTitle') || ''].join('|');
-    }
+    /** The route a continuation belongs to: the semantic route (core: the view, the shown item, a shared-title link, a search query, a tab). */
+    const routeKey = hash => JE.routeKey(hash);
 
-    // The lifecycle (D53, ended is forever): it moves on with every route change, user switch and the
-    // action bar going off, and never comes back. A modal's own history entry on the same route is not
-    // a route change. Browsers fire popstate during a hash change and core/navigation fires je:navigate
-    // during pushState, so each step is seen even when the route comes back at once. hashchange carries
-    // its own new URL for hosts that only queue their events.
+    // The lifecycle (D53, ended is forever) is the core's (D46S2-R10 shape 6): every owner token carries its session,
+    // document and semantic route, so an operation ends with a route change (a new search query or hub tab included),
+    // a user switch, the document leaving or coming back, and the action bar going off ({@link end}).
     let lifecycle = 0;
-    let shown = routeKey();
-    let sweeping = false;
-    /** Closes the UI of operations that just ended (their scopes) once the current step has finished. */
-    function sweep() {
-        if (sweeping) return;
-        sweeping = true;
-        queueMicrotask(() => {
-            sweeping = false;
-            try { JE.endScopes?.(); } catch (_) { /* the owning document has already gone (disposal) */ }
-        });
-    }
-    /** Moves the lifecycle on when the route is not the one last seen; returns it. */
-    function observe(route = routeKey()) {
-        if (route !== shown) { shown = route; lifecycle++; sweep(); }
-        return lifecycle;
-    }
-    /** Ends every operation started so far (a user switch, the feature going off, disposal, the document leaving). */
-    function end() { lifecycle++; sweep(); }
-    window.addEventListener('popstate', () => observe());
-    window.addEventListener('je:navigate', () => observe());
-    window.addEventListener('hashchange', event => { observe(routeKey(new URL(event.newURL || window.location.href).hash)); observe(); });
+    const live = new Set();
+    /** Ends every operation started so far (a user switch, the feature going off, disposal). */
+    function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
-    // The document's own lifecycle is a route step too (D46S2-R5-1). Leaving it (pagehide, whether or not the page goes
-    // into the back/forward cache; freeze) ends every operation and closes its UI right away. A page that comes back
-    // (pageshow from the cache; resume) starts another lifecycle: what was started before it left stays ended, and the
-    // hosts reconcile fresh controls for the new one (no new view is shown on a restore).
-    // Only the document's own events count: jellyfin-web dispatches bubbling pagehide/pageshow CustomEvents from its
-    // view elements on every view change (verified on 12.2), and those reach window too.
+    // Leaving the document (pagehide, freeze) and coming back (pageshow from the cache, resume) end every operation in
+    // core; the hosts reconcile fresh controls for the new one (no new view is shown on a restore).
     const own = event => event.target?.nodeType !== 1;
-    const depart = event => { if (!own(event)) return; end(); JE.endScopes?.(); A.departed?.(); };
-    const arrive = event => { if (!own(event)) return; end(); JE.endScopes?.(); A.restored?.(); };
-    window.addEventListener('pagehide', depart);
-    document.addEventListener('freeze', depart);
-    window.addEventListener('pageshow', event => { if (event.persisted) arrive(event); });
-    document.addEventListener('resume', arrive);
+    window.addEventListener('pagehide', event => { if (own(event)) A.departed?.(); });
+    document.addEventListener('freeze', event => { if (own(event)) A.departed?.(); });
+    window.addEventListener('pageshow', event => { if (own(event) && event.persisted) A.restored?.(); });
+    document.addEventListener('resume', event => { if (own(event)) A.restored?.(); });
 
     /**
-     * One owner generation (D53): the session, the mount (`mount()` says the owning host is still
-     * this one) and the lifecycle it started in. Every setup/action continuation checks `current()`
-     * after each await. Once it isn't current it never is again, even if the page, card or user comes
-     * back. Two owners use it. The OFFER is whatever showed a choice (a sheet, row or menu); a press
-     * counts only while it is current. The OPERATION starts when the person submits: it belongs to the
-     * session, the route and the owning row/card, not to the offer, so it survives the offer closing.
+     * One owner generation (D53): an operation token (core `JE.operation`) with the session, document and semantic
+     * route it started in, and the mount (`mount()` says the owning host is still this one). Every setup/action
+     * continuation checks `current()` after each await, and every effect checks it as it happens. Once it isn't current
+     * it never is again, even if the page, card or user comes back. Two owners use it. The OFFER is whatever showed a
+     * choice (a sheet, row or menu); a press counts only while it is current. The OPERATION starts when the person
+     * submits: it belongs to the session, the route and the owning row/card, not to the offer, so it survives the offer
+     * closing.
      */
     function generation(mount = () => true) {
-        const session = JE.createSessionAction();
-        const born = observe();
-        let ended = false;
-        const current = () => {
-            if (!ended && (observe() !== born || !session.current() || mount() === false)) ended = true;
-            return !ended;
-        };
-        return { current, bind: callback => (...args) => current() ? callback(...args) : false, onCancel: session.onCancel };
+        const born = lifecycle;
+        const token = JE.operation({ mount: () => lifecycle === born && mount() !== false });
+        live.add(token);
+        return token;
     }
 
     /** True for a cancelled lookup, which ends the setup rather than becoming a fallback state. */
@@ -141,7 +108,8 @@
             if (!action.current()) return false;
             // Opening navigates, so the route changes: report the opening itself, not the generation after it.
             if (actual && JE.titleDetails.openItem) { JE.titleDetails.openItem(actual); return true; }
-            return await JE.titleDetails.openKey(c.key, { current: action.current }) === true;
+            // The link's operation reaches whatever opens it, the fallback window included (D46S2-R8-1).
+            return await JE.titleDetails.openKey(c.key, { owner: action }) === true;
         } catch (_) { return false; }
     }
 
@@ -246,7 +214,9 @@
             if (!action.current()) return [];
             // Not while the title is already asked for, on its way or here: the page's own request control shows no
             // Request then either (the status says where it is), so the bar never offers one over it (Q-PLAYR18-2).
-            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'),
+            // A row (`options.reconcile`) gets it either way, marked `askable`: it follows the newest status (D46S2-R7-5).
+            const askable = JE.internals?.arrAskSheet?.askable?.(titleStatus) !== false;
+            if (JE.arrAsk.canAsk(caps, c.type === 'movie' ? 'movie' : 'series') && (askable || options.reconcile)) out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), askable,
                 run: (opener, submitted) => JE.arrAskSheet.open({ key: c.titleKey, kind: c.type === 'movie' ? 'movie' : 'series', name: displayName(),
                     initialSeason: c.season, initialEpisode: c.episode }, { opener, operation: submitted }) });
         } else if (c.absent && !JE.arrAsk?.enabled?.() && JE.pluginConfig?.JellyseerrEnabled && JE.jellyseerrMoreInfo?.open && !root?.matches?.('.je-more-info-modal')) {
@@ -255,9 +225,10 @@
             out.push({ id: 'request', group: 'requests', icon: 'add', label: JE.t('jellyseerr_btn_request'), run: (_opener, submitted) => JE.jellyseerrMoreInfo.open(c.tmdbId, c.type, { season: c.season, episode: c.episode }, submitted) });
         }
         // The window's 4K request (Q-D46S2FIX5-1 (b)): its compact row hides Seerr's 4K split, so its More sheet offers
-        // it while Seerr 4K is on. It is the window's own request: owned by the window's owner, as its 4K option is.
-        const request4k = root?.matches?.('.je-more-info-modal') ? root.jeRequest4k : null;
-        if (typeof request4k === 'function') out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: () => request4k(root) });
+        // it while Seerr 4K is on. Like every entry it belongs to the operation the press submitted (D46S2-R7-1), also in a
+        // window opened natively.
+        if (root?.matches?.('.je-more-info-modal') && typeof root.jeRequest4k === 'function')
+            out.push({ id: 'request-4k', group: 'requests', icon: '4k', label: JE.t('jellyseerr_btn_request_4k'), run: (_opener, submitted) => root.jeRequest4k(submitted) });
         if (JE.pluginConfig?.JellyseerrShowReportButton && JE.jellyseerrIssueReporter) {
             if (!source('report', '.jellyseerr-report-issue-icon', 'requests', JE.t('jellyseerr_report_issue_button'), 'warning')) {
                 const status = JE.pluginConfig.JellyseerrEnabled ? await JE.jellyseerrAPI?.checkUserStatus?.() : null;

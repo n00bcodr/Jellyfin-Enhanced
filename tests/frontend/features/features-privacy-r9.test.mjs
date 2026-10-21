@@ -37,7 +37,7 @@ function sgSetup(t){
  for(const m of ['ids','state','detail-button','seerr-toggle','settings-tab'])h.load('enhanced/spoilerguard/'+m+'.js');
  let reloads=0;const toasts=[];h.JE.toast=m=>toasts.push(m);
  const api=h.JE.internals.spoilerGuard;Object.assign(api,{confirmDisableSpoiler:async()=>true,refreshSpoilerableImages(){},scheduleFullReload(){reloads++;}});
- return {...h,api,calls,server,toasts,reloads:()=>reloads,reads:()=>calls.filter(c=>c.method==='GET').length,
+ return {...h,get NATIVE(){return h.NATIVE;},api,calls,server,toasts,reloads:()=>reloads,reads:()=>calls.filter(c=>c.method==='GET').length,
   setGets(v){gets=v;},setWrites(v){writes=v;},switchUser(){h.window.ApiClient.setAuthenticationInfo('token-b','b');},
   page:()=>h.document.querySelector('#itemDetailPage')};
 }
@@ -58,7 +58,7 @@ function filterSetup(t,items,reply){
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  const settle=async()=>{for(let i=0;i<4;i++){await tick();await new Promise(r=>h.window.requestAnimationFrame(r));}};
  const later=ms=>{const now=h.window.Date.now;h.window.Date.now=()=>now()+ms;};
- return {...h,api,reads,settle,later};
+ return {...h,get NATIVE(){return h.NATIVE;},api,reads,settle,later};
 }
 
 for(const recovery of ['timer','demand','mutation'])test(`mounted preferences resync and enable on ${recovery} recovery`,async t=>{
@@ -67,18 +67,18 @@ for(const recovery of ['timer','demand','mutation'])test(`mounted preferences re
  assert.equal(box.disabled,true);assert.equal(box.checked,true);
  h.setGets('up');
  if(recovery==='timer')timers.fire();
- else if(recovery==='mutation')await h.api.enableForMovie('aabb','Title', h.JE.NATIVE);
+ else if(recovery==='mutation')await h.api.enableForMovie('aabb','Title', h.NATIVE);
  else {const now=h.window.Date.now;h.window.Date.now=()=>now()+6000;await h.api.whenLoaded();}
  await until(()=>h.api.isLoadOk(),'recovered');await tick();
  assert.equal(box.checked,false,'server value replaces guessed checkbox');assert.equal(box.disabled,false,'mounted section is usable');
- box.checked=true;box.dispatchEvent(new h.window.Event('change'));await until(()=>h.server.Prefs.HideCast===null,'save after recovery');
+ box.checked=true;h.trusted(box,new h.window.Event('change'));await until(()=>h.server.Prefs.HideCast===null,'save after recovery');
 });
 test('outgoing preferences ignore incoming recovery and stay inert',async t=>{
  const h=sgSetup(t);controlTimers(h,slow);h.setGets('down');const box=mountPrefs(h);
  await until(()=>h.reads()===2&&h.api.isLoaded(),'failed load');await tick();h.switchUser();
  h.server.Prefs={HideCast:false};h.setGets('up');const now=h.window.Date.now;h.window.Date.now=()=>now()+6000;await h.api.loadState();
  assert.equal(box.checked,true,'incoming preferences never populate outgoing section');assert.equal(box.disabled,true);
- box.checked=false;box.dispatchEvent(new h.window.Event('change'));await tick();
+ box.checked=false;h.trusted(box,new h.window.Event('change'));await tick();
  assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
 });
 

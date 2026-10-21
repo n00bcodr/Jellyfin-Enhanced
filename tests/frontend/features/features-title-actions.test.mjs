@@ -18,7 +18,7 @@ function setup(t, extra = {}) {
   t.after(() => { h.JE.titleActions?.dispose?.(); h.close(); });
   h.load('arr/actions/title-actions.js');
   h.load('arr/actions/title-actions-sheet.js');
-  return { ...h, calls, actions: h.JE.titleActions, switchUser: () => { user = 'user-b'; } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, actions: h.JE.titleActions, switchUser: () => { user = 'user-b'; } };
 }
 
 test('typed provider identity preserves movie, series and exact child scopes; rejects invented IDs', t => {
@@ -54,7 +54,7 @@ test('receiver authenticates and resolves under their own public title projectio
   assert.equal(calls[0], '/title-actions/tv/603?season=2&episode=4');
   assert.ok(calls.some(c => typeof c === 'string' && c.includes('/season/2')));
   assert.equal(calls.at(-1)[0], 'tv:tmdb:603:s2:e4');
-  assert.equal(calls.at(-1)[1].current(), true, 'the key lookup carries the receive generation');
+  assert.equal(calls.at(-1)[1].owner.current(), true, 'the key lookup carries the receive generation as its owner');
 });
 
 test('revoked receiver access never navigates', async t => {
@@ -168,9 +168,9 @@ test('a successful Report clears the existing owner issue-list cache only for it
   const h = setup(t, { requestManager: { clearCacheMatching: key => cleared.push(key) },
     core: { api: { fetch: async () => ({ mediaInfo: { id: 99 } }), plugin: async () => delayed ? gate.promise : { id: 1 } } } });
   h.load('jellyseerr/api.js');
-  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
+  await h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.NATIVE);
   assert.deepEqual(cleared, ['jellyseerr:/issue']);
-  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.JE.NATIVE);
+  delayed = true; const pending = h.JE.jellyseerrAPI.reportIssue(603, 'movie', 4, 'Catalogue', 0, 0, h.NATIVE);
   await new Promise(resolve => setImmediate(resolve)); h.switchUser(); gate.resolve({ id: 2 });
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(cleared.length, 1);
@@ -250,9 +250,9 @@ test('provider controls and registered extension entries are rejected after dela
 
 test('follow settlement cannot start a reread under a replacement identity', async t => {
   const gate = deferred(); const paths = [];
-  const { JE, load, switchUser } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
+  const { JE, load, switchUser, NATIVE } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
   load('arr/notify/notify-core.js');
-  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, JE.NATIVE);
+  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, NATIVE);
   switchUser(); gate.resolve({});
   assert.equal((await pending).ok, false);
   assert.equal(paths.length, 1);
@@ -271,11 +271,11 @@ test('native synthetic and provider Report owners exclude nonexistent file issue
   });
   h.load('jellyseerr/issue-reporter.js');
   for (const item of [{ Id: 'synthetic' }, { jeAbsent: true }]) {
-    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item, h.JE.NATIVE);
+    h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, item, h.NATIVE);
     assert.deepEqual([...modal.querySelectorAll('[name="issue-type"]')].map(n => n.value), ['4']);
     modal.remove();
   }
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' }, h.JE.NATIVE);
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, { Id: 'real' }, h.NATIVE);
   assert.equal(modal.querySelectorAll('[name="issue-type"]').length, 4);
 });
 
@@ -286,14 +286,16 @@ test('report modal rejects delayed submit after a live user switch', async t => 
     jellyseerrAPI: { fetchIssuesForMedia: async () => ({ results: [] }), reportIssue: async () => { sends++; return {}; } },
     jellyseerrModal: { create: opts => {
       options = opts; modal = h.document.createElement('div'); modal.innerHTML = opts.bodyHtml;
+      // The shell registers its element for its owner, as the real one does (a press inside it is that owner's).
+      h.JE.openSurface(modal, () => {}, opts.operation);
       return { modalElement: modal, show() { h.document.body.append(modal); }, close() { modal.remove(); } };
     } },
   });
   h.load('jellyseerr/issue-reporter.js');
-  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.JE.NATIVE);
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
-  await options.onSave(modal, h.document.createElement('button'), () => {});
+  await options.onSave(modal, h.document.createElement('button'), () => {}, { type: 'click', target: modal });
   assert.equal(sends, 0);
 });
 
@@ -314,7 +316,7 @@ test('Manage retains its opening identity across the feed-position await', async
     core: { api: { plugin: async path => { sends.push(path); return {}; } } },
   });
   h.load('arr/manage/manage-drawer.js');
-  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.JE.NATIVE });
+  const pending = h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE });
   h.switchUser(); gate.resolve({ epoch: 'e', cursor: 1 }); await pending;
   assert.equal(sends.length, 0); h.JE.arrManage.close();
 });
@@ -359,7 +361,7 @@ test('observer reconciliation preserves restored focus on the compact More contr
   row.getBoundingClientRect = () => ({ width: 288 }); h.document.body.append(row);
   h.JE.titleActions.mountRow(row, row, null); h.JE.titleActions.initialize();
   const more = row.querySelector('.je-actions-more');
-  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more, h.JE.NATIVE);
+  h.JE.titleActions.show({}, [{ id: 'one', label: 'One', group: 'view', run() {} }], more, h.NATIVE);
   h.JE.titleActions.close();
   await new Promise(resolve => h.window.requestAnimationFrame(() => h.window.requestAnimationFrame(resolve)));
   assert.equal(h.document.activeElement, more);

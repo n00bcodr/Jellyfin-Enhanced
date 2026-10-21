@@ -5,7 +5,7 @@ function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html=
   let epoch=0,changed;const notices=[],calls=[];
   const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
   t.after(()=>h.close());h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
-  return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
+  return {...h,get NATIVE(){return h.NATIVE;},P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
 // Pages hold whole grid rows: with three live columns that is four rows of 12 cards.
 const grids='<div class="je-requests-grid"></div><div class="je-issues-grid"></div><div class="je-history-grid"></div>';
@@ -127,7 +127,7 @@ test('an outage reported by history before the queue answers is toasted once, wh
 function queued(t,extra={}){
   const waits=[];const h=setup(t,{...extra,api:(path)=>{const d=deferred();waits.push({path,d});return d.promise;}});
   h.P.state.requestsPageSize=undefined;
-  return {...h,waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
+  return {...h,get NATIVE(){return h.NATIVE;},waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
 }
 test('a poll still reading page 1 never overwrites the page 2 the user opened',async t=>{
   const h=queued(t);

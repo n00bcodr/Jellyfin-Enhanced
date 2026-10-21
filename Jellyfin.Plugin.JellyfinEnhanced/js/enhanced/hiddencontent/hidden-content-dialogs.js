@@ -314,7 +314,7 @@
      * @param {Function} [dialogOptions.onChooseShow] Called if user picks "Hide entire show".
      * @param {Function} [dialogOptions.onChooseScoped] Called if user picks "Hide from [surface] only".
      * @param {Object|Node|Event} dialogOptions.owner The owner (required, D46S2-R6): the operation a title action pressed
-     *     Hide for (the confirmation is in its scope and its accept is refused once it ends), JE.NATIVE, or the node or
+     *     Hide for (the confirmation is in its scope and its accept is refused once it ends), a viewer's native owner, or the node or
      *     press it comes from.
      */
     function showHideConfirmation(itemName, onConfirm, dialogOptions = {}) {
@@ -355,7 +355,7 @@
 
         const closeDialog = () => {
             release();
-            releaseScope();
+            releaseScope?.();
             overlay.remove();
             document.removeEventListener('keydown', escHandler);
         };

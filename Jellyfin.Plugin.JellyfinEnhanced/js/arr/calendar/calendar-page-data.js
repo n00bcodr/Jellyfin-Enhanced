@@ -187,7 +187,7 @@
   /**
    * Fetch calendar events from backend
    */
-  async function fetchCalendarEvents(startDate, endDate) {
+  async function fetchCalendarEvents(startDate, endDate, current = () => true) {
     // The backend filters events by the signed-in user's library access — a
     // response (or failure) resolving after a user switch must not replace the
     // new user's events or toast the previous user's instance errors.
@@ -201,7 +201,8 @@
         endDay: localDay(endDate),
       });
       const data = await JE.core.api.plugin(`/arr/calendar?${query.toString()}`);
-      if (JE.session && !JE.session.isCurrent(epoch)) return null;
+      // A superseded range (the viewer moved to another period or view) leaves the newer one's events alone.
+      if ((JE.session && !JE.session.isCurrent(epoch)) || !current()) return null;
       // Row ids are opaque ("sonarr|<instance>|<id>", "radarr|…", "shoko|…"): unique across
       // instances, they key the favourite/watched map and the click lookups as they are.
       state.events = (data.events || []).filter((evt) => evt && evt.releaseDate).map(asLocalDay);
@@ -211,6 +212,7 @@
       surfaceCalendarErrors(data.errors);
       return data;
     } catch (error) {
+      if (!current()) return null;
       console.error(`${logPrefix} Failed to fetch calendar events:`, error);
       if (!JE.session || JE.session.isCurrent(epoch)) {
         state.events = [];
@@ -265,7 +267,7 @@
    * Fetch user data (favorite/watched status) for calendar events
    * Uses POST endpoint to only check specific calendar events, not entire library
    */
-  async function fetchUserData() {
+  async function fetchUserData(current = () => true) {
     // Favorites/watched state is per-user — drop a response that resolves
     // after a user switch instead of refilling the freshly reset map.
     const epoch = JE.session ? JE.session.getEpoch() : 0;
@@ -298,7 +300,7 @@
         method: "POST",
         body: { events: eventsToCheck },
       });
-      if (JE.session && !JE.session.isCurrent(epoch)) return;
+      if ((JE.session && !JE.session.isCurrent(epoch)) || !current()) return;
 
       // Build Map for O(1) lookup by event ID
       state.userDataMap = new Map();
@@ -311,7 +313,7 @@
     } catch (error) {
       // Silently handle error - highlighting is optional. Stale failures
       // (from before a user switch) must not clear the new user's map.
-      if (!JE.session || JE.session.isCurrent(epoch)) state.userDataMap = new Map();
+      if ((!JE.session || JE.session.isCurrent(epoch)) && current()) state.userDataMap = new Map();
     }
   }
 

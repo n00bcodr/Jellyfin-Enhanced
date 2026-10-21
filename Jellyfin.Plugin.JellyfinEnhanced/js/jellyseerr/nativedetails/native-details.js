@@ -246,12 +246,15 @@
      * @param {number|string} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
      * @param {{season?: number, episode?: number}} [scope] Season/episode of a series.
+     * @param {Object} owner Whoever opens it (required, D46S2-R10-5): the press's owner (JE.ownerOf(event)) or an
+     *     operation. Navigating is its effect, checked as it happens: an owner that is not current navigates nowhere.
      * @returns {boolean} True when it navigated; false means the caller keeps its own destination.
      */
-    function open(tmdbId, mediaType, scope) {
+    function open(tmdbId, mediaType, scope, owner) {
         if (!available() || seerrRefusesViewer()) return false;
         const id = idOf(tmdbId, mediaType, scope);
         if (!id) return false;
+        if (!JE.effectOwner(owner, 'a title page')) return true;
         go(id);
         return true;
     }
@@ -277,12 +280,14 @@
      * @param {number|string} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
      * @param {{season?: number, episode?: number}} [scope] Season/episode of a series.
+     * @param {Object} owner Whoever opens it (required, D46S2-R10-2): the press's owner (JE.ownerOf(event)), taken at
+     *     the gesture; nothing is inferred from whatever event is being dispatched.
      * @returns {boolean} True when something opened.
      */
-    function show(tmdbId, mediaType, scope) {
-        if (open(tmdbId, mediaType, scope)) return true;
-        // The fallback of a title page: a page the person opened, not part of any title action (native, D46S2-R6).
-        return openModal(tmdbId, mediaType, scope, JE.NATIVE);
+    function show(tmdbId, mediaType, scope, owner) {
+        if (!JE.effectOwner(owner, 'a title')) return false;
+        if (open(tmdbId, mediaType, scope, owner)) return true;
+        return openModal(tmdbId, mediaType, scope, owner);
     }
 
     /**
@@ -315,21 +320,25 @@
     }
 
     /**
-     * Opens a title known by provider key (Requests hub, notifications, calendar): a library copy the
+     * Opens a title known by provider key (Requests hub, notifications, calendar, a shared link): a library copy the
      * viewer can open first (the season or episode when named), else the native page, else the modal.
      * @param {string} key Title key such as movie:tmdb:603 or tv:tvdb:81189 (season/episode suffixes allowed).
-     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, current?: function(): boolean}} [options] Scope and fallback identity (modal: false, no modal fallback; current: the caller's owner is still current).
+     * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, owner?: Object}} [options]
+     *   Scope and fallback identity (modal: false, no modal fallback). `owner` (required, D46S2-R8-1, R10-1): whoever
+     *   opens the title (a shared link's operation, a press's owner); every step stops once it ends, and the fallback
+     *   window is its own, so it opens only while the owner is current after its details are read too.
      * @returns {Promise<boolean>} True when something opened.
      */
     async function openKey(key, options = {}) {
-        const action = JE.createSessionAction();
+        // Its owner is required (D46S2-R10-1), with or without the window fallback: navigating is its effect too.
+        const action = JE.createSessionAction({ owner: options.owner });
         const child = /:s(\d+)(?::e(\d+))?$/.exec(String(key || ''));
         options = { ...options, ...(child ? { season: Number(child[1]), ...(child[2] != null ? { episode: Number(child[2]) } : {}) } : {}) };
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
         if (available() && key) {
             const answer = await resolve({ key, season: options.season, episode: options.episode });
-            // A caller-owned route/mount generation (a shared link) stops here as well.
-            if (!action.current() || options.current?.() === false) return false;
+            // Navigating is the owner's effect, checked as it happens (D46S2-R9-1).
+            if (!action.current() || !JE.effectOwner(action.owner, 'openKey')) return false;
             if (answer?.itemId && /^[0-9a-f-]{32,36}$/i.test(answer.itemId)) {
                 go(answer.itemId);
                 return true;
@@ -339,8 +348,8 @@
                 return true;
             }
         }
-        if (options.modal === false) return false;
-        return action.current() && options.current?.() !== false && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, JE.NATIVE);
+        if (options.modal === false || !action.owner) return false;
+        return action.current() && openModal(options.tmdbId || tmdbOfKey(key), mediaType, options, action.owner);
     }
 
     // ------------------------------------------------------------------ page adapter
@@ -905,7 +914,7 @@
      */
     function cancelPendingModal() {
         if (!pendingModal) return;
-        clearTimeout(pendingModal.timer);
+        pendingModal.cancel();
         pendingModal = null;
     }
 
@@ -915,19 +924,25 @@
      * meanwhile or is someone else by then.
      * @param {number} tmdbId TMDB id.
      * @param {string} mediaType movie | tv.
+     * @param {Object} owner The page's own (native) owner, taken at its root; the modal opens through the checked timer.
      * @returns {void}
      */
-    function backThenModal(tmdbId, mediaType) {
+    function backThenModal(tmdbId, mediaType, owner) {
         cancelPendingModal();
         const user = window.ApiClient?.getCurrentUserId?.() || null;
-        const pending = { timer: 0, user, from: window.location.hash, landing: null };
-        pending.timer = setTimeout(() => {
+        const pending = { cancel: () => {}, user, from: window.location.hash, landing: null };
+        // Back ends the failed page's own owner (its route goes); the window opens for the page Back landed on, as that
+        // route's own owner, handed out only for the landing recorded by the first navigation after Back (D46S2-R10-2)
+        // and only for the viewer of the failed page.
+        const timer = setTimeout(() => {
             if (pendingModal !== pending) return;
             pendingModal = null;
             if (pending.landing !== null && window.location.hash !== pending.landing) return;
-            if ((window.ApiClient?.getCurrentUserId?.() || null) !== user) return;
-            openModal(tmdbId, mediaType, undefined, JE.NATIVE);
+            if ((window.ApiClient?.getCurrentUserId?.() || null) !== user || !owner?.sessionCurrent?.()) return;
+            const landed = JE.routeOwner(JE.routeKey(pending.landing ?? pending.from), 'the window an absent title page falls back to');
+            if (landed) openModal(tmdbId, mediaType, undefined, landed);
         }, 300);
+        pending.cancel = () => clearTimeout(timer);
         pendingModal = pending;
         history.back();
     }
@@ -1177,7 +1192,7 @@
             e.stopPropagation();
             const btn = /** @type {HTMLElement} */ (e.currentTarget);
             const id = parseInt(btn.dataset.collectionId || '', 10);
-            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '', null, { operation: e });
+            if (id && JE.jellyseerrUI?.showCollectionRequestModal) JE.jellyseerrUI.showCollectionRequestModal(id, btn.dataset.collectionName || '', null, { operation: e, origin: btn });
         });
         const host = page.querySelector('.detailPagePrimaryContent .detailSection') || page.querySelector('.detailPageContent');
         if (!host || state.aborted || current !== state) return;
@@ -1293,7 +1308,7 @@
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
-            token: String(++tokens)
+            token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
             dispose();
@@ -1360,13 +1375,17 @@
             }
             fellBackFrom = id;
             setTimeout(() => { if (fellBackFrom === id) fellBackFrom = null; }, FALLBACK_WINDOW_MS);
+            // The page acts for the route it shows (the viewer opened it; no title action owns it): its fallback window
+            // is the route's own native owner, handed out only for this page's route (D46S2-R10-2).
+            const native = JE.routeOwner(state.route, 'an absent title page falls back to its window');
+            if (!native) return;
             if (cameFromApp()) {
-                backThenModal(parts.tmdbId, state.mediaType);
+                backThenModal(parts.tmdbId, state.mediaType, native);
             } else {
                 // Opened from outside Jellyfin: Back would leave it (or do nothing). The page says it
                 // couldn't load, and the modal opens over it once.
                 refuse(page, 'native_details_failed');
-                openModal(parts.tmdbId, state.mediaType, undefined, JE.NATIVE);
+                openModal(parts.tmdbId, state.mediaType, undefined, native);
             }
             return;
         }

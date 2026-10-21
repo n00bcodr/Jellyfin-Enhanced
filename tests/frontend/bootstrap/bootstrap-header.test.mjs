@@ -26,7 +26,7 @@ function header(t, width = 170) {
     const button = h.document.createElement('button'); button.id = id; button.className = 'headerButton'; button.title = `<${id}>`;
     button.innerHTML = `<span id="${id}-icon" class="material-icons">event</span>`; tray.appendChild(button);
   }
-  return { ...h, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
 }
 function muiHeader(t, contents = '<div class="MuiBox-root" id="native"><button>SyncPlay</button><a>Search</a></div>') {
   let reset, userId = 'user';

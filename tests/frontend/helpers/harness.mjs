@@ -61,20 +61,81 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   window.structuredClone = structuredClone;
   Object.assign(window, globals);
   /** Evaluates and instruments a module as it runs in the production bundle. */
-  function load(path) {
+  function load(path, transform) {
     const file = resolve(jsRoot, path);
     // As the server serves it (the translations script carries the language policy it writes in).
     let source = served(path, readFileSync(file, 'utf8'));
+    if (transform) {
+      // A planted construct (a test runs it to show what the runtime does with it): the transform must apply.
+      const planted = transform(source);
+      if (planted === source) throw new Error(`The plant does not apply to ${path}`);
+      source = planted;
+    }
     if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;
   }
+  // The viewer's own gestures are trusted events, as a browser dispatches them; script-made ones are not (D46S2-R10:
+  // native authority is minted only from trusted events). A click() the test makes outside every production module
+  // is the viewer's; one a production module makes (its own synthetic click) stays untrusted, as in the browser.
+  const implOf = object => object[Object.getOwnPropertySymbols(object).find(symbol => String(symbol) === 'Symbol(impl)')];
+  function dispatchTrusted(target, event) {
+    const impl = implOf(event);
+    impl.isTrusted = true;
+    implOf(target)._dispatch(impl);
+    return !impl._canceledFlag;
+  }
+  function fromProduction() {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 200;
+    const stack = new Error().stack || '';
+    Error.stackTraceLimit = limit;
+    return stack.includes(jsRoot);
+  }
+  const syntheticClick = window.HTMLElement.prototype.click;
+  const clicking = new WeakSet();
+  window.HTMLElement.prototype.click = function () {
+    if (fromProduction()) return syntheticClick.call(this);
+    if (this.matches(':disabled') || clicking.has(this)) return;
+    clicking.add(this);
+    try { dispatchTrusted(this, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 })); }
+    finally { clicking.delete(this); }
+  };
   // Deferred feature actions use the shared identity primitive in the real bundle.
   load('core/session-action.js');
   window.addEventListener('error', event => errors.push(event.error || new Error(event.message)));
   window.addEventListener('unhandledrejection', event => errors.push(event.reason));
   return {
     window, document: window.document, JE, errors,
+    /**
+     * A viewer's native owner, as a gesture of theirs mints it now (a trusted event; its session, document and route
+     * are the current ones): JE.nativeFrom on a trusted event the harness dispatches.
+     */
+    get NATIVE() {
+      let token = null;
+      // (Before tokens a native owner was named during a dispatched event: kept for a replay against older sources.)
+      const probe = event => { token = JE.nativeFrom ? JE.nativeFrom(event) : (typeof JE.nativeRoot === 'function' ? JE.nativeRoot('a test') : JE.NATIVE); };
+      window.document.addEventListener('je-test-gesture', probe);
+      try { dispatchTrusted(window.document, new window.Event('je-test-gesture')); }
+      finally { window.document.removeEventListener('je-test-gesture', probe); }
+      return token;
+    },
+    /** Dispatches `event` on `target` as the browser would for the viewer (trusted). Returns false when cancelled. */
+    trusted: dispatchTrusted,
+    /**
+     * The viewer clicks `node` (a trusted click through its onclick handler property), and the handler's own result
+     * (the promise an async handler returns) comes back for the test to await.
+     */
+    viewerPress(node) {
+      const handler = node.onclick;
+      let result;
+      node.onclick = function (event) { result = handler.call(this, event); return result; };
+      try { dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, view: window, detail: 1 })); }
+      finally { node.onclick = handler; }
+      return result;
+    },
+    /** The viewer presses `key` on `target` (a trusted keydown). */
+    key(target, key, init = {}) { return dispatchTrusted(target, new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })); },
     /** Declares a console.error the test must produce; close() fails if none matched. */
     expectConsoleError(pattern) { allowedErrors.push({ pattern, required: true, matched: false }); },
     /** Tolerates a console.error that may or may not happen (timing-dependent diagnostics). */

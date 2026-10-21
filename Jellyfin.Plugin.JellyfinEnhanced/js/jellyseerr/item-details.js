@@ -1189,7 +1189,8 @@
                     tvDetails.name || tvDetails.title,
                     tvDetails,
                     false,
-                    e
+                    e,
+                    button
                 );
             }
         });

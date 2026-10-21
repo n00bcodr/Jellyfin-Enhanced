@@ -169,7 +169,7 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
   };
   /** Starts the pages (the delayed first look, at once). */
   const start = async () => { h.JE.arrListPages.settingsChanged(); await settle(); };
-  return { ...h, calls, toasts, state, show, showNow, settle, start, playlistPage, collectionPage, order, bodySubs, userChange, viewHooks, spy };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, toasts, state, show, showNow, settle, start, playlistPage, collectionPage, order, bodySubs, userChange, viewHooks, spy };
 }
 
 const PLAYLIST_ITEM = { Id: LIST, Type: 'Playlist' };
@@ -341,8 +341,8 @@ test('leaving the page pauses it (no reads, timers or status subscriptions); Bac
   await h.start();
   const { page, container } = h.playlistPage([]);
   await h.show(page);
-  container.querySelectorAll('.je-list-row-main')[1].click();
-  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ key: 'tv:tvdb:5', options: { mediaType: 'tv', tmdbId: 55, season: 2, episode: 3 } }]);
+  h.trusted(container.querySelectorAll('.je-list-row-main')[1], new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ key: 'tv:tvdb:5', options: { mediaType: 'tv', tmdbId: 55, season: 2, episode: 3, owner: { owner: 'native' } } }]);
   const other = h.document.createElement('div');
   other.className = 'page itemDetailPage';
   h.document.body.appendChild(other);
@@ -431,7 +431,7 @@ test('Request uses the list preview and the shared sheet in its fixed mode, and 
   await h.show(page);
   const buttons = container.querySelectorAll('.je-list-request');
   assert.equal(buttons.length, 1, 'only an askable entry the server offers Request on gets the button');
-  buttons[0].click();
+  h.trusted(buttons[0], new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle(60);
   const sheet = h.document.querySelector('.je-sheet');
   assert.ok(sheet, 'the shared sheet opened');
@@ -464,7 +464,7 @@ test('a season entry asks for exactly that season: the sheet shows its scope, no
   await h.start();
   const { page, container } = h.playlistPage([]);
   await h.show(page);
-  container.querySelector('.je-list-request').click();
+  h.trusted(container.querySelector('.je-list-request'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle(60);
   const sheet = h.document.querySelector('.je-sheet');
   assert.ok(sheet);
@@ -1294,7 +1294,7 @@ for (const loader of ['me', 'quota', 'check']) test(`r3 B1: revoke while sheet $
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
-  const pending = h.JE.internals.arrListPages.request.open({ listId: LIST, ticket: () => [...h.JE.internals.arrListPages.pages.controllers].find(c => c.page === page).ticket }, entry, container.querySelector('.je-list-request'));
+  const pending = h.JE.internals.arrListPages.request.open({ listId: LIST, ticket: () => [...h.JE.internals.arrListPages.pages.controllers].find(c => c.page === page).ticket }, entry, container.querySelector('.je-list-request'), h.NATIVE);
   await h.settle();
   assert.equal(loading, true);
   h.showNow(page, '#/home');
@@ -1317,7 +1317,7 @@ test('r3 B1: revoke closes an active sheet and a late send paints nothing', asyn
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
-  container.querySelector('.je-list-request').click();
+  h.trusted(container.querySelector('.je-list-request'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle();
   assert.ok(h.document.querySelector('.je-sheet-primary'));
   h.document.querySelector('.je-sheet-primary').click();
@@ -1395,7 +1395,7 @@ test('r3 S2: the spy sees delayed list-sheet writes with no list stack frame (pl
   } });
   const gate = h.JE.internals.arrListPages.gate;
   const ticket = gate.issue(LIST, () => true, gate.policy(() => false, false));
-  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { operation: h.JE.NATIVE, listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
+  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { operation: h.NATIVE, listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
   await h.settle();
   const writes = h.spy.take();
   assert.ok(writes.some(w => /ask-sheet\.js/.test(w.frame) && w.scope === 'none'), JSON.stringify(writes.slice(0, 2)));
@@ -1433,7 +1433,7 @@ for (const collection of [false, true]) for (const status of [403, 404]) for (co
     const ctrl = [...lp.pages.controllers].find(c => c.page === page);
     const ticket = ctrl.ticket;
     let ended = false;
-    const pending = lp.request.open({ listId: id, ticket: () => ctrl.ticket }, entry, page.querySelector('.je-list-request')).then(() => { ended = true; });
+    const pending = lp.request.open({ listId: id, ticket: () => ctrl.ticket }, entry, page.querySelector('.je-list-request'), h.NATIVE).then(() => { ended = true; });
     await h.settle();
     if (active) assert.ok(h.document.querySelector('.je-sheet-backdrop'));
     else assert.equal(loading, true, 'the real quota loader is held');

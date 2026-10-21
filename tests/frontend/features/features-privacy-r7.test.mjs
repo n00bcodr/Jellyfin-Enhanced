@@ -18,7 +18,7 @@ function setup(t) {
  t.after(()=>h.close());for(const m of ['navigation','session','api-client'])h.load('core/'+m+'.js');
  for(const m of ['ids','state','detail-button','seerr-toggle'])h.load('enhanced/spoilerguard/'+m+'.js');
  let reloads=0;const api=h.JE.internals.spoilerGuard;Object.assign(api,{confirmDisableSpoiler:async()=>true,refreshSpoilerableImages(){},scheduleFullReload(){reloads++;},getUserPrefs:()=>({})});
- return {...h,api,calls,reloads:()=>reloads,setState(v){state=v;},slow(){slow=deferred();return slow;}};
+ return {...h,get NATIVE(){return h.NATIVE;},api,calls,reloads:()=>reloads,setState(v){state=v;},slow(){slow=deferred();return slow;}};
 }
 for(const kind of ['Movie','Series','Collection'])test(`native ${kind} invalidates old provider reply and refreshes page`,async t=>{
  const h=setup(t);await h.api.loadState();const old=h.slow();
@@ -73,7 +73,7 @@ test('a successful write invalidates old reads while its authoritative refresh i
  const original=h.window.fetch;let hold=false;
  h.window.fetch=(u,o)=>hold&&u.endsWith('/spoiler-blur/series')&&o.method==='GET'?refresh.promise:original(u,o);
  const pending=h.JE.core.api.plugin('/native-details/movie/42');const result=pending.then(v=>({v}),e=>({e}));
- hold=true;const save=h.api.enableForMovie('aabb', undefined, h.JE.NATIVE);await tick();old.resolve(jsonResponse({overview:'stale'}));
+ hold=true;const save=h.api.enableForMovie('aabb', undefined, h.NATIVE);await tick();old.resolve(jsonResponse({overview:'stale'}));
  assert.equal((await result).e?.name,'AbortError');refresh.resolve(jsonResponse({Movies:{aabb:{}}}));await save;
 });
 for(const host of ['native','provider'])test(`${host} silently discards a rejected write after switching viewers`,async t=>{

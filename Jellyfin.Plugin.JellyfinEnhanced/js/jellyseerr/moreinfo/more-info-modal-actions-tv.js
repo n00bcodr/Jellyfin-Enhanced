@@ -9,9 +9,12 @@
     // first in this group.
     const internal = JE.internals.moreInfoModal;
     const DisplayStatus = JE.seerrStatus.DISPLAY;
+    // The window a control is in: the forms it opens publish their answer there (D46S2-R8-2).
+    const windowOf = node => node?.closest?.('.je-more-info-modal') || null;
 
 /**
- * Render request/4K actions and download progress inside the modal.
+ * Render request/4K actions and download progress inside the modal. Every handler takes its owner from its press
+ * (JE.ownerOf(event), D46S2-R7-1): a title action pressing a control for its operation, else the window's.
  */
 function buildTvActions(data, show4kOption = false) {
     const mediaInfo = data.mediaInfo || {};
@@ -45,13 +48,14 @@ function buildTvActions(data, show4kOption = false) {
         arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
         arrowButton.title = JE.t('jellyseerr_btn_request_4k') || 'Request in 4K';
         arrowButton.dataset.tmdbId = data.id;
+        arrowButton.dataset.mediaType = 'tv';
         arrowButton.dataset.toggle4k = 'true';
 
         mainButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, mainButton);
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(mainButton));
             }
         });
 
@@ -103,22 +107,22 @@ function buildTvActions(data, show4kOption = false) {
                 option.addEventListener('click', async (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
+                    // The press's owner, taken before the popup closes (the popup is its arrow press's).
+                    const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, option);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner, windowOf(arrowButton));
                     }
                 });
             }
 
             menu.appendChild(option);
-            document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
-            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
-            const rect = arrowButton.getBoundingClientRect();
-            menu.style.position = 'fixed';
-            menu.style.left = `${rect.left}px`;
-            menu.style.top = `${rect.bottom + 6}px`;
+            // Portaled to the body, outside the window: a popup of the press's owner (a title action's operation, else the
+            // window's), so it closes, and its option sends nothing, once that owner ends (D46S2-R5-3, R7-1); placed in the
+            // viewport, following the page, and closed by Escape / Back with focus back on the arrow (D46S2 audit S6).
+            menu._jeReleaseScope = JE.openPopup(menu, { anchor: arrowButton, owner: JE.ownerOf(e), opener: arrowButton, keyboard: e.detail === 0,
+                gap: 6, matchWidth: false, close: () => { if (open4k === menu) close4k(); } });
+            if (!menu._jeReleaseScope) return;
             requestAnimationFrame(() => menu.classList.add('show'));
             open4k = menu;
             document.addEventListener('click', handleDocClick, true);
@@ -139,7 +143,7 @@ function buildTvActions(data, show4kOption = false) {
 
         // TV always shows season selection modal
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, requestButton);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(requestButton));
         }
     });
 
@@ -156,7 +160,7 @@ function buildSingleTv4kButton(data) {
         e.preventDefault();
         e.stopPropagation();
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, button);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, JE.ownerOf(e), windowOf(button));
         }
     });
     return button;
@@ -182,7 +186,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
             e.preventDefault();
             e.stopPropagation();
             if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, mainButton);
+                JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(mainButton));
             }
         });
 
@@ -230,22 +234,22 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
                 option.addEventListener('click', async (ev) => {
                     ev.preventDefault();
                     ev.stopPropagation();
+                    // The press's owner, taken before the popup closes (the popup is its arrow press's).
+                    const owner = JE.ownerOf(ev);
                     close4k();
                     if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, option);
+                        JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, true, owner, windowOf(arrowButton));
                     }
                 });
             }
 
             menu.appendChild(option);
-            document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the window's operation (if any), so it
-            // closes, and its option sends nothing, once that operation ends (D46S2-R5-3).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, arrowButton);
-            const rect = arrowButton.getBoundingClientRect();
-            menu.style.position = 'fixed';
-            menu.style.left = `${rect.left}px`;
-            menu.style.top = `${rect.bottom + 6}px`;
+            // Portaled to the body, outside the window: a popup of the press's owner (a title action's operation, else the
+            // window's), so it closes, and its option sends nothing, once that owner ends (D46S2-R5-3, R7-1); placed in the
+            // viewport, following the page, and closed by Escape / Back with focus back on the arrow (D46S2 audit S6).
+            menu._jeReleaseScope = JE.openPopup(menu, { anchor: arrowButton, owner: JE.ownerOf(e), opener: arrowButton, keyboard: e.detail === 0,
+                gap: 6, matchWidth: false, close: () => { if (open4k === menu) close4k(); } });
+            if (!menu._jeReleaseScope) return;
             requestAnimationFrame(() => menu.classList.add('show'));
             open4k = menu;
             document.addEventListener('click', handleDocClick, true);
@@ -266,7 +270,7 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
 
         // Show season selection modal for partially available shows
         if (JE.jellyseerrUI?.showSeasonSelectionModal) {
-            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, requestButton);
+            JE.jellyseerrUI.showSeasonSelectionModal(data.id, 'tv', data.title || data.name, data, false, JE.ownerOf(e), windowOf(requestButton));
         }
     });
 

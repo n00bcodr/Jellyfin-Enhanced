@@ -33,7 +33,7 @@ function setup(t, { confirm = true, respond }) {
   h.window.confirm = message => { requests.push({ confirm: message }); return confirm; };
   t.after(() => h.close());
   h.window.eval(`${createEl}\n${helpers}\nwindow.__je = { jeArrMigrationCheck, jeArrMigrationRollback };`);
-  return { ...h, je: h.window.__je, requests, out: () => h.document.getElementById('arrSeerrMigrationResult'), backend: () => h.document.getElementById('arrRequestBackend').value };
+  return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests, out: () => h.document.getElementById('arrSeerrMigrationResult'), backend: () => h.document.getElementById('arrRequestBackend').value };
 }
 
 const settle = () => new Promise(r => setTimeout(r, 0));

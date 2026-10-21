@@ -347,6 +347,28 @@
     // Card element -> its state: the item, the links derived from it, and the
     // hover overview while one is open. WeakMap, so removed cards are freed.
     const cardStates = new WeakMap();
+    // A request for a card's title made anywhere (its own Request, its 4K popup, a form opened from it, the window)
+    // reaches the card through its publication (D46S2-R9-2): the card's own data follows, so the Request its overview
+    // redraws (rebuilt on every tap; gone while a form is open) shows the request instead of offering it again.
+    // The answer keeps its scope (D46S2 audit S5): a series request for some seasons marks those seasons, and the title
+    // only once no season is left to request.
+    JE.followPublications({ selector: '.jellyseerr-card .jellyseerr-more-info-link[data-tmdb-id]' }, ({ node, answer, mutate }) => mutate(() => {
+        const item = cardStates.get(node.closest('.jellyseerr-card'))?.item;
+        if (!item) return;
+        const info = item.mediaInfo || (item.mediaInfo = {});
+        const media = answer.response?.media;
+        const PENDING = JE.seerrStatus.MEDIA.PENDING;
+        const field = answer.is4k ? 'status4k' : 'status';
+        if (Array.isArray(answer.seasons) && answer.seasons.length) {
+            // Only the seasons the card already knows (a card that knows none keeps its title's state: the rest is
+            // still requestable, and its overview says so).
+            for (const season of info.seasons || []) {
+                if (answer.seasons.includes(season.seasonNumber)) season[field] = Math.max(Number(season[field]) || 0, PENDING);
+            }
+            if (Array.isArray(answer.remaining) && answer.remaining.length) return;
+        }
+        info[field] = media?.[field] > PENDING ? media[field] : Math.max(Number(info[field]) || 0, PENDING);
+    }));
     // Containers that already have the delegated card listeners.
     const boundContainers = new WeakSet();
 
@@ -638,14 +660,16 @@
     /**
      * Opens the card's item in Jellyfin.
      * @param {Object} state - The card's state
+     * @param {Object} owner - The press's owner (JE.ownerOf(event)): it reaches the window a title without a page
+     *   falls back to (D46S2-R8-1).
      */
-    function goToJellyfinItem(state) {
+    function goToJellyfinItem(state, owner) {
         // With native details on, Seerr's library id isn't taken on trust: the server names the copy
         // this viewer can open (or the title's native page when there is none).
         const item = state.item || {};
         const tmdbId = parseInt(item.id, 10);
         if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
-            JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+            JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType, owner });
             return;
         }
         try {
@@ -782,8 +806,9 @@
      * @returns {void}
      */
     function openAbsentTitle(tmdbId, mediaType, press) {
-        if (JE.titleDetails?.open?.(tmdbId, mediaType)) return;
-        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType, undefined, JE.ownerOf(press));
+        const owner = JE.ownerOf(press);
+        if (JE.titleDetails?.open?.(tmdbId, mediaType, undefined, owner)) return;
+        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType, undefined, owner);
     }
 
     /**
@@ -807,7 +832,7 @@
             if (nativeDetailsOn() && tmdbId > 0 && (item.mediaType === 'movie' || item.mediaType === 'tv')) {
                 e.preventDefault();
                 e.stopPropagation();
-                JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType });
+                JE.titleDetails.openKey(`${item.mediaType}:tmdb:${tmdbId}`, { tmdbId, mediaType: item.mediaType, owner: JE.ownerOf(e) });
             }
             return;
         }
@@ -816,7 +841,7 @@
         if (item.mediaType === 'collection') {
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
             return;
         }
 
@@ -885,9 +910,9 @@
         e.stopPropagation();
 
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
         } else if (item.mediaType === 'collection') {
-            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e });
+            ui.showCollectionRequestModal(item.id, item.name || item.title, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
         } else if (nativeDetailsOn() || (state.useMoreInfoModal && JE.jellyseerrMoreInfo)) {
             const tmdbId = parseInt(item.id);
             const mediaType = item.mediaType;
@@ -919,7 +944,7 @@
             if (state.linksAvailableToJellyfin) {
                 e.preventDefault();
                 e.stopPropagation();
-                goToJellyfinItem(state);
+                goToJellyfinItem(state, JE.ownerOf(e));
                 return;
             } else if (!state.overview) {
                 e.preventDefault();
@@ -939,7 +964,7 @@
             const followsTap = state.tapNavigatedAt > 0
                 && performance.now() - state.tapNavigatedAt < TAP_CLICK_FOLLOW_MS;
             state.tapNavigatedAt = 0;
-            if (!followsTap) goToJellyfinItem(state);
+            if (!followsTap) goToJellyfinItem(state, JE.ownerOf(e));
         } else if (state.posterOpensModal || (nativeDetailsOn() && state.item.mediaType !== 'collection')) {
             e.preventDefault();
             e.stopPropagation();
@@ -969,7 +994,7 @@
             const item = state.item;
             e.preventDefault();
             e.stopPropagation();
-            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item, { operation: e });
+            ui.showCollectionRequestModal(item.collection.id, item.collection.name, item, { operation: e, origin: e.target.closest?.('.jellyseerr-card') || null });
             return;
         }
         if (inCard(card, target, '.jellyseerr-overview')) {
@@ -995,7 +1020,7 @@
         const state = hit.state;
         e.preventDefault();
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
         } else if (e.key === 'Enter' && nativeDetailsOn() && state.item.mediaType !== 'collection' && parseInt(state.item.id, 10) > 0) {
             // Enter opens the title like a poster click; Space still shows the overview (Request).
             openAbsentTitle(parseInt(state.item.id, 10), state.item.mediaType, e);
@@ -1054,7 +1079,7 @@
         }
 
         if (state.linksAvailableToJellyfin) {
-            goToJellyfinItem(state);
+            goToJellyfinItem(state, JE.ownerOf(e));
             // Its synthetic click still reaches onPosterClick; it must not navigate again.
             state.tapNavigatedAt = performance.now();
             return;

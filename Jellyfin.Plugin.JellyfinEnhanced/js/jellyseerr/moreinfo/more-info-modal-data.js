@@ -218,11 +218,11 @@ function getContentRating(data, mediaType) {
  * @param {string} key Translation key of the message.
  */
 function showError(key) {
-    // A toast, not a blocking browser dialog (an outage of Seerr is not the viewer's error).
+    // A toast, never a blocking browser dialog (an outage of Seerr is not the viewer's error; the core UI kit always
+    // provides JE.toast).
     const text = JE.t ? JE.t(key) : key;
     console.warn(`${logPrefix} ${key}`);
-    if (typeof JE.toast === 'function') JE.toast(JE.escapeHtml ? JE.escapeHtml(text) : text, 5000);
-    else alert(text);
+    JE.toast?.(JE.escapeHtml ? JE.escapeHtml(text) : text, 5000);
 }
 
 /**

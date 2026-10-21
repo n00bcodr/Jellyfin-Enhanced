@@ -269,9 +269,10 @@
      * Opens a card: its Jellyfin page when the person can open one, else the title's native details
      * page (when offered) or Seerr's more-info modal (as the Requests page does).
      * @param {Object} card Card.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): what opens is its effect.
      * @returns {void}
      */
-    function openCard(card) {
+    function openCard(card, owner) {
         const id = normalizeId(card?.itemId);
         if (id) {
             if (window.Emby?.Page?.showItem) window.Emby.Page.showItem(id);
@@ -280,11 +281,11 @@
         }
         const mediaType = card?.kind === 'tv' ? 'tv' : 'movie';
         if (JE.titleDetails?.show) {
-            if (card?.tmdbId) JE.titleDetails.show(card.tmdbId, mediaType);
-            else if (card?.key) JE.titleDetails.openKey(card.key, { mediaType });
+            if (card?.tmdbId) JE.titleDetails.show(card.tmdbId, mediaType, undefined, owner);
+            else if (card?.key) JE.titleDetails.openKey(card.key, { mediaType, owner });
             return;
         }
-        if (card?.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType, undefined, JE.NATIVE);
+        if (card?.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(card.tmdbId, mediaType, undefined, owner);
     }
 
     /**
@@ -356,7 +357,7 @@
         second.appendChild(el('bdi', '', line || '\u00a0'));
         box.appendChild(second);
         node.appendChild(box);
-        node.addEventListener('click', () => openCard(card));
+        node.addEventListener('click', e => openCard(card, JE.ownerOf?.(e)));
         return node;
     }
 

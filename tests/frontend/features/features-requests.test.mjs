@@ -4,7 +4,7 @@ import {createHarness} from '../helpers/harness.mjs';
 function setup(t,downloads=[]){
  const state={downloads,downloadsActiveTab:'all',downloadsSearchQuery:''};
  const h=createHarness({JE:{internals:{requestsPage:{state}}}});t.after(()=>h.close());h.load('arr/requests/requests-page-render-helpers.js');
- return {...h,state,api:h.JE.internals.requestsPage};
+ return {...h,get NATIVE(){return h.NATIVE;},state,api:h.JE.internals.requestsPage};
 }
 const episode=(number,overrides={})=>({source:'Sonarr',title:'Show',seasonNumber:1,episodeNumber:number,progress:0.5,instanceName:'primary',status:'Downloading',...overrides});
 test('download grouping collapses packs, preserves singles and separates instances, seasons and progress',t=>{

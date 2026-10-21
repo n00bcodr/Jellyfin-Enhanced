@@ -16,7 +16,7 @@ function setup(t, config = {}) {
   h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} });
-  return { ...h, writes, toasts, async change(id, value) {
+  return { ...h, get NATIVE() { return h.NATIVE; }, writes, toasts, async change(id, value) {
     const input = h.document.getElementById(id);
     if (input.type === 'checkbox') input.checked = value; else input.value = value;
     input.dispatchEvent(new h.window.Event('change', { bubbles: true }));

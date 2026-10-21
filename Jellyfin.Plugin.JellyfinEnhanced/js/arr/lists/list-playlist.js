@@ -469,10 +469,10 @@
             e.preventDefault();
             e.stopPropagation();
             if (request) {
-                if (!request.disabled) lp.request.open({ listId, ticket: () => ctrl.ticket, onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
+                if (!request.disabled) lp.request.open({ listId, ticket: () => ctrl.ticket, onDone: () => ctrl.scheduleRefetch(500) }, ph, request, JE.ownerOf?.(e));
                 return;
             }
-            lp.pages.openEntry(ctrl, ph);
+            lp.pages.openEntry(ctrl, ph, JE.ownerOf?.(e));
         };
 
         // jellyfin-web's post-render hook (its rows were replaced): put the rows back. Chained and never unhooked (a

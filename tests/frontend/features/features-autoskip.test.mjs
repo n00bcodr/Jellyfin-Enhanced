@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
-function setup(t){const h=createHarness();t.after(()=>h.close());h.load('enhanced/player/auto-skip.js');return {...h,api:h.JE.internals.autoSkip};}
+function setup(t){const h=createHarness();t.after(()=>h.close());h.load('enhanced/player/auto-skip.js');return {...h,get NATIVE(){return h.NATIVE;},api:h.JE.internals.autoSkip};}
 for(const [src,expected] of [['/Videos/a/stream?StartTimeTicks=100000000',100000000],['/Videos/a/stream?starttimeticks=100&CopyTimestamps=True',0],['/Videos/a/master.m3u8?StartTimeTicks=100',0],['/Videos/a/stream?StartTimeTicks=100&Static=true',0],['blob:test',0],['/Videos/a/stream?StartTimeTicks=-10',0]]){
  test(`auto-skip transcode offset ${src}`,t=>{const h=setup(t);assert.equal(h.api.parseTranscodeOffsetTicksFromSrc(src),expected);});
 }
@@ -10,7 +10,7 @@ async function engine(t,{segments=[{Id:'intro',Type:'Intro',StartTicks:100000000
  const video=h.document.createElement('video');Object.defineProperty(video,'duration',{value:duration});
  const e=h.api.createAutoSkipEngine({shouldSkipType:type=>type==='Intro',resolveItemId:()=>item,fetchSegments:fetchSegments|| (async()=>{loads++;return segments;}),getPositionOffsetTicks:()=>offset,onSkipped:s=>skipped.push(s.Id)});
  e.attach(video);await new Promise(done=>setImmediate(done));
- return {...h,e,video,skipped,loads:()=>loads,setItem:id=>{item=id;},tick(time){video.currentTime=time;video.dispatchEvent(new h.window.Event('timeupdate'));}};
+ return {...h,get NATIVE(){return h.NATIVE;},e,video,skipped,loads:()=>loads,setItem:id=>{item=id;},tick(time){video.currentTime=time;video.dispatchEvent(new h.window.Event('timeupdate'));}};
 }
 test('auto-skip honors exact boundaries, clamps duration and ignores unsupported segments',async t=>{
  const h=await engine(t,{duration:18});h.tick(9);assert.equal(h.video.currentTime,9);h.tick(10);assert.equal(h.video.currentTime,18);assert.deepEqual(h.skipped,['intro']);
