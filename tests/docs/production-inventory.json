@@ -1855,7 +1855,15 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-actions.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-api.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-authoring-model.js",
       "category": "js"
     },
     {
@@ -1863,7 +1871,19 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-granularity.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-grid.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-metadata.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-order-model.js",
       "category": "js"
     },
     {
@@ -1872,6 +1892,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-paint.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-picker.js",
       "category": "js"
     },
     {
@@ -1884,6 +1908,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-request.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-search.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/lists/list-surface.js",
       "category": "js"
     },
     {
@@ -11412,7 +11444,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 683,
+    "files": 691,
     "routes": 308,
     "configuration_properties": 651,
     "storage_references": 104,
