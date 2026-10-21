@@ -122,14 +122,14 @@ test('#/requests shows the own tabs from one read, groups My requests and never 
   assert.equal(h.document.querySelector('.je-nav-requests-hub-item .navMenuOptionText').textContent, 'Requests');
 
   // Coming soon: an agenda by day. Ready: Play opens the item.
-  page.querySelector('.je-hub-tab[data-tab="soon"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="soon"]'));
   assert.equal(h.window.location.hash, '#/requests?tab=soon');
   assert.equal(page.querySelectorAll('.je-hub-day').length, 1);
   assert.equal(page.querySelector('.je-hub-name').textContent, 'Agent 327 (2024)');
-  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="ready"]'));
   const shown = [];
   h.window.Emby = { Page: { showItem: id => shown.push(id) } };
-  page.querySelector('.je-hub-btn-primary').click();
+  h.click(page.querySelector('.je-hub-btn-primary'));
   assert.deepEqual(shown, ['abc']);
   // A quiet ready status shows no pill (the row says when it arrived).
   assert.equal(page.querySelectorAll('.je-hub-row .je-arr-pill').length, 0);
@@ -190,7 +190,7 @@ test('administrators get Manage on rows and the Downloads/Calendar tabs; an embe
   assert.equal(rendered.length, 1);
   const node = rendered[0][1];
   assert.ok(page.contains(node));
-  page.querySelector('.je-hub-tab[data-tab="mine"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="mine"]'));
   assert.ok(!h.document.contains(node), 'the embedded container is removed');
   assert.equal(polling, 1);
   assert.equal(downloads._state._customTabMode, false);
@@ -198,7 +198,7 @@ test('administrators get Manage on rows and the Downloads/Calendar tabs; an embe
   assert.equal(page.querySelector('.je-hub-note-warn').textContent, 'Seerr couldn\'t be read: Seerr rejected the API key.');
   const manage = [...page.querySelectorAll('.je-hub-manage')];
   assert.equal(manage.length, 3);
-  manage[1].click();
+  h.click(manage[1]);
   await wait(5);
   assert.ok(h.calls.some(c => c.path === '/arr/admin/manage?key=movie%3Atmdb%3A693134'));
   assert.ok(h.document.querySelector('.je-manage'));
@@ -206,7 +206,7 @@ test('administrators get Manage on rows and the Downloads/Calendar tabs; an embe
 
   // Leaving the page while the Downloads tab shows: its container leaves the document (the
   // Downloads page must never render into the hidden hub later) and its polling stops.
-  page.querySelector('.je-hub-tab[data-tab="downloads"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="downloads"]'));
   const second = rendered.at(-1)[1];
   assert.ok(h.document.contains(second));
   h.window.location.hash = '#/home';
@@ -277,7 +277,7 @@ test('the Manage drawer explains, offers Search now and Open in, lists versions,
   assert.ok(h.live().some(s => s.keys.includes('tv:tvdb:78874:s1:e4')));
 
   // Search now: one POST with a fresh idempotency key; the outcome is shown.
-  drawer.querySelector('.je-manage-btn-primary').click();
+  h.click(drawer.querySelector('.je-manage-btn-primary'));
   await wait(5);
   assert.equal(posted.method, 'POST');
   assert.equal(posted.body.instanceId, 's1');
@@ -323,8 +323,8 @@ test('a request whose title the viewer has no copy of opens the title\'s native 
   await wait(10);
   const page = h.document.getElementById('je-requests-hub-page');
   const rows = [...page.querySelectorAll('.je-hub-row')];
-  rows.find(r => r.dataset.jeArrKey === 'movie:tmdb:693134').click();
-  rows.find(r => r.dataset.jeArrKey === 'tv:tvdb:393189').click();
+  h.click(rows.find(r => r.dataset.jeArrKey === 'movie:tmdb:693134'));
+  h.click(rows.find(r => r.dataset.jeArrKey === 'tv:tvdb:393189'));
   assert.deepEqual(shown, [[693134, 'movie']]);
   assert.deepEqual(keyed, [['tv:tvdb:393189', 'tv']]);
 });
@@ -360,7 +360,7 @@ test('the Seerr more-info modal gets the pill and journey of its title, follows 
   assert.equal(h.calls.at(-1).path, '/acquire/status?keys=movie%3Atmdb%3A5&detail=true');
   const pill = modal.querySelector('.je-arr-modal-status .je-arr-pill');
   assert.equal(pill.querySelector('.je-arr-pill-text').textContent, 'Downloading · 42%');
-  pill.click();
+  h.click(pill);
   assert.match(modal.querySelector('.je-arr-journey').textContent, /Asked by someone in your household/);
   assert.equal(modal.querySelectorAll('.je-arr-modal-manage').length, 0);
   // A change on the feed re-reads in place.
@@ -454,7 +454,7 @@ test('Search now stays busy across re-renders (no second search), and focus neve
   assert.ok(drawer.contains(h.document.activeElement) && h.document.activeElement !== drawer);
 
   search().focus();
-  search().click();
+  h.click(search());
   await wait(5);
   assert.equal(posts.length, 1);
   assert.equal(search().getAttribute('aria-disabled'), 'true');
@@ -466,7 +466,7 @@ test('Search now stays busy across re-renders (no second search), and focus neve
   await until(() => h.calls.filter(c => c.path.startsWith('/arr/admin/manage?')).length > readsBefore);
   await wait(20);
   assert.equal(search().getAttribute('aria-disabled'), 'true');
-  search().click();
+  h.click(search());
   await wait(5);
   assert.equal(posts.length, 1, 'no second search while the first runs');
   posts[0].resolve({ status: 'Succeeded', message: 'Done.' });
@@ -555,7 +555,7 @@ test('keyboard and D-pad focus stays on the same tab, row or button when the pag
 
   // A tab chosen with the keyboard keeps focus once its panel is shown; so does a Play button.
   page.querySelector('.je-hub-tab[data-tab="ready"]').focus();
-  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="ready"]'));
   assert.equal(h.document.activeElement, page.querySelector('.je-hub-tab[data-tab="ready"]'));
   page.querySelector('.je-hub-btn-primary').focus();
   h.live().at(-1).cb(['movie:tmdb:5']);
@@ -628,7 +628,7 @@ test('a failed re-read keeps the rows, says so with Retry, tries again with back
   assert.deepEqual(timers.delays(), [10000]);
   assert.equal(page.querySelector('.je-hub-refresh-failed .je-arr-stale-text').textContent, firstNote);
   // Retry by hand works: the note goes, nothing is scheduled.
-  page.querySelector('.je-hub-refresh-failed .je-arr-stale-retry').click();
+  h.click(page.querySelector('.je-hub-refresh-failed .je-arr-stale-retry'));
   await until(() => !page.querySelector('.je-hub-refresh-failed'));
   assert.deepEqual(timers.delays(), []);
   assert.equal(page.querySelectorAll('.je-hub-row').length, 3);
@@ -673,9 +673,9 @@ test('Hidden Content hides rows and counts on the Requests page (global hides, t
   assert.deepEqual(titles(), ['Waiting Film', '<img src=x onerror=alert(1)>']);
   assert.equal(count('mine'), '1');
   assert.equal(count('ready'), '');
-  page.querySelector('.je-hub-tab[data-tab="ready"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="ready"]'));
   assert.equal(page.querySelector('.je-hub-empty').textContent, 'Nothing you asked for arrived in the last two weeks.');
-  page.querySelector('.je-hub-tab[data-tab="soon"]').click();
+  h.click(page.querySelector('.je-hub-tab[data-tab="soon"]'));
   assert.deepEqual(titles(), ['Agent 327']);
 
   // Unhiding (here or elsewhere) shows at once, without a new read.

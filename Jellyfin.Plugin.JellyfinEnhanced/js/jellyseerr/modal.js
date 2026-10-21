@@ -184,8 +184,8 @@
             window.addEventListener('popstate', onBack);
             document.addEventListener('keydown', handleKeydown);
             setTimeout(() => {
-                // Closed before it finished opening (its operation ended at once): it stays closed.
-                if (closed || !modalElement.isConnected) return;
+                // Closed before it finished opening (its operation ended at once): it stays closed, and focus stays put.
+                if (closed || !modalElement.isConnected || !submitted.current()) return;
                 modalElement.classList.add('show');
                 // Focus the first interactive element in the modal
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
@@ -234,7 +234,8 @@
 
         // Opened for an owner: the modal is in its scope, so once the owner ends (another page, mount, user or the
         // document leaving) it takes no more input and closes. Not admitted (an owner that is not current): terminal.
-        releaseScope = JE.openSurface(modalElement, close, submitted.owner);
+        // Escape and every Back key (the core's surface stack, while it is topmost) dismiss it as Cancel does.
+        releaseScope = JE.openSurface(modalElement, close, submitted.owner, { dismiss: () => dismiss() });
         if (!releaseScope) closed = true;
 
         // Event listeners for closing the modal

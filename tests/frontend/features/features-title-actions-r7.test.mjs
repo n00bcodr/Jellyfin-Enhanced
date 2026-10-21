@@ -41,7 +41,7 @@ async function rerenderWindowRow(h) {
 
 /** Opens the window's own More sheet and returns its entries. */
 async function windowSheet(h) {
-  moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
   return [...h.document.querySelectorAll('.je-actions-entry')];
 }
 
@@ -51,7 +51,7 @@ test('R7-1: the bar\'s Request inside a natively opened window, then leave while
   const h = setup(t, { asks: false, seerr4k: true });
   await nativeWindow(h);
   const release = h.holdPool();
-  barRequest(h).click(); await settle();
+  h.click(barRequest(h)); await settle();
   await h.leave();
   await release(); await delivered();
   assert.equal(posts(h).length, 0, 'the bar\'s operation ended: its request is never sent');
@@ -64,7 +64,7 @@ test('R7-1: the More sheet\'s Request in 4K inside a natively opened window, the
   assert.ok(entry, 'Request in 4K is offered');
   // The run's admission answers while every transport slot is busy: its 4K request waits in the pool.
   const admission = h.hold('GET', '/title-actions/');
-  entry.click(); await settle();
+  h.click(entry); await settle();
   const release = h.holdPool();
   admission.resolve(); await settle();
   await h.leave();
@@ -76,7 +76,7 @@ test('R7-1: advanced on, the bar\'s Request inside a natively opened window open
   const h = setup(t, { asks: false, seerr4k: true, advanced: true });
   await h.JE.jellyseerrAPI.checkUserStatus(); // the cached status the advanced switch reads
   await nativeWindow(h);
-  barRequest(h).click(); await delivered(); await shown();
+  h.click(barRequest(h)); await delivered(); await shown();
   assert.ok(seerrModal(h)?.classList.contains('show'), 'the advanced form opened');
   await rerenderWindowRow(h); await gone();
   assert.equal(h.document.querySelector('.jellyseerr-season-modal.show'), null, 'the form did not outlive the operation');
@@ -87,7 +87,7 @@ test('R7-1: advanced on, Request in 4K from the More sheet of a natively opened 
   const h = setup(t, { asks: false, seerr4k: true, advanced: true });
   await h.JE.jellyseerrAPI.checkUserStatus();
   await nativeWindow(h);
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered(); await shown();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered(); await shown();
   assert.ok(seerrModal(h)?.classList.contains('show'), 'the 4K form opened');
   await rerenderWindowRow(h); await gone();
   assert.equal(h.document.querySelector('.jellyseerr-season-modal.show'), null);
@@ -96,7 +96,7 @@ test('R7-1: advanced on, Request in 4K from the More sheet of a natively opened 
 test('R7-1: TV, the bar\'s Request inside a natively opened window opens the season form for its operation; the row re-renders → closed', async t => {
   const h = setup(t, { asks: false, seerr4k: false });
   await nativeWindow(h, 1399, 'tv');
-  barRequest(h).click(); await delivered(); await shown();
+  h.click(barRequest(h)); await delivered(); await shown();
   assert.ok(seerrModal(h)?.classList.contains('show'), 'the season form opened');
   await rerenderWindowRow(h); await gone();
   assert.equal(h.document.querySelector('.jellyseerr-season-modal.show'), null);
@@ -117,7 +117,7 @@ test('control: the window\'s own Request pressed directly (natively) sends once,
   const h = setup(t, { asks: false, seerr4k: true });
   const modal = await nativeWindow(h);
   const release = h.holdPool();
-  modal.querySelector('.jellyseerr-split-main').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-split-main')); await settle();
   await h.leave();
   await release(); await delivered();
   assert.equal(posts(h).length, 1, 'a native press is native');
@@ -126,7 +126,7 @@ test('control: the window\'s own Request pressed directly (natively) sends once,
 test('control: the bar\'s Request inside a natively opened window, staying → one send', async t => {
   const h = setup(t, { asks: false, seerr4k: true });
   await nativeWindow(h);
-  barRequest(h).click(); await delivered();
+  h.click(barRequest(h)); await delivered();
   assert.equal(posts(h).length, 1);
   assert.notEqual(posts(h)[0][3]?.is4k, true);
 });
@@ -134,7 +134,7 @@ test('control: the bar\'s Request inside a natively opened window, staying → o
 test('control: Request in 4K from the More sheet of a natively opened window, staying → one 4K send', async t => {
   const h = setup(t, { asks: false, seerr4k: true });
   await nativeWindow(h);
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.equal(posts(h)[0][3]?.is4k, true);
 });
@@ -145,7 +145,7 @@ test('R7-3: Request in 4K answers after the window was replaced by another title
   const h = setup(t, { asks: false, seerr4k: true });
   await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await settle();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await settle();
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   const tv = moreInfo(h);
   assert.equal(tv.dataset.tmdbId, '1399');
@@ -160,7 +160,7 @@ test('R7-3: the window\'s own Request answers after the window was replaced → 
   const h = setup(t, { asks: false, seerr4k: false });
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-request-button').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await settle();
   await h.JE.jellyseerrMoreInfo.open(1399, 'tv', undefined, h.NATIVE); await delivered();
   const tv = moreInfo(h);
   held.resolve(); await delivered();
@@ -172,10 +172,10 @@ test('R7-3: a write answering after a newer Refresh of the same window rendered 
   const h = setup(t, { asks: false, seerr4k: false });
   const modal = await nativeWindow(h);
   const held = h.hold('POST', '/jellyseerr/request');
-  modal.querySelector('.jellyseerr-request-button').click(); await settle();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await settle();
   const read = h.hold('GET', '/jellyseerr/movie/603');
   h.manager.clearCache(); // a Refresh within the details' cache time answers from it
-  modal.querySelector('.modal-refresh').click(); await settle();
+  h.click(modal.querySelector('.modal-refresh')); await settle();
   // The Refresh (the newer intent) answers first: the title is here now.
   read.resolve({ id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 5, status4k: 1, jellyfinMediaId: 'abc' } }); await delivered();
   const drawn = modal.querySelector('[data-mount="je-status-chip"]').innerHTML;
@@ -187,7 +187,7 @@ test('R7-3: a write answering after a newer Refresh of the same window rendered 
 test('control: Request in 4K in a window that stays → the 4K chip appears in it', async t => {
   const h = setup(t, { asks: false, seerr4k: true });
   const modal = await nativeWindow(h);
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   assert.equal(posts(h).length, 1);
   assert.notEqual(modal.querySelector('[data-mount="je-status-chip"]').innerHTML.trim(), '', 'the chip is drawn in its own window');
 });
@@ -202,7 +202,7 @@ test('R7-4: a quota refusal, its quota read held, the window\'s operation ends �
   h.a.initialize(); mount(h); await settle();
   await press(h, 'request'); await delivered();
   const quota = h.hold('GET', '/jellyseerr/quota');
-  moreInfo(h).querySelector('.jellyseerr-request-button').click(); await settle(); await delivered();
+  h.click(moreInfo(h).querySelector('.jellyseerr-request-button')); await settle(); await delivered();
   remount(h); h.a.scan(); await settle();
   quota.resolve(); await delivered();
   assert.equal(h.alerts.length, 0, 'no dialog for an ended operation');
@@ -213,7 +213,7 @@ test('R7-4: the bar\'s Request in a natively opened window is refused for quota,
   h.respond('POST', '/jellyseerr/request', QUOTA);
   await nativeWindow(h);
   const quota = h.hold('GET', '/jellyseerr/quota');
-  barRequest(h).click(); await settle(); await delivered();
+  h.click(barRequest(h)); await settle(); await delivered();
   await h.leave();
   quota.resolve(); await delivered();
   assert.equal(h.alerts.length, 0);
@@ -224,7 +224,7 @@ test('R7-4: the quota dialog is open when its operation ends → it closes', asy
   h.respond('POST', '/jellyseerr/request', QUOTA);
   h.a.initialize(); mount(h); await settle();
   await press(h, 'request'); await delivered();
-  moreInfo(h).querySelector('.jellyseerr-request-button').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.jellyseerr-request-button')); await delivered();
   assert.equal(h.alerts.length, 1, 'the dialog opened');
   await delivered(); // the host adds its container a moment after the call
   assert.ok(h.document.querySelector('.dialogContainer'));
@@ -236,7 +236,7 @@ test('control: a quota refusal while the operation lives → one dialog, the but
   const h = setup(t, { asks: false, seerr4k: false });
   h.respond('POST', '/jellyseerr/request', QUOTA);
   const modal = await nativeWindow(h);
-  modal.querySelector('.jellyseerr-request-button').click(); await delivered();
+  h.click(modal.querySelector('.jellyseerr-request-button')); await delivered();
   assert.equal(h.alerts.length, 1);
   assert.match(h.alerts[0].title, /jellyseerr_quota_dialog_title/);
   const button = modal.querySelector('.jellyseerr-request-button');
@@ -284,10 +284,10 @@ test('R7-5: asking from the row\'s Request takes Request away (the ask refreshes
   const h = setup(t, { asks: true, stage: 'notHere' });
   h.respond('POST', '/acquire/requests', () => { h.setStage('asked'); return null; });
   h.a.initialize(); mount(h); await settle(); await delivered();
-  rowRequest(h).click(); await delivered();
+  h.click(rowRequest(h)); await delivered();
   const submit = h.document.querySelector('.je-sheet .je-sheet-primary');
   assert.ok(submit, 'the request sheet offers its Request');
-  submit.click(); await delivered(); h.a.scan(); await delivered();
+  h.click(submit); await delivered(); h.a.scan(); await delivered();
   assert.equal(h.sent('POST', '/acquire/requests').length, 1, 'one ask');
   assert.equal(rowRequest(h), null, 'Request left the row after asking');
 });
@@ -300,7 +300,7 @@ test('R7-6: a Refresh superseded by a newer read of the same window is enabled a
   const held = h.hold('GET', '/jellyseerr/tv/1399');
   h.manager.clearCache();
   const refresh = modal.querySelector('.modal-refresh');
-  refresh.click(); await settle();
+  h.click(refresh); await settle();
   assert.equal(refresh.disabled, true, 'busy while it reads');
   h.document.dispatchEvent(new h.window.CustomEvent('jellyseerr-tv-requested', { detail: { tmdbId: '1399', mediaType: 'tv' } })); await settle();
   held.resolve(); await delivered();
@@ -314,7 +314,7 @@ test('control: a plain Refresh is busy while it reads and enabled after', async 
   const held = h.hold('GET', '/jellyseerr/movie/603');
   h.manager.clearCache();
   const refresh = modal.querySelector('.modal-refresh');
-  refresh.click(); await settle();
+  h.click(refresh); await settle();
   assert.equal(refresh.disabled, true);
   held.resolve(); await delivered();
   assert.equal(refresh.disabled, false);

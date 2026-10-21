@@ -149,10 +149,10 @@ export function remount(h) {
 
 /** Opens the row's More sheet and presses `id`. */
 export async function press(h, id) {
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   const entry = h.document.querySelector(`.je-actions-entry[data-action="${id}"]`);
   assert.ok(entry, 'the sheet offers ' + id);
-  entry.click(); await settle();
+  h.click(entry); await settle();
 }
 
 export const moreInfo = h => [...h.document.querySelectorAll('.je-more-info-modal')].find(m => !m._isClosing) || null;

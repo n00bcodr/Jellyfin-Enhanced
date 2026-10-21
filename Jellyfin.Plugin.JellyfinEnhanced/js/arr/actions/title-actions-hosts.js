@@ -47,7 +47,10 @@
     /** Builds a visible keyboard/touch button. */
     function button(id, label, glyph) {
         const node = document.createElement('button'); node.type = 'button'; node.dataset.action = id;
-        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); ours.add(node); return node;
+        node.setAttribute('aria-label', label); node.title = label; node.append(A.icon(glyph)); ours.add(node);
+        // Drawn for this session, route and document (D46S2-R11-1).
+        JE.mountControl?.(node);
+        return node;
     }
 
     /** True when the layout is jellyfin-web's desktop one (phones use layout-mobile, TVs layout-tv). */
@@ -82,7 +85,8 @@
         card.querySelectorAll('.je-card-more').forEach(n => n.remove());
         A.styles(); card.classList.add('je-actions-card');
         const node = button('more', JE.t('title_actions_more'), 'more_horiz'); node.className = 'je-card-more'; node.dataset.jeActionKey = c.key;
-        node.onclick = e => { e.preventDefault(); e.stopPropagation(); openCard(card, node); };
+        // Only a press someone made opens it (D46S2-R11-1: a script's click names no owner).
+        node.onclick = e => { e.preventDefault(); e.stopPropagation(); if (JE.ownerOf(e)) openCard(card, node); };
         card.append(node); cards.set(card, { key: c.key, button: node });
     }
 
@@ -310,7 +314,7 @@
                 // A press is an operation on this row's mount; owners that confirm first carry it.
                 proxy.onclick = e => {
                     e.preventDefault(); e.stopPropagation();
-                    if (rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
+                    if (JE.ownerOf(e) && rowCurrent(state) && state.row.contains(source) && !source.disabled && source.getAttribute('aria-disabled') !== 'true')
                         A.dispatch(source, A.generation(() => rowCurrent(state)));
                 };
                 if (id === 'primary') { const label = document.createElement('span'); label.className = 'je-actions-primary-label'; proxy.append(label); }
@@ -322,7 +326,7 @@
                 if (label.textContent !== text) label.textContent = text;
             }
         }
-        if (!owned.more) { owned.more = button('more', JE.t('title_actions_more'), 'more_horiz'); owned.more.className = 'je-actions-more'; owned.more.onclick = () => openRow(state, owned.more); }
+        if (!owned.more) { owned.more = button('more', JE.t('title_actions_more'), 'more_horiz'); owned.more.className = 'je-actions-more'; owned.more.onclick = e => { if (JE.ownerOf(e)) openRow(state, owned.more); }; }
         // Insert only misplaced controls: moving an already focused node makes browsers drop focus.
         const desired = ['primary', state.c?.absent ? 'follow' : 'favorite', 'report'].map(id => owned.proxies.get(id)).filter(Boolean).concat(owned.more);
         [...compactRow.children].forEach(n => { if (!desired.includes(n)) n.remove(); });
@@ -352,7 +356,10 @@
      */
     function mountRow(row, root, c) {
         if (!enabled() || disposed) return;
-        hosts.set(root, { c, action: A.generation() });
+        // An unchanged row (the same title, its generation current) is decided before anything is minted (D46S2-R11-13):
+        // a reconciliation pass that changes nothing mints nothing.
+        const host = hosts.get(root);
+        if (!host || host.c?.key !== c?.key || !host.action.current()) hosts.set(root, { c, action: A.generation() });
         let state = rows.get(row);
         if (state && state.c?.key === c?.key && state.action.current()) { paintRow(state); return; }
         if (state) disposeRow(state);
@@ -370,7 +377,7 @@
             if (home && (row.parentElement === home.parent || row.parentElement === home.parent.parentElement)) state.rowHome = home;
         }
         const more = button('more', JE.t('title_actions_more'), 'more_horiz'); more.className = 'button-flat detailButton emby-button je-actions-wide-more';
-        more.onclick = () => openRow(state, more); state.more = more; row.append(more);
+        more.onclick = e => { if (JE.ownerOf(e)) openRow(state, more); }; state.more = more; row.append(more);
         paintRow(state);
         if (c) setupRow(state);
     }
@@ -406,8 +413,9 @@
                 if (!entry.control) {
                     node.disabled = entry.disabled === true; node.title = entry.reason || entry.label;
                     if (entry.reason) node.dataset.jeActionReason = entry.reason;
-                    node.onclick = () => {
-                        if (!action.current()) return;
+                    node.onclick = e => {
+                        // Only a press someone made is the row's operation (D46S2-R11-1).
+                        if (!JE.ownerOf(e) || !action.current()) return;
                         const operation = A.generation(() => action.current());
                         A.invoke(c, entry, node, operation).catch(() => { if (operation.current()) JE.toast?.(JE.t('title_actions_failed')); });
                     };
@@ -525,13 +533,16 @@
         if (started) return; started = true;
         observer = new MutationObserver(schedule); observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-id', 'data-tmdb-id', 'data-media-type', 'data-je-hide-title', 'disabled', 'aria-pressed', 'aria-label', 'title', 'class'] });
         document.addEventListener('contextmenu', e => {
-            const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card)) return;
+            const card = e.target.closest?.(CARD); if (!enabled() || !cardContext(card) || !JE.ownerOf(e)) return;
             e.preventDefault(); e.stopImmediatePropagation(); cancelTouch(); openCard(card);
         }, true);
         document.addEventListener('pointerdown', e => {
             if (e.pointerType === 'mouse' || !enabled()) return;
             const card = e.target.closest?.(CARD); if (!cardContext(card) || (e.target.closest('button') && !e.target.closest('.je-discover-poster-box'))) return;
-            cancelTouch(); touch = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { consumed = card; cancelTouch(); openCard(card); }, 550) };
+            // The long press is the viewer's gesture: its menu opens 550 ms later only while that gesture's owner is
+            // still current (the same page, session and document; D46S2-R11).
+            const owner = JE.ownerOf(e);
+            cancelTouch(); touch = { x: e.clientX, y: e.clientY, timer: setTimeout(() => { cancelTouch(); if (!owner || !JE.effectOwner(owner, 'a long press')) return; consumed = card; openCard(card); }, 550) };
         }, true);
         document.addEventListener('pointermove', e => { if (touch && Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 10) cancelTouch(); }, true);
         ['pointerup', 'pointercancel', 'scroll'].forEach(name => document.addEventListener(name, cancelTouch, true));
@@ -540,11 +551,11 @@
             consumed = null;
             const nativeMenu = e.target.closest?.('[data-action="menu"], .btnCardMenu, .cardMenuButton');
             const card = nativeMenu?.closest(CARD);
-            if (enabled() && cardContext(card)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card, card.querySelector('.je-card-more')); }
+            if (enabled() && cardContext(card) && JE.ownerOf(e)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card, card.querySelector('.je-card-more')); }
         }, true);
         document.addEventListener('keydown', e => {
             const card = e.target.closest?.(CARD);
-            if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && enabled() && cardContext(card)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card); }
+            if ((e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) && enabled() && cardContext(card) && JE.ownerOf(e)) { e.preventDefault(); e.stopImmediatePropagation(); openCard(card); }
         }, true);
         document.addEventListener('jellyseerr-more-info-opened', e => {
             if (!enabled()) return; const { modal, data, mediaType, scope } = e.detail || {}; if (!modal) return;

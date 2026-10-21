@@ -560,6 +560,8 @@
             && ctx.availablePostersLinkToJellyfin;
 
         const card = /** @type {HTMLElement} */ (document.importNode(getCardTemplate(ctx.seerrIconUrl), true));
+        // Drawn for this session, route and document: a press on it after any of them changed is no one's (D46S2-R11-1).
+        JE.mountControl?.(card);
         if (isAvailable) card.classList.add('jellyseerr-card-in-library');
         // Fixed positions in the template (see getCardTemplate).
         const cardBox = /** @type {HTMLElement} */ (card.firstElementChild);
@@ -876,7 +878,10 @@
         e.preventDefault();
         e.stopPropagation();
         if (hideBtn.classList.contains('je-already-hidden')) {
-            JE.hiddenContent.unhideItem(JE.hiddenContent.titleKey(state.mediaType || item.mediaType, item.id) || state.jellyfinMediaId);
+            // The press's write (D46S2-R11-4): a click no one made unhides nothing.
+            const owner = JE.ownerOf(e);
+            if (!owner) return;
+            JE.hiddenContent.unhideItem(JE.hiddenContent.titleKey(state.mediaType || item.mediaType, item.id) || state.jellyfinMediaId, undefined, owner);
             setHideButtonState(hideBtn, false, state.ctx);
             return;
         }

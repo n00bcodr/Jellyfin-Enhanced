@@ -365,7 +365,8 @@
                 populateAdvancedOptions(modalInstance.modalElement, data, 'tv', is4k);
             } catch (error) {
                 console.error(`${logPrefix} Failed to load TV advanced options:`, error);
-                JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
+                // Said only while the form's owner is current (D46S2-R11-8).
+                if (submitted.current()) JE.toast(JE.t('jellyseerr_err_load_server_options'), 3000);
             }
         }
     };

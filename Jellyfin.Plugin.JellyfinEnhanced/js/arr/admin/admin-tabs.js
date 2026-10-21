@@ -825,7 +825,8 @@
         overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDialog(); });
         const onKey = (e) => {
             if (!state.dialog) return;
-            if (e.key === 'Escape') {
+            // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
+            if (e.key === 'Escape' && JE.isTopmostSurface(overlay)) {
                 e.preventDefault();
                 e.stopPropagation();
                 closeDialog();

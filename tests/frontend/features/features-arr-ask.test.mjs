@@ -254,7 +254,7 @@ test('rows mode: JE draws native-looking rows for missing episodes Jellyfin has 
   // Clicks inside a JE row never reach Jellyfin's list handlers.
   let reached = 0;
   h.list().addEventListener('click', () => reached++);
-  four.querySelector('.listItem-content').click();
+  h.click(four.querySelector('.listItem-content'));
   assert.equal(reached, 0);
   // One read of the season rows.
   assert.equal(h.gets.filter(p => p.startsWith('/acquire/requests/season/')).length, 1);
@@ -267,7 +267,7 @@ test('Get it asks for that one episode and the chip says what the server answere
   });
   await h.open();
   h.setRows(() => rowsBody({ requests: { 2: 'waiting' } }));
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input, { key: 'tv:tvdb:1', scope: 'episodes', variant: 'standard', seasons: [], episodes: [{ season: 1, episode: 2 }] });
@@ -285,14 +285,14 @@ test('a refused or failed ask keeps Get it and says so honestly', async t => {
   let answer = { status: 429, body: { outcome: 'quota_exceeded', reason: 'quota_exceeded', certainty: 'Rejected' } };
   const h = setup(t, { server: { post: () => answer } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   const four = h.list().querySelector('.je-ask-row[data-je-ask-episode="4"]');
   assert.equal(four.querySelector('.je-arr-chip').textContent, 'Missing');
   assert.ok(four.querySelector('.je-ask-get:not([disabled])'), 'Get it is back');
   assert.equal(h.toasts.at(-1), "You've used this week's requests.");
   answer = new TypeError('Failed to fetch');
-  four.querySelector('.je-ask-get').click();
+  h.click(four.querySelector('.je-ask-get'));
   await settle(20);
   assert.equal(h.toasts.at(-1), "Couldn't ask right now. Try again later.");
   assert.equal(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-arr-chip').textContent, 'Missing');
@@ -332,7 +332,7 @@ test('banner mode (missing episodes not shown as rows): states per episode and G
   const btn = action.querySelector('.je-ask-get');
   assert.equal(btn.textContent, 'downloadGet E4');
   assert.equal(btn.getAttribute('aria-label'), 'Get the missing episodes: E4');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 4 }]);
   assert.match(h.document.querySelector('.je-ask-banner-action').textContent, /E4 · Waiting for OK/);
@@ -394,7 +394,7 @@ test('the episode dialog shows the status and Get it, traps focus and gives it b
   await h.open();
   const title = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-row-title');
   title.focus();
-  title.click();
+  h.click(title);
   const dialog = h.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-title').textContent, '2. Two');
@@ -423,7 +423,7 @@ test('an episode the arr is looking for right now: "Looking for it", dimmed and 
   assert.ok(two.classList.contains('je-ask-dim'), 'still missing: dimmed');
   // E4 (not monitored) still offers Get it.
   assert.ok(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
-  two.querySelector('.je-ask-row-title').click();
+  h.click(two.querySelector('.je-ask-row-title'));
   const dialog = h.document.querySelector('.je-ask-dialog');
   assert.match(dialog.querySelector('.je-arr-pill-text').textContent, /Looking for it/);
   assert.equal(dialog.querySelector('.je-ask-get'), null, 'the dialog offers nothing either');
@@ -477,7 +477,7 @@ test('TV layout: a JE row is one focusable button that opens the dialog; arrows 
   assert.equal(two.querySelector('button, .je-ask-get'), null, 'no buttons inside a TV row');
   assert.equal(h.document.querySelector('.je-ask-get'), null, 'Get it is never inside a row on TV');
   two.focus();
-  two.click();
+  h.click(two);
   const dialog = h.document.querySelector('.je-ask-dialog');
   const buttons = [...dialog.querySelectorAll('button')];
   assert.equal(h.document.activeElement, buttons[0]);
@@ -489,7 +489,7 @@ test('TV layout: a JE row is one focusable button that opens the dialog; arrows 
   h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   assert.equal(h.document.activeElement, buttons[0], 'wraps around');
   assert.equal(jellyfinSaw, 0, 'the page behind never sees the arrows');
-  buttons[0].click();
+  h.click(buttons[0]);
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input.episodes, [{ season: 1, episode: 2 }]);
@@ -551,7 +551,7 @@ test('rows: a long-missing episode gets Search instead of Get it; a Kid\'s Searc
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search');
   assert.equal(btn.getAttribute('aria-label'), 'Search for episode 2: Two');
   h.setRows(() => rowsBody({ requests: { 2: 'waiting' } }));
-  btn.click();
+  h.click(btn);
   await settle(20);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].path, '/acquire/requests');
@@ -571,7 +571,7 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
     }
   });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts.length, 1);
   assert.equal(h.posts[0].path, '/arr/admin/manage/search');
@@ -582,7 +582,7 @@ test('rows: an administrator\'s Search runs the arr search for exactly that epis
   assert.equal(two.querySelector('.je-ask-get'), null, 'the outcome takes the button\'s place for a while');
   same(h.toasts, ['Nothing found yet · searched just now']);
   found = true;
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[1].body.key, 'tv:tvdb:1:s1:e4');
   assert.equal(h.toasts.at(-1), 'Found a copy — downloading');
@@ -593,7 +593,7 @@ test('rows: someone else\'s Search on an episode a request already sent searches
   let answer = { status: 200, body: { outcome: 'accepted', reason: 'searched', certainty: 'Succeeded', message: 'Searched for it.', found: false } };
   const h = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ requests: { 2: 'household' } }), search: () => answer } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1:e2']);
   assert.match(h.searches[0].body.idempotencyKey, /\S{8,}/);
@@ -603,7 +603,7 @@ test('rows: someone else\'s Search on an episode a request already sent searches
 
   // Nothing sent for E4 yet: the server says so, and the Search asks for it like Get it.
   answer = { status: 200, body: { outcome: 'skipped', reason: 'not_requested', certainty: 'Rejected', message: 'Nothing was asked for here yet.' } };
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-get'));
   await settle(20);
   assert.equal(h.searches.at(-1).body.key, 'tv:tvdb:1:s1:e4');
   assert.equal(h.posts.length, 1);
@@ -619,7 +619,7 @@ test('banner: someone else\'s Search searches the season again when requests sen
     }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(30);
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1'], 'one search for the season, not one per episode');
   same(h.posts, [], 'not a request');
@@ -636,7 +636,7 @@ test('banner: someone else\'s Search searches again each episode a request sent 
     }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(30);
   // The season as a whole first (not every episode was sent), then episode by episode.
   same(h.searches.map(s => s.body.key), ['tv:tvdb:1:s1', 'tv:tvdb:1:s1:e2', 'tv:tvdb:1:s1:e4']);
@@ -648,7 +648,7 @@ test('banner: someone else\'s Search searches again each episode a request sent 
 test('rows: without the Manage drawer an administrator\'s Search asks like everyone else', async t => {
   const h = setup(t, { status: longMissing({ admin: true }), server: { me: ADMIN_ME } });
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[0].path, '/acquire/requests');
 });
@@ -663,7 +663,7 @@ test('banner: long-missing episodes get Search; an administrator\'s searches the
   const btn = admin.document.querySelector('.je-arr-banner .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Search');
   assert.equal(btn.getAttribute('aria-label'), 'Search for the missing episodes: E2, E4');
-  btn.click();
+  admin.click(btn);
   await settle(20);
   same({ path: admin.posts[0].path, key: admin.posts[0].body.key }, { path: '/arr/admin/manage/search', key: 'tv:tvdb:1:s1' });
   assert.equal(admin.document.querySelector('.je-arr-banner .je-ask-searched').textContent, 'Searching…');
@@ -671,7 +671,7 @@ test('banner: long-missing episodes get Search; an administrator\'s searches the
 
   const kid = setup(t, { status: longMissing(), server: { rows: () => rowsBody({ displayMissing: false }) } });
   await kid.open();
-  kid.document.querySelector('.je-arr-banner .je-ask-get').click();
+  kid.click(kid.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle(20);
   same(kid.posts[0].body.input.episodes, [{ season: 1, episode: 2 }, { season: 1, episode: 4 }]);
 });
@@ -773,7 +773,7 @@ test('a Search pressed by someone who asks shows its answer for a while, even af
   });
   await h.open();
   h.setRows(() => rowsBody({ requests: { 2: 'asked' } }));
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   assert.equal(h.posts[0].path, '/acquire/requests');
   const two = () => h.list().querySelector('.je-ask-row[data-je-ask-episode="2"]');
@@ -820,7 +820,7 @@ function otherRows() {
 function openDialog(h, episode = 2) {
   const title = h.list().querySelector(`.je-ask-row[data-je-ask-episode="${episode}"] .je-ask-row-title`);
   title.focus();
-  title.click();
+  h.click(title);
   return { title, get: h.document.querySelector('.je-ask-dialog .je-ask-get') };
 }
 
@@ -838,7 +838,7 @@ test('the episode dialog closes when another season is shown, and its Get it nev
   assert.ok(h.gets.some(p => p.includes(SEASON_B)), 'the new season was read');
   assert.equal(h.document.querySelector('.je-ask-dialog-backdrop'), null, 'the dialog closed with its season');
   // A press that still reaches the old button (it was on screen a moment ago) asks for nothing.
-  get.click();
+  h.click(get);
   await settle(20);
   same(h.posts, [], 'no request for the other series');
 });
@@ -877,7 +877,7 @@ test('an administrator\'s Search waiting for capabilities is dropped when someon
     server: { me: ADMIN_ME, meGate: () => gate, post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) }
   });
   await rowsSearch.open();
-  rowsSearch.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  rowsSearch.click(rowsSearch.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle();
   rowsSearch.switchUser();
   release();
@@ -895,7 +895,7 @@ test('the banner\'s Search waiting for capabilities is dropped when someone else
     server: { me: ADMIN_ME, meGate: () => gate, rows: () => rowsBody({ displayMissing: false }), post: () => ({ status: 200, body: { status: 'Succeeded', found: false } }) }
   });
   await h.open();
-  h.document.querySelector('.je-arr-banner .je-ask-get').click();
+  h.click(h.document.querySelector('.je-arr-banner .je-ask-get'));
   await settle();
   h.switchUser();
   release();
@@ -960,9 +960,9 @@ test('storage full: an administrator still gets Search (the arr\'s own search, n
   let dialog = h.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-get').dataset.mode, 'search');
   assert.equal(dialog.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
-  dialog.querySelector('.je-ask-dialog-close').click();
+  h.click(dialog.querySelector('.je-ask-dialog-close'));
   assert.equal(h.document.querySelector('.je-ask-dialog'), null);
-  row(2).querySelector('.je-ask-get').click();
+  h.click(row(2).querySelector('.je-ask-get'));
   await settle(20);
   same(h.posts.map(p => p.path), ['/arr/admin/manage/search'], 'only the arr\'s own search, never a request');
   same({ instanceId: h.posts[0].body.instanceId, key: h.posts[0].body.key }, { instanceId: 'son1', key: 'tv:tvdb:1:s1:e2' });
@@ -975,7 +975,7 @@ test('storage full: an administrator still gets Search (the arr\'s own search, n
   // Read out with the dialog's name (focus lands on Close; the reason is plain text).
   assert.ok(dialog.querySelector('.je-ask-paused-note').id);
   assert.equal(dialog.getAttribute('aria-describedby'), dialog.querySelector('.je-ask-paused-note').id);
-  dialog.querySelector('.je-ask-dialog-close').click();
+  h.click(dialog.querySelector('.je-ask-dialog-close'));
 });
 
 test('storage full in the banner: an administrator\'s Search for the long-missing ones and the paused line; once, not again above the list', async t => {
@@ -990,7 +990,7 @@ test('storage full in the banner: an administrator\'s Search for the long-missin
   same([btn.querySelector('.je-ask-get-text').textContent, btn.getAttribute('aria-label')], ['Search for E2', 'Search for the missing episodes: E2']);
   assert.equal(action.querySelector('.je-ask-paused-note .je-ask-paused-text').textContent, ADMIN_DETAIL);
   assert.equal(h.document.querySelector('.je-ask-season-note'), null, 'said once, in the banner');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same({ path: h.posts[0].path, key: h.posts[0].body.key }, { path: '/arr/admin/manage/search', key: 'tv:tvdb:1:s1:e2' });
   // Applying the page again keeps the banner as it is (no rebuild loop).
@@ -1059,7 +1059,7 @@ test('a refusal for storage is said in plain words: the ask\'s toast, and a Sear
   assert.equal(A.interpret(403, { outcome: 'blocked', reason: 'low_disk' }).state, 'blocked');
   assert.equal(A.describe({ state: 'blocked', reason: 'low_disk' }, MEMBER_ME).text, "Paused: storage full. There's no room for new downloads right now.");
   await h.open();
-  h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get').click();
+  h.click(h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get'));
   await settle(20);
   same(h.searches.length, 1);
   same(h.posts, [], 'no ask after the refused Search');
@@ -1080,7 +1080,7 @@ test('Seerr mode: an episode\'s Get it reads "Get Season 1" and says why, asks f
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1', 'the button says what it asks for before it is pressed');
   assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
   assert.equal(btn.title, 'Seerr takes whole seasons, so this asks for all of Season 1.');
-  btn.click();
+  h.click(btn);
   await settle(20);
   assert.equal(h.posts.length, 1);
   same(h.posts[0].body.input, { key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] });
@@ -1093,7 +1093,7 @@ test('Seerr mode: an episode\'s Get it reads "Get Season 1" and says why, asks f
   const h2 = setup(t, { server: { me: SEERR_MEMBER } });
   await h2.open();
   await settle();
-  h2.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title').click();
+  h2.click(h2.list().querySelector('.je-ask-row[data-je-ask-episode="4"] .je-ask-row-title'));
   const dialog = h2.document.querySelector('.je-ask-dialog');
   assert.equal(dialog.querySelector('.je-ask-dialog-note').textContent, 'Seerr takes whole seasons, so this asks for all of Season 1.');
   assert.equal(dialog.querySelector('.je-ask-get .je-ask-get-text').textContent, 'Get Season 1');
@@ -1106,7 +1106,7 @@ test('Seerr mode: the banner\'s Get them reads "Get Season 1" and asks for the s
   const btn = h.document.querySelector('.je-arr-banner .je-ask-banner-action .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get Season 1');
   assert.equal(btn.getAttribute('aria-label'), 'Get Season 1. Seerr takes whole seasons, so this asks for all of Season 1.');
-  btn.click();
+  h.click(btn);
   await settle(20);
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1], episodes: [] }]);
 });
@@ -1121,7 +1121,7 @@ test('Seerr with partial requests off: the episode\'s button reads "Get the whol
   const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get the whole series');
   assert.equal(btn.title, 'Seerr takes whole series only, so this asks for every season.');
-  btn.click();
+  h.click(btn);
   await settle(30);
   same(h.posts.map(p => p.body.input), [{ key: 'tv:tvdb:1', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] }]);
 });
@@ -1133,7 +1133,7 @@ test('Seerr mode: a button that did not say "Season" (drawn before the capabilit
   await h.open();
   const btn = h.list().querySelector('.je-ask-row[data-je-ask-episode="2"] .je-ask-get');
   assert.equal(btn.querySelector('.je-ask-get-text').textContent, 'Get it', 'capabilities not known yet');
-  btn.click();
+  h.click(btn);
   release();
   await settle(30);
   assert.equal(h.posts.length, 0, 'nothing is asked behind a "Get it" label');

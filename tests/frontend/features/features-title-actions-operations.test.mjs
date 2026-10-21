@@ -103,7 +103,7 @@ const INTERRUPTS = [
 
 /** Opens the row's More sheet and returns the entry button for `id`. */
 async function openSheet(h, id) {
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   const entry = h.document.querySelector(`.je-actions-entry[data-action="${id}"]`);
   assert.ok(entry, 'the sheet offers ' + id);
   return entry;
@@ -121,9 +121,9 @@ const ACTIONS = {
   open: { finish: async () => {}, done: h => h.opened.some(o => o[1] === 'item'), none: h => !h.opened.some(o => o[1] === 'item') },
   share: { finish: async () => {}, done: h => h.toasts.includes('title_actions_copied'), none: h => !h.toasts.includes('title_actions_copied') && h.shared === 0 },
   guard: { finish: async h => { h.confirms.at(-1)?.resolve(true); await settle(); }, done: h => h.writes.some(w => w[1] === 'guard-off'), none: h => !h.writes.some(w => w[1] === 'guard-off') },
-  hide: { finish: async h => { h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide')?.click(); await settle(); },
+  hide: { finish: async h => { const accept = h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide'); if (accept) h.click(accept); await settle(); },
     done: h => h.writes.some(w => w[1] === 'hide'), none: h => !h.writes.some(w => w[1] === 'hide') },
-  report: { finish: async h => { const m = h.modals.at(-1); if (m) { const button = h.document.createElement('button'); m.modalElement.append(button); await m.options.onSave(m.modalElement, button, () => {}, { type: 'click', target: button }); } await settle(); },
+  report: { finish: async h => { const m = h.modals.at(-1); if (m) { const button = h.document.createElement('button'); m.modalElement.append(button); await h.pressIn(button, e => m.options.onSave(m.modalElement, button, () => {}, e)); } await settle(); },
     done: h => h.writes.some(w => w[1] === 'report'), none: h => !h.writes.some(w => w[1] === 'report') },
 };
 
@@ -143,7 +143,7 @@ for (const id of Object.keys(ACTIONS)) {
     const h = prepare(t, id); await settle();
     const entry = await openSheet(h, id);
     const gate = h.gate();
-    entry.click(); await settle();
+    h.click(entry); await settle();
     if (h.document.querySelector('.je-actions-sheet')) escape(h);
     gate.resolve({ allowed: true, itemId: ITEM }); await settle();
     await ACTIONS[id].finish(h);
@@ -154,7 +154,7 @@ for (const id of Object.keys(ACTIONS)) {
     const h = prepare(t, id); await settle();
     const entry = await openSheet(h, id);
     escape(h);
-    entry.click(); await settle();
+    h.click(entry); await settle();
     await ACTIONS[id].finish(h);
     assert.equal(ACTIONS[id].none(h), true, id);
   });
@@ -164,7 +164,7 @@ for (const id of Object.keys(ACTIONS)) {
       const h = prepare(t, id); await settle();
       const entry = await openSheet(h, id);
       const gate = h.gate();
-      entry.click(); await settle();
+      h.click(entry); await settle();
       interrupt(h);
       gate.resolve({ allowed: true, itemId: ITEM }); await settle();
       await ACTIONS[id].finish(h);
@@ -179,7 +179,7 @@ for (const id of ['guard', 'hide', 'report']) {
     test(`${id}: ${name} while its confirmation is open → accepting writes nothing`, async t => {
       const h = prepare(t, id); await settle();
       const entry = await openSheet(h, id);
-      entry.click(); await settle();
+      h.click(entry); await settle();
       assert.equal(h.document.querySelector('.je-actions-sheet'), null, 'the sheet gave way to the owner');
       if (id === 'guard') assert.equal(h.confirms.length, 1, 'the Guard asks first');
       if (id === 'hide') assert.ok(h.document.querySelector('.je-hide-confirm-overlay'), 'Hide asks first');
@@ -191,7 +191,7 @@ for (const id of ['guard', 'hide', 'report']) {
   }
   test(`controls: ${id} accepted on the same session, route and mount writes once`, async t => {
     const h = prepare(t, id); await settle();
-    (await openSheet(h, id)).click(); await settle();
+    h.click(await openSheet(h, id)); await settle();
     await ACTIONS[id].finish(h);
     assert.equal(h.writes.filter(w => w[1] === { guard: 'guard-off', hide: 'hide', report: 'report' }[id]).length, 1);
   });
@@ -209,7 +209,7 @@ for (const id of ['guard', 'hide', 'report']) {
       assert.equal(row.classList.contains('je-actions-compact'), false, 'the wide row');
       const node = row.querySelector(`.je-actions-adapted[data-je-action-kind="${id}"]`);
       assert.ok(node, 'the adapter placed the owner control');
-      node.click(); await settle();
+      h.click(node); await settle();
       assert.equal({ guard: h.confirms.length, hide: h.document.querySelectorAll('.je-hide-confirm-overlay').length, report: h.modals.length }[id], 1, 'the owner asks first, once');
       interrupt(h);
       await ACTIONS[id].finish(h);
@@ -221,7 +221,7 @@ for (const id of ['guard', 'hide', 'report']) {
     Object.defineProperty(h.window, 'innerWidth', { value: 1280, writable: true, configurable: true });
     const row = h.row(); row.getBoundingClientRect = () => ({ width: 2000 });
     h.a.mountRow(row, h.page, h.a.fromKey('movie:tmdb:603')); await settle();
-    row.querySelector(`.je-actions-adapted[data-je-action-kind="${id}"]`).click(); await settle();
+    h.click(row.querySelector(`.je-actions-adapted[data-je-action-kind="${id}"]`)); await settle();
     await ACTIONS[id].finish(h);
     assert.equal(h.writes.filter(w => w[1] === { guard: 'guard-off', hide: 'hide', report: 'report' }[id]).length, 1);
   });
@@ -236,7 +236,7 @@ for (const [name, interrupt] of INTERRUPTS) {
     Object.defineProperty(h.window, 'innerWidth', { value: 1280, writable: true, configurable: true });
     const row = h.row(); row.getBoundingClientRect = () => ({ width: 2000 });
     h.a.mountRow(row, h.page, h.a.fromKey('movie:tmdb:603')); await settle();
-    row.querySelector('.je-spoiler-pending-detail').click(); await settle();
+    h.click(row.querySelector('.je-spoiler-pending-detail')); await settle();
     assert.equal(h.confirms.length, 1, 'the Guard asks once');
     interrupt(h);
     await ACTIONS.guard.finish(h);
@@ -253,7 +253,7 @@ for (const [name, interrupt] of INTERRUPTS) {
     Object.defineProperty(h.window, 'innerWidth', { value: 1280, writable: true, configurable: true });
     const row = h.row(); row.getBoundingClientRect = () => ({ width: 2000 });
     h.a.mountRow(row, h.page, h.a.fromKey('movie:tmdb:603')); await settle();
-    toggle.click(); await settle();
+    h.click(toggle); await settle();
     assert.equal(h.confirms.length, 1, 'the Guard asks once');
     interrupt(h);
     await ACTIONS.guard.finish(h);
@@ -270,7 +270,7 @@ test('native guard: with the action bar off, a direct press behaves exactly as w
   const row = h.row(); row.getBoundingClientRect = () => ({ width: 2000 });
   h.a.mountRow(row, h.page, h.a.fromKey('movie:tmdb:603')); await settle();
   h.featureOff(); await settle();
-  toggle.click(); await settle();
+  h.click(toggle); await settle();
   assert.equal(h.confirms.length, 1, 'the owner still asks');
   await ACTIONS.guard.finish(h);
   assert.equal(h.writes.filter(w => w[1] === 'guard-off').length, 1, 'and writes on accept');
@@ -286,7 +286,7 @@ test('controls: a native guard pressed directly in a current managed row writes 
   h.a.mountRow(row, h.page, c); await settle();
   // Disposed and remounted on the same node: one listener, now owned by the new mount.
   h.featureOff(); h.JE.pluginConfig.NativeAbsentDetailsEnabled = true; h.a.mountRow(row, h.page, c); await settle(); h.a.scan(); await settle();
-  toggle.click(); await settle();
+  h.click(toggle); await settle();
   assert.equal(h.confirms.length, 1);
   await ACTIONS.guard.finish(h);
   assert.equal(h.writes.filter(w => w[1] === 'guard-off').length, 1);
@@ -301,7 +301,7 @@ test('Guard: accepted, then navigation while the write waits in the Spoiler Guar
     h.load('enhanced/spoilerguard/state.js');
     Object.assign(h.guard, { isTmdbKnown: () => true, isTmdbEnabled: () => true, whenLoaded: async () => {}, bindStateView() {},
       confirmDisableSpoiler: () => { const d = deferred(); h.confirms.push(d); return d.promise; } });
-    (await openSheet(h, 'guard')).click(); await settle();
+    h.click(await openSheet(h, 'guard')); await settle();
     const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.NATIVE); await settle();
     h.confirms.at(-1).resolve(true); await settle();
     if (stale) h.navigate();
@@ -314,9 +314,9 @@ test('Guard: accepted, then navigation while the write waits in the Spoiler Guar
 test('Hide: accepted, then navigation while the write waits in the Hidden Content queue → no PUT', async t => {
   for (const stale of [true, false]) {
     const h = prepare(t, 'hide'); await settle();
-    (await openSheet(h, 'hide')).click(); await settle();
+    h.click(await openSheet(h, 'hide')); await settle();
     const busy = deferred(); h.hidden.enqueuePersistence(() => busy.promise);
-    h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide').click(); await settle();
+    h.click(h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide')); await settle();
     if (stale) h.navigate();
     busy.resolve(); await settle();
     assert.equal(h.writes.filter(w => w[1] === 'hide').length, stale ? 0 : 1, stale ? 'stale' : 'control');
@@ -328,11 +328,11 @@ test('SEC-R2-1: the real Guard dialog refuses its accept after navigation and cl
   // The production confirmation (dialog.js), not a stub.
   h.load('enhanced/spoilerguard/dialog.js');
   Object.assign(h.guard, { whenLoaded: async () => {}, getUserPrefs: () => ({}), isDisableSnoozed: () => false, setDisableSnooze: () => h.writes.push(['snooze']) });
-  (await openSheet(h, 'guard')).click(); await settle();
+  h.click(await openSheet(h, 'guard')); await settle();
   const dialog = h.document.querySelector('.je-spoiler-confirm-dialog');
   assert.ok(dialog);
   h.navigate(); await settle();
-  dialog.querySelector('.je-spoiler-confirm-accept').click(); await settle();
+  h.click(dialog.querySelector('.je-spoiler-confirm-accept')); await settle();
   assert.deepEqual(h.writes, []);
 });
 
@@ -348,7 +348,7 @@ test('SEC-R2-1: the library Guard (native button in a library row) carries the o
   Object.defineProperty(h.window, 'innerWidth', { value: 390, writable: true, configurable: true });
   const row = h.row(); row.getBoundingClientRect = () => ({ width: 100 });
   h.a.mountRow(row, h.page, h.a.context({ Id: ITEM, Type: 'Movie', ProviderIds: { Tmdb: '603' }, absent: false })); await settle();
-  (await openSheet(h, 'guard')).click(); await settle();
+  h.click(await openSheet(h, 'guard')); await settle();
   h.navigate('#/details?id=abcdefabcdefabcdefabcdefabcdefab');
   pending.resolve(true); await settle();
   assert.deepEqual(h.writes, []);
@@ -357,15 +357,15 @@ test('SEC-R2-1: the library Guard (native button in a library row) carries the o
 // B-R2-1: Open and Share keep working although the sheet closes before they run.
 test('B-R2-1: Open from the sheet goes to the actual copy', async t => {
   const h = prepare(t, 'open'); await settle();
-  (await openSheet(h, 'open')).click(); await settle();
+  h.click(await openSheet(h, 'open')); await settle();
   assert.deepEqual(h.opened, [['user-a', 'item', ITEM]]);
 });
 
 test('B-R2-1: Open from a card\'s sheet (the sheet admits the same title) still goes to the actual copy', async t => {
   const h = setup(t, { html: '<div class="jellyseerr-card"><a data-tmdb-id="603" data-media-type="movie">Title</a></div>', extra: { arrAsk: { enabled: () => false } } });
   h.a.initialize(); h.a.scan();
-  h.document.querySelector('.je-card-more').click(); await settle();
-  h.document.querySelector('.je-actions-entry[data-action="open"]').click(); await settle();
+  h.click(h.document.querySelector('.je-card-more')); await settle();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="open"]')); await settle();
   assert.deepEqual(h.opened, [['user-a', 'item', ITEM]]);
 });
 
@@ -373,8 +373,8 @@ test('B-R2-1: Share from a card\'s sheet still confirms the copy', async t => {
   const h = setup(t, { html: '<div class="jellyseerr-card"><a data-tmdb-id="603" data-media-type="movie">Title</a></div>' });
   h.window.navigator.clipboard = { writeText: async () => {} };
   h.a.initialize(); h.a.scan();
-  h.document.querySelector('.je-card-more').click(); await settle();
-  h.document.querySelector('.je-actions-entry[data-action="share"]').click(); await settle();
+  h.click(h.document.querySelector('.je-card-more')); await settle();
+  h.click(h.document.querySelector('.je-actions-entry[data-action="share"]')); await settle();
   assert.deepEqual(h.toasts, ['title_actions_copied']);
 });
 
@@ -386,7 +386,7 @@ for (const [name, configure, expect] of [
   test(`B-R2-1: Share: ${name}`, async t => {
     const h = prepare(t, 'share'); await settle();
     configure(h);
-    (await openSheet(h, 'share')).click(); await settle();
+    h.click(await openSheet(h, 'share')); await settle();
     assert.ok(expect(h));
     const link = h.document.querySelector('.je-actions-link');
     if (link) assert.equal(link.value, 'http://jellyfin.test/web/index.html#/home?jeTitle=movie%3Atmdb%3A603');
@@ -404,11 +404,11 @@ for (const [name, copy] of [
     h.a.scan(); await settle();
     assert.equal(h.row().querySelectorAll('.je-actions-row').length, 1);
     assert.equal(h.row().querySelectorAll('.je-actions-more').length, 1);
-    h.row().querySelector('.je-actions-more').click(); await settle();
+    h.click(h.row().querySelector('.je-actions-more')); await settle();
     assert.ok(h.document.querySelector('.je-actions-sheet'), 'More opens');
     escape(h);
     let requested = 0; h.row().querySelector('.je-native-absent-legacy-request').onclick = () => requested++;
-    h.row().querySelector('.je-actions-primary').click();
+    h.click(h.row().querySelector('.je-actions-primary'));
     assert.equal(requested, 1);
   });
 }
@@ -420,7 +420,7 @@ test('Rule 2: a host copy of a card\'s More beside the live one is removed; the 
   card.append(live.cloneNode(true));
   h.a.scan(); await settle();
   assert.deepEqual([...card.querySelectorAll('.je-card-more')], [live]);
-  live.click(); await settle();
+  h.click(live); await settle();
   assert.ok(h.document.querySelector('.je-actions-sheet'));
 });
 
@@ -431,7 +431,7 @@ test('B-R2-2: a host copy of the compact row queues one reconciliation pass by i
   await new Promise(resolve => h.window.requestAnimationFrame(resolve)); await settle();
   await new Promise(resolve => h.window.requestAnimationFrame(resolve)); await settle();
   const more = h.row().querySelector('.je-actions-more');
-  more.click(); await settle();
+  h.click(more); await settle();
   assert.ok(h.document.querySelector('.je-actions-sheet'), 'the copy was replaced without any other DOM change');
 });
 
@@ -493,7 +493,7 @@ for (const [needs, expected] of [[70, []], [100, ['je-actions-fit-1']], [160, ['
     const row = h.row().querySelector('.je-actions-row');
     assert.deepEqual([...row.classList].filter(c => c.startsWith('je-actions-fit')), expected);
     if (expected.length) {
-      h.row().querySelector('.je-actions-more').click(); await settle();
+      h.click(h.row().querySelector('.je-actions-more')); await settle();
       assert.ok(h.document.querySelector('.je-actions-entry[data-action="report"]'), 'Report stays reachable in More');
     }
   });
@@ -519,7 +519,7 @@ const awayAndBack = async h => {
 for (const id of ['guard', 'hide', 'report']) {
   test(`${id}: away and back while its confirmation is open → accepting writes nothing`, async t => {
     const h = prepare(t, id); await settle();
-    (await openSheet(h, id)).click(); await settle();
+    h.click(await openSheet(h, id)); await settle();
     await awayAndBack(h);
     await ACTIONS[id].finish(h);
     assert.equal(ACTIONS[id].none(h), true, id);
@@ -532,7 +532,7 @@ test('Guard: accepted, then away and back while the write waits in the Spoiler G
   h.load('enhanced/spoilerguard/state.js');
   Object.assign(h.guard, { isTmdbKnown: () => true, isTmdbEnabled: () => true, whenLoaded: async () => {}, bindStateView() {},
     confirmDisableSpoiler: () => { const d = deferred(); h.confirms.push(d); return d.promise; } });
-  (await openSheet(h, 'guard')).click(); await settle();
+  h.click(await openSheet(h, 'guard')); await settle();
   const busy = h.gate(); h.guard.enableForTmdb('movie', 999, 'Other', h.NATIVE); await settle();
   h.confirms.at(-1).resolve(true); await settle();
   await awayAndBack(h);
@@ -543,11 +543,11 @@ test('Guard: accepted, then away and back while the write waits in the Spoiler G
 test('Hide: accepted, then away and back while the write waits in the Hidden Content queue → no PUT', async t => {
   for (const stale of [true, false]) {
     const h = prepare(t, 'hide'); await settle();
-    (await openSheet(h, 'hide')).click(); await settle();
+    h.click(await openSheet(h, 'hide')); await settle();
     const confirm = h.document.querySelector('.je-hide-confirm-overlay .je-hide-confirm-hide');
     assert.ok(confirm, 'Hide asks first');
     const busy = deferred(); h.hidden.enqueuePersistence(() => busy.promise);
-    confirm.click(); await settle();
+    h.click(confirm); await settle();
     if (stale) await awayAndBack(h);
     // The queued write gets every chance to go out before counting (the control's does).
     busy.resolve(); for (let i = 0; i < 3; i++) { await new Promise(resolve => setTimeout(resolve, 0)); await settle(); }
@@ -559,11 +559,11 @@ test('the real Guard dialog refuses its accept after away and back and closes', 
   const h = prepare(t, 'guard'); await settle();
   h.load('enhanced/spoilerguard/dialog.js');
   Object.assign(h.guard, { whenLoaded: async () => {}, getUserPrefs: () => ({}), isDisableSnoozed: () => false, setDisableSnooze: () => h.writes.push(['snooze']) });
-  (await openSheet(h, 'guard')).click(); await settle();
+  h.click(await openSheet(h, 'guard')); await settle();
   const dialog = h.document.querySelector('.je-spoiler-confirm-dialog');
   assert.ok(dialog);
   await awayAndBack(h);
-  dialog.querySelector('.je-spoiler-confirm-accept')?.click(); await settle();
+  { const accept = dialog.querySelector('.je-spoiler-confirm-accept'); if (accept) h.click(accept); } await settle();
   assert.deepEqual(h.writes, []);
 });
 
@@ -576,7 +576,7 @@ for (const id of ['guard', 'hide']) {
       h.load('enhanced/spoilerguard/dialog.js');
       Object.assign(h.guard, { whenLoaded: async () => {}, getUserPrefs: () => ({}), isDisableSnoozed: () => false, setDisableSnooze: () => h.writes.push(['snooze']) });
     }
-    (await openSheet(h, id)).click(); await settle();
+    h.click(await openSheet(h, id)); await settle();
     const surface = h.document.querySelector(id === 'guard' ? '.je-spoiler-confirm-dialog' : '.je-hide-confirm-overlay');
     assert.ok(surface, 'the owner asks first');
     const clone = cloneRow(h); h.a.mountRow(clone, h.page, h.a.fromKey('movie:tmdb:603')); h.a.scan(); await settle();

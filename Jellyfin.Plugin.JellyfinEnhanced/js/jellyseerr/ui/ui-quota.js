@@ -165,11 +165,11 @@
         const submitted = JE.captureSubmitted(owner);
         if (error?.name === 'AbortError' || !submitted.current()) {
             // Its owner ended (nothing was sent, or the answer has nowhere to go): nothing to say.
-        } else if (isQuotaError(error)) {
-            await showQuotaErrorDialog(error, mediaType, submitted);
-        } else {
+        } else if (!isQuotaError(error)) {
             const upstream = error?.responseJSON?.message;
             JE.toast(upstream ? escapeHtml(upstream) : JE.t('jellyseerr_modal_toast_request_fail'), 4000);
+        } else {
+            await showQuotaErrorDialog(error, mediaType, submitted);
         }
         if (requestBtn) {
             requestBtn.disabled = false;

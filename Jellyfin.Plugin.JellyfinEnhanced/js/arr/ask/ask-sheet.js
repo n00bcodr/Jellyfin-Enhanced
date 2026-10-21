@@ -367,7 +367,7 @@
         const kind = title.kind === 'movie' ? 'movie' : 'series';
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
         const caps = options?.caps || await JE.arrAsk.me();
-        if (!action.current() || !newest()) return null;
+        if (!action.current() || !newest() || !submitted.current()) return null;
         if (!JE.arrAsk.canAsk(caps, kind)) {
             JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
             return null;
@@ -380,7 +380,7 @@
             // Whether this title can be asked for now (e.g. "Paused: storage full"), said before anything is picked.
             JE.arrAsk.check ? JE.arrAsk.check(title.key, variant) : null
         ]);
-        if (!action.current() || !newest() || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
+        if (!action.current() || !newest() || !submitted.current() || (JE.session?.getEpoch ? JE.session.getEpoch() : 0) !== epoch) return null;
         if (shown?.initialSeason != null && !(shown.seasons || []).some(s => s.season === shown.initialSeason)) {
             JE.arrAsk.toast(tr('arr_sheet_seasons_unavailable')); return null;
         }
@@ -837,7 +837,9 @@
             return;
         }
         const allowance = result.state === 'quota' ? (await JE.arrAsk.quota(state.kind === 'movie' ? 'movie' : 'tv')) || state.quota : state.quota;
-        if (!state.action.current()) return;
+        // Feedback is a page effect (D46S2-R11-8): said only while the owner is current (closed by the viewer, the
+        // answer still reaches them; ended by a navigation, it toasts nothing on the newer page).
+        if (!state.action.current() || !state.submitted.current()) { if (!state.done) finish(state, null); return; }
         const words = JE.arrAsk.describe(result, state.caps, allowance);
         if (result.ok || result.state === 'unknown') {
             JE.arrAsk.toast(words.text);
@@ -875,7 +877,8 @@
     function onKey(state, e) {
         if (state.done) return;
         const typing = /input|textarea|select/i.test(e.target?.tagName || '') && e.target?.type !== 'checkbox';
-        if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || (e.key === 'Backspace' && !typing)) {
+        // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
+        if ((e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || (e.key === 'Backspace' && !typing)) && JE.isTopmostSurface(state.backdrop)) {
             e.preventDefault();
             e.stopPropagation();
             finish(state, null);
@@ -988,7 +991,8 @@
             const caps = await JE.arrAsk.me();
             if (!mayAsk()) return null;
             if (!JE.arrAsk.canAsk(caps, 'movie')) {
-                JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
+                // Feedback is a page effect (D46S2-R11-8): only while the owner is current.
+                if (submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
                 return null;
             }
             const quota = await JE.arrAsk.quota('movie');
@@ -996,8 +1000,11 @@
             if (needsSheet(caps, quota, 'movie')) return { sheet: true, caps, quota };
             const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() });
             if (result.stale) return null;
+            // The answer is the viewer's (their write went out); saying so is a page effect, shown only while its owner is
+            // current (an answer after the viewer moved on toasts nothing on the newer page; D46S2-R11-8).
+            if (!submitted.current()) return result;
             const allowance = result.state === 'quota' ? (await JE.arrAsk.quota('movie')) || quota : quota;
-            JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
+            if (submitted.current()) JE.arrAsk.toast(JE.arrAsk.describe(result, caps, allowance).text);
             return result;
         })();
         const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, operation: submitted.owner, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
@@ -1211,19 +1218,19 @@
                     if (instanceId) {
                         label.textContent = tr('arr_ask_searching');
                         const result = await JE.arrAsk.adminSearch(status?.key || title.key, instanceId, { bound: submitted.bound() });
-                        JE.arrAsk.toast(result.text);
+                        if (submitted.current()) JE.arrAsk.toast(result.text);
                         words = result.chip ? { chip: result.chip, tone: result.tone } : null;
                     } else if ((searched = await JE.arrAsk.familySearch(status?.key || title.key, { bound: submitted.bound() }))) {
                         // Requests already sent it: search for it again instead of asking.
-                        JE.arrAsk.toast(searched.text);
+                        if (submitted.current()) JE.arrAsk.toast(searched.text);
                         words = searched.chip ? { chip: searched.chip, tone: searched.tone } : null;
                     } else if (submitted.current()) {
                         const result = kind === 'movie' ? await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() }) : await open(title, { opener: b, operation: submitted.owner });
                         if (result?.stale) { /* its operation ended before the send: nothing was sent */ } else if (result && (result.ok || result.state === 'unknown')) {
                             const said = JE.arrAsk.describe(result, caps, null);
-                            if (kind === 'movie') JE.arrAsk.toast(said.text);
+                            if (kind === 'movie' && submitted.current()) JE.arrAsk.toast(said.text);
                             words = said.chip ? { chip: said.chip, tone: said.tone } : null;
-                        } else if (result && kind === 'movie') {
+                        } else if (result && kind === 'movie' && submitted.current()) {
                             JE.arrAsk.toast(JE.arrAsk.describe(result, caps, null).text);
                         }
                     }

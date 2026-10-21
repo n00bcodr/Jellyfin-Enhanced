@@ -124,8 +124,9 @@
                 button.append(icon(entry.icon), label, el('span', 'je-actions-state'));
                 if (entry.control) { entry.control.classList.add('je-actions-control'); sheet.append(entry.control); }
                 sync(entry, button); pairs.push([entry, button]);
-                button.onclick = async () => {
-                    if (!action.current() || button.disabled) return;
+                button.onclick = async e => {
+                    // Only a press someone made is an operation (D46S2-R11-1: a script's click names no owner).
+                    if (!JE.ownerOf(e) || !action.current() || button.disabled) return;
                     const operation = A.generation(() => host.current() !== false);
                     // Close before opening the owner's modal; that modal owns focus from this point.
                     try { await A.invoke(c, { ...entry, ...(control ? { source: control } : {}), beforeRun: () => closeLease(lease) }, opener, operation); }
@@ -148,7 +149,7 @@
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
         // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
         // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
-        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener });
+        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener, dismiss: () => close() });
         if (!current.releaseScope) { close(false); return false; }
         sheet.addEventListener('keydown', e => {
             if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) {

@@ -20,7 +20,7 @@
     /** Reasons of an accepted ask that mean "waits for an OK". */
     const WAITING = new Set(['awaiting_approval', 'over_quota', 'seerr_whole_series_only', 'authorization_changed', 'identity_changed', 'configuration_changed', 'seerr_user_unlinked', 'no_4k_instance']);
 
-    let meState = null; // { at, epoch, promise, value }
+    let meState = null; // { at, epoch (cacheEpoch), promise, value }
     /** @type {Map<string, string>} input fingerprint -> clientRequestId kept until a definitive answer */
     const openIds = new Map();
     /** @type {Set<Function>} */
@@ -52,6 +52,15 @@
     function epoch() {
         return JE.session?.getEpoch ? JE.session.getEpoch() : 0;
     }
+    /**
+     * The key of this module's caches (D46S2-R11-9): the session epoch and the requests family's write epoch (every
+     * ask, cancel or follow moves it as it is sent and as it is answered), so a capability or title check read after a
+     * write never comes from one that started before it.
+     * @returns {string} Key.
+     */
+    function cacheEpoch() {
+        return `${epoch()}:${JE.core?.api?.writeEpoch ? JE.core.api.writeEpoch('acquire') : 0}`;
+    }
 
     /**
      * A request to a plugin route; resolves with {status, body} for every HTTP answer (errors
@@ -76,7 +85,7 @@
     function me(force) {
         if (!enabled()) return Promise.resolve(null);
         const now = Date.now();
-        const current = epoch();
+        const current = cacheEpoch();
         if (!force && meState && meState.epoch === current && (meState.promise || now - meState.at < ME_TTL_MS)) {
             return meState.promise || Promise.resolve(meState.value);
         }
@@ -325,7 +334,8 @@
      * @param {{clientRequestId?: string, signal?: AbortSignal, bound?: Object}} [options] Options; bound: the core
      *     transport binding of the operation that asks (JE.captureSubmitted(owner).bound()), checked right before the POST.
      * @returns {Promise<Object>} Result (see {@link interpret}); state 'failed' when no answer came, plus `stale`
-     *     when a bound ask was never sent (its operation or session ended).
+     *     when a bound ask was never sent (its operation or session ended), or `stale` and `accepted` (with the server's
+     *     answer) when it was answered after its owner ended: its state is reconciled, nothing is said.
      */
     async function ask(input, options) {
         if (!enabled()) return { ok: false, status: 0, state: 'off', outcome: '', reason: 'feature_disabled', certainty: '', requestId: null };
@@ -337,7 +347,22 @@
         try {
             answer = await call('/acquire/requests', { method: 'POST', body: { clientRequestId, input }, signal: options?.signal, bound: options?.bound });
         } catch (err) {
-            // Bound to an operation or session that ended before the send: nothing was sent, nothing to say.
+            // Three outcomes (D46S2-R11-9). Answered after its owner ended (accepted): the server took it, so this
+            // session's state is reconciled (the clientRequestId is spent, the capability and title checks go, the
+            // surfaces showing the title re-read) with no page effect (`stale`: nobody is told on a newer page).
+            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
+            if (written?.outcome === 'accepted') {
+                const answered = written.answer || {};
+                if (!(answered.status >= 500)) openIds.delete(print);
+                const result = { ...interpret(answered.status || 0, answered.body), clientRequestId, stale: true, accepted: true };
+                if (!written.sessionChanged && started === epoch() && (result.ok || result.state === 'unknown')) {
+                    meState = null;
+                    checks.clear();
+                    emit({ type: 'ask', key: input.key, input, result });
+                }
+                return result;
+            }
+            // Bound to an operation or session that ended before the send (unsent): nothing was sent, nothing to say.
             if (err?.name === 'AbortError' && options?.bound) return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId: null, clientRequestId, stale: true };
             if (err?.name === 'AbortError') throw err;
             console.warn(`${logPrefix} ask failed (${err?.message || err})`);
@@ -364,18 +389,28 @@
     async function cancel(requestId, options) {
         if (!enabled() || !/^[0-9a-f]{32}$/i.test(String(requestId || ''))) return { ok: false, status: 0, state: 'invalid', outcome: '', reason: 'invalid_id', certainty: '', requestId: null };
         let answer;
+        let accepted = false;
         try {
             answer = await call(`/acquire/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST', body: {}, bound: options?.bound });
         } catch (err) {
-            console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
-            return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
+            // Three outcomes (D46S2-R11-9): answered after its owner ended, the cancel happened (reconciled below, said by
+            // nobody); never sent, nothing happened.
+            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
+            if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            else if (written?.outcome === 'unsent') return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'aborted', certainty: '', requestId, stale: true };
+            else {
+                console.warn(`${logPrefix} cancel failed (${err?.message || err})`);
+                return { ok: false, status: 0, state: 'failed', outcome: '', reason: 'network', certainty: '', requestId };
+            }
         }
         const result = interpret(answer.status, answer.body);
         if (result.ok) {
             result.state = 'cancelled';
+            meState = null;
+            checks.clear();
             emit({ type: 'cancel', requestId, result });
         }
-        return result;
+        return accepted ? { ...result, stale: true, accepted: true } : result;
     }
 
     /**
@@ -501,7 +536,7 @@
         return block && typeof block.reason === 'string' ? block : null;
     }
 
-    /** @type {Map<string, {at: number, epoch: number, promise: Promise<Object|null>}>} title checks by key|variant, briefly */
+    /** @type {Map<string, {at: number, epoch: string, promise: Promise<Object|null>}>} title checks by key|variant (cacheEpoch), briefly */
     const checks = new Map();
     /** How long a title check is reused. */
     const CHECK_TTL_MS = 30000;
@@ -519,7 +554,7 @@
         const edition = variant === '4k' ? '4k' : 'standard';
         const id = `${key}|${edition}`;
         const now = Date.now();
-        const current = epoch();
+        const current = cacheEpoch();
         const hit = checks.get(id);
         if (hit && hit.epoch === current && now - hit.at < CHECK_TTL_MS) return hit.promise;
         const promise = call(`/acquire/requests/check?key=${encodeURIComponent(key)}&variant=${edition}`)
@@ -668,12 +703,15 @@
      */
     async function adminSearch(key, instanceId, options) {
         let answer;
+        let accepted = false;
         try {
             answer = await call('/arr/admin/manage/search', { method: 'POST', body: { instanceId, key, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            if (err?.name === 'AbortError') throw err;
-            const text = tr('arr_manage_search_failed', { message: err?.message || String(err) });
-            return { ok: false, state: 'failed', chip: '', text, tone: 'attention' };
+            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said).
+            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
+            if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            else if (err?.name === 'AbortError') throw err;
+            else return { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: err?.message || String(err) }), tone: 'attention' };
         }
         const body = answer.body || {};
         let result;
@@ -688,7 +726,7 @@
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
         if (result.ok) emit({ type: 'search', key, result });
-        return result;
+        return accepted ? { ...result, stale: true, accepted: true } : result;
     }
 
     /**
@@ -706,11 +744,15 @@
         const k = String(key || '');
         if (!(k.startsWith('movie:') ? !/:s\d+/.test(k) : /^tv:[^:]+:[^:]+(:s\d+(:e\d+)?)?$/.test(k))) return null;
         let answer;
+        let accepted = false;
         try {
             answer = await call('/acquire/requests/search', { method: 'POST', body: { key: k, idempotencyKey: newClientId() }, bound: options?.bound });
         } catch (err) {
-            if (err?.name === 'AbortError') throw err;
-            return null;
+            // Three outcomes (D46S2-R11-9): taken after its owner ended → reconciled below (`accepted`, nothing said).
+            const written = options?.bound && JE.core.api.writeOutcome ? JE.core.api.writeOutcome(err) : null;
+            if (written?.outcome === 'accepted' && !written.sessionChanged) { answer = written.answer || { status: 0, body: null }; accepted = true; }
+            else if (err?.name === 'AbortError') throw err;
+            else return null;
         }
         const body = answer.body || {};
         let result;
@@ -731,7 +773,7 @@
             result = { ok: true, state: 'running', chip: tr('arr_search_running_chip'), text: tr('arr_search_running'), tone: 'looking' };
         }
         if (result.ok) emit({ type: 'search', key: k, result });
-        return result;
+        return accepted ? { ...result, stale: true, accepted: true } : result;
     }
 
     /**

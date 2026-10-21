@@ -878,17 +878,19 @@
     }
 
     /**
-     * The one bound-request check: the request's own session must still be the signed-in one and its owner's
-     * current() (when given) must be true. Used as the request's session assertion, so the transport runs it
-     * immediately before every send and again before the answer is published.
-     * @param {{session: RequestSession, current?: () => boolean}} bound
+     * The one bound-request check: an owned write's token may still write by the core's own record (`owned`), the
+     * request's own session must still be the signed-in one and its owner's current() (when given) must be true. Used
+     * as the request's session assertion, so the transport runs it immediately before every send and again before the
+     * answer is published.
+     * @param {{session: RequestSession, current?: () => boolean, token?: object}} bound
+     * @param {boolean} [owned] A title-action write (OWNED_WRITES): its token is checked too.
      * @returns {(() => void) & {userId: string, token: string}}
      */
-    function bindRequest(bound) {
+    function bindRequest(bound, owned = false) {
         const owner = bound?.session;
         if (!owner || typeof owner.current !== 'function') throw new TypeError('A bound request needs the session that asked for it');
         return Object.assign(() => {
-            if (!owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
+            if ((owned && !JE.mayWrite(bound.token, owner)) || !owner.current() || (bound.current && bound.current() !== true)) throw createAbortError();
         }, { userId: owner.userId, token: owner.token });
     }
 
@@ -999,8 +1001,11 @@
 
         const isWrite = !/^(GET|HEAD)$/i.test(method);
         // A title-action write goes out only with an owner token's binding (D46S2-R10-1): one without (a planted or
-        // dropped owner) is refused before any byte goes out.
-        if (isWrite && OWNED_WRITES.test(url) && !(bound && JE.isOwnerToken?.(bound.token))) {
+        // dropped owner) is refused before any byte goes out. The token's own state decides (D46S2-R11-3): the core's
+        // record of it (minted by the core, not ended, its session the signed-in one, its write lifetime) and the binding
+        // naming that token's own session; the binding's predicate can only restrict further.
+        const owned = isWrite && OWNED_WRITES.test(url);
+        if (owned && !(bound && JE.isOwnerToken?.(bound.token))) {
             const message = `Jellyfin Enhanced: ${method} ${url} was sent without its owner's binding`;
             if (JE.strictOwners === true) throw new Error(message);
             if (JE.strictOwners === 'record') (JE.refusals = JE.refusals || []).push(message); else console.error(message);
@@ -1009,9 +1014,11 @@
         // A write without its binding while an operation acts (its press, runner or publication callback) dropped that
         // operation's owner: refused at the send, before any byte goes out (D46S2-R9-4).
         if (!bound && isWrite && JE.refuseUnboundWrite?.(`${method} ${url}`)) throw createUnsentAbort();
+        if (owned && !JE.mayWrite(bound.token, bound.session)) throw createUnsentAbort();
         // A bound request is checked against its own session before anything else (it may have been made after
-        // another account signed in); the live identity is then recorded as for any request.
-        const boundSession = bound ? bindRequest(bound) : null;
+        // another account signed in); the live identity is then recorded as for any request. An owned write's token is
+        // checked again by the core right before it is sent (its predicate after the core's).
+        const boundSession = bound ? bindRequest(bound, owned) : null;
         if (boundSession) {
             try { boundSession(); } catch (error) { throw isWrite ? createUnsentAbort() : error; }
         }
@@ -1224,6 +1231,12 @@
         authHeaders,
         isPresentationAbort,
         writeOutcome,
+        /**
+         * A resource family's write epoch (D46S2-R11-9): moved when a write of it is sent and when it is answered. A
+         * module cache keyed by it never answers a read that starts after a write from one that started before it.
+         * @param {string} family 'jellyseerr', 'acquire', 'arr' or 'spoiler-blur'.
+         */
+        writeEpoch: family => writeEpochs.get(family) || 0,
         manager
     };
 

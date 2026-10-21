@@ -32,6 +32,8 @@
     /** @type {Map<string, {at: number, promise: Promise<Object|null>}>} quota by media type, briefly */
     const quotas = new Map();
     const busy = new Set();
+    /** The owner of each action button's latest press (D46S2-R11): run() asks for it. Weak: a button that goes, goes. */
+    const presses = new WeakMap();
     let generation = 0;
     let listening = false;
 
@@ -368,7 +370,11 @@
             e.preventDefault();
             e.stopPropagation();
             if (busy.has(doneKey)) return;
-            onClick(b, JE.ownerOf(e));
+            // The press's owner (D46S2-R11): what the button asks or searches is its, and so is what is said after.
+            const owner = JE.ownerOf(e);
+            if (!owner) return;
+            presses.set(b, owner);
+            onClick(b, owner);
         });
         return b;
     }
@@ -391,6 +397,9 @@
      * @returns {Promise<void>}
      */
     async function run(button, doneKey, makeInput, type) {
+        const owner = presses.get(button);
+        if (!owner) return;
+        const submitted = JE.captureSubmitted(owner);
         busy.add(doneKey);
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
@@ -404,16 +413,18 @@
         try {
             const input = await makeInput();
             if (sessionEpoch() !== started) result = { stale: true };
-            else if (input) result = await JE.arrAsk.ask(input);
+            else if (input) result = await JE.arrAsk.ask(input, { bound: submitted.bound() });
             else result = { ok: true, state: 'nothing' };
         } catch {
             result = { ok: false, state: 'failed' };
         } finally {
             busy.delete(doneKey);
         }
-        if (result.stale) return;
+        // Never sent, or taken after its owner ended: nothing is said (D46S2-R11-8, -9).
+        if (result.stale || !submitted.current()) return;
         const caps = await JE.arrAsk.me();
         const allowance = result.state === 'quota' ? await JE.arrAsk.quota(type) : null;
+        if (!submitted.current()) return;
         const words = JE.arrAsk.describe(result, caps, allowance);
         JE.arrAsk.toast(words.text);
         quotas.clear();
@@ -469,7 +480,14 @@
             button.disabled = false;
             button.removeAttribute('aria-busy');
             if (text) text.textContent = label;
-            if (fallback) await fallback();
+            if (fallback && JE.effectOwner(owner, 'a Search')) await fallback();
+            return;
+        }
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (result.stale || !JE.effectOwner(owner, 'a Search')) {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            if (text) text.textContent = label;
             return;
         }
         JE.arrAsk.toast(result.text);
@@ -699,7 +717,7 @@
      * @returns {Promise<void>}
      */
     async function openSheet(button, status, plan, owner) {
-        if (!JE.arrAskSheet) return;
+        if (!JE.arrAskSheet || !owner) return;
         const item = await loadItem(status.itemId);
         let seasons = plan.seasons;
         let latest = plan.latestSeason;
@@ -710,6 +728,8 @@
             latest = tmdb.latest;
             upcoming = tmdb.upcoming;
         }
+        // The sheet is the press's surface: admitted only while its owner is current (checked again by the sheet).
+        if (!JE.effectOwner(owner, 'the request sheet')) return;
         const result = await JE.arrAskSheet.open({
             key: JE.arrAsk.seriesKey(status.key),
             kind: 'series',

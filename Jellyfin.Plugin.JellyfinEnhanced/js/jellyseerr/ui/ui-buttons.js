@@ -23,6 +23,8 @@
      * @param {boolean} jellyseerrUserFound - If the current user is linked.
      */
     function configureRequestButton(button, item, isJellyseerrActive, jellyseerrUserFound) {
+        // Drawn for this session, route and document (D46S2-R11-1): a press after any of them changed grants nothing.
+        JE.mountControl?.(button);
         // Results can refresh the same button with new data or a new user status.
         // Remove the old closure so one click cannot submit twice or use stale media.
         const previousHandler = requestHandlers.get(button);
@@ -106,6 +108,7 @@
         if (show4KOption && !button.closest('.jellyseerr-button-group')) {
             const buttonGroup = document.createElement('div');
             buttonGroup.className = 'jellyseerr-button-group';
+            JE.mountControl?.(buttonGroup);
 
             const mainButton = button.cloneNode(true);
             mainButton.classList.add('jellyseerr-split-main');
@@ -164,6 +167,7 @@
             // Create button group
             const buttonGroup = document.createElement('div');
             buttonGroup.className = 'jellyseerr-button-group';
+            JE.mountControl?.(buttonGroup);
 
             const hasMainDownloads = item.mediaInfo?.downloadStatus?.length > 0 || item.mediaInfo?.downloadStatus4k?.length > 0;
             const mainDisplayStatus = JE.seerrStatus.resolveDisplayStatus(status, hasMainDownloads);
@@ -210,6 +214,8 @@
             if (!mainButtonDisabled) {
                 const requestHandler = async (e) => {
                     e.stopPropagation();
+                    // A click no one made (a script's, or one that is no one's: D46S2-R11-1) does nothing, the button stays.
+                    if (!JE.ownerOf(e)) return;
                     // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
                     const submitted = JE.captureSubmitted(e);
                     const origin = mainButton.closest('.jellyseerr-card') || mainButton;
@@ -283,6 +289,8 @@
             const requestHandler = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // A click no one made (a script's, or one that is no one's: D46S2-R11-1) does nothing, the button stays.
+                if (!JE.ownerOf(e)) return;
                 // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
                 const submitted = JE.captureSubmitted(e);
                 const origin = button.closest('.jellyseerr-card') || button;

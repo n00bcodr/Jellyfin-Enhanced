@@ -1473,7 +1473,8 @@
             // Native fields are owned by jellyfin-web. Drop their old DOM before its fresh page read.
             state.page.replaceChildren();
             dispose();
-            JE.internals.spoilerGuard?.scheduleFullReload?.();
+            // The reload is this page's own step: it happens only while this page is still the one shown (D46S2-R11-6).
+            JE.internals.spoilerGuard?.scheduleFullReload?.(JE.operation());
         });
         JE.session?.onUserChange?.('native-details', () => { cancelPendingModal(); dispose(); });
     }

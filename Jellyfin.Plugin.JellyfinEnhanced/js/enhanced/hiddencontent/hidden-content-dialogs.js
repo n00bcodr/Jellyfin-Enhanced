@@ -74,12 +74,14 @@
         undoBtn.textContent = JE.t('hidden_content_undo');
         let dismissTimer;
         const release = action.onCancel(() => { clearTimeout(dismissTimer); toast.remove(); });
-        undoBtn.addEventListener('click', async () => {
-            if (!action.current()) return;
+        undoBtn.addEventListener('click', async (e) => {
+            // Undo is the press's write (D46S2-R11-4): a click no one made undoes nothing.
+            const owner = JE.ownerOf(e);
+            if (!owner || !action.current()) return;
             clearTimeout(dismissTimer);
             undoBtn.disabled = true;
             try {
-                if (await unhideItem(itemId) === false) throw new Error('Undo failed');
+                if (await unhideItem(itemId, undefined, owner) === false) throw new Error('Undo failed');
                 if (!action.current()) return;
                 release();
                 toast.classList.remove('je-visible');
@@ -382,8 +384,9 @@
             if (e.target === overlay) closeDialog();
         });
 
+        // Only while it is the topmost surface (a host dialog over it keeps its own keys; D46S2-R11-10).
         const escHandler = (e) => {
-            if (e.key === 'Escape') closeDialog();
+            if (e.key === 'Escape' && JE.isTopmostSurface(overlay)) closeDialog();
         };
         document.addEventListener('keydown', escHandler);
 

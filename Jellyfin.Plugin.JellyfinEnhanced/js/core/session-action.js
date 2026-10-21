@@ -88,7 +88,11 @@
     // Authority is explicit: every effect takes a token minted here. There is no ambient owner (no JE.NATIVE, no
     // window.event, no "the node is on the page"). A token is current while its lifetimes hold, its mount (when given)
     // says so and its parent is current; once it is not, it never is again.
+    // The core decides (D46S2-R11-1..3): whether a token is current or may write comes from the core's own record of it,
+    // never from the token object or a binding a caller hands back (their methods are conveniences for the holder; a
+    // caller's predicate can only further restrict).
     const minted = new WeakSet();
+    const records = new WeakMap();
     /**
      * Mints an owner token. kind: 'operation' (a title action's submitted work), 'native' (a viewer's own gesture, see
      * {@link JE.nativeFrom}) or 'publication' (an answer's handle, see {@link JE.publication}). `parent`: its ancestry
@@ -98,39 +102,56 @@
         const born = { route: observe(), document: documentGeneration };
         let ended = false;
         let stopped = false;
+        const parentRecord = parent ? records.get(parent) : null;
+        const current = () => {
+            if (!ended && (observe() !== born.route || documentGeneration !== born.document || !session.current() ||
+                (mount && mount() === false) || (parentRecord && parentRecord.current() === false))) ended = true;
+            return !ended;
+        };
+        // It may still write (D46S2 audit S3): an operation or publication while current; a viewer's own gesture while
+        // its session is the signed-in one (the viewer asked for the write; its page effects still end with its route).
+        const writable = () => kind === 'native' ? session.current() && !stopped : current();
         const token = {
             kind, native: kind === 'native', parent, session,
             /** Its root: the token at the top of its ancestry (a publication's operation, or a native gesture). */
             get root() { let t = token; while (t.parent) t = t.parent; return t; },
-            current() {
-                if (!ended && (observe() !== born.route || documentGeneration !== born.document || !session.current() ||
-                    (mount && mount() === false) || (parent && parent.current() === false))) ended = true;
-                return !ended;
-            },
+            current,
             /** Its session is still the signed-in one (an accepted write reconciles into that session's state). */
             sessionCurrent: () => session.current(),
-            /**
-             * It may still write (D46S2 audit S3): an operation or publication while current; a viewer's own gesture
-             * while its session is the signed-in one (the viewer asked for the write; its page effects still end with
-             * its route).
-             */
-            writable: () => kind === 'native' ? session.current() && !stopped : token.current(),
+            writable,
             end() { ended = stopped = true; sweep(); },
             /**
              * The core transport binding of a write this token owns: sent only while the token may write (an operation
              * or publication: while it is current; a viewer's own gesture: while its session is the signed-in one, since
              * the viewer asked for it) and `check()` (when given) is true, checked right before the bytes go out.
              */
-            bound: check => Object.freeze({ session, token, current: () => token.writable() && (!check || check() === true) }),
-            bind: callback => (...args) => token.current() ? callback(...args) : false,
+            bound: check => Object.freeze({ session, token, current: () => writable() && (!check || check() === true) }),
+            bind: callback => (...args) => current() ? callback(...args) : false,
             onCancel: dismiss => { dismissals.add(dismiss); return () => dismissals.delete(dismiss); },
             /** A token serializes as its kind only (it is a capability, never data). */
             toJSON: () => ({ owner: kind }),
         };
         minted.add(token);
+        records.set(token, { kind, session, parent, current, writable });
         return token;
     }
     JE.isOwnerToken = x => !!x && typeof x === 'object' && minted.has(x);
+    /** Current now, by the core's record of `x` (false for anything the core did not mint). */
+    const isCurrent = x => records.get(x)?.current() === true;
+    /** The root record of a minted token's ancestry. */
+    const rootRecord = x => { let r = records.get(x); while (r?.parent) r = records.get(r.parent); return r || null; };
+    const nativeRoot = x => rootRecord(x)?.kind === 'native';
+    /** A minted token by the core's record; anything else (a caller's own state object) by its own current(). */
+    const holds = x => records.has(x) ? isCurrent(x) : x?.current?.() !== false;
+    /**
+     * The transport's own check of an owned write (D46S2-R11-3): `token` is one the core minted and may write now (not
+     * ended, its session the signed-in one, its write lifetime), by the core's record; `session` (when given) must be
+     * that token's own session. A binding's predicate is checked as well, never instead.
+     */
+    JE.mayWrite = (token, session) => {
+        const record = records.get(token);
+        return !!record && (session === undefined || session === record.session) && record.writable() === true;
+    };
 
     // Who is acting right now — RESTRICTIONS only, never authority (D46S2-R10-3): while an operation's press, runner or
     // publication callback runs synchronously, a native owner named, an unbound write sent, or a binding made there is
@@ -142,28 +163,99 @@
         try { return fn(); } finally { acting.pop(); }
     }
 
-    // Native tokens minted per gesture: a trusted event gives one token, also when asked again after an await.
+    // ------------------------------------------------------------------ gestures (D46S2-R11-1, -2)
+    // A native owner comes only from the viewer's own gesture, decided here from what the core itself observed:
+    // - a TRUSTED event (the browser's own; a re-dispatch makes it untrusted), checked at every lookup;
+    // - or the host's own activation of the focused control, verified: jellyfin-web (10.11.11 and 12.2, its
+    //   gamepad-to-key and keyboard navigation modules) turns a gamepad's OK into a keyup Event {key 'GamepadA', keyCode
+    //   13} on the focused element followed, in the same call, by that element's click(); and a UWP gamepad's OK (a
+    //   trusted keydown, keyCode 195) into inputManager's select: click() on the focused element inside that keydown's
+    //   dispatch. Only the first click after that key event, on the same focused element, while nothing of JE's acts.
+    // Focus alone never grants; a plain object never grants; a token is remembered per event only for the same target
+    // and the same dispatch, and never consulted inside an operation.
+    const GESTURE_TYPES = ['click', 'auxclick', 'dblclick', 'contextmenu', 'keydown', 'keyup', 'pointerdown', 'pointerup',
+        'mousedown', 'mouseup', 'touchstart', 'touchend', 'submit', 'change', 'input'];
+    // Each gesture event object's dispatches as the core saw them (window, capture: before any other listener).
+    const dispatches = new WeakMap();
+    let armed = null;
+    const count = event => { dispatches.set(event, (dispatches.get(event) || 0) + 1); };
+    for (const type of GESTURE_TYPES) window.addEventListener(type, count, true);
+    /** The host's activation chain started on `event.target` (the focused element). */
+    function arm(event, during) {
+        const target = event.target;
+        if (!target || target.nodeType !== 1 || target !== document.activeElement) { armed = null; return; }
+        const mine = armed = { target, key: event, during, click: null };
+        // The gamepad's click() follows in the same call: nothing later (another task, a JE continuation) is it.
+        if (!during) queueMicrotask(() => { if (armed === mine) armed = null; });
+    }
+    window.addEventListener('keyup', event => { if (!event.isTrusted && event.key === 'GamepadA' && event.keyCode === 13) arm(event, false); }, true);
+    window.addEventListener('keydown', event => {
+        if (event.isTrusted && event.keyCode === 195) arm(event, true);
+        else if (armed && armed.key !== event) armed = null;
+    }, true);
+    window.addEventListener('click', event => {
+        if (!armed) return;
+        // Only the first click after the key event is the host's.
+        if (armed.click || event.isTrusted) armed = null; else armed.click = event;
+    }, true);
+    /** True once for the click jellyfin-web's own activation chain made (consumed). */
+    function hostActivation(event) {
+        const chain = armed;
+        if (!chain || chain.click !== event || event.type !== 'click' || event.target !== chain.target ||
+            chain.target !== document.activeElement || (chain.during && chain.key.eventPhase === 0)) return false;
+        armed = null;
+        return true;
+    }
+    // Controls drawn for the viewer (D46S2-R11-1): a gesture grants authority over one only while its mount is current —
+    // the session it was drawn for, on the page it was drawn for (its semantic route: a view jellyfin-web keeps and shows
+    // again is the same page, with its controls live again; one drawn for another account never is).
+    const mounts = new WeakMap();
+    /** Marks `node` (a control or the card/row holding controls) as drawn now. Returns it. */
+    JE.mountControl = function (node) {
+        if (node && node.nodeType === 1) mounts.set(node, { session: captureSession(), page: routeKey() });
+        return node;
+    };
+    /** The nearest mount of `node` is still current (true when none was recorded: jellyfin-web's own controls). */
+    function mountCurrent(node) {
+        for (let n = node; n; n = n.parentNode || n.host) {
+            const mount = mounts.get(n);
+            if (mount) return mount.session.current() && mount.page === routeKey();
+        }
+        return true;
+    }
+
+    // Native tokens minted per gesture: one per event, for its target and dispatch.
     const gestures = new WeakMap();
     /**
-     * The native owner of a viewer's gesture (D46S2-R10-1/2): minted only from a TRUSTED event (the browser's own, not
-     * JE's re-dispatched or synthetic ones, not a title action's press), or the host's activation of the focused
-     * control (a gamepad's OK), while it is being dispatched and no JE press or runner is; asked again for
-     * the same event later (after an await), the same token comes back, with the lifetimes it had at the gesture. Its
-     * lifetimes: the session, the document and the semantic route of the gesture. Null otherwise.
+     * True for an event someone made (D46S2-R11-1): a trusted one (asked again later: while it is still trusted), or the
+     * host's verified activation of the focused control (remembered for that target and dispatch only).
+     */
+    function gesture(event) {
+        if (event.isTrusted === true) return true;
+        const known = gestures.get(event);
+        if (known) return known.activation && known.target === event.target && known.dispatch === (dispatches.get(event) || 0);
+        if (!hostActivation(event)) return false;
+        gestures.set(event, { token: null, target: event.target, dispatch: dispatches.get(event) || 0, activation: true });
+        return true;
+    }
+    /**
+     * The native owner of a viewer's gesture (see above): minted only while the event is dispatched, from a trusted
+     * event or the host's verified activation, on a control whose mount is current, while no JE press, runner or
+     * publication callback acts (inside one: refused, before anything is remembered or consulted). Asked again for the
+     * same event later (after an await), the same token comes back only for the same target and the same dispatch, and
+     * for a trusted one only while it is still trusted. Its lifetimes: the session, the document and the semantic route
+     * of the gesture. Null otherwise.
      */
     JE.nativeFrom = function (event) {
-        if (!event || typeof event !== 'object' || typeof event.type !== 'string') return null;
-        const known = gestures.get(event);
-        if (known) return known;
-        if (presses.has(event) || event.eventPhase === 0) return null;
-        // The host's own activation of the focused control is the viewer's too: jellyfin-web turns a gamepad's (or a
-        // TV remote's) OK into a click() on the focused element, which the browser marks untrusted. Only that: a click
-        // on the element that has focus, outside every JE dispatch (Q-D46S2FIX10-2).
-        const activation = event.type === 'click' && event.target === document.activeElement && event.target !== document.body;
-        if (event.isTrusted !== true && !activation) return null;
+        if (!(event instanceof Event) || presses.has(event) || !gesture(event)) return null;
         if (actingOperation()) return refused('a native owner was minted inside an operation (its owner was dropped)');
+        const known = gestures.get(event);
+        const dispatch = dispatches.get(event) || 0;
+        if (known && (known.target !== event.target || known.dispatch !== dispatch)) return null;
+        if (known?.token) return known.token;
+        if (event.eventPhase === 0 || !mountCurrent(event.target)) return null;
         const token = mint('native');
-        gestures.set(event, token);
+        gestures.set(event, { token, target: event.target, dispatch, activation: event.isTrusted !== true });
         return token;
     };
 
@@ -178,7 +270,7 @@
     JE.routeOwner = function (expected, reason) {
         if (actingOperation()) return refused(`a route owner (${reason}) was named inside an operation (its owner was dropped)`);
         if (routeKey() !== expected) return null;
-        if (!routeToken || !routeToken.current()) routeToken = mint('native');
+        if (!routeToken || !isCurrent(routeToken)) routeToken = mint('native');
         return routeToken;
     };
     JE.routeKey = routeKey;
@@ -196,19 +288,23 @@
      * The owner `x` names, explicitly (D46S2-R10: nothing is ambient). A minted token: itself. Something holding one (a
      * captured action): its token. A node: the owner of the registered surface it is in (every JE surface registers,
      * native ones too), else none. An event: the token a title action pressed it with ({@link JE.press}); else the owner
-     * of the surface it happened in; else, for a trusted gesture only, the gesture's native token ({@link JE.nativeFrom}).
-     * Null: no owner.
+     * of the surface it happened in, for a gesture someone made (trusted, or the host's verified activation); else, for
+     * such a gesture, its native token ({@link JE.nativeFrom}). A script's or a re-dispatched event, and anything else (a
+     * plain object shaped like an event), names none. Null: no owner.
      */
     function ownerOf(x) {
         if (!x || typeof x !== 'object') return null;
         if (minted.has(x)) return x;
         if (minted.has(x.owner)) return x.owner;
         if (typeof x.nodeType === 'number') return scopeOf(x);
-        if (typeof x.type === 'string' && 'target' in x) {
+        if (x instanceof Event) {
             const pressed = presses.get(x);
             if (pressed) return pressed;
-            // Inside a registered surface: that surface's owner (derived from where it happened, never minted). Else
-            // only a trusted gesture has an owner: its own native token.
+            // Only an event someone made names an owner (D46S2-R11-1): the viewer's own (trusted) or the host's verified
+            // activation. A script's click or a re-dispatched event names none, inside a surface too.
+            if (!gesture(x)) return null;
+            // Inside a registered surface: that surface's owner (derived from where it happened, never minted). Else the
+            // gesture's own native token.
             return scopeOf(x.composedPath?.()[0] || x.target) || JE.nativeFrom(x);
         }
         return null;
@@ -222,7 +318,7 @@
      */
     JE.requireOwner = (x, site) => {
         const owner = ownerOf(x) || missing(site || 'an owner-taking call');
-        return owner && owner.root.native && actingOperation() && !actingOperation().root.native
+        return owner && nativeRoot(owner) && actingOperation() && !nativeRoot(actingOperation())
             ? refused(`${site || 'an owner-taking call'} took a native owner inside an operation (its owner was dropped)`) : owner;
     };
     /**
@@ -231,7 +327,7 @@
      */
     JE.effectOwner = (x, site) => {
         const owner = JE.requireOwner(x, site);
-        return owner && owner.current() ? owner : null;
+        return owner && isCurrent(owner) ? owner : null;
     };
     /**
      * The checked runner: runs `fn` as `owner` only while it is current now; an operation's (or publication's) runner
@@ -240,7 +336,7 @@
     JE.runAs = function (owner, fn) {
         const resolved = JE.effectOwner(owner, 'runAs');
         if (!resolved) return undefined;
-        return resolved.root.native && resolved.kind === 'native' ? fn() : restricted(resolved, fn);
+        return records.get(resolved).kind === 'native' ? fn() : restricted(resolved, fn);
     };
     /** A timer through the checked runner: `fn` runs after `ms` only if `owner` is current then. Returns cancel(). */
     JE.later = function (owner, fn, ms) {
@@ -261,7 +357,7 @@
      */
     JE.refuseUnboundWrite = what => !!actingOperation() && refused(`${what} was sent without its binding inside an operation (its owner was dropped)`) === null;
     /** The operation an owner stands for (null for a native one). */
-    const operationOf = owner => owner && !owner.root.native ? owner : null;
+    const operationOf = owner => owner && !nativeRoot(owner) ? owner : null;
 
     /** Mints an operation token (a title action's submitted work); see mint. */
     JE.operation = options => mint('operation', options);
@@ -289,10 +385,10 @@
     JE.captureSubmitted = function (owner) {
         const resolved = JE.requireOwner(owner, 'captureSubmitted');
         const operation = operationOf(resolved);
-        const current = () => !!resolved && resolved.current();
+        const current = () => !!resolved && isCurrent(resolved);
         return { owner: resolved, operation, current, session: resolved?.session || null,
             /** Its writes may still go out (see the token's writable()). */
-            writable: () => !!resolved && resolved.writable(),
+            writable: () => !!resolved && JE.mayWrite(resolved),
             bound: check => resolved ? resolved.bound(check) : Object.freeze({ session: captureSession(), current: () => false }) };
     };
 
@@ -322,12 +418,50 @@
         const resolved = JE.effectOwner(owner, site || 'a surface');
         return resolved && (!intent || intent() === true) ? resolved : null;
     };
+    // Focus (D46S2-R11-12): opening a surface moves focus into it; Tab (and jellyfin-web's D-pad: a `focuscontainer`)
+    // stays inside the topmost one; closing gives focus back to its opener while that is still live, else to the next
+    // surface down, else to what held the opener (its card, row or page), else to the page.
+    const FOCUSABLE = 'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]';
+    /** The controls of `root` focus can be on, in order (enabled, not hidden, not inert, not tabindex -1). */
+    const focusables = root => [...root.querySelectorAll(FOCUSABLE)].filter(n => !n.disabled && n.tabIndex >= 0 &&
+        !n.closest('[hidden], [inert], .hide') && n.style.display !== 'none' && n.style.visibility !== 'hidden');
+    /** Focuses the first of `nodes` that takes focus; true when one did. */
+    function focusFirst(nodes) {
+        for (const node of nodes) {
+            try { node.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
+            if (document.activeElement === node) return true;
+        }
+        return false;
+    }
+    /** Moves focus into `root` unless it is already there: its [autofocus] control, else its first control, else itself. */
+    function focusInto(root) {
+        if (!root.isConnected || root.contains(document.activeElement)) return;
+        const preferred = root.querySelector('[autofocus]');
+        if (focusFirst([...(preferred ? [preferred] : []), ...focusables(root)])) return;
+        if (!root.hasAttribute('tabindex')) root.setAttribute('tabindex', '-1');
+        focusFirst([root]);
+    }
+    /** A control focus may go back to: connected, enabled, not inert and not inside a closed surface. */
+    const live = node => !!node?.isConnected && typeof node.focus === 'function' && !node.disabled && !node.closest('[inert]') &&
+        !(node.closest && [...stack].some(entry => entry.closed && entry.root.contains(node)));
+    /** Where focus goes when a surface closes (see above). */
+    function restoreFocus(entry) {
+        if (live(entry.opener) && focusFirst([entry.opener])) return;
+        const below = topmost();
+        if (below) { if (!below.host) focusInto(below.root); return; }
+        const holder = entry.holder?.isConnected ? entry.holder : document.querySelector('.mainAnimatedPage:not(.hide), .page:not(.hide)');
+        if (holder && focusFirst(focusables(holder))) return;
+        document.activeElement?.blur?.();
+    }
+
     /**
      * Registers an admitted surface `root` for `owner` (see admitSurface; an owner that is not current is rejected:
-     * null, and `close()` runs at once for a caller that drew it already). `close()` closes it; `options.opener`: the control focus goes back to;
-     * `options.dismiss`: what Escape / Back do while it is topmost (default close). Once the owner ends, the surface
-     * takes no more input and closes at the next lifecycle step. Returns release() for a normal close (the surface
-     * leaves the stack, turns inert and gives focus back), or null when rejected.
+     * null, and `close()` runs at once for a caller that drew it already). `close()` closes it; `options.opener`: the
+     * control focus goes back to (default: the focused one); `options.dismiss`: what Escape and every Back key do while
+     * it is topmost (default close). It joins the one surface stack, takes focus (once it is in the document) and keeps
+     * the host's D-pad inside it. Once the owner ends, the surface takes no more input and closes at the next lifecycle
+     * step. Returns release() for a normal close (the surface leaves the stack and every registry, turns inert and gives
+     * focus back), or null when rejected.
      */
     JE.openSurface = function (root, close, owner, options = {}) {
         if (!root) return null;
@@ -338,7 +472,8 @@
         let surfaces = scopes.get(resolved);
         if (!surfaces) scopes.set(resolved, surfaces = new Set());
         const opener = options.opener || (document.activeElement !== document.body ? document.activeElement : null);
-        const entry = { root, owner: resolved, dismiss: options.dismiss || null, closed: false, close: null, release: null };
+        const entry = { root, owner: resolved, dismiss: options.dismiss || null, closed: false, close: null, release: null, opener,
+            holder: opener?.closest?.('.card, .jellyseerr-card, .mainDetailButtons, .detailButtons, .je-more-info-modal, .page') || null };
         entry.release = () => {
             if (entry.closed) return;
             entry.closed = true;
@@ -349,26 +484,59 @@
             root.setAttribute('inert', '');
             root._jeClosed = true;
             const focused = document.activeElement;
-            if ((!focused || focused === document.body || root.contains(focused)) && opener?.isConnected && typeof opener.focus === 'function') {
-                try { opener.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
-            }
+            if (!focused || focused === document.body || root.contains(focused)) restoreFocus(entry);
+            entry.opener = entry.holder = null;
         };
         entry.close = () => { if (entry.closed) return; entry.release(); close(); };
         surfaces.add(entry);
         stack.push(entry);
+        watchHost();
+        root.classList.add('focuscontainer');
+        // Its opener draws it now (it may be appended after this call): focus moves in once it is in the document.
+        queueMicrotask(() => { if (!entry.closed && JE.isTopmostSurface(root)) focusInto(root); });
         JE.rejectEnded(root, event => {
             // A press dispatched inside it for another, current owner (an owned control of a closed sheet) is that owner's.
             const pressed = event && presses.get(event);
-            if (pressed && pressed !== resolved && pressed.current()) return false;
+            if (pressed && pressed !== resolved && isCurrent(pressed)) return false;
             // Closed: terminal, it takes no input. Else only while its owner is current.
             if (entry.closed) return event.type !== 'keydown';
-            return !resolved.current();
+            return !isCurrent(resolved);
         }, entry.close);
         return entry.release;
     };
+
+    // Dismissal keys (D46S2-R11-11): every key jellyfin-web turns into Back (its keyboard navigation and input manager on
+    // 10.11.11 and 12.2: keyCode 461 and 10009, TV-layout Escape (27, also a gamepad's B through its gamepad-to-key) and a
+    // UWP gamepad's B (196), Backspace on Hisense VIDAA TVs; plus the browser's own Back key) dismisses the topmost JE
+    // surface only, and is consumed before jellyfin-web's router (its window keydown listener ignores a prevented key)
+    // or the browser sees it. Escape closes a JE surface on every layout. A host dialog on top keeps its own keys.
+    const VIDAA = /vidaa/i.test(navigator.userAgent || '');
+    const editable = node => !!node && (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName) || node.isContentEditable);
+    /** True for a key jellyfin-web (or the browser) treats as Back. */
+    const dismissalKey = event => [27, 196, 461, 10009].includes(event.keyCode) || ['Escape', 'GoBack', 'BrowserBack'].includes(event.key) ||
+        event.code === 'BrowserBack' || (VIDAA && event.key === 'Backspace' && !editable(event.target));
+    JE.isDismissalKey = dismissalKey;
+    window.addEventListener('keydown', event => {
+        const top = topmost();
+        if (!top || top.host || event.defaultPrevented) return;
+        if (dismissalKey(event)) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            if (top.dismiss) top.dismiss(event); else top.close();
+            return;
+        }
+        if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey) return;
+        // Tab stays inside the topmost surface: from outside it, or past either end, focus wraps inside.
+        const controls = focusables(top.root);
+        const active = document.activeElement;
+        const inside = top.root.contains(active);
+        const edge = event.shiftKey ? controls[0] : controls[controls.length - 1];
+        if (inside && controls.length && active !== edge && active !== top.root) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!controls.length) { focusInto(top.root); return; }
+        focusFirst(event.shiftKey ? [controls[controls.length - 1]] : [controls[0]]);
+    }, true);
     // ------------------------------------------------------------------ popups (audit S6: a real popup lifecycle)
     const POPUP_MARGIN = 8;
-    const BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack'];
     /**
      * Places `popup` next to `anchor`, measured: below it when it fits in the viewport, else above it, else clamped
      * inside the viewport; never wider than the viewport, its left edge kept inside it. False once the anchor has gone.
@@ -411,25 +579,18 @@
             const current = life; life = null;
             window.removeEventListener('scroll', current.follow, true);
             window.removeEventListener('resize', current.follow);
-            document.removeEventListener('keydown', current.onKey, true);
             current.release?.();
         };
+        // Escape and every Back key reach it through the surface stack while it is topmost (its focus goes back to its
+        // opener as it closes).
         const release = JE.openSurface(popup, () => { finish(); close(); }, admitted, { opener });
         if (!release) return null;
         const follow = () => { if (life && !JE.placePopup(popup, anchor, { gap, matchWidth })) { finish(); close(); } };
-        const onKey = e => {
-            if (!life || !(BACK_KEYS.includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) || !JE.isTopmostSurface(popup)) return;
-            e.preventDefault(); e.stopImmediatePropagation();
-            const focused = popup.contains(document.activeElement) || document.activeElement === opener;
-            finish(); close();
-            if (focused && opener?.isConnected) opener.focus();
-        };
-        life = { release, follow, onKey };
+        life = { release, follow };
         if (!popup.isConnected) document.body.appendChild(popup);
         JE.placePopup(popup, anchor, { gap, matchWidth });
         window.addEventListener('scroll', follow, true);
         window.addEventListener('resize', follow);
-        document.addEventListener('keydown', onKey, true);
         if (keyboard) popup.querySelector('button:not(:disabled), [tabindex="0"]')?.focus();
         return finish;
     };
@@ -447,7 +608,7 @@
     /** Closes every registered surface whose owner has ended; each lifecycle step (route, user, document, mount) calls it. */
     JE.endScopes = function () {
         for (const [owner, surfaces] of [...scopes]) {
-            if (owner.current()) continue;
+            if (isCurrent(owner)) continue;
             for (const entry of [...surfaces]) { try { entry.close(); } catch (error) { console.error('Jellyfin Enhanced: closing an ended surface failed', error); } }
         }
     };
@@ -471,27 +632,48 @@
     }
     const openings = new Map();
     let markers = 0;
-    let hostObserver = null;
     // Zero-width marks: U+2060 frames the opening's number in U+200B (0) / U+200C (1).
-    const markOf = n => '⁠' + n.toString(2).replace(/0/g, '​').replace(/1/g, '‌') + '⁠';
-    function hostArrived(records) {
-        for (const record of records) for (const node of record.addedNodes) {
-            if (node.nodeType !== 1 || !node.matches(HOST_DIALOG)) continue;
-            const text = node.textContent || '';
-            for (const [mark, opening] of openings) {
-                if (!text.includes(mark)) continue;
-                openings.delete(mark);
-                opening.arrive(node);
-                break;
+    const markOf = n => '\u2060' + n.toString(2).replace(/0/g, '\u200b').replace(/1/g, '\u200c') + '\u2060';
+    // The host's dialogs on the one surface stack (D46S2-R11-10): a host dialog that arrives while a JE surface is open
+    // is registered on arrival (topmost: Escape and Back are the host's, nothing under it takes them) and released when
+    // the host removes it; an opening's claim on its own dialog (see openHostDialog) is released with it. No record or
+    // node outlives the dialog.
+    const claims = new Map();
+    let hostObserver = null;
+    function hostChanged(records) {
+        for (const record of records) {
+            for (const node of record.addedNodes) {
+                if (node.nodeType !== 1 || !node.matches(HOST_DIALOG)) continue;
+                const text = node.textContent || '';
+                for (const [mark, opening] of openings) {
+                    if (!text.includes(mark)) continue;
+                    openings.delete(mark);
+                    opening.arrive(node);
+                    break;
+                }
+                if (node.isConnected && stack.some(entry => !entry.host && !entry.closed) && !stack.some(entry => entry.root === node))
+                    stack.push({ root: node, host: true, closed: false, close: () => dismissHostDialog(node) });
+            }
+            for (const node of record.removedNodes) {
+                if (node.nodeType !== 1 || node.isConnected) continue;
+                const index = stack.findIndex(entry => entry.host && entry.root === node);
+                if (index >= 0) { stack[index].closed = true; stack.splice(index, 1); }
+                const claim = claims.get(node);
+                if (claim) { claims.delete(node); claim(); }
             }
         }
-        if (!openings.size && hostObserver) { hostObserver.disconnect(); hostObserver = null; }
+    }
+    /** Starts watching the body's children for host dialogs (once; the body's direct children only). */
+    function watchHost() {
+        if (hostObserver || !document.body) return;
+        hostObserver = new MutationObserver(hostChanged);
+        hostObserver.observe(document.body, { childList: true });
     }
     /**
      * Opens a host dialog for `owner` (required, D46S2-R7-4), a surface like every other: nothing opens unless the owner
      * is current at the call; `open(mark)` opens it and stamps its text with `mark(text)`; the dialog it opened is
-     * dismissed once its owner ends (one that attaches after that is dismissed as it arrives). Returns the host's result,
-     * or null when nothing opened.
+     * dismissed once its owner ends (one that attaches after that is dismissed as it arrives), and every record of it
+     * goes once the host removes it. Returns the host's result, or null when nothing opened.
      */
     JE.openHostDialog = function (open, owner) {
         const resolved = JE.effectOwner(owner, 'openHostDialog');
@@ -502,17 +684,21 @@
         const release = () => { surfaces.delete(entry); if (!surfaces.size && scopes.get(resolved) === surfaces) scopes.delete(resolved); };
         // Ended before its dialog arrived: the opening keeps waiting (up to its 5 s) and dismisses it on arrival.
         const entry = { node: null, ended: false, close: () => { entry.ended = true; release(); if (entry.node) dismissHostDialog(entry.node); } };
-        const opening = { arrive(node) { entry.node = node; if (entry.ended || !resolved.current()) dismissHostDialog(node); } };
+        const opening = { arrive(node) {
+            entry.node = node;
+            claims.set(node, () => { release(); entry.node = null; });
+            if (entry.ended || !isCurrent(resolved)) dismissHostDialog(node);
+        } };
         openings.set(mark, opening);
         surfaces.add(entry);
-        if (!hostObserver) { hostObserver = new MutationObserver(hostArrived); hostObserver.observe(document.body, { childList: true }); }
+        watchHost();
         let result;
         try { result = open(text => String(text ?? '') + mark); }
-        catch (error) { openings.delete(mark); release(); hostArrived([]); throw error; }
-        if (hostObserver) hostArrived(hostObserver.takeRecords());
+        catch (error) { openings.delete(mark); release(); throw error; }
+        if (hostObserver) hostChanged(hostObserver.takeRecords());
         // A container later than 5 s after the call is not this opening's.
-        setTimeout(() => { if (openings.get(mark) === opening) { openings.delete(mark); if (!entry.node) release(); hostArrived([]); } }, 5000);
-        if (!resolved.current()) queueMicrotask(entry.close);
+        setTimeout(() => { if (openings.get(mark) === opening) { openings.delete(mark); if (!entry.node) release(); } }, 5000);
+        if (!isCurrent(resolved)) queueMicrotask(entry.close);
         return result;
     };
 
@@ -530,7 +716,7 @@
         let slot = intents.get(surface);
         if (!slot) intents.set(surface, slot = { all: 0, reads: 0, writes: new Map() });
         const mine = ++slot.all;
-        const live = () => !owner || owner.current();
+        const live = () => !owner || holds(owner);
         if (key == null) { slot.reads = mine; return () => slot.all === mine && live(); }
         const reads = slot.reads;
         slot.writes.set(key, mine);
@@ -659,7 +845,7 @@
      */
     JE.latestIntent = function () {
         let latest = 0;
-        return owner => { const mine = ++latest; return () => mine === latest && (!owner || owner.current() !== false); };
+        return owner => { const mine = ++latest; return () => mine === latest && (!owner || holds(owner)); };
     };
 
     /**
@@ -674,15 +860,15 @@
         const resolved = owned ? ('owner' in options ? JE.requireOwner(options.owner, 'createSessionAction') : missing('createSessionAction({ submitted })')) : null;
         const inside = owned ? null : actingOperation();
         const session = resolved?.session || captureSession();
-        const live = () => !owned || (!!resolved && resolved.current());
+        const live = () => !owned || (!!resolved && isCurrent(resolved));
         const current = () => session.current() && live();
-        const writable = () => session.current() && (!owned || (!!resolved && resolved.writable())) && (!inside || inside.current());
+        const writable = () => session.current() && (!owned || (!!resolved && JE.mayWrite(resolved))) && (!inside || isCurrent(inside));
         /**
          * The request binding for work this action owns: the transport sends it only while this session is the
          * signed-in one, its owner (if any) may write and `check()` (when given) is true, right before the bytes go out.
          */
         const bound = check => resolved ? resolved.bound(check)
-            : Object.freeze({ session, current: () => live() && (!inside || inside.current()) && (!check || check() === true) });
+            : Object.freeze({ session, current: () => live() && (!inside || isCurrent(inside)) && (!check || check() === true) });
         return {
             current,
             /** Its writes may still go out: its owner's writable() (a session capture: its session, and the operation it was taken in). */

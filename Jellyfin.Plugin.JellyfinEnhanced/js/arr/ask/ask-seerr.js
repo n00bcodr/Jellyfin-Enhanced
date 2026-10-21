@@ -77,7 +77,8 @@
                 : await sheet.open(title, { opener, variant, operation });
         } catch (err) {
             console.warn(`${logPrefix} the request sheet could not open (${err?.message || err})`);
-            JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
+            // Said only while the press's owner is current (D46S2-R11-8).
+            if (operation && JE.effectOwner(operation, 'the request sheet')) JE.arrAsk?.toast?.(JE.arrAsk.describe({ state: 'failed' }, null).text);
             return null;
         }
         // The opener changes only through the publication, checked as it does (D46S2-R9-5).

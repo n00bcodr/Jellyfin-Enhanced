@@ -300,7 +300,8 @@
      * @param {string|null} itemId Jellyfin item shown, if any.
      * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action (the library More
      *     sheet's Remind), the POST is that operation's, checked by the transport right before it goes out.
-     * @returns {Promise<{ok: boolean, code?: string, nextAt?: string}>} Outcome.
+     * @returns {Promise<{ok: boolean, code?: string, nextAt?: string, accepted?: boolean}>} Outcome (D46S2-R11-9): never
+     *     sent (cancelled); accepted after its owner ended (ok, accepted: the caller shows nothing); answered; or failed.
      */
     async function remind(key, itemId, owner) {
         const submitted = JE.captureSubmitted(owner);
@@ -308,6 +309,9 @@
             const res = await api('/acquire/remind', { method: 'POST', body: { key, itemId: itemId || null }, bound: submitted.bound() });
             return { ok: true, nextAt: res?.nextAt };
         } catch (err) {
+            const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
+            if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
+            if (outcome.outcome === 'accepted' && !outcome.sessionChanged) return { ok: true, accepted: true, nextAt: outcome.answer?.nextAt };
             return { ok: false, code: err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed'), nextAt: err?.responseJSON?.nextAt };
         }
     }
@@ -492,6 +496,9 @@
      * @returns {void}
      */
     function open(item, owner) {
+        // Opening is the press's effect (D46S2-R11-5): every branch (the bell, a library item, a title, the Requests page)
+        // acts only for an owner that is current now; an ended or missing one opens and navigates nothing.
+        if (!JE.effectOwner(owner, 'a notification')) return;
         if (item.kind === 'summary') {
             N.openBell?.();
             return;

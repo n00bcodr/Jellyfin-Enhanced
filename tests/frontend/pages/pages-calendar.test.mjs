@@ -192,9 +192,9 @@ test('calendar card navigates to series while play button targets episode and un
   const h=actions(t);h.P.state.events=[{id:'episode',type:'Series',hasFile:true,itemId:'series-id',itemEpisodeId:'episode-id'},{id:'movie',type:'Movie',hasFile:false,itemId:'movie-id'}];
   h.document.body.innerHTML='<div class="je-calendar-card" data-event-id="episode"><button class="je-calendar-play-btn" data-event-id="episode"></button></div><div class="je-calendar-card" data-event-id="movie"></div>';
   h.document.body.addEventListener('click',h.P.handleEventClick);
-  h.document.querySelector('.je-calendar-card').click();assert.equal(h.window.location.hash,'#/details?id=series-id');
-  h.document.querySelector('button').click();assert.equal(h.window.location.hash,'#/details?id=episode-id');
-  h.document.querySelector('[data-event-id="movie"]').click();assert.equal(h.window.location.hash,'#/details?id=episode-id');
+  h.click(h.document.querySelector('.je-calendar-card'));assert.equal(h.window.location.hash,'#/details?id=series-id');
+  h.click(h.document.querySelector('button'));assert.equal(h.window.location.hash,'#/details?id=episode-id');
+  h.click(h.document.querySelector('[data-event-id="movie"]'));assert.equal(h.window.location.hash,'#/details?id=episode-id');
 });
 
 test('with native details on, a title without a file opens its page by key (the episode from Play, the series from the card)', async t => {
@@ -210,7 +210,7 @@ test('with native details on, a title without a file opens its page by key (the 
   h.document.body.addEventListener('click', h.P.handleEventClick);
   // The series card: no file anywhere, the provider lookup finds no item → the series page.
   h.JE.core.api.plugin = async () => { throw Object.assign(new Error('HTTP 400'), {status: 400}); };
-  for (const id of ['movie', 'ep', 'imdb']) h.document.querySelector(`[data-event-id="${id}"]`).click();
+  for (const id of ['movie', 'ep', 'imdb']) h.click(h.document.querySelector(`[data-event-id="${id}"]`));
   await new Promise(r => setTimeout(r, 20));
   assert.equal(keyed.length, 3);
   assert.ok(keyed.some(k => k.key === 'movie:tmdb:438631' && k.mediaType === 'movie'));
@@ -220,13 +220,13 @@ test('with native details on, a title without a file opens its page by key (the 
   keyed.length = 0;
   h.P.state.events.push({id: 'epfile', type: 'Series', hasFile: true, tvdbId: 393189, seasonNumber: 1, episodeNumber: 3});
   h.document.body.insertAdjacentHTML('beforeend', '<div class="je-calendar-card" data-event-id="epfile"><button class="je-calendar-play-btn" data-event-id="epfile"></button></div>');
-  h.document.querySelector('[data-event-id="epfile"] button').click();
+  h.click(h.document.querySelector('[data-event-id="epfile"] button'));
   await new Promise(r => setTimeout(r, 20));
   assert.deepEqual(keyed.map(k => [k.key, k.season, k.episode]), [['tv:tvdb:393189', 1, 3]]);
   // Native details off: nothing opens for a title without a file (as before).
   keyed.length = 0;
   h.JE.titleDetails.available = () => false;
-  h.document.querySelector('[data-event-id="movie"]').click();
+  h.click(h.document.querySelector('[data-event-id="movie"]'));
   await new Promise(r => setTimeout(r, 5));
   assert.equal(keyed.length, 0);
 });
@@ -351,9 +351,9 @@ test('calendar rows with the same arr id on two instances keep their own flags a
   assert.deepEqual(plain(h.P.filterEvents(h.P.state.events)).map(e=>e.itemId),['series-b']);
   h.document.body.innerHTML=h.P.renderCardItems([a,b]);
   h.document.body.addEventListener('click',h.P.handleEventClick);
-  h.document.querySelector(`.je-calendar-card[data-event-id="${b.id}"]`).click();
+  h.click(h.document.querySelector(`.je-calendar-card[data-event-id="${b.id}"]`));
   assert.equal(h.window.location.hash,'#/details?id=series-b');
-  h.document.querySelector(`.je-calendar-card[data-event-id="${a.id}"]`).click();
+  h.click(h.document.querySelector(`.je-calendar-card[data-event-id="${a.id}"]`));
   assert.equal(h.window.location.hash,'#/details?id=series-a');
 });
 

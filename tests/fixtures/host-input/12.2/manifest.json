@@ -1,0 +1,29 @@
+{
+ "image": "jellyfin/jellyfin:12.2",
+ "sources": {
+  "keyboard-navigation.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 74550,
+   "sha256": "bb3e54ef463ebe1c2e2e107da0534b338f5b7e23c939f14ee08f0457dff8c47e"
+  },
+  "input-manager.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 38490,
+   "sha256": "649f3dd7eb6e6194c1a39eb790612b3dd35d6e067b52acdce88dfe2e8e44be91"
+  },
+  "focus-manager.module.js": {
+   "file": "main.jellyfin.bundle.js",
+   "module": 9164,
+   "sha256": "03977dddd279b97d5f46b790e83dd773f7972c50655ec8f8f0d0e5cb56117656"
+  },
+  "gamepadtokey.chunk.js": {
+   "file": "84348.af69b1c00f13f8c923bc.chunk.js",
+   "sha256": "8f8ddac9b27323a7c1ccb7a5dbc02c86a6fb5ccab1de04fc5c4774709f85e462"
+  }
+ },
+ "licenses": {
+  "main.jellyfin.bundle.js.LICENSE.txt": {
+   "sha256": "be00e9ae0b464141b75106ce36313c47070d2536728441c2cc24495ca08c7c99"
+  }
+ }
+}

@@ -104,12 +104,12 @@ test('sheet keyboard and TV directions trap focus and Back restores opener', t =
 });
 
 test('sheet source proxies use the original handler and reflect disabled/pressed state', t => {
-  const { actions: a, document: d } = setup(t);
+  const { actions: a, click, document: d } = setup(t);
   const source = d.createElement('button'); let writes = 0;
   source.textContent = 'Played'; source.setAttribute('aria-pressed', 'true');
   source.onclick = () => { writes++; }; d.body.append(source);
   a.show({ name: 'Title' }, [{ id: 'played', group: 'watch', source, label: 'Played' }], d.querySelector('#opener'), a.generation());
-  d.querySelector('[data-action="played"]').click();
+  click(d.querySelector('[data-action="played"]'));
   assert.equal(writes, 1);
   source.disabled = true;
   a.show({}, [{ id: 'played', group: 'watch', source, label: 'Played' }], undefined, a.generation());
@@ -177,18 +177,18 @@ test('a successful Report clears the existing owner issue-list cache only for it
 });
 
 test('a sheet opened by A cannot invoke a source control as B', t => {
-  const { actions: a, document: d, switchUser } = setup(t);
+  const { actions: a, click, document: d, switchUser } = setup(t);
   const source = d.createElement('button'); let writes = 0; source.onclick = () => writes++; d.body.append(source);
   a.show({}, [{ id: 'native', group: 'other', source, label: 'Native' }], undefined, a.generation());
-  switchUser(); d.querySelector('[data-action="native"]').click();
+  switchUser(); click(d.querySelector('[data-action="native"]'));
   assert.equal(writes, 0);
 });
 
 test('owned controls execute before sheet teardown removes their source', t => {
-  const { actions: a, document: d } = setup(t);
+  const { actions: a, click, document: d } = setup(t);
   const control = d.createElement('button'); let writes = 0; control.onclick = () => writes++;
   a.show({}, [{ id: 'guard', group: 'view', control, label: 'Guard' }], undefined, a.generation());
-  d.querySelector('[data-action="guard"]').click();
+  click(d.querySelector('[data-action="guard"]'));
   assert.equal(writes, 1);
 });
 
@@ -220,7 +220,7 @@ test('Discover and search menu titles read the title separately from the display
 });
 
 test('compact row proxies originals; a cloned row is remounted; wide rows keep native controls', t => {
-  const { actions: a, document: d, load } = setup(t);
+  const { actions: a, click, document: d, load } = setup(t);
   load('arr/actions/title-actions-hosts.js');
   const row = d.createElement('div'); row.className = 'mainDetailButtons';
   row.innerHTML = '<button class="btnPlay" aria-label="Play">Play</button><button class="btnUserRating" aria-label="Favourite">Heart</button><button class="btnPlayed" title="Played">Played</button><button class="btnMoreCommands" title="More">More</button><button class="extra" title="Plugin">Plugin</button>';
@@ -229,11 +229,11 @@ test('compact row proxies originals; a cloned row is remounted; wide rows keep n
   let plays = 0; row.querySelector('.btnPlay').onclick = () => plays++;
   a.mountRow(row, row, null);
   assert.equal(row.querySelectorAll('.je-actions-row').length, 1);
-  row.querySelector('.je-actions-primary').click(); assert.equal(plays, 1);
+  click(row.querySelector('.je-actions-primary')); assert.equal(plays, 1);
   a.mountRow(row, row, null); assert.equal(row.querySelectorAll('.je-actions-more').length, 1);
   const clone = row.cloneNode(true); row.replaceWith(clone); clone.getBoundingClientRect = () => ({ width: 288 });
   clone.querySelector('.btnPlay').onclick = () => plays++;
-  a.mountRow(clone, clone, null); clone.querySelector('.je-actions-primary').click(); assert.equal(plays, 2);
+  a.mountRow(clone, clone, null); click(clone.querySelector('.je-actions-primary')); assert.equal(plays, 2);
   clone.getBoundingClientRect = () => ({ width: 1600 }); a.mountRow(clone, clone, null);
   assert.equal(clone.classList.contains('je-actions-compact'), false);
   assert.equal(clone.querySelector('.je-actions-row'), null);
@@ -295,7 +295,7 @@ test('report modal rejects delayed submit after a live user switch', async t => 
   h.JE.jellyseerrIssueReporter.showReportModal('603', 'Title', 'movie', null, null, h.NATIVE);
   modal.querySelector('input[name="issue-type"]').checked = true;
   h.switchUser();
-  await options.onSave(modal, h.document.createElement('button'), () => {}, { type: 'click', target: modal });
+  await h.pressIn(modal, e => options.onSave(modal, h.document.createElement('button'), () => {}, e));
   assert.equal(sends, 0);
 });
 
@@ -344,13 +344,13 @@ test('a library detail page already mounted when the bundle finishes receives th
 // D53 r2: the sheet is the offer (closing it before a press cancels); a press is an operation that outlives it.
 test('a sheet closed before the press runs nothing; a press followed by closing the sheet still completes', async t => {
   const gate = deferred(); let opened = 0;
-  const { actions: a, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
+  const { actions: a, click, document: d } = setup(t, { core: { api: { plugin: () => gate.promise } } });
   a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
   const entry = d.querySelector('[data-action="manage"]');
-  a.close(); entry.click(); gate.resolve({ allowed: true });
+  a.close(); click(entry); gate.resolve({ allowed: true });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 0, 'dismissed offer');
   a.show(a.context({ mediaType: 'movie', id: 603 }), [{ id: 'manage', group: 'requests', label: 'Manage', run() { opened++; } }], undefined, a.generation());
-  d.querySelector('[data-action="manage"]').click(); a.close();
+  click(d.querySelector('[data-action="manage"]')); a.close();
   await new Promise(resolve => setImmediate(resolve)); assert.equal(opened, 1, 'submitted operation');
 });
 
@@ -396,10 +396,10 @@ test('More Info privacy actions retain and proxy the existing secondary owner co
   assert.equal(row.querySelector('[data-je-action-kind="guard"]'), null);
   assert.equal(original.isConnected, true);
   assert.equal(original.classList.contains('je-actions-external-original'), true);
-  row.querySelector('.je-actions-more').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-more')); await new Promise(resolve => setImmediate(resolve));
   const proxy = h.document.querySelector('.je-actions-entry[data-action="guard"]');
   assert.equal(proxy.getAttribute('aria-pressed'), 'true');
-  proxy.click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(proxy); await new Promise(resolve => setImmediate(resolve));
   assert.equal(toggles, 1);
 });
 
@@ -433,10 +433,10 @@ test('existing modal Follow and Manage owners supply the compact row and sheet w
   h.actions.mountRow(row, root, h.actions.fromKey('movie:tmdb:603'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(root.querySelectorAll('.je-actions-external-original').length, 2);
-  row.querySelector('.je-actions-row [data-action="follow"]').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-row [data-action="follow"]')); await new Promise(resolve => setImmediate(resolve));
   assert.equal(follows, 1);
-  row.querySelector('.je-actions-more').click(); await new Promise(resolve => setImmediate(resolve));
-  h.document.querySelector('.je-actions-entry[data-action="manage"]').click(); await new Promise(resolve => setImmediate(resolve));
+  h.click(row.querySelector('.je-actions-more')); await new Promise(resolve => setImmediate(resolve));
+  h.click(h.document.querySelector('.je-actions-entry[data-action="manage"]')); await new Promise(resolve => setImmediate(resolve));
   assert.equal(manages, 1);
 });
 

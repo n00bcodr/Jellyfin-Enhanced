@@ -43,6 +43,9 @@
     /** Ends every operation started so far (a user switch, the feature going off, disposal). */
     function end() { lifecycle++; for (const token of [...live]) token.end(); live.clear(); }
     JE.session?.onUserChange?.('title-actions-lifecycle', end);
+    /** Releases every operation that has ended (D46S2-R11-13): each route change prunes the registry. */
+    const prune = () => { for (const token of live) if (!token.current()) live.delete(token); };
+    for (const type of ['hashchange', 'popstate', 'je:navigate']) window.addEventListener(type, () => queueMicrotask(prune));
     // Leaving the document (pagehide, freeze) and coming back (pageshow from the cache, resume) end every operation in
     // core; the hosts reconcile fresh controls for the new one (no new view is shown on a restore).
     const own = event => event.target?.nodeType !== 1;
@@ -62,6 +65,10 @@
      */
     function generation(mount = () => true) {
         const born = lifecycle;
+        // Bounded (D46S2-R11-13): the registry holds only operations that are still current; an ended one (its route,
+        // session, document or mount gone) leaves it as the next one is minted, so it never grows with reconciliation
+        // passes or navigation.
+        for (const token of live) if (!token.current()) live.delete(token);
         const token = JE.operation({ mount: () => lifecycle === born && mount() !== false });
         live.add(token);
         return token;
@@ -137,6 +144,9 @@
             const { owner: live, native: own } = presses.get(node);
             if (pressing.has(node) || (own && !live.current())) return;
             event.preventDefault(); event.stopImmediatePropagation();
+            // Only a press someone made becomes the row's operation (D46S2-R11-1): the viewer's own (a trusted or the
+            // host's verified activation) or a title action's; a script's click is no one's and does nothing.
+            if (!JE.ownerOf(event)) return;
             // A fresh event (JE.press): click() is a no-op while this element's own click is still in progress.
             if (live.current()) dispatch(node, generation(() => live.current()));
         }, true);
@@ -272,5 +282,7 @@
         }
         return action.current() ? out : [];
     }
-    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries });
+    /** Diagnostics (read-only): how many operations the registry holds now (bounded: D46S2-R11-13). */
+    const registrySize = () => live.size;
+    Object.assign(A, { context, fromKey, routeKey, generation, end, cancelled, admit, shareUrl, receive, dispatch, bindPress, invoke, register, entries, registrySize });
 })(window.JellyfinEnhanced);

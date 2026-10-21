@@ -100,13 +100,21 @@
             const beforeRules = JSON.parse(JSON.stringify(getHiddenData().items || {}));
             const item = { itemId: '', seriesId: '', type: title.type, tmdbId: title.tmdbId,
                 name: title.name || title.title || '', posterPath: title.posterPath || '', hideScope: 'global', hiddenAt: new Date().toISOString() };
-            // The transport checks the operation (if any) again right before the bytes go out.
+            // The transport checks the operation (if any) again right before the bytes go out. Three outcomes (D46S2-R11-9):
+            // never sent → nothing changed; answered after its owner ended (accepted) → this session's rules are
+            // reconciled from the answer with no page effect; answered → as below.
             let reply;
+            let accepted = false;
             try {
                 reply = await JE.core.api.ajax({ type: hidden ? 'PUT' : 'DELETE', dataType: 'json', bound: submitted.operationBound(),
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${user}/hidden-content/rule/${encodeURIComponent(title.key)}`),
                     ...(hidden ? { data: JSON.stringify(item), contentType: 'application/json' } : {}) });
-            } catch (err) { if (err?.name === 'AbortError' && !submitted.writable()) return false; throw err; }
+            } catch (err) {
+                const written = JE.core.api.writeOutcome?.(err);
+                if (written?.outcome === 'accepted' && !written.sessionChanged) { reply = written.answer; accepted = true; }
+                else if (err?.name === 'AbortError' && !submitted.writable()) return false;
+                else throw err;
+            }
             if (!action.current()) return false;
             const current = getHiddenData();
             const authoritative = reply?.items || reply?.Items;
@@ -126,7 +134,10 @@
             rebuildSets();
             emitChange();
             refreshNativeCardVisibility();
-            if (hidden) showUndoToast(item.name, title.key);
+            // Feedback is a page effect (D46S2-R11-8): only while its owner is current (the library's own owner-less path:
+            // its session, checked above); a write the server took after its owner ended changes state, not the page.
+            if (accepted) return false;
+            if (hidden && (!owner || submitted.current())) showUndoToast(item.name, title.key);
             return true;
         }));
         ruleWrites.set(title.key, task);
@@ -149,6 +160,8 @@
         button.type = 'button';
         button.className = options.detail ? 'button-flat detailButton emby-button je-detail-hide-btn' : 'je-hide-btn';
         button.dataset.jeTitleKey = title.key;
+        // Drawn for this session, route and document: a press after any of them changed is no one's (D46S2-R11-1).
+        JE.mountControl?.(button);
         /** Repaints only changed attributes so mutation observers settle. */
         function paint() {
             const hidden = hiddenTmdbIdSet.has(title.key);
@@ -175,7 +188,10 @@
         button.onclick = async e => {
             e.preventDefault(); e.stopPropagation();
             // The press's owner (D46S2-R6): a press dispatched for a title action stays bound to that operation up to the write.
+            // A title's Hide control acts only for a current owner (D46S2-R11-4): the viewer's own press or a title action's;
+            // a script's click names none and hides nothing (the library's own owner-less path is saveTitleRule(…, null)).
             const owner = JE.ownerOf(e);
+            if (!owner || !JE.effectOwner(owner, 'the Hide control')) return;
             if (!hiddenTmdbIdSet.has(title.key) && internal.showHideConfirmation && !internal.isConfirmationSuppressed()) {
                 internal.showHideConfirmation(title.name || title.title || '', () => run(owner), { owner });
                 return;

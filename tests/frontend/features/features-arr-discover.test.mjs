@@ -169,7 +169,7 @@ test('rows render once each with state chips, titles as text and Because you wat
   // The card body opens the Jellyfin item the caller has; without Seerr, other cards aren't links.
   const shown = [];
   h.window.Emby = { Page: { showItem: id => shown.push(id) } };
-  cardOf(root, 'movie:tmdb:1').querySelector('button.je-discover-poster-box').click();
+  h.click(cardOf(root, 'movie:tmdb:1').querySelector('button.je-discover-poster-box'));
   assert.deepEqual(shown, ['aa11']);
   assert.equal(cardOf(root, 'movie:tmdb:4').querySelector('button.je-discover-poster-box'), null);
   // Re-rendering the page (a feed change) redraws from memory without reading again.
@@ -184,7 +184,7 @@ test('with Seerr set up, cards the caller does not have open its more-info windo
   const h = setup(t, { hash: '#/requests?tab=discover', config: { JellyseerrEnabled: true }, JE: { jellyseerrMoreInfo: { open: (id, type) => opened.push([id, type]) } } });
   h.JE.initializeArrHub();
   await until(() => hubPage(h).querySelectorAll('.je-discover-card').length >= 7);
-  cardOf(hubPage(h), 'tv:tmdb:20').querySelector('button.je-discover-poster-box').click();
+  h.click(cardOf(hubPage(h), 'tv:tmdb:20').querySelector('button.je-discover-poster-box'));
   assert.deepEqual(opened, [[20, 'tv']]);
 });
 
@@ -194,7 +194,7 @@ test('with native details offered, a card the caller does not have opens the tit
   h.JE.titleDetails = { available: () => true, open: (id, type) => { native.push([id, type]); return true; } };
   h.JE.initializeArrHub();
   await until(() => hubPage(h).querySelectorAll('.je-discover-card').length >= 7);
-  cardOf(hubPage(h), 'tv:tmdb:20').querySelector('button.je-discover-poster-box').click();
+  h.click(cardOf(hubPage(h), 'tv:tmdb:20').querySelector('button.je-discover-poster-box'));
   assert.deepEqual(native, [[20, 'tv']]);
   assert.deepEqual(opened, []);
 });
@@ -221,8 +221,8 @@ test('Request on a movie asks once with the movie input, toasts the honest outco
   assert.equal(button.textContent, 'addRequest');
   assert.equal(button.getAttribute('aria-label'), 'Request Someone asked');
   button.focus();
-  button.click();
-  button.click();                                         // a double tap is one ask
+  h.click(button);
+  h.click(button);                                         // a double tap is one ask
   await until(() => h.toasts.length === 1);
   assert.equal(posts.length, 1);
   assert.deepEqual(posts[0].input, { key: 'movie:tmdb:4', scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
@@ -247,7 +247,7 @@ test('Request on a movie asks once with the movie input, toasts the honest outco
   });
   h2.JE.initializeArrHub();
   await until(() => hubPage(h2).querySelectorAll('.je-discover-request').length >= 2);
-  cardOf(hubPage(h2), 'movie:tmdb:5').querySelector('.je-discover-request').click();
+  h2.click(cardOf(hubPage(h2), 'movie:tmdb:5').querySelector('.je-discover-request'));
   await until(() => h2.toasts.length === 1);
   assert.equal(h2.toasts[0], 'You&#39;ve used this week&#39;s requests.');
   assert.ok(cardOf(hubPage(h2), 'movie:tmdb:5').querySelector('.je-discover-request:not([aria-busy])'));
@@ -271,7 +271,7 @@ test('series get Notify me without the request sheet and the sheet when it is lo
   const kidShow = cardOf(hubPage(h), 'tv:tmdb:20').querySelector('.je-discover-request');
   assert.equal(kidShow.textContent, 'chatAsk Dad');
   assert.equal(kidShow.getAttribute('aria-label'), 'Ask Dad for A show');
-  kidShow.click();
+  h.click(kidShow);
   assert.deepEqual(plain(sheets), [{ key: 'tv:tmdb:20', kind: 'series', name: 'A show', year: 2024, poster: '/p.jpg' }]);
   assert.equal(h.fetches.filter(f => f.init.method === 'POST').length, 0);
   assert.equal(cardOf(hubPage(h), 'movie:tmdb:5').querySelector('.je-discover-request').textContent, 'chatAsk Dad');
@@ -325,7 +325,7 @@ test('More reads the next page of a row and appends it, also across a redraw whi
   await until(() => answers.length === 1);
   answers[0].d.resolve(page([card('movie:tmdb:1', 'One')], { totalPages: 3 }));
   await until(() => hubPage(h).querySelector('.je-discover-more'));
-  hubPage(h).querySelector('.je-discover-more').click();
+  h.click(hubPage(h).querySelector('.je-discover-more'));
   await until(() => answers.length === 2);
   assert.equal(answers[1].f.params.get('page'), '2');
   // The page redraws (a feed change) while page 2 is on its way: the read still lands.
@@ -459,22 +459,22 @@ test('cards use the request sheet: a series has its seasons read first, a movie 
   h.JE.initializeArrHub();
   await until(() => hubPage(h).querySelectorAll('.je-discover-card').length >= 7);
 
-  cardOf(hubPage(h), 'movie:tmdb:5').querySelector('.je-discover-request').click();
+  h.click(cardOf(hubPage(h), 'movie:tmdb:5').querySelector('.je-discover-request'));
   await until(() => h.document.querySelector('.je-sheet'));
   assert.ok(h.document.querySelector('.je-sheet-variant-option[data-variant="4k"]'), 'a 4K holder chooses');
   assert.equal(posts.length, 0, 'nothing is asked before the choice');
-  h.document.querySelector('.je-sheet-primary').click();
+  h.click(h.document.querySelector('.je-sheet-primary'));
   await until(() => posts.length === 1 && cardOf(hubPage(h), 'movie:tmdb:5').querySelector('.je-discover-chip'));
   assert.deepEqual(posts[0].input, { key: 'movie:tmdb:5', scope: 'movie', variant: 'standard', seasons: [], episodes: [] });
   assert.equal(cardOf(hubPage(h), 'movie:tmdb:5').querySelector('.je-discover-chip').textContent, 'sendAsked!');
 
-  cardOf(hubPage(h), 'tv:tmdb:20').querySelector('.je-discover-request').click();
+  h.click(cardOf(hubPage(h), 'tv:tmdb:20').querySelector('.je-discover-request'));
   await until(() => h.document.querySelector('.je-sheet-card'));
   assert.ok(h.fetches.some(f => f.path === '/tmdb/tv/20'));
   const choices = [...h.document.querySelectorAll('.je-sheet-card')].map(c => c.dataset.choice);
   assert.ok(choices.includes('everything') && choices.includes('pick'), `season choices: ${choices}`);
-  h.document.querySelector('.je-sheet-card[data-choice="everything"]').click();
-  h.document.querySelector('.je-sheet-primary').click();
+  h.click(h.document.querySelector('.je-sheet-card[data-choice="everything"]'));
+  h.click(h.document.querySelector('.je-sheet-primary'));
   await until(() => posts.length === 2);
   assert.deepEqual(posts[1].input, { key: 'tv:tmdb:20', scope: 'seasons', variant: 'standard', seasons: [1, 2], episodes: [] });
 
@@ -487,7 +487,7 @@ test('cards use the request sheet: a series has its seasons read first, a movie 
   });
   m.JE.initializeArrHub();
   await until(() => hubPage(m).querySelectorAll('.je-discover-request').length >= 2);
-  cardOf(hubPage(m), 'movie:tmdb:5').querySelector('.je-discover-request').click();
+  m.click(cardOf(hubPage(m), 'movie:tmdb:5').querySelector('.je-discover-request'));
   await until(() => m.toasts.length === 1);
   assert.equal(posts2.length, 1);
   assert.equal(m.document.querySelector('.je-sheet'), null);
@@ -530,13 +530,13 @@ test('a partial ask keeps Request more: other seasons of a series, the other cop
   assert.equal(cardOf(root, 'movie:tmdb:6').querySelector('.je-discover-request'), null, 'a movie asked for in the only copy they may ask for: nothing more');
   assert.ok(cardOf(root, 'movie:tmdb:7').querySelector('.je-discover-request'), 'a 4K ask leaves the standard copy requestable');
 
-  more.click();
+  h.click(more);
   await until(() => h.document.querySelector('.je-sheet-card'));
   const checks = [...h.document.querySelectorAll('.je-sheet-pick .je-sheet-check')];
   assert.deepEqual(checks.map(c => [c.querySelector('input').disabled, c.querySelector('.je-sheet-check-facts')?.textContent]),
     [[true, 'Already asked for'], [false, '8 episodes'], [false, '8 episodes']]);
-  h.document.querySelector('.je-sheet-card[data-choice="everything"]').click();
-  h.document.querySelector('.je-sheet-primary').click();
+  h.click(h.document.querySelector('.je-sheet-card[data-choice="everything"]'));
+  h.click(h.document.querySelector('.je-sheet-primary'));
   await until(() => posts.length === 1);
   assert.deepEqual(posts[0].input.seasons, [2, 3], 'Everything is what is left');
   await until(() => cardOf(hubPage(h), 'tv:tmdb:20').querySelector('.je-discover-request'));
@@ -547,7 +547,7 @@ test('a partial ask keeps Request more: other seasons of a series, the other cop
   await until(() => hubPage(k).querySelectorAll('.je-discover-card').length >= 3);
   const hd = cardOf(hubPage(k), 'movie:tmdb:6').querySelector('.je-discover-request');
   assert.equal(hd.textContent, 'addRequest more');
-  hd.click();
+  k.click(hd);
   await until(() => k.document.querySelector('.je-sheet'));
   assert.equal(k.document.querySelector('.je-sheet-variant-option[aria-pressed="true"]').dataset.variant, '4k');
 });
@@ -604,7 +604,7 @@ test('storage full: a card says "Paused: storage full" only when the server mark
   assert.equal(cardOf(root, 'movie:tmdb:905').querySelector('.je-discover-paused, .je-discover-request'), null, 'nothing to ask for a title in the library');
 
   // Pressed: the sheet opens on that title, checks it and says why; nothing is asked.
-  paused.click();
+  h.click(paused);
   await until(() => h.document.querySelector('.je-sheet-note-paused'));
   assert.deepEqual(checks, ['movie:tmdb:4|standard']);
   assert.equal(h.document.querySelector('.je-sheet-note-paused').textContent, `storagePaused: storage full · ${sentence}`);
@@ -635,14 +635,14 @@ test('JE mode with native details: a search-row card opens the title\'s native p
       typeInto(h, 'dune');
       await until(() => h.document.querySelectorAll('.je-ask-search-section .je-discover-card').length === 2);
       const section = h.document.querySelector('.je-ask-search-section');
-      cardOf(section, 'tv:tmdb:20').querySelector('button.je-discover-poster-box').click();
+      h.click(cardOf(section, 'tv:tmdb:20').querySelector('button.je-discover-poster-box'));
       if (nativeOn) {
         assert.deepEqual(native, [[20, 'tv']], 'the card body opens the native page');
         assert.deepEqual(opened, [], 'not Seerr\'s window');
       } else {
         assert.deepEqual(opened, [[20, 'tv']], 'without native details: Seerr\'s window, as before');
       }
-      cardOf(section, 'movie:tmdb:2').querySelector('.je-discover-request').click();
+      h.click(cardOf(section, 'movie:tmdb:2').querySelector('.je-discover-request'));
       await until(() => h.toasts.length === 1);
       assert.equal(posts.length, 1);
       assert.deepEqual(posts[0].input, { key: 'movie:tmdb:2', scope: 'movie', variant: 'standard', seasons: [], episodes: [] });

@@ -1040,6 +1040,13 @@
             console.debug(`${logPrefix} Issue reported for Seerr media ID ${internalId} (TMDB ${mediaId}, ${mediaType}): ${problemType}`);
             return result;
         } catch (error) {
+            // Three outcomes (D46S2-R11-9): answered after its owner ended, the report exists (its issue reads are
+            // refreshed; the caller says nothing: `jeAccepted`); never sent, nothing happened (AbortError).
+            const written = JE.core.api.writeOutcome?.(error);
+            if (written?.outcome === 'accepted' && !written.sessionChanged) {
+                JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');
+                return { ...(written.answer && typeof written.answer === 'object' ? written.answer : {}), jeAccepted: true };
+            }
             if (action.current() && error?.name !== 'AbortError') console.error(`${logPrefix} Failed to report issue for TMDB ID ${mediaId}:`, error);
             throw error;
         }

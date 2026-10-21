@@ -65,7 +65,7 @@ test('control: Guard from the window refreshes it, and its Request then works (o
   const h = setup(t, { asks: false });
   await openWindow(h);
   policyChanged(h); await delivered();
-  moreInfo(h).querySelector('.jellyseerr-request-button').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.jellyseerr-request-button')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });
 
@@ -130,7 +130,7 @@ test('control: the Share fallback stays selectable while its operation lives', a
   assert.ok(input);
   assert.match(input.value, /jeTitle=movie%3Atmdb%3A603/);
   assert.equal(h.document.activeElement, input, 'focused, its text selected');
-  input.click(); await settle();
+  h.click(input); await settle();
   assert.ok(link(h), 'a press inside it keeps it open');
 });
 
@@ -206,7 +206,7 @@ test('read path: the window\'s Refresh answering after the policy refresh replac
   const h = setup(t, { asks: false });
   const before = await openWindow(h);
   const held = h.hold('GET', '/jellyseerr/movie/603');
-  before.querySelector('.modal-refresh').click(); await settle();
+  h.click(before.querySelector('.modal-refresh')); await settle();
   policyChanged(h); await settle();
   held.resolve({ id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 2, status4k: 1 } }); await delivered();
   const after = moreInfo(h);
@@ -218,7 +218,7 @@ test('read path: the window\'s Refresh answering after the window\'s operation e
   const h = setup(t, { asks: false });
   const modal = await openWindow(h);
   const held = h.hold('GET', '/jellyseerr/movie/603');
-  modal.querySelector('.modal-refresh').click(); await settle();
+  h.click(modal.querySelector('.modal-refresh')); await settle();
   await rerender(h); await delivered();
   assert.ok(modal.querySelector('.jellyseerr-request-button'), 'the window shows Request (status not requested)');
   held.resolve({ id: 603, title: 'The Matrix', mediaInfo: { id: 77, status: 2, status4k: 1 } }); await delivered();
@@ -268,8 +268,8 @@ test('read path: two More presses, the older one\'s admission answers last → t
   h.a.show = (...args) => { shows++; return show(...args); };
   // Both presses wait on the one (de-duplicated) admission read; its answer reaches the older press last in line.
   const held = h.hold('GET', '/title-actions/');
-  h.row().querySelector('.je-actions-more').click(); await settle();
-  h.row().querySelector('.je-actions-more').click(); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
+  h.click(h.row().querySelector('.je-actions-more')); await settle();
   held.resolve(); await delivered();
   assert.ok(h.document.querySelector('.je-actions-backdrop'), 'the newer press opened the sheet');
   assert.equal(shows, 1, 'the older press did not open (or replace) one');
@@ -327,7 +327,7 @@ test('a press carries its owner explicitly: JE.press tags the click, a direct pr
   const button = h.document.createElement('button'); h.document.body.append(button);
   const op = h.a.generation(); const seen = [];
   button.addEventListener('click', e => seen.push(h.JE.ownerOf(e)));
-  h.JE.press(button, op); button.click();
+  h.JE.press(button, op); h.click(button);
   assert.equal(seen[0], op);
   assert.equal(seen[1]?.native, true, 'the viewer\'s own click is native');
   // A detached node outside any registered surface names no owner (it is not on the page, nor in UI an operation opened).
@@ -338,7 +338,7 @@ test('a press carries its owner explicitly: JE.press tags the click, a direct pr
 
 /** Opens the window's own More sheet. */
 async function windowSheet(h) {
-  moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more').click(); await delivered();
+  h.click(moreInfo(h).querySelector('.je-actions-more, .je-actions-wide-more')); await delivered();
   return [...h.document.querySelectorAll('.je-actions-entry')];
 }
 
@@ -348,7 +348,7 @@ test('4K: with Seerr 4K on, the window\'s More sheet offers Request in 4K; press
   const entry = (await windowSheet(h)).find(n => n.dataset.action === 'request-4k');
   assert.ok(entry, 'Request in 4K is offered');
   assert.equal(entry.textContent.includes('jellyseerr_btn_request_4k'), true);
-  entry.click(); await delivered();
+  h.click(entry); await delivered();
   const posts = h.sent('POST', '/jellyseerr/request');
   assert.equal(posts.length, 1);
   assert.equal(posts[0][3]?.is4k, true, 'the 4K request');
@@ -360,7 +360,7 @@ test('4K: the window\'s operation ends while its 4K request waits in the transpo
   await openWindow(h);
   const entry = (await windowSheet(h)).find(n => n.dataset.action === 'request-4k');
   const release = h.holdPool();
-  entry.click(); await settle();
+  h.click(entry); await settle();
   await rerender(h);
   await release(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 0);
@@ -378,7 +378,7 @@ test('control: a native window\'s Request in 4K sends natively, once', async t =
   const h = setup(t, { asks: false, seerr4k: true });
   h.a.initialize(); await settle();
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
-  (await windowSheet(h)).find(n => n.dataset.action === 'request-4k').click(); await delivered();
+  h.click((await windowSheet(h)).find(n => n.dataset.action === 'request-4k')); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
 });
 
@@ -390,7 +390,7 @@ for (const stage of ['asked', 'downloading', 'ready']) {
     h.a.initialize(); mount(h); await settle(); await delivered();
     const primary = h.row().querySelector('.je-actions-row .je-actions-primary');
     assert.equal(primary?.textContent.includes('jellyseerr_btn_request') ?? false, false, 'no Request primary');
-    h.row().querySelector('.je-actions-more').click(); await delivered();
+    h.click(h.row().querySelector('.je-actions-more')); await delivered();
     const entries = [...h.document.querySelectorAll('.je-actions-entry')].map(n => n.dataset.action);
     assert.ok(entries.length > 0, 'the sheet is open');
     assert.equal(entries.includes('request'), false);
@@ -401,6 +401,6 @@ test('control: a title not here (nothing under way) → the bar offers Request i
   const h = setup(t, { asks: true, stage: 'notHere' });
   h.a.initialize(); mount(h); await settle(); await delivered();
   assert.match(h.row().querySelector('.je-actions-row .je-actions-primary')?.textContent || '', /jellyseerr_btn_request/);
-  h.row().querySelector('.je-actions-more').click(); await delivered();
+  h.click(h.row().querySelector('.je-actions-more')); await delivered();
   assert.ok([...h.document.querySelectorAll('.je-actions-entry')].some(n => n.dataset.action === 'request'));
 });

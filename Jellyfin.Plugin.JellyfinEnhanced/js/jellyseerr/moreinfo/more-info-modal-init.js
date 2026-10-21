@@ -23,9 +23,11 @@
  *   newest opening) and belongs to its scope.
  */
 moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
-    const generation = ++openGeneration;
     const submitted = JE.captureSubmitted(owner);
-    if (!submitted.owner) return;
+    // Admitted before it touches any shared state (D46S2-R11-7): a stale or owner-less call never advances the opening
+    // generation, so it cannot supersede the viewer's pending opening.
+    if (!submitted.owner || !submitted.current()) return;
+    const generation = ++openGeneration;
     try {
         // Fetch details first so the modal can open immediately
         const data = await internal.fetchMediaDetails(tmdbId, mediaType);
@@ -151,7 +153,9 @@ function showModal(data, mediaType, scope, submitted) {
 
     // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
     // the Collection and request modals); once the operation ends, it takes no more input and closes.
-    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted.owner);
+    // Its owner ending closes this window only (D46S2-R11-7): never the opening generation, so a newer opening the viewer
+    // has pending is not superseded by an older window's lifecycle.
+    modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) closeCurrentModal(); }, submitted.owner);
     if (!modal._releaseScope) return false;
     // The window's reads (Refresh, a TV request's refresh) and the writes answering into it render only for its newest
     // intent while their owner is current (JE.surfaceIntent, JE.publication).

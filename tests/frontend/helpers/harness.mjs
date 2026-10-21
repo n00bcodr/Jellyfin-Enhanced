@@ -73,9 +73,9 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
     return JE;
   }
-  // The viewer's own gestures are trusted events, as a browser dispatches them; script-made ones are not (D46S2-R10:
-  // native authority is minted only from trusted events). A click() the test makes outside every production module
-  // is the viewer's; one a production module makes (its own synthetic click) stays untrusted, as in the browser.
+  // The viewer's own gestures are trusted events, as a browser dispatches them; every script-made one is untrusted,
+  // the test's own click() included (D46S2-R11: jsdom cannot make a trusted event, so trust comes only from the
+  // explicit test-only helpers below, which no production module can reach).
   const implOf = object => object[Object.getOwnPropertySymbols(object).find(symbol => String(symbol) === 'Symbol(impl)')];
   function dispatchTrusted(target, event) {
     const impl = implOf(event);
@@ -83,22 +83,11 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     implOf(target)._dispatch(impl);
     return !impl._canceledFlag;
   }
-  function fromProduction() {
-    const limit = Error.stackTraceLimit;
-    Error.stackTraceLimit = 200;
-    const stack = new Error().stack || '';
-    Error.stackTraceLimit = limit;
-    return stack.includes(jsRoot);
+  /** The viewer clicks `node` (a trusted click, as the browser dispatches one; a disabled control takes none). */
+  function viewerClick(node) {
+    if (node.matches(':disabled')) return true;
+    return dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 }));
   }
-  const syntheticClick = window.HTMLElement.prototype.click;
-  const clicking = new WeakSet();
-  window.HTMLElement.prototype.click = function () {
-    if (fromProduction()) return syntheticClick.call(this);
-    if (this.matches(':disabled') || clicking.has(this)) return;
-    clicking.add(this);
-    try { dispatchTrusted(this, new window.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1 })); }
-    finally { clicking.delete(this); }
-  };
   // Deferred feature actions use the shared identity primitive in the real bundle.
   load('core/session-action.js');
   window.addEventListener('error', event => errors.push(event.error || new Error(event.message)));
@@ -120,6 +109,20 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     },
     /** Dispatches `event` on `target` as the browser would for the viewer (trusted). Returns false when cancelled. */
     trusted: dispatchTrusted,
+    /** The viewer clicks `node` (trusted; test-only: a click() anywhere, a test's included, is untrusted). */
+    click: viewerClick,
+    /**
+     * The viewer presses inside `node` (a trusted click dispatched on it): `fn(event)` runs while it is dispatched and its
+     * result comes back. Inside a registered surface the press is that surface's owner's (JE.ownerOf(event)).
+     */
+    pressIn(node, fn) {
+      let result;
+      const listener = event => { result = fn(event); };
+      node.addEventListener('click', listener, { once: true });
+      dispatchTrusted(node, new window.MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      node.removeEventListener('click', listener);
+      return result;
+    },
     /**
      * The viewer clicks `node` (a trusted click through its onclick handler property), and the handler's own result
      * (the promise an async handler returns) comes back for the test to await.

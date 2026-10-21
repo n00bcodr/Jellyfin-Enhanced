@@ -570,8 +570,10 @@
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (mode === 'search') searchEpisode(ep, btn, scope);
-            else getEpisodes([ep.episode], btn, false, scope);
+            // The press's owner (D46S2-R11): its writes carry its binding and what it says is shown only while it is current.
+            const owner = JE.ownerOf(e);
+            if (mode === 'search') searchEpisode(ep, btn, scope, owner);
+            else getEpisodes([ep.episode], btn, false, scope, owner);
         });
         setBusyLook(btn, busy.has(ep.episode));
         return btn;
@@ -599,11 +601,13 @@
      * @param {Object} ep Episode status.
      * @param {HTMLButtonElement} button The button pressed.
      * @param {string|null} [scope] The season the button was made for (nothing happens on another).
+     * @param {Object} [owner] The press's owner (JE.ownerOf(event)); none: nothing happens (D46S2-R11).
      * @returns {Promise<void>}
      */
-    async function searchEpisode(ep, button, scope) {
+    async function searchEpisode(ep, button, scope, owner) {
         const target = season;
-        if (!target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        if (!owner || !target?.rows || busy.has(ep.episode) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
         // Capabilities are read for this session: a sign-out (and someone else's sign-in) before
         // they arrive drops the Search instead of running it with the next person's token.
         const started = JE.arrAsk.epoch();
@@ -615,7 +619,11 @@
         JE.internals?.arrStatusEpisodes?.apply?.();
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId) : await JE.arrAsk.familySearch(ep.key);
+            result = instanceId ? await JE.arrAsk.adminSearch(ep.key, instanceId, { bound: submitted.bound() }) : await JE.arrAsk.familySearch(ep.key, { bound: submitted.bound() });
+        } catch (error) {
+            // Never sent (its owner ended first): nothing to say.
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             busy.delete(ep.episode);
         }
@@ -623,11 +631,13 @@
         if (!result) {
             // Nothing sent for it yet (or not missing for long enough): ask for it like Get it.
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes([ep.episode], button, true, target.itemId);
+            await getEpisodes([ep.episode], button, true, target.itemId, owner);
             return;
         }
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) searched.set(ep.episode, { chip: result.chip, tone: result.tone, at: Date.now() });
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
@@ -650,12 +660,14 @@
      * @param {HTMLButtonElement} button The button pressed (focus goes to the new chip after).
      * @param {boolean} [search] The ask is a Search (its state then shows for a while only).
      * @param {string|null} [scope] The season the button was made for (nothing is asked on another).
+     * @param {Object} [owner] The press's owner (JE.ownerOf(event)); none: nothing is asked (D46S2-R11).
      * @returns {Promise<void>}
      */
-    async function getEpisodes(episodes, button, search, scope) {
+    async function getEpisodes(episodes, button, search, scope, owner) {
         const target = season;
         const rows = target?.rows;
-        if (!rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        if (!owner || !rows || !episodes.length || episodes.some(n => busy.has(n)) || (scope && target.itemId !== scope)) return;
+        const submitted = JE.captureSubmitted(owner);
         const place = button?.closest('.listItem, .je-arr-banner') || null;
         const placeEpisode = place?.classList.contains('je-ask-row') ? place.dataset.jeAskEpisode : null;
         // Seerr mode: the button asks for the whole season, so every episode of it waits for the answer.
@@ -675,7 +687,7 @@
                 input = button?.dataset.rounded === '1' ? await JE.arrAsk.roundedInput(rows.series, caps, [rows.season]) : null;
                 if (!input) result = { ok: false, state: button?.dataset.rounded === '1' ? 'failed' : 'blocked', reason: 'seerr_whole_season_only' };
             }
-            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input);
+            if (!result && JE.arrAsk.epoch() === started) result = await JE.arrAsk.ask(input, { bound: submitted.bound() });
         } finally {
             affected.forEach(n => busy.delete(n));
         }
@@ -690,6 +702,8 @@
             const shown = result.state === 'waiting' ? 'waiting' : result.state === 'nothing' ? null : result.state === 'declined' ? 'declined' : 'asked';
             if (shown && stillHere) affected.forEach(n => local.set(n, { state: shown, at: Date.now(), search: !!search }));
         }
+        // The answer is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(words.text);
         JE.arrAsk.toast(words.text);
         if (stillHere) {
@@ -1084,7 +1098,7 @@
                 btn.setAttribute('aria-label', search ? tr('arr_ask_search_them_label', { list }) : tr('arr_ask_get_them_label', { list }));
             }
             const scope = normalize(status.itemId);
-            btn.addEventListener('click', () => (search ? searchBanner(offerEps, status, btn) : getEpisodes(offer, btn, false, scope)));
+            btn.addEventListener('click', (e) => { const owner = JE.ownerOf(e); return search ? searchBanner(offerEps, status, btn, owner) : getEpisodes(offer, btn, false, scope, owner); });
             setBusyLook(btn, offer.some(n => busy.has(n)));
             action.appendChild(btn);
         }
@@ -1102,12 +1116,14 @@
      * @param {Array<Object>} eps Episode statuses.
      * @param {Object} status Season status.
      * @param {HTMLButtonElement} button The button pressed.
+     * @param {Object} [owner] The press's owner (JE.ownerOf(event)); none: nothing happens (D46S2-R11).
      * @returns {Promise<void>}
      */
-    async function searchBanner(eps, status, button) {
+    async function searchBanner(eps, status, button, owner) {
         const target = season;
         const numbers = eps.map(ep => ep.episode);
-        if (!target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        if (!owner || !target?.rows || !numbers.length || numbers.some(n => busy.has(n)) || target.itemId !== normalize(status.itemId)) return;
+        const submitted = JE.captureSubmitted(owner);
         const key = eps.length === 1 ? eps[0].key : status.key;
         const started = JE.arrAsk.epoch();
         const caps = await JE.arrAsk.me();
@@ -1119,33 +1135,39 @@
         let toAsk = [];
         try {
             if (instanceId) {
-                result = await JE.arrAsk.adminSearch(key, instanceId);
+                result = await JE.arrAsk.adminSearch(key, instanceId, { bound: submitted.bound() });
             } else {
                 // The whole season first: one search for all of them when requests sent every one.
-                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key) : null;
+                const whole = eps.length > 1 && status.key ? await JE.arrAsk.familySearch(status.key, { bound: submitted.bound() }) : null;
                 if (JE.arrAsk.epoch() !== started) return;
                 const done = whole ? [whole] : [];
                 for (const [i, ep] of (whole ? [] : eps).entries()) {
-                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key) : null;
+                    const one = i < BANNER_SEARCH_MAX ? await JE.arrAsk.familySearch(ep.key, { bound: submitted.bound() }) : null;
                     if (JE.arrAsk.epoch() !== started) return;
                     if (one) done.push(one);
                     else toAsk.push(ep.episode);
                 }
                 result = done.find(r => r.state === 'found') || done.find(r => r.ok) || done[0] || null;
             }
+        } catch (error) {
+            // Never sent (its owner ended first): nothing to say.
+            if (error?.name === 'AbortError') return;
+            throw error;
         } finally {
             numbers.forEach(n => busy.delete(n));
         }
         if (JE.arrAsk.epoch() !== started) return;
         if (!result) {
             if (season?.itemId !== target.itemId) return;
-            await getEpisodes(numbers, button, true, target.itemId);
+            await getEpisodes(numbers, button, true, target.itemId, owner);
             return;
         }
         // Episodes no request sent yet are asked for like Get them.
-        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId);
+        if (toAsk.length && season?.itemId === target.itemId) await getEpisodes(toAsk, null, true, target.itemId, owner);
         const stillHere = !!season && season.itemId === target.itemId;
         if (stillHere && result.chip) bannerSearched = { chip: result.chip, tone: result.tone, at: Date.now(), itemId: target.itemId };
+        // What it found is a page effect (D46S2-R11-8): said only while the press's owner is current.
+        if (!submitted.current()) return;
         announce(result.text);
         JE.arrAsk.toast(result.text);
         if (!stillHere) return;
