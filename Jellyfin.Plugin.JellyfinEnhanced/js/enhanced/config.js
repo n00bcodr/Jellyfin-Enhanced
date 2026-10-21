@@ -611,6 +611,9 @@
         return { document: copyDocument(state.shown), read: state.readOk };
     };
 
+    /** Whether operations of this session on the document are still out (queued or sent, not yet answered). */
+    JE.internals.userDocumentPending = fileName => settingsDocument(fileName).pending.length > 0;
+
     /**
      * Read a server document with a revision fence. A response begun during/before a newer save
      * cannot replace that save's baseline, even if it arrives after the save completes.

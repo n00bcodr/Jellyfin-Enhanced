@@ -25,7 +25,10 @@
      */
     function persist(operation) {
         const generation = saveGeneration;
-        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true }).then(() => true, error => {
+        const sent = JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true });
+        // A revision seen while this change was out is read once every change of this tab is answered.
+        sent.finally(() => internal.readAfterSave?.()).catch(() => {});
+        return sent.then(() => true, error => {
             if (generation !== saveGeneration) return false;
             // A change refused because the document couldn't be read was already reported by the store.
             if (!error?.settingsNotRead) {
@@ -34,6 +37,15 @@
             }
             return false;
         });
+    }
+
+    /**
+     * Whether a change of this tab to the person's hidden content is still out (queued or sent, not yet answered): a rules
+     * read started now must not be taken over it (it is read again after it).
+     * @returns {boolean}
+     */
+    function hasPendingSave() {
+        return JE.internals.userDocumentPending ? JE.internals.userDocumentPending('hidden-content.json') : false;
     }
 
     /** Settles once every hidden-content change queued so far has been answered (before a server-side hide write). */
@@ -147,6 +159,7 @@
 
     Object.assign(internal, {
         persist,
+        hasPendingSave,
         flushPendingSave,
         fetchHiddenContentUsers,
         fetchUserHiddenItemsForAdmin,

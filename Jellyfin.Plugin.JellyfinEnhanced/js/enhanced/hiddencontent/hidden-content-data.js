@@ -155,7 +155,7 @@
             return true;
         }));
         ruleWrites.set(title.key, task);
-        task.finally(() => { if (ruleWrites.get(title.key) === task) ruleWrites.delete(title.key); }).catch(() => {});
+        task.finally(() => { if (ruleWrites.get(title.key) === task) ruleWrites.delete(title.key); readAfterSave(); }).catch(() => {});
         return task;
     }
 
@@ -691,7 +691,8 @@
      */
     function revalidate() {
         if (revalidating) { revisionPending = true; return revalidating; }
-        if (internal.hasPendingSave?.()) { revisionPending = true; return Promise.resolve(false); }
+        // A change of this tab still out (an item change in the store's queue, or a title rule's write): read after it.
+        if (internal.hasPendingSave?.() || ruleWrites.size > 0) { revisionPending = true; return Promise.resolve(false); }
         revisionPending = false;
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         // Taken before the read: the rules as read are at least this new.
@@ -708,7 +709,7 @@
                 });
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
                 // Changed here meanwhile, or a save started: this tab's change wins; read again after it.
-                if (hiddenData !== before || internal.hasPendingSave?.()) { revisionPending = true; return false; }
+                if (hiddenData !== before || internal.hasPendingSave?.() || ruleWrites.size > 0) { revisionPending = true; return false; }
                 const next = (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
                 const after = JE.core?.revision?.document?.('hidden-content') ?? null;
                 loadedRevision = after === revision ? revision : null;
@@ -735,6 +736,16 @@
             }
         })();
         return revalidating;
+    }
+
+    /**
+     * Once this tab's changes are all answered (the store's queue and the title rule writes), a revision seen while they
+     * were out is read now (it was held back so a read could not be taken over them).
+     */
+    function readAfterSave() {
+        if (!revisionPending || revalidating || internal.hasPendingSave?.() || ruleWrites.size > 0) return;
+        if ((JE.core?.revision?.document?.('hidden-content') ?? null) === loadedRevision) return;
+        void revalidate();
     }
 
     document.addEventListener('je-document-revision', (e) => {
@@ -799,6 +810,7 @@
         unhideAll,
         resetFromUserConfig,
         revalidate,
+        readAfterSave,
         /** @returns {boolean} A newer revision of the rules is waiting to be read (after this tab's pending save). */
         hasRevisionPending: () => revisionPending,
     });

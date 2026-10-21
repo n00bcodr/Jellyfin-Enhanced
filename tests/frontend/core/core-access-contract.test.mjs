@@ -112,20 +112,26 @@ test('another tab hides a title: this tab\'s Hidden Content rules follow, in pla
   let hc = 'h1';
   let reads = 0;
   let posted = 0;
+  let releaseSave;
+  const saveHeld = new Promise(resolve => { releaseSave = resolve; });
   const h = createHarness({
     JE: { userConfig: { hiddenContent: { items: {}, settings: {} } } },
     apiClient: { ajax: async (req) => {
-      if (req.type === 'POST') { posted++; return {}; }
+      if (req.type === 'POST' || req.type === 'PATCH') { posted++; return { success: true }; }
       reads++;
       return { items: { [id]: { itemId: id, tmdbId: '603', hideScope: 'global' } }, settings: {} };
     } },
-    fetch: async url => {
+    fetch: async (url, init = {}) => {
       const revision = `a=a1;hc=${hc};sg=s1`;
+      // The joined write path: the settings store sends a hide as one PATCH of the document through the core transport
+      // (held open here, so the save is pending while the next revision is seen).
+      if ((init.method || 'GET').toUpperCase() === 'PATCH') { posted++; await saveHeld; return revised({ success: true }, revision); }
       return revised({ revision }, revision);
     }
   });
   t.after(() => h.close());
-  loadCore(h, ['enhanced/hiddencontent/hidden-content-data.js', 'enhanced/hiddencontent/hidden-content-save.js']);
+  // The bundle's order: each document's write queue and the settings store before the Hidden Content modules.
+  loadCore(h, ['core/mutation-queue.js', 'enhanced/config.js', 'enhanced/hiddencontent/hidden-content-data.js', 'enhanced/hiddencontent/hidden-content-save.js']);
   const content = h.JE.internals.hiddenContent;
   let refreshed = 0;
   content.refreshNativeCardVisibility = () => { refreshed++; };
@@ -148,6 +154,7 @@ test('another tab hides a title: this tab\'s Hidden Content rules follow, in pla
   await flush(4);
   assert.equal(reads, 1, 'no read over a pending save');
   assert.equal(content.isHidden('c'.repeat(32)), true);
+  releaseSave();
   await new Promise(r => setTimeout(r, 700));
   await flush(6);
   assert.equal(posted, 1);
