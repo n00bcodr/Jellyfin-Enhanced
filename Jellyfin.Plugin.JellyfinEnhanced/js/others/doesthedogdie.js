@@ -18,7 +18,6 @@
         // Topics the user didn't pick need a few votes, so one stray vote doesn't headline.
         const MIN_VOTES = 3;
 
-        let picked = null;       // Set of topic ids, loaded once per session
         let catalogPromise = null;
         let generation = 0;
 
@@ -74,28 +73,19 @@
         const pctOf = (t) => Math.round((t.Yes / (t.Yes + t.No)) * 100);
         const tone = (pct) => (pct >= 90 ? 'je-ddd-hi' : pct >= 75 ? 'je-ddd-mid' : 'je-ddd-low');
 
+        // The picks are the settings store's ddd-triggers.json document: one source, no copy kept here. The store reads it
+        // once per session and publishes the stored picks before anything is saved.
+        const pickedNow = () => new Set(JE.internals?.userDocument?.('ddd-triggers.json')?.document?.Triggers || []);
+
         async function loadPicked() {
-            if (picked) return picked;
-            // Filled through its own reference: after a user change `picked` is the next viewer's set, and a late
-            // reply must not add this viewer's private picks to it.
-            const mine = new Set();
-            picked = mine;
-            try {
-                const userId = ApiClient.getCurrentUserId();
-                const doc = await ApiClient.ajax({
-                    type: 'GET',
-                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/ddd-triggers.json?_=${Date.now()}`),
-                    dataType: 'json'
-                });
-                if (picked === mine && ApiClient.getCurrentUserId() === userId) {
-                    (doc?.Triggers || []).forEach((id) => mine.add(id));
-                    // The settings store saves this document whole only after a read of it (a failed read would lose picks).
-                    JE.internals?.noteSettingsRead?.('ddd-triggers.json', doc);
+            if (!JE.internals?.userDocument?.('ddd-triggers.json')?.read) {
+                try {
+                    await JE.readUserSettings('ddd-triggers.json');
+                } catch (e) {
+                    console.warn(`${logPrefix} Could not load your triggers.`, e);
                 }
-            } catch (e) {
-                console.warn(`${logPrefix} Could not load your triggers.`, e);
             }
-            return mine;
+            return pickedNow();
         }
 
         function chip(topic) {
@@ -117,6 +107,7 @@
             const topics = entry.Topics || [];
             const votes = (t) => t.Yes + t.No;
             const present = topics.filter((t) => pctOf(t) >= PRESENT_PCT && votes(t) >= MIN_VOTES).sort((a, b) => votes(b) - votes(a));
+            const picked = pickedNow();
             const hasPicks = picked.size > 0;
             const mine = hasPicks ? topics.filter((t) => picked.has(t.Id)) : [];
             const hits = mine.filter((t) => pctOf(t) >= PRESENT_PCT).sort((a, b) => votes(b) - votes(a));
@@ -211,7 +202,9 @@
             cancel.addEventListener('click', close);
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 
-            const draft = new Set(picked);
+            // The picker's changes are the topics ticked and unticked here; a pick made elsewhere meanwhile stays.
+            const initial = pickedNow();
+            const draft = new Set(initial);
             let topics = [];
             try {
                 topics = (await getCatalog())?.Topics || [];
@@ -247,16 +240,17 @@
 
             save.addEventListener('click', async () => {
                 close();
-                const shown = picked;
+                const userId = ApiClient.getCurrentUserId();
+                const add = [...draft].filter((id) => !initial.has(id));
+                const remove = [...initial].filter((id) => !draft.has(id));
                 try {
-                    // Refused (with a toast) while the picks were never read: they would replace the stored ones.
-                    await JE.saveUserSettings('ddd-triggers.json', { Triggers: Array.from(draft) }, { throwOnError: true });
+                    // Refused (with a toast) when the picks can't be read first.
+                    await JE.patchUserSettings('ddd-triggers.json', { add, remove }, { throwOnError: true });
                 } catch (e) {
                     console.warn(`${logPrefix} Could not save your triggers.`, e);
                     return;
                 }
-                if (picked !== shown) return; // another viewer's picks since: theirs stay
-                picked = draft;
+                if (ApiClient.getCurrentUserId() !== userId) return; // another viewer since
                 onSaved();
             });
         }
@@ -364,7 +358,6 @@
         // Remove outgoing content synchronously, before any asynchronous re-read.
         JE.session?.onUserChange('doesthedogdie', () => {
             ++generation;
-            picked = null;
             document.querySelectorAll(`.${SECTION_CLASS}, .je-ddd-modal`).forEach(n => n.remove());
         });
         JE.core.navigation?.onNavigate?.(() => {

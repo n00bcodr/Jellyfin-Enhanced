@@ -100,6 +100,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private static readonly Dictionary<string, (string Content, DateTime CachedAt)> _responseCache = new();
         private static readonly object _responseCacheLock = new();
 
+        // Moves on every drop of the Seerr response and TMDB enrichment caches (a settings save, a request that changes a
+        // title), before the drop and under the cache's lock: a read that began under an older value isn't stored.
+        private static long _seerrResponseGeneration;
+
         // Throttle for manual user import
         private static DateTime _lastManualImport = DateTime.MinValue;
         private static readonly object _importThrottleLock = new();
@@ -119,10 +123,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return cached.Value;
             }
 
+            // Taken before the probe: a settings save while it runs (another Seerr) doesn't keep its answer, and the answer
+            // lives from the probe's start.
+            var generation = Interlocked.Read(ref _seerrResponseGeneration);
+            var probedAt = DateTime.UtcNow;
             bool active = await ProbeJellyseerrStatusAsync();
             lock (_seerrStatusCacheLock)
             {
-                _seerrStatusCache = (active, DateTime.UtcNow);
+                if (generation == Interlocked.Read(ref _seerrResponseGeneration)) _seerrStatusCache = (active, probedAt);
             }
             return active;
         }
@@ -342,21 +350,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         private async Task<JellyseerrUser?> GetJellyseerrUser(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
+            => (await GetJellyseerrUserRead(jellyfinUserId, bypassCache, allowAutoImport)).User;
+
+        // The Seerr user and when the read that found them began (a held answer's own read): a cache that keeps something
+        // worked out from it (the account id) ends when this read does, never later.
+        private async Task<(JellyseerrUser? User, DateTime ReadAt)> GetJellyseerrUserRead(string jellyfinUserId, bool bypassCache = false, bool allowAutoImport = true)
         {
+            // Taken before anything is read: the generation fences a store after a clear, the instant starts the lifetime.
+            var generation = Interlocked.Read(ref _userCacheGeneration);
+            var readAt = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
                 _logger.Warning("Seerr configuration is missing. Cannot look up user ID.");
-                return null;
+                return (null, readAt);
             }
 
             // Skip blocked users entirely — no lookup, no import, no API calls
             if (IsJellyseerrImportBlocked(jellyfinUserId, config))
             {
-                return null;
+                return (null, readAt);
             }
 
-            var generation = Interlocked.Read(ref _userCacheGeneration);
             bool cacheEnabled = !config.JellyseerrDisableCache && !bypassCache;
             if (cacheEnabled)
             {
@@ -369,7 +384,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var ttl = cached.User == null ? TimeSpan.FromSeconds(60) : GetUserIdCacheTtl();
                         if (DateTime.UtcNow - cached.CachedAt < ttl)
                         {
-                            return cached.User;
+                            return (cached.User, cached.CachedAt);
                         }
                     }
                 }
@@ -412,10 +427,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 lock (_userCacheLock)
                                 {
                                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                        _userCache[jellyfinUserId] = (user, DateTime.UtcNow);
+                                        _userCache[jellyfinUserId] = (user, readAt);
                                 }
                             }
-                            return user;
+                            return (user, readAt);
                         }
                         _logger.Info($"No matching Jellyfin User ID found in the {users?.Count ?? 0} users from {trimmedUrl}");
                     }
@@ -446,11 +461,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         lock (_userCacheLock)
                         {
                             if (generation == Interlocked.Read(ref _userCacheGeneration))
-                                _userCache[jellyfinUserId] = (importedUser, DateTime.UtcNow);
+                                _userCache[jellyfinUserId] = (importedUser, readAt);
                         }
                     }
 
-                    return importedUser;
+                    return (importedUser, readAt);
                 }
             }
 
@@ -462,12 +477,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userCacheLock)
                 {
                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userCache[jellyfinUserId] = (null, DateTime.UtcNow);
+                        _userCache[jellyfinUserId] = (null, readAt);
                 }
             }
 
             _logger.Warning($"Could not find or import a matching Seerr user for Jellyfin User ID {ResolveUserDisplay(jellyfinUserId)} after checking all URLs.");
-            return null;
+            return (null, readAt);
         }
 
         private async Task<(JellyseerrUser? User, bool Definite)> TryAutoImportJellyseerrUser(string jellyfinUserId, string[] urls, HttpClient httpClient)
@@ -594,6 +609,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Seerr was just read and links <paramref name="seerrUserId"/> (null: no account) to the person: a lookup this
+        /// proxy holds for them that names another account ends now, and lookups running now aren't kept (the generation
+        /// moves), so the proxy never acts in Seerr as an account that is no longer the person's for the rest of its own
+        /// lifetime.
+        /// </summary>
+        /// <param name="jellyfinUserId">The person.</param>
+        /// <param name="seerrUserId">Their Seerr account as just read.</param>
+        internal static void ForgetSeerrAccountOtherThan(Guid jellyfinUserId, int? seerrUserId)
+        {
+            var person = jellyfinUserId.ToString("N");
+            static bool Same(string key, string person) => string.Equals(key.Replace("-", string.Empty), person, StringComparison.OrdinalIgnoreCase);
+            var id = seerrUserId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            lock (_userCacheLock)
+            {
+                var stale = _userCache.Where(e => Same(e.Key, person) && e.Value.User?.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) != id).Select(e => e.Key).ToList();
+                if (stale.Count > 0)
+                {
+                    Interlocked.Increment(ref _userCacheGeneration);
+                    foreach (var key in stale) _userCache.Remove(key);
+                }
+            }
+
+            lock (_userIdCacheLock)
+            {
+                var stale = _userIdCache.Where(e => Same(e.Key, person) && e.Value.JellyseerrUserId != id).Select(e => e.Key).ToList();
+                if (stale.Count > 0)
+                {
+                    Interlocked.Increment(ref _userCacheGeneration);
+                    foreach (var key in stale) _userIdCache.Remove(key);
+                }
+            }
+        }
+
         /// <summary>Clears Seerr answers and user lookups when its settings are saved.</summary>
         public static void ClearAllSeerrCachesOnConfigChange()
         {
@@ -601,16 +650,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             SeerrAskedProofCache.Shared.Clear();
             lock (_responseCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _responseCache.Clear();
             }
             lock (_tmdbEnrichmentCacheLock)
             {
+                Interlocked.Increment(ref _seerrResponseGeneration);
                 _tmdbEnrichmentCache.Clear();
             }
             // Avatar cache may reference the OLD Seerr URL — clear it too.
             _avatarCache.Clear();
             // also flush the cached status probe so admins see fresh
-            // reachability immediately after fixing config.
+            // reachability immediately after fixing config (a probe running now is fenced by the generation above).
             lock (_seerrStatusCacheLock) { _seerrStatusCache = null; }
             // Arr queue/history/calendar/links come from ArrStateStore, which starts over by itself
             // for an instance whose URL or key changed (its client is rebuilt).
@@ -642,10 +693,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         private async Task<string?> GetJellyseerrUserId(string jellyfinUserId)
         {
+            // Taken before anything is read (a clear after it fences the store below).
+            var generation = Interlocked.Read(ref _userCacheGeneration);
             var config = JellyfinEnhanced.Instance?.Configuration;
             bool cacheEnabled = config == null || !config.JellyseerrDisableCache;
 
-            var generation = Interlocked.Read(ref _userCacheGeneration);
             // Check cache first (unless disabled)
             var cachedId = TryGetCachedJellyseerrUserId(jellyfinUserId);
             if (cachedId != null)
@@ -653,7 +705,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return cachedId;
             }
 
-            var user = await GetJellyseerrUser(jellyfinUserId);
+            // The id lives from the read of the user it came from (a held one may be nearly as old as its own limit).
+            var (user, readAt) = await GetJellyseerrUserRead(jellyfinUserId);
             var jellyseerrUserId = user?.Id.ToString();
 
             if (!string.IsNullOrEmpty(jellyseerrUserId) && cacheEnabled)
@@ -661,7 +714,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lock (_userIdCacheLock)
                 {
                     if (generation == Interlocked.Read(ref _userCacheGeneration))
-                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                        _userIdCache[jellyfinUserId] = (jellyseerrUserId, readAt);
                 }
             }
 
@@ -768,6 +821,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var subPathInfix = $":/api/v1/{mediaType}/{mediaId}/";
                 lock (_responseCacheLock)
                 {
+                    Interlocked.Increment(ref _seerrResponseGeneration);
                     var keys = _responseCache.Keys
                         .Where(k =>
                             k.EndsWith(bareSuffix, StringComparison.Ordinal)
@@ -1060,6 +1114,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // issues) must run to completion even if the browser goes away.
             var ct = method == HttpMethod.Get ? HttpContext.RequestAborted : CancellationToken.None;
 
+            // Taken before the first read (the configuration, the person's Seerr account): a drop while this runs means its
+            // answer may come from the configuration before the change; the answer lives from here.
+            var responseGeneration = Interlocked.Read(ref _seerrResponseGeneration);
+            var requestStart = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !config.JellyseerrEnabled || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.GetJellyseerrApiKey()))
             {
@@ -1320,7 +1378,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         {
                             lock (_responseCacheLock)
                             {
-                                _responseCache[cacheKey] = (json, DateTime.UtcNow);
+                                if (responseGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _responseCache[cacheKey] = (json, requestStart);
 
                                 if (_responseCache.Count > 200 || _responseCache.Count % 50 == 0)
                                 {
@@ -4127,6 +4185,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4f: the Ready playlist and native Ready messages in effect (parents included; each person opts in).
                 ArrReadyPlaylistEnabled = Services.Acquire.Ready.ReadyFlags.Playlist(config),
                 ArrReadyMessagesEnabled = Services.Acquire.Ready.ReadyFlags.Messages(config),
+                // Phase 4c2: list import review and From URL (effective switches only; providers come from the import route)
+                ArrListImportEnabled = Services.Acquire.Lists.Import.ListImportFlags.Import(config),
+                ArrListSourcesEnabled = Services.Acquire.Lists.Import.ListImportFlags.Sources(config),
 
                 // Arr Tags Sync Settings
                 config.ArrTagsSyncEnabled,
@@ -4287,6 +4348,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // UserConfigurationManager expects folder names in N format (without dashes),
             // matching AuthorizeUserConfigAccess.
             var authorizedUserId = userId.Value.ToString("N");
+            // The person's revisions as the filter took them before this action read their documents (else taken now, still
+            // before the reads below): the client keeps the mirrors it loads from here under them.
+            var revision = Response.Headers.TryGetValue(Helpers.AccessRevision.Header, out var taken) && taken.Count > 0
+                ? taken.ToString()
+                : _userManager == null ? null : Helpers.AccessRevision.For(_userManager, userId.Value);
 
             IReadOnlyList<string>? componentScripts = null;
             try
@@ -4300,13 +4366,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             var isAdmin = IsAdminUser();
+            // Each document's revision, taken before it is read (the client orders later answers against it).
+            var userRevisions = new Dictionary<string, string>(StringComparer.Ordinal);
+            Func<object> Revisioned(string fileName, Func<object> read) => () =>
+            {
+                var (document, revision) = ReadWithRevision(authorizedUserId, fileName, read);
+                userRevisions[fileName] = revision;
+                return document;
+            };
 
             return new JsonResult(new
             {
                 Version = JellyfinEnhanced.Instance?.Version.ToString() ?? "unknown",
+                // The server's JE build (the client script's cache key): a page from another build asks to be reloaded.
+                Build = JellyfinEnhanced.Instance?.ScriptCacheKey,
                 // Lets the client confirm the payload belongs to the user it expects
                 // (a token swap during a user switch must never be applied silently).
                 UserId = authorizedUserId,
+                Revision = revision,
                 PublicConfig = BuildPublicConfig(config),
                 PrivateConfig = isAdmin ? BuildPrivateConfig(config) : null,
                 // Same name checks the client used to run against GET /Plugins.
@@ -4314,12 +4391,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 HasPluginPages = IsPluginInstalled("Plugin Pages"),
                 UserSettings = new
                 {
-                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, () => LoadUserSettingsDocument(authorizedUserId)),
-                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json")),
-                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json")),
-                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json")),
-                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, () => LoadUserHiddenContentDocument(authorizedUserId)),
+                    Settings = TryLoadUserDocument("settings.json", authorizedUserId, Revisioned("settings.json", () => LoadUserSettingsDocument(authorizedUserId))),
+                    Shortcuts = TryLoadUserDocument("shortcuts.json", authorizedUserId, Revisioned("shortcuts.json", () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json"))),
+                    Bookmark = TryLoadUserDocument("bookmark.json", authorizedUserId, Revisioned("bookmark.json", () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json"))),
+                    Elsewhere = TryLoadUserDocument("elsewhere.json", authorizedUserId, Revisioned("elsewhere.json", () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json"))),
+                    HiddenContent = TryLoadUserDocument("hidden-content.json", authorizedUserId, Revisioned("hidden-content.json", () => LoadUserHiddenContentDocument(authorizedUserId))),
                 },
+                UserRevisions = userRevisions,
                 ComponentScripts = componentScripts,
                 Prefetched = BuildBootstrapPrefetched(config, userId.Value, authorizedUserId, isAdmin),
             });
@@ -5088,7 +5166,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
             if (authorizationResult != null) return authorizationResult;
 
-            return Ok(_userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+            var (triggers, revision) = ReadWithRevision(authorizedUserId, "ddd-triggers.json",
+                () => _userConfigurationManager.GetUserConfiguration<DddSettings>(authorizedUserId, "ddd-triggers.json"));
+            return DocumentAnswer(triggers, revision);
         }
 
         [HttpPost("user-settings/{userId}/ddd-triggers.json")]
@@ -5101,7 +5181,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "ddd-triggers.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "ddd-triggers.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 return Ok(new { success = true, file = "ddd-triggers.json" });
             }
             catch (Exception ex)
@@ -5298,6 +5379,88 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new FileStreamResult(stream, contentType);
         }
 
+        // ---- Whole-document writes of per-user documents (the POST routes kept for older pages and API clients) ----
+        // Every read route hands out the document's revision (ETag) and every whole-document write sends back the one it read
+        // (If-Match): the document is replaced only while it is still that revision, under its file lock
+        // (UserConfigurationManager.ReplaceUserDocument). A write without one goes ahead only where nothing can be lost;
+        // otherwise nothing is written and the writer is told (409 revision_conflict, with the current revision).
+
+        /// <summary>The revision the writer read (If-Match), or null when it sent none.</summary>
+        private string? RequestedRevision()
+        {
+            var value = Request?.Headers.IfMatch.ToString();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+
+        /// <summary>Hands out a per-user document's revision with the answer (ETag).</summary>
+        private void AnswerRevision(string revision)
+        {
+            if (Response != null) Response.Headers.ETag = "\"" + revision + "\"";
+        }
+
+        /// <summary>
+        /// Reads a per-user document with its revision. The revision is taken before the read, so a write landing in between
+        /// leaves the revision older than the document (a whole write built on it is refused, never allowed); a read that
+        /// itself wrote (a first read stores the defaults) reads once more behind the newer revision.
+        /// </summary>
+        private (T Document, string Revision) ReadWithRevision<T>(string authorizedUserId, string fileName, Func<T> read)
+        {
+            var revision = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
+            var document = read();
+            var after = _userConfigurationManager.RevisionOf(authorizedUserId, fileName);
+            return after == revision ? (document, revision) : (read(), after);
+        }
+
+        /// <summary>
+        /// A per-user document as a read answers it: its revision as the ETag and, when the client asked for it
+        /// (<c>?withRevision=true</c>, for clients that can't read headers), the document and its revision in the body.
+        /// </summary>
+        private IActionResult DocumentAnswer(object document, string revision)
+        {
+            AnswerRevision(revision);
+            var asked = Request?.Query["withRevision"].ToString();
+            return string.Equals(asked, "true", StringComparison.OrdinalIgnoreCase) ? Ok(new { document, revision }) : Ok(document);
+        }
+
+        /// <summary>
+        /// A whole-document write refused because the stored document isn't the one the writer read. One sent without any
+        /// revision from a signed-in page is a page of an earlier JE build (the current one never writes a document whole): its
+        /// session is also told to reload, so the change it couldn't save isn't lost silently (ClientReloadNotice).
+        /// </summary>
+        private IActionResult RevisionConflict(string fileName, string revision)
+        {
+            AnswerRevision(revision);
+            if (RequestedRevision() == null) Services.ClientReloadNotice.Send(_sessionManager, User, Services.ClientReloadNotice.SettingsText, _logger);
+            return StatusCode(409, new
+            {
+                success = false,
+                code = "revision_conflict",
+                file = fileName,
+                revision,
+                message = $"{fileName} has changed since it was read, so it was not replaced. Read it again and make the change to what it holds now.",
+            });
+        }
+
+        /// <summary>
+        /// Replaces a per-user document whole through the revision gate. Null when it is stored (or already was); otherwise
+        /// the answer (no document, or a conflict).
+        /// </summary>
+        private IActionResult? FencedReplace<T>(string authorizedUserId, string fileName, T? document, out UserConfigurationManager.DocumentWrite outcome, Action<T, T>? prepare = null) where T : class, new()
+        {
+            outcome = UserConfigurationManager.DocumentWrite.Unchanged;
+            if (document == null) return BadRequest(new { success = false, message = $"A {fileName} document is required." });
+            var (written, revision, _) = _userConfigurationManager.ReplaceUserDocument(authorizedUserId, fileName, document, RequestedRevision(), prepare);
+            outcome = written;
+            if (written == UserConfigurationManager.DocumentWrite.Conflict)
+            {
+                _logger.Info($"Refused a stale {fileName} for {ResolveUserDisplay(authorizedUserId)} (its revision isn't the stored one).");
+                return RevisionConflict(fileName, revision);
+            }
+
+            AnswerRevision(revision);
+            return null;
+        }
+
         private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
         {
             authorizedUserId = string.Empty;
@@ -5487,7 +5650,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserSettingsDocument(authorizedUserId));
+            var (settings, revision) = ReadWithRevision(authorizedUserId, UserConfigurationManager.SettingsFileName, () => LoadUserSettings(authorizedUserId));
+            return DocumentAnswer(SettingsDocument(settings), revision);
         }
 
         /// <summary>
@@ -5495,7 +5659,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// with the caller's IsAdmin flag applied. Shared by the settings.json
         /// endpoint and /bootstrap so both return exactly the same shape.
         /// </summary>
-        private object LoadUserSettingsDocument(string authorizedUserId)
+        private object LoadUserSettingsDocument(string authorizedUserId) => SettingsDocument(LoadUserSettings(authorizedUserId));
+
+        /// <summary>The user's settings.json as stored (seeding defaults on first access).</summary>
+        private JellyfinEnhancedUserSettings LoadUserSettings(string authorizedUserId)
         {
             // Populate defaults from plugin configuration if missing
             if (!_userConfigurationManager.UserConfigurationExists(authorizedUserId, "settings.json"))
@@ -5514,7 +5681,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            return _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+        }
+
+        /// <summary>A settings.json document as the settings routes hand it out (gated display language, the caller's IsAdmin).</summary>
+        private object SettingsDocument(JellyfinEnhancedUserSettings userConfig)
+        {
             // Handed out as the display-language gate stores it: a file written before the gate existed (or restored by an
             // older version) never gives the client a language to mirror into Jellyfin's shared key. The file isn't rewritten.
             userConfig.DisplayLanguage = LanguageTags.Sanitize(userConfig.DisplayLanguage);
@@ -5545,8 +5717,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json");
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "shortcuts.json",
+                () => _userConfigurationManager.GetUserConfiguration<UserShortcuts>(authorizedUserId, "shortcuts.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpGet("user-settings/{userId}/elsewhere.json")]
@@ -5560,8 +5733,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json");
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "elsewhere.json",
+                () => _userConfigurationManager.GetUserConfiguration<ElsewhereSettings>(authorizedUserId, "elsewhere.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpPost("user-settings/{userId}/settings.json")]
@@ -5580,8 +5754,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Phase 4: the person's consents are their own and change only through the consent operation below. This
                 // save replaces the whole file (the person's own or an administrator's) and keeps every consent as stored.
                 // Read, kept, compared and saved under the person's settings lock.
-                var (saved, changes) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration);
-                if (saved && changes.Count > 0)
+                if (userConfiguration == null) return BadRequest(new { success = false, message = "A settings.json document is required." });
+                // Replaced only as a change of the revision the writer read (If-Match), like every whole-document write.
+                var (outcome, changes, revision) = _userConfigurationManager.SaveUserSettings(authorizedUserId, userConfiguration, RequestedRevision());
+                if (outcome == UserConfigurationManager.DocumentWrite.Conflict)
+                {
+                    _logger.Info($"Refused a stale settings.json for {ResolveUserDisplay(authorizedUserId)} (its revision isn't the stored one).");
+                    return RevisionConflict("settings.json", revision);
+                }
+
+                AnswerRevision(revision);
+                if (outcome == UserConfigurationManager.DocumentWrite.Saved && changes.Count > 0)
                 {
                     _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
                 }
@@ -5634,8 +5817,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "invalid_consent", message = "A consent field and value are required." });
             try
             {
-                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value);
-                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage });
+                var settings = _userConfigurationManager.SetPersonalConsent(authorizedUserId, change.Field, change.Value, out var revision);
+                AnswerRevision(revision);
+                return Ok(new { success = true, consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, revision });
             }
             catch (ArgumentException)
             {
@@ -5645,6 +5829,192 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to save personal consent for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
                 return StatusCode(500, new { success = false, message = "Failed to save personal consent." });
+            }
+        }
+
+        /// <summary>
+        /// A change to a per-user document as the operations the client made: <c>Set</c> (field → value) for settings.json and
+        /// elsewhere.json, <c>Upsert</c> (key → record) and <c>Remove</c> (keys) for bookmark.json (bookmark ids) and
+        /// shortcuts.json (shortcut names), <c>Add</c> and <c>Remove</c> (topic ids) for ddd-triggers.json. The server applies
+        /// them to the document it holds now, so what another tab or device changed since this client's read stays.
+        /// </summary>
+        public sealed class UserDocumentPatch
+        {
+            /// <summary>Fields to set.</summary>
+            public Dictionary<string, System.Text.Json.JsonElement>? Set { get; set; }
+
+            /// <summary>Records to add or replace, by key.</summary>
+            public Dictionary<string, System.Text.Json.JsonElement>? Upsert { get; set; }
+
+            /// <summary>Items to add (ddd-triggers.json).</summary>
+            public List<System.Text.Json.JsonElement>? Add { get; set; }
+
+            /// <summary>Keys or items to remove.</summary>
+            public List<System.Text.Json.JsonElement>? Remove { get; set; }
+        }
+
+        private const int UserDocumentPatchBytes = 1024 * 1024;
+
+        private static readonly System.Text.Json.JsonSerializerOptions UserDocumentReadOptions = new() { PropertyNameCaseInsensitive = true };
+
+        private static string? PatchKey(System.Text.Json.JsonElement e) => e.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => e.GetString(),
+            System.Text.Json.JsonValueKind.Number => e.GetRawText(),
+            _ => null,
+        };
+
+        /// <summary>Applies field changes to the person's settings.json (consents excepted: see the consent operation).</summary>
+        [HttpPatch("user-settings/{userId}/settings.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsSettings(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            try
+            {
+                var (settings, changes, revision) = _userConfigurationManager.PatchUserSettingsRevision(authorizedUserId, patch?.Set,
+                    () => JellyfinEnhanced.Instance?.Configuration is { } c ? UserSettingsDefaults.Create(c) : new JellyfinEnhancedUserSettings());
+                if (changes.Count > 0) _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = "settings.json", consents = UserConfigurationManager.ConsentsOf(settings), displayLanguage = settings.DisplayLanguage, document = SettingsDocument(settings), revision });
+            }
+            catch (UserDocumentPatchException ex)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save user settings for user {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save user settings." });
+            }
+        }
+
+        /// <summary>Adds or replaces bookmarks by id and removes others, keeping every bookmark the patch doesn't name.</summary>
+        [HttpPatch("user-settings/{userId}/bookmark.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserBookmark(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<UserBookmark>(userId, "bookmark.json", patch, (doc, p) =>
+            {
+                var n = 0;
+                foreach (var key in (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+                {
+                    if (key != null && doc.Bookmarks.Remove(key)) n++;
+                }
+
+                foreach (var (id, value) in p.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+                {
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    doc.Bookmarks[id] = value.Deserialize<BookmarkItem>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Bookmark {id} is empty.");
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Adds and removes Does the Dog Die topic ids, keeping every other pick.</summary>
+        [HttpPatch("user-settings/{userId}/ddd-triggers.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsDdd(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<DddSettings>(userId, "ddd-triggers.json", patch, (doc, p) =>
+            {
+                static int Topic(System.Text.Json.JsonElement e) => e.ValueKind == System.Text.Json.JsonValueKind.Number && e.TryGetInt32(out var id)
+                    ? id : throw new UserDocumentPatchException("A trigger is a topic id (a number).");
+                var n = 0;
+                var remove = (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(Topic).ToHashSet();
+                n += doc.Triggers.RemoveAll(remove.Contains);
+                foreach (var id in (p.Add ?? new List<System.Text.Json.JsonElement>()).Select(Topic))
+                {
+                    if (doc.Triggers.Contains(id)) continue;
+                    doc.Triggers.Add(id);
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Adds or replaces shortcuts by name and removes others, keeping every shortcut the patch doesn't name.</summary>
+        [HttpPatch("user-settings/{userId}/shortcuts.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsShortcuts(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<UserShortcuts>(userId, "shortcuts.json", patch, (doc, p) =>
+            {
+                var n = 0;
+                foreach (var name in (p.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+                {
+                    if (name != null) n += doc.Shortcuts.RemoveAll(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+                }
+
+                foreach (var (name, value) in p.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+                {
+                    var shortcut = value.Deserialize<Shortcut>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Shortcut {name} is empty.");
+                    shortcut.Name = name;
+                    var index = doc.Shortcuts.FindIndex(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+                    if (index >= 0) doc.Shortcuts[index] = shortcut; else doc.Shortcuts.Add(shortcut);
+                    n++;
+                }
+
+                return n;
+            });
+        }
+
+        /// <summary>Applies field changes to the person's elsewhere.json.</summary>
+        [HttpPatch("user-settings/{userId}/elsewhere.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserSettingsElsewhere(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            return PatchUserDocument<ElsewhereSettings>(userId, "elsewhere.json", patch, (doc, p) =>
+            {
+                var updated = UserConfigurationManager.ApplyFieldChanges(doc, p.Set);
+                doc.Region = updated.Region;
+                doc.Regions = updated.Regions;
+                doc.Services = updated.Services;
+                doc.SeasonProviders = updated.SeasonProviders;
+                return 1;
+            });
+        }
+
+        // Applies a patch to a per-user document under its file lock (strict read: a corrupt file is never overwritten) and
+        // answers the document as stored afterwards.
+        private IActionResult PatchUserDocument<T>(string userId, string fileName, UserDocumentPatch? patch, Func<T, UserDocumentPatch, int> apply) where T : class, new()
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (patch == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+            try
+            {
+                T? stored = null;
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<T>(authorizedUserId, fileName, doc =>
+                {
+                    stored = doc;
+                    return apply(doc, patch);
+                });
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = fileName, document = stored, revision });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save {fileName} for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = $"Failed to save {fileName}." });
             }
         }
 
@@ -5661,7 +6031,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "shortcuts.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "shortcuts.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved user shortcuts for {ResolveUserDisplay(authorizedUserId)} to shortcuts.json");
                 return Ok(new { success = true, file = "shortcuts.json" });
             }
@@ -5684,8 +6055,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            var userConfig = _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json");
-            return Ok(userConfig);
+            var (userConfig, revision) = ReadWithRevision(authorizedUserId, "bookmark.json",
+                () => _userConfigurationManager.GetUserConfiguration<UserBookmark>(authorizedUserId, "bookmark.json"));
+            return DocumentAnswer(userConfig, revision);
         }
 
         [HttpPost("user-settings/{userId}/bookmark.json")]
@@ -5701,7 +6073,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "bookmark.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "bookmark.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved enhanced bookmarks for {ResolveUserDisplay(authorizedUserId)} to bookmark.json");
                 return Ok(new { success = true, file = "bookmark.json" });
             }
@@ -5829,7 +6202,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "elsewhere.json", userConfiguration);
+                var refused = FencedReplace(authorizedUserId, "elsewhere.json", userConfiguration, out _);
+                if (refused != null) return refused;
                 _logger.Info($"Saved user elsewhere settings for {ResolveUserDisplay(authorizedUserId)} to elsewhere.json");
                 return Ok(new { success = true, file = "elsewhere.json" });
             }
@@ -5852,7 +6226,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
-            return Ok(LoadUserHiddenContentDocument(authorizedUserId));
+            var (hidden, revision) = ReadWithRevision(authorizedUserId, "hidden-content.json", () => LoadUserHiddenContentDocument(authorizedUserId));
+            return DocumentAnswer(hidden, revision);
         }
 
         /// <summary>
@@ -5931,34 +6306,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, "hidden-content.json"))
+                try
                 {
-                    // Pre-write strict read so a corrupt existing file 503s + backs up instead of being overwritten.
-                    try
-                    {
-                        var current = _userConfigurationManager.GetUserConfigurationStrict<UserHiddenContent>(
-                            authorizedUserId, "hidden-content.json");
-                        var currentRevision = Services.HiddenContentPolicy.RulesRevision(current);
-                        if (userConfiguration.Revision != null ? userConfiguration.Revision != currentRevision
-                            : current.Items.Any(p => !userConfiguration.Items.TryGetValue(p.Key, out var incoming)
-                                || Newtonsoft.Json.JsonConvert.SerializeObject(incoming) != Newtonsoft.Json.JsonConvert.SerializeObject(p.Value)))
-                            return Conflict(new { success = false, code = "hidden_content_changed" });
-                        userConfiguration.Revision = Services.HiddenContentPolicy.RulesRevision(userConfiguration);
-                    }
-                    catch (Exception strictEx) when (strictEx is InvalidDataException
-                                                  || strictEx is Newtonsoft.Json.JsonException)
-                    {
-                        _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
-                        return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
-                    }
-                    catch (IOException ioEx)
-                    {
-                        _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
-                        return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
-                    }
-
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "hidden-content.json", userConfiguration);
+                    // Under the file lock: a strict read first (a corrupt existing file 503s + backs up instead of being
+                    // overwritten), then the revision gate (an older tab's document never replaces a newer one).
+                    // Play edge (D46 rules): the stored document carries its rules revision for the rule routes' answers.
+                    userConfiguration.Revision = Services.HiddenContentPolicy.RulesRevision(userConfiguration);
+                    var refused = FencedReplace(authorizedUserId, "hidden-content.json", userConfiguration, out var outcome);
+                    if (refused != null) return refused;
+                    if (outcome == UserConfigurationManager.DocumentWrite.Unchanged) return Ok(new { success = true, file = "hidden-content.json" });
                 }
+                catch (Exception strictEx) when (strictEx is InvalidDataException
+                                              || strictEx is Newtonsoft.Json.JsonException)
+                {
+                    _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                    return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                    return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+                }
+
                 Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
                 _logger.Info($"Saved hidden content for {ResolveUserDisplay(authorizedUserId)} to hidden-content.json");
                 return Ok(new { success = true, file = "hidden-content.json", revision = userConfiguration.Revision });
@@ -6022,6 +6391,95 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
         }
 
+        /// <summary>
+        /// Applies the person's Hidden Content changes to the hidden-content.json the server holds now, under its file lock:
+        /// <c>Upsert</c> (item key → item) adds or replaces items, <c>Remove</c> (item keys) removes them (with the same item
+        /// stored under another spelling of its id), <c>Set</c> (setting → value) changes settings. Every item and setting the
+        /// patch doesn't name stays, so what another tab or device hid or changed meanwhile is kept. Answers the document as
+        /// stored afterwards.
+        /// </summary>
+        [HttpPatch("user-settings/{userId}/hidden-content.json")]
+        [Authorize]
+        [BodyLimit(UserDocumentPatchBytes)]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public IActionResult PatchUserHiddenContent(string userId, [FromBody] UserDocumentPatch? patch)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (patch == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+            try
+            {
+                UserHiddenContent? stored = null;
+                var (changed, revision) = _userConfigurationManager.RmwUserDocument<UserHiddenContent>(authorizedUserId, "hidden-content.json", doc =>
+                {
+                    stored = doc;
+                    return ApplyHiddenContentPatch(doc, patch);
+                });
+                if (changed > 0) Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
+                AnswerRevision(revision);
+                return Ok(new { success = true, file = "hidden-content.json", document = stored, revision });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"hidden-content.json corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {ex.Message}");
+                return StatusCode(503, new { success = false, message = "Hidden-content store is corrupt; backed up. Please retry." });
+            }
+            catch (IOException ioEx)
+            {
+                _logger.Warning($"hidden-content.json temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                return StatusCode(500, new { success = false, message = "Hidden-content store is temporarily unavailable. Please retry." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save hidden content for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save hidden content." });
+            }
+        }
+
+        // An item id as compared: the server stores ids dashed, cards carry them undashed.
+        private static string CanonicalHiddenId(string? id) => (id ?? string.Empty).Replace("-", string.Empty, StringComparison.Ordinal).ToLowerInvariant();
+
+        /// <summary>Applies a Hidden Content patch to the stored document; returns how many items and settings it changed.</summary>
+        internal static int ApplyHiddenContentPatch(UserHiddenContent doc, UserDocumentPatch patch)
+        {
+            doc.Items ??= new Dictionary<string, HiddenContentItem>();
+            var n = 0;
+            foreach (var key in (patch.Remove ?? new List<System.Text.Json.JsonElement>()).Select(PatchKey))
+            {
+                if (string.IsNullOrEmpty(key)) continue;
+                var wanted = CanonicalHiddenId(key);
+                foreach (var stored in doc.Items.Keys.ToList())
+                {
+                    if (stored == key || (wanted.Length > 0 && (CanonicalHiddenId(stored) == wanted || CanonicalHiddenId(doc.Items[stored]?.ItemId) == wanted)))
+                    {
+                        doc.Items.Remove(stored);
+                        n++;
+                    }
+                }
+            }
+
+            foreach (var (key, value) in patch.Upsert ?? new Dictionary<string, System.Text.Json.JsonElement>())
+            {
+                // Keys are dictionary lookups (never paths); the length cap is light defence against pathological payloads.
+                if (string.IsNullOrWhiteSpace(key) || key.Length > 256) throw new UserDocumentPatchException("A hidden item needs a key of at most 256 characters.");
+                doc.Items[key] = value.Deserialize<HiddenContentItem>(UserDocumentReadOptions) ?? throw new UserDocumentPatchException($"Hidden item {key} is empty.");
+                n++;
+            }
+
+            if (patch.Set is { Count: > 0 } set)
+            {
+                doc.Settings = UserConfigurationManager.ApplyFieldChanges(doc.Settings ?? new HiddenContentSettings(), set);
+                n++;
+            }
+
+            if (n > 0) doc.Revision = Services.HiddenContentPolicy.RulesRevision(doc); // play edge: D46 rules revision
+            return n;
+        }
+
         // Self-or-admin accessor pair for spoilerblur.json, mirroring the other
         // per-user files — otherwise it would be the only per-user JE file an
         // administrator cannot inspect or repair remotely.
@@ -6041,9 +6499,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // file should still return the (empty) default rather than 503 — the
             // user-facing spoiler-blur endpoints already handle strict reads,
             // backups and corruption reporting.
-            var state = _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(
-                authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName);
-            return Ok(state);
+            var (state, revision) = ReadWithRevision(authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName,
+                () => _userConfigurationManager.GetUserConfiguration<UserSpoilerBlur>(authorizedUserId, Services.SpoilerBlurImageFilter.SpoilerBlurFileName));
+            return DocumentAnswer(state, revision);
         }
 
         // Hard cap per spoiler-list dict on the raw full-state save endpoint:
@@ -6105,28 +6563,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                lock (_userConfigurationManager.GetUserFileLock(authorizedUserId, fileName))
+                try
                 {
-                    // Pre-write strict read so a corrupt existing file 503s + backs up
-                    // instead of being silently overwritten (same as hidden-content).
-                    try
-                    {
-                        _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
-                            authorizedUserId, fileName);
-                    }
-                    catch (Exception strictEx) when (strictEx is InvalidDataException
-                                                  || strictEx is Newtonsoft.Json.JsonException)
-                    {
-                        _logger.Warning($"{fileName} corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
-                        return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
-                    }
-                    catch (IOException ioEx)
-                    {
-                        _logger.Warning($"{fileName} temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
-                        return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
-                    }
-
-                    _userConfigurationManager.SaveUserConfiguration(authorizedUserId, fileName, userConfiguration);
+                    // Under the file lock: a strict read first (a corrupt existing file 503s + backs up instead of being
+                    // silently overwritten, as for hidden-content), then the revision gate (an older tab's document never
+                    // replaces a newer one).
+                    var refused = FencedReplace(authorizedUserId, fileName, userConfiguration, out _);
+                    if (refused != null) return refused;
+                }
+                catch (Exception strictEx) when (strictEx is InvalidDataException
+                                              || strictEx is Newtonsoft.Json.JsonException)
+                {
+                    _logger.Warning($"{fileName} corrupt for {ResolveUserDisplay(authorizedUserId)} (backed up): {strictEx.Message}");
+                    return StatusCode(503, new { success = false, message = "Spoiler Guard store is corrupt; backed up. Please retry." });
+                }
+                catch (IOException ioEx)
+                {
+                    _logger.Warning($"{fileName} temporarily unreadable for {ResolveUserDisplay(authorizedUserId)}: {ioEx.Message}");
+                    return StatusCode(500, new { success = false, message = "Spoiler Guard store is temporarily unavailable. Please retry." });
                 }
 
                 // Reconcile the promoter's fast-path gate with the new PendingTmdb
@@ -6677,14 +7131,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var userKey = userId.Value.ToString("N");
             var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
 
+            // The preferences' revision is their file's (spoilerblur.json): any write of it moves it on.
+            var revision = _userConfigurationManager.RevisionOf(userKey, fileName);
             if (!_userConfigurationManager.UserConfigurationExists(userKey, fileName))
             {
+                AnswerRevision(revision);
                 return Ok(new SpoilerBlurUserPrefs());
             }
             try
             {
                 var state = _userConfigurationManager.GetUserConfigurationStrict<UserSpoilerBlur>(
                     userKey, fileName);
+                AnswerRevision(revision);
                 return Ok(state.Prefs ?? new SpoilerBlurUserPrefs());
             }
             catch (InvalidDataException strictEx)
@@ -6698,6 +7156,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {strictEx.Message}");
                 Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), strictEx.Message);
                 return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+        }
+
+        /// <summary>
+        /// Changes the person's Spoiler Guard overrides named in <c>Set</c> (preference → value) in the spoilerblur.json the
+        /// server holds now, under its file lock; every other preference stays (another tab or device may have changed it).
+        /// Answers the preferences as stored afterwards.
+        /// </summary>
+        [HttpPatch("spoiler-blur/user-prefs")]
+        [Authorize]
+        [Produces("application/json")]
+        [Consumes("application/json")]
+        [RequestSizeLimit(8 * 1024)]
+        public IActionResult PatchSpoilerBlurUserPrefs([FromBody] UserDocumentPatch? patch)
+        {
+            var userId = UserHelper.GetCurrentUserId(User);
+            if (userId == null || userId == Guid.Empty) return Forbid();
+            if (patch?.Set == null) return BadRequest(new { success = false, code = "invalid_patch", message = "A patch is required." });
+
+            var fileName = Services.SpoilerBlurImageFilter.SpoilerBlurFileName;
+            var userKey = userId.Value.ToString("N");
+            try
+            {
+                SpoilerBlurUserPrefs? prefs = null;
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserSpoilerBlur>(userKey, fileName, state =>
+                {
+                    state.Prefs = UserConfigurationManager.ApplyFieldChanges(state.Prefs ?? new SpoilerBlurUserPrefs(), patch.Set);
+                    prefs = state.Prefs;
+                    return 1;
+                });
+                AnswerRevision(revision);
+                return Ok(new { success = true, prefs, revision });
+            }
+            catch (Exception ex) when (ex is UserDocumentPatchException or System.Text.Json.JsonException)
+            {
+                return BadRequest(new { success = false, code = "invalid_patch", message = ex.Message });
+            }
+            catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
+            {
+                _logger.Warning($"spoilerblur.json corrupt for {ResolveUserDisplay(userKey)} (backed up): {ex.Message}");
+                Services.SpoilerUserResolver.RecordCorruption(userKey, ResolveUserDisplay(userKey), ex.Message);
+                return StatusCode(503, new { success = false, message = "Spoiler Guard data was corrupt and has been backed up. Your stored values have been reset to defaults — please reconfigure." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save Spoiler Guard preferences for {ResolveUserDisplay(userKey)}: {ex.Message}");
+                return StatusCode(500, new { success = false, message = "Failed to save Spoiler Guard preferences." });
             }
         }
 
@@ -6717,10 +7222,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             try
             {
-                _userConfigurationManager.RmwUserConfiguration<UserSpoilerBlur>(
+                // The preferences are replaced whole only as a change of the revision the writer read (If-Match), under the
+                // file lock; without one only where nothing can be lost (no file yet, or the same preferences).
+                var expected = RequestedRevision();
+                var outcome = UserConfigurationManager.DocumentWrite.Unchanged;
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserSpoilerBlur>(
                     userKey, fileName, state =>
                 {
-                    state.Prefs = new SpoilerBlurUserPrefs
+                    var current = _userConfigurationManager.RevisionOf(userKey, fileName);
+                    var next = new SpoilerBlurUserPrefs
                     {
                         HideSeriesDescriptions = body.HideSeriesDescriptions,
                         HideEpisodeDescriptions = body.HideEpisodeDescriptions,
@@ -6736,8 +7246,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         UseAdvancedCategories = body.UseAdvancedCategories,
                         SkipDisableConfirm = body.SkipDisableConfirm,
                     };
+                    if (UserConfigurationManager.SameContent(next, state.Prefs ?? new SpoilerBlurUserPrefs())) return 0;
+                    if (expected == null ? _userConfigurationManager.UserConfigurationExists(userKey, fileName) : !UserConfigurationManager.IfMatchAllows(expected, current))
+                    {
+                        outcome = UserConfigurationManager.DocumentWrite.Conflict;
+                        return 0;
+                    }
+
+                    state.Prefs = next;
+                    outcome = UserConfigurationManager.DocumentWrite.Saved;
                     return 1;
                 });
+                if (outcome == UserConfigurationManager.DocumentWrite.Conflict)
+                {
+                    _logger.Info($"Refused stale Spoiler Guard preferences for {ResolveUserDisplay(userKey)} (their revision isn't the stored one).");
+                    return RevisionConflict("spoiler-blur/user-prefs", revision);
+                }
+
+                AnswerRevision(revision);
                 return Ok(new { success = true, prefs = body });
             }
             catch (InvalidDataException strictEx)
@@ -7798,7 +8324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var preExistedHc = _userConfigurationManager.UserConfigurationExists(authorizedUserId, "hidden-content.json");
                 var hcDefaults = JellyfinEnhanced.Instance?.Configuration;
 
-                _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(
+                var (_, revision) = _userConfigurationManager.RmwUserDocument<UserHiddenContent>(
                     authorizedUserId, "hidden-content.json", h =>
                     {
                         if (!preExistedHc && hcDefaults != null && h.Items.Count == 0)
@@ -7837,7 +8363,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         return 1;
                     });
                 Services.HiddenContentResponseFilter.InvalidateUser(authorizedUserId);
-                return Ok(new { success = true, key, entry });
+                // The revision of hidden-content.json this hide left: a page orders it with its own saves' answers.
+                return Ok(new { success = true, key, entry, revision });
             }
             catch (Exception ex) when (ex is InvalidDataException || ex is Newtonsoft.Json.JsonException)
             {
@@ -10702,6 +11229,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             take = Math.Clamp(take, 1, 200);
             skip = Math.Max(0, skip);
 
+            // Taken before the configuration is read: the TMDB enrichment kept below is fenced by it and lives from here.
+            var enrichmentGeneration = Interlocked.Read(ref _seerrResponseGeneration);
+            var requestStart = DateTime.UtcNow;
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null)
                 return StatusCode(500, "Plugin configuration not available");
@@ -10888,7 +11418,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                         if (tmdbId.HasValue && !string.IsNullOrEmpty(type))
                         {
-                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.GetJellyseerrApiKey());
+                            var enrichedData = await EnrichWithTmdbData(client, tmdbId.Value, type, jellyseerrUrl!, config.GetJellyseerrApiKey(), enrichmentGeneration, requestStart);
                             title = enrichedData.Title;
                             year = enrichedData.Year;
                             posterUrl = enrichedData.PosterUrl;
@@ -11752,8 +12282,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             public int? EpisodeNumber { get; set; }
         }
 
-        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey)
+        private async Task<(string? Title, int? Year, string? PosterUrl, string? DigitalReleaseDate, string? TheatricalReleaseDate, string? InitialAirDate, string? NextAirDate)> EnrichWithTmdbData(HttpClient client, int tmdbId, string type, string jellyseerrUrl, string apiKey, long enrichmentGeneration, DateTime requestStart)
         {
+            // enrichmentGeneration and requestStart: taken by the request before it read the configuration that named
+            // jellyseerrUrl and apiKey (a drop since then means they may be the old Seerr's).
             var cacheKey = $"{(type == "movie" ? "movie" : "tv")}:{tmdbId}";
             var cacheTtl = GetTmdbEnrichmentCacheTtl();
             var cacheEnabled = !(JellyfinEnhanced.Instance?.Configuration?.JellyseerrDisableCache ?? false);
@@ -11882,14 +12414,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             TmdbEnrichmentResult result;
             if (cacheEnabled)
             {
-                var fetchTask = _tmdbEnrichmentInFlight.GetOrAdd(cacheKey, _ => FetchEnrichmentAsync());
+                // Shared only with reads of the same generation (one that began before a drop never answers a later one).
+                var flightKey = cacheKey + "@" + enrichmentGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                var fetchTask = _tmdbEnrichmentInFlight.GetOrAdd(flightKey, _ => FetchEnrichmentAsync());
                 try
                 {
                     result = await fetchTask;
                 }
                 finally
                 {
-                    _tmdbEnrichmentInFlight.TryRemove(cacheKey, out _);
+                    _tmdbEnrichmentInFlight.TryRemove(new KeyValuePair<string, Task<TmdbEnrichmentResult>>(flightKey, fetchTask));
                 }
 
                 // don't cache empty enrichment
@@ -11905,7 +12439,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     lock (_tmdbEnrichmentCacheLock)
                     {
-                        _tmdbEnrichmentCache[cacheKey] = (result!, DateTime.UtcNow);
+                        if (enrichmentGeneration == Interlocked.Read(ref _seerrResponseGeneration)) _tmdbEnrichmentCache[cacheKey] = (result!, requestStart);
 
                         if (_tmdbEnrichmentCache.Count > 500 || _tmdbEnrichmentCache.Count % 100 == 0)
                         {
@@ -12029,6 +12563,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var client = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
                 client.Timeout = TimeSpan.FromSeconds(10);
+                // The avatar lives from when its read began.
+                var readAt = DateTime.UtcNow;
 
                 using var avatarRequest = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"{jellyseerrUrl}{avatarPath}");
                 // explicit User-Agent + Accept so Cloudflare's bot
@@ -12066,7 +12602,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var etag = $"\"{Convert.ToHexString(hash)}\"";
 
                 // Store in server-side cache and evict expired entries periodically
-                _avatarCache[cacheKey] = (content, contentType, etag, DateTime.UtcNow);
+                _avatarCache[cacheKey] = (content, contentType, etag, readAt);
                 if (_avatarCache.Count > 50 || _avatarCache.Count % 10 == 0)
                 {
                     foreach (var key in _avatarCache

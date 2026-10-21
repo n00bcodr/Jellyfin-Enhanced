@@ -38,7 +38,7 @@ function setup(t, respond) {
   h_url(h.window);
   t.after(() => h.close());
   h.window.eval(`${helpers}\nwindow.__je = { jeBackupExportOptions, jeBackupExport, jeBackupUpload, jeBackupSummaryText, jeBackupRestoreText, jeBackupInit };`);
-  return { ...h, je: h.window.__je, requests, $: id => h.document.getElementById(id) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests, $: id => h.document.getElementById(id) };
 }
 
 function response(status, body, headers = {}) {

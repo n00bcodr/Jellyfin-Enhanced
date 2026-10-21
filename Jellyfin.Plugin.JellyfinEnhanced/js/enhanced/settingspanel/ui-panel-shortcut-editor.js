@@ -42,27 +42,27 @@
                 if (row) row.style.opacity = isDisabled ? '0.5' : '';
             };
 
-            const setShortcutDisabled = (action, disabled) => {
-                const shortcutIndex = JE.userConfig.shortcuts.Shortcuts.findIndex(s => s.Name === action);
+            // Every edit is an operation on the person's shortcuts.json (the settings store's document): one shortcut set
+            // or removed by name. The page's copy (JE.userConfig.shortcuts) is the store's view and is never changed here.
+            const storedShortcut = (action) => {
+                const doc = JE.internals?.userDocument?.('shortcuts.json')?.document;
+                return (Array.isArray(doc?.Shortcuts) ? doc.Shortcuts : []).find(s => s && s.Name === action);
+            };
+            const saveShortcutKey = (action, key) => {
+                const base = storedShortcut(action) || pluginShortcuts.find(s => s.Name === action) || { Name: action };
+                JE.patchUserSettings('shortcuts.json', { upsert: { [action]: { ...base, Key: key } } });
+            };
 
+            const setShortcutDisabled = (action, disabled) => {
                 if (disabled) {
-                    if (shortcutIndex > -1) {
-                        JE.userConfig.shortcuts.Shortcuts[shortcutIndex].Key = '';
-                    } else {
-                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
-                        JE.userConfig.shortcuts.Shortcuts.push({ ...defaultConfig, Key: '' });
-                    }
+                    saveShortcutKey(action, '');
                     JE.state.activeShortcuts[action] = '';
                 } else {
                     const defaultConfig = pluginShortcuts.find(s => s.Name === action);
                     const defaultKey = defaultConfig ? defaultConfig.Key : '';
-                    if (shortcutIndex > -1) {
-                        JE.userConfig.shortcuts.Shortcuts.splice(shortcutIndex, 1);
-                    }
+                    if (storedShortcut(action)) JE.patchUserSettings('shortcuts.json', { remove: [action] });
                     JE.state.activeShortcuts[action] = defaultKey;
                 }
-
-                JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
 
                 const keyElement = help.querySelector(`.shortcut-key[data-action="${action}"]`);
                 if (keyElement && document.activeElement !== keyElement) {
@@ -150,14 +150,7 @@
                     }
 
                     // Update or add the shortcut override
-                    let userShortcut = JE.userConfig.shortcuts.Shortcuts.find(s => s.Name === action);
-                    if (userShortcut) {
-                        userShortcut.Key = combo;
-                    } else {
-                        const defaultConfig = pluginShortcuts.find(s => s.Name === action);
-                        JE.userConfig.shortcuts.Shortcuts.push({ ...defaultConfig, Key: combo });
-                    }
-                    JE.saveUserSettings('shortcuts.json', JE.userConfig.shortcuts);
+                    saveShortcutKey(action, combo);
 
                     // Update active shortcuts
                     JE.state.activeShortcuts[action] = combo;

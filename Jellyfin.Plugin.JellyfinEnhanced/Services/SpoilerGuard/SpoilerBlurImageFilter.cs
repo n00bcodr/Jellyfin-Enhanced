@@ -145,18 +145,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void OnUserDataSaved(object? sender, MediaBrowser.Controller.Library.UserDataSaveEventArgs e)
         {
-            // Dispatch off the IUserDataManager publish thread. Other
-            // UserDataSaved consumers (resume tracking, scheduled tasks,
-            // integrations) share that thread; a malicious user
-            // burst-toggling Played would otherwise pile up synchronous
-            // O(K) cache scans on the publish path. Task.Run drops the
-            // work onto the threadpool — fire-and-forget is safe because
-            // a missed eviction just leaves stale cache for ≤30s (TTL).
-            if (e?.Item == null || e.UserId == Guid.Empty) return;
+            // O(1), inline on the publish thread: the invalidation is a counter
+            // and one record per (user, season or series), no scan of the
+            // cache. Inline (not dispatched) so a season poster asked for right
+            // after the save never gets the answer from before it, and a
+            // computation that was running when the save landed never leaves an
+            // entry that is served (UserAccessCache).
+            if (_disposed || e?.Item == null || e.UserId == Guid.Empty) return;
 
-            // Snapshot the values we need so the lambda captures don't
-            // race against post-event mutation.
-            var userId = e.UserId;
             Guid? seasonId = null;
             Guid? seriesId = null;
             switch (e.Item)
@@ -181,101 +177,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return;
             }
 
-            if (!seasonId.HasValue && !seriesId.HasValue) return;
-
-            // Per-(user, scope) coalesce. A "Mark season watched" sweep on
-            // a 24-episode season fires 24 events → 24 queued threadpool
-            // tasks all racing the same _watchedCache; coalescing per-user
-            // only would collapse cross-season events (seasons A and B for
-            // the same user collide and drop B's eviction). Keyed by
-            // (userId, scopeId) where scopeId is seasonId for
-            // episode/season events and seriesId for series events.
-            // Same-season repeats coalesce; cross-season events each get
-            // their own dispatch.
-            var scopeId = seasonId.HasValue && seasonId.Value != Guid.Empty
-                ? seasonId.Value
-                : seriesId!.Value;
-            var dedupKey = (userId, scopeId);
-            if (!_pendingInvalidations.TryAdd(dedupKey, 0))
-            {
-                return;
-            }
-
-            // Protect the dispatcher itself. If Task.Run throws
-            // synchronously (OOM, threadpool denial-of-service), the
-            // lambda's `finally` never runs — the dedup key would stay
-            // in the dictionary forever and that scope's events would
-            // be silently dropped until process restart. Catch + remove.
             try
             {
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        // Instance-field _disposed read at execution time
-                        // so post-Dispose lambdas no-op fast.
-                        if (_disposed) return;
-                        if (seasonId.HasValue && seasonId.Value != Guid.Empty)
-                        {
-                            // Keys carry the host's specials setting after the season id: both forms go.
-                            var key = userId.ToString("N") + ":" + seasonId.Value.ToString("N");
-                            _watchedCache.TryRemove(key + ":0", out _);
-                            // Surface eviction-key-mismatch as a debug
-                            // breadcrumb. If a future refactor desyncs the
-                            // build-key from the read-key, evictions
-                            // silently become no-ops; counting the
-                            // no-removal cases makes that observable.
-                            if (!_watchedCache.TryRemove(key + ":1", out _))
-                            {
-                                // Hit may not exist (cold cache); not an error.
-                                // _logger.Info($"[SpoilerBlur] UserDataSaved: no cache entry for season key {key} (cold cache or already evicted).");
-                            }
-                        }
-                        else if (seriesId.HasValue && seriesId.Value != Guid.Empty)
-                        {
-                            // Series-level event — invalidate every cached season
-                            // for this user (keys are "{userN}:{seasonN}", so we
-                            // iterate). Cheap: cache is small (≤512) and this is
-                            // rare. ToArray so the snapshot survives a concurrent
-                            // insert and future framework changes to Keys.
-                            var prefix = userId.ToString("N") + ":";
-                            foreach (var k in _watchedCache.Keys.ToArray())
-                            {
-                                if (k.StartsWith(prefix, StringComparison.Ordinal))
-                                    _watchedCache.TryRemove(k, out _);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _resolver.WarnRateLimited(
-                            "userdata-saved-handler:" + ex.GetType().FullName,
-                            $"Spoiler Guard: failed to invalidate season cache on UserDataSaved: {ex.Message}");
-                    }
-                    finally
-                    {
-                        _pendingInvalidations.TryRemove(dedupKey, out _);
-                    }
-                });
+                // Season entries depend on their season and their series (see
+                // HasWatchedAnyEpisodeInSeason), so a series-level event ends
+                // every cached season of it for this user.
+                if (seasonId is { } season && season != Guid.Empty) _watchedCache.Invalidate(e.UserId, season);
+                else if (seriesId is { } series && series != Guid.Empty) _watchedCache.Invalidate(e.UserId, series);
             }
             catch (Exception ex)
             {
-                // Synchronous Task.Run failure (rare). Release the dedup
-                // slot so subsequent events for this scope can dispatch
-                // again, and surface the failure with rate-limited warn.
-                _pendingInvalidations.TryRemove(dedupKey, out _);
                 _resolver.WarnRateLimited(
-                    "userdata-saved-dispatch:" + ex.GetType().FullName,
-                    $"Spoiler Guard: Task.Run dispatch threw synchronously: {ex.Message}");
+                    "userdata-saved-handler:" + ex.GetType().FullName,
+                    $"Spoiler Guard: failed to invalidate season cache on UserDataSaved: {ex.Message}");
             }
         }
-
-        // Per-(user, scope) dedup gate for the OnUserDataSaved Task.Run
-        // dispatch. Scope is seasonId for episode/season events, seriesId
-        // for series events. Static so a hot-reload preserves the dedup
-        // state across plugin instances (matches _watchedCache,
-        // _warnedShapeAt pattern in this file).
-        private static readonly ConcurrentDictionary<(Guid, Guid), byte> _pendingInvalidations = new();
 
         // This filter is a Singleton subscribed to
         // IUserDataManager.UserDataSaved. Without an unsubscribe path,
@@ -586,7 +502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 case Jellyfin.Data.Enums.BaseItemKind.Episode:
                     if (identity.Played == true) return ImageVerdict.PassUncached;
                     if (poster && config.SpoilerAdvancedMode && !config.SpoilerNextEpisodeStripImage && state.Prefs?.UseAdvancedCategories != false
-                        && SpoilerNextUnwatchedService.Categorize(_nextUnwatched.GetBoundary(user.Id, identity.SeriesId), item.Id, item.ParentIndexNumber, item.IndexNumber)
+                        && SpoilerNextUnwatchedService.Categorize(_nextUnwatched.GetBoundary(user.Id, identity.SeriesId, user), item.Id, item.ParentIndexNumber, item.IndexNumber)
                             == SpoilerEpisodeCategory.NextEpisode)
                         return ImageVerdict.PassUncached;
                     if (isTrickplay && await WatchedPastAsync(context, item, user, chapter: false).ConfigureAwait(false)) return ImageVerdict.PassUncached;
@@ -890,22 +806,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Per-(user, season) "any episode watched?" cache. Home-page rows can
         // request the same season's Primary + Backdrop + Thumb in quick
         // succession; without caching we'd hit the library DB three times for
-        // the same answer. The cache TTL is short because a user marking an
-        // episode watched should flip the season's poster from blurred to
-        // clear on next page load — too long a TTL means stale state. 30s is
-        // long enough to cover a full home-page render but short enough that
-        // mark-watched → next-navigation roundtrips see fresh data.
+        // the same answer. The answer depends on the viewer's ACCESS as well as
+        // on their watched state: the season's episodes are the ones Jellyfin
+        // lets them see, so blocking the only watched episode's tag (parental,
+        // library or any other access change, with or without an event) must
+        // blur the season's art on the next request. UserAccessCache keys each
+        // entry by the viewer as this request read them (fingerprint) and their
+        // version; UserDataSaved invalidates the season (and series) for the
+        // user. 30s only bounds a change written straight into Jellyfin's
+        // database.
         private static readonly TimeSpan SeasonWatchedCacheTtl = TimeSpan.FromSeconds(30);
 
-        private sealed class WatchedCacheEntry
-        {
-            public required bool AnyWatched { get; init; }
-            public required DateTime ExpiresAt { get; init; }
-            /// <summary>The input tick the episodes' watched state was read at.</summary>
-            public long ReadAt { get; init; }
-        }
+        /// <summary>A season's answer and the input tick the episodes' watched state was read at.</summary>
+        private readonly record struct WatchedCacheEntry(bool AnyWatched, long ReadAt);
 
-        private static readonly ConcurrentDictionary<string, WatchedCacheEntry> _watchedCache = new();
+        // Keyed by the host's specials setting too (which episodes the season holds depends on it).
+        private static readonly UserAccessCache<(Guid User, Guid Season, string Specials), WatchedCacheEntry> _watchedCache = new(SeasonWatchedCacheTtl, 512);
 
         // Does this candidate's spoiler state cover the item at all? Used to
         // pick the effective user when a shared-IP request yields several
@@ -942,11 +858,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool HasWatchedAnyEpisodeInSeason(JUser user, Season season)
         {
             // Which episodes the season holds depends on the host's specials setting: part of the memo's key.
-            var key = user.Id.ToString("N") + ":" + season.Id.ToString("N") + ":" + PrivacyReads.HostSpecials();
-            var now = DateTime.UtcNow;
+            var key = (user.Id, season.Id, PrivacyReads.HostSpecials());
             // The user's watched state over the season's episodes, recorded as of when it was read.
             PrivacyReads.WatchedIn(user.Id, season.Id);
-            if (_watchedCache.TryGetValue(key, out var hit) && hit.ExpiresAt > now && !PrivacyInputs.ScopeChangedSince(hit.ReadAt, user.Id, season.Id))
+            // Taken before the query: the viewer as this request read them, and
+            // the season and series a watched-state change names.
+            var ticket = _watchedCache.Begin(user, season.Id, season.SeriesId);
+            if (_watchedCache.TryGet(key, ticket.Authority, out var hit) && !PrivacyInputs.ScopeChangedSince(hit.ReadAt, user.Id, season.Id))
             {
                 PrivacyReadSet.Current?.Watched(user.Id, season.Id, hit.ReadAt);
                 PrivacyReadSet.Current?.ChildrenOf(season.Id, hit.ReadAt);
@@ -1005,25 +923,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // succeeds.
             if (!determinationFailed)
             {
-                _watchedCache[key] = new WatchedCacheEntry
-                {
-                    AnyWatched = anyWatched,
-                    ExpiresAt = now + SeasonWatchedCacheTtl,
-                    ReadAt = readAt,
-                };
-            }
-
-            // Periodic eviction so the dictionary doesn't grow unbounded
-            // across long server uptimes. Snapshot via ToArray so a
-            // concurrent insert during the scan can't trip
-            // InvalidOperationException — `ConcurrentDictionary` enumerator
-            // only guarantees stable iteration when snapshotted.
-            if (_watchedCache.Count > 512)
-            {
-                foreach (var kvp in _watchedCache.ToArray())
-                {
-                    if (kvp.Value.ExpiresAt < now) _watchedCache.TryRemove(kvp.Key, out _);
-                }
+                _watchedCache.Set(key, ticket, new WatchedCacheEntry(anyWatched, readAt));
             }
 
             return anyWatched;

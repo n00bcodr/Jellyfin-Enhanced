@@ -177,7 +177,7 @@
      * Opens the drawer for a Jellyfin item or a title key.
      * @param {{itemId?: string, key?: string}} target What to manage.
      * @param {{operation: Object|Node|Event}} options The owner (required, D46S2-R6): the operation a title action
-     *     submitted, JE.NATIVE, or the node or press it comes from. The drawer reads, shows and writes only while it is
+     *     submitted, a viewer's native owner, or the node or press it comes from. The drawer reads, shows and writes only while it is
      *     current, and closes once it isn't.
      * @returns {Promise<void>}
      */
@@ -202,7 +202,8 @@
         // retry and write of it; the transport checks both right before each send.
         const session = JE.createSessionAction();
         const action = { current: () => session.current() && submitted.current(), onCancel: session.onCancel,
-            bound: owner => session.bound(() => submitted.current() && (!owner || owner() === true)) };
+            // Its owner token's binding (D46S2-R10-1): its session, and the owner current at each send.
+            bound: owner => submitted.bound(() => submitted.current() && (!owner || owner() === true)) };
         current = { target, overlay, root, opener, action, submitted, loads: JE.latestIntent(), unsubscribe: null, reloadTimer: null, generation: mine, data: null, result: null, searching: {}, queueBusy: {}, adding: {}, okAt: 0, refreshFailed: false, retryTimer: null, retryDelay: 0 };
         const opening = current;
         // A stale drawer takes no input: a link in it opens nothing (D46S2-R4-3), and an ended operation closes it.

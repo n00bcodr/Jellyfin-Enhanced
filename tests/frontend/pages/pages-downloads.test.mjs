@@ -5,7 +5,7 @@ function setup(t,{api=async()=>({}),ajax=async()=>({results:[]}),config={},html=
   let epoch=0,changed;const notices=[],calls=[];
   const h=createHarness({html,globals,JE:{pluginConfig:{JellyseerrEnabled:true,DownloadsPageShowIssues:true,DownloadsShowHistory:true,...config},helpers:{},t:key=>key,toast:message=>notices.push(message),session:{getEpoch:()=>epoch,isCurrent:value=>value===epoch,onUserChange:(_key,fn)=>{changed=fn;}},core:{api:{plugin:async(...args)=>{calls.push(args);return api(...args);}}}},apiClient:{ajax,getUrl:(path,params)=>'http://jellyfin.test'+path+(params?'?'+new URLSearchParams(params):'')}});
   t.after(()=>h.close());h.load('arr/live/arr-intent.js');h.load('arr/requests/requests-page-data.js');const P=h.JE.internals.requestsPage;const rendered=[];P.renderPage=()=>rendered.push(P.state.isLoading);
-  return {...h,P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
+  return {...h,get NATIVE(){return h.NATIVE;},P,notices,calls,rendered,switchUser:()=>{epoch++;changed();}};
 }
 // Pages hold whole grid rows: with three live columns that is four rows of 12 cards.
 const grids='<div class="je-requests-grid"></div><div class="je-issues-grid"></div><div class="je-history-grid"></div>';
@@ -68,12 +68,12 @@ test('downloads stale issue denial does not deny the new account',async t=>{
   const pending=deferred();const h=setup(t,{ajax:()=>pending.promise});h.expectConsoleError('Requests Page: Failed to fetch issues:');
   const run=h.P.fetchIssues();h.switchUser();pending.reject({status:403});await run;assert.equal(h.P.state.issuesPermissionDenied,false);assert.equal(h.notices.length,0);
 });
-test('downloads issues hydrate alternate metadata shapes and reuse cache only within account',async t=>{
+test('downloads issues hydrate alternate metadata shapes and read the media details again on every load (a per-person answer)',async t=>{
   const calls=[];const h=setup(t,{ajax:async options=>{calls.push(options);return options.url.includes('/issue')?{results:[{id:1,media:{mediaType:'tv',tmdbId:42}}],pageInfo:{pages:2}}:{id:42,name:'Series',poster_path:'/poster.jpg',first_air_date:'2020-01-01'};}});
-  await h.P.fetchIssues();await h.P.fetchIssues();assert.equal(calls.length,3);
+  await h.P.fetchIssues();await h.P.fetchIssues();assert.equal(calls.length,4);
   assert.equal(h.P.state.issues[0].media.title,'Series');assert.equal(h.P.state.issues[0].media.posterPath,'/poster.jpg');assert.equal(h.P.state.issuesTotalPages,2);
   assert.equal(calls[0].headers['X-Jellyfin-User-Id'],'user-a');
-  h.switchUser();await h.P.fetchIssues();assert.equal(calls.length,5);
+  h.switchUser();await h.P.fetchIssues();assert.equal(calls.length,6);
 });
 // History goes through JE.core.api.plugin (h.calls); issues through ApiClient.ajax, counted separately.
 for(const enabled of [false,true]){
@@ -127,7 +127,7 @@ test('an outage reported by history before the queue answers is toasted once, wh
 function queued(t,extra={}){
   const waits=[];const h=setup(t,{...extra,api:(path)=>{const d=deferred();waits.push({path,d});return d.promise;}});
   h.P.state.requestsPageSize=undefined;
-  return {...h,waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
+  return {...h,get NATIVE(){return h.NATIVE;},waits,read:prefix=>waits.filter(w=>w.path.startsWith(prefix))};
 }
 test('a poll still reading page 1 never overwrites the page 2 the user opened',async t=>{
   const h=queued(t);

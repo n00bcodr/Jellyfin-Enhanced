@@ -37,7 +37,7 @@
             e.stopPropagation();
 
             if (JE.titleDetails?.show) {
-                JE.titleDetails.show(tmdbId, mediaType);
+                JE.titleDetails.show(tmdbId, mediaType, undefined, JE.ownerOf(e));
             } else {
                 JE.jellyseerrMoreInfo.open(tmdbId, mediaType, undefined, e);
             }

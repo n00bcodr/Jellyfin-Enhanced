@@ -37,7 +37,7 @@ public class ApiListConsentTests
         using var f = new ApiPluginFixture();
         var person = Guid.NewGuid();
         Seed(f, person, stored);
-        var answer = Controller(f, person, admin).SaveUserSettingsSettings(person.ToString("N"),
+        var answer = Controller(f, person, admin).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"),
             new JellyfinEnhancedUserSettings { ListSwapIn = stale, ShowFileSizes = true });
         Assert.IsType<OkObjectResult>(answer);
         Assert.Equal(stored, Stored(f, person).ListSwapIn);
@@ -55,7 +55,7 @@ public class ApiListConsentTests
         var person = Guid.NewGuid();
         Seed(f, person, theirs);
 
-        var answer = Controller(f, Guid.NewGuid(), admin: true).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { ListSwapIn = sent, ShowFileSizes = true });
+        var answer = Controller(f, Guid.NewGuid(), admin: true).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), new JellyfinEnhancedUserSettings { ListSwapIn = sent, ShowFileSizes = true });
 
         Assert.IsType<OkObjectResult>(answer);
         var stored = Stored(f, person);
@@ -146,10 +146,10 @@ public class ApiListConsentTests
         switch (writer)
         {
             case "self-save":
-                Assert.IsType<OkObjectResult>(Controller(f, person, false).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ListSwapIn = true, ShowFileSizes = true }));
+                Assert.IsType<OkObjectResult>(Controller(f, person, false).HavingRead(f.Core.Manager, personN).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ListSwapIn = true, ShowFileSizes = true }));
                 break;
             case "admin-save":
-                Assert.IsType<OkObjectResult>(other.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ListSwapIn = null, ShowFileSizes = true }));
+                Assert.IsType<OkObjectResult>(other.HavingRead(f.Core.Manager, personN).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ListSwapIn = null, ShowFileSizes = true }));
                 break;
             case "reset":
                 Assert.IsType<OkObjectResult>(other.ResetAllUsersSettings());
@@ -200,10 +200,18 @@ public class ApiListConsentTests
         var person = Guid.NewGuid();
         Seed(f, person, true);
         var browser2 = Stored(f, person);
+        var read = Controller(f, person, false).HavingRead(f.Core.Manager, person.ToString("N")).HttpContext.Request.Headers.IfMatch.ToString();
         var self = Controller(f, person, false);
         Assert.IsType<OkObjectResult>(self.SetUserSettingsConsent(person.ToString("N"), new() { Field = "ListSwapIn", Value = false }));
         browser2.ShowFileSizes = true;
-        Assert.IsType<OkObjectResult>(self.SaveUserSettingsSettings(person.ToString("N"), browser2));
+        // Stage 1 fix round 9: the stale document is refused whole (the revocation changed the stored revision).
+        var stale = Controller(f, person, false);
+        stale.HttpContext.Request.Headers.IfMatch = read;
+        Assert.Equal(409, Assert.IsAssignableFrom<ObjectResult>(stale.SaveUserSettingsSettings(person.ToString("N"), browser2)).StatusCode);
+        Assert.False(Stored(f, person).ListSwapIn);
+        Assert.False(Stored(f, person).ShowFileSizes);
+        // Read again, the same document is stored, and the revocation stays.
+        Assert.IsType<OkObjectResult>(Controller(f, person, false).HavingRead(f.Core.Manager, person.ToString("N")).SaveUserSettingsSettings(person.ToString("N"), browser2));
         Assert.False(Stored(f, person).ListSwapIn);
         Assert.True(Stored(f, person).ShowFileSizes);
     }
@@ -235,11 +243,11 @@ public class ApiListConsentTests
         switch (writer)
         {
             case "self-save":
-                self.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
+                self.HavingRead(f.Core.Manager, personN).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
                 self.SetUserSettingsConsent(personN, new() { Field = "ListSwapIn", Value = false });
                 break;
             case "admin-save":
-                admin.SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
+                admin.HavingRead(f.Core.Manager, personN).SaveUserSettingsSettings(personN, new JellyfinEnhancedUserSettings { ShowFileSizes = true });
                 self.SetUserSettingsConsent(personN, new() { Field = "ListSwapIn", Value = false });
                 break;
             case "reset":

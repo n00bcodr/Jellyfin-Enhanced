@@ -27,7 +27,7 @@ public class ListsMetadataTests
 
     private const string Season2 =
         "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"posterPath\":\"/s2.jpg\",\"episodes\":[" +
-        "{\"episodeNumber\":1,\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}]}";
+        "{\"episodeNumber\":1,\"seasonNumber\":2,\"showId\":110492,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}]}";
 
     [Fact]
     public void TvMetadataGivesReleaseDatesExpectedEpisodesAndProductionStatePerKind()
@@ -76,19 +76,29 @@ public class ListsMetadataTests
         Assert.Equal(("Clayface", "2026-10-23", 2026, "/theirs.jpg", "Mud.", "tt31227572"), (movie.Title, movie.ReleaseDate, movie.Year!.Value, movie.PosterPath!, movie.Overview!, movie.ImdbId!));
         Assert.False(ListMetadataService.Apply(movie, meta)); // nothing new
 
-        // TBA in Seerr wins over a stale client date; junk values are dropped.
-        var tba = ListMetadataService.FromMovie(Json("{\"releaseDate\":\"\",\"posterPath\":\"../x.svg\",\"imdbId\":\"nope\"}"), Today);
+        // TBA in Seerr ("" in a whole answer) wins over a stale client date.
+        var tba = ListMetadataService.FromMovie(Json("{\"id\":1239193,\"releaseDate\":\"\",\"posterPath\":null,\"imdbId\":null,\"externalIds\":{\"imdbId\":null}}"), Today);
         Assert.True(ListMetadataService.Apply(movie, tba));
         Assert.Null(movie.ReleaseDate);
         Assert.Equal("tt31227572", movie.ImdbId);
         Assert.Null(tba.PosterPath);
+
+        // Junk values are no values and (review round 8) make the answer partial: nothing it can't vouch for is cleared.
+        movie.ReleaseDate = "2026-10-23";
+        movie.PosterPath = "/theirs.jpg";
+        var junk = ListMetadataService.FromMovie(Json("{\"id\":1239193,\"releaseDate\":\"soon\",\"posterPath\":\"../x.svg\",\"imdbId\":\"tt31227572\",\"externalIds\":{\"imdbId\":\"tt31227572\"}}"), Today);
+        Assert.True(junk.Partial);
+        Assert.Null(junk.ReleaseDate);
+        Assert.Null(junk.PosterPath);
+        Assert.False(ListMetadataService.Apply(movie, junk));
+        Assert.Equal(("2026-10-23", "/theirs.jpg"), (movie.ReleaseDate, movie.PosterPath));
     }
 
     [Fact]
     public async Task FetchingIsCachedPerSeerrAndUnknownTitlesAreRememberedBriefly()
     {
         using var h = new ListsHarness(seerr: true);
-        h.MovieDetails[10] = "{\"id\":10,\"releaseDate\":\"2010-07-16\"}";
+        h.MovieDetails[10] = "{\"id\":10,\"releaseDate\":\"2010-07-16\",\"posterPath\":null,\"imdbId\":null}"; // a whole answer (round 7: only those are kept)
         var movie = Movie(10);
         Assert.Equal("2010-07-16", (await h.Metadata.FetchAsync(movie, TimeSpan.FromHours(1), Today, CancellationToken.None))!.ReleaseDate);
         await h.Metadata.FetchAsync(movie, TimeSpan.FromHours(1), Today, CancellationToken.None);
@@ -153,9 +163,9 @@ public class ListsMetadataTests
     public void ListedEpisodeAirDatesFollowTmdbWhenItMovesOrUndatesThem()
     {
         var episodes = Ph("{\"kind\":\"episodes\",\"tmdbId\":110492,\"seasonNumber\":2,\"title\":\"Peacemaker\",\"episodes\":[{\"s\":2,\"e\":1,\"airDate\":\"2025-08-01\",\"title\":\"Mine\"},{\"s\":2,\"e\":2,\"airDate\":\"2026-10-10\"}]}");
-        var season = "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"episodes\":[" +
-            "{\"episodeNumber\":1,\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}," +
-            "{\"episodeNumber\":2,\"seasonNumber\":2,\"airDate\":null,\"name\":\"Ep 2\"}]}";
+        var season = "{\"seasonNumber\":2,\"airDate\":\"2025-08-21\",\"posterPath\":null,\"episodes\":[" +
+            "{\"episodeNumber\":1,\"seasonNumber\":2,\"showId\":110492,\"airDate\":\"2025-08-21\",\"name\":\"Ep 1\"}," +
+            "{\"episodeNumber\":2,\"seasonNumber\":2,\"showId\":110492,\"airDate\":null,\"name\":\"Ep 2\"}]}";
         var meta = ListMetadataService.FromTv(episodes, Json(Peacemaker), Json(season), Today, Today);
         Assert.True(ListMetadataService.Apply(episodes, meta));
         Assert.Equal(("Mine", "2025-08-21"), (episodes.Episodes[0].Title, episodes.Episodes[0].AirDate)); // moved: corrected; title kept
@@ -211,7 +221,7 @@ public class ListsMetadataTests
 
         // A later read isn't stuck behind the abandoned burst.
         h.ReplyAsync = null;
-        h.MovieDetails[1] = "{\"id\":1,\"releaseDate\":\"2001-01-01\"}";
+        h.MovieDetails[1] = "{\"id\":1,\"releaseDate\":\"2001-01-01\",\"posterPath\":null,\"imdbId\":null}";
         var fresh = await h.Metadata.FetchAsync(Movie(1), TimeSpan.FromHours(1), Today, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal("2001-01-01", fresh!.ReleaseDate);
 

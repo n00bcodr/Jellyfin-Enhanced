@@ -151,7 +151,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | Surface | Treatment |
 |---|---|
 | Episode images | Unplayed episodes use parent artwork or blur. Played episodes keep their images. |
-| Season images | Season 0 (specials) and Season 1 stay visible. Later seasons use replacement until any episode in that season is played. |
+| Season images | Season 0 (specials) and Season 1 stay visible. Later seasons use replacement until any episode in that season you may see is played; an episode hidden from you (a blocked tag, a rating or library change) doesn't count from the next request. |
 | Movie images | Unplayed, guarded movies follow image policy. Posters and thumbnails stay visible by default. |
 | Descriptions | Nonempty descriptions become your configured placeholder, initially `Spoiler Guard activated`. Series descriptions have a separate control. |
 | Episode and season titles | Numbered protected episodes become `Season X, Episode Y`; eligible numbered seasons become `Season N`. |
@@ -350,7 +350,7 @@ Your admin can reveal selected information for your next unwatched episode and t
 
     Advanced mode can relax titles, descriptions, and ratings in supported episode metadata. Unchecking **Next episode: keep image hidden** can also reveal the next episode's Primary/Thumb image. Search hints and card score overlays retain their separate, stricter policies. Chapter/trickplay protection still follows its own rules.
 
-    Watched-data events normally evict the boundary cache immediately. Library changes can wait for its five-minute lifetime.
+    The boundary is computed again on the next request after any change that decides it: a watched-state change, an episode added, removed or updated (renumbered or re-rated), or a change to your library, channel or parental access, however it was made. A stale boundary isn't safe (a later episode could keep the next-episode reveal and show its title after an earlier one became visible), so the five-minute cache lifetime only bounds what Jellyfin doesn't report (an episode changed straight in its database).
 
 ## Multi-client support
 

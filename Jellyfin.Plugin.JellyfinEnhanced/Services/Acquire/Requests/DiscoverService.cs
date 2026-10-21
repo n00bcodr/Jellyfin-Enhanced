@@ -180,7 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private UserConfigurationManager? _userConfig;
         private ILibraryManager? _library;
         private readonly TitleAliases? _aliases;
-        private readonly Func<string, int, Guid, CancellationToken, Task<bool>> _maySeeAbsent;
+        private readonly Func<string, int, StatusViewer, CancellationToken, Task<bool>> _maySeeAbsent;
         private readonly Func<string, string, CancellationToken, Task<string?>> _tmdb;
         private readonly Func<StatusViewer, int, IReadOnlyList<RecentTitle>> _recent;
         private readonly Func<Guid, HiddenTitles> _hidden;
@@ -191,7 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// <summary>Creates the service over the shared TMDB cache, the parental filter and Jellyfin.</summary>
         public DiscoverService(RequestService requests, TitleAliases aliases, SeerrParentalFilter parental, TmdbResponseCache tmdb, ILibraryManager library, UserConfigurationManager userConfig, SpoilerPresentation? presentation = null)
             : this(requests, aliases,
-                (kind, id, user, ct) => parental.MaySeeAbsentAsync(kind, id, user.ToString("N", CultureInfo.InvariantCulture), ct),
+                ParentalCheck(parental),
                 (path, query, ct) => TmdbAsync(tmdb, path, query, ct),
                 (viewer, max) => RecentlyWatched(library, viewer, max),
                 user => ReadHidden(userConfig, library, user),
@@ -202,7 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         /// <summary>Creates the service with explicit readers (tests).</summary>
         internal DiscoverService(RequestService requests, TitleAliases? aliases,
-            Func<string, int, Guid, CancellationToken, Task<bool>> maySeeAbsent,
+            Func<string, int, StatusViewer, CancellationToken, Task<bool>> maySeeAbsent,
             Func<string, string, CancellationToken, Task<string?>> tmdb,
             Func<StatusViewer, int, IReadOnlyList<RecentTitle>> recent,
             Func<Guid, HiddenTitles> hidden,
@@ -217,6 +217,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _now = now;
             _gate = new ResponseGate(requests.View, () => requests.Policy.Configuration);
         }
+
+        /// <summary>
+        /// The absent-title rating check of the production service: decided with the policy of the viewer as the request
+        /// read them (<see cref="StatusViewer.Handle"/>, the same read its answer is keyed by), never a later read of the
+        /// person by id, which a policy change can land between (a widened then restored limit would file a title the
+        /// narrow limit hides under the narrow limit's key). A restricted viewer with no read user is refused.
+        /// </summary>
+        /// <param name="parental">The parental filter.</param>
+        /// <returns>The check.</returns>
+        internal static Func<string, int, StatusViewer, CancellationToken, Task<bool>> ParentalCheck(SeerrParentalFilter parental)
+            => (kind, id, viewer, ct) => viewer.Handle is not User person
+                ? Task.FromResult(false)
+                : parental.TryGetRestrictedPolicy(person, out var policy) ? parental.MaySeeAbsentAsync(kind, id, policy, ct) : Task.FromResult(true);
 
         /// <summary>Hidden Content's per-user file.</summary>
         internal const string HiddenContentFile = "hidden-content.json";
@@ -382,7 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var result = new Dictionary<string, bool>(StringComparer.Ordinal);
             if (!viewer.HasParentalLimit) return result;
             var absent = rows.DistinctBy(r => r.Key).Where(r => Lookup(viewer, r) is { Seen.Count: 0, IsProvenAbsent: true }).ToList();
-            var checks = await Task.WhenAll(absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer.UserId, ct))).ConfigureAwait(false);
+            var checks = await Task.WhenAll(absent.Select(r => MaySeeAsync(r.Kind, r.TmdbId, viewer, ct))).ConfigureAwait(false);
             for (var i = 0; i < absent.Count; i++) result[absent[i].Key] = checks[i];
             return result;
         }
@@ -447,12 +460,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             };
         }
 
-        private async Task<bool> MaySeeAsync(string kind, int tmdbId, Guid user, CancellationToken ct)
+        private async Task<bool> MaySeeAsync(string kind, int tmdbId, StatusViewer viewer, CancellationToken ct)
         {
             await ParentalSlots.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                return await _maySeeAbsent(kind, tmdbId, user, ct).ConfigureAwait(false);
+                return await _maySeeAbsent(kind, tmdbId, viewer, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

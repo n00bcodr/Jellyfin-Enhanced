@@ -40,7 +40,7 @@ const PAGE_MANIFEST = [
   ["url: ApiClient.getUrl('/Plugins'),", 'installed plugins: enables or disables dependent controls, never sets a value'],
   ['function checkCustomTabsConfigCompat() {\n            ApiClient.ajax({', "the Custom Tabs plugin's configuration: shape check for a banner"],
   ["            return ApiClient.ajax({\n                type: 'GET',\n                url: ApiClient.getUrl('/Plugins/' + CUSTOM_TABS_PLUGIN_ID", "the Custom Tabs plugin's configuration: read right before JE's own narrow write to it"],
-  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            jeSecretInit', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration'],
+  ['var fresh = await ApiClient.getPluginConfiguration(pluginId);\n            if (!fresh) return;', 'after a save: credential placeholders and *arr cards rebuilt from the saved configuration (each only if unedited when drawn)'],
   ["/JellyfinEnhanced/arr/admin/instances'), dataType: 'json' });", 'Check button: lists the saved instances'],
   ["/JellyfinEnhanced/arr/admin/notify'), dataType: 'json' });", 'notification status display'],
   ["type: what === 'provision' ? 'POST' : 'DELETE',", 'not a read: provisions or removes a webhook (method chosen at run time)'],
@@ -52,9 +52,7 @@ const PAGE_MANIFEST = [
   ["ApiClient.getJSON(ApiClient.getUrl('JellyfinEnhanced/spoiler-blur/apply-existing/status'))", 'Spoiler Guard apply-to-existing progress display'],
   ['ApiClient.getJSON(previewUrl)', 'Spoiler Guard apply-to-existing preview (counts)'],
   ["ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog')", 'the list of tags to style: the saved overrides come from the stored JSON model (tagStyles.serialize), never from the list'],
-  ['ApiClient.getPluginConfiguration(pluginId).then((config) => {', 'the configuration read itself: until it succeeds no whole save runs (jeConfigSaveAllowed)'],
-  ['const config = await ApiClient.getPluginConfiguration(pluginId);\n            const finalShortcuts', 'the fresh read every save starts from (unchanged fields keep its bytes)'],
-  ['fresh = await ApiClient.getPluginConfiguration(pluginId);\n            } catch (fetchErr)', 'Custom Tabs owned flags: fresh read before a narrow write'],
+  ['ApiClient.getPluginConfiguration(pluginId).then((read) => {', 'the configuration read itself: until it succeeds no whole save runs (jeConfigSaveAllowed)'],
   ['const fresh = await ApiClient.getPluginConfiguration(pluginId);\n                    CUSTOM_TAB_MANAGED_ENTRIES', 'Custom Tabs owned flags: cache rollback after a failed write'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Status'),", "the server's clock, shown under the maintenance window"],
   ["fetch(ApiClient.getUrl('/JellyfinEnhanced/BrandingStatus')", 'branding image previews (files, not configuration)'],
@@ -62,7 +60,6 @@ const PAGE_MANIFEST = [
   ["url: ApiClient.getUrl('/JellyfinEnhanced/host-compat'),", 'plugin build banner'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/whats-new'),", '"new" badges on settings'],
   ['url: validationUrl, dataType: \'json\', headers: { \'X-Arr-ApiKey\': apiKeyVal }', 'path-mapping validation button: shows a result'],
-  ['const config = await ApiClient.getPluginConfiguration(pluginId);\n                    config.ClearLocalStorageTimestamp', 'clear client caches: one field written on a fresh read'],
   ["url: ApiClient.getUrl('/JellyfinEnhanced/jellyseerr/permission-audit'),", 'Seerr permission audit report'],
   ["const status = await ApiClient.ajax({ type: 'GET', url: url, dataType: 'json' });", 'MDBList account status display']
 ];
@@ -99,9 +96,9 @@ export function checkConfigPage(source) {
   for (const [anchor, count] of anchorHits) if (count !== 1) problems.push(`manifest entry matched ${count} sites: ${anchor}`);
   for (const field of fields) if (!used.has(field)) problems.push(`field "${field}" has no loader marked for it`);
   // The save writes a registered field only through the field (saveInto / value()), never from its control.
-  const build = source.slice(source.indexOf('async function buildConfigFromForm()'), source.indexOf('async function runCustomTabsSync('));
+  const build = source.slice(source.indexOf('function jeFormConfig(base, quiet)'), source.indexOf('async function runCustomTabsSync('));
   for (const field of savedFields(source)) {
-    if (new RegExp(`config\\.${field}\\s*=`).test(build)) problems.push(`buildConfigFromForm writes ${field} directly`);
+    if (new RegExp(`config\\.${field}\\s*=`).test(build)) problems.push(`jeFormConfig writes ${field} directly`);
   }
   // No direct writes to a registered select's value by id outside the field helpers.
   for (const id of ['DefaultLanguage', 'qualityTagsPreferredAudioLanguage', 'autoMovieRequestServer', 'autoMovieRequestProfile', 'autoMovieRequestRootFolder']) {
@@ -115,10 +112,11 @@ test('every read on the configuration page is a registered field loader or a lis
   const { problems, sites } = checkConfigPage(page);
   assert.deepEqual(problems, []);
   const loaders = sites.filter(s => s.fields);
-  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 30 other reads.
+  // Counted: 12 marked loader sites for the page's 12 kinds of asynchronously filled field, 27 other reads (round 7: a
+  // save, the Custom Tabs owned flags and the cache-clear stamp no longer read first; they send only their changes).
   assert.equal(loaders.length, 12);
   assert.equal(sites.length - loaders.length, PAGE_MANIFEST.length);
-  assert.equal(PAGE_MANIFEST.length, 30);
+  assert.equal(PAGE_MANIFEST.length, 27);
   assert.deepEqual([...registered(page)].sort(), [
     'AutoMovieRequestCustomProfileId', 'AutoMovieRequestCustomRootFolder', 'AutoMovieRequestCustomServerId', 'DEFAULT_REGION', 'DefaultLanguage',
     'JellyseerrImportBlockedUsers', 'MaintenanceModeAffectedUsers', 'QualityTagsPreferredAudioLanguage', 'SpoilerAutoEnableLibraryIds',
@@ -174,7 +172,7 @@ test('planted: a marked loader whose completion bypasses the field fails the sca
 test('planted: the save writing a registered field from its control fails the scan', () => {
   const planted = page.replace('            _jeDefaultLanguageField.saveInto(config);', "            config.DefaultLanguage = document.querySelector('#DefaultLanguage').value || '';");
   assert.notEqual(planted, page);
-  assert.match(checkConfigPage(planted).problems.join('\n'), /buildConfigFromForm writes DefaultLanguage directly/);
+  assert.match(checkConfigPage(planted).problems.join('\n'), /jeFormConfig writes DefaultLanguage directly/);
 });
 
 // The Dashboard user pages and the settings panel: no whole-form save exists there. The user pages send only the fields

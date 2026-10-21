@@ -318,6 +318,22 @@
         }
         // Create settings modal
         function createSettingsModal() {
+            // What this dialog shows as saved (it is drawn once, from the stored settings): a save sends only what the person
+            // changed against it, so a setting changed in another tab or device meanwhile stays. It moves on only when a save
+            // of the dialog is answered; after a failed one the person's choice still differs and the next save sends it.
+            const dialogShown = { Region: userRegion, Regions: userRegions.slice(), Services: userServices.slice(), SeasonProviders: userSeasonProviders };
+            // The dialog's saves not answered yet, in order: what the server will hold once they are is what a save compares
+            // with (a choice changed back while one is out is sent too, after it).
+            const inFlight = [];
+            /** A setting as the server will hold it once the dialog's saves still out are answered. */
+            function expected(key) {
+                for (let i = inFlight.length - 1; i >= 0; i--) if (Object.hasOwn(inFlight[i], key)) return inFlight[i][key];
+                return dialogShown[key];
+            }
+            /** A save of the dialog was answered: what it sent is what the dialog shows as saved. */
+            function acknowledged(sent) {
+                for (const key of Object.keys(sent)) dialogShown[key] = JSON.parse(JSON.stringify(sent[key]));
+            }
             const modal = document.createElement('div');
             modal.id = 'streaming-settings-modal';
             modal.style.cssText = `
@@ -422,8 +438,6 @@
             };
 
             document.getElementById('save-settings').onclick = () => {
-                userRegion = document.getElementById('region-select').value;
-
                 // Get selected regions from autocomplete
                 const selectedRegions = [];
                 regionsContainer.querySelectorAll('.selected-tag').forEach(tag => {
@@ -433,27 +447,34 @@
                         selectedRegions.push(match[1]);
                     }
                 });
-                userRegions = selectedRegions;
 
                 // Get selected services from autocomplete
                 const selectedServices = [];
                 servicesContainer.querySelectorAll('.selected-tag').forEach(tag => {
                     selectedServices.push(tag.textContent.replace('×', '').trim());
                 });
-                userServices = selectedServices;
 
                 const seasonCheckbox = document.getElementById('season-providers-checkbox');
-                if (seasonCheckbox) userSeasonProviders = seasonCheckbox.checked;
 
                 modal.style.display = 'none';
 
+                // The lookups follow the store's document (loadSettings, called with every publication of it).
                 const elsewhereSettings = {
-                    Region: userRegion,
-                    Regions: userRegions,
-                    Services: userServices,
-                    SeasonProviders: userSeasonProviders
+                    Region: document.getElementById('region-select').value,
+                    Regions: selectedRegions,
+                    Services: selectedServices,
+                    SeasonProviders: seasonCheckbox ? seasonCheckbox.checked : userSeasonProviders
                 };
-                JE.saveUserSettings('elsewhere.json', elsewhereSettings);
+                const set = {};
+                for (const key of Object.keys(elsewhereSettings)) {
+                    if (JSON.stringify(elsewhereSettings[key]) !== JSON.stringify(expected(key))) set[key] = elsewhereSettings[key];
+                }
+                if (!Object.keys(set).length) return;
+                const sent = JSON.parse(JSON.stringify(set));
+                inFlight.push(sent);
+                const settled = () => { const i = inFlight.indexOf(sent); if (i !== -1) inFlight.splice(i, 1); };
+                JE.patchUserSettings('elsewhere.json', { set }, { throwOnError: true })
+                    .then(() => { settled(); acknowledged(sent); }, () => { settled(); /* the store logs it and shows the stored values again */ });
             };
 
             // Close on backdrop click
@@ -464,21 +485,22 @@
             };
         }
 
-        // Load saved settings
-        function loadSettings() {
+        // Load saved settings. The dialog's own controls keep what the person chose there (a failed save is retried from
+        // them) unless `syncDialog` (a new person's settings).
+        function loadSettings(syncDialog = true) {
             const settings = JE.userConfig.elsewhere || {};
             userRegion = settings.Region || DEFAULT_REGION;
             userRegions = settings.Regions || [];
             userServices = settings.Services || [];
             userSeasonProviders = settings.SeasonProviders !== false;
             const seasonCheckbox = document.getElementById('season-providers-checkbox');
-            if (seasonCheckbox) seasonCheckbox.checked = userSeasonProviders;
+            if (seasonCheckbox && syncDialog) seasonCheckbox.checked = userSeasonProviders;
         }
 
         // This closure survives an SPA logout/login, so re-read the incoming
         // user's saved regions/services once their config has been reloaded —
         // otherwise user B keeps browsing with user A's Elsewhere preferences.
-        document.addEventListener('je:user-data-loaded', loadSettings);
+        document.addEventListener('je:user-data-loaded', () => loadSettings());
 
         function createServiceBadge(service, tmdbId, mediaType) {
             const badge = document.createElement('div');
@@ -1386,6 +1408,8 @@
         // --- Initialization ---
         loadRegionsAndProviders();
         loadSettings();
+        // The settings store's elsewhere.json is the one source: follow what it publishes (a save's answer, a read).
+        JE.internals?.observeUserDocument?.('elsewhere.json', 'elsewhere-settings', () => loadSettings(false));
 
         // Use deferred initialization with requestIdleCallback
         if (typeof requestIdleCallback !== 'undefined') {

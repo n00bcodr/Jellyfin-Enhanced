@@ -90,6 +90,8 @@ export function setup(t, { asks = true, seerrMoreInfo = false, card = false, ove
   const row = () => h.document.querySelector('.mainDetailButtons');
   return {
     ...h, a, page, row, requests, toasts,
+    /** A viewer's native owner minted now (the harness getter, kept live through the spread). */
+    get NATIVE() { return h.NATIVE; },
     hold(method, prefix) { const d = deferred(); gates.push({ method, prefix, d }); return d; },
     holdFeed() { prime = deferred(); return prime; },
     sent: (method, prefix) => requests.filter(r => r[1] === method && r[2].startsWith(prefix)),

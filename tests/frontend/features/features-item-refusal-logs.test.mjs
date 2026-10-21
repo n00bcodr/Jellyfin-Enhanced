@@ -14,7 +14,7 @@ async function ratings(t,failure,errors=[]){
     JE:{pluginConfig:{MdblistRatingsEnabled:true,MdblistRatingsShowOnItemDetails:true},t:key=>key,cdn:{url:(_source,path)=>`https://cdn.test/${path}`},
       helpers:{getItemCached:async()=>{throw failure;},onViewPage:fn=>{hook=fn;return()=>{};}},core:{api:{plugin:async path=>{calls.push(path);return null;}}}}});
   t.after(()=>h.close());h.window.setTimeout=fn=>{queueMicrotask(fn);return 1;};h.load('others/mdblist-ratings.js');h.JE.initializeMdblistRatingsScript();
-  await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();return {...h,calls};
+  await hook(null,h.document.querySelector('#itemDetailPage'),h.window.location.hash);await nextTurn();return {...h,get NATIVE(){return h.NATIVE;},calls};
 }
 test('MDBList ratings item refused by the server (HTTP 404) logs no error and leaves page usable',async t=>{
   const h=await ratings(t,REFUSED);assert.equal(h.calls.length,0);assert.equal(h.document.querySelector('.je-mdblist-ratings-section'),null);assert.ok(h.document.querySelector('.tagline'));
@@ -32,7 +32,7 @@ async function tagLinks(t,failure,errors=[]){
       core:{lifecycle:{register:()=>({track:()=>{}})},navigation:{onNavigate:()=>()=>{},onViewPage:()=>()=>{}}}}});
   t.after(()=>h.close());h.load('arr/arr-tag-links.js');await h.JE.initializeArrTagLinksScript();
   // The first check on an already open details page.
-  timers.shift()();await nextTurn();return {...h,reads:()=>reads};
+  timers.shift()();await nextTurn();return {...h,get NATIVE(){return h.NATIVE;},reads:()=>reads};
 }
 test('arr tag links item refused by the server (HTTP 404) logs no error and adds no link',async t=>{
   const h=await tagLinks(t,REFUSED);assert.equal(h.reads(),1);assert.equal(h.document.querySelector('.arr-tag-link'),null);assert.ok(h.document.querySelector('.itemExternalLinks'));

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
@@ -98,6 +99,33 @@ public class PosterBlurFilterTests
             state.Collections[boxSet.Id.ToString("N")]=new(); Assert.False(state.Movies.ContainsKey(movie.Id.ToString("N")));
             Plugin.Core.Manager.SaveUserConfiguration(key,"spoilerblur.json",state); SpoilerUserResolver.InvalidateUser(key); return movie;
         }
+        /// <summary>
+        /// Season 2 of the guarded series with two episodes: the first watched and tagged "spoiler-tag", the second not.
+        /// The season's episodes are found the way Jellyfin finds them (Season.GetEpisodes → the library's query for the
+        /// viewer, whose blocked tags leave tagged episodes out), so the viewer's access decides which ones count.
+        /// </summary>
+        public (Season Season, Episode Watched) AddSeason()
+        {
+            var series=new Series{Id=Episode.SeriesId,PresentationUniqueKey="je-test-series-"+Guid.NewGuid().ToString("N")};
+            var season=new Season{Id=Guid.NewGuid(),SeriesId=series.Id,IndexNumber=2,PresentationUniqueKey="je-test-season-"+Guid.NewGuid().ToString("N")};
+            var watched=new Episode{Id=Guid.NewGuid(),SeriesId=series.Id,SeasonId=season.Id,ParentIndexNumber=2,IndexNumber=1,Tags=["spoiler-tag"]};
+            var unwatched=new Episode{Id=Guid.NewGuid(),SeriesId=series.Id,SeasonId=season.Id,ParentIndexNumber=2,IndexNumber=2};
+            Library.Setup(l=>l.GetItemById(season.Id)).Returns(season);Library.Setup(l=>l.GetItemById(series.Id)).Returns(series);
+            // Jellyfin asks by the season's key, or by the series' key when specials are shown within seasons (the default).
+            Library.Setup(l=>l.GetItemList(It.Is<InternalItemsQuery>(q=>q.AncestorWithPresentationUniqueKey==season.PresentationUniqueKey||q.SeriesPresentationUniqueKey==series.PresentationUniqueKey)))
+                .Returns((InternalItemsQuery q)=>new BaseItem[]{watched,unwatched}.Where(e=>!e.Tags.Any(t=>q.ExcludeInheritedTags.Contains(t))).ToList());
+            Library.Setup(l=>l.Sort(It.IsAny<IEnumerable<BaseItem>>(),It.IsAny<User?>(),It.IsAny<IEnumerable<Jellyfin.Data.Enums.ItemSortBy>>(),It.IsAny<Jellyfin.Database.Implementations.Enums.SortOrder>()))
+                .Returns((IEnumerable<BaseItem> items,User? _,IEnumerable<Jellyfin.Data.Enums.ItemSortBy> _,Jellyfin.Database.Implementations.Enums.SortOrder _)=>items);
+            UserData.Setup(u=>u.GetUserData(It.IsAny<User>(),watched)).Returns(new UserItemData{Key="watched",Played=true});
+            UserData.Setup(u=>u.GetUserData(It.IsAny<User>(),unwatched)).Returns(new UserItemData{Key="unwatched",Played=false});
+            BaseItem.LibraryManager=Library.Object;
+            var configuration=new Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager>();
+            configuration.SetupGet(c=>c.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration());
+            previousConfiguration??=BaseItem.ConfigurationManager;configurationSet=true;BaseItem.ConfigurationManager=configuration.Object;
+            return (season,watched);
+        }
+        private MediaBrowser.Controller.Configuration.IServerConfigurationManager? previousConfiguration;
+        private bool configurationSet;
         /// <summary>Runs a trickplay tile request (Videos/{id}/Trickplay/{width}/{index}.jpg); with an ip it is anonymous and resolved by session-on-IP.</summary>
         public Task<(ActionExecutedContext Executed,DefaultHttpContext Http)> RunTrickplay(IActionResult original,Guid item,IPAddress? ip=null,Action<HttpContext>? arrange=null)
             => Run(original,controller:"Trickplay",action:"GetTrickplayTileImage",item:item,ip:ip,arrange:arrange);
@@ -118,7 +146,7 @@ public class PosterBlurFilterTests
             await Filter.OnActionExecutionAsync(executing,()=>{http.Response.Headers.CacheControl="public, max-age=31536000";http.Response.Headers.ETag="original";http.Response.Headers.LastModified="yesterday";return Task.FromResult(executed);});
             await response.Start(); return(executed,http);
         }
-        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));foreach(var id in extraUsers) SpoilerUserResolver.InvalidateUser(id.ToString("N"));BaseItem.LibraryManager=previousLibrary!;Plugin.Dispose();}
+        public void Dispose(){Filter.Dispose();next.Dispose();SpoilerUserResolver.InvalidateUser(UserId.ToString("N"));foreach(var id in extraUsers) SpoilerUserResolver.InvalidateUser(id.ToString("N"));BaseItem.LibraryManager=previousLibrary!;if(configurationSet) BaseItem.ConfigurationManager=previousConfiguration!;Plugin.Dispose();}
     }
     private static void Private(HttpContext http,bool chapter=false)
     {
@@ -339,6 +367,52 @@ public class PosterBlurFilterTests
     {
         using var f=new Fixture();using var stream=new MemoryStream(empty?[]:PosterBlurTests.Source());var original=new FileStreamResult(stream,"image/png");
         var(executed,_)=await f.Run(original,method:method);Assert.Same(original,executed.Result);Assert.True(stream.CanRead);
+    }
+
+
+    // Review round 2 (COREUC-R2-1): the season's "any episode watched?" answer depends on which episodes the viewer may
+    // see. Blocking the only watched episode's tag (a silent save, or the Dashboard's, which 10.11 makes with no event)
+    // blurs the season's art on the next request, not 30 s later.
+    [Theory]
+    [InlineData(false)][InlineData(true)]
+    public async Task Blocking_the_only_watched_episodes_tag_blurs_the_season_on_the_next_request(bool bracketed)
+    {
+        using var f=new Fixture();var(season,_)=f.AddSeason();
+        var current=UserChange.Read(f.UserId);f.Users.Setup(u=>u.GetUserById(f.UserId)).Returns(()=>current);
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/png");
+        var(first,_)=await f.Run(original,item:season.Id);Assert.Same(original,first.Result);
+        var(again,_)=await f.Run(original,item:season.Id);Assert.Same(original,again.Result);
+        void Block()=>current=UserChange.Read(f.UserId,policy:u=>u.SetPreference(Jellyfin.Database.Implementations.Enums.PreferenceKind.BlockedTags,["spoiler-tag"]));
+        if(bracketed) await UserChange.PolicyPost(f.UserId,Block); else Block();
+        var(blocked,http)=await f.Run(original,item:season.Id);
+        var result=Assert.IsType<FileContentResult>(blocked.Result);Blurred(original.FileContents,result.FileContents);Private(http);
+        // Given back: clear again on the next request.
+        current=UserChange.Read(f.UserId);
+        var(shown,_)=await f.Run(original,item:season.Id);Assert.Same(original,shown.Result);
+    }
+
+    // A season answer computed while a watched-state save lands (it read the episode before the save) is never served:
+    // the save invalidates inline, and the cache never keeps what began before it.
+    [Fact]
+    public async Task A_season_answer_computed_across_a_watched_state_save_is_never_served()
+    {
+        using var f=new Fixture();var(season,watched)=f.AddSeason();
+        var current=UserChange.Read(f.UserId);f.Users.Setup(u=>u.GetUserById(f.UserId)).Returns(()=>current);
+        var played=true;var saveDuringRead=true;
+        f.UserData.Setup(u=>u.GetUserData(It.IsAny<User>(),watched)).Returns(()=>
+        {
+            var seen=played;
+            if(saveDuringRead)
+            {
+                // The viewer marks it unplayed while this request is reading it.
+                saveDuringRead=false;played=false;
+                f.UserData.Raise(u=>u.UserDataSaved+=null,f.UserData.Object,new UserDataSaveEventArgs{UserId=f.UserId,Item=watched,Keys=[],UserData=new UserItemData{Key="watched",Played=false}});
+            }
+            return new UserItemData{Key="watched",Played=seen};
+        });
+        var original=new FileContentResult(PosterBlurTests.Source(),"image/png");
+        var(first,_)=await f.Run(original,item:season.Id);Assert.Same(original,first.Result);
+        var(next,_)=await f.Run(original,item:season.Id);Assert.IsType<FileContentResult>(next.Result);Assert.NotSame(original,next.Result);
     }
 
 }

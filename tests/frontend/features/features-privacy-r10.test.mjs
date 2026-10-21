@@ -13,7 +13,7 @@ function setup(t,reply){
  t.after(()=>h.close());h.load('core/navigation.js');h.load('core/session.js');h.load('core/session-action.js');h.load('enhanced/hiddencontent/hidden-content-data.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
  h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
- return {...h,api,reads,async settle(){for(let n=0;n<6;n++){await tick();await new Promise(r=>h.window.requestAnimationFrame(r));}},
+ return {...h,get NATIVE(){return h.NATIVE;},api,reads,async settle(){for(let n=0;n<6;n++){await tick();await new Promise(r=>h.window.requestAnimationFrame(r));}},
   later(){const now=h.window.Date.now;h.window.Date.now=()=>now()+31000;},
   switchUser(){h.window.ApiClient.setAuthenticationInfo('b','b');h.JE.userConfig={hiddenContent:{items:{provider:{type:'Series',tmdbId:'42'}},settings:{}}};api.resetFromUserConfig();}};
 }

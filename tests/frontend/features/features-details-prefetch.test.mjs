@@ -31,7 +31,7 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
  t.after(()=>h.close());
  for(const file of ['features-details-media-info.js','features-release-dates.js','features-details-page.js'])h.load(`enhanced/itemdetails/${file}`);
  const page=h.document.getElementById('itemDetailPage'),row=page.querySelector('.itemMiscInfo-primary');
- return {...h,page,row,plugin,tmdb,
+ return {...h,get NATIVE(){return h.NATIVE;},page,row,plugin,tmdb,
   runScheduled(){while(scheduled.length)debounced[scheduled.shift()]();},
   itemRequests:()=>[...items.keys()],lookups:()=>lookups,
   bumpEpoch(){epoch++;},epoch:()=>epoch,
@@ -152,7 +152,7 @@ test('no people/info prefetch without people tags, after leaving, or on another 
 test('the real settings store restores failed file-size visibility through the details dispatcher', async t => {
  const h=setup(t,{settings:{showFileSizes:true,showWatchProgress:false},config:{}});
  h.JE.userConfig={settings:{...h.JE.currentSettings}};
- h.load('enhanced/config.js');h.JE.currentSettings=h.JE.loadSettings();
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.JE.currentSettings=h.JE.loadSettings();
  h.viewshow();await h.resolveItem();await placeChips(h);
  assert.ok(h.row.querySelector('.mediaInfoItem-fileSize'));
  const held=deferred();h.window.ApiClient.ajax=()=>held.promise;

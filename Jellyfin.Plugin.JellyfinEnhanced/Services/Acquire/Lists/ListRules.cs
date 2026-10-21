@@ -34,8 +34,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>The 4K edition.</summary>
         public const string FourK = "4k";
 
-        private static readonly Regex ImdbRegex = new("^tt[0-9]{5,10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex PosterRegex = new("^/[A-Za-z0-9_-]+\\.(jpg|png)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex ImdbRegex = new(@"^tt[0-9]{5,10}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex PosterRegex = new(@"^/[A-Za-z0-9_-]+\.(jpg|png)\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         /// <summary>
         /// Validates client input and builds a placeholder. Returns false with a short reason on invalid input.

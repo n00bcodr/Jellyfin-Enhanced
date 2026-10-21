@@ -406,4 +406,48 @@ public class ApiNotifyRoutesTests
         Assert.DoesNotContain(item.ToString("N"), body.Body, StringComparison.Ordinal);
         Assert.Equal(1, body.Json.GetProperty("unread").GetInt32());
     }
+
+    // Found by the stage 1 fix round 9 writer scan: a settings change read the person's preferences, changed them and stored
+    // them whole without a lock, so a change stored between that read and that write was put back.
+    [Fact]
+    public async Task ASettingsChangeKeepsAChangeStoredWhileItWasBeingMade()
+    {
+        using var rig = await IntegrationNotificationsTests.Started();
+        var c = Controller(rig, rig.Emma);
+        var t = rig.Arr.Now;
+        var other = true;
+        c.Now = () =>
+        {
+            if (other)
+            {
+                other = false;
+                Assert.Equal(200, Of(Controller(rig, rig.Emma).PutPrefs(new NotifyPrefsRequest { Episodes = false })).Status); // another tab
+            }
+            return t;
+        };
+        Assert.Equal(200, Of(c.PutPrefs(new NotifyPrefsRequest { Ready = false })).Status);
+        var stored = rig.NotifyStore.Prefs(rig.Emma.UserId);
+        Assert.False(stored.Ready);
+        Assert.False(stored.Episodes, "the other tab's change stays");
+    }
+
+    [Fact]
+    public async Task PreferenceChangesForOnePersonRunOneAtATime()
+    {
+        using var rig = await IntegrationNotificationsTests.Started();
+        var store = rig.NotifyStore;
+        var user = rig.Emma.UserId;
+        Task? second = null;
+        store.UpdatePrefs(user, prefs =>
+        {
+            second = Task.Run(() => store.UpdatePrefs(user, p => { p.Episodes = false; return true; }, rig.Arr.Now));
+            Assert.False(second.Wait(200), "the second change waits for the first");
+            prefs.Ready = false;
+            return true;
+        }, rig.Arr.Now);
+        await second!.WaitAsync(TimeSpan.FromSeconds(5));
+        var stored = store.Prefs(user);
+        Assert.False(stored.Ready);
+        Assert.False(stored.Episodes);
+    }
 }

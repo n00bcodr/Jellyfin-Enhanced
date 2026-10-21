@@ -169,7 +169,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!tmdb.HasValue && path != null)
                 tmdb = instance.Kind == ArrKind.Radarr ? library?.Movies.FirstOrDefault(m => m.Path == path)?.TmdbId : library?.Series.FirstOrDefault(m => m.Path == path)?.TmdbId;
             if (!tmdb.HasValue && key?.Provider == "tvdb") tmdb = library?.SeriesByTvdb(key.NumericId ?? 0)?.TmdbId;
-            return Parental?.MaySeeAbsent(instance.Kind == ArrKind.Radarr ? "movie" : "tv", tmdb ?? 0, viewer.UserId.ToString("N"), out _) == true;
+            return MaySeeAbsentAs(viewer, instance.Kind == ArrKind.Radarr ? "movie" : "tv", tmdb ?? 0);
         }
 
         /// <summary>Cache-only rating decision by canonical key, resolving TVDB to TMDB through indexed copies.</summary>
@@ -182,7 +182,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (tmdb.HasValue) break;
                 if (!key.IsMovie && key.Provider == "tvdb") tmdb = _store.PeekLibrary(instance.Id)?.SeriesByTvdb(key.NumericId ?? 0)?.TmdbId;
             }
-            return Parental?.MaySeeAbsent(key.IsMovie ? "movie" : "tv", tmdb ?? 0, viewer.UserId.ToString("N"), out _) == true;
+            return MaySeeAbsentAs(viewer, key.IsMovie ? "movie" : "tv", tmdb ?? 0);
+        }
+
+        // Decided with the policy of the viewer as the request read them (the read every cached status answer is keyed by),
+        // never a later read of the person by id, which a policy change can land between. No read user: refused.
+        private bool MaySeeAbsentAs(StatusViewer viewer, string kind, int tmdb)
+        {
+            if (Parental is not { } parental || viewer.Handle is not User user) return false;
+            return !parental.TryGetRestrictedPolicy(user, out var policy) || parental.MaySeeAbsent(kind, tmdb, policy, out _);
         }
 
         /// <summary>A token that changes with mappings, linked libraries, roots and Jellyfin library locations.</summary>

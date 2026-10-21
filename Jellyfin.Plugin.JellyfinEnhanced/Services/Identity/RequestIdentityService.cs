@@ -121,13 +121,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // memory models (ARM) too.
         private static readonly TimeSpan UserCountCacheTtl = TimeSpan.FromSeconds(60);
 
-        private sealed class SingleUserSnapshot
-        {
-            public required Guid? Value { get; init; }
-            public required DateTime CheckedAt { get; init; }
-        }
-
-        private volatile SingleUserSnapshot? _singleUser;
+        // The single-user answer on the ticket protocol (Helpers.WrittenStateCache, one slot): an enumeration that began
+        // before a user was created or deleted is never kept (a plain reset let one that read "only A" put it back after
+        // B's creation reset it).
+        private readonly Helpers.WrittenStateCache<int, Guid?> _singleUser = new(UserCountCacheTtl, 1);
         private readonly object _singleUserLock = new();
 
         private readonly ISessionManager _sessionManager;
@@ -157,26 +154,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void InvalidateUserTopology()
         {
-            _singleUser = null; // atomic volatile reference write
+            _singleUser.Invalidate(0);
         }
 
         // The lone user's id when the server has exactly one account, else
         // null. Cached for UserCountCacheTtl.
         private Guid? TryGetSingleUserId()
         {
-            var snapshot = _singleUser; // one volatile read; immutable after publish
-            if (snapshot != null && (DateTime.UtcNow - snapshot.CheckedAt) < UserCountCacheTtl)
-            {
-                return snapshot.Value;
-            }
+            if (_singleUser.TryGet(0, out var known)) return known;
 
             lock (_singleUserLock)
             {
-                snapshot = _singleUser;
-                if (snapshot != null && (DateTime.UtcNow - snapshot.CheckedAt) < UserCountCacheTtl)
-                {
-                    return snapshot.Value;
-                }
+                // Taken before the enumeration: a topology change during it ends what it read.
+                var ticket = _singleUser.Begin();
+                if (_singleUser.TryGet(0, out known)) return known;
 
                 Guid? result;
                 try
@@ -197,7 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         $"JE request identity: user enumeration for the single-user shortcut threw: {ex.Message}");
                     result = null;
                 }
-                _singleUser = new SingleUserSnapshot { Value = result, CheckedAt = DateTime.UtcNow };
+                _singleUser.Set(0, ticket, result);
                 return result;
             }
         }

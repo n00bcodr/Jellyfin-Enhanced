@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHarness, plain, deferred } from '../helpers/harness.mjs';
 import { readFileSync } from 'node:fs';
 
-const modules = ['core/navigation.js', 'core/session.js', 'enhanced/config.js'];
+const modules = ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'enhanced/config.js'];
 const payload = (extra = {}) => ({ UserId: 'user-a', Version: '1.2.3', PublicConfig: {}, PrivateConfig: null,
   HasCustomTabs: false, HasPluginPages: false, UserSettings: {}, ComponentScripts: modules, ...extra });
 async function until(predicate) {
@@ -65,7 +65,7 @@ function setup(t, { data = payload(), ajax, bundle = 'ok', dev = false, storage 
     return result;
   };
   h.load('plugin.js');
-  return { ...h, calls, scripts, initialized, get translationLoads() { return translationLoads; }, get plugin() { return h.window.JellyfinEnhanced; },
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, scripts, initialized, get translationLoads() { return translationLoads; }, get plugin() { return h.window.JellyfinEnhanced; },
     switchUser(id) { userId = id; h.window.JellyfinEnhanced.session.checkNow('test'); } };
 }
 
@@ -77,16 +77,16 @@ test('bootstrap shares one request and loads actual settings before enabled feat
   assert.equal(h.plugin.pluginVersion, '1.2.3');
   assert.equal(h.plugin.currentSettings.qualityTagsEnabled, false);
   assert.deepEqual(h.initialized, ['ReviewsScript', 'HiddenContent', 'CalendarPage', 'hideSplash']);
-  assert.equal(h.window.__JE_BUNDLE_PROGRESS, 3);
+  assert.equal(h.window.__JE_BUNDLE_PROGRESS, 4);
   assert.equal(h.window.__JE_BUNDLE_MODULES, undefined);
   assert.ok(h.scripts.every(s => s.src.includes('v=1.2.3-build123')));
 });
 
 for (const bundle of ['error', 'malformed']) test(`bundle ${bundle} falls back to ordered real modules`, async t => {
-  const h = setup(t, { bundle, data: payload({ ComponentScripts: [' // comment', null, 'core/navigation.js', ' core/session.js ', '', 'enhanced/config.js'] }) });
+  const h = setup(t, { bundle, data: payload({ ComponentScripts: [' // comment', null, 'core/navigation.js', ' core/session.js ', '', 'core/mutation-queue.js', 'enhanced/config.js'] }) });
   await until(() => h.plugin.initialized);
   const components = h.scripts.filter(s => modules.some(name => s.src.includes(name)));
-  assert.equal(components.length, 3);
+  assert.equal(components.length, 4);
   assert.ok(components[0].src.includes('core/navigation.js'));
   assert.ok(components.every(s => s.async === false));
   assert.equal(h.plugin.session.getUserId(), 'user-a');

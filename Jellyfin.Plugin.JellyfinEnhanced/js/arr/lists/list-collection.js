@@ -332,10 +332,10 @@
             e.preventDefault();
             e.stopPropagation();
             if (request) {
-                if (!request.disabled) lp.request.open({ listId, ticket: () => ctrl.ticket, onDone: () => ctrl.scheduleRefetch(500) }, ph, request);
+                if (!request.disabled) lp.request.open({ listId, ticket: () => ctrl.ticket, onDone: () => ctrl.scheduleRefetch(500) }, ph, request, JE.ownerOf?.(e));
                 return;
             }
-            lp.pages.openEntry(ctrl, ph);
+            lp.pages.openEntry(ctrl, ph, JE.ownerOf?.(e));
         };
 
         /** Puts the section back where it belongs after Jellyfin re-rendered the page around it. */

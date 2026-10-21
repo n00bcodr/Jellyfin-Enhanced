@@ -117,6 +117,7 @@
             arrowButton.className = 'jellyseerr-split-arrow';
             arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
             arrowButton.dataset.tmdbId = item.id;
+            arrowButton.dataset.mediaType = 'tv';
             arrowButton.dataset.toggle4k = 'true';
 
             const tvDs4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
@@ -135,14 +136,7 @@
             buttonGroup.appendChild(arrowButton);
             button.replaceWith(buttonGroup);
 
-            arrowButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (state.active4KPopup && state.active4KPopup.parentElement === buttonGroup) {
-                    internal.hide4KPopup();
-                } else {
-                    internal.show4KPopup(buttonGroup, item);
-                }
-            });
+            arrowButton.addEventListener('click', (e) => internal.toggle4KPopup(e, buttonGroup, item));
         }
     }
 
@@ -194,6 +188,7 @@
             arrowButton.className = 'jellyseerr-split-arrow';
             arrowButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M12.53 16.28a.75.75 0 01-1.06 0l-7.5-7.5a.75.75 0 011.06-1.06L12 14.69l6.97-6.97a.75.75 0 111.06 1.06l-7.5 7.5z" clip-rule="evenodd" /></svg>';
             arrowButton.dataset.tmdbId = item.id;
+            arrowButton.dataset.mediaType = 'movie';
             arrowButton.dataset.toggle4k = 'true';
 
             const ds4k = JE.seerrStatus.resolveDisplayStatus(status4k, false);
@@ -215,27 +210,32 @@
             if (!mainButtonDisabled) {
                 const requestHandler = async (e) => {
                     e.stopPropagation();
+                    // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
+                    const submitted = JE.captureSubmitted(e);
+                    const origin = mainButton.closest('.jellyseerr-card') || mainButton;
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
+                        ui.showMovieRequestModal(item.id, item.title || item.name, item, false, submitted.owner, origin);
                     } else {
+                        // The answer publishes into this card (and the cards that follow the title) through its
+                        // publication (D46S2-R8-2); a refusal's dialog is that publication's too (R8-6).
+                        const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId: item.id, mediaType: 'movie' } });
                         mainButton.disabled = true;
                         mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                         try {
-                            await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(mainButton).bound() });
+                            const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
                             if (requestHandlers.get(mainButton) !== requestHandler) return;
-                            if (!item.mediaInfo) item.mediaInfo = {};
-                            item.mediaInfo.status = 3;
-                            mainButton.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
-                            mainButton.classList.remove('jellyseerr-button-request');
-                            mainButton.classList.add('jellyseerr-button-pending');
+                            // The answer changes the UI only through its publication, checked as it does (D46S2-R9-5).
+                            publication.run(() => {
+                                if (!item.mediaInfo) item.mediaInfo = {};
+                                item.mediaInfo.status = 3;
+                                publication.publish({ response });
+                            });
                         } catch (error) {
                             if (requestHandlers.get(mainButton) !== requestHandler) return;
-                            mainButton.disabled = false;
-                            // Quota errors get a themed dialog; restore button to idle.
+                            // Quota errors get a themed dialog (only while the publication holds); restore button to idle.
                             if (ui.isQuotaError && ui.isQuotaError(error)) {
-                                await ui.showQuotaErrorDialog(error, 'movie');
-                                if (requestHandlers.get(mainButton) !== requestHandler) return;
-                                mainButton.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                                publication.apply(mainButton, node => { node.disabled = false; node.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`; });
+                                await ui.showQuotaErrorDialog(error, 'movie', publication);
                                 return;
                             }
                             let errorMessage = JE.t('jellyseerr_btn_error');
@@ -249,8 +249,11 @@
                                 errorMessage = error.responseJSON.message;
                             }
                             // Escape API-sourced error message before inserting into HTML
-                            mainButton.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
-                            mainButton.classList.add('jellyseerr-button-error');
+                            publication.apply(mainButton, node => {
+                                node.disabled = false;
+                                node.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
+                                node.classList.add('jellyseerr-button-error');
+                            });
                         }
                     }
                 };
@@ -258,14 +261,7 @@
                 mainButton.addEventListener('click', requestHandler);
             }
 
-            arrowButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (state.active4KPopup && state.active4KPopup.parentElement === buttonGroup) {
-                    internal.hide4KPopup();
-                } else {
-                    internal.show4KPopup(buttonGroup, item);
-                }
-            });
+            arrowButton.addEventListener('click', (e) => internal.toggle4KPopup(e, buttonGroup, item));
             return;
         }
 
@@ -287,27 +283,32 @@
             const requestHandler = async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                // The press's owner (D46S2-R7-1), taken before the button's content changes under it.
+                const submitted = JE.captureSubmitted(e);
+                const origin = button.closest('.jellyseerr-card') || button;
                 if (JE.jellyseerrAPI.shouldShowAdvanced()) {
-                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, e);
+                    ui.showMovieRequestModal(item.id, item.title || item.name, item, false, submitted.owner, origin);
                 } else {
+                    // The answer publishes into this card (and the cards that follow the title) through its
+                    // publication (D46S2-R8-2); a refusal's dialog is that publication's too (R8-6).
+                    const publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId: item.id, mediaType: 'movie' } });
                     button.disabled = true;
                     button.innerHTML = `<span>${JE.t('jellyseerr_btn_requesting')}</span><span class="jellyseerr-button-spinner"></span>`;
                     try {
-                        await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: JE.captureSubmitted(button).bound() });
+                        const response = await JE.jellyseerrAPI.requestMedia(item.id, 'movie', {}, false, item, null, { bound: submitted.bound() });
                         if (requestHandlers.get(button) !== requestHandler) return;
-                        if (!item.mediaInfo) item.mediaInfo = {};
-                        item.mediaInfo.status = 3;
-                        button.innerHTML = `<span>${JE.t('jellyseerr_btn_requested')}</span>${icons.requested}`;
-                        button.classList.remove('jellyseerr-button-request');
-                        button.classList.add('jellyseerr-button-pending');
+                        // The answer changes the UI only through its publication, checked as it does (D46S2-R9-5).
+                        publication.run(() => {
+                            if (!item.mediaInfo) item.mediaInfo = {};
+                            item.mediaInfo.status = 3;
+                            publication.publish({ response });
+                        });
                     } catch (error) {
                         if (requestHandlers.get(button) !== requestHandler) return;
-                        button.disabled = false;
-                        // Quota errors get a themed dialog; restore button to idle.
+                        // Quota errors get a themed dialog (only while the publication holds); restore button to idle.
                         if (ui.isQuotaError && ui.isQuotaError(error)) {
-                            await ui.showQuotaErrorDialog(error, 'movie');
-                            if (requestHandlers.get(button) !== requestHandler) return;
-                            button.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`;
+                            publication.apply(button, node => { node.disabled = false; node.innerHTML = `${icons.request}<span>${JE.t('jellyseerr_btn_request')}</span>`; });
+                            await ui.showQuotaErrorDialog(error, 'movie', publication);
                             return;
                         }
                         let errorMessage = JE.t('jellyseerr_btn_error');
@@ -320,8 +321,11 @@
                         } else if (error.responseJSON?.message) {
                             errorMessage = error.responseJSON.message;
                         }
-                        button.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
-                        button.classList.add('jellyseerr-button-error');
+                        publication.apply(button, node => {
+                            node.disabled = false;
+                            node.innerHTML = `<span>${escapeHtml(errorMessage)}</span>${icons.error}`;
+                            node.classList.add('jellyseerr-button-error');
+                        });
                     }
                 }
             };

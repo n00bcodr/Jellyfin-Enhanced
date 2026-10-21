@@ -19,49 +19,12 @@
     let overrideRulesCachedAt = 0;
     const OVERRIDE_RULES_TTL = 5 * 60 * 1000; // 5 minutes
 
-    // Collection membership per movie (TMDB id -> collection, or null for
-    // none) as answered by the batched lookup, for the signed-in user. Kept
-    // as long as the core client kept the per-movie detail responses it
-    // replaces, so a movie seen again (the same query retyped, a later page)
-    // costs no request.
-    /** @type {Map<number, {collection: Object|null, at: number}>} */
-    const movieCollections = new Map();
-    const MOVIE_COLLECTIONS_TTL_MS = 30 * 60 * 1000;
-    const MOVIE_COLLECTIONS_MAX_ENTRIES = 1000;
     // Ids per request: the server answers up to 100 (MovieCollectionsBatch.MaxIds),
     // but 40 keep the query string under ~330 bytes, inside even strict proxy
     // query-length limits (e.g. 512); a search page (20 results) is one request.
+    // The answers aren't kept between calls: they are per person (Seerr user,
+    // parental limits), and a restriction applies to the next lookup.
     const MOVIE_COLLECTIONS_IDS_PER_REQUEST = 40;
-    JE.session?.onUserChange('jellyseerr-movie-collections', () => movieCollections.clear());
-
-    /**
-     * Looks up a remembered collection answer.
-     * @param {number} tmdbId - TMDB movie id.
-     * @returns {Object|null|undefined} The movie's collection, null when it is
-     *   in none, undefined when not known (never asked, or expired).
-     */
-    function recallMovieCollection(tmdbId) {
-        const entry = movieCollections.get(tmdbId);
-        if (!entry) return undefined;
-        if (Date.now() - entry.at >= MOVIE_COLLECTIONS_TTL_MS) {
-            movieCollections.delete(tmdbId);
-            return undefined;
-        }
-        return entry.collection;
-    }
-
-    /**
-     * Remembers a collection answer, evicting the oldest one at capacity.
-     * @param {number} tmdbId - TMDB movie id.
-     * @param {Object|null} collection - The movie's collection, null for none.
-     */
-    function rememberMovieCollection(tmdbId, collection) {
-        movieCollections.delete(tmdbId);
-        if (movieCollections.size >= MOVIE_COLLECTIONS_MAX_ENTRIES) {
-            movieCollections.delete(movieCollections.keys().next().value);
-        }
-        movieCollections.set(tmdbId, { collection, at: Date.now() });
-    }
 
     // Set once Seerr refuses this account's issue reads (no VIEW_ISSUES, or no account); cleared on a user switch.
     let issuesRefused = false;
@@ -115,6 +78,26 @@
     }
 
     /**
+     * The binding a request write takes (D46S2-R10-1): an owner token's (JE.captureSubmitted(owner).bound()), from a
+     * title action's operation or the viewer's own gesture. Without one nothing is read or sent: refused (it throws in
+     * tests) and the call rejects as never sent.
+     */
+    function requireBinding(bound, site) {
+        if (bound && JE.isOwnerToken?.(bound.token)) return;
+        const message = `Jellyfin Enhanced: ${site} was called without its owner's binding`;
+        if (JE.strictOwners === true) throw new Error(message);
+        if (JE.strictOwners === 'record') (JE.refusals = JE.refusals || []).push(message); else console.error(message);
+        const error = new DOMException('Cancelled', 'AbortError');
+        error.jeOutcome = 'unsent';
+        throw error;
+    }
+
+    /** A request answer that arrived after its owner ended (accepted) still refreshes the title's caches. */
+    function reconcileAccepted(error, tmdbId, mediaType) {
+        if (JE.core.api.writeOutcome?.(error).outcome === 'accepted') invalidateRequestCaches(tmdbId, mediaType);
+    }
+
+    /**
      * Invalidate Seerr/TMDB caches impacted by a successful request.
      * Keeps UI surfaces in sync without waiting for a hard refresh.
      * @param {number|string} tmdbId
@@ -149,24 +132,6 @@
         }
 
         patterns.forEach(pattern => JE.requestManager.clearCacheMatching(pattern));
-    }
-
-    /**
-     * Broadcast successful request events so all UI surfaces can update immediately.
-     * @param {number|string} tmdbId
-     * @param {'movie'|'tv'} mediaType
-     * @param {boolean} is4k
-     */
-    function emitMediaRequested(tmdbId, mediaType, is4k = false) {
-        document.dispatchEvent(new CustomEvent('jellyseerr-media-requested', {
-            detail: { tmdbId: String(tmdbId), mediaType: String(mediaType || '').toLowerCase(), is4k: !!is4k }
-        }));
-
-        if (String(mediaType || '').toLowerCase() === 'tv') {
-            document.dispatchEvent(new CustomEvent('jellyseerr-tv-requested', {
-                detail: { tmdbId: String(tmdbId), mediaType: 'tv' }
-            }));
-        }
     }
 
     /**
@@ -405,9 +370,9 @@
     /**
      * Adds collection membership information to movie items in search results.
      * One batched server lookup (jellyseerr/movie-collections) covers every
-     * movie not already answered this session; it reads Seerr's movie detail,
-     * then TMDB's when Seerr names no collection, exactly as
-     * fetchMovieCollection does per movie.
+     * movie of the call; it reads Seerr's movie detail, then TMDB's when Seerr
+     * names no collection, exactly as fetchMovieCollection does per movie.
+     * Nothing is kept for later calls (the answer is per person).
      * @param {Array} results
      * @param {{signal?: AbortSignal|null}} [options]
      * @returns {Promise<Array>} A copy with `collection` set on member movies.
@@ -421,20 +386,17 @@
         const unknown = new Set();
         results.forEach(item => {
             const id = Number(item.id);
-            if (item.mediaType === 'movie' && Number.isInteger(id) && id > 0 && recallMovieCollection(id) === undefined) {
+            if (item.mediaType === 'movie' && Number.isInteger(id) && id > 0) {
                 unknown.add(id);
             }
         });
         const ids = Array.from(unknown);
 
-        // Answers that land after a user switch belong to the previous user
-        // (Seerr permissions, parental gating): use them, never keep them.
-        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
         const answered = new Map();
         try {
             for (let c = 0; c < ids.length; c += MOVIE_COLLECTIONS_IDS_PER_REQUEST) {
                 const chunk = ids.slice(c, c + MOVIE_COLLECTIONS_IDS_PER_REQUEST);
-                // skipCache: answers are kept per movie below rather than per id set.
+                // skipCache: a per-person answer, never kept by the browser.
                 const data = await get(`/movie-collections?ids=${chunk.join(',')}`, { signal, skipCache: true });
                 Object.entries(data?.results || {}).forEach(([id, collection]) => answered.set(Number(id), collection || null));
             }
@@ -443,14 +405,10 @@
             // didn't answer just get no collection this time.
             if (e?.name !== 'AbortError') console.debug(`${logPrefix} Collection lookup failed:`, e);
         }
-        if (!JE.session || JE.session.isCurrent(requestEpoch)) {
-            answered.forEach((collection, id) => rememberMovieCollection(id, collection));
-        }
-
         results.forEach((item, i) => {
             if (item.mediaType !== 'movie') return;
             const id = Number(item.id);
-            const collection = answered.has(id) ? answered.get(id) : recallMovieCollection(id);
+            const collection = answered.get(id);
             if (collection) out[i] = { ...item, collection };
         });
         return out;
@@ -686,15 +644,17 @@
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
      * @param {{bound?: Object}} [options] - bound: the core transport binding of the operation that requests
-     *   (JE.captureSubmitted(origin).bound(); none natively). Every caller passes it (D46S2-R5, enforced by a source
-     *   scan); it is checked after the override-rule read and by the transport right before the POST.
+     *   (JE.captureSubmitted(owner).bound(): a title action's operation or the viewer's own gesture). Required
+     *   (D46S2-R10-1): without it nothing is read or sent. Checked after the override-rule read and by the transport
+     *   right before the POST.
      * @returns {Promise<any>}
      */
     api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null, options = {}) {
-        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
-        const action = JE.createSessionAction();
+        // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
-        const current = () => action.current() && (!bound || bound.current() !== false);
+        requireBinding(bound, 'a Seerr request');
+        const action = JE.createSessionAction();
+        const current = () => action.current() && bound.current() !== false;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
@@ -714,12 +674,12 @@
             ...(is4k ? { is4k: true } : {})
         };
 
-        const result = await post('/request', body, bound);
+        let result;
+        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, mediaType); throw error; }
 
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, mediaType);
-            emitMediaRequested(tmdbId, mediaType, is4k);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, mediaType);
@@ -746,10 +706,11 @@
      * @returns {Promise<any>}
      */
     api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null, options = {}) {
-        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
-        const action = JE.createSessionAction();
+        // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
-        const current = () => action.current() && (!bound || bound.current() !== false);
+        requireBinding(bound, 'a Seerr request');
+        const action = JE.createSessionAction();
+        const current = () => action.current() && bound.current() !== false;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
@@ -768,12 +729,12 @@
             ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
-        const result = await post('/request', body, bound);
+        let result;
+        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, 'tv'); throw error; }
 
         // Add to watchlist after successful request
         if (result) {
             invalidateRequestCaches(tmdbId, 'tv');
-            emitMediaRequested(tmdbId, 'tv', is4k);
             JE.helpers.trackUsage('seerr.request_submitted');
             try {
                 await api.addToWatchlist(tmdbId, 'tv');
@@ -990,7 +951,7 @@
 
     /**
      * The authorized Seerr record needed for reporting; absent files may still have a request record. A read: `owner`
-     * (an operation or JE.NATIVE), when given, cancels it once it ends.
+     * (an owner token), when given, cancels it once it ends.
      */
     api.reportContext = async function(mediaId, mediaType, owner) {
         if (!['movie', 'tv'].includes(mediaType) || !Number.isInteger(Number(mediaId)) || Number(mediaId) <= 0 || Number(mediaId) > 2147483647) throw new TypeError('Invalid provider title');
@@ -1012,8 +973,9 @@
 
             // Fetch the correct internal media id from Seerr
 
-            const context = await api.reportContext(mediaId, mediaType, submitted);
-            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
+            // The report is the viewer's write: its read goes on while its owner may write (D46S2 audit S3).
+            const context = await api.reportContext(mediaId, mediaType, { current: submitted.writable });
+            if (!action.current() || !submitted.writable()) throw new DOMException('Cancelled', 'AbortError');
             const internalId = context.mediaId;
             if (!internalId) {
                 throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
@@ -1029,7 +991,7 @@
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
-            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
+            if (!action.current() || !submitted.writable()) throw new DOMException('Cancelled', 'AbortError');
             const result = await post('/issue', body, submitted.bound());
             if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');

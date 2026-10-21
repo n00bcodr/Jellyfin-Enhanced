@@ -95,6 +95,31 @@ test('defaults: an older saved configuration loads every phase-4 switch off and 
     assert.equal(out.ArrAutomationKilledInstances, '');
 });
 
+const LIST_IMPORT_SWITCHES = ['ArrPhase4ListImportEnabled', 'ArrPhase4ListSourcesEnabled', 'ArrPhase4ListMdblistEnabled', 'ArrPhase4ListMdblistApiEnabled',
+    'ArrPhase4ListTmdbEnabled', 'ArrPhase4ListChronolistsEnabled', 'ArrPhase4ListTraktEnabled', 'ArrPhase4ListImdbEnabled', 'ArrPhase4ListJeMetadataEnabled'];
+
+test('list import and sources (phase 4c2): every switch defaults off, round-trips, and hangs under its parent', t => {
+    const { h } = setup();
+    t.after(() => h.close());
+    h.window.load({});
+    const off = {};
+    h.window.save(off);
+    for (const key of LIST_IMPORT_SWITCHES) assert.equal(off[key], false, key);
+    h.window.load(Object.fromEntries(LIST_IMPORT_SWITCHES.map(k => [k, true])));
+    const on = {};
+    h.window.save(on);
+    for (const key of LIST_IMPORT_SWITCHES) assert.equal(on[key], true, key);
+    assert.ok(!('ArrListTraktApiKey' in on), 'the Trakt client ID is a stored credential, saved with the other secrets');
+    const child = (parent, id) => h.window.deps.some(d => d.parent === parent && d.children.includes(id));
+    assert.ok(child('arrPhase4ListAuthoringEnabled', 'arrPhase4ListImportEnabled'));
+    assert.ok(child('arrPhase4ListImportEnabled', 'arrPhase4ListSourcesEnabled'));
+    for (const id of ['arrPhase4ListMdblistEnabled', 'arrPhase4ListTmdbEnabled', 'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled'])
+        assert.ok(child('arrPhase4ListSourcesEnabled', id), id);
+    assert.ok(child('arrPhase4ListMdblistEnabled', 'arrPhase4ListMdblistApiEnabled'));
+    assert.ok(child('arrPhase4ListTraktEnabled', 'arrListTraktApiKey'));
+    assert.ok(child('arrPhase4ListPlaceholdersEnabled', 'arrPhase4ListJeMetadataEnabled'));
+});
+
 test('the switch hierarchy: phase 4 under phase 1, the engine under phase 4 and phase 3, the rollout guard under nothing', t => {
     const { h } = setup();
     t.after(() => h.close());

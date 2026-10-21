@@ -2768,6 +2768,33 @@
                                 <div class="je-setting-description" data-desc-for="arrPhase4ReadyMessagesEnabled"><div class="fieldDescription">Needs phase 4 and notifications. When something a person asked for or follows is ready, a short message appears on one Jellyfin app or TV signed in as them (and nobody else), only while nothing is playing or paused there or on their other devices; never in their quiet hours, never for a hidden title, and "hide titles" keeps the title out. Busy or closed apps just miss it; the bell, phone and e-mail alerts are unchanged. Some apps can't show these messages. Off for everyone until they turn it on.</div></div>
                             </div>
                             <!-- /Phase 4f: Ready playlist and native Ready messages -->
+                            <!-- Phase 4c2: list import and sources -->
+                            <div id="arrListImportSettings" class="je-arr-list-settings">
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListImportEnabled" is="emby-checkbox" type="checkbox"/><span>Import lists (paste, file or URL), with a review first</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListImportEnabled"><div class="fieldDescription">Needs "Adding and editing list entries". People who can edit a list can paste a watch guide, table or titles, import a CSV (IMDb and Letterboxd exports too) or read a list URL, and review every match before anything is added. Titles are looked up on TMDB with this server's TMDB key (or through Seerr when no key is saved); people's parental limits, Hidden Content and Spoiler Guard apply to what the review shows. The review itself never changes a list.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListSourcesEnabled" is="emby-checkbox" type="checkbox"/><span>Import from a list URL (From URL)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListSourcesEnabled"><div class="fieldDescription">Needs "Import lists". Each list site below has its own switch; a site that is off is never contacted. Letterboxd is never read directly: people are pointed to an MDBList mirror or a CSV export.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListMdblistEnabled" is="emby-checkbox" type="checkbox"/><span>MDBList public lists</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListMdblistEnabled"><div class="fieldDescription">Public MDBList lists, read without a key (MDBList also mirrors Letterboxd, IMDb and Trakt lists).</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListMdblistApiEnabled" is="emby-checkbox" type="checkbox"/><span>Let administrators read private MDBList lists with this server's MDBList key</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListMdblistApiEnabled"><div class="fieldDescription">Needs "MDBList public lists" and an MDBList API key (Ratings section). Only an administrator's deliberate choice reads a list through the API; it counts against the key's daily quota, which ratings share. A list MDBList doesn't serve publicly is never read through the key on its own.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListTmdbEnabled" is="emby-checkbox" type="checkbox"/><span>TMDB lists, collections and charts</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListTmdbEnabled"><div class="fieldDescription">Needs the TMDB API key. Without one, collections, trending and upcoming movies can be read through Seerr instead; the review says so.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListChronolistsEnabled" is="emby-checkbox" type="checkbox"/><span>Chronolists watch orders</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListChronolistsEnabled"><div class="fieldDescription">chronolists.com watch orders (MCU, DC Arrowverse and others) with exact TMDB ids: runs of episodes become one entry each, no title search needed.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListTraktEnabled" is="emby-checkbox" type="checkbox"/><span>Trakt lists, watchlists and charts</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListTraktEnabled"><div class="fieldDescription">Needs a Trakt client ID below (create an API app on trakt.tv). Without one, Trakt URLs say so and nothing is read.</div></div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="arrListTraktApiKey">Trakt client ID</label>
+                                    <input id="arrListTraktApiKey" is="emby-input" type="text" autocomplete="off" class="je-api-input"/>
+                                    <div class="fieldDescription">Kept on the server only (never sent to browsers); Replace or Clear it here.</div>
+                                </div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListImdbEnabled" is="emby-checkbox" type="checkbox"/><span>IMDb lists, watchlists and charts (unofficial)</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListImdbEnabled"><div class="fieldDescription">An opt-in: IMDb has no public API for lists, so this uses IMDb's unofficial one, which may stop working without notice; the review always says so. IMDb CSV exports work without it.</div></div>
+                                <div class="checkboxContainer"><label><input id="arrPhase4ListJeMetadataEnabled" is="emby-checkbox" type="checkbox"/><span>Title details for list entries from TMDB when Seerr isn't set up</span></label></div>
+                                <div class="je-setting-description" data-desc-for="arrPhase4ListJeMetadataEnabled"><div class="fieldDescription">Needs "Lists" and the TMDB API key. Release dates, posters, seasons and episodes of list entries come from TMDB directly. When Seerr is set up it keeps answering, as before.</div></div>
+                            </div>
+                            <!-- /Phase 4c2: list import and sources -->
                             <!-- /Requests & downloads, phase 4 -->
                             <div class="checkboxContainer"><label><input id="arrPhase2Enabled" is="emby-checkbox" type="checkbox"/><span>Tell me, and admin essentials (phase 2)</span></label></div>
                             <div class="je-setting-description" data-desc-for="arrPhase2Enabled">
@@ -4528,59 +4555,48 @@
                 searchClear.style.display = 'block';
             }
 
-            // Unsaved-changes indicator: diffs a snapshot of every form control against the last saved snapshot.
+            // Unsaved-changes indicator: shows whether a save would send anything, i.e. whether the form now says something
+            // other than what the server last handed out (jeConfigPatch over _jeSent, the same comparison the save makes).
+            // Typing, a card added or removed, a confirmed list reset or a programmatic change all count; a value changed
+            // back does not, and a list that arrives later changes nothing the administrator didn't change.
             const saveDock = document.querySelector('.je-save-dock');
-            let _jeSavedSnapshot = null;
-
-            function jeSnapshotFormState() {
-                const parts = [];
-                let i = 0;
-                form.querySelectorAll('input, select, textarea').forEach((el) => {
-                    if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
-                    if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
-                    if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
-                    if (el.closest('.je-arr-migration')) return; // the Seerr move panel's own confirmation, not a setting
-                    // An instance's add defaults load when its card opens: loading them isn't a change, editing them is.
-                    if (el.closest('.arr-instance-add') && el.dataset.jeInitial !== undefined
-                        && String(el.type === 'checkbox' ? el.checked : el.value) === el.dataset.jeInitial) return;
-                    const key = el.id || el.name || ('#' + i++);
-                    parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
-                });
-                // shortcutOverrides is JS state, not bound to persistent <input> elements.
-                parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
-                return parts.join('');
-            }
-
-            /** Call once the form reflects a known-saved state. */
-            function jeMarkSaved() {
-                _jeSavedSnapshot = jeSnapshotFormState();
-                jeUpdateDirtyIndicator();
-            }
+            let _jeDirtyQueued = false;
 
             /**
-             * Takes a control's new value as saved when the server changed that setting itself (request
-             * handling after a Seerr move or rollback), so the page doesn't report it as unsaved.
-             * @param {HTMLElement} el - the control (with an id)
-             * @param {string} previous - its value before the change
+             * Whether the form holds changes the server won't have once the save still out (if any) is answered: the form is
+             * compared with that save's snapshot while it is out (a value changed back meanwhile is unsaved), else with what
+             * the server last answered.
              */
-            function jeAcceptServerValue(el, previous) {
-                if (_jeSavedSnapshot === null || !el || !el.id) return;
-                _jeSavedSnapshot = _jeSavedSnapshot.replace(el.id + '=' + previous, el.id + '=' + el.value);
-                jeUpdateDirtyIndicator();
+            function jeHasUnsavedChanges() {
+                if (!_jeSent) return false;
+                const expected = _jeInFlight || _jeSent;
+                const patch = jeConfigPatch(expected, jeFormConfig(_jeBase, true), _jeInFlight || _jeBase);
+                return Object.keys(patch.Set).length > 0 || Object.keys(patch.Instances).length > 0;
             }
 
             function jeUpdateDirtyIndicator() {
-                const dirty = _jeSavedSnapshot !== null && jeSnapshotFormState() !== _jeSavedSnapshot;
-                if (saveDock) saveDock.classList.toggle('je-dirty', dirty);
+                _jeDirtyQueued = false;
+                if (saveDock) saveDock.classList.toggle('je-dirty', jeHasUnsavedChanges());
             }
 
-            form.addEventListener('input', jeUpdateDirtyIndicator);
-            form.addEventListener('change', jeUpdateDirtyIndicator);
-            // Fallback poll for structural changes that don't fire input/change (adding/removing a row).
-            setInterval(jeUpdateDirtyIndicator, 1000);
+            /** One update per burst of edits (each keystroke and each node of a redrawn list would otherwise recompute). */
+            function jeQueueDirtyIndicator() {
+                if (_jeDirtyQueued) return;
+                _jeDirtyQueued = true;
+                setTimeout(jeUpdateDirtyIndicator, 0);
+            }
 
+            form.addEventListener('input', jeQueueDirtyIndicator);
+            form.addEventListener('change', jeQueueDirtyIndicator);
+            // Structural edits (a card or row added or removed) fire neither. The indicator only toggles a class on the dock,
+            // which this observer doesn't watch, so it never triggers itself.
+            new MutationObserver(jeQueueDirtyIndicator).observe(form, { childList: true, subtree: true });
+            setInterval(jeQueueDirtyIndicator, 1000);
+
+            // Leaving warns while the form holds unsaved changes, and while a save is still out (its changes aren't stored
+            // until it is answered; the marker compares the form with that save meanwhile, so it alone can't tell).
             window.addEventListener('beforeunload', (e) => {
-                if (!saveDock || !saveDock.classList.contains('je-dirty')) return;
+                if (!jeSaveOutstanding() && !(saveDock && saveDock.classList.contains('je-dirty'))) return;
                 e.preventDefault();
                 e.returnValue = '';
             });
@@ -5263,8 +5279,8 @@
         // last configuration read, the state of its latest list load (pending | loaded | failed: each load has a
         // generation, a later load supersedes an earlier one and a late completion of the earlier one is ignored) and
         // whether the administrator changed it on this page. A save writes the administrator's value only for a changed
-        // field; every other field keeps what the server holds, byte for byte (buildConfigFromForm starts from a fresh
-        // read). A change made while a list loads is kept when the list arrives. A select shows a value its list lacks as
+        // field; every other field keeps what the server holds, byte for byte (a save sends only the administrator's
+        // changes: see jeConfigPatch). A change made while a list loads is kept when the list arrives. A select shows a value its list lacks as
         // one temporary option, removed when the value is replaced or the real option arrives.
 
         /**
@@ -5276,7 +5292,7 @@
          */
         function jeAsyncField(key, spec) {
             var f = {
-                key: key, state: 'idle', generation: 0, changed: false, stored: undefined, hasStored: false,
+                key: key, state: 'idle', generation: 0, changed: false, revision: 0, stored: undefined, hasStored: false,
                 /** The value of the latest configuration read; the form shows it again, so earlier edits are gone. */
                 setStored: function(raw) { f.stored = raw; f.hasStored = true; f.changed = false; },
                 /** Starts a list load; its completion must pass the returned token to settle(). */
@@ -5287,7 +5303,8 @@
                     f.state = ok ? 'loaded' : 'failed';
                     return true;
                 },
-                markChanged: function() { f.changed = true; },
+                /** Every change by the administrator is a new revision (see saved). */
+                markChanged: function() { f.changed = true; f.revision += 1; },
                 /** The administrator's value, or undefined when the field keeps the stored one. */
                 value: function() { return f.changed ? spec.read(f) : undefined; },
                 /** Writes the administrator's value into the configuration being saved; an unchanged field is left alone. */
@@ -5295,10 +5312,13 @@
                     var v = f.value();
                     if (v !== undefined) config[spec.field] = v;
                 },
-                /** After a successful save the saved value is the stored one. */
-                saved: function(config) {
+                /**
+                 * After a successful save the saved value is the stored one. The field stays changed when the administrator
+                 * changed it again after the save's snapshot (`revision`, taken with it): that later edit is still unsaved.
+                 */
+                saved: function(config, revision) {
                     if (f.changed && spec.field) f.stored = config[spec.field];
-                    f.changed = false;
+                    if (revision === f.revision) f.changed = false;
                 }
             };
             return f;
@@ -5756,33 +5776,38 @@
         }
 
         /**
-         * Re-reads the saved configuration after a save so credential fields show their new
-         * placeholders (a just-typed key is never left on screen) and new instances get their ids.
-         * @returns {Promise<void>}
+         * What a save draws again from the configuration read after it: each credential shows its new placeholder (a
+         * just-typed key is never left on screen) and the *arr cards are drawn from the stored lists (new instances get
+         * their ids). Each entry is drawn as a unit, from `fields` of the configuration read.
          */
-        async function jeRefreshSecretFields() {
-            var fresh = await ApiClient.getPluginConfiguration(pluginId);
-            jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]);
-            jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
-            jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
-            jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || '');
-            jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || '');
-            jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
-            jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || '');
-            jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || '');
-            jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || '');
-            jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
-            loadArrInstances(fresh);
-            updateAllDependencies();
-            var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
-            _jeSentImportHandles = {};
-            if (lost.length) {
-                Dashboard.alert({
-                    title: 'API key not saved',
-                    message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
-                });
-            }
-        }
+        var JE_REDRAWN_GROUPS = [
+            { fields: ['TMDB_API_KEY'], draw: function(fresh) { jeSecretInit(document.querySelector('#TMDB_API_KEY'), fresh.TMDB_API_KEY, [document.querySelector('#jellyseerr_TMDB_API_KEY')]); } },
+            { fields: ['JellyseerrApiKey'], draw: function(fresh) {
+                jeSecretInit(document.querySelector('#JellyseerrApiKey'), fresh.JellyseerrApiKey);
+                jeSecretBindServers(document.querySelector('#JellyseerrApiKey'), (fresh.JellyseerrUrls || '').split(/[\r\n,]+/));
+            } },
+            { fields: ['MdblistApiKey'], draw: function(fresh) { jeSecretInit(document.querySelector('#mdblistApiKey'), fresh.MdblistApiKey || ''); } },
+            { fields: ['DoesTheDogDieApiKey'], draw: function(fresh) { jeSecretInit(document.querySelector('#doesTheDogDieApiKey'), fresh.DoesTheDogDieApiKey || ''); } },
+            { fields: ['ShokoApiKey'], draw: function(fresh) {
+                jeSecretInit(document.querySelector('#shokoApiKey'), fresh.ShokoApiKey || '');
+                jeSecretBindServers(document.querySelector('#shokoApiKey'), [fresh.ShokoUrl || '']);
+            } },
+            { fields: ['BackupPassphrase'], draw: function(fresh) { jeSecretInit(document.querySelector('#backupPassphrase'), fresh.BackupPassphrase || ''); } },
+            { fields: ['ArrNtfyToken'], draw: function(fresh) { jeSecretInit(document.querySelector('#arrNtfyToken'), fresh.ArrNtfyToken || ''); } },
+            { fields: ['ArrSmtpPassword'], draw: function(fresh) { jeSecretInit(document.querySelector('#arrSmtpPassword'), fresh.ArrSmtpPassword || ''); } },
+            { fields: ['ArrListTraktApiKey'], draw: function(fresh) { jeSecretInit(document.querySelector('#arrListTraktApiKey'), fresh.ArrListTraktApiKey || ''); } }, // Phase 4c2
+            { fields: ['SonarrInstances', 'RadarrInstances', 'SonarrUrl', 'SonarrApiKey', 'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings'], draw: function(fresh) {
+                loadArrInstances(fresh);
+                var lost = jeImportedKeysLost(_jeSentImportHandles, fresh);
+                _jeSentImportHandles = {};
+                if (lost.length) {
+                    Dashboard.alert({
+                        title: 'API key not saved',
+                        message: 'The key imported from Seerr could not be used for: ' + lost.join(', ') + '. The import expired or the address no longer matches the server it was imported for. Enter the API key and save again.'
+                    });
+                }
+            } }
+        ];
 
         // Instance id -> name of rows the last save sent with an import handle (see jeImportedKeysLost).
         var _jeSentImportHandles = {};
@@ -6226,6 +6251,9 @@
         // When false, saveArrInstances refuses to overwrite the stored value and legacy fields
         // to avoid turning a read-side corruption into permanent data loss.
         var _arrParseOK = { sonarr: true, radarr: true };
+        // Lists the administrator confirmed resetting (their stored JSON was unreadable): the next save sends that reset as
+        // its own operation, which the server applies only while the stored list is still unreadable (see jeConfigPatch).
+        var _jeArrResetConfirmed = { sonarr: false, radarr: false };
 
         function tryParseInstanceList(raw, type, container) {
             if (!raw) { _arrParseOK[type] = true; return []; }
@@ -6271,8 +6299,10 @@
                     function(confirmed) {
                         if (!confirmed) return;
                         _arrParseOK[type] = true;
+                        _jeArrResetConfirmed[type] = true;
                         banner.remove();
-                        // On next Save, the empty array will be written and legacy fields cleared normally.
+                        // On next Save, the reset is sent (with any instances added since) and legacy fields cleared normally.
+                        if (typeof jeUpdateDirtyIndicator === 'function') jeUpdateDirtyIndicator();
                     }
                 );
             });
@@ -6287,6 +6317,7 @@
             sonarrList.textContent = '';
             radarrList.textContent = '';
             _arrParseOK = { sonarr: true, radarr: true };
+            _jeArrResetConfirmed = { sonarr: false, radarr: false };
 
             var sonarrInstances = tryParseInstanceList(config.SonarrInstances, 'sonarr', sonarrList);
             var radarrInstances = tryParseInstanceList(config.RadarrInstances, 'radarr', radarrList);
@@ -6563,7 +6594,6 @@
             document.querySelector('#arrRequestRoles').value = config.ArrRequestRoles;
             document.querySelector('#arrRequestUsers').value = config.ArrRequestUsers;
             document.querySelector('#arrRequestQuotaLimit').value = config.ArrRequestQuotaLimit;
-            jeArrServerOwnedIds.forEach(function(id) { var el = document.querySelector(id); el.dataset.jeLoaded = String(el.value); });
             document.querySelector('#arrRequestQuotaWindowDays').value = config.ArrRequestQuotaWindowDays;
             document.querySelector('#arrRequestSeriesThreshold').value = config.ArrRequestSeriesThreshold;
             document.querySelector('#arrRequestDeclineCooldownDays').value = config.ArrRequestDeclineCooldownDays;
@@ -6590,43 +6620,23 @@
             jeSecretInit(document.querySelector('#arrSmtpPassword'), config.ArrSmtpPassword || '');
             document.querySelector('#arrSmtpFrom').value = config.ArrSmtpFrom || '';
             document.querySelector('#arrSmtpFromName').value = config.ArrSmtpFromName || 'Jellyfin';
+            jeSecretInit(document.querySelector('#arrListTraktApiKey'), config.ArrListTraktApiKey || ''); // Phase 4c2
             jeLoadArrAutomationSettings(config);
             jeLoadArrPhase4bSettings(config);
         }
 
         /**
-         * Settings the server changes by itself too: the Household tab (roles, quotas, house rules,
-         * default role) and a move from Seerr or its rollback (request handling).
-         */
-        var jeArrServerOwnedIds = ['#arrRequestBackend', '#arrRequestPreset', '#arrRequestDefaultRole', '#arrRequestRoles', '#arrRequestUsers', '#arrRequestQuotaLimit'];
-
-        /**
-         * The value to save for a setting the server also changes: the page's value when it was changed
-         * on this page, else the server's current one (config holds a fresh read), which the page then
-         * shows. A save from a page opened before a Household edit or a Seerr move never puts back the
-         * older household or request handling. The read is sent along (ArrServerOwnedSeen), so the server
-         * also keeps an edit that lands between this read and the save.
-         * @param {Object} config - Plugin configuration being saved (read from the server just now)
+         * The value the form says for a setting the server also changes (Household tab, a Seerr move or its rollback).
+         * Like every field it is sent only when the administrator changed it on this page (jeConfigPatch), so a save never
+         * puts back an older household or request handling.
+         * @param {Object} config - Plugin configuration being built
          * @param {string} id - The control's selector
          * @param {string} field - The configuration field
          * @param {Function} [read] - Turns the control's value into the field's value (default: as is)
-         * @returns {*} The value to save
+         * @returns {*} The value
          */
         function jeArrServerOwned(config, id, field, read) {
             var el = document.querySelector(id);
-            var server = config[field];
-            if (server !== undefined && server !== null) {
-                var seen = {};
-                try { seen = JSON.parse(config.ArrServerOwnedSeen || '{}') || {}; } catch (e) { seen = {}; }
-                seen[field] = String(server);
-                config.ArrServerOwnedSeen = JSON.stringify(seen);
-            }
-            if (el.dataset.jeLoaded !== undefined && String(el.value) === el.dataset.jeLoaded && server !== undefined && server !== null) {
-                el.value = server;
-                el.dataset.jeLoaded = String(el.value);
-                return server;
-            }
-            el.dataset.jeLoaded = String(el.value);
             return read ? read(el.value) : el.value;
         }
 
@@ -6673,6 +6683,7 @@
             config.ArrSmtpPassword = jeSecretRead(document.querySelector('#arrSmtpPassword'));
             config.ArrSmtpFrom = (document.querySelector('#arrSmtpFrom').value || '').trim();
             config.ArrSmtpFromName = (document.querySelector('#arrSmtpFromName').value || '').trim().slice(0, 60);
+            config.ArrListTraktApiKey = jeSecretRead(document.querySelector('#arrListTraktApiKey')); // Phase 4c2
             jeSaveArrAutomationSettings(config);
             jeSaveArrPhase4bSettings(config);
         }
@@ -6999,6 +7010,11 @@
             document.querySelector('#arrPhase4ReadyPlaylistEnabled').checked = config.ArrPhase4ReadyPlaylistEnabled === true;
             document.querySelector('#arrPhase4ReadyMessagesEnabled').checked = config.ArrPhase4ReadyMessagesEnabled === true;
             document.querySelector('#arrReadyRetentionDays').value = num(config.ArrReadyRetentionDays, 30);
+            // Phase 4c2: list import and sources
+            ['arrPhase4ListImportEnabled', 'arrPhase4ListSourcesEnabled', 'arrPhase4ListMdblistEnabled', 'arrPhase4ListMdblistApiEnabled', 'arrPhase4ListTmdbEnabled',
+                'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled', 'arrPhase4ListJeMetadataEnabled'].forEach(function(id) {
+                document.querySelector('#' + id).checked = config[id.charAt(0).toUpperCase() + id.slice(1)] === true;
+            });
             document.querySelector('#arrAutomationShadowOverride').checked = config.ArrAutomationShadowOverride === true;
             document.querySelector('#arrAutomationKillAll').checked = config.ArrAutomationKillAll === true;
             document.querySelector('#arrAutomationFree').checked = config.ArrAutomationFree === true;
@@ -7088,6 +7104,11 @@
             config.ArrPhase4ReadyMessagesEnabled = document.querySelector('#arrPhase4ReadyMessagesEnabled').checked;
             var readyDays = parseInt(document.querySelector('#arrReadyRetentionDays').value, 10);
             config.ArrReadyRetentionDays = isNaN(readyDays) ? 30 : Math.min(90, Math.max(1, readyDays));
+            // Phase 4c2: list import and sources
+            ['arrPhase4ListImportEnabled', 'arrPhase4ListSourcesEnabled', 'arrPhase4ListMdblistEnabled', 'arrPhase4ListMdblistApiEnabled', 'arrPhase4ListTmdbEnabled',
+                'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled', 'arrPhase4ListJeMetadataEnabled'].forEach(function(id) {
+                config[id.charAt(0).toUpperCase() + id.slice(1)] = document.querySelector('#' + id).checked;
+            });
             config.ArrAutomationShadowOverride = document.querySelector('#arrAutomationShadowOverride').checked;
             config.ArrAutomationKillAll = document.querySelector('#arrAutomationKillAll').checked;
             config.ArrAutomationFree = document.querySelector('#arrAutomationFree').checked;
@@ -7200,9 +7221,6 @@
         /** The phase-4b switches (household rules, group quotas, administrators' Seerr request options). */
         var JE_ARR_PHASE4B_FLAGS = [['#arrPhase4HouseholdRulesEnabled', 'ArrPhase4HouseholdRulesEnabled'], ['#arrPhase4GroupQuotasEnabled', 'ArrPhase4GroupQuotasEnabled'], ['#arrPhase4SeerrRequestOptionsEnabled', 'ArrPhase4SeerrRequestOptionsEnabled']];
 
-        /** Settings only the Household tab edits (no control here): a page save keeps the server's value. */
-        var JE_ARR_PHASE4B_SERVER_OWNED = ['ArrHouseholdRules', 'ArrHouseholdStreamingCountry', 'ArrHouseholdStreamingServices', 'ArrGroupQuotaPools'];
-
         /**
          * Fills the phase-4b switches (all off unless saved on).
          * @param {Object} config - Plugin configuration
@@ -7213,19 +7231,13 @@
         }
 
         /**
-         * Copies the phase-4b switches into the configuration being saved, and marks the household rules and pools
-         * as read (ArrServerOwnedSeen, from this fresh read) so a page save never puts back an older Household-tab edit.
-         * @param {Object} config - Plugin configuration (read from the server just now)
+         * Copies the phase-4b switches into the configuration being built. The household rules and pools are edited on the
+         * Household tab, never by this form, so a page save never sends them (jeConfigPatch sends only changes).
+         * @param {Object} config - Plugin configuration being built
          * @returns {void}
          */
         function jeSaveArrPhase4bSettings(config) {
             JE_ARR_PHASE4B_FLAGS.forEach(function(flag) { config[flag[1]] = document.querySelector(flag[0]).checked; });
-            var seen = {};
-            try { seen = JSON.parse(config.ArrServerOwnedSeen || '{}') || {}; } catch (e) { seen = {}; }
-            JE_ARR_PHASE4B_SERVER_OWNED.forEach(function(field) {
-                if (config[field] !== undefined && config[field] !== null) seen[field] = String(config[field]);
-            });
-            config.ArrServerOwnedSeen = JSON.stringify(seen);
         }
         // ==================== /Requests & downloads, phase 4b ====================
 
@@ -7249,10 +7261,10 @@
         function jeArrMigrationSyncBackend(backend) {
             var select = document.getElementById('arrRequestBackend');
             if (!select || !backend || select.value === backend) return;
-            var previous = select.value;
             select.value = backend;
-            select.dataset.jeLoaded = backend;
-            if (typeof jeAcceptServerValue === 'function') jeAcceptServerValue(select, previous);
+            // The server holds it now (the move's answer): not a change of this page's (the next save doesn't send it).
+            if (typeof jeAcceptStored === 'function') jeAcceptStored('ArrRequestBackend', backend);
+            if (typeof jeUpdateDirtyIndicator === 'function') jeUpdateDirtyIndicator();
         }
 
         /**
@@ -7615,8 +7627,8 @@
         // Cache of the four "JE owns this Custom Tabs entry" booleans from the
         // most recently loaded config. Sync uses these to decide whether a
         // matching CT entry was created by JE (safe to delete) or by the admin
-        // (must not touch). saveConfig writes the updated values back as part
-        // of its single config write.
+        // (must not touch). Only the Custom Tabs sync writes them (as a patch of
+        // those fields alone).
         var _jeCustomTabOwnedCache = Object.create(null);
 
         // Tracks whether the most recent `renderQualityCatOrderAdmin` call ran
@@ -8514,7 +8526,21 @@
         function loadConfig() {
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
-            ApiClient.getPluginConfiguration(pluginId).then((config) => {
+            var revision = _jeConfigRevision;
+            ApiClient.getPluginConfiguration(pluginId).then((read) => {
+                // Once the form has been filled, a read that overlapped a save (one began or ended since this read began,
+                // whatever its outcome, or one is still out or waiting), or that began before the page took a value the server
+                // holds now, may hold less than the page: it isn't drawn. It is read again once the saves are done.
+                if (_jeConfigReadOk && (revision !== _jeConfigRevision || jeSaveOutstanding())) {
+                    _jeRefreshWanted = true;
+                    jeRefreshAfterSaves();
+                    Dashboard.hideLoadingMsg();
+                    return;
+                }
+                // A refresh keeps what the administrator changed and hasn't saved: those fields are drawn with the form's
+                // values and stay unsaved (their baseline stays as it was); every other field shows what the server holds now.
+                const kept = _jeConfigReadOk ? jeKeepUnsaved(read) : null;
+                const config = kept ? kept.config : read;
                 CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
                     _jeCustomTabOwnedCache[entry.ownedKey] = config[entry.ownedKey] === true;
                 });
@@ -8529,7 +8555,6 @@
                 // Load all other settings
                 document.querySelector('#devMode').checked = config.DevMode;
                 document.querySelector('#maintenanceModeEnabled').checked = config.MaintenanceModeEnabled || false;
-                document.querySelector('#maintenanceModeEnabled').dataset.jeLoaded = String(config.MaintenanceModeEnabled === true);
                 document.querySelector('#maintenanceModeMessage').value = config.MaintenanceModeMessage || '';
                 document.querySelector('#maintenanceModeNotificationMessage').value = config.MaintenanceModeNotificationMessage || '';
                 document.querySelector('#maintenanceModeDurationMinutes').value = config.MaintenanceModeDurationMinutes || 0;
@@ -8755,8 +8780,6 @@
                 document.querySelector('#syncJellyfinWatchlistToSeerr').checked = config.SyncJellyfinWatchlistToSeerr || false;
                 document.querySelector('#jellyseerrAutoImportUsers').checked = config.JellyseerrAutoImportUsers || false;
                 document.querySelector('#jellyseerrImportBlockedUsers').value = config.JellyseerrImportBlockedUsers || '';
-                // Phase 4u: retain concurrent Dashboard-user edits.
-                document.querySelector('#jellyseerrImportBlockedUsers').dataset.jeLoaded = config.JellyseerrImportBlockedUsers || '';
                 loadBlockedUsersList(config.JellyseerrImportBlockedUsers || '');
                 document.querySelector('#preventWatchlistReAddition').checked = config.PreventWatchlistReAddition !== false;
                 document.querySelector('#watchlistMemoryRetentionDays').value = config.WatchlistMemoryRetentionDays || 365;
@@ -9136,11 +9159,12 @@
                 updateRequestsRequirementsBanner();
 
                 Dashboard.hideLoadingMsg();
-                // The form now shows the saved settings: whole saves are allowed from here on.
+                // The form now shows the saved settings: saves are allowed from here on, and send what changes from here.
+                jeConfigRead(read);
+                if (kept) kept.restore();
                 _jeConfigReadOk = true;
                 jeConfigReadNotice(false);
-                // Delay so late-finishing sub-populations (maintenance users, branding previews) settle first.
-                setTimeout(jeMarkSaved, 500);
+                jeUpdateDirtyIndicator();
             }).catch((err) => {
                 Dashboard.hideLoadingMsg();
                 console.warn('[JE] Could not read the plugin configuration:', err);
@@ -9149,10 +9173,10 @@
             });
         }
 
-        // ==================== No whole save without a read ====================
-        // A save writes the whole configuration from this form. Until one read of the configuration has filled the form in
-        // this page session, the form holds its built-in defaults, so a save (or "Apply to all users") would replace every
-        // setting with them: both refuse and say why.
+        // ==================== No save without a read ====================
+        // A save sends what the administrator changed against the configuration the page read. Until one read has filled
+        // the form in this page session, the form holds its built-in defaults and there is nothing to compare with, so a
+        // save (or "Apply to all users", or "Import Users Now") refuses and says why.
         var _jeConfigReadOk = false;
         var JE_CONFIG_READ_REASON = 'Jellyfin Enhanced could not read its saved settings, so this page shows defaults. Saving is turned off so those defaults cannot replace your settings. Retry, or reload the page.';
 
@@ -9168,7 +9192,7 @@
         }
 
         /**
-         * True when a whole save may run; otherwise tells the admin why not.
+         * True when a save may run; otherwise tells the admin why not.
          * @returns {boolean}
          */
         function jeConfigSaveAllowed() {
@@ -9180,8 +9204,15 @@
 
         document.getElementById('je-config-read-retry-btn').addEventListener('click', loadConfig);
 
-        async function buildConfigFromForm() {
-            const config = await ApiClient.getPluginConfiguration(pluginId);
+        /**
+         * The configuration as this form says it: a copy of `base` with every control's value written into it. An
+         * asynchronously filled field the administrator didn't change keeps base's value (see jeAsyncField). No requests.
+         * @param {Object} base - The configuration the page holds (_jeBase)
+         * @param {boolean} [quiet] - Don't alert about values the form drops (used for the comparison snapshot)
+         * @returns {Object} The configuration
+         */
+        function jeFormConfig(base, quiet) {
+            const config = JSON.parse(JSON.stringify(base || {}));
             const finalShortcuts = [...defaultShortcuts];
             shortcutOverrides.forEach(override => {
                 const index = finalShortcuts.findIndex(s => s.Name === override.Name);
@@ -9189,17 +9220,10 @@
             });
             config.Shortcuts = finalShortcuts;
             config.DevMode = document.querySelector('#devMode').checked;
-            // A timed window switches maintenance off by itself (and another admin or the API can
-            // flip it) while this page is open. When the toggle was not touched since it was loaded,
-            // keep the server's current value so saving unrelated settings never quietly starts a
-            // new window or ends someone else's.
-            const mmToggle = document.querySelector('#maintenanceModeEnabled');
-            const mmServerEnabled = String(config.MaintenanceModeEnabled === true);
-            if (String(mmToggle.checked) === mmToggle.dataset.jeLoaded && mmServerEnabled !== mmToggle.dataset.jeLoaded) {
-                mmToggle.checked = config.MaintenanceModeEnabled === true;
-            }
-            mmToggle.dataset.jeLoaded = String(mmToggle.checked);
-            config.MaintenanceModeEnabled = mmToggle.checked;
+            // A timed window switches maintenance off by itself (and another admin or the API can flip it) while this page
+            // is open: the toggle is sent only when the administrator changed it (jeConfigPatch), so saving unrelated
+            // settings never quietly starts a new window or ends someone else's.
+            config.MaintenanceModeEnabled = document.querySelector('#maintenanceModeEnabled').checked;
             config.MaintenanceModeMessage = document.querySelector('#maintenanceModeMessage').value;
             config.MaintenanceModeNotificationMessage = document.querySelector('#maintenanceModeNotificationMessage').value;
             // Clamped (0 .. one year): a value past int range would fail the whole config save.
@@ -9388,7 +9412,7 @@
                         invalid.push(line);
                     }
                 }
-                if (invalid.length > 0) {
+                if (invalid.length > 0 && !quiet) {
                     console.warn('Jellyfin Enhanced: dropping invalid Seerr URL(s) on save (must start with http:// or https://):', invalid);
                     if (typeof Dashboard !== 'undefined' && Dashboard.alert) {
                         Dashboard.alert({
@@ -9490,7 +9514,7 @@
 
             // Save multi-instance Sonarr/Radarr
             var arrIncompleteWarnings = saveArrInstances(config);
-            if (arrIncompleteWarnings.length > 0) {
+            if (arrIncompleteWarnings.length > 0 && !quiet) {
                 // Surface each incomplete-card warning to the admin before the save completes.
                 arrIncompleteWarnings.forEach(function(msg) {
                     Dashboard.alert({ title: '⚠ Incomplete *arr instance', message: msg });
@@ -9690,12 +9714,7 @@
 
             config.EnableLoginImage = document.querySelector('#loginImageEnabled').checked;
             config.CustomPluginLinks = document.querySelector('#customPluginLinks').value || '';
-
-            // Carry the cached "JE owns this Custom Tabs entry" flags through any
-            // round-trip; sync may overwrite specific keys after computing actions.
-            CUSTOM_TAB_MANAGED_ENTRIES.forEach(function(entry) {
-                config[entry.ownedKey] = _jeCustomTabOwnedCache[entry.ownedKey] === true;
-            });
+            // The "JE owns this Custom Tabs entry" flags are not form fields: only the Custom Tabs sync writes them.
 
             return config;
         }
@@ -9726,24 +9745,13 @@
             if (pendingUpdates.length === 0) {
                 return syncResult;
             }
-            // Narrow second-write: fetch the latest config from the server first,
-            // then apply ONLY the owned-flag delta. This minimizes the race window
-            // where an interleaving save (double-click, "Apply to all users", or
-            // a concurrent admin in another browser tab) would otherwise be lost
-            // if we replayed the form's stale snapshot on top. Any unrelated
-            // fields the other save wrote are preserved because we only mutate
-            // the `*CustomTabJeOwned` keys on the fresh copy.
-            let fresh;
+            // Second write: ONLY the owned-flag delta, applied by the server to the configuration it holds then, so an
+            // interleaving save (another tab or administrator) is never replayed over.
+            const ownedPatch = { Set: {}, Instances: {} };
+            pendingUpdates.forEach(function(u) { ownedPatch.Set[u.ownedKey] = u.value; });
             try {
-                fresh = await ApiClient.getPluginConfiguration(pluginId);
-            } catch (fetchErr) {
-                console.error('[JE] Could not re-fetch config for owned-flag persist:', fetchErr);
-                fresh = null;
-            }
-            const target = fresh || config; // fall back to form state if fetch fails
-            pendingUpdates.forEach(function(u) { target[u.ownedKey] = u.value; });
-            try {
-                await ApiClient.updatePluginConfiguration(pluginId, target);
+                await jePatchConfiguration(ownedPatch);
+                pendingUpdates.forEach(function(u) { jeAcceptStored(u.ownedKey, u.value); });
                 // Server confirmed — commit cache.
                 pendingUpdates.forEach(function(u) {
                     _jeCustomTabOwnedCache[u.ownedKey] = u.value;
@@ -9780,66 +9788,349 @@
             }
         }
 
-        /**
-         * After a successful save, each page-level asynchronously filled field's saved value is its stored one.
-         * @param {Object} config - The configuration just saved
-         */
-        function jeAsyncFieldsSaved(config) {
-            [_jeMaintenanceUsersField, _jeRegionField, _jeTagCacheLibrariesField, _jeSpoilerLibrariesField, _jeAudioLanguageField,
-                _jeDefaultLanguageField, _jeAutoMovieServerField, _jeAutoMovieProfileField, _jeAutoMovieRootField, _jeBlockedUsersField]
-                .forEach(function(field) { field.saved(config); });
+        /** Every page-level asynchronously filled field (see jeAsyncField). */
+        function jeAsyncFields() {
+            return [_jeMaintenanceUsersField, _jeRegionField, _jeTagCacheLibrariesField, _jeSpoilerLibrariesField, _jeAudioLanguageField,
+                _jeDefaultLanguageField, _jeAutoMovieServerField, _jeAutoMovieProfileField, _jeAutoMovieRootField, _jeBlockedUsersField];
         }
 
-        // Re-entrancy guard. `Dashboard.showLoadingMsg()` provides only a visual
-        // overlay, not an input block, so two rapid Enter presses or a second
-        // click on the save dock can still fire saveConfig in parallel — the
-        // second one's `buildConfigFromForm` reads a server state that the
-        // first one has already mutated, and Save#1's deferred owned-flag write
-        // (step 2) can land after Save#2 and silently revert the admin's
-        // between-save form changes. Treat saves as serial.
-        var _jeSaveInFlight = false;
+        /**
+         * After a successful save, each page-level asynchronously filled field's saved value is its stored one. A field the
+         * administrator changed again after the save took its snapshot (its revision moved on) stays changed, so the next
+         * save sends that later edit.
+         * @param {Object} config - The configuration the save was built from
+         * @param {number[]} revisions - Each field's revision when the snapshot was taken (jeAsyncFields order)
+         */
+        function jeAsyncFieldsSaved(config, revisions) {
+            jeAsyncFields().forEach(function(field, i) { field.saved(config, revisions[i]); });
+        }
 
-        async function saveConfig(e) {
-            e.preventDefault();
-            if (_jeSaveInFlight) return false;
+        // ==================== Saves are patches ====================
+        // The page never sends the whole configuration. _jeBase is the configuration as the page last read it, plus what its
+        // own saves sent since; _jeSent is the form's configuration (jeFormConfig over _jeBase) as of that read or the last
+        // successful save. A save sends only the fields whose form value differs from _jeSent (for the *arr instance lists:
+        // the instances added or removed and the instance fields changed, by id), and the server applies them to the
+        // configuration it holds then (PATCH /JellyfinEnhanced/configuration). Whatever another administrator, tab or server
+        // write changed meanwhile stays, unless this page changed that same field. An edit made while a save is in flight
+        // is not in that save's snapshot, so it still differs from _jeSent afterwards and goes with the next save.
+        var _jeBase = null;
+        var _jeSent = null;
+        // The snapshot of the save that is out (null when none is): what the server will hold once it is answered. The unsaved
+        // marker compares the form with it (jeHasUnsavedChanges).
+        var _jeInFlight = null;
+        // Moves on with every change of what the page holds as stored (a read taken, a save's answer, a value the server now
+        // holds, a redraw): a configuration read that began before one of them is not drawn over it (loadConfig,
+        // jeRedrawSavedFields).
+        var _jeConfigRevision = 0;
+        // A configuration read dropped because it overlapped a save: read again once the saves are done (jeRefreshAfterSaves).
+        var _jeRefreshWanted = false;
+        var JE_ARR_INSTANCE_LISTS = ['SonarrInstances', 'RadarrInstances'];
+
+        /** Whether a save is out or waiting to go (its changes aren't stored until it is answered). */
+        function jeSaveOutstanding() {
+            return !!_jeInFlight || !!_jeSaveWaiting;
+        }
+
+        /** Reads the configuration again after the saves now out or waiting, when a read was dropped meanwhile. */
+        function jeRefreshAfterSaves() {
+            _jeSaveChain.then(function() {
+                if (!_jeRefreshWanted || jeSaveOutstanding()) return;
+                _jeRefreshWanted = false;
+                loadConfig();
+            });
+        }
+
+        /**
+         * For a refresh of a form the administrator changed: the configuration to draw (the read, with the form's values for
+         * every field they changed and haven't saved, unless the server now holds that same value) and `restore()`, run once
+         * the read was recorded (jeConfigRead), which keeps those fields' baselines so they stay unsaved and go with the next
+         * save, and keeps their asynchronously filled fields changed.
+         * @param {Object} read - The configuration read
+         * @returns {{config: Object, restore: Function}|null} null when nothing is unsaved
+         */
+        function jeKeepUnsaved(read) {
+            if (!_jeSent || !_jeBase) return null;
+            var form = jeFormConfig(_jeBase, true);
+            var patch = jeConfigPatch(_jeSent, form);
+            var fields = Object.keys(patch.Set).filter(function(field) { return JSON.stringify(form[field]) !== JSON.stringify(read[field]); })
+                .concat(Object.keys(patch.Instances));
+            if (!fields.length) return null;
+            var base = {}, sent = {};
+            fields.forEach(function(field) { base[field] = _jeBase[field]; sent[field] = _jeSent[field]; });
+            var async = jeAsyncFields().filter(function(field) { return field.changed && fields.indexOf(field.key) !== -1; });
+            var config = JSON.parse(JSON.stringify(read));
+            fields.forEach(function(field) { config[field] = form[field]; });
+            return {
+                config: config,
+                restore: function keepBaselines() {
+                    fields.forEach(function(field) { _jeBase[field] = base[field]; _jeSent[field] = sent[field]; });
+                    _jeConfigRevision++;
+                    // Drawn with the administrator's value, which is not what the server holds: still their change.
+                    async.forEach(function(field) {
+                        field.stored = read[field.key];
+                        field.hasStored = true;
+                        field.markChanged();
+                    });
+                }
+            };
+        }
+        // Kept from each list's first instance by the server; never sent.
+        var JE_ARR_MIRROR_FIELDS = ['SonarrUrl', 'SonarrApiKey', 'SonarrUrlMappings', 'RadarrUrl', 'RadarrApiKey', 'RadarrUrlMappings'];
+
+        /**
+         * Records the configuration a read filled the form from (call once the form shows it).
+         * @param {Object} config - The configuration read
+         */
+        function jeConfigRead(config) {
+            _jeBase = JSON.parse(JSON.stringify(config));
+            _jeSent = jeFormConfig(_jeBase, true);
+            _jeConfigRevision++;
+        }
+
+        /**
+         * Takes a value the server holds now, and the form shows, as stored rather than as this page's change (a Seerr
+         * move switched request handling).
+         * @param {string} field - The configuration field
+         * @param {*} value - Its stored value
+         */
+        function jeAcceptStored(field, value) {
+            if (_jeBase) _jeBase[field] = value;
+            if (_jeSent) _jeSent[field] = value;
+            _jeConfigRevision++;
+        }
+
+        /** An instance list as stored (a JSON string), or null when it can't be read. */
+        function jeParseInstances(raw) {
+            try { var list = JSON.parse(raw || '[]'); return Array.isArray(list) ? list : null; } catch (e) { return null; }
+        }
+
+        /**
+         * The operations that turn one instance list into another, by instance id.
+         * @param {string} before - The list as last read or saved (form's view)
+         * @param {string} after - The list the form says now
+         * @param {string} stored - The list in _jeBase: an instance only the form has (built from an older configuration's
+         *   single-instance fields) is added, not changed
+         * @returns {Object|null} { Add, Remove, Change } (Change: { Id, Set: { field or "Defaults.Field": value } }), or null
+         */
+        function jeInstanceOps(before, after, stored) {
+            var was = jeParseInstances(before), now = jeParseInstances(after), known = jeParseInstances(stored) || [];
+            if (!was || !now || before === after) return null;
+            var byId = function(list) {
+                var map = {};
+                list.forEach(function(x) { if (x && x.Id) map[String(x.Id).toLowerCase()] = x; });
+                return map;
+            };
+            var wasById = byId(was), nowById = byId(now), knownById = byId(known);
+            var ops = { Add: [], Remove: [], Change: [] };
+            Object.keys(wasById).forEach(function(id) { if (!nowById[id] && knownById[id]) ops.Remove.push(wasById[id].Id); });
+            Object.keys(nowById).forEach(function(id) {
+                var x = nowById[id], y = wasById[id];
+                if (!y || !knownById[id]) {
+                    if (!y || JSON.stringify(x) !== JSON.stringify(y)) ops.Add.push(x);
+                    return;
+                }
+                var set = {};
+                Object.keys(x).forEach(function(key) {
+                    if (key === 'Id') return;
+                    var nv = x[key], ov = y[key];
+                    var objects = nv && ov && typeof nv === 'object' && typeof ov === 'object' && !Array.isArray(nv) && !Array.isArray(ov);
+                    if (objects) {
+                        Object.keys(nv).forEach(function(sub) {
+                            if (JSON.stringify(nv[sub]) !== JSON.stringify(ov[sub])) set[key + '.' + sub] = nv[sub];
+                        });
+                    } else if (JSON.stringify(nv) !== JSON.stringify(ov)) {
+                        set[key] = nv;
+                    }
+                });
+                if (Object.keys(set).length) ops.Change.push({ Id: x.Id, Set: set });
+            });
+            return ops.Add.length || ops.Remove.length || ops.Change.length ? ops : null;
+        }
+
+        /**
+         * The administrator's changes: every field whose form value differs from what was last read or saved.
+         * @param {Object} sent - _jeSent
+         * @param {Object} now - jeFormConfig(_jeBase) now
+         * @param {Object} [base] - The configuration whose instance lists are known as stored (default _jeBase)
+         * @returns {{Set: Object, Instances: Object}} The patch (empty when nothing changed)
+         */
+        function jeConfigPatch(sent, now, base) {
+            var patch = { Set: {}, Instances: {} };
+            Object.keys(now).forEach(function(field) {
+                if (JE_ARR_MIRROR_FIELDS.indexOf(field) !== -1) return;
+                if (JE_ARR_INSTANCE_LISTS.indexOf(field) !== -1) {
+                    // A confirmed reset of an unreadable list is its own operation (the form's instances are added to the
+                    // empty list); an unreadable list nobody reset is never written (saveArrInstances leaves it as stored).
+                    var ops = _jeArrResetConfirmed[field === 'SonarrInstances' ? 'sonarr' : 'radarr']
+                        ? { ResetUnreadable: true, Add: jeParseInstances(now[field]) || [], Remove: [], Change: [] }
+                        : jeInstanceOps(sent[field], now[field], (base || _jeBase || {})[field]);
+                    if (ops) patch.Instances[field] = ops;
+                    return;
+                }
+                if (JSON.stringify(now[field]) !== JSON.stringify(sent[field])) patch.Set[field] = now[field];
+            });
+            return patch;
+        }
+
+        /**
+         * Sends changes to the server, which applies them to the configuration it holds now.
+         * @param {Object} patch - { Set, Instances }
+         * @returns {Promise<Object>} { configuration (as stored afterwards), applied, ignored, skipped }
+         */
+        function jePatchConfiguration(patch) {
+            return ApiClient.ajax({
+                type: 'PATCH',
+                url: ApiClient.getUrl('/JellyfinEnhanced/configuration'),
+                contentType: 'application/json',
+                data: JSON.stringify(patch),
+                dataType: 'json'
+            });
+        }
+
+        /**
+         * "Select specific users" with nobody ticked would be stored as an empty list, which the server reads as every
+         * non-admin user: refused, with the reason. Only the administrator's own new choice is checked.
+         * @returns {boolean} Whether the save may go on
+         */
+        function jeMaintenanceSelectionAllowed() {
+            var field = _jeMaintenanceUsersField;
+            if (!field.changed || field.value() !== '[]') return true;
+            Dashboard.alert({
+                title: 'Settings not saved',
+                message: 'Maintenance mode is set to "Select specific users", but no user is ticked. Jellyfin Enhanced would treat that as every non-admin user. Tick at least one user, or choose "All non-admin users".'
+            });
+            return false;
+        }
+
+        // Saves run one after another. A save requested while one runs (a second click, Import Users Now, Apply to all
+        // users) waits for it and then saves what the form says by then; requests made meanwhile share that one save.
+        var _jeSaveChain = Promise.resolve();
+        var _jeSaveWaiting = null;
+
+        /**
+         * Saves the administrator's changes.
+         * @returns {Promise<boolean>} true once they are stored, false when the save was refused or failed (the
+         *   administrator was told why)
+         */
+        function jeSave() {
+            if (_jeSaveWaiting) return _jeSaveWaiting;
+            var waiting = _jeSaveChain.then(function() {
+                if (_jeSaveWaiting === waiting) _jeSaveWaiting = null;
+                return jeSaveNow();
+            });
+            _jeSaveWaiting = waiting;
+            _jeSaveChain = waiting.then(function() {}, function() {});
+            return waiting;
+        }
+
+        /**
+         * The redrawn entries (JE_REDRAWN_GROUPS) the administrator hasn't edited since the save took its snapshot.
+         * @param {Object} sentNow - The configuration the save was built from
+         * @returns {Object[]}
+         */
+        function jeUneditedRedrawGroups(sentNow) {
+            var current = jeFormConfig(_jeBase, true);
+            return JE_REDRAWN_GROUPS.filter(function(group) {
+                return group.fields.every(function(field) { return JSON.stringify(current[field]) === JSON.stringify(sentNow[field]); });
+            });
+        }
+
+        /**
+         * After a save, the credentials are shown as placeholders again and the *arr cards drawn from the stored lists,
+         * from a read of the configuration. An entry the administrator edited since the save's snapshot stays as typed and
+         * goes with the next save; that is checked again right before drawing (an edit may come while the read runs). What
+         * is drawn again counts as read.
+         * @param {Object} sentNow - The configuration the save was built from
+         */
+        async function jeRedrawSavedFields(sentNow) {
+            if (!jeUneditedRedrawGroups(sentNow).length) return;
+            var revision = _jeConfigRevision;
+            var fresh = await ApiClient.getPluginConfiguration(pluginId);
+            if (!fresh) return;
+            // A read that began before another change of what the page holds (a value taken, another read) isn't drawn.
+            if (revision !== _jeConfigRevision) return;
+            // Check at apply time: only what is still unedited now is drawn.
+            var groups = jeUneditedRedrawGroups(sentNow);
+            groups.forEach(function(group) { group.draw(fresh); });
+            if (!groups.length) return;
+            updateAllDependencies();
+            var drawn = jeFormConfig(_jeBase, true);
+            groups.forEach(function(group) {
+                group.fields.forEach(function(field) {
+                    _jeBase[field] = fresh[field];
+                    _jeSent[field] = drawn[field];
+                });
+            });
+            _jeConfigRevision++;
+        }
+
+        /**
+         * One save: refuses when it must (no read yet, an empty "specific users" choice), sends the changes, then applies
+         * the side effects (Custom Tabs, maintenance mode) from the configuration as stored.
+         * @returns {Promise<boolean>}
+         */
+        async function jeSaveNow() {
             if (!jeConfigSaveAllowed()) return false;
-            _jeSaveInFlight = true;
+            if (!jeMaintenanceSelectionAllowed()) return false;
             enforceTabExclusivity();
             Dashboard.showLoadingMsg();
             var saveBtns = document.querySelectorAll('.je-save-dock-btn');
             saveBtns.forEach(function(b) { b.disabled = true; });
 
             try {
-                const config = await buildConfigFromForm();
-                const result = await ApiClient.updatePluginConfiguration(pluginId, config);
-                jeAsyncFieldsSaved(config);
+                // This save's snapshot: an edit from here on belongs to the next save.
+                const revisions = jeAsyncFields().map(function(field) { return field.revision; });
+                const resets = Object.keys(_jeArrResetConfirmed).filter(function(type) { return _jeArrResetConfirmed[type]; });
+                const now = jeFormConfig(_jeBase);
+                let result;
+                // While it is out, the unsaved marker compares the form with this snapshot (what the server will hold). A save
+                // beginning and ending (whatever its outcome) moves the configuration revision on: a read that overlapped it
+                // isn't drawn (loadConfig reads again afterwards).
+                _jeInFlight = JSON.parse(JSON.stringify(now));
+                _jeConfigRevision++;
+                jeUpdateDirtyIndicator();
+                try {
+                    result = await jePatchConfiguration(jeConfigPatch(_jeSent, now));
+                } finally {
+                    _jeInFlight = null;
+                    _jeConfigRevision++;
+                }
+                // The answer: what this save sent is what the server holds (an edit made since still differs from it).
+                _jeBase = now;
+                _jeSent = JSON.parse(JSON.stringify(now));
+                _jeConfigRevision++;
+                jeAsyncFieldsSaved(now, revisions);
+                jeUpdateDirtyIndicator();
+                resets.forEach(function(type) { _jeArrResetConfirmed[type] = false; });
+                const stored = (result && (result.configuration || result.Configuration)) || now;
+                const skipped = (result && (result.skipped || result.Skipped)) || [];
                 // After JE config is persisted, sync any managed Custom Tabs entries.
                 // We surface non-OK results to the admin via Dashboard.alert so a
                 // partial failure doesn't hide behind the green "saved" toast.
-                const syncResult = await runCustomTabsSync(config);
+                const syncResult = await runCustomTabsSync(stored);
 
-                // Apply maintenance mode: enable/disable users to match the toggle
+                // Apply maintenance mode as stored (another administrator's change included): enable/disable users to match
                 try {
-                    if (config.MaintenanceModeEnabled) {
-                        const affectedIds = config.MaintenanceModeAffectedUsers === 'all'
+                    if (stored.MaintenanceModeEnabled) {
+                        const affectedIds = stored.MaintenanceModeAffectedUsers === 'all'
                             ? []
-                            : JSON.parse(config.MaintenanceModeAffectedUsers || '[]');
+                            : JSON.parse(stored.MaintenanceModeAffectedUsers || '[]');
                         await ApiClient.ajax({
                             type: 'POST',
                             url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Enable'),
                             contentType: 'application/json',
                             data: JSON.stringify({
-                                message: config.MaintenanceModeMessage || '',
-                                notificationMessage: config.MaintenanceModeNotificationMessage || '',
-                                durationMinutes: config.MaintenanceModeDurationMinutes || 0,
-                                action: config.MaintenanceModeAction || 'disable_accounts',
+                                message: stored.MaintenanceModeMessage || '',
+                                notificationMessage: stored.MaintenanceModeNotificationMessage || '',
+                                durationMinutes: stored.MaintenanceModeDurationMinutes || 0,
+                                action: stored.MaintenanceModeAction || 'disable_accounts',
                                 affectedUserIds: affectedIds
                             })
                         });
                         // Broadcast a native Jellyfin message to all active sessions
                         // (reaches non-web clients like TV apps too — works regardless of Active Streams setting)
-                        const mmMsg = (config.MaintenanceModeNotificationMessage || '').trim()
-                            || (config.MaintenanceModeMessage || '').trim()
+                        const mmMsg = (stored.MaintenanceModeNotificationMessage || '').trim()
+                            || (stored.MaintenanceModeMessage || '').trim()
                             || 'Server maintenance is starting. Please finish up and try again later.';
                         try {
                             await ApiClient.ajax({
@@ -9861,7 +10152,7 @@
                         await ApiClient.ajax({
                             type: 'POST',
                             url: ApiClient.getUrl('/JellyfinEnhanced/MaintenanceMode/Disable', {
-                                includeScheduled: !config.MaintenanceScheduleEnabled
+                                includeScheduled: !stored.MaintenanceScheduleEnabled
                             })
                         });
                     }
@@ -9871,9 +10162,17 @@
 
                 Dashboard.processPluginConfigurationUpdateResult(result);
                 // Show the saved credentials as placeholders again (never leave a typed key on screen).
-                try { await jeRefreshSecretFields(); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
-                // The form now is the just-saved state, so re-snapshot immediately.
-                jeMarkSaved();
+                try { await jeRedrawSavedFields(now); } catch (refreshErr) { console.warn('[JE] Could not refresh saved credentials:', refreshErr); }
+                // What this save sent is saved; an edit made since still shows as unsaved.
+                jeUpdateDirtyIndicator();
+                if (skipped.length) {
+                    try {
+                        Dashboard.alert({
+                            title: 'Some changes were not saved',
+                            message: 'While this page was open, another administrator removed or re-added Sonarr/Radarr instances you changed (or repaired a list you reset), so these changes were not saved: ' + skipped.join(', ') + '. Reload the page to see the instances as they are now.'
+                        });
+                    } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
+                }
                 if (syncResult && syncResult.ok === false) {
                     try {
                         Dashboard.alert({
@@ -9883,19 +10182,29 @@
                         });
                     } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
                 }
+                return true;
             } catch (saveErr) {
                 Dashboard.hideLoadingMsg();
                 console.error('[JE] saveConfig failed:', saveErr);
+                // Nothing of it is stored: the form is compared with what the server last answered again.
+                jeUpdateDirtyIndicator();
                 try {
                     Dashboard.alert({
                         title: 'Save failed',
                         message: 'Could not save Jellyfin Enhanced settings. Check the browser console and server logs, then try again.'
                     });
                 } catch (alertErr) { console.warn('[JE] Dashboard.alert threw:', alertErr); }
+                return false;
             } finally {
-                _jeSaveInFlight = false;
                 saveBtns.forEach(function(b) { b.disabled = false; });
+                // A read dropped while this save was out is read again now (unless another save follows).
+                if (_jeRefreshWanted) jeRefreshAfterSaves();
             }
+        }
+
+        function saveConfig(e) {
+            if (e) e.preventDefault();
+            jeSave();
             return false;
         }
 
@@ -9903,19 +10212,11 @@
         async function resetAllUserSettings() {
             if (!jeConfigSaveAllowed()) return;
             if (confirm("Are you sure?\n\nThis saves the current configuration, then copies these Display/Playback/etc. values into every user's Enhanced Panel settings, replacing anything they've customized for themselves. This cannot be undone per-user; each user would have to re-apply their own preferences afterward.")) {
+                // First, save the current configuration (after a save already running): only once it is stored are the
+                // users' settings replaced with it.
+                if (!await jeSave()) return;
                 Dashboard.showLoadingMsg();
                 try {
-                    // First, save the current configuration
-                    const config = await buildConfigFromForm();
-                    await ApiClient.updatePluginConfiguration(pluginId, config);
-                    jeAsyncFieldsSaved(config);
-                    jeMarkSaved();
-
-                    // Sync managed Custom Tabs entries — same flow as a normal save,
-                    // so "Apply to all users" doesn't silently skip the side-effect.
-                    const syncResult = await runCustomTabsSync(config);
-
-                    // Then reset all user settings to match the saved config
                     await ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'),
@@ -9923,17 +10224,13 @@
                     });
 
                     Dashboard.hideLoadingMsg();
-                    let msg = 'Configuration saved and applied to all users successfully!\n\nSettings will take effect after users refresh their browsers.';
-                    if (syncResult && syncResult.ok === false) {
-                        msg += '\n\n(Custom Tabs sync did not complete: ' + (syncResult.detail || 'see console') + ')';
-                    }
-                    Dashboard.alert({ title: 'Success', message: msg });
+                    Dashboard.alert({ title: 'Success', message: 'Configuration saved and applied to all users successfully!\n\nSettings will take effect after users refresh their browsers.' });
                 } catch (e) {
                     Dashboard.hideLoadingMsg();
-                    console.error('Failed to save and apply settings:', e);
+                    console.error('Failed to apply settings to all users:', e);
                     Dashboard.alert({
                         title: 'Error',
-                        message: 'Failed to save and apply settings to all users. Check server logs for details.'
+                        message: 'Your settings were saved, but applying them to all users failed. Check server logs for details.'
                     });
                 }
             }
@@ -10998,6 +11295,13 @@
             { parent: 'arrPhase3Enabled', label: 'Ask for it (durable requests, phase 3)', children: ['arrPhase4ReadyPlaylistEnabled'] },
             { parent: 'arrPhase4ReadyPlaylistEnabled', label: 'Ready playlist: a private "Ready to watch" playlist for each person', children: ['arrReadyRetentionDays'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrPhase4ReadyMessagesEnabled'] },
+            // Phase 4c2: list import and sources
+            { parent: 'arrPhase4ListPlaceholdersEnabled', label: 'Lists', children: ['arrPhase4ListJeMetadataEnabled'] },
+            { parent: 'arrPhase4ListAuthoringEnabled', label: 'Adding and editing list entries', children: ['arrPhase4ListImportEnabled'] },
+            { parent: 'arrPhase4ListImportEnabled', label: 'Import lists', children: ['arrPhase4ListSourcesEnabled'] },
+            { parent: 'arrPhase4ListSourcesEnabled', label: 'Import from a list URL', children: ['arrPhase4ListMdblistEnabled', 'arrPhase4ListTmdbEnabled', 'arrPhase4ListChronolistsEnabled', 'arrPhase4ListTraktEnabled', 'arrPhase4ListImdbEnabled'] },
+            { parent: 'arrPhase4ListMdblistEnabled', label: 'MDBList public lists', children: ['arrPhase4ListMdblistApiEnabled'] },
+            { parent: 'arrPhase4ListTraktEnabled', label: 'Trakt lists, watchlists and charts', children: ['arrListTraktApiKey'] },
             { parent: 'arrPhase4AutomationEnabled', label: 'Automation engine', children: ['arrAutomationRecipe_auto_season', 'arrAutomationRecipe_auto_movie', 'arrAutomationRecipe_keep_up', 'arrAutomationRecipe_list_acquire_ahead', 'arrAutomationRecipe_release_day', 'arrAutomationRecipe_list_sync', 'arrAutomationRecipe_list_sync_requests', 'arrAutomationKillAll', 'arrAutomationHouseholdAddsPerDay', 'arrAutomationSearchesPerHour', 'arrAutomationSearchesPerDay', 'arrAutomationSeerrPostsPerDay', 'arrAutomationSourceFetchesPerHour', 'arrAutomationDeltaWorkPerHour', 'arrAutomationFree'] },
             { parent: 'arrPhase2Enabled', label: 'Tell me, and admin essentials (phase 2)', children: ['arrTargetedRefreshEnabled', 'arrLibraryPendingMinutes', 'arrLowDiskPercent', 'arrSeerrHandoffGraceMinutes', 'arrActivityLogMirror', 'arrNotificationsEnabled'] },
             { parent: 'arrNotificationsEnabled', label: 'Notifications', children: ['arrNotifyHouseholdUrl', 'arrNotifyBatchMinutes', 'arrNtfyEnabled', 'arrNtfyServerUrl', 'arrNtfyToken', 'arrNtfyTestTopic', 'arrNtfyTestBtn', 'arrEmailEnabled', 'arrSmtpHost', 'arrSmtpPort', 'arrSmtpStartTls', 'arrSmtpUsername', 'arrSmtpPassword', 'arrSmtpFrom', 'arrSmtpFromName', 'arrEmailTestAddress', 'arrEmailTestBtn', 'arrNotifyAdminDownMinutes', 'arrNotifyAdminStuckHours', 'arrNotifyDigestHour', 'arrNotifyStatusBtn'] },
@@ -12716,9 +13020,9 @@
             if (confirm("Clear all client caches?\n\nThis will force all clients to clear their quality and genre tag caches on next page load.")) {
                 Dashboard.showLoadingMsg();
                 try {
-                    const config = await ApiClient.getPluginConfiguration(pluginId);
-                    config.ClearLocalStorageTimestamp = Date.now();
-                    await ApiClient.updatePluginConfiguration(pluginId, config);
+                    const stamp = Date.now();
+                    await jePatchConfiguration({ Set: { ClearLocalStorageTimestamp: stamp }, Instances: {} });
+                    jeAcceptStored('ClearLocalStorageTimestamp', stamp);
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert({
                         title: 'Success',
@@ -13280,14 +13584,12 @@
             btn.textContent = 'Saving config...';
             resultDiv.style.display = 'none';
 
-            try {
-                // Save config first so the server uses the current blocklist
-                await saveConfig(new Event('submit'));
-            } catch (e) {
+            // Save config first so the server uses the current blocklist: after a save already running, and only once this
+            // save is stored.
+            if (!await jeSave()) {
                 resultDiv.style.display = 'block';
                 resultDiv.textContent = 'Could not save config. Import was not attempted.';
                 resultDiv.style.color = '#f44336';
-                console.error('Config save failed before import:', e);
                 btn.disabled = false;
                 btn.textContent = 'Import Users Now';
                 return;

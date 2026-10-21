@@ -42,6 +42,13 @@
     /** Dismiss timers of the toasts on screen (cancelled when a toast goes). */
     const toastTimers = new Map();
 
+    // The person's notification settings have one queue, bound to the signed-in session (core/mutation-queue.js): changes
+    // go out one at a time in the order they were made (each a change of the fields it names, applied by the server to
+    // what it holds then), the session is checked right before each is sent, and an account switch cancels the previous
+    // person's. Its revision moves on with every change queued or answered: a settings read that began before one is not
+    // taken over it.
+    const prefsQueue = JE.core.mutationQueue('arr-notify-prefs');
+
     /**
      * True when the server has notifications on (master, phase 1, phase 2 and the notifications switch).
      * @returns {boolean} Enabled.
@@ -206,16 +213,22 @@
      * @param {boolean} [force] Reload.
      * @returns {Promise<void>}
      */
+    // Follow reads in the order they started (D46S2 audit S4): an answer is applied only while no read that started
+    // later has been applied, so a read from before a write never replaces the reread after it.
+    let followReads = 0;
+    let followsApplied = 0;
     async function loadFollows(force) {
         if (state.follows && !force) return;
         const identity = state.identity;
+        const mine = ++followReads;
         let data = null;
         try {
             data = await api('/acquire/follows');
         } catch (_) {
             data = null;
         }
-        if (identity !== state.identity) return;
+        if (identity !== state.identity || mine < followsApplied) return;
+        if (data) followsApplied = mine;
         if (data) {
             state.follows = new Set((data.follows || []).map(f => f.key));
             state.muted = new Set(data.muted || []);
@@ -263,21 +276,29 @@
      * @param {string} key Movie, series or season key.
      * @param {boolean} on Follow.
      * @param {Object|Node|Event} owner The owner (required, D46S2-R6): pressed for a title action, the PUT is that
-     *     operation's, checked by the transport right before it goes out; JE.NATIVE (or a native press) otherwise.
-     * @returns {Promise<{ok: boolean, code?: string}>} Outcome.
+     *     operation's, checked by the transport right before it goes out; the viewer's own press otherwise.
+     * @returns {Promise<{ok: boolean, code?: string, accepted?: boolean}>} Outcome (D46S2 audit S3): never sent
+     *     (cancelled); accepted after its owner ended (ok, accepted: the follows are reread for this session, the
+     *     caller shows nothing); answered; or failed. The reread after the PUT never joins a read from before it.
      */
     async function setFollow(key, on, owner) {
         const action = JE.createSessionAction();
         const submitted = JE.captureSubmitted(owner);
+        let accepted = false;
         try {
             await api('/acquire/follows', { method: 'PUT', body: { key, on }, bound: submitted.bound() });
         } catch (err) {
-            if (err?.name === 'AbortError' && !submitted.current()) return { ok: false, code: 'cancelled' };
-            return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
+            const outcome = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
+            if (outcome.outcome === 'unsent') return { ok: false, code: 'cancelled' };
+            if (outcome.outcome !== 'accepted' || outcome.sessionChanged) {
+                return { ok: false, code: err?.responseJSON?.code || (err?.status === 403 ? 'not_allowed' : 'failed') };
+            }
+            accepted = true;
         }
         if (!action.current()) return { ok: false, code: 'cancelled' };
         await loadFollows(true);
-        return action.current() ? { ok: true } : { ok: false, code: 'cancelled' };
+        if (!action.current()) return { ok: false, code: 'cancelled' };
+        return accepted ? { ok: true, accepted: true } : { ok: true };
     }
 
     /**
@@ -306,6 +327,7 @@
     async function loadPrefs(force) {
         if (state.prefs && !force) return { prefs: state.prefs, channels: state.channels, contact: state.contact, admin: state.admin };
         const identity = state.identity;
+        const revision = prefsQueue.revision;
         let body = null;
         try {
             body = await api('/acquire/notify/prefs');
@@ -314,7 +336,8 @@
         }
         // Another user signed in meanwhile: this answer (their topic, their address) isn't theirs.
         if (identity !== state.identity) return null;
-        applyPrefs(body);
+        // A change was queued or answered since this read began: the read may hold less than the page does.
+        if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);
         return { prefs: state.prefs, channels: state.channels, contact: state.contact, admin: state.admin };
     }
 
@@ -345,11 +368,12 @@
     async function prefsCall(path, method, body) {
         const identity = state.identity;
         try {
-            const res = await api(path, { method, body });
+            const res = await prefsQueue.send(() => api(path, { method, body }));
             if (identity !== state.identity) return { ok: false, code: 'user_changed' };
             if (res && res.prefs) applyPrefs(res);
             return { ok: true, body: res };
         } catch (err) {
+            if (err?.sessionChanged) return { ok: false, code: 'user_changed' };
             const code = err?.responseJSON?.code || (err?.status === 429 ? 'too_soon' : 'failed');
             return { ok: false, code, status: err?.status };
         }
@@ -474,9 +498,10 @@
      * its native details page when offered; else the Requests page or, for an administrators'
      * alert, the tab of it the server linked) and marks it read.
      * @param {Object} item Inbox item.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): opening is its effect (D46S2-R10-1).
      * @returns {void}
      */
-    function open(item) {
+    function open(item, owner) {
         if (item.kind === 'summary') {
             N.openBell?.();
             return;
@@ -493,8 +518,8 @@
         if (!alert && typeof item.key === 'string' && /^(movie|tv):[a-z]+:[A-Za-z0-9]+(:s\d+(:e\d+)?)?$/.test(item.key) && JE.titleDetails?.available?.() === true) {
             // A title notice: the title's page (a copy the user can open first), else the Requests page.
             const m = /^(.*?)(?::s(\d+)(?::e(\d+))?)?$/.exec(item.key);
-            JE.titleDetails.openKey(m[1], { season: m[2] != null ? Number(m[2]) : undefined, episode: m[3] != null ? Number(m[3]) : undefined, modal: false })
-                .then((opened) => { if (!opened) window.location.hash = fallback; });
+            JE.titleDetails.openKey(m[1], { season: m[2] != null ? Number(m[2]) : undefined, episode: m[3] != null ? Number(m[3]) : undefined, modal: false, owner })
+                .then((opened) => { if (!opened && JE.effectOwner(owner, 'a notification')) window.location.hash = fallback; });
             return;
         }
         window.location.hash = fallback;
@@ -549,14 +574,14 @@
         text.type = 'button';
         text.className = 'je-notify-toast-text';
         text.appendChild(buildText(item));
-        text.addEventListener('click', () => { dismiss(el); open(item); });
+        text.addEventListener('click', (e) => { const owner = JE.ownerOf(e); dismiss(el); open(item, owner); });
         el.appendChild(text);
         if (item.itemId && (item.kind === 'ready' || item.kind === 'episodes')) {
             const play = document.createElement('button');
             play.type = 'button';
             play.className = 'je-notify-toast-play';
             play.textContent = tr('arr_notify_play');
-            play.addEventListener('click', () => { dismiss(el); open(item); });
+            play.addEventListener('click', (e) => { const owner = JE.ownerOf(e); dismiss(el); open(item, owner); });
             el.appendChild(play);
         }
         const close = document.createElement('button');

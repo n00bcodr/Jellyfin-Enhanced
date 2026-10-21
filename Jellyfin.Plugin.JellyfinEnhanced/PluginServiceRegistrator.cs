@@ -160,6 +160,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // JellyfinUserActions), and moved by its user events.
             serviceCollection.AddSingleton<Services.Acquire.Automation.JellyfinUserChangeBracket>();
             serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Services.Acquire.Automation.JellyfinUserChangeBracket>());
+            // Round 10: Jellyfin's plugin-configuration route for JE's configuration is fenced like every configuration writer
+            // (an earlier generation is refused with a visible 409; an earlier JE settings page is told to reload).
+            serviceCollection.AddSingleton<Services.HostConfigurationRouteFilter>();
+            serviceCollection.Configure<MvcOptions>(o =>
+            {
+                o.Filters.AddService<Services.HostConfigurationRouteFilter>();
+                // Every answer of JE's routes names the server's JE build: a page loaded from another build asks to be reloaded.
+                o.Filters.Add(new Services.ClientBuildFilter());
+            });
+            // Core (user-change caches): whom an action of unknown person (a sign-in by name) turned out to be about, so JE's
+            // user caches read again only that person's entries (Helpers.UserAuthority).
+            serviceCollection.AddSingleton<Helpers.UserChangeAttribution>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Helpers.UserChangeAttribution>());
+            // Core (user-change caches, round 5): every JE answer carries the person's access and document revisions, taken
+            // before the action reads anything (Helpers.AccessRevision), so a browser tab can tell its kept answers are old.
+            serviceCollection.AddSingleton<Helpers.AccessRevisionFilter>();
+            serviceCollection.Configure<MvcOptions>(o => o.Filters.AddService<Helpers.AccessRevisionFilter>());
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserUpdatedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserDeletedEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
             serviceCollection.AddScoped<IEventConsumer<Jellyfin.Data.Events.Users.UserLockedOutEventArgs>, Services.Acquire.Automation.JellyfinUserChangeVersion>();
@@ -272,6 +289,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton(sp => new Services.Acquire.Ready.ReadySessionMessages(sp.GetRequiredService<Services.Acquire.Ready.IReadySessionHost>()));
             serviceCollection.AddSingleton<Services.Acquire.Ready.ReadyNativeChannel>();
             // ---- end Phase 4f ----
+            // ---- Phase 4c2: list import review and sources (preview only; inert while off). The title lookup is the
+            // metadata adapter (TMDB with JE's key, else Seerr); list metadata without Seerr comes from TMDB behind its own
+            // switch: this registration of IListMetadataSource replaces 4c1's (the last one wins) and keeps Seerr first.
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.MetadataCallLimiter>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.SeerrImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportLookup, Services.Acquire.Lists.Import.MetadataImportLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IListLibraryLookup, Services.Acquire.Lists.Import.ResolverListLibraryLookup>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportViewerPolicy, Services.Acquire.Lists.Import.UserImportViewerPolicy>();
+            // What the library holds of a title for the caller (a title in a library they can't open is never offered as
+            // absent): the native details' projection on 12, the same library reader on 10.11.
+#if JF12
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportPhysicalTitles>(sp => new Services.Acquire.Lists.Import.LibraryImportPhysicalTitles(
+                sp.GetRequiredService<Services.NativeDetails.NativeDetailsPolicy>()));
+#else
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.IImportPhysicalTitles>(sp => new Services.Acquire.Lists.Import.LibraryImportPhysicalTitles(
+                new Services.NativeDetails.NativeDetailsLibrary(
+                    sp.GetRequiredService<MediaBrowser.Controller.Library.ILibraryManager>(),
+                    sp.GetRequiredService<Services.Acquire.TitleAliases>(),
+                    () => sp.GetRequiredService<Services.Acquire.IArrJellyfinView>().Revision),
+                sp.GetRequiredService<Services.Acquire.IArrJellyfinView>()));
+#endif
+            // List-source reads: no redirects, public addresses only (checked at connect time), the system proxy kept.
+            serviceCollection.AddHttpClient(Services.Acquire.Lists.Sources.SourceHttp.ClientName)
+                .ConfigurePrimaryHttpMessageHandler(Services.Acquire.Lists.Sources.SourceHttp.CreateHandler);
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.ListImportResolver>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.IListSourceFetcher, Services.Acquire.Lists.Sources.ListSourceFetcher>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Sources.ListSourcePreview>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.ListMetadataService>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.Import.TmdbListMetadataSource>();
+            serviceCollection.AddSingleton<Services.Acquire.Lists.IListMetadataSource, Services.Acquire.Lists.Import.ListMetadataSources>();
+            // ---- end Phase 4c2 ----
             serviceCollection.AddHostedService<Services.Acquire.Requests.RequestOutbox>();
             // "Keep getting new episodes": charges each new season once when a Sonarr library read shows it started.
             serviceCollection.AddHostedService<Services.Acquire.Requests.FutureSeasonCharges>();
@@ -485,6 +534,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The Requests & downloads routes (status, season rows) answer for synthetic page ids by key.
             serviceCollection.AddSingleton<Services.Acquire.IAbsentTitlePages, Services.NativeDetails.NativeDetailsPages>();
 #endif
+
+            // Collages closed PR #936 drew into lists' native images are withheld everywhere: MVC answers (both versions, ahead of
+            // every image filter) and WebSocket messages (the host's WebSocket manager, registered before this, is wrapped).
+            Services.Acquire.Lists.LegacyCollageWithholdFilter.Register(serviceCollection);
 
             serviceCollection.Configure<MvcOptions>(o =>
             {

@@ -12,9 +12,10 @@ function setup(t, plugin = async () => ({})) {
     session: { getEpoch: () => epoch, isCurrent: e => e === epoch, onUserChange: (key, fn) => listeners.set(key, fn) },
   }});
   t.after(() => h.close());
+  h.load('core/mutation-queue.js');
   h.load('enhanced/spoilerguard/ids.js');
   h.load('enhanced/spoilerguard/state.js');
-  return { ...h, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
 }
 
 for (const [input, expected] of [['AA-BB','aabb'], [null,''], [{},''], [42,'42']]) {
@@ -66,19 +67,19 @@ for (const kind of ['Series','Movie','Collection']) {
     const h=setup(t,async(path,options)=>{if(fail)throw new Error('denied');
       if(options?.method==='POST')state={[kind==='Series'?'Series':kind==='Movie'?'Movies':'Collections']:{aabb:{}}};
       if(options?.method==='DELETE')state={};return state;});
-    await h.state[`enableFor${kind}`](...(kind==='Series'?['AA-BB']:['AA-BB','Title']),h.JE.NATIVE);
+    await h.state[`enableFor${kind}`](...(kind==='Series'?['AA-BB']:['AA-BB','Title']),h.NATIVE);
     const check=kind==='Series'?'isEnabledFor':`is${kind}EnabledFor`;
     assert.equal(h.state[check]('aabb'),true);
     assert.equal(h.calls[0][1].skipRetry,true);
-    fail=true; await assert.rejects(h.state[`disableFor${kind}`]('aabb',h.JE.NATIVE),/denied/);
+    fail=true; await assert.rejects(h.state[`disableFor${kind}`]('aabb',h.NATIVE),/denied/);
     assert.equal(h.state[check]('aabb'),true);
-    fail=false; await h.state[`disableFor${kind}`]('aabb',h.JE.NATIVE);
+    fail=false; await h.state[`disableFor${kind}`]('aabb',h.NATIVE);
     assert.equal(h.state[check]('aabb'),false);
   });
   test(`old-user ${kind} mutation cannot populate the new session`, async t => {
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
-    const pending=h.state[`enableFor${kind}`](...(kind==='Series'?['secret']:['secret','']),h.JE.NATIVE);
+    const pending=h.state[`enableFor${kind}`](...(kind==='Series'?['secret']:['secret','']),h.NATIVE);
     await Promise.resolve(); await Promise.resolve();h.switchUser(); resolve({}); await pending;
     assert.equal(h.state.hasAnyState(),false);
   });
@@ -86,23 +87,23 @@ for (const kind of ['Series','Movie','Collection']) {
 test('TMDB pending promotion, lookup without Jellyfin ID and removal remain consistent',async t=>{
   let response={promoted:'pending'};
   const h=setup(t,async(path,options)=>options?.method?response:response.removedFrom?{}:{ProviderTitles:{'tv:tmdb:42':{}},Series:response.jellyfinId?{[response.jellyfinId]:{}}:{}});
-  await h.state.enableForTmdb('TV',42,'A & B', h.JE.NATIVE);
+  await h.state.enableForTmdb('TV',42,'A & B', h.NATIVE);
   assert.match(h.calls[0][0],/displayName=A%20%26%20B/);
   assert.equal(h.state.isTmdbEnabled('tv',42),true);
   response={promoted:'series',jellyfinId:'AA-BB'};
-  await h.state.enableForTmdb('tv',42, undefined, h.JE.NATIVE);
+  await h.state.enableForTmdb('tv',42, undefined, h.NATIVE);
   assert.equal(h.state.isTmdbEnabled('tv',42),true);
   response={removedFrom:'series',jellyfinId:'AA-BB'};
-  await h.state.disableForTmdb('tv',42, h.JE.NATIVE);
+  await h.state.disableForTmdb('tv',42, h.NATIVE);
   assert.equal(h.state.isTmdbEnabled('tv',42),false);
-  await assert.rejects(h.state.enableForTmdb('person',42, undefined, h.JE.NATIVE),/invalid/);
-  await assert.rejects(h.state.disableForTmdb('tv','', h.JE.NATIVE),/invalid/);
+  await assert.rejects(h.state.enableForTmdb('person',42, undefined, h.NATIVE),/invalid/);
+  await assert.rejects(h.state.disableForTmdb('tv','', h.NATIVE),/invalid/);
 });
 for (const operation of ['enableForTmdb','setUserPrefs']) {
   test(`old-user ${operation} response cannot populate the new session`,async t=>{
     let resolve;
     const h=setup(t,()=>new Promise(r=>{resolve=r;}));
-    const pending=operation==='enableForTmdb'?h.state.enableForTmdb('movie',42, undefined, h.JE.NATIVE):h.state.setUserPrefs({secret:true}, h.JE.NATIVE);
+    const pending=operation==='enableForTmdb'?h.state.enableForTmdb('movie',42, undefined, h.NATIVE):h.state.setUserPrefs({secret:true}, h.NATIVE);
     await Promise.resolve(); await Promise.resolve();h.switchUser(); resolve({promoted:'movie',jellyfinId:'secret'}); await pending;
     assert.equal(h.state.hasAnyState(),false);
     assert.equal(Object.keys(h.state.getUserPrefs()).length,0);

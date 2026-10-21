@@ -269,14 +269,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             try
             {
+                // Taken before the build reads anything: the fence, and the instant the entry lives from.
                 var generation = Interlocked.Read(ref _memoGeneration);
+                var builtAt = DateTime.UtcNow;
                 var entry = await Task.Run(() => _tagCache.BuildEntryOnDemand(item)).ConfigureAwait(false);
                 lock (_memoLock)
                 {
                     if (generation == _memoGeneration)
                     {
                         if (_memo.Count >= MaxMemoEntries) TrimMemo();
-                        _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow);
+                        _memo[item.Id] = new MemoEntry(entry, builtAt);
                     }
                 }
 

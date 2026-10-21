@@ -7,6 +7,10 @@
  * - A details page of a playlist or collection that is shown gets one controller (made once per page element; a page
  *   jellyfin-web keeps hidden is paused: no reads, timers or subscriptions; it reads again when shown).
  * - Stops and removes everything on a person change.
+ * - The document's own lifecycle ends a page show too: a pagehide (leaving for another site, which may keep the
+ *   document in the back/forward cache) pauses every controller, so each ticket ends and every hold bound to it is
+ *   given back; a persisted pageshow (the browser's Back restoring that document, with no view show from
+ *   jellyfin-web) shows the page on screen again, which resumes its controller with a fresh ticket.
  * - Each controller owns ONE ticket ({@link issue}, lp.gate): the session, the page show (a generation bumped on every
  *   show), the route still naming the list, the list id, and that page's Spoiler Guard policy. It is issued when the
  *   page is shown and revoked when it is paused, disposed or the page element shows another list (at once, before
@@ -38,6 +42,7 @@
     let offLibrary = null;
     let libraryClient = null;
     let viewHook = null;
+    let watchingDocument = false;
     /** Bumped on every page show: an answer asked for an earlier show is never drawn. */
     let viewGeneration = 0;
 
@@ -196,12 +201,52 @@
     }
 
     /**
+     * Whether an event is the document's own page transition (the browser fires it at the window for the document),
+     * not a page element's `pageshow` bubbling up (JE's own pages dispatch those).
+     * @param {Event} e Event.
+     * @returns {boolean} The document's.
+     */
+    function documentTransition(e) {
+        return !!e && (e.target === document || e.target === window);
+    }
+
+    /**
+     * The document is left (pagehide; persisted when it may come back from the back/forward cache): every page show
+     * ends here, as leaving the page would end it.
+     * @param {PageTransitionEvent} e Event.
+     */
+    function onPageHide(e) {
+        if (documentTransition(e)) prune(null);
+    }
+
+    /**
+     * The document came back from the back/forward cache: the page on screen is shown again (a new page show).
+     * @param {PageTransitionEvent} e Event.
+     */
+    function onPageShow(e) {
+        if (documentTransition(e) && e.persisted === true) onViewShow(null, window.location.hash);
+    }
+
+    /**
+     * Follows the document's lifecycle while the pages are on.
+     * @param {boolean} on Watch.
+     */
+    function watchDocument(on) {
+        if (on === watchingDocument) return;
+        watchingDocument = on;
+        const method = on ? 'addEventListener' : 'removeEventListener';
+        window[method]('pagehide', onPageHide);
+        window[method]('pageshow', onPageShow);
+    }
+
+    /**
      * Opens an entry's title at its exact scope (season / episode), keeping where the person was for Back.
      * @param {Object} ctrl Controller of the page.
      * @param {Object} ph Entry.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): what opens is its effect.
      * @returns {void}
      */
-    function openEntry(ctrl, ph) {
+    function openEntry(ctrl, ph, owner) {
         if (!lp.render.opensTitle(ph)) return;
         const options = { mediaType: ph.mediaType === 'movie' ? 'movie' : 'tv', tmdbId: Number(ph.tmdbId) || undefined };
         if (ph.kind === 'season' || ph.kind === 'episodes') options.season = Number(ph.seasonNumber);
@@ -210,9 +255,9 @@
         lp.gate.paint(ctrl.ticket, () => {
             lastOpened = { listId: ctrl.listId, placeholderId: ph.id };
             if (typeof JE.titleDetails?.openKey === 'function') {
-                JE.titleDetails.openKey(ph.titleKey, options).catch?.(() => {});
+                JE.titleDetails.openKey(ph.titleKey, { ...options, owner }).catch?.(() => {});
             } else if (Number(ph.tmdbId) > 0 && typeof JE.jellyseerrMoreInfo?.open === 'function') {
-                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType, undefined, JE.NATIVE);
+                JE.jellyseerrMoreInfo.open(Number(ph.tmdbId), options.mediaType, undefined, owner);
             }
         }, 'open');
     }
@@ -282,6 +327,7 @@
             offChange = JE.arrLists.onChange(onListChange);
             subscribeLibrary();
             lp.grid.start();
+            watchDocument(true);
             const onView = JE.core?.navigation?.onViewPage || JE.helpers?.onViewPage;
             if (onView && !viewHook) viewHook = onView((view, element, hash) => { onViewShow(element, hash); }, { immediate: true });
             else onViewShow(null, window.location.hash);
@@ -290,6 +336,7 @@
             offChange?.();
             offChange = null;
             lp.grid.stop();
+            watchDocument(false);
             disposeAll();
         } else if (on) {
             // The person changed one of the kinds: drop the controllers of a kind now off, draw the other again.

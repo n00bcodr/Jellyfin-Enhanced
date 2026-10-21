@@ -47,7 +47,7 @@ function moduleSpec(t, file, { responses = {}, item, genres = { movie: [], tv: [
   h.load('jellyseerr/nativedetails/native-details.js');
   h.load(`jellyseerr/discovery/${file}`);
   const signal = new h.window.AbortController().signal;
-  return { ...h, spec, requests, genreReads, items, signal };
+  return { ...h, get NATIVE() { return h.NATIVE; }, spec, requests, genreReads, items, signal };
 }
 
 const FILMOGRAPHY = '/JellyfinEnhanced/native-details/person/3810/filmography';
@@ -148,7 +148,7 @@ function realPersonPage(t, results) {
   h.load('jellyseerr/discovery/person-discovery.js');
   cleanups.push(() => controller.cleanup());
   const cards = selector => Array.from(h.document.querySelectorAll(`${selector} .card`), c => c.textContent);
-  return { ...h, controller, filter, requests, create, cards, cleanUp: fn => cleanups.push(fn) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, controller, filter, requests, create, cards, cleanUp: fn => cleanups.push(fn) };
 }
 
 test('with library titles excluded (the default), a filmography of someone the library lacks still shows its library titles, through the real discovery base and card filter', async t => {
@@ -416,7 +416,7 @@ test('the native-feeds choice: no Seerr account, Seerr reachable, Jellyfin Enhan
   assert.equal(use(UNLINKED), false);
 });
 
-test('the native feeds are read again each time (filtered for the viewer\'s policy now); Seerr\'s rows keep the tab cache', async t => {
+test('the native feeds are read again each time; a page of Seerr\'s rows is kept only under the access revision it was asked under; identical reads in flight share one request', async t => {
   const calls = [];
   const h = createHarness({
     JE: { pluginConfig: { NativeAbsentDetails: { Enabled: true, ContractVersion: 1 } }, t: key => key },
@@ -424,7 +424,7 @@ test('the native feeds are read again each time (filtered for the viewer\'s poli
     fetch: async url => { calls.push(String(url)); return jsonResponse({ results: [{ id: calls.length }] }); },
   });
   t.after(() => h.close());
-  for (const name of ['navigation', 'session', 'api-client']) h.load(`core/${name}.js`);
+  for (const name of ['navigation', 'session', 'access-revision', 'api-client']) h.load(`core/${name}.js`);
   h.JE.requestManager = h.JE.core.api.manager;
   h.load('jellyseerr/discovery/discovery-filter-utils.js');
   const get = path => h.JE.discoveryFilter.fetchWithManagedRequest(path, 'genre');
@@ -433,7 +433,13 @@ test('the native feeds are read again each time (filtered for the viewer\'s poli
   await get(native); await get(native);
   await get(proxy); await get(proxy);
   assert.equal(calls.filter(u => u.includes('native-details')).length, 2);
+  // Seerr's rows are per person (their Seerr account, the parental filter the server applies): the page is used again
+  // only while the access revision it was asked under holds.
   assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 1);
+  h.JE.core.revision.noteRevision('a=a1;hc=h1;sg=s1');
+  h.JE.core.revision.noteRevision('a=a2;hc=h1;sg=s1');
+  await Promise.all([get(proxy), get(proxy)]);
+  assert.equal(calls.filter(u => u.includes('/jellyseerr/')).length, 2);
 });
 
 test('library rows count a title held only in 4K as in the library: left out when library titles are excluded, else its card opens the 4K copy', async t => {

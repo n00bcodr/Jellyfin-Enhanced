@@ -29,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
     public sealed class ArrJellyfinView : IArrJellyfinView, IDisposable
     {
         private readonly ILibraryManager _libraryManager;
+
+        /// <summary>The current library topology (folders, names, enabled, paths) as text; set by the live view.</summary>
+        internal static Func<string>? LibraryTopology;
         private readonly IUserManager _userManager;
         private readonly ILogger<ArrJellyfinView>? _logger;
         private long _revision;
@@ -56,6 +59,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public ArrJellyfinView(ILibraryManager libraryManager, IUserManager userManager, ILogger<ArrJellyfinView>? logger = null)
         {
             _libraryManager = libraryManager;
+            LibraryTopology = () =>
+            {
+                var topology = new StringBuilder();
+                foreach (var folder in (libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
+                {
+                    topology.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
+                    foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) topology.Append(':').Append(path);
+                }
+
+                return topology.ToString();
+            };
             _userManager = userManager;
             _logger = logger;
             _libraryManager.ItemAdded += OnItemChanged;
@@ -81,48 +95,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // An API key's user id is the empty GUID, which Jellyfin 12 refuses to look up (it throws).
             var user = Helpers.ArrCaller.Find(userId, _userManager);
             if (user == null || user.HasPermission(PermissionKind.IsDisabled)) return null;
-            var isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
-            var allFolders = user.HasPermission(PermissionKind.EnableAllFolders);
-            var folders = allFolders ? Array.Empty<Guid>() : user.GetPreferenceValues<Guid>(PreferenceKind.EnabledFolders);
-            var blockedTags = user.GetPreference(PreferenceKind.BlockedTags) ?? Array.Empty<string>();
-            var allowedTags = user.GetPreference(PreferenceKind.AllowedTags) ?? Array.Empty<string>();
-            var blockedUnrated = user.GetPreferenceValues<UnratedItem>(PreferenceKind.BlockUnratedItems);
-            // Folders blocked through the user policy API: library access in another form (like
-            // EnabledFolders), so part of the fingerprint but not a parental limit. A series' seasons
-            // and episodes always sit in the series' own library, so they never hide parts of it.
-            var blockedFolders = user.GetPreferenceValues<Guid>(PreferenceKind.BlockedMediaFolders);
-            var parental = HasParentalLimit(user);
+            return ViewerOf(user);
+        }
 
+        /// <summary>
+        /// The viewer as <paramref name="user"/> (one read of them): every fact of the viewer, its policy revision and its
+        /// handle come from this same object, so what is decided with it and what it is keyed by agree.
+        /// </summary>
+        /// <param name="user">The user, as read.</param>
+        /// <returns>The viewer.</returns>
+        internal static StatusViewer ViewerOf(User user) => new()
+        {
+            UserId = user.Id,
+            IsAdmin = user.HasPermission(PermissionKind.IsAdministrator),
+            DisplayMissingEpisodes = user.DisplayMissingEpisodes,
+            HasParentalLimit = HasParentalLimit(user),
+            PolicyRevision = PolicyRevisionOf(user),
+            Handle = user,
+        };
+
+        /// <summary>
+        /// The policy revision of <paramref name="user"/> as read (<see cref="StatusViewer.PolicyRevision"/>): role,
+        /// library access (all, enabled and blocked folders), parental settings and "show missing episodes"
+        /// (<see cref="Helpers.UserAuthority.AppendPolicy"/>). A cache that decides with a user object keys by the
+        /// revision of that same object, never by another read of the user, which a change can land between.
+        /// </summary>
+        /// <param name="user">The user.</param>
+        /// <returns>The revision.</returns>
+        public static string PolicyRevisionOf(JUser user)
+        {
             var fingerprint = new StringBuilder();
-            fingerprint.Append(isAdmin ? 'A' : 'U').Append('|').Append(allFolders ? '*' : '-').Append('|');
-            foreach (var f in folders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
-            fingerprint.Append('|').Append(user.MaxParentalRatingScore?.ToString(CultureInfo.InvariantCulture) ?? "-")
-                .Append('.').Append(user.MaxParentalRatingSubScore?.ToString(CultureInfo.InvariantCulture) ?? "-").Append('|');
-            foreach (var t in blockedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
-            fingerprint.Append('|');
-            foreach (var t in allowedTags.OrderBy(t => t, StringComparer.Ordinal)) fingerprint.Append(t).Append(',');
-            fingerprint.Append('|');
-            foreach (var u in blockedUnrated.OrderBy(u => u)) fingerprint.Append((int)u).Append(',');
-            fingerprint.Append('|');
-            foreach (var f in blockedFolders.OrderBy(f => f)) fingerprint.Append(f.ToString("N", CultureInfo.InvariantCulture)).Append(',');
-            fingerprint.Append('|').Append(user.DisplayMissingEpisodes ? 'M' : '-');
-            // Removed/moved libraries may never emit ItemRemoved when Jellyfin cancels cleanup. Their current
-            // topology is also part of the viewer's scope, so a cached Ready/4K body cannot outlive that scope.
-            foreach (var folder in (_libraryManager.GetVirtualFolders() ?? new List<VirtualFolderInfo>()).OrderBy(f => f.ItemId, StringComparer.Ordinal).ThenBy(f => f.Name, StringComparer.Ordinal))
-            {
-                fingerprint.Append('|').Append(folder.ItemId).Append(':').Append(folder.Name).Append(folder.LibraryOptions?.Enabled == false ? '-' : '+');
-                foreach (var path in (folder.Locations ?? Array.Empty<string>()).OrderBy(p => p, StringComparer.Ordinal)) fingerprint.Append(':').Append(path);
-            }
-
-            return new StatusViewer
-            {
-                UserId = user.Id,
-                IsAdmin = isAdmin,
-                DisplayMissingEpisodes = user.DisplayMissingEpisodes,
-                HasParentalLimit = parental,
-                PolicyRevision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint.ToString())), 0, 12),
-                Handle = user,
-            };
+            Helpers.UserAuthority.AppendPolicy(fingerprint, user);
+            // Edition (play edge join): removed/moved libraries may never emit ItemRemoved when Jellyfin cancels cleanup.
+            // Their current topology is also part of the viewer's scope, so a cached Ready/4K body cannot outlive that scope.
+            fingerprint.Append(LibraryTopology?.Invoke() ?? string.Empty);
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint.ToString())), 0, 12);
         }
 
         /// <summary>

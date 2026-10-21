@@ -16,41 +16,43 @@ function setup(t, { get = async () => ({}), post = async () => ({ id: 7 }), conf
   t.after(() => h.close());
   h.load('jellyseerr/api.js');
   for (const event of ['jellyseerr-media-requested', 'jellyseerr-tv-requested']) h.document.addEventListener(event, e => events.push([event, plain(e.detail)]));
-  return { ...h, api: h.JE.jellyseerrAPI, calls, invalidated, usage, events, toasts, switchUser() { epoch++; onChange(); } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, api: h.JE.jellyseerrAPI, calls, invalidated, usage, events, toasts, switchUser() { epoch++; onChange(); } };
 }
 
-for (const type of ['movie', 'tv']) test(`${type} request sends explicit settings without retry and broadcasts success`, async t => {
+for (const type of ['movie', 'tv']) test(`${type} request sends explicit settings without retry; its caller publishes the success`, async t => {
   const h = setup(t);
-  const result = await h.api.requestMedia('42', type, { serverId: 2, profileId: 5 }, true, null, 88);
+  const result = await h.api.requestMedia('42', type, { serverId: 2, profileId: 5 }, true, null, 88, { bound: h.NATIVE.bound() });
   assert.equal(result.id, 7);
-  assert.deepEqual(h.calls, [['/jellyseerr/request', { method: 'POST', skipRetry: true, body: {
+  // The write carries the viewer's binding (D46S2-R10-1); the rest of what is sent is as before.
+  assert.ok(h.calls.every(([, options]) => options.bound?.token?.owner === 'native'));
+  assert.deepEqual(h.calls.map(([url, { bound, ...rest }]) => [url, rest]), [['/jellyseerr/request', { method: 'POST', skipRetry: true, body: {
     mediaType: type, mediaId: 42, serverId: 2, profileId: 5, ...(type === 'tv' ? { seasons: 'all', tvdbId: 88 } : {}), is4k: true
   }}]]);
   assert.ok(h.invalidated.includes(`jellyseerr:/${type}/42`));
   assert.ok(h.invalidated.includes('jellyseerr:/quota'));
-  assert.equal(h.events.length, type === 'tv' ? 2 : 1);
-  assert.deepEqual(h.events[0][1], { tmdbId: '42', mediaType: type, is4k: true });
+  // One publication path (D46S2-R8-2): the transport broadcasts nothing; each caller publishes through its surface.
+  assert.deepEqual(h.events, []);
   assert.deepEqual(h.usage, ['seerr.request_submitted']);
 });
 
 test('selected seasons and manual TVDB match survive override-rule evaluation', async t => {
   const h = setup(t, { get: async () => [{ sonarrServiceId: 9, language: 'ja', profileId: 3, rootFolder: '/anime' }] });
-  await h.api.requestTvSeasons('42', [0, 2], {}, { originalLanguage: 'ja' }, false, 777);
+  await h.api.requestTvSeasons('42', [0, 2], {}, { originalLanguage: 'ja' }, false, 777, { bound: h.NATIVE.bound() });
   assert.deepEqual(h.calls[0][1].body, { mediaType: 'tv', mediaId: 42, seasons: [0, 2], serverId: 9, profileId: 3, rootFolder: '/anime', tvdbId: 777 });
 });
 
 for (const status of [403, 404, 429, 503]) test(`request ${status} fails without success side effects or retry`, async t => {
   const failure = Object.assign(new Error('rejected'), { status });
   const h = setup(t, { post: async () => { throw failure; } });
-  await assert.rejects(h.api.requestTvSeasons(42, [1]), error => error === failure);
+  await assert.rejects(h.api.requestTvSeasons(42, [1], {}, null, false, null, { bound: h.NATIVE.bound() }), error => error === failure);
   assert.equal(h.calls.length, 1);
   assert.deepEqual(h.events, []); assert.deepEqual(h.invalidated, []); assert.deepEqual(h.usage, []);
 });
 
 test('watchlist failure does not turn an accepted request into a retryable failure', async t => {
   const h = setup(t); h.api.addToWatchlist = async () => { throw new Error('unavailable'); };
-  assert.equal((await h.api.requestMedia(42, 'movie')).id, 7);
-  assert.equal(h.calls.length, 1); assert.equal(h.events.length, 1);
+  assert.equal((await h.api.requestMedia(42, 'movie', {}, false, null, null, { bound: h.NATIVE.bound() })).id, 7);
+  assert.equal(h.calls.length, 1); assert.deepEqual(h.events, []);
 });
 
 test('advanced options require both administrator setting and current user permission', async t => {
@@ -93,8 +95,11 @@ test('status banners escape upstream HTML and reset on user switch', t => {
 
 function uiSetup(t, options) {
   const h = setup(t, options);
-  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-buttons.js']) h.load(`jellyseerr/${file}`);
-  h.button = h.document.createElement('button'); h.document.body.append(h.button);
+  // ui-results: the cards follow a request's publication (D46S2-R8-2), the requesting card's own control included.
+  h.JE.core.ui = { addTouchTapListener() {} };
+  for (const file of ['seerr-status.js', 'ui/ui-icons.js', 'ui/ui-quota.js', 'ui/ui-buttons.js', 'ui/ui-results.js']) h.load(`jellyseerr/${file}`);
+  // As a card draws it (ui-cards): the button names its title.
+  h.button = h.document.createElement('button'); h.button.dataset.tmdbId = '42'; h.button.dataset.mediaType = 'movie'; h.document.body.append(h.button);
   h.item = { id: 42, mediaType: 'movie', title: 'Film' };
   h.configure = (active = true, user = true) => h.JE.jellyseerrUI.configureRequestButton(h.button, h.item, active, user);
   return h;
@@ -259,10 +264,11 @@ async function seasonModal(t, { tvDetails, partial = true, specials = true, post
   let modal;
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => '', populateAdvancedOptions() {}, create(o) {
     const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`;
-    h.document.body.append(el); modal = { el, o }; return { modalElement: el, show() {} }; } };
-  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.JE.NATIVE);
+    // The shell registers its element for its owner, as the real one does (a press inside it is that owner's).
+    h.document.body.append(el); h.JE.openSurface(el, () => {}, o.operation); modal = { el, o }; return { modalElement: el, show() {} }; } };
+  await h.JE.jellyseerrUI.showSeasonSelectionModal(42, 'tv', 'Show', null, false, h.NATIVE);
   const requestBtn = h.document.createElement('button');
-  return { ...h, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, el: modal.el, requestBtn, save: () => modal.o.onSave(modal.el, requestBtn, () => {}, { type: 'click', target: modal.el }) };
 }
 const seasonCheckbox = (h, number) => h.el.querySelector(`.jellyseerr-season-checkbox[data-season-number="${number}"]`);
 const tvSeasons = [{ seasonNumber: 0, name: 'Specials', episodeCount: 2, airDate: '2020-01-01' }, { seasonNumber: 1, name: '<img src=x onerror=evil()>', episodeCount: 3, airDate: '2020-01-01' }, { seasonNumber: 2, episodeCount: 3, airDate: '2021-01-01' }];
@@ -322,16 +328,16 @@ function requestModals(t, options) {
   const select = id => `<select id="${id}"><option value=""></option><option value="${values[id]}">x</option></select>`;
   let current;
   h.JE.jellyseerrModal = { createAdvancedOptionsHTML: () => ['movie-server', 'movie-quality', 'movie-folder'].map(select).join(''), populateAdvancedOptions() {},
-    create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); current = { el, o }; return { modalElement: el, show() {} }; } };
+    create(o) { const el = h.document.createElement('div'); el.innerHTML = `<div class="jellyseerr-modal-body">${o.bodyHtml}</div>`; h.document.body.append(el); h.JE.openSurface(el, () => {}, o.operation); current = { el, o }; return { modalElement: el, show() {} }; } };
   h.requestBtn = h.document.createElement('button');
   h.modal = () => current.el;
-  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {});
+  h.save = () => current.o.onSave(current.el, h.requestBtn, () => {}, { type: 'click', target: current.el });
   return h;
 }
 
 test('movie request modal needs every advanced option before it submits them', async t => {
   const h = requestModals(t); h.api.fetchAdvancedRequestData = async () => ({});
-  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null, false, h.JE.NATIVE);
+  await h.JE.jellyseerrUI.showMovieRequestModal(42, 'Film', null, false, h.NATIVE);
   const ids = ['movie-server', 'movie-quality', 'movie-folder'];
   await h.save(); assert.equal(h.calls.length, 0); assert.equal(h.toasts.at(-1)[0], 'jellyseerr_modal_toast_options_missing');
   // Any one option left empty blocks the request on its own.
@@ -354,7 +360,7 @@ test('collection request modal escapes titles, skips owned movies and stops at t
   // The quote would end the poster's alt attribute and start an onerror one if it were not escaped.
   const hostile = '<img src=x onerror=evil()>" onerror="evil()';
   h.api.fetchCollectionDetails = async () => ({ parts: [{ id: 1, title: hostile, mediaInfo: { status: 5 } }, { id: 2, title: 'Two' }, { id: 3, title: 'Three' }] });
-  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga', null, { operation: h.JE.NATIVE });
+  await h.JE.jellyseerrUI.showCollectionRequestModal(9, 'Saga', null, { operation: h.NATIVE });
   assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-details .title img'), null);
   assert.equal(h.modal().querySelector('.jellyseerr-collection-movie-poster').getAttribute('alt'), hostile);
   assert.equal(h.modal().querySelector('[onerror]'), null);

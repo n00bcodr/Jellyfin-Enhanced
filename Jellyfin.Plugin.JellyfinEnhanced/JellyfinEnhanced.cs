@@ -184,7 +184,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 _restoringConfiguration = true;
                 try
                 {
-                    UpdateConfiguration(restored);
+                    // A configuration write like any other (its generation moves on past the one held now), never the host
+                    // route's: the restored configuration is applied whatever generation the backup recorded.
+                    ApplyConfiguration(_ => restored);
                 }
                 finally
                 {
@@ -355,13 +357,72 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // transition queue — turning it off must actually release the cache
         // memory, and turning it on must catch up on the off window right away
         // rather than serving a stale snapshot until the daily 3 AM refresh.
-        public override void UpdateConfiguration(BasePluginConfiguration configuration)
+        //
+        // Jellyfin's plugin-configuration route (POST /Plugins/{id}/Configuration) is the one caller: it hands over the whole
+        // configuration a client posted. That configuration is applied only as a change of the generation it was read at
+        // (PluginConfiguration.ConfigurationGeneration, checked under the lock every configuration write takes); a copy built
+        // on an earlier generation would put back what another administrator, a server write or a restore changed since, so
+        // it is refused (ConfigurationConflictException: nothing written; the route answers 409, HostConfigurationRouteFilter).
+        public override void UpdateConfiguration(BasePluginConfiguration configuration) => ApplyConfiguration(current =>
         {
-            // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
-            // Configuration, so an actual OFF<->ON transition is distinguishable
-            // from an unrelated config save (this method fires on every save).
-            var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+            if (configuration is PluginConfiguration incoming && current != null && incoming.ConfigurationGeneration != current.ConfigurationGeneration)
+            {
+                throw new ConfigurationConflictException(incoming.ConfigurationGeneration, current.ConfigurationGeneration);
+            }
+
+            return configuration;
+        });
+
+        // The generation of the configuration last written (or held when the first write came): every write takes the next one.
+        private readonly object _generationLock = new();
+        private long _writtenGeneration;
+
+        /// <summary>
+        /// Every write of the configuration goes through here (a configuration page save, Jellyfin's route, a restore, every
+        /// server writer's SaveConfiguration()): its generation moves on past both the document's and the last one written,
+        /// so no two writes share one and a restored or older document never brings an earlier generation back.
+        /// </summary>
+        public override void SaveConfiguration(PluginConfiguration config)
+        {
+            ArgumentNullException.ThrowIfNull(config);
+            lock (_generationLock)
+            {
+                var next = Math.Max(config.ConfigurationGeneration, _writtenGeneration) + 1;
+                config.ConfigurationGeneration = next;
+                base.SaveConfiguration(config);
+                _writtenGeneration = next;
+            }
+        }
+
+        /// <summary>The generation of the configuration held now counts as written (it was loaded with it).</summary>
+        private void NoteHeldGeneration(PluginConfiguration? held)
+        {
+            if (held == null) return;
+            lock (_generationLock) _writtenGeneration = Math.Max(_writtenGeneration, held.ConfigurationGeneration);
+        }
+
+        /// <summary>
+        /// Applies a configuration page save made of the administrator's changes (<see cref="ConfigurationPatch"/>) to the
+        /// configuration held at that moment, under the lock every configuration write takes, then saves it like any other
+        /// configuration update. Throws <see cref="ConfigurationPatchException"/> (nothing saved) for a patch that can't be read.
+        /// </summary>
+        internal ConfigurationPatchResult PatchConfiguration(ConfigurationPatch patch)
+        {
+            ConfigurationPatchResult? result = null;
+            ApplyConfiguration(current =>
+            {
+                var next = ConfigurationPatcher.Clone(current ?? new PluginConfiguration());
+                result = ConfigurationPatcher.Apply(next, patch);
+                return next;
+            });
+            return result!;
+        }
+
+        // Builds the configuration to store from the one held now (under AnalyticsCredentialLock, so a patch reads and
+        // replaces it atomically with the server's own writes), stores it, then runs the config-change side effects.
+        private void ApplyConfiguration(Func<PluginConfiguration?, BasePluginConfiguration> build)
+        {
+            bool tagCacheWasEnabled, analyticsWasEnabled;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -381,13 +442,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // The administrator's default display language passes the display-language gate on every save and restore (it
             // becomes each person's first setting and Jellyfin's shared language key): a malformed value or a language JE
             // ships no bundle for is stored as Auto.
-            if (configuration is PluginConfiguration gated)
-            {
-                gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
-            }
-
             lock (AnalyticsCredentialLock)
             {
+                // Captured BEFORE base.UpdateConfiguration replaces Configuration, so an actual OFF<->ON transition is
+                // distinguishable from an unrelated config save (this runs on every save).
+                tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+                analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+                NoteHeldGeneration(Configuration as PluginConfiguration);
+                var configuration = build(Configuration as PluginConfiguration);
+                if (configuration is PluginConfiguration gated)
+                {
+                    gated.DefaultLanguage = Helpers.LanguageTags.Sanitize(gated.DefaultLanguage);
+                }
+
                 if (!_restoringConfiguration && configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
                     // Credentials: placeholders/blanks keep the stored value, the clear token removes

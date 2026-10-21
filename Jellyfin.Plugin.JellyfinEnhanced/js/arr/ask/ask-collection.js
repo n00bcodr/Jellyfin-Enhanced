@@ -413,8 +413,9 @@
         a.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (typeof JE.titleDetails?.show === 'function') JE.titleDetails.show(tmdb, 'movie');
-            else JE.jellyseerrMoreInfo.open(tmdb, 'movie', undefined, JE.NATIVE);
+            const owner = JE.ownerOf?.(e);
+            if (typeof JE.titleDetails?.show === 'function') JE.titleDetails.show(tmdb, 'movie', undefined, owner);
+            else JE.jellyseerrMoreInfo.open(tmdb, 'movie', undefined, owner);
         });
         return a;
     }

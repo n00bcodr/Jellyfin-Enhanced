@@ -1782,10 +1782,43 @@ at run time, code outside Jellyfin's server (another plugin's own code, another 
 .NET's own code calls back on an object Jellyfin handed it (a stream's `Write` during a copy .NET makes; a delegate
 handed to .NET counts as run there). A user change made there
 through Jellyfin's user manager, or made by a plugin's callback to someone other than the person the action is for, is
-covered afterwards: Jellyfin announces every user update, deletion and lockout it makes, and Jellyfin Enhanced moves
-that person's version when it does, so the next check reads the change. A check already deciding in the moment between
-the change being saved and Jellyfin's announcement can still use what it read before. A change written straight into
-Jellyfin's database, bypassing Jellyfin, isn't covered.
+covered afterwards only when Jellyfin announces it, and Jellyfin doesn't announce every change:
+
+- Announced on both versions: a user deleted, a user locked out by failed sign-ins, a user renamed; on 12.2 also a
+  policy save. Jellyfin Enhanced moves that person's version when Jellyfin announces the change, so the next check reads
+  it. A check already deciding in the moment between the change being saved and the announcement can still use what it
+  read before.
+- Not announced: a user save (`UpdateUserAsync`) on both versions (sign-in activity, profile images, the start-up
+  wizard's user, and on 12.2 a library rename rewriting users' library access), and a policy save (`UpdatePolicyAsync`)
+  on 10.11 (administrator, disabled, parental limits, tags, libraries, schedules). Made through one of the bracketed
+  actions above (the Dashboard's user pages, Jellyfin's user and start-up API) or by Jellyfin Enhanced itself
+  (maintenance mode), such a save is covered all the same: the bracket moves the version whether or not Jellyfin
+  announces anything. Made by other code outside those actions (another plugin calling Jellyfin's user manager
+  directly), it doesn't move the version, so a check that was already deciding when it landed can use the facts it read
+  before. Checks that start afterwards read the new facts.
+
+A change written straight into Jellyfin's database, bypassing Jellyfin, isn't covered by the check (the caches below
+see it on their next read).
+
+Jellyfin Enhanced's own caches of what a user may see don't wait for an announcement. What they compare is every
+property of the user, its permissions and its preferences that decides access (libraries, channels, Live TV, parental
+limits, tags, schedules, the role, disabled and hidden), worked out from a classification of Jellyfin's own user types
+that the tests check against the 12.2 and 10.11.11 servers, so a property a newer Jellyfin adds counts until it is
+classified, and is written so that no tag or other value can pass for another (two different users never compare
+equal). The tag cache's per-user filter, native details' artwork grants, Spoiler Guard's next episode and its season
+artwork (whether an episode you may see was watched) follow the user as each request reads them and the person's
+version, so any access change applies to the next request however it was made, a save by other code and a change
+written straight into the database included. Review authors (hidden or disabled), poster tags and acquisition badges'
+4K check hold the user (or what was read through it) and follow the person's version: the next request after a
+bracketed or announced change. An answer worked out while a change lands is never reused afterwards: a request that read
+the user before a save may finish with what it read, and what it worked out from that read is kept with that read, so the
+next request works it out again (a 4K badge included). Every cache Jellyfin
+Enhanced keeps is listed in its tests with what it depends on, so a new one that depends on a user's access can't be
+missed. Someone else signing in doesn't count as a change to them: once a sign-in by name (or a new user)
+has run, only the person it was about is read again; only when that can't be told is every cached review author or
+poster user read again once. A save by other code that moves nothing reaches review authors, poster tags and the 4K
+badge when their entry expires (15, 30 and 30 seconds, counted from when it was read); until then a review by an author who was just hidden or disabled
+can still be counted, and a 4K badge can stay on a poster.
 
 What each recipe decided (in every mode) is kept for 90 days; the same playback moment again counts as one decision.
 Administrators see the engine's state, every budget with when it has room again, paused instances, waiting automatic
@@ -1949,6 +1982,73 @@ is theirs alone: an administrator saving their settings, or resetting everyone's
 list feature (its `list-placeholders` folder) with `GET /JellyfinEnhanced/arr/admin/lists/import` (a dry run that
 changes nothing) and `POST` (the import). The old files are only read. Lists whose playlist or collection is gone are
 left out, unreadable files are copied aside, and imported lists start with swap-in off and any linked source paused.
+
+**Importing lists (review).** With *Import lists* on (off by default, under *Adding and editing list entries*), the
+server can read a pasted list, a CSV file or a list URL and match each line to a title, without changing any list:
+
+- **What it reads.** Pasted titles (`Title (Year)`, `S01E01-E05`, numbered guides, tables), CSV and JSON exports from
+  Letterboxd, IMDb and Trakt, and, with *Import from a list URL* and each site's own switch, MDBList public lists,
+  TMDB lists, collections and charts, Trakt lists and charts (with a Trakt client ID), Chronolists watch orders and,
+  as an opt-in marked unofficial, IMDb lists and charts. A site that is off is never contacted. Letterboxd has no API:
+  people are pointed to an MDBList mirror or a CSV export.
+- **Matching.** Titles are looked up on TMDB with the server's key, or through Seerr when no key is saved. Each match
+  says how sure it is, offers other candidates, and says whether the title (or how much of a series or season) is
+  already in the library. A title TMDB or Seerr says doesn't exist is remembered for 30 minutes; a lookup that failed
+  or came back incomplete or unreadable is asked again on the next review (with several Seerr addresses, "doesn't
+  exist" needs every one of them to say so).
+- **Privacy.** A person with parental limits gets only titles whose rating is verified to be within them, and source
+  counts are hidden from them. A title the household hid (Hidden Content) is marked and never pre-selected. With Spoiler
+  Guard on, overviews and episode titles of guarded titles are left out. A title, season or episode the library holds
+  in a library the person can't open is never offered as missing, whichever id the library knows it by (TMDB, TVDB or
+  IMDb): when some library items lack a TMDB id, the title's other ids are looked up first, up to 4 at a time and for
+  at most 30 seconds per list review. A title whose ids weren't found in that time is left out with the counts hidden;
+  reviewing the list again goes on from the lookups already made.
+- **Whole lists only.** A list read counts as complete only when the site itself says it ended and its page and item
+  counts add up (no empty page in the middle, no error). Each row's own type is checked before it counts as a title:
+  a person, game or adult title in a list that mixes types is counted and skipped; a type JE doesn't know, a missing
+  type where the site always gives one, or a type that doesn't belong (a show in a movie chart) makes the read partial.
+  Anything less is shown as partial (or cut off at the 1000-entry cap), so nothing would ever be removed because of it.
+  Only a complete read is kept for the next few minutes (so preview, apply and link read the list once); a partial or
+  cut-off one is read again, so a list fixed at the source shows up at once. A read made of several requests (an IMDb
+  watchlist found through a `p.` profile, then its pages; a list's pages) is complete only when every one of them
+  answered cleanly: an error IMDb reports next to the profile it found makes the whole read partial, and an answer
+  whose error list isn't one JE can read is a failed read. A page's counts must make sense too: a
+  negative page count or total, a different page than the one asked for, or a total below the rows read makes the read
+  partial. Through Seerr, each configured Seerr address is tried in turn: a whole answer is used; a partial one is kept
+  only until another address answers in full; an error, a timeout or an answer for something else moves on to the next
+  address; and a list only counts as "not found" when every address says so. Seerr answers every failure behind it (an
+  id TMDB doesn't know included) with the same error, so that is shown as "Seerr couldn't read this", never as "not found".
+- **Answers to another question.** Every answer is checked against what was asked: details for another title or media
+  type, a season holding another season's episodes (or the same episode twice, or another show's), a TMDB or IMDb list
+  page of another list, a Chronolists page of another watch order, a search by id that answers another id, a poster read
+  that doesn't name the title or season asked for, or a search row of a media type Jellyfin Enhanced doesn't know is
+  never used, remembered, or allowed to clear anything an entry already has. An answer that doesn't say what it is (a
+  list page without its id, a season without its number) is used at most as partial, never remembered. With more than
+  one Seerr address, the next one is asked instead.
+- **"Not found" only when the site says so.** A list is "not found" (or a title "doesn't exist") only from the site's own
+  answer for that: TMDB's not-found reply, IMDb's not-found or private error for that list, MDBList's or Trakt's own
+  status. IMDb's error has to be about the list itself: a not-found error about a title inside the list (IMDb leaves the
+  whole list out then) is "couldn't read", not "private or missing". A proxy's error page, an IMDb internal error, an
+  empty answer or any Seerr error is shown as "couldn't read", so nothing is treated as missing because a site had a bad
+  moment. An empty search result counts as "no titles" only when the site says its total is 0.
+- **Unusable values.** A date that isn't a date, a poster that isn't a TMDB image path or an id that isn't a positive
+  number is never used: the rest of the answer is, but nothing already stored (a release date, a poster) is cleared by
+  it and the answer isn't remembered. An MDBList ratings answer counts only when it is the title's whole record: the
+  title and type asked for, and its ratings list with values in range (an empty list or a rating without a value is
+  fine). Anything else (no TMDB id, another title or type, a missing ratings list, a score of 999) is a failed lookup
+  that is retried, never "no ratings" for days, and it never clears ratings already stored. A scheduled batch is used
+  only when every row is one of the titles asked for, of the type asked for, once.
+- **Limits.** Each person can read 10 list URLs per 5 minutes, and each site has an hourly read budget, with room kept
+  for people over background work. MDBList's API is used only when an administrator chooses it for a list, and each of
+  its requests takes one request of the server's MDBList quota before it is sent, the same way MDBList ratings do, so
+  imports and ratings together never go below the quota's safety margin. The quota is tracked per API key: after the
+  key is changed, the new key's balance is read from MDBList before its first request. Every
+  request to a list site (each page, each retry, MDBList's quota check) re-checks the site's switch and counts against
+  its budget, so turning a site off (IMDb included) stops the very next request. List sites are read without following
+  redirects and only at public addresses. No answer is read past 8 MiB, whichever site sent it (a list page, a title's
+  details, a poster, an MDBList rating or a site's error reply): a larger one is a failed read, never used.
+- **Title details without Seerr.** With *Title details for list entries from TMDB when Seerr isn't set up*, list entries
+  get their release dates, seasons and episode counts from TMDB directly when Seerr isn't set up.
 
 ### Acquisition badges: New for you, Upgraded, 4K (phase 4)
 

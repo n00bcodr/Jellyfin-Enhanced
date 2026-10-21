@@ -27,7 +27,7 @@ function panel(tt, { config = {}, settings = {}, answer = () => [] } = {}) {
   });
   tt.after(() => h.close());
   h.load('enhanced/translations.js');
-  h.load('enhanced/config.js');
+  h.load('core/mutation-queue.js'); h.load('enhanced/config.js');
   // A language change schedules a page reload after 1.5 s of real time; none of these tests is about it (and a reload
   // firing under load would end the page mid-test).
   h.JE.internals.scheduleReloadWhenIdle = () => {};
@@ -56,14 +56,14 @@ const listPages = { ArrListsEnabled: true, ArrListPlaylistUiEnabled: true, ArrLi
 test('a list-page preference is saved through the settings document and the list pages follow it at once', async t => {
   const h = panel(t, { config: listPages });
   await h.choose('listPlaylistUiSelect', 'off');
-  const saved = JSON.parse(h.writes.at(-1).data);
+  const saved = JSON.parse(h.writes.at(-1).data).Set;
   assert.equal(saved.listPlaylistUi, false);
   assert.equal(h.JE.currentSettings.listPlaylistUi, false);
   assert.ok(h.listPages.length >= 1, 'the list pages were told');
   assert.equal(h.listPages.at(-1).listPlaylistUi, false, 'they read the new value');
   assert.deepEqual(h.toasts, [tr('toast_list_settings_saved')]);
   await h.choose('listCollectionUiSelect', 'off');
-  assert.equal(JSON.parse(h.writes.at(-1).data).listCollectionUi, false);
+  assert.equal(JSON.parse(h.writes.at(-1).data).Set.listCollectionUi, false);
   assert.equal(h.listPages.at(-1).listCollectionUi, false);
 });
 
@@ -105,7 +105,7 @@ for (const [stored, expected] of [['zz-ZZ', ''], ['xx', ''], ['en_US!', ''], ['n
 // it, whatever was sent (haw-AU was stored as Auto while the client kept and mirrored haw-AU until a reload). A server
 // whose answer carries no display language (older) leaves the client's own gated value.
 for (const [sent, stored] of [['haw-AU', ''], ['kok-GB', ''], ['fr', ''], ['pt-br', 'pt-BR'], ['en-AU', 'en-AU']]) test(`a saved ${sent} is mirrored as the server stored it (${JSON.stringify(stored)})`, async t => {
-  const h = panel(t, { settings: { displayLanguage: 'en-GB' }, answer: request => request.type === 'POST' ? { success: true, file: 'settings.json', consents: {}, displayLanguage: stored } : [] });
+  const h = panel(t, { settings: { displayLanguage: 'en-GB' }, answer: request => request.type === 'PATCH' && !request.url.endsWith('/consent') ? { success: true, file: 'settings.json', consents: {}, displayLanguage: stored } : [] });
   const select = h.document.getElementById('displayLanguageSelect');
   for (const code of ['', 'haw-AU', 'kok-GB', 'fr', 'pt-br', 'pt-BR', 'en-AU']) select.appendChild(Object.assign(h.document.createElement('option'), { value: code, textContent: code || 'Auto' }));
   h.window.localStorage.setItem('user-a-language', 'de');

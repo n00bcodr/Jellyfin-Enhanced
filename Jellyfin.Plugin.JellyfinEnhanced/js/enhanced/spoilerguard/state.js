@@ -14,6 +14,12 @@
     const enabledPendingTmdb = new Set();
 
     let userPrefs = {};
+    // The override saves not answered yet, in order (each a { Set } of preferences), and the preferences' one queue, bound to
+    // the signed-in session (core/mutation-queue.js): saves go out one at a time (a change made back while one is out
+    // reaches the server after it), the session is checked right before each is sent, and an account switch cancels the
+    // previous person's saves unsent. Its revision moves on with every save queued or answered (and the switch), so a state
+    // read that began before one doesn't take its Prefs.
+    let pendingPrefs = [];
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -26,6 +32,9 @@
     let recoveryTimer = null;
     // Titles whose state an accepted write established while the full state is unavailable.
     const confirmed = new Map();
+    // Core user-change caches (play edge join): the document revision the state was read under, and whether a newer one was seen.
+    let loadedRevision = null;
+    let stale = false;
 
     /** Tell current detail-page consumers to discard topic content after a policy change. */
     function notifyPolicyChanged() {
@@ -111,20 +120,35 @@
         }, RECOVERY_DELAYS_MS[recoveryAttempt]);
     }
 
+    /** What a write that was never sent resolves with (its owner ended first): it changed nothing, so nothing follows. */
+    const UNSENT = internal.UNSENT = Object.freeze({ unsent: true });
+
     /**
      * All controls share one ordered write, authoritative read and policy notification path. `owner` (required,
-     * D46S2-R6): the operation a title action pressed the control for (it must still be current right before the
-     * write), JE.NATIVE, or the node or press it comes from. What follows an accepted write stays bound to the session only.
+     * D46S2-R6): the owner token the control was pressed for (a title action's operation, or the viewer's own gesture;
+     * it must still be current right before the write), or the node or press it comes from. Three outcomes (D46S2 audit
+     * S3): never sent (its owner ended first) resolves UNSENT and changes nothing; sent and answered, also after its
+     * owner ended (accepted), reconciles this session's state from the server (a reread and the policy event) and
+     * resolves with the answer; a failure rejects. Page effects are the caller's, only while its owner is current.
      */
     function mutateState(path, options, project, owner) {
         const action = JE.createSessionAction();
         const submitted = JE.createSessionAction({ owner });
         const task = mutationQueue.catch(() => {}).then(async () => {
-            if (!action.current() || !submitted.current()) return;
-            // The transport checks the operation (if any) again right before the bytes go out (after the core queue).
+            // Sent only while its owner may write (an operation: while current; the viewer's own gesture: its session).
+            const bound = submitted.bound();
+            if (!action.current() || bound.current() !== true) return UNSENT;
+            // The transport checks the owner again right before the bytes go out (after the core queue).
             let response;
-            try { response = await request(path, { ...options, bound: submitted.operationBound() }); }
-            catch (err) { if (err?.name === 'AbortError' && !submitted.current()) return; throw err; }
+            try { response = await request(path, { ...options, bound }); }
+            catch (err) {
+                const { outcome, answer, sessionChanged } = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
+                if (outcome === 'unsent') return UNSENT;
+                if (outcome !== 'accepted') throw err;
+                // Accepted after its owner ended: still this session's change, reconciled below (another session's is not ours).
+                if (sessionChanged) return answer;
+                response = answer;
+            }
             if (!action.current()) return response;
             generation++;
             JE.core.api.manager?.invalidatePresentation?.();
@@ -205,6 +229,15 @@
         if (loaded && !loadOk && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.resolve();
         return startLoad();
     };
+
+    // Another tab or device saved this person's Spoiler Guard state (its document revision moved): read it again now
+    // when it is in use, else on the next use. The state shown stays until the new one is in (only changes are drawn).
+    document.addEventListener('je-document-revision', function(e) {
+        const detail = e.detail || {};
+        if (detail.document !== 'spoiler-guard' || detail.revision === loadedRevision) return;
+        stale = true;
+        if (loaded && JE.pluginConfig?.SpoilerBlurEnabled === true) internal.loadState();
+    });
 
     internal.whenLoaded = function() {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return Promise.resolve();
@@ -292,8 +325,15 @@
     // The library series and movies the person guards (Jellyfin ids, N form): copies, read-only. Lists (phase 4c3a)
     // map them to TMDB ids to guard entries of the same titles that aren't in the library.
     internal.guardedIds = function() { return { series: Array.from(enabledSeries), movies: Array.from(enabledMovies) }; };
+    // Play edge: the rebuild's PATCH (only the preferences that differ; the server applies them to what it holds now)
+    // sent through D46's owner-bound mutateState.
     internal.setUserPrefs = function(next, owner) {
-        return mutateState('/spoiler-blur/user-prefs', { method: 'POST', body: next || {}, skipRetry: true }, () => { userPrefs = { ...(next || {}) }; }, owner)
+        const set = {};
+        for (const [key, value] of Object.entries(next || {})) {
+            if (JSON.stringify(value) !== JSON.stringify(userPrefs?.[key])) set[key] = value;
+        }
+        if (!Object.keys(set).length) return Promise.resolve(Object.assign({}, userPrefs));
+        return mutateState('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }, () => { userPrefs = { ...(userPrefs || {}), ...set }; }, owner)
             .then(() => internal.getUserPrefs());
     };
 
@@ -312,6 +352,8 @@
         confirmed.clear();
         loaded = false;
         loadOk = false;
+        loadedRevision = null;
+        stale = false;
         enabledSeries.clear();
         enabledMovies.clear();
         enabledCollections.clear();

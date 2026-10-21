@@ -64,7 +64,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private readonly IJellyfinLibraryAccess _libraries;
         private readonly IRequestPolicy? _requests;
         private readonly NativeDetailsLibrary? _physical;
-        private readonly ConcurrentDictionary<Guid, (string Revision, DateTime At)> _revisions = new();
+        private readonly Helpers.UserAccessCache<Guid, string> _revisions = new(RevisionTtl, 1000);
         private readonly ConcurrentDictionary<Guid, long> _epochs;
         private readonly string? _epochFile;
         private readonly object _epochWrite = new();
@@ -218,6 +218,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
+        /// <see cref="Physical(User, bool, int, int?, bool)"/> asked under every id the caller knows the title by (TMDB,
+        /// TVDB, IMDb: the list import's physical-title projection, review round 2), with this policy's viewer revision.
+        /// </summary>
+        /// <param name="viewer">The effective viewer.</param>
+        /// <param name="movie">Movie (else series).</param>
+        /// <param name="keys">Every key of the title.</param>
+        /// <param name="season">The season whose hidden episodes are wanted, or null.</param>
+        /// <returns>The physical title (hidden when the library can't be read).</returns>
+        public PhysicalTitle Physical(User viewer, bool movie, IReadOnlyCollection<TitleKey> keys, int? season)
+        {
+            if (_physical == null) return PhysicalTitle.None;
+            try
+            {
+                return _physical.Read(viewer, Revision(viewer), movie, keys, season);
+            }
+            catch (Exception)
+            {
+                return new PhysicalTitle { Hidden = true };
+            }
+        }
+
+        /// <summary>The library reader's <see cref="NativeDetailsLibrary.HoldsCopiesWithout"/> (true when it can't be asked).</summary>
+        /// <param name="movie">Movies (else series).</param>
+        /// <param name="providers">Providers of the ids at hand.</param>
+        /// <returns>True when copies exist that none of those ids can find.</returns>
+        public bool HoldsCopiesWithout(bool movie, IReadOnlyCollection<string> providers)
+        {
+            if (_physical == null) return false;
+            try
+            {
+                return _physical.HoldsCopiesWithout(movie, providers);
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        /// <summary>
         /// The viewer-level part of <see cref="MaySeeAsync"/>, the same for every title: the feature is on,
         /// the viewer is enabled, Seerr is configured and (Seerr mode) the viewer is linked and not
         /// import-blocked. Artwork requests re-run it, since grants outlive the page that minted them.
@@ -268,7 +307,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         {
             if (userId == Guid.Empty) return;
             _epochs.AddOrUpdate(userId, 1, (_, epoch) => epoch + 1);
-            _revisions.TryRemove(userId, out _);
+            // Also ends a revision being computed right now (it may have read the epoch before this).
+            _revisions.Invalidate(userId);
             if (!SaveEpochs())
             {
                 // The sign-out isn't on disk: a restart would read the epochs from before it. Remove the
@@ -481,7 +521,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         }
 
         /// <summary>
-        /// The viewer's policy revision: parental limit and tag rules, library access, the feature
+        /// The viewer's policy revision: parental limit and tag rules, library access, every other
+        /// access-deciding fact of the viewer (<see cref="Helpers.UserAuthority.Fingerprint"/>), the feature
         /// switch, Seerr configuration, the request mode, the viewer's import block and their session
         /// epoch (<see cref="Revoke"/>) with the epochs' generation. Artwork grants
         /// carry it; any change ends the grants minted before. (Seerr linkage and per-title request
@@ -491,7 +532,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <returns>An opaque revision string.</returns>
         public string Revision(User viewer)
         {
-            if (_revisions.TryGetValue(viewer.Id, out var hit) && DateTime.UtcNow - hit.At < RevisionTtl) return hit.Revision;
+            // The memo is keyed by the viewer as just read (every access-deciding fact, Helpers.UserAuthorityFields)
+            // and the person's own Jellyfin user version: a change made a moment ago (10.11 saves a policy with no
+            // event) ends the grants on the next request, not when the memo expires.
+            var ticket = _revisions.Begin(viewer);
+            if (_revisions.TryGet(viewer.Id, ticket.Authority, out var hit)) return hit;
+            var authority = ticket.Authority;
+
             var config = JellyfinEnhanced.Instance?.Configuration;
             var text = JsonSerializer.Serialize(SeerrParentalFilter.PolicyFor(viewer))
                 + "|" + viewer.HasPermission(PermissionKind.EnableAllFolders)
@@ -502,10 +549,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                 + "|" + (config != null && SeerrConfigured(config))
                 + "|" + (config != null && JeMode(config)) + "|" + (config != null && RequestsOn(config))
                 + "|" + (config != null && ImportBlocked(config, viewer))
-                + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture);
+                + "|" + _generation + "." + _epochs.GetValueOrDefault(viewer.Id).ToString(CultureInfo.InvariantCulture)
+                // Any other access-deciding change ends the grants too.
+                + "|" + authority;
             var revision = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).Substring(0, 16);
-            if (_revisions.Count > 1000) _revisions.Clear();
-            _revisions[viewer.Id] = (revision, DateTime.UtcNow);
+            _revisions.Set(viewer.Id, ticket, revision);
             return revision;
         }
 

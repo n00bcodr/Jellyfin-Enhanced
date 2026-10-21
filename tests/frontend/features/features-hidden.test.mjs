@@ -1,13 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness,deferred} from '../helpers/harness.mjs';
+// Hidden Content keeps its document in the settings store (config.js): every change is an operation the server answers.
+const patching=ajax=>async request=>request.type==='PATCH'?{success:true}:ajax(request);
 function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
  let epoch=0; const handlers=new Map();const frames=[];
- const h=createHarness({html,apiClient:{ajax},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
+ const h=createHarness({html,apiClient:{ajax:patching(ajax)},globals:{requestAnimationFrame:fn=>frames.push(fn)},JE:{userConfig:{hiddenContent:{items,settings}},session:{getEpoch:()=>epoch,isCurrent:e=>e===epoch,onUserChange:(key,fn)=>handlers.set(key,fn)}}});
  t.after(()=>h.close());
- h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
- return {...h,api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
+ return {...h,get NATIVE(){return h.NATIVE;},api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
 }
 for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','preference','timer','switch'])
  test(`native ${type} provider hide respects ${mode} before persistence`,async t=>{
@@ -21,7 +23,7 @@ for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','p
   if(mode==='timer') h.window.localStorage.setItem('je_hide_confirm_suppressed_until:anonymous',new Date(Date.now()+60000).toISOString());
   h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
   const card=h.document.querySelector('.card');const button=card.querySelector('.je-hide-btn');assert.ok(button);
-  await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+  await h.viewerPress(button);
   const dialog=h.document.querySelector('.je-hide-confirm-overlay');
   if(mode==='confirm'||mode==='cancel'||mode==='switch'){
    assert.ok(dialog,'confirmation opens');assert.equal(writes.length,0,'no persistence before confirmation');
@@ -40,7 +42,7 @@ for (const type of ['Movie','Series']) test(`ID-only native ${type} retains its 
  h.JE.t=k=>k;h.window.ApiClient.getItem=async()=>({Type:type,ProviderIds:{Tmdb:'42'}});
  h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  h.api.addLibraryHideButtons();const card=h.document.querySelector('.card');
- await card.querySelector('.je-hide-btn').onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ await h.viewerPress(card.querySelector('.je-hide-btn'));
  h.api.refreshNativeCardVisibility();h.flush();
  assert.equal(card.classList.contains('je-hidden'),true,'a later filter paint must know the deliberately resolved provider');
  assert.equal(card.dataset.tmdbId,'42');
@@ -112,13 +114,32 @@ test('absent title cards save only typed provider identity and report failed sav
  t.after(()=>h.close());h.load('enhanced/hiddencontent/hidden-content-data.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();Object.assign(api,{refreshNativeCardVisibility:()=>{},showUndoToast:()=>{}});
  const btn=api.buildTitleControl({itemId:SYN,name:'Absent'});h.document.body.appendChild(btn);
- await btn.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ await h.viewerPress(btn);
  assert.deepEqual(Object.keys(api.getHiddenData().items),['movie:tmdb:42']);
  assert.equal(JSON.parse(writes[0].data).itemId,'');assert.equal(JSON.stringify(writes).includes(SYN),false);
  assert.equal(btn.getAttribute('aria-label'),'hidden_content_unhide');
  await api.unhideItem('movie:tmdb:42');assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
- fail=true;await btn.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ fail=true;await h.viewerPress(btn);
  assert.deepEqual(Object.keys(api.getHiddenData().items),[]);assert.equal(btn.textContent,'hidden_content_save_failed_persistent');
+test('titles that are not in the library (native details synthetic ids) never become Hidden Content rules',async t=>{
+ const SYN='4a45ad11000a938e00000000f9c67720',REAL='0123456789abcdef0123456789abcdef';
+ const html=`<div class="card" data-id="${SYN}" data-type="Movie"><div class="cardBox"></div></div><div class="card" data-id="${REAL}" data-type="Movie"><div class="cardBox"></div></div>`;
+ let saves=0;
+ const h=createHarness({html,apiClient:{ajax:async request=>{if(request.type==='PATCH')saves++;return {Items:[]};}},globals:{requestAnimationFrame:fn=>fn()},JE:{t:k=>k,titleDetails:{isSynthetic:id=>String(id).replace(/-/g,'').toLowerCase()===SYN},userConfig:{hiddenContent:{items:{},settings:{enabled:true,showHideButtons:true,showButtonLibrary:true}}}}});
+ t.after(()=>h.close());
+ h.load('core/mutation-queue.js'); h.load('enhanced/config.js');h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-save.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
+ const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
+ Object.assign(api,{showUndoToast:()=>{}});
+ api.addLibraryHideButtons();
+ assert.equal(h.document.querySelector(`[data-id="${SYN}"] .je-hide-btn`),null);
+ assert.ok(h.document.querySelector(`[data-id="${REAL}"] .je-hide-btn`));
+ api.hideItem({itemId:SYN,name:'Dune: Part Two',type:'Movie'});
+ api.hideItem({itemId:'',tmdbId:1,seriesId:SYN,name:'Episode',type:'Episode'});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
+ assert.equal(saves,0);
+ api.hideItem({itemId:REAL,name:'Real',type:'Movie'});
+ assert.deepEqual(Object.keys(api.getHiddenData().items),[REAL]);
+ await new Promise(r=>setTimeout(r,0));assert.equal(saves,1,'one item operation for the real title');
 });
 test('the hidden content page takes over when Jellyfin answers its own #/hidden-content route with another page',t=>{
  const h=createHarness({html:'<div class="mainAnimatedPages"><div id="home" class="mainAnimatedPage">home</div></div>',JE:{t:k=>k,pluginConfig:{HiddenContentEnabled:true},hiddenContent:{},helpers:{onSidebarRebuilt:()=>()=>{}}}});
@@ -161,11 +182,11 @@ test('a shared card control evaluates its mounted surface and preserves that fil
  h.JE.t=k=>k;Object.assign(h.api,{showUndoToast:()=>{}});
  const root=h.document.querySelector('.jellyseerr-card');
  const button=h.api.buildTitleControl({mediaType:'movie',tmdbId:42,name:'Film'},{surface:()=> 'discovery'});root.appendChild(button);
- await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),true);
  await h.api.unhideItem('movie:tmdb:42');h.flush();
  h.api.getHiddenData().settings.filterDiscovery=false;
- await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),false);
 });
 
@@ -184,7 +205,7 @@ for (const library of [true,false]) test(`native recommendation cards use their 
  assert.equal(card.classList.contains('je-hidden'),!library,'scheduled detail rescans use each card surface');
  h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
  Object.assign(h.api,{showUndoToast:()=>{}});await h.api.unhideItem('movie:tmdb:42');h.flush();
- await card.querySelector('.je-hide-btn').onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(card.querySelector('.je-hide-btn'));h.flush();
  assert.equal(card.classList.contains('je-hidden'),!library);
 });
 test('failed provider Undo keeps translated failure and retry control until confirmed',async t=>{
@@ -200,7 +221,7 @@ test('bulk save and atomic rule share acknowledgement ordering',async t=>{
  const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:put.promise;}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  h.api.debouncedSave();const saving=h.api.flushPendingSave();await new Promise(r=>setImmediate(r));
- const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);await new Promise(r=>setImmediate(r));
+ const hiding=h.api.saveTitleRule({mediaType:'movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
  assert.equal(requests.filter(o=>o.type==='PUT').length,0,'rule must wait for pending bulk persistence');
  bulk.resolve({success:true});await saving;await new Promise(r=>setImmediate(r));
  assert.equal(requests.filter(o=>o.type==='PUT').length,1);put.resolve({success:true});assert.equal(await hiding,true);
@@ -210,7 +231,7 @@ test('bulk save and atomic rule share acknowledgement ordering',async t=>{
 test('atomic acknowledgement refreshes its full rule base without losing newer local edits',async t=>{
  const put=deferred(),requests=[];const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='PUT'?put.promise:Promise.resolve({success:true,revision:'bulk'});}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);await new Promise(r=>setImmediate(r));
+ const hiding=h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);await new Promise(r=>setImmediate(r));
  h.api.getHiddenData().items.local={itemId:'local',type:'Movie'};
  put.resolve({success:true,revision:'rules',items:{'movie:tmdb:42':{type:'Movie',tmdbId:'42'},'tv:tmdb:51':{type:'Series',tmdbId:'51'}}});await hiding;
  assert.equal(h.api.isHiddenByTmdbId(51,'tv'),true,'another tab rule accompanies the new base revision');
@@ -231,7 +252,7 @@ test('atomic write flushes edits made before its debounce starts, including remo
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  await h.api.unhideItem('native');
  h.api.getHiddenData().items.added={itemId:'added'};h.api.debouncedSave();
- await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.JE.NATIVE);
+ await h.api.saveTitleRule({type:'Movie',tmdbId:42,name:'Film'},true, h.NATIVE);
  assert.deepEqual(requests.map(o=>o.type),['POST','PUT']);
  assert.equal(h.api.getHiddenData().items.native,undefined);
  assert.ok(h.api.getHiddenData().items.added);assert.ok(server.added);assert.equal(server.native,undefined);
@@ -244,8 +265,8 @@ test('same-title atomic writes cannot overtake a pending flush and deadlock the 
  const h=setup(t,{ajax:o=>{requests.push(o);return o.type==='POST'?bulk.promise:Promise.resolve({success:true});}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
  h.api.debouncedSave();
- const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE);
- const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false, h.JE.NATIVE);
+ const first=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
+ const second=h.api.saveTitleRule({type:'Movie',tmdbId:42},false, h.NATIVE);
  await new Promise(r=>setImmediate(r));bulk.resolve({success:true});
  await Promise.race([Promise.all([first,second]),new Promise((_,reject)=>setTimeout(()=>reject(new Error('persistence queue deadlocked')),500))]);
  assert.deepEqual(requests.map(o=>o.type),['POST','PUT','DELETE']);assert.equal(h.api.isHiddenByTmdbId(42,'movie'),false);
@@ -260,7 +281,7 @@ test('edits made while a pending bulk flush awaits are saved before the atomic b
   return {revision:String(requests.length),items:JSON.parse(JSON.stringify(server))};
  }});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE);
+ h.api.debouncedSave();const pending=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE);
  await new Promise(r=>setImmediate(r));h.api.getHiddenData().items.late={itemId:'late'};h.api.debouncedSave();first.resolve();
  await pending;assert.ok(h.api.getHiddenData().items.late);assert.ok(server.late);
  assert.deepEqual(requests.map(o=>o.type),['POST','POST','PUT']);
@@ -279,7 +300,7 @@ for(const churn of [false,true]) test(`bounded flush ${churn?'refuses continuing
  const gates=[deferred(),deferred(),deferred()],requests=[];
  const h=setup(t,{ajax:async o=>{requests.push(o);if(o.type==='POST')await gates[requests.filter(x=>x.type==='POST').length-1].promise;return {success:true};}});
  h.JE.t=k=>k;h.load('enhanced/hiddencontent/hidden-content-save.js');Object.assign(h.api,{showUndoToast:()=>{}});
- h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.JE.NATIVE).then(value=>({value}),error=>({error}));
+ h.api.debouncedSave();const outcome=h.api.saveTitleRule({type:'Movie',tmdbId:42},true, h.NATIVE).then(value=>({value}),error=>({error}));
  for(let i=0;i<3;i++){
   await new Promise(r=>setImmediate(r));
   if(i<2||churn){h.api.getHiddenData().items['late'+i]={itemId:'late'+i};h.api.debouncedSave();}

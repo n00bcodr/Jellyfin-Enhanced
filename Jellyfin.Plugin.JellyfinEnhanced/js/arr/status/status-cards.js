@@ -562,9 +562,35 @@
         setTimeout(scan, 400);
     }
 
+    /**
+     * The person's access moved (core/access-revision.js: a library taken away, a parental limit changed): every status
+     * and badge kept here was worked out for the old access. The same person is still signed in, so nothing is torn
+     * down: every read running now is fenced (its answer is refused when it lands), every kept answer is dropped, and
+     * the cards on the page are read again; each badge stays as it is until its new answer paints over it (an unchanged
+     * one isn't touched, one the new access hides is removed then).
+     * @returns {void}
+     */
+    function onAccessRevision() {
+        if (!started) return;
+        JE.arrStatus.invalidateResponses();
+        // Fenced above: their answers are refused, so their ids may be asked for again now.
+        inFlight.clear();
+        const onPage = idsOnPage();
+        for (const id of new Set([...cache.keys(), ...stale.keys(), ...retryIds])) {
+            forget(id);
+            if (onPage.has(id)) queued.add(id);
+        }
+        retryIds.clear();
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+        failures = 0;
+        prune(onPage);
+        if (queued.size && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
+    }
+
     JE.session?.onUserChange?.('arr-status-cards', clearAll);
+    document.addEventListener('je-access-revision', onAccessRevision);
 
     JE.internals = JE.internals || {};
-    JE.internals.arrStatusCards = { scan, flush, paint, refreshKeys, prune, badgeCorner, reset, onUserData, cache, idsByKey };
+    JE.internals.arrStatusCards = { scan, flush, paint, refreshKeys, prune, badgeCorner, reset, onUserData, onAccessRevision, cache, idsByKey };
     JE.initializeArrStatusCards = initialize;
 })(window.JellyfinEnhanced);

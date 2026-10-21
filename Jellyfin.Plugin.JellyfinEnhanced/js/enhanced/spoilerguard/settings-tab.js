@@ -102,7 +102,10 @@
         }
         internal.bindStateView?.(ctx.help, sync);
 
-        async function save(changed, previousChecked) {
+        async function save(changed, previousChecked, event) {
+            // The settings tab's own control: the change's owner (the viewer's own gesture), taken at the change, as the
+            // write follows awaits (D46S2-R10-1).
+            const native = event ? JE.ownerOf(event) : null;
             if (!action.current()) {
                 changed.checked = previousChecked;
                 setDisabled(true);
@@ -114,10 +117,10 @@
                 await internal.whenLoaded();
                 if (!action.current()) return;
                 if (!internal.isLoadOk()) throw new Error('Initial Spoiler Guard load failed; refusing to overwrite preferences.');
-                const prefs = internal.getUserPrefs();
+                // Only this override: the others are as the server holds them (or will, once their saves are answered).
                 const key = changed.dataset.pref;
                 prefs[key] = key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false);
-                await internal.setUserPrefs(prefs, JE.NATIVE);
+                await internal.setUserPrefs(prefs, native);
             } catch (e) {
                 if (!action.current()) return;
                 console.error(`${logPrefix} preference save failed:`, e);
@@ -132,8 +135,8 @@
         }
 
         boxes.forEach(function(box) {
-            box.addEventListener('change', function() {
-                void save(box, !box.checked);
+            box.addEventListener('change', function(event) {
+                void save(box, !box.checked, event);
                 ctx.resetAutoCloseTimer();
             });
         });

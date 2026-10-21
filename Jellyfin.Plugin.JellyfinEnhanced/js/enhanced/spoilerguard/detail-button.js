@@ -36,8 +36,13 @@
     }
     const stateName = enabled => enabled === null ? 'unknown' : enabled ? 'on' : 'off';
 
+    /**
+     * Writes the toggle for `owner` (the press's). Its page effects (toast, the page's reviews, the reload) happen only
+     * for a write that was sent, while `owner` is still current, and on the page it was pressed on (D46S2 audit S3);
+     * the button shows the state whatever happened.
+     */
     function performToggle(button, itemId, kind, page, enable, owner) {
-        const action = JE.createSessionAction();
+        const action = JE.createSessionAction({ owner });
         let displayName = '';
         if ((kind === 'movie' || kind === 'collection') && page) {
             try {
@@ -53,11 +58,11 @@
         else if (kind === 'collection') operation = enable ? internal.enableForCollection(itemId, displayName, owner) : internal.disableForCollection(itemId, owner);
         else operation = enable ? internal.enableForSeries(itemId, owner) : internal.disableForSeries(itemId, owner);
 
-        operation.then(function() {
-            if (!action.current()) return;
+        operation.then(function(result) {
             const enabled = stateOf(kind, itemId);
             renderButton(button, enabled);
             button.setAttribute('data-je-spoiler-state', stateName(enabled));
+            if (result === internal.UNSENT || !action.current() || !page?.isConnected) return;
             // Keep separate per-kind keys so translators can tailor the
             // wording later; all enabled messages are deliberately
             // mode-neutral because images may be hidden or blurred.
@@ -76,8 +81,8 @@
             try {
                 if (enable && JE.pluginConfig?.SpoilerStripReviews !== false
                     && internal.getUserPrefs().HideReviews !== false) {
-                    const reviews = document.querySelector('#itemDetailPage:not(.hide) .tmdb-reviews-section')
-                        || document.querySelector('.tmdb-reviews-section');
+                    // The reviews of the page it was pressed on, never whatever page is current by then.
+                    const reviews = page.querySelector('.tmdb-reviews-section');
                     reviews?.parentNode?.removeChild(reviews);
                 }
             } catch (e) {

@@ -169,7 +169,7 @@ function setup(t, { config = {}, prefs = {}, views, summaries, preview, submit, 
   };
   /** Starts the pages (the delayed first look, at once). */
   const start = async () => { h.JE.arrListPages.settingsChanged(); await settle(); };
-  return { ...h, calls, toasts, state, show, showNow, settle, start, playlistPage, collectionPage, order, bodySubs, userChange, viewHooks, spy };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, toasts, state, show, showNow, settle, start, playlistPage, collectionPage, order, bodySubs, userChange, viewHooks, spy };
 }
 
 const PLAYLIST_ITEM = { Id: LIST, Type: 'Playlist' };
@@ -341,8 +341,8 @@ test('leaving the page pauses it (no reads, timers or status subscriptions); Bac
   await h.start();
   const { page, container } = h.playlistPage([]);
   await h.show(page);
-  container.querySelectorAll('.je-list-row-main')[1].click();
-  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ key: 'tv:tvdb:5', options: { mediaType: 'tv', tmdbId: 55, season: 2, episode: 3 } }]);
+  h.trusted(container.querySelectorAll('.je-list-row-main')[1], new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ key: 'tv:tvdb:5', options: { mediaType: 'tv', tmdbId: 55, season: 2, episode: 3, owner: { owner: 'native' } } }]);
   const other = h.document.createElement('div');
   other.className = 'page itemDetailPage';
   h.document.body.appendChild(other);
@@ -431,7 +431,7 @@ test('Request uses the list preview and the shared sheet in its fixed mode, and 
   await h.show(page);
   const buttons = container.querySelectorAll('.je-list-request');
   assert.equal(buttons.length, 1, 'only an askable entry the server offers Request on gets the button');
-  buttons[0].click();
+  h.trusted(buttons[0], new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle(60);
   const sheet = h.document.querySelector('.je-sheet');
   assert.ok(sheet, 'the shared sheet opened');
@@ -464,7 +464,7 @@ test('a season entry asks for exactly that season: the sheet shows its scope, no
   await h.start();
   const { page, container } = h.playlistPage([]);
   await h.show(page);
-  container.querySelector('.je-list-request').click();
+  h.trusted(container.querySelector('.je-list-request'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle(60);
   const sheet = h.document.querySelector('.je-sheet');
   assert.ok(sheet);
@@ -560,6 +560,36 @@ test('the collection section follows the server order (release date, TBA last), 
   await h.settle();
   assert.equal(await h.JE.arrListPages.coveredKeys(COLL), null);
   assert.equal(page.querySelector('.je-list-section'), null, 'and the section went at once');
+});
+
+test('a moved access revision reads each list count again in place: a mark stays until its new answer, and goes only if the answer says so', async t => {
+  const ids = [ITEM(0x2000), ITEM(0x2001)];
+  let restricted = false;
+  let asked = 0;
+  const h = setup(t, {
+    views: () => [null, 404],
+    summaries: () => { asked++; return [{ lists: ids.map((listId, i) => ({ listId, listKind: 'playlist', missing: restricted && i === 1 ? 0 : 3 })), pending: [] }]; }
+  });
+  const grid = h.document.createElement('div');
+  grid.className = 'page libraryPage';
+  grid.innerHTML = '<div class="itemsContainer vertical-wrap">' + ids.map(id => `<div class="card" data-id="${id}" data-type="Playlist"><div class="cardImageContainer"><div class="cardIndicators"></div></div></div>`).join('') + '</div>';
+  h.document.body.appendChild(grid);
+  h.window.location.hash = '#/list?parentId=x';
+  await h.start();
+  for (let i = 0; i < 100 && grid.querySelectorAll('.je-list-grid-indicator').length < 2; i++) await sleep(20);
+  const [first, second] = [...grid.querySelectorAll('.je-list-grid-indicator')];
+  assert.ok(first && second);
+  const removed = [];
+  new h.window.MutationObserver(records => records.forEach(r => r.removedNodes.forEach(n => removed.push(n)))).observe(grid, { subtree: true, childList: true });
+  restricted = true;
+  h.document.dispatchEvent(new h.window.CustomEvent('je-access-revision', { detail: { before: 'a1', revision: 'a2' } }));
+  assert.ok(first.isConnected && second.isConnected, 'the marks stay while their counts are read again');
+  for (let i = 0; i < 100 && asked < 2; i++) await sleep(20);
+  await h.settle(100);
+  assert.equal(asked, 2, 'the counts are read again');
+  assert.equal(grid.querySelector(`.card[data-id="${ids[0]}"] .je-list-grid-indicator`), first, 'an unchanged mark is the same element');
+  assert.equal(removed.filter(n => n === first).length, 0);
+  assert.equal(grid.querySelector(`.card[data-id="${ids[1]}"] .je-list-grid-indicator`), null, 'a count the new access changes goes');
 });
 
 test('the Playlists grid asks about 170 cards in two calls (the first cards first), marks incomplete lists instead of the played check, and re-decorates a re-used card', async t => {
@@ -1294,7 +1324,7 @@ for (const loader of ['me', 'quota', 'check']) test(`r3 B1: revoke while sheet $
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
-  const pending = h.JE.internals.arrListPages.request.open({ listId: LIST, ticket: () => [...h.JE.internals.arrListPages.pages.controllers].find(c => c.page === page).ticket }, entry, container.querySelector('.je-list-request'));
+  const pending = h.JE.internals.arrListPages.request.open({ listId: LIST, ticket: () => [...h.JE.internals.arrListPages.pages.controllers].find(c => c.page === page).ticket }, entry, container.querySelector('.je-list-request'), h.NATIVE);
   await h.settle();
   assert.equal(loading, true);
   h.showNow(page, '#/home');
@@ -1317,7 +1347,7 @@ test('r3 B1: revoke closes an active sheet and a late send paints nothing', asyn
   await h.start();
   const { page, container } = h.playlistPage();
   await h.show(page);
-  container.querySelector('.je-list-request').click();
+  h.trusted(container.querySelector('.je-list-request'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   await h.settle();
   assert.ok(h.document.querySelector('.je-sheet-primary'));
   h.document.querySelector('.je-sheet-primary').click();
@@ -1395,7 +1425,7 @@ test('r3 S2: the spy sees delayed list-sheet writes with no list stack frame (pl
   } });
   const gate = h.JE.internals.arrListPages.gate;
   const ticket = gate.issue(LIST, () => true, gate.policy(() => false, false));
-  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { operation: h.JE.NATIVE, listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
+  const opening = h.JE.arrAskSheet.open({ key: 'movie:tmdb:100', kind: 'movie', name: 'Probe' }, { operation: h.NATIVE, listTicket: ticket, fixed: { scope: 'Movie', input: {}, send: async () => null } });
   await h.settle();
   const writes = h.spy.take();
   assert.ok(writes.some(w => /ask-sheet\.js/.test(w.frame) && w.scope === 'none'), JSON.stringify(writes.slice(0, 2)));
@@ -1433,7 +1463,7 @@ for (const collection of [false, true]) for (const status of [403, 404]) for (co
     const ctrl = [...lp.pages.controllers].find(c => c.page === page);
     const ticket = ctrl.ticket;
     let ended = false;
-    const pending = lp.request.open({ listId: id, ticket: () => ctrl.ticket }, entry, page.querySelector('.je-list-request')).then(() => { ended = true; });
+    const pending = lp.request.open({ listId: id, ticket: () => ctrl.ticket }, entry, page.querySelector('.je-list-request'), h.NATIVE).then(() => { ended = true; });
     await h.settle();
     if (active) assert.ok(h.document.querySelector('.je-sheet-backdrop'));
     else assert.equal(loading, true, 'the real quota loader is held');
@@ -1460,3 +1490,339 @@ for (const collection of [false, true]) for (const status of [403, 404]) for (co
     assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 1);
   });
 }
+
+// A Request press's in-flight state belongs to the page show that made it. jellyfin-web keeps a left page and shows the
+// same rows on Back, so B presses the very button A disabled, while A's preview may still be on its way.
+const ASKABLE = id => [{ items: [{ placeholderId: id, title: 'x', outcome: 'request', reason: 'looking', cost: 1 }], askable: 1, cost: 1, maxBatch: 20 }];
+const SKIPPED = id => [{ items: [{ placeholderId: id, outcome: 'skip', reason: 'custom' }] }];
+/** How A's held preview ends after B pressed: each would draw something (a sheet, a toast, a refresh) if it were current. */
+const LATE = {
+  askable: (d, id) => d.resolve(ASKABLE(id)),
+  skip: (d, id) => d.resolve(SKIPPED(id)),
+  changed: d => d.resolve([{ error: true, code: 'changed' }, 409]),
+  network: d => d.reject(new TypeError('network'))
+};
+
+/** A list page with one requestable entry whose previews are held until the test answers them. */
+async function heldRequestPage(t, collection) {
+  const previews = [];
+  // Before the harness closes (hooks run in order): what is still held answers, and its cleanup runs.
+  t.after(async () => { previews.forEach(d => d.resolve(SKIPPED(P(1)))); await sleep(20); });
+  const id = collection ? COLL : LIST;
+  const entry = ph(P(1), { actions: ['request'] });
+  const body = view([entry], [entry.token], { listId: id, listKind: collection ? 'collection' : 'playlist', actions: ['request'] });
+  const h = setup(t, {
+    views: () => [body],
+    items: { [id]: { Id: id, Type: collection ? 'BoxSet' : 'Playlist' } },
+    preview: () => { const d = deferred(); previews.push(d); return d.promise; }
+  });
+  await h.start();
+  const page = collection ? h.collectionPage() : h.playlistPage().page;
+  const hash = '#/details?id=' + id;
+  await h.show(page, hash);
+  const other = h.document.createElement('div');
+  other.className = 'page itemDetailPage';
+  h.document.body.appendChild(other);
+  const lp = h.JE.internals.arrListPages;
+  return {
+    h, lp, id, entry, page, previews,
+    ctrl: () => [...lp.pages.controllers].find(c => c.page === page),
+    button: () => page.querySelector('.je-list-request'),
+    away: async () => { page.classList.add('hide'); other.classList.remove('hide'); await h.show(other, '#/details?id=' + 'e'.repeat(32)); },
+    back: async () => { other.classList.add('hide'); page.classList.remove('hide'); await h.show(page, hash); }
+  };
+}
+
+for (const collection of [false, true]) for (const [late, end] of Object.entries(LATE)) {
+  test(`LIST-REQ-INFLIGHT-1: ${collection ? 'collection' : 'playlist'} Request after away-and-back is B's own press; A's late preview (${late}) draws nothing and leaves B alone`, async t => {
+    const r = await heldRequestPage(t, collection);
+    const { h, lp } = r;
+    const a = r.button();
+    a.click();
+    await h.settle();
+    assert.equal(r.previews.length, 1, "A's preview is asked for");
+    assert.equal(a.disabled, true, "A's press takes the button while it prepares");
+    await r.away();
+    assert.equal(a.disabled, false, "leaving the page gives A's button back (A's page show is over)");
+    await r.back();
+    assert.equal(r.button(), a, 'Back shows the page jellyfin-web kept: the same row and button');
+    const toasts = h.toasts.length;
+    r.button().click();
+    await h.settle();
+    assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
+    assert.equal(a.disabled, true, "B's press takes the button");
+    end(r.previews[0], r.entry.id);
+    await h.settle(60);
+    assert.equal(h.toasts.length, toasts, "A's late answer shows no toast: " + h.toasts.join(' / '));
+    assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, "A's late answer opens no sheet");
+    assert.equal(a.disabled, true, "A's cleanup never gives back the button B holds");
+    const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+    await h.settle();
+    assert.equal(r.previews.length, 2, "A's cleanup left B's in-flight entry in place: a second press on B's page show sends nothing");
+    assert.equal(await again, null);
+    r.previews[1].resolve(ASKABLE(r.entry.id));
+    await h.settle(60);
+    assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
+    assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
+    h.document.querySelector('.je-sheet-secondary').click();
+    await h.settle();
+  });
+}
+
+for (const revoked of [true, false]) test(`LIST-REQ-INFLIGHT-1: a press from a later page show is never joined to an older one (A's ticket ${revoked ? 'revoked' : 'out of scope, not revoked'})`, async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  let pageA = true;
+  const ticketA = lp.gate.issue(r.id, () => pageA, lp.gate.policy(() => false, false));
+  const pressA = lp.request.open({ listId: r.id, ticket: () => ticketA }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 1);
+  pageA = false;
+  if (revoked) ticketA.revoke();
+  const ticketB = lp.gate.issue(r.id, () => true, lp.gate.policy(() => false, false));
+  const pressB = lp.request.open({ listId: r.id, ticket: () => ticketB }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, "B's press was joined to A's old work (in-flight keyed by list and entry only)");
+  const toasts = h.toasts.length;
+  r.previews[0].resolve(SKIPPED(r.entry.id));
+  assert.equal(await pressA, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts, 'A draws nothing');
+  const again = lp.request.open({ listId: r.id, ticket: () => ticketB }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, "A's cleanup removed only its own entry: B's second press still does nothing");
+  assert.equal(await again, null);
+  r.previews[1].resolve(SKIPPED(r.entry.id));
+  assert.equal(await pressB, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts + 1, "B's own answer is shown");
+});
+
+test('LIST-REQ-INFLIGHT-1 control: on one page show a second press (tap or call) sends one preview and opens one sheet', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  const a = r.button();
+  a.click();
+  a.click();
+  const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+  await h.settle();
+  assert.equal(r.previews.length, 1, 'one preview for one page show');
+  assert.equal(await again, null);
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1);
+  assert.equal(r.previews.length, 1);
+  h.document.querySelector('.je-sheet-secondary').click();
+  await h.settle();
+});
+
+test('LIST-REQ-INFLIGHT-1: a person switch frees every press; the next person\'s press on the entry is its own and the old one draws nothing', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h, lp } = r;
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 1);
+  h.state.epoch++;
+  h.userChange.forEach(fn => fn());
+  await h.settle();
+  const ticket = lp.gate.issue(r.id, () => true, lp.gate.policy(() => false, false));
+  const press = lp.request.open({ listId: r.id, ticket: () => ticket }, r.entry, null);
+  await h.settle();
+  assert.equal(r.previews.length, 2, 'the next person starts their own preview');
+  const toasts = h.toasts.length;
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.toasts.length, toasts);
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null);
+  r.previews[1].resolve(SKIPPED(r.entry.id));
+  assert.equal(await press, null);
+  await h.settle();
+  assert.equal(h.toasts.length, toasts + 1);
+});
+
+test('LIST-REQ-INFLIGHT-1 audit: the Playlists grid left and shown again while its summary is in flight marks the new cards once it answers (one call)', async t => {
+  const held = deferred();
+  t.after(async () => { held.resolve([{ lists: [], pending: [] }]); await sleep(20); });
+  let count = 0;
+  const h = setup(t, { realBody: true, views: () => [null, 404], summaries: () => { count++; return held.promise; } });
+  const cardHtml = `<div class="card squareCard card-withuserdata" data-id="${LIST}" data-type="Playlist"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer itemAction"><div class="cardIndicators"><div class="playedIndicator indicator"></div></div></a></div></div></div>`;
+  const grid = h.document.createElement('div');
+  grid.className = 'page libraryPage';
+  grid.innerHTML = '<div class="itemsContainer vertical-wrap">' + cardHtml + '</div>';
+  h.document.body.appendChild(grid);
+  h.window.location.hash = '#/list?parentId=x';
+  await h.start();
+  await h.settle(300);
+  assert.equal(count, 1, 'the summary is asked for');
+  // Away (jellyfin-web drops the grid's cards) and back (new card elements) while that answer is on its way.
+  grid.querySelector('.itemsContainer').innerHTML = '';
+  await h.settle(60);
+  grid.querySelector('.itemsContainer').innerHTML = cardHtml;
+  await h.settle(300);
+  held.resolve([{ lists: [{ listId: LIST, listKind: 'playlist', missing: 3 }], pending: [] }]);
+  await h.settle(60);
+  const card = grid.querySelector('.card');
+  assert.equal(card.querySelector('.je-list-grid-count')?.textContent, '3', 'the shown card gets the answer');
+  assert.equal(count, 1, 'joined, not asked twice');
+});
+
+// The document's own lifecycle ends a page show too: leaving for another site can put the whole document in the
+// back/forward cache (a persisted pagehide), and the browser's Back restores it as it was (a persisted pageshow) with no
+// view show from jellyfin-web. Every hold of that show ends on the pagehide; the pageshow starts a new show.
+/** A page transition event as the browser fires it (persisted: the document goes to / comes from the bfcache). */
+function transition(h, type, persisted) {
+  const Ctor = h.window.PageTransitionEvent;
+  if (typeof Ctor === 'function') return new Ctor(type, { persisted });
+  const e = new h.window.Event(type);
+  Object.defineProperty(e, 'persisted', { value: persisted });
+  return e;
+}
+/** Leaves the document into the bfcache and restores it (the page stays shown and the route stays the list's). */
+const docLeave = async h => { h.window.dispatchEvent(transition(h, 'pagehide', true)); await h.settle(); };
+const docBack = async h => { h.window.dispatchEvent(transition(h, 'pageshow', true)); await h.settle(); };
+
+for (const collection of [false, true]) for (const [late, end] of Object.entries(LATE)) {
+  test(`LIST-REQ-INFLIGHT-2: ${collection ? 'collection' : 'playlist'} Request after the document left into the bfcache and came back is B's own press; A's late preview (${late}) draws nothing`, async t => {
+    const r = await heldRequestPage(t, collection);
+    const { h, lp } = r;
+    const a = r.button();
+    const ticketA = r.ctrl().ticket;
+    a.click();
+    await h.settle();
+    assert.equal(r.previews.length, 1, "A's preview is asked for");
+    assert.equal(a.disabled, true, "A's press takes the button while it prepares");
+    await docLeave(h);
+    assert.equal(ticketA.current(), false, "the persisted pagehide ends A's page show (its ticket)");
+    assert.equal(a.disabled, false, "the persisted pagehide gives A's button back");
+    const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+    await docBack(h);
+    assert.equal(r.button(), a, 'the restored document is the same page: the same row and button');
+    assert.equal(a.disabled, false, "the restored page's Request is enabled");
+    assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads + 1, 'the persisted pageshow resumes the shown page (it reads its list again)');
+    const ticketB = r.ctrl().ticket;
+    assert.ok(ticketB && ticketB !== ticketA && ticketB.current(), 'the resumed page has a fresh, current ticket');
+    const toasts = h.toasts.length;
+    r.button().click();
+    await h.settle();
+    assert.equal(r.previews.length, 2, "B's press starts its own preview while A's is still held");
+    assert.equal(a.disabled, true, "B's press takes the button");
+    end(r.previews[0], r.entry.id);
+    await h.settle(60);
+    assert.equal(h.toasts.length, toasts, "A's late answer shows no toast: " + h.toasts.join(' / '));
+    assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, "A's late answer opens no sheet on the restored page");
+    assert.equal(a.disabled, true, "A's cleanup never gives back the button B holds");
+    const again = lp.request.open({ listId: r.id, ticket: () => r.ctrl().ticket }, r.entry, a);
+    await h.settle();
+    assert.equal(r.previews.length, 2, "A's cleanup left B's in-flight entry in place");
+    assert.equal(await again, null);
+    r.previews[1].resolve(ASKABLE(r.entry.id));
+    await h.settle(60);
+    assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "B's preview opens B's sheet");
+    assert.equal(a.disabled, false, 'the sheet is open: B gives its button back');
+    h.document.querySelector('.je-sheet-secondary').click();
+    await h.settle();
+  });
+}
+
+for (const collection of [false, true]) test(`LIST-REQ-INFLIGHT-2 lifecycle: a ${collection ? 'collection' : 'playlist'} page's read, refresh timer and status subscription end on a persisted pagehide; the pageshow reads again with a fresh ticket and the late answer of the old read is dropped`, async t => {
+  const id = collection ? COLL : LIST;
+  const first = ph(P(1), { actions: ['request'] });
+  const second = ph(P(2), { actions: ['request'], title: 'Second' });
+  const held = deferred();
+  t.after(async () => { held.resolve(); await sleep(20); });
+  let reads = 0;
+  const body = entries => view(entries, entries.map(e => e.token), { listId: id, listKind: collection ? 'collection' : 'playlist', rev: reads });
+  const h = setup(t, {
+    items: { [id]: { Id: id, Type: collection ? 'BoxSet' : 'Playlist' } },
+    views: async () => {
+      reads++;
+      // The second read (a refresh started on the old show) is held until after the restore, then answers with only
+      // the first entry; the restored show's own read answers with both.
+      if (reads === 2) { await held.promise; return [body([first])]; }
+      return [body(reads === 1 ? [first] : [first, second])];
+    }
+  });
+  await h.start();
+  const page = collection ? h.collectionPage() : h.playlistPage().page;
+  await h.show(page, '#/details?id=' + id);
+  const lp = h.JE.internals.arrListPages;
+  const ctrl = [...lp.pages.controllers].find(c => c.page === page);
+  const ticketA = ctrl.ticket;
+  assert.ok(ticketA?.current());
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 1);
+  ctrl.load();
+  await h.settle();
+  assert.equal(reads, 2, 'a read of the old show is on its way');
+  ctrl.scheduleRefetch(40);
+  await docLeave(h);
+  assert.equal(ticketA.current(), false, "the persisted pagehide ends the page's ticket");
+  assert.equal(ctrl.paused, true, 'the page is paused');
+  assert.equal(ctrl.refetchTimer, null, 'its refresh timer is cleared');
+  assert.equal(ctrl.statusOff, null, 'its status subscription is gone');
+  await sleep(80);
+  assert.equal(reads, 2, 'nothing reads while the document is away');
+  await docBack(h);
+  assert.equal(reads, 3, 'the persisted pageshow reads the list again');
+  const ticketB = ctrl.ticket;
+  assert.ok(ticketB && ticketB !== ticketA && ticketB.current(), 'with a fresh ticket');
+  assert.equal(ctrl.paused, false);
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 2, "the restored show's view is drawn");
+  held.resolve();
+  await h.settle(60);
+  assert.equal(page.querySelectorAll('.je-list-row, .je-list-card').length, 2, "the old show's late answer replaces nothing");
+});
+
+test('LIST-REQ-INFLIGHT-2: a Request sheet open when the document leaves into the bfcache closes with its page show; after the restore Request opens a new one', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const a = r.button();
+  a.click();
+  await h.settle();
+  r.previews[0].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, "A's sheet is open");
+  await docLeave(h);
+  assert.equal(h.document.querySelector('.je-sheet-backdrop'), null, 'the sheet ends with the page show it was opened for');
+  assert.equal(a.disabled, false);
+  await docBack(h);
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 2, "the restored page's press asks again");
+  r.previews[1].resolve(ASKABLE(r.entry.id));
+  await h.settle(60);
+  assert.equal(h.document.querySelectorAll('.je-sheet').length, 1, 'one new sheet');
+  h.document.querySelector('.je-sheet-secondary').click();
+  await h.settle();
+});
+
+test('LIST-REQ-INFLIGHT-2 control: the first load\'s pageshow (not persisted) neither ends nor restarts the shown page', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const ticket = r.ctrl().ticket;
+  const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+  h.window.dispatchEvent(transition(h, 'pageshow', false));
+  await h.settle();
+  assert.equal(r.ctrl().ticket, ticket, 'same ticket');
+  assert.equal(ticket.current(), true);
+  assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
+  r.button().click();
+  await h.settle();
+  assert.equal(r.previews.length, 1, 'Request still works on that show');
+});
+
+test('LIST-REQ-INFLIGHT-2 control: a page element\'s own bubbling pageshow / pagehide (as JE\'s pages dispatch) is not the document\'s lifecycle', async t => {
+  const r = await heldRequestPage(t, false);
+  const { h } = r;
+  const ticket = r.ctrl().ticket;
+  const reads = h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length;
+  for (const type of ['pagehide', 'pageshow']) {
+    const e = new h.window.CustomEvent(type, { bubbles: true, detail: {} });
+    Object.defineProperty(e, 'persisted', { value: true });
+    r.page.dispatchEvent(e);
+  }
+  await h.settle();
+  assert.equal(r.ctrl().paused, false, 'not paused');
+  assert.equal(r.ctrl().ticket, ticket, 'same ticket');
+  assert.equal(ticket.current(), true);
+  assert.equal(h.calls.filter(c => c.path === `/acquire/lists/${r.id}`).length, reads, 'no extra read');
+});

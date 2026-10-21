@@ -488,6 +488,8 @@ JE uses your MDBList account status to track limits, remaining quota, and reset 
 
     Server status is cached for about three minutes, and JE adjusts its cached remaining count after requests. **Check** can test an unsaved key without replacing the saved key's quota cache.
 
+    Every request that counts against the quota (a title's ratings, a batch of the Fetch task, a list read through MDBList's API) takes its request from the remaining count before it is sent, in one step, so requests made at the same time can't both pass the check. Lookups stop at a safety margin of 5 remaining requests, and the Fetch task's batches at the **Fetch Task Reserve**.
+
     Both individual and batch requests stop at a five-request safety margin when status is known. Fetch additionally observes **Fetch Task Reserve** and stops conservatively if account status cannot be read. Individual lookups may proceed when status is unavailable. These checks do not reserve capacity against other applications using the same MDBList account. Consult [MDBList's API documentation](https://docs.mdblist.com/docs/api) for account-plan and short-window limits rather than assuming a fixed allowance.
 
 If no badges appear, check the master/display switches, key status, TMDB metadata, and available source data. If Jellyfin's own fields stay unchanged, check the Sync switch, cached data, chosen sources, and overwrite setting. Failed batches are logged and can be retried on a later Fetch run.
@@ -668,7 +670,7 @@ Warn users during server work, optionally restrict non-admin accounts or remote 
 
 !!! warning "Saving can restrict access immediately"
 
-    The default manual action disables non-admin accounts. Leave both **Action** boxes unchecked for a banner/notification-only window. Administrators are excluded from policy changes. An empty specific-user selection means all eligible non-admin users; **Deselect All** does not mean “affect nobody.”
+    The default manual action disables non-admin accounts. Leave both **Action** boxes unchecked for a banner/notification-only window. Administrators are excluded from policy changes. **Select specific users** needs at least one ticked user: the page refuses to save it with nobody ticked (the server would read an empty selection as every eligible non-admin user), and says so. Choose **All non-admin users** to affect everyone.
 
 ### Settings
 

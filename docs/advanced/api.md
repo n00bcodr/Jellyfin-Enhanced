@@ -169,7 +169,7 @@ Use add/remove for individual bookmarks. Use the document routes to read or repl
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | GET | `user-settings/{userId}/bookmark.json` | Own/admin | No body → bookmark document; missing/unreadable file gives `{"Bookmarks":{}}`. |
-| POST | `user-settings/{userId}/bookmark.json` | Own/admin | Complete document → `{"success":true,"file":"bookmark.json"}`. |
+| POST | `user-settings/{userId}/bookmark.json` | Own/admin | Complete document, with the GET's `ETag` in `If-Match` (see [Revisions](#per-user-settings-files)) → `{"success":true,"file":"bookmark.json"}`; stale → `409 revision_conflict`. |
 | POST | `user-settings/{userId}/bookmark.json/add` | Own/admin | One entry, excluding timestamps → `{"success":true,"id":"Bm_…"}`. |
 | DELETE | `user-settings/{userId}/bookmark.json/{bookmarkId}` | Own/admin | Bookmark dictionary key → `{"success":true,"removed":true}`. |
 
@@ -368,6 +368,12 @@ Use these routes to read or replace a user's saved preferences and state. They p
 
 All use own/admin authorization. GETs are `no-store`; POST replaces the complete document and normally returns `{"success":true,"file":"<filename>"}`. These routes are not an arbitrary file service.
 
+**Revisions.** Every GET of a document answers its revision in the `ETag` header. A POST that replaces a document whole must send that revision back in `If-Match`: the server replaces the document only while it is still that revision (checked under the document's lock), so a client that read an older document (another tab, device or client changed it since) can't put it back. A POST without `If-Match` goes ahead only where nothing can be lost: no document is stored yet, or it sends the document as stored. Otherwise nothing is written and the answer is `409 {"success":false,"code":"revision_conflict","file":"…","revision":"<current>","message":"…"}` (the current revision also in `ETag`): read the document again and make the change to what it holds now. A successful POST answers the new revision in `ETag`. To change part of a document, use its PATCH route (no revision needed: only what it names changes).
+
+A revision counts the writes of that document (`"<incarnation>.<writes>"`); it never comes from the content, so a document changed back, or restored from a backup, has a new revision and a revision read before is refused. Revisions are also spent when the server starts again, when a JE backup is restored and when a person's folder is removed: read again after any of those. `If-Match` takes entity tags as HTTP defines them: quoted (`If-Match: "018f3a2b4c5d.7"`), one or a list (`"a", "b"`: any of them current); a weak tag (`W/"…"`), an unquoted value or `*` names no revision. PATCH answers (and the consent route's) carry the revision they stored in `revision` (and `ETag`); a GET with `?withRevision=true` answers `{"document":…,"revision":"…"}` for clients that can't read headers.
+
+**Recovering from a 409.** Read the document again (GET, which hands out the current revision), apply your change to what it holds now, and send it again with that revision, or send only your change with the document's PATCH route, which needs no revision. A page of an earlier Jellyfin Enhanced (one that was open while JE was updated) is refused the same way; its signed-in session is also shown Jellyfin's own message asking to reload the page.
+
 | Method | Path | Document |
 |---|---|---|
 | GET | `user-settings/{userId}/settings.json` | Enhanced settings |
@@ -381,6 +387,7 @@ All use own/admin authorization. GETs are `no-store`; POST replaces the complete
 | POST | `user-settings/{userId}/ddd-triggers.json` | Replace picked trigger IDs |
 | GET | `user-settings/{userId}/hidden-content.json` | Hidden Content state |
 | POST | `user-settings/{userId}/hidden-content.json` | Replace Hidden Content state |
+| PATCH | `user-settings/{userId}/hidden-content.json` | Change Hidden Content item by item and setting by setting: `{"Upsert":{"<key>":<item>},"Remove":["<key>"],"Set":{"filterSearch":true}}`. Applied under the file lock to the stored document (an item or setting the patch doesn't name stays; a removal also takes the same item stored under another spelling of its id) → `{success,file,document}` (the stored document). The web client uses only this route. |
 | GET | `user-settings/{userId}/spoilerblur.json` | Raw Spoiler Guard state |
 | POST | `user-settings/{userId}/spoilerblur.json` | Replace raw Spoiler Guard state |
 
@@ -402,8 +409,12 @@ It maintains pending-promotion registrations. Its GET is lenient and can return 
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
   "$JE_URL/user-settings/$USER_ID/settings.json"
 
+# Replace Elsewhere preferences whole: send the ETag the GET answered.
+REV=$(curl -s -D - -o /dev/null -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+  "$JE_URL/user-settings/$USER_ID/elsewhere.json" | awk -F': ' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
 curl -X POST "$JE_URL/user-settings/$USER_ID/elsewhere.json" \
   -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
+  -H "If-Match: $REV" \
   -H 'Content-Type: application/json' \
   --data '{"Region":"US","Regions":["US"],"Services":[],"SeasonProviders":true}'
 ```
@@ -912,7 +923,8 @@ Read your protection lists and preferences here. Preference POSTs replace the co
 |---|---|---|---|
 | GET | `spoiler-blur/series` | Caller | Full `{Series,Movies,Collections,PendingTmdb,Prefs}` state; `no-store`. |
 | GET | `spoiler-blur/user-prefs` | Caller | `SpoilerBlurUserPrefs` object. |
-| POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB → `{success:true,prefs:<submitted preferences>}`. |
+| POST | `spoiler-blur/user-prefs` | Caller | Complete preference object, at most 8 KiB, with the GET's `ETag` in `If-Match` (see [Revisions](#per-user-settings-files)) → `{success:true,prefs:<submitted preferences>}`; a stale or missing revision where preferences are stored → `409 revision_conflict`. |
+| PATCH | `spoiler-blur/user-prefs` | Caller | `{"Set":{"HideTags":false}}`: only the named preferences change, under the file lock (another tab's or device's choice stays) → `{success:true,prefs:<stored preferences>}`. The web client uses only this route. |
 
 The four dictionaries default to `{}` and use case-insensitive keys. Library keys are N-format GUIDs. Pending keys are `movie:<tmdbId>` or `tv:<tmdbId>`.
 
@@ -955,9 +967,9 @@ Preference write failures return `503` for corruption or `500` for other failure
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/spoiler-blur/series"
-curl -X POST "$JE_URL/spoiler-blur/user-prefs" \
+curl -X PATCH "$JE_URL/spoiler-blur/user-prefs" \
   -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
-  -H 'Content-Type: application/json' --data '{"HideReviews":false}'
+  -H 'Content-Type: application/json' --data '{"Set":{"HideReviews":false}}'
 ```
 
 ### Enable, disable, and pending protection
@@ -1214,10 +1226,12 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | Field | Shape |
 |---|---|
 | `Version`, `UserId` | Version string and caller's N-format ID. |
+| `Build` | The server's JE build (the client script's cache key, new with every build). Every answer of JE's routes names it in `X-JE-Build` too; the web client asks for a reload when it changes while a page is open. |
 | `PublicConfig` | Same field set as `public-config`, authenticated context. |
 | `PrivateConfig` | Curated admin object below; null/omitted for viewers. |
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
 | `UserSettings` | `{Settings,Shortcuts,Bookmark,Elsewhere,HiddenContent}` typed documents. |
+| `UserRevisions` | File name → revision of each document read (the GETs' `ETag` values, unquoted). |
 | `ComponentScripts` | Ordered component-script path array, nullable on manifest failure. |
 | `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions}`; standalone response shapes or null. |
 
@@ -1273,6 +1287,8 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `MaintenanceModeEndsAt` | Nullable ISO timestamp |
 
 Private configuration is `no-store`. Admin fields are strings `SonarrUrl`, `RadarrUrl`, `BazarrUrl`, `SonarrUrlMappings`, `RadarrUrlMappings`, `BazarrUrlMappings`, `ShokoUrl`, `ShokoUrlMappings`; arrays `SonarrInstances`, `RadarrInstances` of `{Name,Url,UrlMappings,Enabled}`; and booleans `SonarrInstancesCorrupt`, `RadarrInstancesCorrupt`. This is selected link configuration and diagnostics, rather than the complete saved model. The separate admin `jellyseerr/settings/{type}` endpoint can return upstream API keys.
+
+**Jellyfin's plugin-configuration route.** `GET /Plugins/{id}/Configuration` hands out JE's configuration with its `ConfigurationGeneration`, which every configuration write moves on (a configuration page save, a server write, a restore). `POST /Plugins/{id}/Configuration` with an API key applies a whole configuration only when it carries the generation stored now; one built on an earlier configuration is refused with `409 {"success":false,"code":"configuration_conflict","generation":<current>,"message":"…"}` and nothing is written: read it again, change it, and post it with the new generation. A signed-in page posting there is a JE settings page of an earlier version (the current page saves with `PATCH /JellyfinEnhanced/configuration`, which takes only the fields that changed): it is refused with `409 reload_required` and its session is asked to reload. Prefer `PATCH /JellyfinEnhanced/configuration` with `{"Set":{"ToastDuration":2000}}` for scripts.
 
 Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required.
 
@@ -1786,7 +1802,7 @@ swap-in work that started before it; a retry with the same request id continues 
 | `POST /acquire/lists/summaries` | signed in (lists on; answers nothing while the caller's playlist and collection pages are both off) | `{listIds}` (1–200) → `{lists: [{listId, listKind, missing}], pending}`: the asked-for lists the caller can see that have entries they can see, with how many (`missing` ≥ 1; a list with none, or one they can't see, is left out, so hidden entries are never counted). Read through the same rights check as a view, right before the answer; no statuses or metadata. Lists not worked out within 10 seconds (slow parental checks) are in `pending`, to ask again. Private, not stored. |
 | `GET /acquire/lists/editable` | authoring on | `{playlists: [{id, name, isOwn, nativeCanEdit, ownerName?}], collections, canManageCollections}`. |
 | `POST /acquire/lists/playlists`, `POST /acquire/lists/collections` | authoring on (collections: administrators and collection managers) | `{requestId, name, isPublic?, entries?}` → `{listId, listKind, name, result}`. A retry with the same `requestId` continues with the list the first attempt created, even when the server stopped right after Jellyfin made it: the create runs under the chosen name plus the attempt's marker, so Jellyfin keeps the marker in the list's own folder (and a provider id on a collection), and the list then gets its chosen name (a retry finishes that too). A list of the same name, anyone's, is never taken for it, and no list ever gets a share for nobody. Collections: one create per destination at a time across people; a name a collection in Jellyfin's collections folder already has (or its folder, compared without case) is `409 name_taken`, a `[boxset]` folder elsewhere isn't; a list another attempt already recorded is `409 create_uncertain`, before any entry is applied. |
-| `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. |
+| `GET` / `POST /arr/admin/lists/import` | administrators (lists on) | The experimental-list importer: dry run / import. Report: `documents`, `collageMarkers`, `imported`, `unchanged`, `skipped`, `quarantined` with reasons. A list whose own image is still a poster collage the experimental lists drew is shown without an image to everyone (imported or not; nothing is deleted), in every answer (whatever its form) and WebSocket message, and so are the playlist/collection library tiles that may hold one (until Jellyfin composes the tile again from list images proven clean; for good if it was composed from a collage or seen while a list was its collage; a tile's dates alone prove nothing). What is withheld is decided where each answer is written, in its own character set and whatever its size; an image set on the list later shows as usual, and everything else in an answer or message is sent exactly as Jellyfin wrote it. |
 
 The current owner or a human administrator also receives `placements: [{state, reason, attempts, at, tokens}]` in the
 list view. Other callers receive an empty array. Tokens name only landed entries the caller can currently see;
@@ -1799,6 +1815,23 @@ other placeholder swaps. A write explicitly anchored to a pending entry answers 
 
 
 Bodies are capped at 16 KiB, except `items`, `apply`, `order` and list creation (1 MiB).
+
+#### List import (phase 4)
+
+Review only: these routes read and look up, and never change a list. Signed-in people only (`403 user_required`),
+`404 disabled` while *Import lists* (or, for `source`, *Import from list sites*) is off. Every answer, errors included,
+is `private, no-store`. An optional `listId` names the list the import is for: an invalid id is `400 invalid_list_id`,
+a list the caller can't see `404 not_found`, one they can't edit `403 forbidden`. "In the library" then means visible to
+the caller and, for a playlist someone else owns, to its owner too.
+
+| Method and path | Body / answer |
+|---|---|
+| `GET /acquire/lists/import/providers` | `{import, sources, mdblist, mdblistApi, tmdbLists, tmdbCharts, trakt, imdb, chronolists, metadataProvider: "tmdb" \| "seerr" \| "", maxItems: 1000, resolveChunk: 25}`. `mdblistApi` is true only for administrators. No secrets. |
+| `POST /acquire/lists/import/resolve` | `{entries: [ImportEntry], listId?}` (1–25 per call; send chunks one after another; 128 KiB) → `{results: [{index, state: ok \| transient \| invalid, confidence: high \| medium \| low \| none, kind, match, candidates, reasons, alternatives}], complete, upstreamCalls, metadataProvider}`. A candidate carries `mediaType`, `tmdbId`, `tvdbId`, `imdbId`, `title`, `year`, `posterPath`, `overview`, `season`/`episodes`/`episodeTotal` and `inLibrary: {itemId, kind, episodeItemIds, complete}`, plus `hidden: true` (the household's Hidden Content; the match is then at most `low` with reason `hidden`) and `spoilerGuarded: true` (Spoiler Guard: overview, season name and episode titles left out). Titles a parental rating or tag limit hides, or whose rating can't be read, are never candidates. `429 busy` (Retry-After 2) while the caller's previous call runs; `504 parental_pending` (Retry-After 2) when the parental checks didn't finish in time; `503 metadata_unavailable` without a TMDB key and Seerr. |
+| `POST /acquire/lists/import/source` | `{url, listId?, useMdblistApi?}` (16 KiB; `useMdblistApi` administrators only, else `403 admin_required`) → `{kind, provider, url, title, unofficial, notice?, entries: [ImportEntry with sourceKey, sourceKeys, prepared], total, truncated, dropped, partial?, grouped, snapshotKeys, snapshot: {state: complete \| partial \| truncated, digest}, countsHidden?}`. Exact sources (TMDB, Trakt, Chronolists) come with `prepared` results. Entries for a title, season or episode the library holds but the caller can't open are left out (never shown as not in the library); the same applies to `resolve` candidates. A person whose view can be narrower than the list (parental limits, or access to fewer than every library) gets only what they may open, with `countsHidden: true`, `total` and `dropped` 0 and no `snapshot`. `snapshot` describes exactly the keys the answer carries: `truncated` when capped, `partial` when any key of the list is left out, the site's paging couldn't be read to its end, or a row the site sent couldn't be keyed or came twice (a person, game or adult title the site lists is counted, not a gap, where the list mixes types; a row of a type JE doesn't know, with a type field that holds no type (a number, `null`, an empty string), without the type the site always gives, or of a type that doesn't belong to the list, such as a show in a movie chart, is partial). An entry whose ids couldn't be completed within the review's 30 s budget is left out with `countsHidden: true`; ids the title lookup doesn't know are remembered for 30 minutes, so the next review goes on past them. For a title the caller guards with Spoiler Guard, an entry carries no `note` (an IMDb episode row's note is the episode's title) or `episodeTitle`, and its `prepared` match no overview, season name or episode titles. Errors are typed: `400` `invalid_url`, `unsupported_url`, `letterboxd_unsupported`, `provider_disabled`, `provider_pinned`, `imdb_disabled`, `trakt_not_configured`, `tmdb_key_required`; `404` `not_found`, `mdblist_not_public`; `429` `rate_limited`, `quota_exhausted`, `fetch_limited`, `read_budget_exhausted` (with Retry-After); `502` `upstream_error`, `unreachable`, `too_large` (an answer over 8 MiB, never read past that), `source_empty`, `source_format_changed`, `source_redirected` (list sites' redirects are never followed), `source_address_blocked` (the site's host resolved to a non-public address); `504 timeout`. |
+
+`ImportEntry` is `{index, title?, year?, typeHint?: movie \| tv, season?, episodes?: [{s, e}], openEnded?, episodeTitle?,
+ids?: {tmdb?, tmdbType?, tvdb?, imdb?}, imdbEpisode?, status?, note?, alternatives?}`, which is what `JE.arrListImport.parser` produces.
 
 #### Home rows (phase 4)
 

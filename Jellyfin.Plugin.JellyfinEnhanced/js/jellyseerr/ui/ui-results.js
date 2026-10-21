@@ -20,33 +20,35 @@
     let pendingRepositionObserver = null;
     let pendingRepositionTimeout = null;
 
-    // Keep card buttons in sync when a request is made from other surfaces (e.g., more info modal)
-    function markCardRequested(tmdbId, mediaType, is4k = false) {
-        const button = document.querySelector(`.jellyseerr-request-button[data-tmdb-id="${tmdbId}"]`);
-        if (!button) return;
-
-        const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
-        const setPending = (target) => {
-            target.innerHTML = `${icons.requested}<span>${requestedLabel}</span>`;
-            target.classList.remove('jellyseerr-button-request');
-            if (!target.classList.contains('jellyseerr-button-pending')) {
-                target.classList.add('jellyseerr-button-pending');
-            }
-            target.disabled = true;
-        };
-
-        if (button.classList.contains('jellyseerr-split-main')) {
-            setPending(button);
-            const arrow = button.parentElement?.querySelector('.jellyseerr-split-arrow');
-            if (arrow && is4k) {
-                arrow.classList.add('jellyseerr-4k-pending');
-                arrow.disabled = true;
-            }
-        } else {
-            setPending(button);
+    /**
+     * Shows a card's control as its answer left it (D46S2 audit S5: the scope the request was for is kept): its standard
+     * Request (and the card's badge), or its 4K arrow. A series request for some seasons, while others are still
+     * requestable (`answer.remaining`), keeps Request offered as "Request More".
+     * @param {{node: HTMLElement, answer: Object}} handle The publication's scoped handle for a card's request button or 4K arrow.
+     */
+    function markCardRequested({ node, answer }) {
+        const partial = answer?.mediaType === 'tv' && Array.isArray(answer.remaining) && answer.remaining.length > 0;
+        if (JE.identityOf(node)?.edition === '4k') {
+            if (partial) return;
+            node.classList.add('jellyseerr-4k-pending');
+            node.disabled = true;
+            return;
         }
+        if (partial) {
+            const more = JE?.t ? JE.t('jellyseerr_btn_request_more') : 'Request More';
+            node.innerHTML = `${icons.request}<span>${more}</span>`;
+            node.disabled = false;
+            return;
+        }
+        const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
+        node.innerHTML = `${icons.requested}<span>${requestedLabel}</span>`;
+        node.classList.remove('jellyseerr-button-request');
+        if (!node.classList.contains('jellyseerr-button-pending')) {
+            node.classList.add('jellyseerr-button-pending');
+        }
+        node.disabled = true;
 
-        const card = button.closest('.jellyseerr-card');
+        const card = node.closest('.jellyseerr-card');
         const badge = card?.querySelector('.jellyseerr-status-badge');
         if (badge) {
             badge.innerHTML = icons.requested;
@@ -55,11 +57,11 @@
         }
     }
 
-    document.addEventListener('jellyseerr-media-requested', (e) => {
-        const { tmdbId, mediaType, is4k } = e.detail || {};
-        if (!tmdbId || !mediaType) return;
-        markCardRequested(String(tmdbId), mediaType, is4k);
-    });
+    // Cards follow a request made anywhere (a card, a form, the More Info window) through the one publication path
+    // (D46S2-R8-2, R9-5, R10-6): core selects the controls (declaratively, none inside a window, which draws its own) and
+    // marks only those a publication reaches now (its title, media type and edition, while it is current where it was made).
+    JE.followPublications({ selector: '.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]', exclude: '.je-more-info-modal' },
+        handle => handle.mutate(() => markCardRequested(handle)));
 
     // ================================
     // UI MANAGEMENT FUNCTIONS
@@ -482,7 +484,6 @@
             }
         });
     };
-    internal.markCardRequested = markCardRequested;
     internal.analyzeSeasonStatuses = analyzeSeasonStatuses;
     internal.createJellyseerrSection = createJellyseerrSection;
 

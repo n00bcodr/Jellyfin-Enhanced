@@ -29,6 +29,7 @@
 // The binding is part of the request's identity: de-duplication and the response cache key on it (its session and its
 // owner's predicate, by object identity), so a bound request never shares an in-flight request or a cached answer with
 // another binding or with an unbound caller, and one binding ending (or its caller aborting) cancels only its own request.
+//   JE.core.build                    — the server's JE build vs the one this page booted against (reload notice)
 (function(JE) {
     'use strict';
 
@@ -108,6 +109,21 @@
     /** @type {Map<string, {data: any, timestamp: number}>} */
     const responseCache = new Map();
 
+    // Only answers that are the same for every person are kept (awards, MDBList ratings, the DoesTheDogDie catalog).
+    // Everything else the server projects for the person asking: the Seerr and TMDB proxies and watch providers apply
+    // their parental limits and Seerr account, so a restriction must apply to the next request, not after the TTL.
+    // Those keys still share a request already in flight; nothing is kept once it settles.
+    const SHARED_CACHE_PREFIXES = Object.freeze(['awards:', 'mdblist-ratings:', 'ddd:']);
+
+    /**
+     * True when a cache key's answer is the same for everyone (see SHARED_CACHE_PREFIXES).
+     * @param {string} key - Cache key.
+     * @returns {boolean} Whether it may be kept.
+     */
+    function isSharedKey(key) {
+        return typeof key === 'string' && SHARED_CACHE_PREFIXES.some(prefix => key.startsWith(prefix));
+    }
+
     // AbortController management per page/context
     /** @type {Map<string, AbortController>} */
     const activeControllers = new Map();
@@ -171,6 +187,56 @@
         abortError.name = 'AbortError';
         return abortError;
     }
+
+    // Write outcomes (D46S2 audit S3): a bound write that was never sent (its binding ended first) is UNSENT; one the
+    // server answered after its owner ended is ACCEPTED (the AbortError carries the answer, so the caller reconciles
+    // its session's state from the server without any page effect); otherwise it answered (or failed) normally.
+    /** @param {*} data @param {boolean} sessionChanged @returns {Error} */
+    function createAcceptedAbort(data, sessionChanged) {
+        const error = /** @type {any} */ (createAbortError());
+        error.jeOutcome = 'accepted';
+        error.jeAnswer = data;
+        error.jeSessionChanged = sessionChanged;
+        return error;
+    }
+    /** @returns {Error} */
+    function createUnsentAbort() {
+        const error = /** @type {any} */ (createAbortError());
+        error.jeOutcome = 'unsent';
+        return error;
+    }
+    /**
+     * The outcome of a write's error: 'unsent' (never sent), 'accepted' (answered after its owner ended; `answer`), or
+     * 'failed' (anything else).
+     * @param {*} error
+     * @returns {{outcome: 'unsent'|'accepted'|'failed', answer?: *, sessionChanged?: boolean}}
+     */
+    function writeOutcome(error) {
+        if (error?.jeOutcome === 'accepted') return { outcome: 'accepted', answer: error.jeAnswer, sessionChanged: !!error.jeSessionChanged };
+        if (error?.jeOutcome === 'unsent' || (error?.name === 'AbortError' && error?.jeSent !== true)) return { outcome: 'unsent' };
+        return { outcome: 'failed' };
+    }
+
+    // Read freshness (D46S2-R10-9, audit S4): each resource family a title action writes has a write epoch, moved on when
+    // a write of it is sent and again when it is answered. A read's de-duplication and cache keys carry the epoch it
+    // started in, so a read that starts after a write never joins (or answers from) one that started before it.
+    /** @type {Map<string, number>} */
+    const writeEpochs = new Map();
+    // Read-only POSTs (they change nothing) do not move an epoch.
+    const READ_POSTS = /\/JellyfinEnhanced\/arr\/calendar\/user-data(?:\?|$)/;
+    /** @param {string} url @returns {string} The family a request belongs to ('' when untracked). */
+    function familyOf(url) {
+        const m = /\/JellyfinEnhanced\/(jellyseerr|acquire|arr|spoiler-blur)(?:\/|\?|$)/.exec(String(url || ''));
+        return m ? m[1] : '';
+    }
+    /** @param {string} family */
+    function bumpEpoch(family) {
+        if (family) writeEpochs.set(family, (writeEpochs.get(family) || 0) + 1);
+    }
+    // The title-action write endpoints (D46S2-R10-1): a write there goes out only with an owner token's binding (the
+    // Seerr request and issue, Follow and Remind; every caller passes one). JE mode's own asks and searches carry their
+    // owner's binding from every title action; its library pages still send session-guarded writes of their own.
+    const OWNED_WRITES = /\/JellyfinEnhanced\/(?:jellyseerr\/(?:request|issue)|acquire\/(?:follows|remind))(?:\?|$)/;
 
     /**
      * The abort of a read that started under an older Hidden Content / Spoiler Guard policy. Only this abort may be
@@ -241,7 +307,7 @@
      * @param {boolean} [acceptHttpErrors=false] Return HTTP errors to status-preserving callers.
      * @returns {Promise<Response>}
      */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false) {
+    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, assertSession = captureSession(), acceptHttpErrors = false, onSend = null) {
         const startTime = performance.now();
         let lastError;
         let lastStatus;
@@ -261,8 +327,13 @@
 
             try {
                 assertSession();
+                if (onSend) onSend();
                 const response = await fetch(url, options);
+                // Every JE answer names the server's build: another one than this page booted against asks for a reload.
+                build.noteAnswer(response);
                 assertSession();
+                // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
+                JE.core?.revision?.noteResponse(response);
 
                 if (response.ok || acceptHttpErrors) {
                     if (metrics.enabled) {
@@ -606,6 +677,7 @@
      * @param {string} key
      */
     function getCached(key) {
+        if (!isSharedKey(key)) return null;
         const entry = responseCache.get(key);
         if (entry && Date.now() - entry.timestamp < CONFIG.cache.ttlMs) {
             if (metrics.enabled) {
@@ -629,6 +701,8 @@
      * @param {*} data
      */
     function setCache(key, data) {
+        // A per-person answer is never kept (it would outlive a change to the person's access).
+        if (!isSharedKey(key)) return;
         // Refresh an existing key without evicting an unrelated entry. Deleting
         // first also moves the refreshed response to the newest LRU position.
         responseCache.delete(key);
@@ -781,6 +855,7 @@
         // Cache management
         getCached,
         setCache,
+        isSharedKey,
         clearCache,
         clearCacheMatching,
         invalidatePresentation: presentationChanged,
@@ -946,14 +1021,33 @@
             bound
         } = options;
 
+        const isWrite = !/^(GET|HEAD)$/i.test(method);
+        // A title-action write goes out only with an owner token's binding (D46S2-R10-1): one without (a planted or
+        // dropped owner) is refused before any byte goes out.
+        if (isWrite && OWNED_WRITES.test(url) && !(bound && JE.isOwnerToken?.(bound.token))) {
+            const message = `Jellyfin Enhanced: ${method} ${url} was sent without its owner's binding`;
+            if (JE.strictOwners === true) throw new Error(message);
+            if (JE.strictOwners === 'record') (JE.refusals = JE.refusals || []).push(message); else console.error(message);
+            throw createUnsentAbort();
+        }
+        // A write without its binding while an operation acts (its press, runner or publication callback) dropped that
+        // operation's owner: refused at the send, before any byte goes out (D46S2-R9-4).
+        if (!bound && isWrite && JE.refuseUnboundWrite?.(`${method} ${url}`)) throw createUnsentAbort();
         // A bound request is checked against its own session before anything else (it may have been made after
         // another account signed in); the live identity is then recorded as for any request.
         const boundSession = bound ? bindRequest(bound) : null;
-        if (boundSession) boundSession();
+        if (boundSession) {
+            try { boundSession(); } catch (error) { throw isWrite ? createUnsentAbort() : error; }
+        }
         const live = captureSession();
-        const assertSession = boundSession || live;
-        // Dedup and cache keys of a bound request are its binding's own.
-        const scope = bindingScope(bound);
+        // A write: once sent, its owner ending no longer aborts it midway (it is accepted, see writeOutcome).
+        let sent = false;
+        const assertSession = !isWrite || !boundSession ? (boundSession || live)
+            : Object.assign(() => { if (!sent) boundSession(); else live(); }, { userId: boundSession.userId, token: boundSession.token });
+        const family = READ_POSTS.test(url) ? '' : familyOf(url);
+        // Dedup and cache keys of a bound request are its binding's own, and a read's carry its family's write epoch.
+        const scope = bindingScope(bound) + (family && !isWrite ? `\u0000epoch:${family}:${writeEpochs.get(family) || 0}\u0000` : '');
+        const onSend = isWrite ? () => { if (!sent) { sent = true; bumpEpoch(family); } } : null;
         const withStatus = responseMode === 'status';
         const isGet = method.toUpperCase() === 'GET';
         const presentation = presentationGeneration;
@@ -1031,7 +1125,8 @@
                     init,
                     (skipRetry || withStatus) ? { ...CONFIG.retry, maxAttempts: 1 } : undefined,
                     assertSession,
-                    withStatus
+                    withStatus,
+                    onSend
                 );
                 assertSession();
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
@@ -1053,10 +1148,12 @@
             } catch (error) {
                 assertSession();
                 assertPresentation();
+                if (sent && error && typeof error === 'object') /** @type {any} */ (error).jeSent = true;
                 throw error;
             } finally {
                 if (timeoutId) clearTimeout(timeoutId);
                 if (unchain) unchain();
+                if (sent) bumpEpoch(family);
             }
         };
 
@@ -1086,8 +1183,24 @@
         else if (isGet && !withStatus && auth && Object.keys(headers).length === 0) {
             pending = deduplicatedFetch(`${scope}GET ${url}`, limitedFetch, signal, limit).then((data) => structuredClone(data));
         } else pending = limitedFetch();
-        const data = await pending;
-        // Each deduplicated caller owns its own publication boundary too.
+        let data;
+        try { data = await pending; }
+        catch (error) {
+            // Not sent (its binding ended while it queued): unsent, nothing reached the server.
+            if (isWrite && !sent && /** @type {any} */ (error)?.name === 'AbortError' && !/** @type {any} */ (error).jeOutcome) throw createUnsentAbort();
+            throw error;
+        }
+        // Each deduplicated caller owns its own publication boundary too. A bound write the server answered after its
+        // owner ended is accepted: the answer goes back in the abort, for its session's state only.
+        if (isWrite && boundSession && sent) {
+            let current = true;
+            try { boundSession(); } catch (_) { current = false; }
+            if (!current) {
+                let sameSession = true;
+                try { live(); } catch (_) { sameSession = false; }
+                throw createAcceptedAbort(data, !sameSession);
+            }
+        }
         assertSession();
         assertPresentation();
         return data;
@@ -1124,6 +1237,64 @@
             signal: options.signal, skipRetry: true, bound: options.bound
         });
     }
+    // ---- The server's JE build (the version handshake) ----
+    // The server names its JE build (the client script's cache key, new with every build) in the bootstrap and on every
+    // answer of its routes (X-JE-Build). The first one this page sees is the build it booted against (JE.serverBuild, set
+    // from the bootstrap); an answer naming another means JE was updated on the server while this page kept its scripts:
+    // the page asks the person to reload (once), before a save can be lost to a contract this page doesn't know.
+    let reloadNotice = null;
+
+    /** Shows the reload notice (once per page). */
+    function showReloadNotice() {
+        if (reloadNotice?.isConnected || !document.body) return;
+        const text = (key, fallback) => {
+            const value = typeof JE.t === 'function' ? JE.t(key) : '';
+            return typeof value === 'string' && value && value !== key ? value : fallback;
+        };
+        const notice = document.createElement('div');
+        notice.className = 'je-reload-notice';
+        notice.setAttribute('role', 'alert');
+        notice.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100000;max-width:min(560px,calc(100vw - 32px));'
+            + 'box-sizing:border-box;display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:8px;'
+            + 'background:#202020;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.5);font-size:14px;line-height:1.4;';
+        const message = document.createElement('span');
+        message.textContent = text('reload_notice_text', 'Jellyfin Enhanced was updated on the server. Reload this page so your changes keep being saved.');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = text('reload_notice_button', 'Reload');
+        button.style.cssText = 'flex:none;padding:6px 14px;border:0;border-radius:4px;background:#00a4dc;color:#fff;font:inherit;cursor:pointer;';
+        button.addEventListener('click', () => window.location.reload());
+        notice.append(message, button);
+        document.body.appendChild(notice);
+        reloadNotice = notice;
+        console.warn(`${logPrefix} the server runs another Jellyfin Enhanced build than this page: reload to keep saving.`);
+    }
+
+    const build = {
+        /**
+         * Compares a build the server named with the one this page booted against (the first it saw).
+         * @param {*} serverBuild - The server's build, as named in an answer.
+         * @returns {boolean} True when they differ (the reload notice is shown).
+         */
+        check(serverBuild) {
+            if (typeof serverBuild !== 'string' || !serverBuild) return false;
+            if (!JE.serverBuild) { JE.serverBuild = serverBuild; return false; }
+            if (serverBuild === JE.serverBuild) return false;
+            showReloadNotice();
+            return true;
+        },
+        /**
+         * Reads the build an answer names (a fetch Response, or the Response a failed ApiClient.ajax rejects with).
+         * @param {*} response
+         */
+        noteAnswer(response) {
+            try {
+                const named = response?.headers?.get?.('X-JE-Build');
+                if (named) build.check(named);
+            } catch { /* An answer without readable headers names no build. */ }
+        }
+    };
+    JE.core.build = build;
 
     JE.core.api = {
         fetch: coreFetch,
@@ -1134,6 +1305,7 @@
         session,
         authHeaders,
         isPresentationAbort,
+        writeOutcome,
         manager
     };
 

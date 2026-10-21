@@ -25,7 +25,7 @@ function setup(t, { libraries = [] } = {}) {
   });
   t.after(() => h.close());
   h.window.eval(`${helpers}\nwindow.__je = { jeSecretInit, jeSecretSetState, jeSecretRead, jeSecretWireValue, jeSecretBindServers, jeSecretCheckServers, jeImportedKeysLost, jeIsSecretPlaceholder, jeNewGuid, jeBuildInstanceRegistryFields, jeReadInstanceRegistryFields, JE_SECRET_CLEAR };`);
-  return { ...h, je: h.window.__je, $: id => h.document.getElementById(id) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, $: id => h.document.getElementById(id) };
 }
 
 test('a saved credential shows its placeholder read-only and posts it back unchanged', t => {

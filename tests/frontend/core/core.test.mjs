@@ -110,9 +110,9 @@ test('custom headers and writes do not accidentally share requests', async t => 
 test('response cache expires, evicts least-recently-used entries, and selectively clears', t => {
   const { JE, window } = setup(t); const m = JE.core.api.manager;
   let now = 100; window.Date.now = () => now; m.CONFIG.cache.maxEntries = 2; m.CONFIG.cache.ttlMs = 10;
-  m.setCache('a',1); m.setCache('b',2); assert.equal(m.getCached('a'),1); m.setCache('c',3);
-  assert.equal(m.getCached('b'),null); m.clearCacheMatching('c'); assert.equal(m.getCached('c'),null);
-  now = 110; assert.equal(m.getCached('a'),null);
+  m.setCache('awards:a',1); m.setCache('awards:b',2); assert.equal(m.getCached('awards:a'),1); m.setCache('awards:c',3);
+  assert.equal(m.getCached('awards:b'),null); m.clearCacheMatching('awards:c'); assert.equal(m.getCached('awards:c'),null);
+  now = 110; assert.equal(m.getCached('awards:a'),null);
 });
 
 test('late previous-user response cannot repopulate cleared cache', async t => {
@@ -245,8 +245,8 @@ test('replacing dedicated observer with shared observer disconnects the old obse
 
 test('refreshing an existing cache key does not evict an unrelated response',t=>{
  const {JE}=setup(t);const m=JE.core.api.manager;m.CONFIG.cache.maxEntries=2;
- m.setCache('a',1);m.setCache('b',2);m.getCached('a');m.setCache('a',3);
- assert.equal(m.getCached('b'),2);assert.equal(m.getCached('a'),3);
+ m.setCache('awards:a',1);m.setCache('awards:b',2);m.getCached('awards:a');m.setCache('awards:a',3);
+ assert.equal(m.getCached('awards:b'),2);assert.equal(m.getCached('awards:a'),3);
 });
 
 test('subscribing during priority dispatch does not revisit the current subscriber',async t=>{

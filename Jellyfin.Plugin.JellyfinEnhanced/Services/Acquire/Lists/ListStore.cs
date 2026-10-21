@@ -45,8 +45,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
         /// <summary>The folder of the documents inside Jellyfin Enhanced's data folder.</summary>
         public const string DirectoryName = "lists";
 
-        private static readonly Regex ListIdRegex = new("^[0-9a-f]{32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-        private static readonly Regex RequestIdRegex = new("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex ListIdRegex = new(@"^[0-9a-f]{32}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex RequestIdRegex = new(@"^[A-Za-z0-9_-]{1,64}\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {

@@ -382,9 +382,7 @@
             return false;
         }
 
-        // Flush pending HC save BEFORE the POST so a later debounce can't clobber the just-written entry.
-        // If the flush fails the debounce is rescheduled inside flushPendingSave; abort the write so we
-        // don't proceed on top of stale server state.
+        // Hidden Content changes this page queued are answered first, so the server applies them before this hide.
         try {
             await JE.hiddenContent?.flushPendingSave?.();
         } catch (e) {
@@ -394,7 +392,7 @@
 
         try {
             if (!action.current()) return false;
-            await JE.core.api.ajax({
+            const answer = await JE.core.api.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
                 data: '{}',
@@ -406,9 +404,9 @@
             if (!action.current()) return false;
             optimisticHideRemovedCard(itemId, surface, card);
 
-            // Local-cache mirror only — server already wrote the canonical entry; a refetch would risk a clobber.
+            // The server's answer: its entry becomes part of this page's Hidden Content document.
             try {
-                JE.hiddenContent?.markScopedHidden?.(itemId, surface);
+                JE.hiddenContent?.markScopedHidden?.(itemId, surface, answer?.revision ?? answer?.Revision);
             } catch (e) {
                 console.warn('🪼 Jellyfin Enhanced: markScopedHidden mirror failed', e);
             }
