@@ -147,16 +147,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
             var have = 0;
             var missing = new List<CollectionPart>();
+            // "Have" is the one availability predicate (D53, edition round 19 part B): a copy they open that plays (any
+            // edition); never a ".disc" stub or a pathless item, which are missing like a movie Jellyfin doesn't have.
+            var editions = new EditionAvailability(_view, () => null, (k, v) => _view.Copies(k, v, _aliases?.Of(k)).Display);
             foreach (var part in parts)
             {
                 var key = TitleKey.Parse(part.Key)!;
                 var aliases = _aliases?.Of(key);
                 var copies = _view.Copies(key, viewer, aliases);
-                if (copies.SeenOpenable != null) have++;
-                // A copy the viewer can't open (another library, its rating or tags): Jellyfin's answer
-                // is final, so the movie isn't theirs to see here. Only a movie proven absent is missing (a lookup
-                // that couldn't finish may have a copy they can't open among the rows it didn't read).
-                else if (copies.IsProvenAbsent) missing.Add(part);
+                if (editions.Movie(viewer, copies.Seen, Edition.Any).Count > 0) have++;
+                // A copy they open that plays nothing is theirs to see: missing. A copy the viewer can't open (another
+                // library, its rating or tags): Jellyfin's answer is final, so the movie isn't theirs to see here. Otherwise
+                // only a movie proven absent is missing (a lookup that couldn't finish may have a copy they can't open among
+                // the rows it didn't read).
+                else if (copies.SeenOpenable != null || copies.IsProvenAbsent) missing.Add(part);
             }
 
             // Absent movies: only what the viewer's parental limits allow (the filter refuses unknowns).

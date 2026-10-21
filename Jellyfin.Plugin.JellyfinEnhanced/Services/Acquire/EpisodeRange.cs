@@ -72,6 +72,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public bool Contains((int Season, int Episode) number)
             => _seasons.TryGetValue(number.Season, out var ranges) && ranges.Any(r => r.Contains(number.Episode));
 
+        /// <summary>
+        /// Whether one retained interval covers every episode <paramref name="first"/>..<paramref name="last"/> of the season
+        /// (adjacent files were merged into one interval, so a range spread over several files is covered too). The work is
+        /// one look per interval, never one per number, and the endpoints never overflow.
+        /// </summary>
+        public bool ContainsRange(int season, int first, int last)
+            => last >= first && _seasons.TryGetValue(season, out var ranges) && ranges.Any(r => r.First <= first && r.Last >= last);
+
         /// <summary>Exact count for a season, using a wider integer for pathological metadata.</summary>
         public long CountInSeason(int season)
             => _seasons.TryGetValue(season, out var ranges) ? ranges.Sum(r => (long)r.Last - r.First + 1) : 0;

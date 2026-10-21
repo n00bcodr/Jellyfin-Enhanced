@@ -493,12 +493,13 @@ public class ApiArrStatusTests
 
         var card = Items(await Batch(rig, rig.Kid, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();
         Assert.Equal(2, card.Count);
-        foreach (var status in card)
-        {
-            Assert.Equal("ready", status.GetProperty("stage").GetString());
-            Assert.False(status.TryGetProperty("progress", out _));
-        }
-        Assert.True(card[0].GetProperty("quiet").GetBoolean());
+        foreach (var status in card) Assert.False(status.TryGetProperty("progress", out _));
+        // The series item's own poster card reads only the queue (quiet when nothing is under way). By key, the kid plays no
+        // episode at all (E1, the only file, is hidden from them): never "in the library" (edition round 19 part B, the one
+        // availability predicate), but where Sonarr has got to with what they may see, and still no download of E1.
+        Assert.Equal(("ready", true), (card[0].GetProperty("stage").GetString(), card[0].GetProperty("quiet").GetBoolean()));
+        Assert.NotEqual("ready", card[1].GetProperty("stage").GetString());
+        Assert.NotEqual("downloading", card[1].GetProperty("stage").GetString());
         // The admin plays E1, so its download is an upgrade: Ready on both, as the series page says (edition r11, D53). For
         // the kid, who doesn't play it, only the hidden-parts rule keeps it from reading as a download.
         var admin = Items(await Batch(rig, rig.Admin, rig.Ids(rig.Firefly), "tv:tvdb:78874")).EnumerateArray().ToList();

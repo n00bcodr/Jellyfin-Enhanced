@@ -107,6 +107,7 @@ public class IntegrationEditionExhaustionTests
         const string key = "movie:tmdb:693134";
         IntegrationEditionBoundTests.Rows(l, 0, hidden: hidden, id: "693134");
         rig.View.CopiesFrom = (k, viewer, aliases) => k.Title.ToString() == key ? l.View.Copies(k, viewer, aliases) : null;
+        rig.View.Routed = l.View;
         rig.NotifyStore.Add(rig.Emma.UserId, "ready|" + key, NotifyKind.Ready, key, null, new Dictionary<string, string> { ["title"] = "Dune: Part Two" },
             new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);
         await rig.Dispatcher.RunOnceAsync(default);

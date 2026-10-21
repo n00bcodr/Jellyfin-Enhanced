@@ -186,7 +186,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (!MayAskByKey(viewer, key, lookup)) continue;
                 var copies = Shown(facts, lookup);
                 statuses.Add(WithLiveKey(key.IsMovie
-                    ? StatusComposer.Movie(facts, null, copies, c, detail: false)
+                    ? StatusComposer.Movie(facts, null, copies, c, detail: false, qualifying: Playing(viewer, copies))
                     : StatusComposer.SeriesByKey(facts, copies, c), facts));
             }
             return Cache.Put(cacheKey, Serialize(statuses));
@@ -240,7 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A missing (virtual) episode or season whose file has arrived: Jellyfin adds the file's item
             // under a new id and drops the virtual one at its next series refresh. Until then the page of
             // the virtual item reads as the arrived one and names it, so the page can move there.
-            if (!item.Playable && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { Playable: true } arrived && arrived.ItemId != item.ItemId)
+            if (!EditionAvailability.Plays(item) && item.Kind is "episode" or "season" && ScopeItem(viewer, item.Key, item.SeriesId) is { } arrived && EditionAvailability.Plays(arrived) && arrived.ItemId != item.ItemId)
             {
                 var status = WithVersions(ComposeItem(viewer, arrived, gather), arrived, viewer);
                 status.OpenItemId = arrived.ItemId.ToString("N", CultureInfo.InvariantCulture);
@@ -267,8 +267,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// </summary>
         private TitleStatus WithVersions(TitleStatus status, JfItemRef item, StatusViewer viewer)
         {
-            if (item.Kind is "movie" or "episode" && item.Playable && item.Versions > 0)
-                status.Versions = item.Versions > 1 ? Math.Max(1, _view.Sources(item.ItemId, viewer).Select(s => s.BackingItemId).Distinct().Count()) : item.Versions;
+            if (item.Kind is "movie" or "episode" && EditionAvailability.Plays(item) && item.Versions > 0)
+                status.Versions = item.Versions > 1 ? Math.Max(1, Editions.Item(viewer, item.ItemId, Edition.Any).Select(h => h.PlayableItemId).Distinct().Count()) : item.Versions;
             return status;
         }
 
@@ -293,7 +293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 case "movie":
                 {
                     var copies = Shown(facts, CopiesOf(title, viewer));
-                    status = StatusComposer.Movie(facts, item, copies, c, detail: true);
+                    status = StatusComposer.Movie(facts, item, copies, c, detail: true, qualifying: Playing(viewer, copies));
                     // Get 4K is pointless when a copy the viewer can open (this one or another library's) has a 4K source.
                     if (Editions.Movie(viewer, copies, Edition.FourK).Count > 0) status.FourK = true;
                     break;
@@ -325,10 +325,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// title's.
         /// </summary>
         private EpisodeCoverage PlayedElsewhere(IReadOnlyList<JfCopy>? copies, Guid own, int season, StatusViewer viewer)
-            => new((copies ?? Array.Empty<JfCopy>()).Where(x => x.Visible && x.ItemId != own).DistinctBy(x => x.ItemId)
-                .SelectMany(x => _view.EpisodeSources(x.ItemId, season, viewer, readDimensions: false))
-                .Where(e => e.Sources.Count > 0)
-                .Select(e => new JfEpisode { ItemId = e.ItemId, Season = e.Season, Episode = e.Episode, EpisodeEnd = e.EpisodeEnd }));
+            => Editions.Episodes(viewer, (copies ?? Array.Empty<JfCopy>()).Where(x => x.ItemId != own).ToList(), Edition.Any, season).Coverage();
 
         /// <summary>
         /// Where a season page's copy-qualified controls land (D53, edition round 15: one binding decides wording and action;
@@ -561,7 +558,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             switch (page.Kind)
             {
                 case "movie":
-                    status = StatusComposer.Movie(facts, null, copies, c, detail: true);
+                    status = StatusComposer.Movie(facts, null, copies, c, detail: true, qualifying: Playing(viewer, copies));
                     break;
                 case "series":
                     // What the library hides from the viewer goes in as hidden markers (numbers only), so a
@@ -594,22 +591,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // Spoiler Guard's air-date switch on the title: the page names no air date (as its episode list).
             if (page.Spoilers?.AirDate == true) StatusComposer.WithoutAirDates(status);
             status = WithLiveKey(status, facts);
-            status.OpenItemId = OpenableCopy(viewer, page, copies);
+            status.OpenItemId = LibraryItemFor(viewer, page.ScopeKey, copies)?.ToString("N", CultureInfo.InvariantCulture);
             return status;
         }
 
         /// <summary>
-        /// The library item the viewer can open for an absent page once a copy has arrived: the movie or
-        /// series; for a season or episode page that season or (playable) episode, when it is there.
+        /// "Open in library" (an absent page once a copy arrived, the native-details resolver): the library item of
+        /// <paramref name="key"/>'s scope the viewer can open and that plays (D53, edition round 19 part B: the one
+        /// availability predicate, <see cref="Edition.Any"/>): the movie copy with a playable source; the series copy that
+        /// plays an episode; the season item whose own series item plays an episode of it; the episode item that plays.
+        /// A copy that lists only placeholders, missing or pathless items is not there yet: null (the page stays).
         /// </summary>
-        private string? OpenableCopy(StatusViewer viewer, AbsentTitle page, IReadOnlyList<JfCopy> copies)
+        internal Guid? LibraryItemFor(StatusViewer viewer, TitleKey key, IReadOnlyList<JfCopy>? copies = null)
         {
-            if (copies.FirstOrDefault(x => x.Visible) is not { } shown) return null;
-            if (page.Kind is "movie" or "series") return shown.ItemId.ToString("N", CultureInfo.InvariantCulture);
-            var scope = ScopeItem(viewer, page.ScopeKey);
-            if (scope == null || (page.Kind == "episode" && !scope.Playable)) return null;
-            return scope.ItemId.ToString("N", CultureInfo.InvariantCulture);
+            copies ??= CopiesOf(key.Title, viewer).Display;
+            if (key.Season is not int season)
+            {
+                var holding = Playing(viewer, copies, key.IsMovie);
+                return copies.FirstOrDefault(x => x.Visible && holding.Contains(x.ItemId))?.ItemId;
+            }
+            var scope = ScopeItem(viewer, key);
+            if (scope == null) return null;
+            if (key.Episode != null) return EditionAvailability.Plays(scope) ? scope.ItemId : null;
+            return scope.SeriesId is Guid series && Editions.Holding(viewer, copies.Where(x => x.ItemId == series).ToList(), movie: false, Edition.Any, season).Count > 0
+                ? scope.ItemId : null;
         }
+
+        /// <summary>
+        /// The copies among <paramref name="copies"/> the viewer has an accessible playable source in (<see cref="Edition.Any"/>):
+        /// movie items with one, or series items that play an episode. The availability every Ready credit, variant line,
+        /// arrival and "open in library" of the whole title reads.
+        /// </summary>
+        private IReadOnlySet<Guid> Playing(StatusViewer viewer, IReadOnlyList<JfCopy> copies, bool movie = true)
+            => Editions.Holding(viewer, copies, movie, Edition.Any);
 
         /// <summary>
         /// The Jellyfin season or episode item a season/episode key names, when the viewer can see the
@@ -629,7 +643,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var copy in copies.Where(x => x.Visible).DistinctBy(x => x.ItemId))
             {
                 var item = ScopeItemIn(viewer, key, copy.ItemId, season);
-                if (item is { Playable: true }) return item;
+                if (item != null && EditionAvailability.Plays(item)) return item;
                 first ??= item;
             }
             return first;
@@ -648,7 +662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             foreach (var id in ids)
             {
                 if (_view.Resolve(id, viewer) is not { } item || item.Kind != kind || item.SeriesId != seriesItemId) continue;
-                if (item.Playable) return item;
+                if (EditionAvailability.Plays(item)) return item;
                 first ??= item;
             }
             return first;
@@ -670,7 +684,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             if (key.Season == null)
             {
-                var visible = CopiesOf(key.Title, viewer).Display.Where(x => x.Visible).Select(x => x.ItemId).ToList();
+                // Only a copy that plays is an arrival (D53, edition round 19 part B): never a movie or series that lists stubs.
+                var copies = CopiesOf(key.Title, viewer).Display;
+                var holding = Playing(viewer, copies, key.IsMovie);
+                var visible = copies.Where(x => x.Visible && holding.Contains(x.ItemId)).Select(x => x.ItemId).Distinct().ToList();
                 if (visible.Count == 0) return null;
                 if (shown is Guid id && visible.Contains(id)) return id;
                 if (key.IsMovie && shown is Guid gone)
@@ -697,7 +714,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             }
             return null;
 
-            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && !scope.Playable) ? null : scope.ItemId;
+            Guid? Arrival(JfItemRef? scope) => scope == null || (key.Episode != null && !EditionAvailability.Plays(scope)) ? null : scope.ItemId;
         }
 
         /// <summary>
@@ -730,8 +747,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var c = Context(viewer);
             if (key.IsMovie)
             {
-                // A copy the viewer can already open is not missing (one the lookup saw counts, finished or not).
-                if (CopiesOf(title, viewer).SeenOpenable != null) return (null, sent);
+                // A copy the viewer can already play the standard edition from is not missing (one the lookup saw counts,
+                // finished or not); a stub or a copy they can't open is (the one availability predicate).
+                if (Editions.Movie(viewer, CopiesOf(title, viewer).Seen, Edition.Standard, readDimensions: Editions.NeedsDimensions(Edition.Standard)).Count > 0) return (null, sent);
             }
             else
             {
@@ -785,8 +803,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 HiddenParts? together = null;
                 HiddenParts Together() => together ??= StatusComposer.SplitHidden(
                     open.SelectMany(x => c.EpisodesOf!(x.ItemId)).ToList(), open.SelectMany(x => c.FolderOf!(x.ItemId).Seasons).ToList()).Hidden;
+                // What a binding's own copy holds: the episodes it plays the standard edition of for them (the one availability
+                // predicate: a stub, a missing item or, with "Standard requests need a non-4K copy", a 4K-only file is not held).
                 return new SearchView(
-                    b => b.Open ? new EpisodeCoverage(c.EpisodesOf!(b.Jf!.ItemId).Where(e => !e.Hidden)) : null,
+                    b => b.Open ? Editions.Episodes(viewer, new[] { b.Jf! }, Edition.Standard, null, readDimensions: Editions.NeedsDimensions(Edition.Standard)).Coverage() : null,
                     (b, season, episode) => c.HiddenOf != null
                         && ((b.Open && c.HiddenOf(b.Jf!.ItemId).Hides(season, episode)) || Together().Hides(season, episode)));
             }
@@ -1139,10 +1159,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             facts.Request = scope != null ? scope.Request : _requests.For(key, viewer);
             var copies = Shown(facts, lookup);
             var c = context ?? Context(viewer);
+            var playing = key.IsMovie ? Playing(viewer, copies) : null;
             var status = key.IsMovie
-                ? StatusComposer.Movie(facts, null, copies, c, detail)
+                ? StatusComposer.Movie(facts, null, copies, c, detail, qualifying: playing)
                 : StatusComposer.SeriesByKey(facts, copies, c);
-            return new KeyedStatus(key, WithLiveKey(status, facts), copies.FirstOrDefault(x => x.Visible));
+            // Play and "open in library" name a copy that plays (D53, edition round 19 part B), never one that lists stubs.
+            var open = copies.FirstOrDefault(x => x.Visible && (playing?.Contains(x.ItemId) ?? c.Holds?.Invoke(x.ItemId) == true));
+            return new KeyedStatus(key, WithLiveKey(status, facts), open);
         }
 
         /// <summary>
@@ -1342,6 +1365,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 // What Jellyfin hides from a viewer with parental limits in a series folder: from the same read.
                 HiddenOf = viewer.IsAdmin || !viewer.HasParentalLimit ? null
                     : id => hidden.TryGetValue(id, out var found) ? found : hidden[id] = StatusComposer.SplitHidden(EpisodesOf(id), FolderOf(id).Seasons).Hidden,
+                // The one availability predicate over the same folder read (Edition.Any: an episode Jellyfin plays for them).
+                Holds = id => EpisodesOf(id).Any(EditionAvailability.Plays),
             };
         }
 

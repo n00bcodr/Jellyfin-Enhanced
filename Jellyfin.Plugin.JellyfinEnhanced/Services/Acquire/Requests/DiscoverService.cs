@@ -384,8 +384,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var key = TitleKey.Parse(row.Key)!;
             var lookup = Lookup(viewer, row);
-            // The card shows what a finished lookup found (one that couldn't finish reads as not in the library).
-            var open = lookup.Display.FirstOrDefault(c => c.Visible);
+            // The card shows what a finished lookup found (one that couldn't finish reads as not in the library). In the library
+            // means a copy they open plays (D53, edition round 19 part B: the one availability predicate): a movie whose copy
+            // is only a ".disc" stub, or a series whose copies list only stubs or missing episodes, is still askable.
+            var shown = lookup.Display.FirstOrDefault(c => c.Visible);
+            var playing = shown == null ? null : new EditionAvailability(_requests.View, () => null, (_, _) => lookup.Display).Holding(viewer, lookup.Display, key.IsMovie, Edition.Any);
+            var open = playing == null ? null : lookup.Display.FirstOrDefault(c => c.Visible && playing.Contains(c.ItemId));
             if (viewer.HasParentalLimit)
             {
                 // A copy Jellyfin hides from them (rating, tags or library) hides the title unless one they can open
@@ -395,6 +399,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (seen.Count > 0 ? lookup.SeenOpenable == null : !lookup.IsProvenAbsent || !ratings.TryGetValue(row.Key, out var may) || !may) return null;
             }
             var itemId = open?.ItemId.ToString("N", CultureInfo.InvariantCulture);
+            // Hidden Content keyed by a copy's item id hides the title whether or not that copy plays.
+            if (shown != null && hidden.Contains(shown.ItemId.ToString("N", CultureInfo.InvariantCulture))) return null;
             if (itemId != null && hidden.Contains(itemId)) return null;
             var flags = Flags(key, viewer.UserId);
             return new DiscoverCard

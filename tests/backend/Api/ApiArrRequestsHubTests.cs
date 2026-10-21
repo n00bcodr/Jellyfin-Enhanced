@@ -217,7 +217,7 @@ public class ApiArrRequestsHubTests
         // the page answers 200 with every one of Emma's requests, and nothing is cached from that read.
         using var library = new IntegrationEditionOrphanTests.Library();
         IntegrationEditionBoundTests.Rows(library, IntegrationEditionBoundTests.PastTheCeiling, live: false, id: "693134");
-        using var rig = await Ready(r => r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "movie:tmdb:693134" ? library.View.Copies(key, viewer, aliases) : null);
+        using var rig = await Ready(r => { r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "movie:tmdb:693134" ? library.View.Copies(key, viewer, aliases) : null; r.View.Routed = library.View; });
         rig.Service.Cache.Clear();
         var emma = await Hub(rig, rig.Emma);
         Assert.Equal(200, emma.Status);
@@ -237,6 +237,7 @@ public class ApiArrRequestsHubTests
         using var rig = await Ready(r =>
         {
             r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "movie:tmdb:693134" ? library.View.Copies(key, viewer, aliases) : null;
+            r.View.Routed = library.View;
             // Dune's standard copy has been missing for a month: nothing in the queue or grabbed.
             var dune = r.Radarr.Movies.Single(m => (int)m["tmdbId"]! == 693134);
             dune["added"] = r.Arr.Now.UtcDateTime.AddDays(-30).ToString("o", CultureInfo.InvariantCulture);
@@ -258,6 +259,7 @@ public class ApiArrRequestsHubTests
         using var rig = await Ready(r =>
         {
             r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == "tv:tvdb:78874" ? library.View.Copies(key, viewer, aliases) : null;
+            r.View.Routed = library.View;
             // Firefly S1E2 monitored, out for years, nothing grabbed.
             r.Sonarr.Episodes.Add(new JsonObject { ["id"] = 102, ["seriesId"] = 1, ["seasonNumber"] = 1, ["episodeNumber"] = 2, ["airDateUtc"] = "2003-10-12T00:00:00Z", ["hasFile"] = false, ["monitored"] = true });
         });

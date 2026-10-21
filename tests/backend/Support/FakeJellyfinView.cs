@@ -162,6 +162,12 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     /// <summary>Answers Copies instead of the in-memory copies when it returns a lookup (tests route one title to a real ArrJellyfinView).</summary>
     public Func<TitleKey, StatusViewer, IReadOnlyCollection<TitleKey>?, CopyLookup?>? CopiesFrom { get; set; }
 
+    /// <summary>
+    /// The real view <see cref="CopiesFrom"/> routes a title to: the sources of an item this fake doesn't hold are read there
+    /// too, so one Jellyfin answers both the copies and what plays in them (as the real host does).
+    /// </summary>
+    public IArrJellyfinView? Routed { get; set; }
+
     /// <summary>The keys every Copies call looked for (the key first, then its aliases of the same kind).</summary>
     public List<IReadOnlyList<string>> CopyQueries { get; } = new();
 
@@ -337,7 +343,16 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
                 if (copy.ItemId == itemId && Sees(to)) return Read(copy.DateCreated);
             }
         }
-        return Array.Empty<JfSource>();
+        // Like the real view, any episode item: one listed in a series folder with a file, which the viewer sees in a copy they open.
+        foreach (var (series, list) in EpisodesBySeries)
+        {
+            foreach (var (episode, to) in list)
+            {
+                if (episode.ItemId != itemId || episode.Virtual || episode.Hidden) continue;
+                return Sees(to) && (viewer.IsLibraryContext || SeesSeries(series, viewer)) ? Read(episode.DateCreated) : Array.Empty<JfSource>();
+            }
+        }
+        return Routed?.Sources(itemId, viewer, readDimensions) ?? Array.Empty<JfSource>();
     }
 
     /// <summary>
@@ -383,7 +398,11 @@ internal sealed partial class FakeJellyfinView : IArrJellyfinView
     /// <summary>Like Jellyfin's ancestry query: exactly this series item's episodes with a file the viewer can open, with their sources.</summary>
     public IReadOnlyList<JfEpisodeSources> EpisodeSources(Guid seriesItemId, int? season, StatusViewer viewer, bool readDimensions = true)
     {
+        // An episode lookup like any other (tests hold or fail one mid-way), never counted as a season/episode list read.
+        OnEpisodes?.Invoke();
+        if (FailEpisodesOf == seriesItemId) throw new InvalidOperationException("library query failed");
         bool Sees(HashSet<Guid>? to) => viewer.IsLibraryContext || to == null || to.Contains(viewer.UserId);
+        if (!EpisodesBySeries.ContainsKey(seriesItemId) && Routed != null) return Routed.EpisodeSources(seriesItemId, season, viewer, readDimensions);
         if ((!viewer.IsLibraryContext && !SeesSeries(seriesItemId, viewer)) || !EpisodesBySeries.TryGetValue(seriesItemId, out var list)) return Array.Empty<JfEpisodeSources>();
         return list.Where(e => !e.Episode.Virtual && !e.Episode.Hidden && e.Episode.ItemId != Guid.Empty && (season == null || e.Episode.Season == season)
                 && Sees(e.VisibleTo) && (viewer.IsLibraryContext || !Withdrawn(e.Episode.ItemId, viewer)) && (!Items.TryGetValue(e.Episode.ItemId, out var item) || Sees(item.VisibleTo)))

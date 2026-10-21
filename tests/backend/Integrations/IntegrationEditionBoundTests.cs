@@ -219,6 +219,7 @@ public class IntegrationEditionBoundTests
         const string bound = "movie:tmdb:693134";
         var rows = Rows(l, PastTheCeiling, live: false, id: "693134");
         rig.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == bound ? l.View.Copies(key, viewer, aliases) : null;
+        rig.View.Routed = l.View;
         long Ready(string key, string title)
             => rig.NotifyStore.Add(rig.Emma.UserId, "ready|" + key, NotifyKind.Ready, key, null, new Dictionary<string, string> { ["title"] = title },
                 new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now)!.Value;
@@ -292,6 +293,7 @@ public class IntegrationEditionBoundTests
         {
             r.Request(1, 693134, r.Emma);
             r.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == dune ? l.View.Copies(key, viewer, aliases) : null;
+            r.View.Routed = l.View;
         });
         rig.Service.RebuildInterest();
         await rig.Service.EvaluateAsync(new[] { dune }, null, default);
@@ -318,6 +320,7 @@ public class IntegrationEditionBoundTests
         // When the batch is due, the series' copy lookup reaches its bound: the batch stays, nothing is told.
         Rows(l, PastTheCeiling, live: false, id: "371980", provider: "Tvdb");
         rig.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == severance ? l.View.Copies(key, viewer, aliases) : null;
+        rig.View.Routed = l.View;
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         Assert.Equal(0, rig.Service.FlushBatches(rig.Arr.Now));
         Assert.NotNull(rig.NotifyStore.Batch(rig.Emma.UserId, severance));
@@ -336,6 +339,7 @@ public class IntegrationEditionBoundTests
         rig.Tmdb["trending/movie/week"] = IntegrationRequestDiscoverTests.Page(IntegrationRequestDiscoverTests.Movie(603, "The Matrix"), IntegrationRequestDiscoverTests.Movie(1, "One"));
         var rows = Rows(l, PastTheCeiling);
         rig.R.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == Matrix.ToString() ? l.View.Copies(key, viewer, aliases) : null;
+        rig.R.View.Routed = l.View;
         JsonElement Card(JsonElement body) => body.GetProperty("answer").GetProperty("results").EnumerateArray().Single(e => e.GetProperty("key").GetString() == Matrix.ToString());
         var (status, body, _) = await rig.Discover(rig.R.Member, "trending");
         Assert.Equal(200, status);

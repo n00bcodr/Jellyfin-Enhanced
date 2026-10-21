@@ -81,23 +81,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { code = "invalid_scope" });
             }
 
-            // A copy the caller can open wins: the scope asked for when it is there, else the title. An
-            // episode counts only with a file Jellyfin plays: a missing (virtual) episode or a stub the library
-            // lists is not a copy, as for the arrival hand-off, so it opens the native page with its Get it /
-            // Search instead.
-            var copies = _status.CopiesOf(title, viewer).Display;
-            if (copies.FirstOrDefault(x => x.Visible) is { } shown)
-            {
-                if (season is int s)
-                {
-                    var scopeKey = episode is int e ? title.WithEpisode(s, e) : title.WithSeason(s);
-                    if (_status.ScopeItem(viewer, scopeKey) is { } scope && !(episode != null && !scope.Playable)) return Ok(new { itemId = scope.ItemId.ToString("N", CultureInfo.InvariantCulture) });
-                }
-                else
-                {
-                    return Ok(new { itemId = shown.ItemId.ToString("N", CultureInfo.InvariantCulture) });
-                }
-            }
+            // A copy the caller can open and that plays wins: the scope asked for when it is there (never the title in its
+            // place). "Open in library" reads the one availability predicate (ArrStatusService.LibraryItemFor): a missing
+            // (virtual) episode, a stub the library lists, or a movie or series whose copies only list stubs is not there yet,
+            // so it opens the native page with its Get it / Search instead.
+            var scopeKey = season is int s ? (episode is int e ? title.WithEpisode(s, e) : title.WithSeason(s)) : title;
+            if (_status.LibraryItemFor(viewer, scopeKey) is Guid open) return Ok(new { itemId = open.ToString("N", CultureInfo.InvariantCulture) });
 
             tmdb ??= title.Provider == "tmdb" ? title.NumericId : null;
             tmdb ??= _aliases.Of(title).FirstOrDefault(k => k.Provider == "tmdb" && k.IsMovie == title.IsMovie)?.NumericId;

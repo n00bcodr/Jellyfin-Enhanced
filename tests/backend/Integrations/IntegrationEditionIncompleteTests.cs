@@ -64,6 +64,7 @@ public class IntegrationEditionIncompleteTests
             config.ArrIntegrationEnabled = true; config.ArrPhase1Enabled = true; config.ArrPhase3Enabled = true; config.ArrRequestBackend = "je"; config.ArrRequestDefaultRole = "Member";
             Member = Jf.AddUser(false);
             Jf.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == Matrix.ToString() ? l.View.Copies(key, viewer, aliases) : null;
+            Jf.Routed = l.View;
             var users = new Mock<IUserManager>(); users.Setup(u => u.GetUserById(Member.UserId)).Returns((User)Member.Handle!);
             var server = new Mock<IServerConfigurationManager>(); server.SetupGet(s => s.Configuration).Returns(new ServerConfiguration { MetadataCountryCode = "US" });
             var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response()));
@@ -120,6 +121,7 @@ public class IntegrationEditionIncompleteTests
         rig.Tmdb["trending/movie/week"] = IntegrationRequestDiscoverTests.Page(IntegrationRequestDiscoverTests.Movie(603, "The Matrix"), IntegrationRequestDiscoverTests.Movie(1, "One"));
         var kid = rig.AddLimitedKid();
         rig.R.View.CopiesFrom = (key, viewer, aliases) => key.Title.ToString() == Matrix.ToString() ? l.View.Copies(key, viewer, aliases) : null;
+        rig.R.View.Routed = l.View;
         Shape(l, shape);
         var (status, body, _) = await rig.Discover(kid, "trending");
         Assert.Equal(200, status);
@@ -268,6 +270,7 @@ public class IntegrationEditionIncompleteTests
         const string key = "movie:tmdb:693134";
         Shape(l, shape, id: "693134");
         rig.View.CopiesFrom = (k, viewer, aliases) => k.Title.ToString() == key ? l.View.Copies(k, viewer, aliases) : null;
+        rig.View.Routed = l.View;
         rig.NotifyStore.Add(rig.Emma.UserId, "ready|" + key, NotifyKind.Ready, key, null, new Dictionary<string, string> { ["title"] = "Dune: Part Two" },
             new[] { (NotifyChannel.Ntfy, rig.Arr.Now) }, rig.Arr.Now);
         await rig.Dispatcher.RunOnceAsync(default);

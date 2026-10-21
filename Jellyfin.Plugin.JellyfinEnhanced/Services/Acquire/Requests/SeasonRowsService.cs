@@ -227,7 +227,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private SeasonRows Project(StatusViewer viewer, TitleKey key, string seriesId, int season, List<JfEpisode> jf, Dictionary<int, SeasonRowEpisode> meta)
         {
             var hidden = new HashSet<int>(jf.Where(e => e.Hidden).SelectMany(Numbers));
-            var withFile = new HashSet<int>(jf.Where(e => !e.Hidden && e.Playable).SelectMany(Numbers));
+            var withFile = new HashSet<int>(jf.Where(EditionAvailability.Plays).SelectMany(Numbers));
             var canonical = _aliases?.Canonical(key.Title) ?? key.Title;
             var facts = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "standard"));
             var facts4k = _policy.Evaluate(viewer.UserId, Probe(canonical, season, "4k"));

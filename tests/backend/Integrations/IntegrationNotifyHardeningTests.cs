@@ -628,7 +628,13 @@ public class IntegrationNotifyHardeningTests
         rig.View.Rev++;
         await rig.Step(tvdb, tmdb, imdb);
         Assert.Empty(rig.Inbox(rig.Emma));
-        foreach (var season in new[] { 1, 2 }) rig.View.AddEpisode(series, new JfEpisode { ItemId = Guid.NewGuid(), Season = season, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+        foreach (var season in new[] { 1, 2 })
+        {
+            var id = Guid.NewGuid();
+            rig.View.AddEpisode(series, new JfEpisode { ItemId = id, Season = season, Episode = 2, DateCreated = rig.Arr.Now.UtcDateTime });
+            // The "/srv/uhd" copy's files are 2160p (a 4K request's arrival is a file with 4K dimensions, D44).
+            rig.View.AddSource(id, 3840, 2160);
+        }
         await rig.Step(imdb, tmdb, tvdb);
         rig.Open();
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);

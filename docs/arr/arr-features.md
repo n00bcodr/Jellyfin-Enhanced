@@ -755,8 +755,10 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       the 4K copy, and a title in a library you can't open never counts); **new episodes** of series you follow or
       asked for, gathered per series for 10 minutes from the first one ("Severance: 3 new episodes ready"; a whole season
       at once reads "Season 2 is ready" when Sonarr says that is all of it; only numbers, never an episode's name, so
-      nothing is spoiled; a 4K request hears about the 4K copy's episodes only, and with no 4K Sonarr set up in
-      Jellyfin Enhanced only about the copy Seerr matched it to, never the standard copy); a request of yours **declined**
+      nothing is spoiled; a 4K request hears about episodes whose own file is 4K, in whichever copy or folder they are: an
+      HD file in the 4K Sonarr's folder is not a 4K arrival (and doesn't use up the 4K one), a 4K file in the standard folder
+      is; with *Standard requests need a non-4K copy* on, a standard request isn't told about a 4K-only episode; a stub or
+      placeholder file is never an arrival); a request of yours **declined**
       (with the reason given) and, for requests Jellyfin Enhanced handles (phase 3), a request of yours **OK'd** ("Dad
       OK'd Firefly S1E4"; "… is on its way" when someone else's request covered it). In JE mode your requests are
       followed like Seerr requests are in Seerr mode: Ready and new episodes are told for exactly the part you asked for
@@ -769,7 +771,9 @@ Hear when what you asked for or follow is ready, on the bell, in a pop-up, on yo
       no longer open by the time a batch goes out is left out (a series followed under two ids, even for different
       seasons, is still one batch).
       Phone alerts and e-mails held back by quiet hours or retries are checked again as they go out (nothing about a
-      title you can no longer open, nothing of a kind you switched off meanwhile, nothing on a channel switched off
+      title you can no longer open, nothing about a file that no longer plays the edition announced, such as a 4K file
+      replaced by an HD one or turned into a stub, and a batch says only what still plays, nothing of a kind you switched
+      off meanwhile, nothing on a channel switched off
       meanwhile; the bell then shows such an entry without its title), and a disabled account is told nothing. When a
       Jellyfin user is deleted, their follows, settings and inbox go with them.
 
@@ -927,7 +931,13 @@ ask fetch the episodes that are missing, one tap each.
       for an OK never hides **Get it in 4K**), and a download of a copy you can't open is never shown to you. A copy plays an episode only when it has a file Jellyfin can play: a placeholder or stub file
       (such as a *.disc* stub) is never *Ready*, in this copy or another, on its season page, its own episode page, its
       card or a movie's page, a download of it is that episode on its way (not a better copy), and its arrival is never
-      announced.
+      announced. The same rule holds everywhere something is said to be there: a movie by title (the Requests page, cards
+      by title, the Seerr modal), an administrator's line for another copy (a 4K copy that is only a stub is not *Ready*),
+      a whole series asked for with no seasons named, *Open in library*, Discover's *In your library*, a collection's
+      missing movies, a family **Search** (a stubbed episode is searched), and the automatic requests (two versions of one
+      episode count as one, a two-part file as both episodes, and the next season is asked for unless every one of its
+      episodes plays). A *.strm* shortcut plays its remote file as its own item, so a 2160p one is a 4K copy. A season
+      card without Sonarr's episode list never counts an episode twice (a file Sonarr has and the queue's import of it).
     - **What happens after a tap** is said plainly on the row: *Waiting for OK* when the ask needs someone's OK (Kids
       always; Members over their allowance or house rules), *Asked!* when it went straight through, *Someone asked* when
       another person in the household already asked for it. Anything else (over the week's allowance, not allowed,

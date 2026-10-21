@@ -994,7 +994,7 @@ public class IntegrationNotificationsTests
     }
 
     /// <summary>Adds a 4K Sonarr (role 4k) holding Severance in its own folder, before anything is read.</summary>
-    private static FakeArr.Host FourKSonarr(Rig r)
+    internal static FakeArr.Host FourKSonarr(Rig r)
     {
         var host = r.Arr.Add("sonarr4k.lan", "Sonarr");
         r.Arr.Configure(
@@ -1040,6 +1040,8 @@ public class IntegrationNotificationsTests
         var episode = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/media/tv4k/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();
@@ -1081,6 +1083,8 @@ public class IntegrationNotificationsTests
         // The 4K folder's S2E1 arrives (the standard folder had S2E1 all along): told once, linked to the 4K episode.
         var episode = Guid.NewGuid();
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();
@@ -1129,6 +1133,8 @@ public class IntegrationNotificationsTests
         // The 4K folder's S2E1 arrives: told, linked to the 4K episode.
         var episode = Guid.NewGuid();
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();
@@ -1195,7 +1201,8 @@ public class IntegrationNotificationsTests
     public async Task AFourKSeasonRequestWithNoFourKSonarrIsToldOnlyAboutTheCopySeerrMatchedItTo()
     {
         // Jellyfin Enhanced watches only a standard Sonarr; Seerr sends 4K requests to one it doesn't
-        // watch. Emma asks for Season 2 of Severance in 4K; Seerr names the Jellyfin item of the 4K copy.
+        // watch. Emma asks for Season 2 of Severance in 4K; Seerr names the Jellyfin item of the 4K copy. Only a file with
+        // 4K dimensions is her arrival (edition round 19 part B), wherever it is; the HD copy's files are not.
         var uhd = Guid.NewGuid();
         using var rig = await Started(r =>
         {
@@ -1219,6 +1226,8 @@ public class IntegrationNotificationsTests
         var episode = Guid.NewGuid();
         rig.View.AddCopy(TitleKey.Parse(Severance)!, new JfCopy { ItemId = uhd, Path = "/srv/uhd/Severance", LibraryName = "Shows 4K", DateCreated = rig.Arr.Now.UtcDateTime });
         rig.View.AddEpisode(uhd, new JfEpisode { ItemId = episode, Season = 2, Episode = 1, DateCreated = rig.Arr.Now.UtcDateTime });
+        // Its file's own dimensions make it the 4K edition (D44: never the folder's Sonarr).
+        rig.View.AddSource(episode, 3840, 2160);
         await rig.Step(Severance);
         rig.Arr.Now = rig.Arr.Now.AddMinutes(11);
         await rig.Step();

@@ -760,7 +760,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// The playable sources of a movie or episode as Jellyfin plays them (its media sources, every version
         /// included), each with its video stream's dimensions. None for a missing (virtual) item or a placeholder.
         /// A version played by another item counts only when the viewer can open that item (Jellyfin's own check:
-        /// library access and parental limits); the library context opens every one in a current library.
+        /// library access and parental limits); the library context opens every one in a current library. A native
+        /// shortcut (a ".strm" file) plays its remote address as the shortcut item's own source (Jellyfin 10.11 and 12.x:
+        /// the item's own id, remote, its probed streams): it is bound to that local item, whose own path decides library
+        /// membership, with the remote source's dimensions; any other non-file source is bound to nothing.
         /// </summary>
         private List<JfSource> SourcesOf(Video video, StatusViewer viewer, IReadOnlyDictionary<Guid, LiveLibrary> libraries)
         {
@@ -768,20 +771,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (!Playable(video)) return list;
             foreach (var source in video.GetMediaSources(false))
             {
-                if (source.Protocol != MediaProtocol.File || string.IsNullOrEmpty(source.Path) || source.Type == MediaSourceType.Placeholder) continue;
-                var stream = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video).OrderByDescending(s => (s.Width ?? 0) * (long)(s.Height ?? 0)).FirstOrDefault();
+                if (string.IsNullOrEmpty(source.Path) || source.Type == MediaSourceType.Placeholder) continue;
                 var id = Guid.TryParse(source.Id, out var parsed) ? parsed : video.Id;
+                var shortcut = source.Protocol != MediaProtocol.File;
+                if (shortcut && !(video.IsShortcut && id.Equals(video.Id))) continue;
+                var stream = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video).OrderByDescending(s => (s.Width ?? 0) * (long)(s.Height ?? 0)).FirstOrDefault();
                 // The item that plays exactly this file: the primary for its own path, else the version's item by
                 // source id, else by path. A source with none is not credited to the primary (nothing could insert it),
                 // nor is one whose item the viewer can't open (a linked version in another library, or one rated above
                 // their limit).
-                var version = BridgePaths.SamePath(source.Path, video.Path) ? video
+                var version = shortcut || BridgePaths.SamePath(source.Path, video.Path) ? video
                     : (!id.Equals(video.Id) ? _libraryManager.GetItemById(id) as Video : null);
                 // Some native sources name the primary id. Their own backing path still decides membership.
-                if (version == null || string.IsNullOrEmpty(version.Path) || !BridgePaths.SamePath(source.Path, version.Path))
+                if (!shortcut && (version == null || string.IsNullOrEmpty(version.Path) || !BridgePaths.SamePath(source.Path, version.Path)))
                     version = _libraryManager.FindByPath(source.Path, false) as Video;
                 if (version == null || LibraryOf(version, viewer, libraries) == null
-                    || LibraryOf(version, viewer, libraries, sourcePath: source.Path) == null) continue;
+                    || LibraryOf(version, viewer, libraries, sourcePath: shortcut ? version.Path : source.Path) == null) continue;
                 list.Add(new JfSource
                 {
                     SourceId = id,
@@ -789,7 +794,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     BackingItemId = version.Id,
                     Width = stream?.Width,
                     Height = stream?.Height,
-                    Path = source.Path,
+                    Path = shortcut ? version.Path : source.Path,
                     DateCreated = Utc(version.DateCreated),
                 });
             }

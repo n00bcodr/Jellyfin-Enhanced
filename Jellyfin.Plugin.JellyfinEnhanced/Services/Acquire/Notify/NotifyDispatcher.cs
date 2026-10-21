@@ -370,6 +370,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (_view == null || delivery.Kind is not (NotifyKind.Ready or NotifyKind.Episodes)) return null;
             if (_view.Viewer(delivery.UserId) is not { } viewer) return "The recipient no longer exists or is disabled.";
+            // What it announces is judged again at delivery by the one availability predicate (D53, edition round 19 part B),
+            // for the edition it was judged by when it was created: an item it names must still have an accessible playable
+            // source of that edition for the recipient (a 4K file replaced by an HD one, or a file that became a stub, is no
+            // longer the arrival it announced). Older alerts name no edition: a 4K one is 4K, any other whatever plays.
+            var editions = new EditionAvailability(_view, _config, (k, v) => _view.Copies(k, v, _aliases?.Of(k)).Display);
+            var edition = payload.TryGetValue("variant", out var variant) && variant == "4k" ? Edition.FourK
+                : payload.TryGetValue("edition", out var named) && named == NotificationService.EditionName(Edition.Standard) ? Edition.Standard
+                : Edition.Any;
             // Older notifications have no episodeItems and retain their parent-item check. New
             // batches carry each number's actual file, including combined files and the variant.
             if (delivery.Kind == NotifyKind.Episodes && payload.TryGetValue("episodeItems", out var json))
@@ -377,9 +385,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                 List<NotifyEpisode>? episodes;
                 try { episodes = JsonSerializer.Deserialize<List<NotifyEpisode>>(json, PayloadJson); }
                 catch (JsonException) { episodes = null; }
-                var visible = episodes?.Where(e => e.ItemId != Guid.Empty && _view.Resolve(e.ItemId, viewer) != null)
+                var visible = episodes?.Where(e => e.ItemId != Guid.Empty && editions.Item(viewer, e.ItemId, edition).Count > 0)
                     .DistinctBy(e => (e.Season, e.Episode)).OrderBy(e => e.Season).ThenBy(e => e.Episode).ToList();
-                if (visible is not { Count: > 0 }) return "The recipient can no longer open these episodes.";
+                if (visible is not { Count: > 0 }) return "The recipient can no longer play these episodes in the edition announced.";
                 var seasons = visible.Select(e => e.Season).Distinct().ToList();
                 payload["count"] = visible.Count.ToString(CultureInfo.InvariantCulture);
                 payload["seasons"] = string.Join(", ", seasons);
@@ -400,10 +408,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             }
             if (Guid.TryParse(delivery.ItemId, out var item) && item != Guid.Empty)
             {
-                return _view.Resolve(item, viewer) == null ? "The recipient can no longer open this title." : null;
+                if (_view.Resolve(item, viewer) == null) return "The recipient can no longer open this title.";
+                // A movie's own item must still play the edition; a series, season or episode item an older alert names is
+                // judged by the title below (an episode batch was judged by its episodes above).
+                if (delivery.Kind == NotifyKind.Ready) return editions.Item(viewer, item, edition).Count > 0 ? null : "The recipient's copy no longer plays the edition announced.";
+                return null;
             }
             var key = TitleKey.Parse(delivery.TitleKey);
-            return key != null && _view.Copies(key, viewer, _aliases?.Of(key)).SeenOpenable != null ? null : "The recipient can no longer open this title.";
+            if (key == null) return "The recipient can no longer open this title.";
+            var seen = _view.Copies(key, viewer, _aliases?.Of(key)).Seen;
+            var plays = key.IsMovie ? editions.Movie(viewer, seen, edition).Count > 0 : editions.Episodes(viewer, seen, edition, null).Hits.Count > 0;
+            return plays ? null : "The recipient can no longer play this title in the edition announced.";
         }
 
         /// <summary>Why a channel can't carry the delivery now (switched off or not set up, by the administrator or the user), or null.</summary>

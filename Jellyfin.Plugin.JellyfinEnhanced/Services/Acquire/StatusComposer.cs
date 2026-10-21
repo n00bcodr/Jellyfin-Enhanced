@@ -403,6 +403,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// <see cref="EpisodesOf"/>); null for everyone else (nothing is hidden from them).
         /// </summary>
         public Func<Guid, HiddenParts>? HiddenOf { get; init; }
+
+        /// <summary>
+        /// Whether a series item (a copy) plays an episode for the viewer now: the availability predicate
+        /// (<see cref="EditionAvailability"/>, <see cref="Edition.Any"/>) over the same folder read as <see cref="EpisodesOf"/>.
+        /// A Sonarr copy's line reads "in the library" only then. Null: not known, so nothing is credited.
+        /// </summary>
+        public Func<Guid, bool>? Holds { get; init; }
     }
 
     /// <summary>
@@ -479,13 +486,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         /// copy they can't open is that hidden copy's, never "nobody's" (its downloads are never theirs to see), and ownership
         /// is judged against every instance holding the title (<paramref name="owners"/>, default the facts' own), so an edition's
         /// instances alone never take a copy by "it is the only Radarr here".</para>
+        /// <para>D53, edition round 19 part B (one availability definition): a copy other than the page's own item is in the
+        /// library for a Radarr's line, the headline or Play only when it is in <paramref name="qualifying"/>, the copies
+        /// <see cref="EditionAvailability.Holding"/> found an accessible playable source of the edition in. Null: none is
+        /// (never "visible is enough"). The page's own item is judged by <see cref="EditionAvailability.Plays(JfItemRef)"/>.</para>
         /// </remarks>
         public static TitleStatus Movie(TitleFacts facts, JfItemRef? item, IReadOnlyList<JfCopy>? copies, ComposeContext c, bool detail, bool followEveryRole = false,
             IReadOnlyCollection<Guid>? qualifying = null, IReadOnlyList<ArrCopyFacts>? owners = null)
         {
             var self = item != null ? new JfCopy { ItemId = item.ItemId, Visible = true, Path = item.Path, DateCreated = item.DateCreated, LibraryId = item.LibraryId, LibraryName = item.LibraryName } : null;
             var jf = copies ?? (self != null ? new[] { self } : Array.Empty<JfCopy>());
-            bool Qualifies(JfCopy x) => qualifying == null || qualifying.Contains(x.ItemId);
+            bool Qualifies(JfCopy x) => qualifying?.Contains(x.ItemId) == true;
             // The page's own item as the viewer opens it now, when the copies don't list it (a lookup that couldn't finish):
             // an arr copy whose folder is exactly its title folder owns it all the same (as SeriesCopyFor).
             var unlisted = self != null && jf.All(x => x.ItemId != self.ItemId) && !string.IsNullOrWhiteSpace(self.Path) ? self : null;
@@ -500,7 +511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 var own = item != null ? matched.FirstOrDefault(m => m.ItemId == item.ItemId) : null;
                 // The page's own item is a stub (D53, edition round 16: it plays nothing): this copy reads where its Radarr
                 // has got to, a download of it included, never Ready.
-                var stub = own != null && !item!.Playable;
+                var stub = own != null && !EditionAvailability.Plays(item!);
                 var visible = stub ? null : own ?? matched.FirstOrDefault(m => m.Visible && Qualifies(m));
                 CopyState state;
                 if (visible != null)
@@ -540,7 +551,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 }
                 else
                 {
-                    headline = item.Playable ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated) : NothingKnown(facts);
+                    headline = EditionAvailability.Plays(item) ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready, Since: item.DateCreated) : NothingKnown(facts);
                 }
             }
             else if (jf.Any(x => x.Visible && Qualifies(x)))
@@ -587,7 +598,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 Progress = headline.Progress,
                 NextDate = headline.Date,
                 NextDay = headline.Day,
-                Journey = detail ? MovieJourney(headline, headlineCopy, item, jf, facts.Request, c) : null,
+                Journey = detail ? MovieJourney(headline, headlineCopy, item, jf.Where(Qualifies).ToList(), facts.Request, c) : null,
                 Admin = admin,
             };
         }
@@ -820,7 +831,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             if (copy == null)
             {
                 var none = ApplyRequest(NothingKnown(facts), facts.Request, c, facts);
-                var hasEpisodes = jfEpisodes?.Any(e => e.Playable) == true;
+                var hasEpisodes = jfEpisodes?.Any(EditionAvailability.Plays) == true;
                 return new TitleStatus
                 {
                     Key = facts.Key.ToString(), ItemId = Id(item.ItemId), Kind = "series",
@@ -990,7 +1001,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             ArrEpisodeEntry? arr = null;
             // One item reference carries every fact (D53, edition round 16): a stub Jellyfin lists reads where its arr has
             // got to, as its season row does; only an episode Jellyfin plays is Ready (and a download of it an upgrade).
-            if (item.Playable)
+            if (EditionAvailability.Plays(item))
             {
                 arr = copy?.Episodes?.Find(season, number);
                 state = (copy == null ? null : QueuedEpisode(copy, RowsFor(copy, season, number, arr), have: true, item.DateCreated, c))
@@ -1103,11 +1114,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         public static TitleStatus SeriesByKey(TitleFacts facts, IReadOnlyList<JfCopy> copies, ComposeContext c, HiddenParts? hidden = null)
         {
             var visible = copies.Any(x => x.Visible);
+            // In the library only when a copy the viewer opens plays an episode (D53, edition round 19 part B: the one
+            // availability predicate, <see cref="ComposeContext.Holds"/>; not known: none does). A copy that lists only
+            // placeholders or missing episodes reads where its Sonarr has got to.
+            var plays = copies.Any(x => x.Visible && c.Holds?.Invoke(x.ItemId) == true);
             var bindings = SeriesBindings(facts, copies, c);
             var bound = Headline(bindings);
             var state = bound == null
-                ? (visible ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
-                : SeriesCopyState(bound.Read(c, hidden), visible, c, facts.Request, FilesOf(bound, c));
+                ? (plays ? new CopyState(StatusStage.Ready, StatusReasonCode.Ready) : NothingKnown(facts))
+                : SeriesCopyState(bound.Read(c, hidden), plays, c, facts.Request, FilesOf(bound, c));
             if (!visible && copies.Count > 0 && c.Viewer.IsAdmin && state.Stage == StatusStage.AlmostReady)
             {
                 // An admin is told why.
@@ -1253,10 +1268,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             var (visibleEpisodes, hidden) = SplitHidden(jfEpisodes, boundSeasons);
             var wanted = new HashSet<int>(seasons);
             var all = visibleEpisodes ?? Array.Empty<JfEpisode>();
-            var real = all.Where(e => e.Playable && wanted.Contains(e.Season)).ToList();
+            var real = all.Where(e => EditionAvailability.Plays(e) && wanted.Contains(e.Season)).ToList();
             // Single episodes outside the requested seasons, with the Jellyfin episode that has each (if any).
             var picked = (episodes ?? Array.Empty<(int Season, int Episode)>()).Where(p => !wanted.Contains(p.Season)).Distinct()
-                .Select(p => (Part: p, Have: all.FirstOrDefault(e => e.Playable && e.Season == p.Season && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(p.Episode))))
+                .Select(p => (Part: p, Have: all.FirstOrDefault(e => EditionAvailability.Plays(e) && e.Season == p.Season && new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(p.Episode))))
                 .ToList();
             var arrived = real.Select(e => e.DateCreated).Concat(picked.Where(p => p.Have != null).Select(p => p.Have!.DateCreated))
                 .Where(d => d.HasValue).DefaultIfEmpty(null).Max();
@@ -1646,7 +1661,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 
         /// <summary>The Jellyfin episode the viewer plays an episode number from (a combined file covers its range; never a placeholder), if any.</summary>
         private static JfEpisode? Have(IReadOnlyList<JfEpisode>? files, int season, int episode)
-            => files?.FirstOrDefault(x => x.Season == season && !x.Hidden && x.Playable && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(episode));
+            => files?.FirstOrDefault(x => x.Season == season && EditionAvailability.Plays(x) && new EpisodeRange(x.Episode, x.EpisodeEnd).Contains(episode));
 
         // ------------------------------------------------------------------ summaries
 
@@ -1708,7 +1723,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
         {
             var stats = copy.Series?.Seasons.FirstOrDefault(s => s.SeasonNumber == season);
             // Sonarr counts episodes with a file, not files: a two-part file covers two episodes.
-            var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(e => !e.Hidden && e.Playable));
+            var coverage = new EpisodeCoverage((jfEpisodes ?? Array.Empty<JfEpisode>()).Where(EditionAvailability.Plays));
             var ready = (int)Math.Min(int.MaxValue, coverage.CountInSeason(season));
             // The queue as the season's page reads it: a download of an episode the viewer plays is an upgrade (ready).
             var queued = QueuedEpisodes(copy, jfEpisodes, c, season);
@@ -1718,8 +1733,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             // A season whose statistics can't be vouched for: what is visibly here or on its way, nothing more.
             var aired = copy.Unvouched.Contains(season) ? ready + downloading + almost : Math.Max(stats?.EpisodeCount ?? 0, ready);
             var files = stats?.EpisodeFileCount ?? 0;
-            var pending = Math.Max(0, files - ready);
-            var missing = Math.Max(0, aired - ready - pending - downloading - almost);
+            // D53, edition round 19 part B (disjoint identities): Sonarr's file count names no episodes, so its overlap with the
+            // queue (an importing episode has its file already; a download of an episode Sonarr has a file for Jellyfin hasn't
+            // read yet) can't be told. Both are bounded from below: a file Jellyfin doesn't play yet counts as on its way only past
+            // what the queue already names, and an episode counts as missing only when it can be none of those files or rows.
+            // No episode is counted twice, and the parts never add up to more than the season's aired episodes.
+            var unread = Math.Max(0, files - ready);
+            var pending = Math.Max(0, unread - downloading - almost);
+            var missing = Math.Max(0, aired - ready - unread - downloading - almost);
             var next = stats?.NextAiring is DateTime n && n > c.Now ? n : (DateTime?)null;
             return new StatusSummary { Aired = aired, Ready = ready, Downloading = downloading, AlmostReady = almost + pending, Missing = missing, Unknown = copy.QueueUnknown ? missing : 0, Attention = attention, NextAir = next, NextSeason = next.HasValue ? season : null };
         }
@@ -1906,7 +1927,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                     if (QueuedEpisode(other, rows, have != null, have?.DateCreated, c) is { } state) variants.Add((other, state, null));
                     continue;
                 }
-                variants.Add((other, SeriesCopyState(other, bound.Jf != null, c, facts.Request, files), bound.Jf));
+                // In the library for this line only when its own copy plays an episode for the viewer (the availability
+                // predicate, D53 edition round 19 part B): a copy that lists only placeholders reads where its Sonarr is.
+                variants.Add((other, SeriesCopyState(other, bound.Open && c.Holds?.Invoke(bound.Jf!.ItemId) == true, c, facts.Request, files), bound.Jf));
                 problems.AddRange(found);
             }
             return any;

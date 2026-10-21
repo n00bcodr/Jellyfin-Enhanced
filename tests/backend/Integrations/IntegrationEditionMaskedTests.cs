@@ -354,15 +354,15 @@ public class IntegrationEditionMaskedTests
 
     /// <summary>
     /// The only production methods that may read Jellyfin's grouped lists, each for a reason no Sonarr fact passes through:
-    /// the lists themselves, the native season page's rows, the hidden-part request gate, the auto-request presence count,
-    /// and features outside Requests &amp; downloads that present Jellyfin's own season (item stats, Spoiler Guard).
+    /// the lists themselves, the native season page's rows, the hidden-part request gate, and features outside Requests &amp;
+    /// downloads that present Jellyfin's own season (item stats, Spoiler Guard). The auto-request presence count reads the
+    /// availability predicate since edition round 19 part B (its grouped rows counted one episode's versions twice).
     /// </summary>
     private static readonly string[] GroupedListExceptions =
     {
         "ArrJellyfinView.Episodes",           // the presented list itself (IArrJellyfinView.Episodes)
         "ArrJellyfinView.Seasons",            // the presented list itself (IArrJellyfinView.Seasons)
         "ArrJellyfinView.VisibleEpisodeIds",  // the presented list's own hidden markers (part of Episodes)
-        "AutoRequestRecorder.EpisodesInLibrary", // presence count: "held in a copy you open"
         "ItemStatsService.Collect",           // item stats of Jellyfin's own season (no arr fact)
         "RequestPolicy.NativeScopeAllowed",   // the hidden-part request gate (a part a copy they open plays is theirs)
         "SeasonRowsService.ForSeasonAsync",   // the native season page's rows (presentation)
