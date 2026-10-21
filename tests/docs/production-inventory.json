@@ -671,6 +671,34 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageBody.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageCompositions.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageProjection.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageSockets.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageTiles.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageWithhold.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageWithholdFilter.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListAccess.cs",
       "category": "Services"
     },
@@ -10916,6 +10944,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ExperimentalListImporter.cs"
     },
     {
+      "literal": "legacy-collage-tiles.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/LegacyCollageWithhold.cs"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Lists/ListFlags.cs"
     },
@@ -11380,10 +11412,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 676,
+    "files": 683,
     "routes": 308,
     "configuration_properties": 651,
-    "storage_references": 103,
+    "storage_references": 104,
     "scheduled_tasks": 15,
     "locales": 33
   }
