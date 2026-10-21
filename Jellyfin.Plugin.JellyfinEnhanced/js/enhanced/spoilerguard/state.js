@@ -36,6 +36,11 @@
     let loadedRevision = null;
     let stale = false;
 
+    /** @returns {string|null} The document revision known now. */
+    function knownRevision() {
+        return JE.core?.revision?.document?.('spoiler-guard') ?? null;
+    }
+
     /** Tell current detail-page consumers to discard topic content after a policy change. */
     function notifyPolicyChanged() {
         window.dispatchEvent(new Event('je:spoiler-changed'));
@@ -189,11 +194,17 @@
         // The page-load bootstrap carries this user's state (same body as the
         // endpoint); it is handed out once, so later loads ask the server.
         const requestGeneration = generation;
+        // Taken before the read (core user-change caches): the state as read is at least this new.
+        const revision = knownRevision();
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
         statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : readState())
             .then(function(data) {
                 if (!action.current() || requestGeneration !== generation) return;
                 adoptState(data);
+                // A revision that moved while this read ran may or may not be in it: read again on the next use.
+                const now = knownRevision();
+                loadedRevision = now === revision ? revision : null;
+                if (now !== revision) stale = true;
                 refreshControls();
                 // If tag renderers already ran fail-closed while this request was
                 // in flight, give them one authoritative pass now.
@@ -224,9 +235,11 @@
     }
 
     internal.loadState = function() {
-        if (statePromise) return statePromise;
+        // A state kept under an older document revision (another tab or device saved it) is read again.
+        if (statePromise && !stale) return statePromise;
         // A settled failure answers fail-closed until its window passes; the next demand retries.
         if (loaded && !loadOk && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.resolve();
+        stale = false;
         return startLoad();
     };
 
@@ -241,7 +254,11 @@
 
     internal.whenLoaded = function() {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return Promise.resolve();
-        if (loaded && loadOk) return Promise.resolve();
+        if (loaded && loadOk) {
+            // Kept under an older revision: read again (the state shown answers until it is in).
+            if (stale) internal.loadState();
+            return Promise.resolve();
+        }
         return internal.loadState();
     };
 
