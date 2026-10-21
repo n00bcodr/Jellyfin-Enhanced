@@ -297,13 +297,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
         /// <summary>How long an alert whose check met a copy lookup's scan bound waits before it is looked at again.</summary>
         internal static readonly TimeSpan BoundRetry = TimeSpan.FromMinutes(15);
 
-        // An alert whose check met a copy lookup's scan bound: looked at again after BoundRetry while it is at most WaitAtMost
-        // old, then ended unsent (nothing proves the recipient may see it; never retried forever).
-        private static NotifyFinal BoundWait(in GateRead read, NotifyAlert alert, string? why)
-            => read.Now - alert.Queued <= WaitAtMost
-                ? NotifyFinal.Wait(alert, read.Now, why + " (a copy lookup reached its scan bound)", read.Now + BoundRetry)
-                : NotifyFinal.Refuse(alert, read.Now, why + " (a copy lookup reached its scan bound for a day; not sent)");
-
         // What the final gate reads, all at once, when it is called: the configuration, the recipient's preferences and the
         // clock. A ref struct: the compiler won't let it live across an await, so nothing a decision reads can be carried
         // from before one into it.
@@ -362,7 +355,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
             // A copy lookup that reached its scan bound proves nothing gone: the alert stays pending and is looked at again later,
             // for a day at most (a title whose copies always exceed the bound never gets a conclusive look). One that may go out
             // on what the lookup did see (a copy the recipient can open) goes out.
-            if (verdict.Bound) return BoundWait(in read, alert, verdict.Why);
+            if (verdict.Bound) return read.Now - alert.Queued <= WaitAtMost
+                ? NotifyFinal.Wait(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound)", read.Now + BoundRetry)
+                : NotifyFinal.Refuse(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound for a day; not sent)");
             // The recipient's Hidden Content (or the request, or the title's rating) can't be read now: nothing is sent until it
             // can (looked at again shortly), for a day at most.
             if (verdict.Wait && read.Now - alert.Queued <= WaitAtMost) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
@@ -406,7 +401,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
 
             var verdict = Suppression(in read, alert, payload, outbound: false, out var itemId);
             // As for a delivery: a copy lookup that reached its scan bound proves nothing gone (looked at again later).
-            if (verdict.Bound) return BoundWait(in read, alert, verdict.Why);
+            if (verdict.Bound) return read.Now - alert.Queued <= WaitAtMost
+                ? NotifyFinal.Wait(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound)", read.Now + BoundRetry)
+                : NotifyFinal.Refuse(alert, read.Now, verdict.Why + " (a copy lookup reached its scan bound for a day; not sent)");
             if (verdict.Wait) return NotifyFinal.Wait(alert, read.Now, verdict.Why, read.Now + WaitFor);
             if (verdict.Why is { } why) return NotifyFinal.Refuse(alert, read.Now, why);
             return NotifyFinal.Tell(alert, read.Now, payload, itemId, Deliveries(in read, alert.Kind));

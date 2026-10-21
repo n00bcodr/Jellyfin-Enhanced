@@ -586,7 +586,7 @@ public class IntegrationSeerrDestinationTableTests
         ["RequestLedger.HoldWithout4k"] = (new[] { "Extra", "Extra" }, "a 4K request released: sent or queued by what covers it"),
         ["RequestLedger.SentCovers"] = (new[] { "Extra", "SamePlace" }, "family Search: what went out covers the ask"),
         ["RequestLedger.RoutingChanged"] = (new[] { "RoutingChanged" }, "an approval changes routing (administrators only)"),
-        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves" },
+        ["RequestLedger.CreateCore"] = (new[] { "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "Extra", "SameEdition", "SameTarget", "Serves", "SameInstance" },
             "own dedup and its representative, implicit approval, decline cooldown, shared coverage, confirmed scope"),
         ["RequestLedger.Coverage"] = (new[] { "SameTarget", "SameTarget" }, "shared coverage at a target"),
         ["RequestLedger.Confirmed"] = (new[] { "SameTarget" }, "what went out to a target"),
