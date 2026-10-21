@@ -313,25 +313,28 @@ public class PrivacyReviewRound23Tests
     }
 
     [Fact]
-    public async Task AGuardSavedWhileTheTagCacheIsWrittenSendsNoProtectedBytes()
+    public async Task AGuardSavedWhileTheTagCacheIsWrittenAppliesFromTheCommitOn()
     {
+        // The tag cache's bytes reach the client only after its commit validated them: a guard saved while the client
+        // reads them is after that answer (which is complete, never cut) and applies to the next one.
         using var site = new PrivacyReviewRound19Tests.TagSite(rules: false, stripTags: true, extras: true);
         typeof(PrivacyReviewRound19Tests.TagSite).GetMethod("SignIn", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(site, null);
         var http = site.Controller.HttpContext;
         http.Request.Method = "GET";
-        using var output = new SlowClient(() => site.Guard(site.Series));
+        bool? committed = null;
+        using var output = new SlowClient(() => { committed = PrivacyResponseGuard.Find(http)?.Committed; site.Guard(site.Series); });
         http.Response.Body = output;
         // The action returns; its result writes the body afterwards.
         var result = site.Controller.GetTagCache(site.Alice.Id);
         await result.ExecuteResultAsync(new ActionContext(http, new RouteData(), new ActionDescriptor()));
-        var body = System.Text.Encoding.UTF8.GetString(output.ToArray());
+        Assert.True(committed, "a byte reached the client before the answer was validated");
+        Assert.Equal(http.Response.ContentLength, output.Length);
         var fresh = await site.TagCacheResponse();
         Assert.DoesNotContain(site.Sentinels.In(fresh.Body), p => p.StartsWith("episode", StringComparison.Ordinal));
-        Assert.DoesNotContain(site.Sentinels.In(body), p => p.StartsWith("episode", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task AGuardSavedWhileANativeListIsWrittenSendsNoProtectedBytesAfterIt()
+    public async Task ANativeListReachesTheClientOnlyAfterItsCommit()
     {
         // A long episode list leaves in several writes; the viewer guards the series while the first one waits on the client.
         using var rig = new PrivacyHostShapeModelTests.Rig();
@@ -346,7 +349,8 @@ public class PrivacyReviewRound23Tests
         var context = PrivacyHostShapeModelTests.Context(shot, rig.Viewer);
         var services = new ServiceCollection().AddLogging().AddMvcCore().Services.BuildServiceProvider();
         context.HttpContext.RequestServices = services;
-        using var output = new SlowClient(() => rig.Commit(Rule("sg-series"), rig.Viewer));
+        bool? committed = null;
+        using var output = new SlowClient(() => { committed = PrivacyResponseGuard.Find(context.HttpContext)?.Committed; rig.Commit(Rule("sg-series"), rig.Viewer); });
         context.HttpContext.Response.Body = output;
         var gate = rig.Gate();
         gate.OnResourceExecuting(new ResourceExecutingContext(context, [], []));
@@ -354,11 +358,11 @@ public class PrivacyReviewRound23Tests
         gate.OnResultExecuting(delivery);
         try { await delivery.Result.ExecuteResultAsync(context); }
         catch (OperationCanceledException) { }
-        var bytes = output.ToArray();
-        Assert.True(output.WrittenBefore > 0 && bytes.Length >= output.WrittenBefore, "the answer did not start leaving");
-        var after = System.Text.Encoding.UTF8.GetString(bytes, (int)output.WrittenBefore, bytes.Length - (int)output.WrittenBefore);
-        Assert.DoesNotContain("Secret synopsis r23", after);
-        Assert.DoesNotContain("Secret ending r23", after);
+        // Nothing reached the client before the complete answer was validated (the guard was saved after that commit,
+        // while the client read it): the answer the client got is whole, as it was validated.
+        Assert.True(committed, "a byte reached the client before the answer was validated");
+        using var whole = System.Text.Json.JsonDocument.Parse(output.ToArray());
+        Assert.Equal(400, whole.RootElement.EnumerateObject().First(p => p.Name.Equals("Items", StringComparison.OrdinalIgnoreCase)).Value.GetArrayLength());
     }
 
     [Fact]
@@ -482,7 +486,9 @@ public class PrivacyReviewRound23Tests
         site.Library.Setup(l => l.FindByPath(series.Path, It.IsAny<bool?>())).Returns(() => { lookups++; return series; });
         var body = site.TagData(clips.Select(c => c.Id).ToArray());
         Assert.DoesNotContain("Clip reveal", body);
-        Assert.True(lookups <= 1, $"one owner folder looked up {lookups} times for a tag-data batch of 50 clips");
+        // Once for the answer, and once more where the gate compares the judged clips with the live library (per folder,
+        // never per clip).
+        Assert.True(lookups <= 2, $"one owner folder looked up {lookups} times for a tag-data batch of 50 clips");
     }
 
     [Fact]

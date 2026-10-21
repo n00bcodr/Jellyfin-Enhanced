@@ -26,6 +26,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     }
 
     /// <summary>
+    /// What an advanced-mode category reveals of an unwatched guarded episode (each flag exempts one field from a strip the
+    /// base switches apply; none by default): the one per-item reveal every representation of the episode uses (its item
+    /// answers, search hints, the activity log, tag data, images).
+    /// </summary>
+    public readonly record struct SpoilerCategoryReveal(bool Title, bool Overview, bool Ratings)
+    {
+        /// <summary>The reveal of <paramref name="category"/> under the administrator's settings.</summary>
+        public static SpoilerCategoryReveal Of(SpoilerEpisodeCategory category, Configuration.PluginConfiguration cfg) => category switch
+        {
+            SpoilerEpisodeCategory.NextEpisode => new(!cfg.SpoilerNextEpisodeStripTitle, !cfg.SpoilerNextEpisodeStripOverview, !cfg.SpoilerNextEpisodeStripRatings),
+            SpoilerEpisodeCategory.CurrentSeason => new(!cfg.SpoilerCurrentSeasonStripTitle, !cfg.SpoilerCurrentSeasonStripOverview, !cfg.SpoilerCurrentSeasonStripRatings),
+            _ => default,
+        };
+    }
+
+    /// <summary>
     /// Owns the per-(user, series) "next unwatched episode" boundary used by the
     /// advanced Spoiler Guard category reveals. "Next" is deliberately the first
     /// unwatched non-special episode in (ParentIndexNumber, IndexNumber) order —
@@ -128,7 +144,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // removed, or the user's watched state in the series), not merely until its time runs out.
             if (_cache.TryGetValue(key, out var slot) && slot.ExpiresAtTicks > now && !PrivacyInputs.ScopeChangedSince(slot.ReadAt, userId, seriesId))
             {
-                reads?.Since(slot.ReadAt);
+                // The remembered boundary's own inputs, as of when it was read (nothing else in the answer is backdated).
+                reads?.Watched(userId, seriesId, slot.ReadAt);
+                reads?.Library(seriesId, slot.ReadAt);
+                reads?.ChildrenOf(seriesId, slot.ReadAt);
                 return slot.Boundary;
             }
 
@@ -150,6 +169,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             else _cache[key] = new CacheSlot(boundary, now + CacheTtl.Ticks, readAt);
             return boundary;
         }
+
+        /// <summary>
+        /// An unwatched guarded episode's advanced category for a viewer: <see cref="SpoilerEpisodeCategory.Other"/> unless the
+        /// administrator turned advanced mode on and the viewer kept it (the same gate order every representation uses).
+        /// </summary>
+        public SpoilerEpisodeCategory CategoryOf(Guid userId, Configuration.UserSpoilerBlur state, Configuration.PluginConfiguration cfg,
+            Guid seriesId, Guid episodeId, int? parentIndexNumber, int? indexNumber)
+            => !cfg.SpoilerAdvancedMode || state.Prefs?.UseAdvancedCategories == false ? SpoilerEpisodeCategory.Other
+                : Categorize(GetBoundary(userId, seriesId), episodeId, parentIndexNumber, indexNumber);
 
         /// <summary>
         /// Pure categorization of an episode DTO against a boundary. Validation
@@ -183,35 +211,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var user = _userManager.GetUserById(userId);
                 if (user == null) return null;
-
-                // Series-scoped, Limit=1, sorted server-side — the same bounded
-                // single-item shape as TagCacheService.GetFirstEpisode.
-                // ParentIndexNumberNotEquals=0 excludes specials so a pile of
-                // unwatched specials can't pin the boundary to Season 0.
-                // Both target Jellyfin lines (10.11 / 12) expose
-                // ParentIndexNumberNotEquals and the (ItemSortBy, SortOrder)
-                // tuple OrderBy, so no per-TFM shim is needed here.
-                var query = new InternalItemsQuery(user)
-                {
-                    ParentId = seriesId,
-                    IncludeItemTypes = new[] { BaseItemKind.Episode },
-                    Recursive = true,
-                    IsPlayed = false,
-                    IsVirtualItem = false,
-                    ParentIndexNumberNotEquals = 0,
-                    Limit = 1,
-                    OrderBy = new[]
-                    {
-                        (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending),
-                        (ItemSortBy.IndexNumber, JSortOrder.Ascending),
-                        (ItemSortBy.SortName, JSortOrder.Ascending),
-                    },
-                };
-
-                if (_libraryManager.GetItemList(query).FirstOrDefault() is not Episode first) return null;
-                if (first.ParentIndexNumber is not int season || season <= 0) return null;
-                if (first.IndexNumber is not int episode) return null;
-                return new NextUnwatchedBoundary(first.Id, season, episode);
+                return Compute(_libraryManager, user, seriesId);
             }
             catch (Exception ex)
             {
@@ -226,6 +226,53 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return null;
             }
+        }
+
+        /// <summary>
+        /// The boundary computed now, unremembered (a site without the shared service): its inputs are recorded as the
+        /// remembered one's are.
+        /// </summary>
+        public static NextUnwatchedBoundary? ComputeNow(ILibraryManager library, JUser user, Guid seriesId)
+        {
+            if (seriesId == Guid.Empty) return null;
+            var reads = PrivacyReadSet.Current;
+            reads?.Watched(user.Id, seriesId);
+            reads?.Library(seriesId);
+            reads?.ChildrenOf(seriesId);
+            try { return Compute(library, user, seriesId); }
+            catch (Exception) { return null; }
+        }
+
+        private static NextUnwatchedBoundary? Compute(ILibraryManager libraryManager, JUser user, Guid seriesId)
+        {
+            // Series-scoped, Limit=1, sorted server-side — the same bounded
+            // single-item shape as TagCacheService.GetFirstEpisode.
+            // ParentIndexNumberNotEquals=0 excludes specials so a pile of
+            // unwatched specials can't pin the boundary to Season 0.
+            // Both target Jellyfin lines (10.11 / 12) expose
+            // ParentIndexNumberNotEquals and the (ItemSortBy, SortOrder)
+            // tuple OrderBy, so no per-TFM shim is needed here.
+            var query = new InternalItemsQuery(user)
+            {
+                ParentId = seriesId,
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                Recursive = true,
+                IsPlayed = false,
+                IsVirtualItem = false,
+                ParentIndexNumberNotEquals = 0,
+                Limit = 1,
+                OrderBy = new[]
+                {
+                    (ItemSortBy.ParentIndexNumber, JSortOrder.Ascending),
+                    (ItemSortBy.IndexNumber, JSortOrder.Ascending),
+                    (ItemSortBy.SortName, JSortOrder.Ascending),
+                },
+            };
+
+            if (libraryManager.GetItemList(query).FirstOrDefault() is not Episode first) return null;
+            if (first.ParentIndexNumber is not int season || season <= 0) return null;
+            if (first.IndexNumber is not int episode) return null;
+            return new NextUnwatchedBoundary(first.Id, season, episode);
         }
 
         // Fires on every user-data save (playback ticks included). O(1)

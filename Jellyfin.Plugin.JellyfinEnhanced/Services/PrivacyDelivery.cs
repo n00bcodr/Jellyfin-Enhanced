@@ -21,6 +21,13 @@ internal enum PrivacyInputKind : byte
 
     /// <summary>An item joined the library: it moves only answers that read the set of items under its series or season.</summary>
     Added,
+
+    /// <summary>
+    /// The first update of an item whose facts were never known since the start (no event or judgment read them): it
+    /// moves an answer that read the item's facts only by the event log; an answer that recorded the facts it judged the
+    /// item by compares them with the live item instead.
+    /// </summary>
+    FirstSeen,
 }
 
 /// <summary>
@@ -39,9 +46,6 @@ public static class PrivacyInputs
 
     private const int MaxFacts = 250_000;
 
-    /// <summary>The ownership facts of one item that a verdict reads (its owner and extra kind, series, season, number, TMDB key, members).</summary>
-    private readonly record struct Facts(Guid Owner, int Extra, Guid Series, Guid Season, int Index, string? Tmdb, int Members);
-
     /// <summary>The user-data fields a verdict reads: the watched state, and the playback position (null: not known).</summary>
     private readonly record struct Watch(bool Played, long? Position);
 
@@ -55,7 +59,7 @@ public static class PrivacyInputs
     /// <summary>What the log knows of one host store's facts (the library's item facts, the user-data store's verdict fields).</summary>
     private sealed class Memory
     {
-        public ConcurrentDictionary<Guid, Facts> Facts { get; } = new();
+        public ConcurrentDictionary<Guid, PrivacyFacts> Facts { get; } = new();
         public ConcurrentDictionary<(Guid User, Guid Item), Watch> Watch { get; } = new();
     }
 
@@ -136,7 +140,7 @@ public static class PrivacyInputs
         which = null;
         if (Since(since) is not { } changes) { which = "the input log no longer reaches back to the answer's start"; return true; }
         foreach (var change in changes)
-            if (reads.Reads(change.Kind, change.User, change.Items))
+            if (reads.Reads(change.Kind, change.User, change.Items, change.Tick))
             {
                 which = change.Kind.ToString().ToLowerInvariant() + " change of " + string.Join(",", change.Items.Take(4).Select(i => i.ToString("N")));
                 return true;
@@ -153,7 +157,7 @@ public static class PrivacyInputs
         if (Since(since) is not { } changes) return null;
         var ids = new HashSet<Guid>();
         foreach (var change in changes)
-            if (change.Kind == PrivacyInputKind.Library) ids.UnionWith(change.Items);
+            if (change.Kind is PrivacyInputKind.Library or PrivacyInputKind.FirstSeen) ids.UnionWith(change.Items);
         return ids;
     }
 
@@ -169,7 +173,7 @@ public static class PrivacyInputs
             _tick++;
             _log[_tick % Capacity] = new Change(_tick, user, items, kind);
         }
-        if (kind == PrivacyInputKind.Library) LibraryChanged?.Invoke(items);
+        if (kind is PrivacyInputKind.Library or PrivacyInputKind.FirstSeen) LibraryChanged?.Invoke(items);
     }
 
     /// <summary>
@@ -183,7 +187,7 @@ public static class PrivacyInputs
         var facts = MemoryOf(library).Facts;
         if (facts.ContainsKey(item.Id)) return;
         if (facts.Count >= MaxFacts) facts.Clear();
-        facts.TryAdd(item.Id, Of(item));
+        facts.TryAdd(item.Id, PrivacyFacts.Of(item));
     }
 
     /// <summary>
@@ -205,6 +209,23 @@ public static class PrivacyInputs
     }
 
     /// <summary>
+    /// Remembers the watched state a batch query established for each of <paramref name="items"/> (in
+    /// <paramref name="played"/> or not; its position unknown), when the log knows none yet: the first save after it that
+    /// leaves the watched state as it was is a progress save, not a watched change.
+    /// </summary>
+    internal static void KnowWatched(IUserDataManager? store, Guid user, IEnumerable<Guid> items, ISet<Guid> played)
+    {
+        if (user == Guid.Empty) return;
+        var watch = MemoryOf(store).Watch;
+        foreach (var item in items)
+        {
+            if (item == Guid.Empty || watch.ContainsKey((user, item))) continue;
+            if (watch.Count >= MaxFacts) watch.Clear();
+            watch.TryAdd((user, item), new Watch(played.Contains(item), null));
+        }
+    }
+
+    /// <summary>
     /// Reconciles a watched state the host read for an answer it built (a DTO's user data): never known, it is remembered;
     /// different from what was remembered, it changed without the log seeing it, so the change is logged (with
     /// <paramref name="related"/>, the item's season and series) and every answer that read it is invalid.
@@ -222,42 +243,12 @@ public static class PrivacyInputs
         if (known.Played != played) Record(PrivacyInputKind.Watched, user, related.Prepend(item));
     }
 
-    private static Facts Of(BaseItem item) => new(
-        item.OwnerId,
-        item.ExtraType is { } extra ? (int)extra : -1,
-        item is Episode episode ? episode.SeriesId : item is Season season ? season.SeriesId : Guid.Empty,
-        item is Episode inSeason ? inSeason.SeasonId : Guid.Empty,
-        item is Season numbered ? numbered.IndexNumber ?? -1 : -1,
-        item.GetProviderId(MetadataProvider.Tmdb),
-        item is Folder { LinkedChildren: { Length: > 0 } links } ? Members(links) : 0
-#if JF10
-            // 10.11 records an owner's extras on the owner (and can attach one without saving the extra's own row).
-            ^ (item.ExtraIds is { Length: > 0 } extras ? Members(extras) : 0)
-#endif
-        );
-
-#if JF10
-    private static int Members(Guid[] ids)
-    {
-        var hash = new HashCode();
-        foreach (var id in ids) hash.Add(id);
-        return hash.ToHashCode();
-    }
-#endif
-
-    private static int Members(LinkedChild[] links)
-    {
-        var hash = new HashCode();
-        foreach (var link in links) hash.Add(link?.ItemId);
-        return hash.ToHashCode();
-    }
-
     /// <summary>
     /// The ids an item's change can move: itself, its season, series and owner (before and after), a collection's members
     /// (on 10.11, an owner's extras too).
     /// (An extra's verdict follows its owner: the answers that judge an extra judge its owner too.)
     /// </summary>
-    private static IEnumerable<Guid> Moved(BaseItem item, Facts facts, Facts? before)
+    private static IEnumerable<Guid> Moved(BaseItem item, PrivacyFacts facts, PrivacyFacts? before)
     {
         yield return item.Id;
         yield return facts.Owner;
@@ -278,7 +269,7 @@ public static class PrivacyInputs
 #endif
     }
 
-    private static void Remember(object? host, Guid id, Facts facts)
+    private static void Remember(object? host, Guid id, PrivacyFacts facts)
     {
         var known = MemoryOf(host).Facts;
         if (known.Count >= MaxFacts) known.Clear();
@@ -290,7 +281,7 @@ public static class PrivacyInputs
         // A new item moves no verdict of the items an answer judged; its facts are remembered so a later change of them is
         // logged. It does move what an answer read of the set it joins (the next unwatched episode of its series).
         if (e?.Item is not { } item) return;
-        var facts = Of(item);
+        var facts = PrivacyFacts.Of(item);
         Remember(sender, item.Id, facts);
         Record(PrivacyInputKind.Added, Guid.Empty, Moved(item, facts, null));
     }
@@ -314,21 +305,21 @@ public static class PrivacyInputs
     private static void OnItemUpdated(object? sender, ItemChangeEventArgs e)
     {
         if (e?.Item is not { } item) return;
-        var facts = Of(item);
+        var facts = PrivacyFacts.Of(item);
         // A refresh that leaves the facts as they were known moves no verdict (a scan refreshes thousands). A fact never
         // known (no event or judgment read it since the start) is unknown: its update is logged.
-        Facts? before = MemoryOf(sender).Facts.TryGetValue(item.Id, out var known) ? known : null;
+        PrivacyFacts? before = MemoryOf(sender).Facts.TryGetValue(item.Id, out var known) ? known : null;
         if (before == facts) return;
         Remember(sender, item.Id, facts);
-        Record(PrivacyInputKind.Library, Guid.Empty, Moved(item, facts, before));
+        Record(before == null ? PrivacyInputKind.FirstSeen : PrivacyInputKind.Library, Guid.Empty, Moved(item, facts, before));
         if (item is Folder { LinkedChildren: not null } && (before == null || before.Value.Members != facts.Members)) CollectionChanged?.Invoke(item.Id);
     }
 
     private static void OnItemRemoved(object? sender, ItemChangeEventArgs e)
     {
         if (e?.Item is not { } item) return;
-        Facts? before = MemoryOf(sender).Facts.TryRemove(item.Id, out var known) ? known : null;
-        Record(PrivacyInputKind.Library, Guid.Empty, Moved(item, Of(item), before));
+        PrivacyFacts? before = MemoryOf(sender).Facts.TryRemove(item.Id, out var known) ? known : null;
+        Record(PrivacyInputKind.Library, Guid.Empty, Moved(item, PrivacyFacts.Of(item), before));
         if (item is Folder { LinkedChildren: not null }) CollectionChanged?.Invoke(item.Id);
     }
 
@@ -351,7 +342,69 @@ public static class PrivacyInputs
         if (before is not { } old || now is not { } current || old.Played != current.Played) kind = PrivacyInputKind.Watched;
         else if (old.Position != current.Position || old.Position == null) kind = PrivacyInputKind.Progress;
         else return;
-        Record(kind, e.UserId, Moved(item, Of(item), null));
+        Record(kind, e.UserId, Moved(item, PrivacyFacts.Of(item), null));
+    }
+}
+
+/// <summary>
+/// The ownership facts of one item a verdict reads: its owner and extra kind, its series and season, its numbering (a
+/// season's number; an episode's season and episode numbers, which order a series' episodes), its TMDB key and a
+/// collection's members (on 10.11 an owner's extras too). What the input log remembers and what the gate compares with the
+/// host's live item.
+/// </summary>
+public readonly record struct PrivacyFacts(Guid Owner, int Extra, Guid Series, Guid Season, int Index, int ParentIndex, string? Tmdb, int Members)
+{
+    /// <summary>What a live lookup asks of each item (its provider ids; no images or people).</summary>
+    internal static readonly MediaBrowser.Controller.Dto.DtoOptions Options = new(false) { Fields = new[] { MediaBrowser.Model.Querying.ItemFields.ProviderIds }, EnableImages = false };
+
+    /// <summary>The facts of <paramref name="item"/> as it is now (<paramref name="owner"/>: the owner a judgment normalised it to).</summary>
+    public static PrivacyFacts Of(BaseItem item, Guid? owner = null) => new(
+        owner is { } normalised && normalised != Guid.Empty ? normalised : item.OwnerId,
+        PrivacyIdentities.ExtraKind(item) is { } extra ? (int)extra : -1,
+        item is MediaBrowser.Controller.Entities.TV.Episode episode ? episode.SeriesId : item is MediaBrowser.Controller.Entities.TV.Season season ? season.SeriesId : Guid.Empty,
+        item is MediaBrowser.Controller.Entities.TV.Episode inSeason ? inSeason.SeasonId : Guid.Empty,
+        item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? item.IndexNumber ?? -1 : -1,
+        item is MediaBrowser.Controller.Entities.TV.Episode ? item.ParentIndexNumber ?? -1 : -1,
+        item.GetProviderId(MetadataProvider.Tmdb),
+        item is Folder { LinkedChildren: { Length: > 0 } links } ? Hash(links) : 0
+#if JF10
+            // 10.11 records an owner's extras on the owner (and can attach one without saving the extra's own row).
+            ^ (item.ExtraIds is { Length: > 0 } extras ? Hash(extras) : 0)
+#endif
+        );
+
+    /// <summary>
+    /// Whether <paramref name="other"/> names the same ownership (owner, extra kind, series, season, numbering, TMDB key):
+    /// what an in-memory item is compared by (its members may be loaded differently from a stored row's).
+    /// </summary>
+    internal bool SameOwnership(PrivacyFacts other) => this with { Members = 0 } == other with { Members = 0 };
+
+    /// <summary>
+    /// The facts of the host's live <paramref name="item"/> compared with <paramref name="judged"/>: a row that names no owner
+    /// where the judgment saw one (10.11's extra attached in memory, listed by its owner) is normalised by the same ownership
+    /// rule the judgment used (<paramref name="folders"/>: one folder lookup per distinct folder of the check).
+    /// </summary>
+    internal static PrivacyFacts Live(ILibraryManager library, BaseItem item, PrivacyFacts judged, Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?> folders)
+    {
+        var facts = Of(item);
+        if (facts == judged || item.OwnerId != Guid.Empty || judged.Owner == Guid.Empty) return facts;
+        return facts with { Owner = PrivacyIdentities.ExtraOwner(library, item, folders) };
+    }
+
+#if JF10
+    private static int Hash(Guid[] ids)
+    {
+        var hash = new HashCode();
+        foreach (var id in ids) hash.Add(id);
+        return hash.ToHashCode();
+    }
+#endif
+
+    private static int Hash(LinkedChild[] links)
+    {
+        var hash = new HashCode();
+        foreach (var link in links) hash.Add(link?.ItemId);
+        return hash.ToHashCode();
     }
 }
 

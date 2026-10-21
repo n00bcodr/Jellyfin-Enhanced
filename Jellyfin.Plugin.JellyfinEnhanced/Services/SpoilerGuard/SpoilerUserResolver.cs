@@ -128,7 +128,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 && _collectionScopeCache.TryGetValue(cacheKey, out var hit)
                 && (now - hit.CachedAt) < CollectionScopeCacheTtl)
             {
-                PrivacyReadSet.Current?.Since(hit.ReadAt);
+                // The memo's own inputs, as of when it was read.
+                if (PrivacyReadSet.Current is { } memo)
+                {
+                    memo.Library(movieId, hit.ReadAt);
+                    foreach (var key in userState.Collections.Keys) if (Guid.TryParse(key, out var guid)) memo.Library(guid, hit.ReadAt);
+                }
                 return hit.CollectionId;
             }
             var readAt = PrivacyInputs.Now;

@@ -128,7 +128,7 @@ public class PrivacyReviewRound23ScopeTests
     }
 
     [Fact]
-    public async Task AGuardSavedWhileTheHostWritesANativeAnswerSendsNoProtectedText()
+    public async Task TheHostsExecutorHandsTheTransportOnlyACommittedAnswer()
     {
         using var rig = new PrivacyHostShapeModelTests.Rig();
         var shot = Shot("TvShows.GetEpisodes.json");
@@ -136,8 +136,9 @@ public class PrivacyReviewRound23ScopeTests
         var context = PrivacyHostShapeModelTests.Context(shot, viewer);
         var delivery = new ResultExecutingContext(context, [], new ObjectResult(PrivacyHostShapeModelTests.Value(shot)), new object());
         rig.Gate().OnResultExecuting(delivery);
-        // The host's executor writes the body afterwards (its first write waits on the client).
-        using var body = new SlowClient(() => Guard(rig, viewer));
+        // The host's executor writes the body afterwards; the transport's first write waits on the client.
+        bool? committed = null;
+        using var body = new SlowClient(() => { committed = PrivacyResponseGuard.Find(context.HttpContext)?.Committed; Guard(rig, viewer); });
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddControllers();
@@ -146,7 +147,9 @@ public class PrivacyReviewRound23ScopeTests
         context.HttpContext.Response.Body = body;
         await delivery.Result.ExecuteResultAsync(context);
         Assert.True(body.Written, "the host's executor never wrote the body");
-        Assert.DoesNotContain("Secret plot r17 episode", Encoding.UTF8.GetString(body.ToArray()));
+        // Nothing reached the client before the complete answer was validated; a guard saved while the client reads it
+        // applies to the next answer (the one written while it is saved is AGuardSavedWhileTheHostWritesALongNativeAnswerLeavesNoProtectedText).
+        Assert.True(committed, "a byte reached the client before the answer was validated");
     }
 
     // ---------------------------------------------------------------------------------------------------------------

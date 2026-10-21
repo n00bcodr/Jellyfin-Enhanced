@@ -108,7 +108,7 @@ public class PosterBlurFilterTests
         var result=Assert.IsType<FileContentResult>(executed.Result);using var image=SKBitmap.Decode(result.FileContents);Assert.Equal(16,image.Width);Private(http);
     }
     [Theory]
-    [InlineData(true,false,"Primary")][InlineData(false,true,"Primary")][InlineData(false,false,"Backdrop")]
+    [InlineData(true,false,"Primary")][InlineData(false,true,"Primary")][InlineData(false,false,"Backdrop")][InlineData(false,false,"Logo")]
     public async Task Watched_exempt_posters_and_disabled_artwork_keep_bytes_but_disallow_public_cache(bool watched,bool keep,string type)
     {
         using var f=new Fixture(); f.Plugin.Plugin.Configuration.SpoilerKeepMoviePosters=keep;f.Plugin.Plugin.Configuration.SpoilerBlurArtwork=false;
@@ -122,7 +122,8 @@ public class PosterBlurFilterTests
         using var f=new Fixture();f.Plugin.Plugin.Configuration.SpoilerBlurMode=mode;var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,method:"HEAD");Assert.Same(original,executed.Result);Private(http);
     }
     [Theory]
-    [InlineData("Logo","Image","GetItemImage")][InlineData("Primary","Items","GetItems")][InlineData("Primary","Image","OtherAction")]
+    // A logo is artwork (as provider answers treat it): it follows the artwork setting, below.
+    [InlineData("Banner","Image","GetItemImage")][InlineData("Primary","Items","GetItems")][InlineData("Primary","Image","OtherAction")]
     public async Task Unrelated_routes_or_image_types_are_untouched(string type,string controller,string action)
     {
         using var f=new Fixture();var original=new FileContentResult(PosterBlurTests.Source(),"image/png");var(executed,http)=await f.Run(original,type,controller:controller,action:action);

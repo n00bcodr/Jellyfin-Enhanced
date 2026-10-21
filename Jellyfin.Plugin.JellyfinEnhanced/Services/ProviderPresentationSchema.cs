@@ -216,6 +216,8 @@ public static class ProviderPresentationSchema
         Children("title", "ratings", "ratings", "ratings"); Children("title", "awards", "award", "ratings");
         Policy("translation-data", "title name", "scoped-title");
         Policy("episode", "name title originalName originalTitle", "episode-title");
+        // A later season's own name is a title like an episode's (seasons 0 and 1 are the entry point).
+        Policy("season", "name", "season-title");
         Policy("calendar", "overview", "calendar-overview");
         Policy("calendar", "subtitle", "episode-subtitle");
         Policy("calendar", "episodeTitle episodeName", "episode-title");
@@ -413,6 +415,7 @@ public static class ProviderPresentationSchema
             if(guarded && field.Policy!=null && spoilers!=null && Suppress(field.Policy,spoilers,title,effectiveKind,season))
             {
                 if(field.Policy=="episode-title" && schema.Role==Role.Episode && Key(pair.Key)=="name") row[pair.Key]="";
+                else if(field.Policy=="season-title") row[pair.Key]=string.Create(CultureInfo.InvariantCulture,$"Season {season}");
                 else if(field.Policy=="episode-subtitle") row[pair.Key]=string.Create(CultureInfo.InvariantCulture,$"S{season:00}E{episode:00}");
                 else if(pair.Value is JsonArray && field.Child!=null && field.Policy is not ("cast" or "all-cast")) row[pair.Key]=new JsonArray();
                 else row.Remove(pair.Key);
@@ -469,7 +472,8 @@ public static class ProviderPresentationSchema
     private static bool Suppress(string policy,SpoilerPresentationContext spoilers,string? title,string kind,int season)
         => policy switch {
             "calendar-overview" => spoilers.Suppresses(title,"overview",kind=="tv"?"episode":kind,season),
-            "scoped-title" => kind=="episode" && spoilers.MissingRow(title).Title,
+            "scoped-title" => (kind=="episode" || kind=="season" && season>1) && spoilers.MissingRow(title).Title,
+            "season-title" => kind=="season" && season>1 && spoilers.MissingRow(title).Title,
             "episode-title" or "episode-subtitle" => spoilers.MissingRow(title).Title,
             _ when policy.StartsWith("episode-art:",StringComparison.Ordinal) => spoilers.ProtectArtwork(title,"episode",policy[12..],season),
             _ when policy.StartsWith("series-art:",StringComparison.Ordinal) => spoilers.ProtectArtwork(title,kind,policy[11..],season),

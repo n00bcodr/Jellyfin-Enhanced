@@ -247,6 +247,8 @@ public class PerfRound2TagCacheResponseTests
 
         var series = new Series { Id = endpoint.SeriesId, Name = "Show", Genres = ["Series secret"] };
         endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, It.IsAny<User>())).Returns(series);
+        // The host's direct lookup serves the same item (the delivery gate compares the judged item with it).
+        endpoint.Library.Setup(x => x.GetItemById(series.Id)).Returns(series);
         endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]); // no episodes: the unguarded projection still completes
         endpoint.SignIn(endpoint.Alice);
         var tagData = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()]));

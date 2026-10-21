@@ -55,9 +55,8 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
             if (!cached.Unavailable) config.RecordPolicyRead(viewer.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, cached.State);
             if (PrivacyReadSet.Current is { } reads)
             {
-                reads.Since(cached.ReadAt);
-                reads.Library(cached.LibraryInputs);
-                foreach (var id in cached.LibraryInputs) reads.Watched(viewer, id);
+                reads.Library(cached.LibraryInputs, cached.ReadAt);
+                foreach (var id in cached.LibraryInputs) reads.Watched(viewer, id, cached.ReadAt);
             }
             return cached;
         }

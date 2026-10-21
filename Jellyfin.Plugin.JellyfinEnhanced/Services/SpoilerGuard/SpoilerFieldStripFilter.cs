@@ -614,7 +614,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>An unwatched guarded episode's advanced category (an input of its image verdict); null without advanced mode.</summary>
         private string? Category(BaseItemDto item, UserSpoilerBlur userState, PluginConfiguration cfg, Guid userId, Guid seriesId)
             => !cfg.SpoilerAdvancedMode || userState.Prefs?.UseAdvancedCategories == false || item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode ? null
-                : SpoilerNextUnwatchedService.Categorize(_nextUnwatched.GetBoundary(userId, seriesId), item.Id, item.ParentIndexNumber, item.IndexNumber).ToString();
+                : _nextUnwatched.CategoryOf(userId, userState, cfg, seriesId, item.Id, item.ParentIndexNumber, item.IndexNumber).ToString();
+
+        /// <summary>
+        /// What Spoiler Guard reveals of a protected item for this viewer, the same for every representation of it (its item
+        /// answers, search hints, the activity log): the base switches, and for an episode its advanced category, from the
+        /// numbering the library holds for it now (<paramref name="parentIndex"/>/<paramref name="index"/> when the caller
+        /// already read them from the library).
+        /// </summary>
+        internal PrivacyReveal RevealFor(PrivacyIdentity identity, UserSpoilerBlur state, PluginConfiguration cfg, Guid userId, int? parentIndex = null, int? index = null)
+        {
+            if (identity.Kind != Jellyfin.Data.Enums.BaseItemKind.Episode || !cfg.SpoilerAdvancedMode || state.Prefs?.UseAdvancedCategories == false)
+                return Reveal(state, cfg);
+            if (parentIndex == null && index == null && PrivacyReads.Item(_libraryManager, identity.ItemId) is { } episode)
+                (parentIndex, index) = (episode.ParentIndexNumber, episode.IndexNumber);
+            var category = SpoilerCategoryReveal.Of(_nextUnwatched.CategoryOf(userId, state, cfg, identity.SeriesId, identity.ItemId, parentIndex, index), cfg);
+            return Reveal(state, cfg, null, new CategoryReveal(category.Title, category.Overview, category.Ratings));
+        }
 
         private CategoryReveal ResolveCategoryReveal(
             BaseItemDto item,
@@ -623,25 +639,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Guid userId,
             Guid seriesId)
         {
-            if (!cfg.SpoilerAdvancedMode) return CategoryReveal.None;
-            if (userState.Prefs?.UseAdvancedCategories == false) return CategoryReveal.None;
             if (item.Type != Jellyfin.Data.Enums.BaseItemKind.Episode) return CategoryReveal.None;
-
-            var boundary = _nextUnwatched.GetBoundary(userId, seriesId);
-            var category = SpoilerNextUnwatchedService.Categorize(
-                boundary, item.Id, item.ParentIndexNumber, item.IndexNumber);
-            return category switch
-            {
-                SpoilerEpisodeCategory.NextEpisode => new CategoryReveal(
-                    Title: !cfg.SpoilerNextEpisodeStripTitle,
-                    Overview: !cfg.SpoilerNextEpisodeStripOverview,
-                    Ratings: !cfg.SpoilerNextEpisodeStripRatings),
-                SpoilerEpisodeCategory.CurrentSeason => new CategoryReveal(
-                    Title: !cfg.SpoilerCurrentSeasonStripTitle,
-                    Overview: !cfg.SpoilerCurrentSeasonStripOverview,
-                    Ratings: !cfg.SpoilerCurrentSeasonStripRatings),
-                _ => CategoryReveal.None,
-            };
+            var reveal = SpoilerCategoryReveal.Of(_nextUnwatched.CategoryOf(userId, userState, cfg, seriesId, item.Id, item.ParentIndexNumber, item.IndexNumber), cfg);
+            return new CategoryReveal(reveal.Title, reveal.Overview, reveal.Ratings);
         }
 
         // A movie ID is "in spoiler scope" when either (a) it's directly
@@ -721,8 +721,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var seasonItem = PrivacyReads.Item(_libraryManager, seasonId)
                     as MediaBrowser.Controller.Entities.TV.Season;
                 if (seasonItem == null) return false;
-                PrivacyReads.WatchedIn(jUser.Id, seasonId);
-                foreach (var ep in seasonItem.GetEpisodes(jUser, new MediaBrowser.Controller.Dto.DtoOptions(false), shouldIncludeMissingEpisodes: false))
+                foreach (var ep in PrivacyReads.SeasonEpisodes(seasonItem, jUser))
                 {
                     if (ep == null) continue;
                     var ud = PrivacyReads.UserData(_userDataManager, jUser, ep);
@@ -805,7 +804,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IReadOnlyDictionary<Guid, PrivacyIdentity> identities)
         {
             if (result?.SearchHints == null) return result!;
-            var reveal = Reveal(userState, cfg);
             var host = Host();
             var hints = new List<SearchHint>(result.SearchHints.Count);
             foreach (var hint in result.SearchHints)
@@ -816,8 +814,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     hints.Add(hint!);
                     continue;
                 }
-                // Its name and series are the construction table's (an episode's or season's neutral name, an extra's kind).
-                hints.Add(PrivacyValues.Hint(hint, identity, reveal, host));
+                // Its name and series are the construction table's (an episode's or season's neutral name, an extra's kind),
+                // revealed as the item itself is (an advanced category's reveal included).
+                hints.Add(PrivacyValues.Hint(hint, identity, RevealFor(identity, userState, cfg, userId), host));
             }
             return new SearchHintResult(hints.ToArray(), result.TotalRecordCount);
         }
@@ -958,6 +957,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             long? watchedThrough = null;
             if (item.Type == Jellyfin.Data.Enums.BaseItemKind.Movie && item.Chapters != null)
             {
+                // The answer's own position decides which chapters are revealed: it is an input of this answer (a
+                // rewind or a seek before the answer leaves makes it be projected again with the current one).
+                if (item.UserData != null && item.Id != Guid.Empty)
+                {
+                    PrivacyReadSet.Current?.Watched(userId, item.Id);
+                    PrivacyReads.Progress(userId, item.Id);
+                }
                 watchedThrough = item.UserData switch
                 {
                     { Played: true } => long.MaxValue,

@@ -165,35 +165,43 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var http = context.HttpContext;
                 var response = http.Response;
                 var (body, reads) = (_body, _reads);
-                // Before anything is sent: the body (and its ETag) is rebuilt when an input it read changed.
-                for (var attempt = 1; reads != null && !reads.StillValid(); attempt++)
+                // The body is held and committed here: its read-set validated, the response started, then the bytes handed
+                // over. An input that changed before the commit builds the body (and its ETag) again, bounded.
+                var guard = reads != null ? PrivacyResponseGuard.Install(http, reads) : PrivacyResponseGuard.Find(http);
+                guard?.Bind(http, owned: true);
+                for (var attempt = 0; attempt < PrivacyDelivery.Attempts; attempt++)
                 {
-                    if (attempt >= PrivacyDelivery.Attempts || _rebuild?.Invoke() is not { } fresh)
+                    if (attempt > 0)
                     {
-                        response.StatusCode = 503;
-                        response.Headers.CacheControl = "private, no-store";
-                        return;
+                        if (_rebuild?.Invoke() is not { } fresh) break;
+                        PrivacyResponseGuard.Replace(http, reads, fresh.Reads ?? reads!);
+                        guard!.Discard();
+                        (body, reads) = (fresh.Body, fresh.Reads);
                     }
-                    PrivacyResponseGuard.Replace(http, reads, fresh.Reads ?? reads);
-                    (body, reads) = (fresh.Body, fresh.Reads);
+                    // no-cache (not no-store): the client may keep a copy to revalidate against, but must always revalidate.
+                    response.Headers.CacheControl = "private, no-cache";
+                    response.Headers.ETag = body.ETag;
+                    if (_ifNoneMatch != null && _ifNoneMatch.Contains(body.ETag, StringComparison.Ordinal))
+                    {
+                        // A 304 is confirmed at the header commit.
+                        response.StatusCode = 304;
+                        response.ContentLength = null;
+                    }
+                    else
+                    {
+                        response.StatusCode = 200;
+                        response.ContentType = ContentType;
+                        response.ContentLength = body.Length;
+                        var aborted = http.RequestAborted;
+                        foreach (var segment in new[] { body._prefix, body._items, body._suffix })
+                            for (var offset = 0; offset < segment.Length; offset += Slice)
+                                await response.Body.WriteAsync(segment.AsMemory(offset, Math.Min(Slice, segment.Length - offset)), aborted).ConfigureAwait(false);
+                    }
+                    if (guard == null) return;
+                    if (await guard.TryCommitAsync().ConfigureAwait(false)) return;
+                    if (guard.Stopped) return;
                 }
-                // no-cache (not no-store): the client may keep a copy to revalidate against, but must always revalidate.
-                response.Headers.CacheControl = "private, no-cache";
-                response.Headers.ETag = body.ETag;
-                if (_ifNoneMatch != null && _ifNoneMatch.Contains(body.ETag, StringComparison.Ordinal))
-                {
-                    response.StatusCode = 304;
-                    return;
-                }
-                var aborted = http.RequestAborted;
-                response.StatusCode = 200;
-                response.ContentType = ContentType;
-                response.ContentLength = body.Length;
-                // Every slice goes through the response's guard (the body's read-set is checked before each write; a slow
-                // client makes each write wait, so the multi-MB items segment is never one write).
-                foreach (var segment in new[] { body._prefix, body._items, body._suffix })
-                    for (var offset = 0; offset < segment.Length; offset += Slice)
-                        await response.Body.WriteAsync(segment.AsMemory(offset, Math.Min(Slice, segment.Length - offset)), aborted).ConfigureAwait(false);
+                guard?.Stop();
             }
 
             /// <summary>The largest single write.</summary>

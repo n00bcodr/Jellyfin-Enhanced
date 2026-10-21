@@ -772,8 +772,6 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
         if (result.Value is not QueryResult<MediaBrowser.Model.Activity.ActivityLogEntry> { Items: not null } page) return;
         var spoiler = final.Spoilers is { Enabled: true } s && (s.Unavailable || SpoilerFieldStripFilter.HasEntries(s.State)) ? final.Spoilers : null;
         var config = JellyfinEnhanced.Instance?.Configuration;
-        // What the administrator's and the viewer's switches reveal; nothing when the policy cannot be read.
-        var reveal = spoiler is { Unavailable: false } && config != null ? SpoilerFieldStripFilter.Reveal(spoiler.State, config) : null;
         var values = Values();
         var kept = new List<MediaBrowser.Model.Activity.ActivityLogEntry>(page.Items.Count);
         var changed = false;
@@ -789,7 +787,10 @@ public sealed class TitlePresentationResultFilter(UserConfigurationManager manag
                 : spoiler != null && config != null && strip != null && (spoiler.Unavailable || strip.Protects(identity, spoiler.State, viewer));
             if (!protect) { kept.Add(entry); continue; }
             var user = entry.UserId != Guid.Empty ? users?.GetUserById(entry.UserId)?.Username : null;
-            kept.Add(PrivacyValues.Activity(entry, identity, identity != null ? reveal : null, user, values));
+            // What the switches reveal of this entry's item, as its item answers do (an advanced category's reveal included);
+            // nothing when the policy cannot be read.
+            var reveal = identity != null && spoiler is { Unavailable: false } && config != null && strip != null ? strip.RevealFor(identity, spoiler.State, config, viewer) : null;
+            kept.Add(PrivacyValues.Activity(entry, identity, reveal, user, values));
             changed = true;
         }
         if (changed)

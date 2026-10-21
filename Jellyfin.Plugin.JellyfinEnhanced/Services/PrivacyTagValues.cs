@@ -23,8 +23,9 @@ public readonly record struct PrivacyTagStrip(bool Vocabulary, bool Scores, bool
 /// <param name="Placeholder">The administrator's placeholder (a guarded series' name under the title strip).</param>
 /// <param name="FirstEpisode">A series' or season's stream-bearing first episode, with the viewer's access.</param>
 /// <param name="FirstProtected">Whether Spoiler Guard protects that episode for the viewer.</param>
+/// <param name="CategoryReveal">What a protected episode's advanced category reveals for the viewer (none without one).</param>
 public sealed record PrivacyTagDataRequest(SpoilerTagStripPolicy? Policy, string? MediaSourceId, string? Placeholder,
-    Func<BaseItem, BaseItem?> FirstEpisode, Func<BaseItem, bool> FirstProtected);
+    Func<BaseItem, BaseItem?> FirstEpisode, Func<BaseItem, bool> FirstProtected, Func<BaseItem, SpoilerCategoryReveal>? CategoryReveal = null);
 
 /// <summary>
 /// The construction table's tag answers: the tag cache's guarded entries (GET tag-cache, native poster tags) and the card
@@ -153,9 +154,13 @@ public static partial class PrivacyValues
     {
         var kind = item.GetBaseItemKind();
         var policy = request.Policy;
+        // A protected episode is revealed as its item answers reveal it: the base switches, minus its advanced category's reveal.
+        var category = stub == SpoilerTagDataStub.Episode && request.CategoryReveal != null ? request.CategoryReveal(item) : default;
         var stripGenres = policy?.StripGenres == true;
-        var stripRatings = policy?.StripRatings == true;
-        var reveal = new PrivacyReveal { Title = policy?.ReplaceTitle != true, TitleFamily = policy?.SanitizeTitleStreams != true };
+        var stripRatings = policy?.StripRatings == true && !category.Ratings;
+        var replaceTitle = policy?.ReplaceTitle == true && !category.Title;
+        var stripOverview = policy?.StripOverview == true && !category.Overview;
+        var reveal = new PrivacyReveal { Title = !replaceTitle, TitleFamily = !(replaceTitle || stripOverview) };
 
         // The versions the caller selected: a details page's chosen version goes through the same projection (and the same
         // language resolution) as the whole item.

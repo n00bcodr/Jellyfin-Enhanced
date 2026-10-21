@@ -97,6 +97,15 @@ public static class PrivacyIdentities
     /// <param name="collections">Candidate collections whose linked children are matched (optional).</param>
     public static Dictionary<Guid, PrivacyIdentity> Resolve(ILibraryManager library, IEnumerable<Guid> ids, JUser? viewer = null,
         IUserDataManager? userData = null, IEnumerable<Guid>? collections = null)
+        => Resolve(library, ids, viewer, userData, collections, null);
+
+    /// <summary>
+    /// As <see cref="Resolve(ILibraryManager, IEnumerable{Guid}, JUser?, IUserDataManager?, IEnumerable{Guid}?)"/>, also
+    /// giving the facts each judged item and owner was judged by (<paramref name="facts"/>), so a later reuse of the
+    /// resolution can have them compared with the live items.
+    /// </summary>
+    internal static Dictionary<Guid, PrivacyIdentity> Resolve(ILibraryManager library, IEnumerable<Guid> ids, JUser? viewer,
+        IUserDataManager? userData, IEnumerable<Guid>? collections, Dictionary<Guid, PrivacyFacts>? facts)
     {
         var answer = new Dictionary<Guid, PrivacyIdentity>();
         var unique = ids.Where(id => id != Guid.Empty).Distinct().ToArray();
@@ -120,6 +129,16 @@ public static class PrivacyIdentities
         Load(library, owners.Values.Concat(items.Values).Where(o => o is Episode or Season).Select(OwnerOf)
             .Where(o => o != Guid.Empty && !items.ContainsKey(o) && !owners.ContainsKey(o)).Distinct().ToArray(), owners);
         foreach (var owner in owners.Values) PrivacyInputs.Know(library, owner);
+        // What each judged item and owner was judged by (an extra by the owner the rule gave it): compared with the live
+        // items at the gate.
+        var reads = PrivacyReadSet.Current;
+        foreach (var item in items.Values.Concat(owners.Values))
+        {
+            // An extra's owner as the rule gave it (an episode's or season's series is a fact of its own).
+            Guid? own = item is Episode or Season ? null : OwnerOf(item);
+            reads?.Item(library, item, own);
+            if (facts != null) facts[item.Id] = PrivacyFacts.Of(item, own);
+        }
         BaseItem? Find(Guid id) => items.TryGetValue(id, out var hit) ? hit : owners.GetValueOrDefault(id);
         var membership = new Dictionary<Guid, List<Guid>>();
         foreach (var collection in collections?.Where(c => c != Guid.Empty).Distinct() ?? [])
@@ -146,13 +165,15 @@ public static class PrivacyIdentities
     /// </summary>
     public static PrivacyIdentity Of(ILibraryManager library, BaseItem item, JUser? viewer = null, IUserDataManager? userData = null)
     {
-        PrivacyReadSet.Current?.Library(item.Id);
+        var reads = PrivacyReadSet.Current;
+        reads?.Library(item.Id);
         PrivacyInputs.Know(library, item);
         var listed = ListedOwners(library, [item]);
         Guid OwnerOf(BaseItem one) => PrivacyIdentities.OwnerOf(one) is var own && own != Guid.Empty ? own : listed.GetValueOrDefault(one.Id);
+        reads?.Item(library, item, item is Episode or Season ? null : OwnerOf(item));
         var owner = item;
         var ownerId = OwnerOf(item) is var first && first != Guid.Empty ? first : item.Id;
-        PrivacyReadSet.Current?.Library(ownerId);
+        reads?.Library(ownerId);
         for (var hop = 0; hop < 2 && OwnerOf(owner) is var next && next != Guid.Empty && PrivacyReads.Item(library, next) is { } found; hop++)
         {
             PrivacyInputs.Know(library, found);
@@ -172,6 +193,9 @@ public static class PrivacyIdentities
     private sealed class RequestIdentities
     {
         public Dictionary<Guid, (PrivacyIdentity Identity, long At)> Known { get; } = new();
+
+        /// <summary>The facts each resolved item and owner was judged by.</summary>
+        public Dictionary<Guid, PrivacyFacts> Facts { get; } = new();
     }
 
     /// <summary>
@@ -185,7 +209,7 @@ public static class PrivacyIdentities
         var known = http?.Items.TryGetValue(RequestKey, out var cached) == true && cached is RequestIdentities map ? map : new RequestIdentities();
         var wanted = ids.Where(id => id != Guid.Empty).Distinct().ToArray();
         var at = PrivacyInputs.Now;
-        foreach (var pair in Resolve(library, wanted.Where(id => !known.Known.ContainsKey(id)))) known.Known[pair.Key] = (pair.Value, at);
+        foreach (var pair in Resolve(library, wanted.Where(id => !known.Known.ContainsKey(id)), null, null, null, known.Facts)) known.Known[pair.Key] = (pair.Value, at);
         if (http != null) http.Items[RequestKey] = known;
         var reads = PrivacyReadSet.Current;
         var answer = new Dictionary<Guid, PrivacyIdentity>();
@@ -194,9 +218,12 @@ public static class PrivacyIdentities
             if (!known.Known.TryGetValue(id, out var hit)) continue;
             if (reads != null)
             {
-                reads.Since(hit.At);
-                reads.Library(id);
-                reads.Library(hit.Identity.OwnerId);
+                // A reused resolution: its own facts, observed when it was resolved (nothing else in the answer is
+                // backdated), and compared with the live items at the gate.
+                reads.Library(id, hit.At);
+                reads.Library(hit.Identity.OwnerId, hit.At);
+                if (known.Facts.TryGetValue(id, out var facts)) reads.Item(library, id, facts);
+                if (known.Facts.TryGetValue(hit.Identity.OwnerId, out var ownerFacts)) reads.Item(library, hit.Identity.OwnerId, ownerFacts);
             }
             answer[id] = hit.Identity;
         }
@@ -260,6 +287,17 @@ public static class PrivacyIdentities
     }
 
     /// <summary>
+    /// The owner the ownership rule gives a live item whose row names none (the gate's comparison): the host's live item's
+    /// own owner where it serves one, else 10.11's listing owner (<paramref name="folders"/>: one lookup per folder).
+    /// </summary>
+    internal static Guid ExtraOwner(ILibraryManager library, BaseItem item, Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?> folders)
+    {
+        if (item is Episode or Season || item.OwnerId != Guid.Empty) return OwnerOf(item);
+        if (item is not (Movie or Series or Folder) && PrivacyValues.SitsLikeAnExtra(item) && library.GetItemById(item.Id) is { OwnerId: var live } && live != Guid.Empty) return live;
+        return ListedOwners(library, [item], folders).GetValueOrDefault(item.Id);
+    }
+
+    /// <summary>
     /// What kind of extra an item is: the host's own extra type, or where the item's row has none (10.11's attached-in-memory
     /// extra), the kind the host's naming rules give its file (its extras folder or suffix). Null when neither says.
     /// </summary>
@@ -271,12 +309,13 @@ public static class PrivacyIdentities
     /// restart it still serves the item as that owner's extra. Such an item is the owner's. One folder lookup per distinct
     /// folder of the batch, each owner's extras read once as a set. Empty on 12, which saves both.
     /// </summary>
-    private static Dictionary<Guid, Guid> ListedOwners(ILibraryManager library, IEnumerable<BaseItem> items)
+    private static Dictionary<Guid, Guid> ListedOwners(ILibraryManager library, IEnumerable<BaseItem> items,
+        Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?>? shared = null)
     {
         var listed = new Dictionary<Guid, Guid>();
 #if JF10
         // Shared with the rest of the answer's attempt (naming, vocabulary); a batch of its own without one.
-        var folders = PrivacyReadSet.Current?.FolderOwners ?? new Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?>(StringComparer.Ordinal);
+        var folders = shared ?? PrivacyReadSet.Current?.FolderOwners ?? new Dictionary<string, (BaseItem Owner, HashSet<Guid> Extras)?>(StringComparer.Ordinal);
         foreach (var item in items)
         {
             if (item.OwnerId != Guid.Empty || item is Movie or Series or Season or Episode or Folder) continue;

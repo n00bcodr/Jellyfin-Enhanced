@@ -88,8 +88,7 @@ public sealed class HiddenContentPolicy
             // ... and the library facts its rules were bound with, as of when they were read.
             if (hit._boundAt is { } bound && PrivacyReadSet.Current is { } reads)
             {
-                reads.Since(bound);
-                reads.Library(hit._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty));
+                reads.Library(hit._titleItems.Keys.Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty), bound);
             }
             return hit;
         }

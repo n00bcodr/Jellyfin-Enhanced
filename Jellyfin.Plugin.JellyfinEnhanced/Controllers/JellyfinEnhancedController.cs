@@ -8750,6 +8750,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // Entries whose kind is not a title of its own (theme videos, trailers, featurettes) follow their owner: one
             // batched identity lookup gives both Hidden Content and Spoiler Guard the verdict tag data uses.
             var owned = !hiddenPolicy.IsEmpty || spPolicy != null ? _spoilerTagDataStripper.OwnedIdentities(items, user) : null;
+            // Every episode and season entry by the series the library holds it under now (its cached entry names the series
+            // and key it was built under): one batched lookup, shared by Hidden Content and Spoiler Guard.
+            var entrySeries = !hiddenPolicy.IsEmpty || spPolicy != null ? _spoilerTagDataStripper.EntrySeries(items, hiddenPolicy.IsEmpty ? spPolicy!.State : null) : null;
 
             if (!hiddenPolicy.IsEmpty)
             {
@@ -8763,9 +8766,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                     var kindName = entry?.Type;
                     // An episode or season is judged by the series it belongs to now (the library may have moved it since the entry was built).
-                    var (series, seriesKey) = entry != null && kindName is "Episode" or "Season" && Guid.TryParse(key, out var entryId)
-                        ? _spoilerTagDataStripper.EntrySeries(entryId, entry) : (Guid.Empty, null);
-                    var titleKey = kindName is "Episode" or "Season" ? seriesKey : Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", entry?.TmdbId);
+                    var (series, seriesKey) = entry != null && kindName is "Episode" or "Season" && entrySeries!.TryGetValue(key, out var current)
+                        ? current : (Guid.Empty, null);
+                    var titleKey = kindName is "Episode" or "Season" ? seriesKey
+                        : kindName == "Movie" && entrySeries!.TryGetValue(key, out var movieNow) ? movieNow.Key
+                        : Services.HiddenContentPolicy.TitleIdentity(kindName == "Movie" ? "movie" : "tv", entry?.TmdbId);
                     if (hiddenPolicy.IsHidden(titleKey, key, series != Guid.Empty ? series.ToString("N") : entry?.SeriesId, "library")) items.Remove(key);
                 }
                 // The client replaces its stored copy (rather than applying a delta) when the hiding rules change.
@@ -8774,7 +8779,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             if (spPolicy != null)
             {
-                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items, owned, since);
+                stripFingerprint = (stripFingerprint == "none" ? "" : stripFingerprint + "|") + _spoilerTagDataStripper.StripTagCache(spPolicy, user, items, owned, since, entrySeries);
             }
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
@@ -8791,12 +8796,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         private Services.TagCacheResponseBody BuildTagCacheBody(JUser user, long? since, JsonSerializerOptions jsonOptions)
         {
             var (answer, _) = ComposeTagCache(user, since, jsonOptions);
-            // The entries the answer holds were judged: their library facts are inputs (the shared, unfiltered copy judged none).
-            if (answer.Keys is { } keys && Services.PrivacyReadSet.Current is { } reads)
-            {
-                foreach (var key in keys.Keys) if (Guid.TryParse(key, out var id)) reads.Library(id);
-                if (answer.Owners != null) reads.Library(answer.Owners);
-            }
+            // The library facts the answer's verdicts depend on were recorded by the reads that took them (the entries'
+            // current series and keys, extras' owners, guarded seasons, collection members), with the facts they were judged
+            // by; an entry whose verdict no library fact decides (judged by its own id) records none. The owners of its
+            // extras are inputs too.
+            if (answer.Owners != null && Services.PrivacyReadSet.Current is { } reads) reads.Library(answer.Owners);
             return ComposeTagCacheBody(answer, jsonOptions);
         }
 
@@ -9031,7 +9035,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var values = _spoilerTagDataStripper.Host();
             var request = new Services.PrivacyTagDataRequest(spoilerPolicy, mediaSourceId, JellyfinEnhanced.Instance?.Configuration?.SpoilerOverviewPlaceholder,
                 container => TagEpisodeSelector.GetFirstEpisode(_libraryManager, container, user),
-                episode => _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, episode) != Services.SpoilerTagDataStub.None);
+                episode => _spoilerTagDataStripper.GetTagDataStub(spoilerPolicy!, user, episode) != Services.SpoilerTagDataStub.None,
+                episode => _spoilerTagDataStripper.CategoryReveal(spoilerPolicy!, user, episode));
             var results = new List<object>(ids.Length);
             var judged = new HashSet<Guid>();
 
