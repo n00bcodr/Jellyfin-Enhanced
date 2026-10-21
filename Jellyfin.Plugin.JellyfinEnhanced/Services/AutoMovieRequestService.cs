@@ -824,6 +824,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            // The id lives from when its read began.
+            var readAt = DateTime.UtcNow;
 
             foreach (var url in urls)
             {
@@ -857,7 +859,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                             var jellyseerrUserId = id.GetInt32().ToString();
                                             lock (_userIdCacheLock)
                                             {
-                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, readAt);
                                             }
                                             return jellyseerrUserId;
                                         }

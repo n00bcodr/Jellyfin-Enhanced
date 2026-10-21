@@ -67,6 +67,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AccessRevisionController.cs",
+      "category": "Controllers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AcquireAdminUsersController.cs",
       "category": "Controllers"
     },
@@ -197,6 +201,10 @@
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Extensions/UserManagerExtensions.cs",
       "category": "Extensions"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AccessRevision.cs",
+      "category": "Helpers"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ArrCaller.cs",
@@ -1815,6 +1823,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/access-revision.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/api-client.js",
       "category": "js"
     },
@@ -2556,6 +2568,15 @@
     }
   ],
   "routes": [
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/revision",
+      "method": "GetRevision",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/AccessRevisionController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
     {
       "verb": "GET",
       "path": "/JellyfinEnhanced/arr/admin/users/summary",
@@ -10455,6 +10476,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/EventHandlers/ContinueWatchingPlaybackEvents.cs"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/AccessRevision.cs"
+    },
+    {
       "literal": "language-policy.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/LanguageTags.cs"
     },
@@ -10907,10 +10932,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 635,
-    "routes": 292,
+    "files": 638,
+    "routes": 293,
     "configuration_properties": 638,
-    "storage_references": 93,
+    "storage_references": 94,
     "scheduled_tasks": 15,
     "locales": 33
   }

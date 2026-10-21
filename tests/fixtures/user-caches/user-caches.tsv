@@ -6,7 +6,9 @@
 # on a user's access, for the reason given. Rules (';'-separated): write:<disposition> for a cache dropped outside the
 # code that fills it (fenced=<generation>, locked=<lock>, self-keyed, own-state, per-call, disposal, evicts; never just
 # "invalidated on write"); snapshot:<Type.Member>=<reader> for the one read by id a keyed computation may make (its key's
-# own read, or a gate that answers only when unchanged); note:<text> explains a keyed row's disposition. See
+# own read, or a gate that answers only when unchanged); deadline:<text> for a time a store takes after its read that is
+# not an answer's lifetime (a schedule, a back-off; round 5: an answer lives from when its read began, and a fence is
+# sampled before the inputs it covers are read); note:<text> explains a keyed row's disposition. See
 # tests/backend/README.md.
 AcquireDatabase._shared	both	independent	process	the shared database service (a reference, not an answer); cleared only when the database is disposed	write:disposal
 AcquisitionStampFeeder._pending	both	independent	item / title	acquisition-badge facts per library item or title; who may see a badge is decided per viewer at read (AcquisitionStampResolver._access); the feeder's own work queue (an entry leaves when it is handled)	write:own-state
@@ -49,12 +51,12 @@ ArrLiveRouter.Pending.Titles	both	independent	arr instance / change key	the arr 
 ArrLiveRouter._counters	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveRouter._pending	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveService._connections	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); live connections: removing one is stopping it	write:own-state
-ArrLiveService._libraryResyncAt	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
+ArrLiveService._libraryResyncAt	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)	deadline:when the next library resync of the instance may run (a schedule, set when the last one ran), not the lifetime of an answer
 ArrLiveService._libraryResyncDeferred	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience)
 ArrLiveService._searches	both	independent	arr instance / change key	the arr live feed's own state per instance; each viewer's share is filtered at read (ArrFeedAudience); per-connection search bookkeeping, dropped with the connection	write:own-state
 ArrSnapshotSlot._error	both	independent	arr instance	the last fetch error of an arr read
 ArrSnapshotSlot._patchesDuringRefresh	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; live patches buffered during a refresh, consumed when it ends (under _lock)	write:own-state
-ArrStateStore.CalendarRangeCache._entries	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
+ArrStateStore.CalendarRangeCache._entries	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer	deadline:FinishedAt times the retry after a FAILED read (from when it ended); an answer lives from At, taken when its read starts
 ArrStateStore.InstanceState.ConfirmedDepartures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer; departures waiting for the next queue snapshot, consumed by it	write:own-state
 ArrStateStore.InstanceState.Departures	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
 ArrStateStore.InstanceState.Seen	both	independent	arr ids / snapshot	what the arr instances hold (snapshots and their indexes): the same for every viewer
@@ -82,7 +84,7 @@ ArrWebhookReceiver._stats	both	independent	log or rate-limit key	log de-duplicat
 AutoMovieRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
 AutoMovieRequestService._requestedMovies	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer; what was auto-requested (send de-duplication); clearing it is a reset of that record, not a copy of stored data	write:own-state
 AutoSeasonRequestService._jellyseerrUserIdCache	both	independent	Jellyfin user id	the person's Seerr account id (an identity link, not Jellyfin access)
-AutoSeasonRequestService._requestedSeasons	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer
+AutoSeasonRequestService._requestedSeasons	both	independent	user → title	what was auto-requested for the person recently (send de-duplication), not an access answer	deadline:when JE asked for the season (send de-duplication for an hour from the ask), not the lifetime of an answer
 AutoSeasonRequestService._seriesDetailsCache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 AutoSeasonRequestService._seriesDetailsInFlight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 AutomationSendGuard.JobAdmission._active	both	independent	job	automation job admission (the frozen 4a check decides per send); one job's admission	write:per-call
@@ -169,7 +171,7 @@ LanguageTags.Shipped	both	independent	none / asset	build, asset and rendering st
 ListMetadataService._cache	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 ListMetadataService._inflight	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
 ListMetadataService._tmdbPosters	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
-ListMetadataService._unreachableUntil	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)
+ListMetadataService._unreachableUntil	both	independent	URL / external id	public metadata from an outside service: the same for every viewer (visibility is filtered where it is shown)	deadline:a back-off after Seerr didn't answer (from the failure), not the lifetime of an answer
 ListService._createLocks	both	independent	lock key	locks (and their holder counts)
 ListService._destinationLocks	both	independent	lock key	locks (and their holder counts)
 ListStore._absent	both	independent	list	list documents (JE data); who may see a list and its placeholders is decided per request; per-list generation (_generations) bumped under _cacheLock by every save and delete; a cold read publishes only if its list's generation is unchanged (under _cacheLock)	write:fenced=GenerationUnlocked

@@ -20,6 +20,46 @@
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
+    // The document revision (core/access-revision.js) the state was read under, taken BEFORE the read; null: unknown.
+    // Another tab or device saving the person's Spoiler Guard state moves it: the state is read again, in place.
+    let loadedRevision = null;
+    // A newer revision than the one the state was read under has been seen: the next use reads it again.
+    let stale = false;
+    // Changes made from this tab (each bumps it): a read that ran across one doesn't replace what it changed.
+    let localEdits = 0;
+
+    /** @returns {string|null} The document revision known now. */
+    function knownRevision() {
+        return JE.core?.revision?.document?.('spoiler-guard') ?? null;
+    }
+
+    /**
+     * Puts a state read in place: only when it differs from what is shown are consumers told (no flicker).
+     * @param {any} value - The state as read.
+     * @returns {boolean} True when anything changed.
+     */
+    function applyState(value) {
+        const ids = (map) => Object.keys(map || {}).map(key => internal.normalizeId(key)).sort().join(',');
+        const pending = (map) => Object.keys(map || {}).map(key => String(key).toLowerCase()).sort().join(',');
+        const changed = !loaded || !loadOk
+            || ids(value.Series) !== [...enabledSeries].sort().join(',')
+            || ids(value.Movies) !== [...enabledMovies].sort().join(',')
+            || ids(value.Collections) !== [...enabledCollections].sort().join(',')
+            || pending(value.PendingTmdb) !== [...enabledPendingTmdb].sort().join(',')
+            || JSON.stringify(value.Prefs || {}) !== JSON.stringify(userPrefs);
+        if (!changed) return false;
+        enabledSeries.clear();
+        enabledMovies.clear();
+        enabledCollections.clear();
+        enabledPendingTmdb.clear();
+        tmdbToJellyfin.clear();
+        Object.keys(value.Series || {}).forEach(key => enabledSeries.add(internal.normalizeId(key)));
+        Object.keys(value.Movies || {}).forEach(key => enabledMovies.add(internal.normalizeId(key)));
+        Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
+        Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
+        userPrefs = value.Prefs || {};
+        return true;
+    }
 
     /** Tell current detail-page consumers to discard topic content after a policy change. */
     function notifyPolicyChanged() {
@@ -31,29 +71,33 @@
     }
 
     internal.loadState = function() {
-        if (statePromise) return statePromise;
+        if (statePromise && !stale) return statePromise;
+        stale = false;
         // A response resolving after a user switch must not populate the
         // (already reset) state with the previous user's data.
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        // Taken before the read: the state as read is at least this new.
+        const revision = knownRevision();
+        const edits = localEdits;
+        const first = !loaded;
         // The page-load bootstrap carries this user's state (same body as the
         // endpoint); it is handed out once, so later loads ask the server.
         const prefetchedState = JE.takePrefetched?.('SpoilerBlurSeries');
-        statePromise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
+        const promise = (prefetchedState ? Promise.resolve(prefetchedState) : request('/spoiler-blur/series'))
             .then(function(data) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
-                const value = data || {};
-                enabledSeries.clear();
-                enabledMovies.clear();
-                enabledCollections.clear();
-                enabledPendingTmdb.clear();
-                tmdbToJellyfin.clear();
-                Object.keys(value.Series || {}).forEach(key => enabledSeries.add(internal.normalizeId(key)));
-                Object.keys(value.Movies || {}).forEach(key => enabledMovies.add(internal.normalizeId(key)));
-                Object.keys(value.Collections || {}).forEach(key => enabledCollections.add(internal.normalizeId(key)));
-                Object.keys(value.PendingTmdb || {}).forEach(key => enabledPendingTmdb.add(String(key).toLowerCase()));
-                userPrefs = value.Prefs || {};
+                if (statePromise !== promise) return;
+                // Changed from this tab while the read ran: what it changed stays; read again on the next use.
+                if (!first && localEdits !== edits) { stale = true; return; }
+                const changed = applyState(data || {});
+                // A revision that moved while this read ran may or may not be in it: read again on the next use.
+                const now = knownRevision();
+                loadedRevision = now === revision ? revision : null;
+                if (now !== revision) stale = true;
                 loaded = true;
                 loadOk = true;
+                if (!changed && !first) return;
+                if (!first) notifyPolicyChanged();
                 // If tag renderers already ran fail-closed while this request was
                 // in flight, give them one authoritative pass now.
                 try {
@@ -65,6 +109,9 @@
             })
             .catch(function(err) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                if (statePromise !== promise) return;
+                // A read again after a revision that failed: the state shown stays (read again on the next use).
+                if (!first && loadOk) { stale = true; return; }
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 loaded = true;
                 loadOk = false;
@@ -79,12 +126,26 @@
                     console.warn(`${logPrefix} post-failure tag rescan failed:`, e);
                 }
             });
-        return statePromise;
+        statePromise = promise;
+        return promise;
     };
+
+    // Another tab or device saved this person's Spoiler Guard state (its document revision moved): read it again now
+    // when it is in use, else on the next use. The state shown stays until the new one is in (only changes are drawn).
+    document.addEventListener('je-document-revision', function(e) {
+        const detail = e.detail || {};
+        if (detail.document !== 'spoiler-guard' || detail.revision === loadedRevision) return;
+        stale = true;
+        if (loaded && JE.pluginConfig?.SpoilerBlurEnabled === true) internal.loadState();
+    });
 
     internal.whenLoaded = function() {
         if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return Promise.resolve();
-        if (loaded) return Promise.resolve();
+        if (loaded) {
+            // Kept under an older revision: read again (the state shown answers until it is in).
+            if (stale) internal.loadState();
+            return Promise.resolve();
+        }
         return statePromise || internal.loadState();
     };
 
@@ -111,6 +172,7 @@
         return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'POST', skipRetry: true })
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledSeries.add(normalized);
                 notifyPolicyChanged();
             });
@@ -122,6 +184,7 @@
         return request(`/spoiler-blur/series/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledSeries.delete(normalized);
                 notifyPolicyChanged();
             });
@@ -134,6 +197,7 @@
             method: 'POST', body: { MovieName: name || '' }, skipRetry: true
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledMovies.add(normalized);
                 notifyPolicyChanged();
             });
@@ -145,6 +209,7 @@
         return request(`/spoiler-blur/movies/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledMovies.delete(normalized);
                 notifyPolicyChanged();
             });
@@ -157,6 +222,7 @@
             method: 'POST', body: { CollectionName: name || '' }, skipRetry: true
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledCollections.add(normalized);
                 notifyPolicyChanged();
             });
@@ -168,6 +234,7 @@
         return request(`/spoiler-blur/collections/${encodeURIComponent(normalized)}`, { method: 'DELETE', skipRetry: true })
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
+                localEdits++;
                 enabledCollections.delete(normalized);
                 notifyPolicyChanged();
             });
@@ -192,6 +259,7 @@
         return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}${query}`, { method: 'POST', skipRetry: true })
             .then(function(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                localEdits++;
                 const key = internal.pendingKey(type, id);
                 if (response?.promoted === 'pending') {
                     if (key) enabledPendingTmdb.add(key);
@@ -217,6 +285,7 @@
         return request(`/spoiler-blur/pending/${type}/${encodeURIComponent(id)}`, { method: 'DELETE', skipRetry: true })
             .then(function(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                localEdits++;
                 const key = internal.pendingKey(type, id);
                 if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.delete(key); }
                 if (response?.removedFrom === 'series' && response.jellyfinId) {
@@ -239,6 +308,7 @@
         return request('/spoiler-blur/user-prefs', { method: 'POST', body: payload, skipRetry: true })
             .then(function(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
+                localEdits++;
                 userPrefs = Object.assign({}, payload);
                 notifyPolicyChanged();
                 return response?.prefs || userPrefs;
@@ -257,6 +327,8 @@
         statePromise = null;
         loaded = false;
         loadOk = false;
+        loadedRevision = null;
+        stale = false;
         enabledSeries.clear();
         enabledMovies.clear();
         enabledCollections.clear();

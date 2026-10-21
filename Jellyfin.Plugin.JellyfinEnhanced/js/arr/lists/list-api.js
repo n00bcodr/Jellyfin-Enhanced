@@ -100,6 +100,8 @@
             signal: options?.signal,
             cache: 'no-store'
         });
+        // The answer carries the person's revisions (core/access-revision.js).
+        JE.core?.revision?.noteResponse(response);
         if (!rule.current()) throw STALE;
 
         let body = null;

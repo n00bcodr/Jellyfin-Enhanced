@@ -428,6 +428,10 @@
         const promise = fetchBootstrap().then((payload) => {
             if (!bootstrapMatchesUser(payload, userId)) throw new Error('Bootstrap response is for a different user');
             storePrefetched(payload, userId);
+            // The person's revisions as the server took them before reading the documents in this payload: the mirrors
+            // loaded from it are kept under them (core/access-revision.js takes them when it loads, or now if loaded).
+            JE.bootstrapRevision = typeof payload.Revision === 'string' ? { userId, revision: payload.Revision } : null;
+            if (JE.bootstrapRevision) JE.core?.revision?.noteRevision?.(payload.Revision);
             return payload;
         }).catch((e) => {
             if (bootstrapPromise === promise) bootstrapPromise = null;

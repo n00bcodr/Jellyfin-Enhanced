@@ -150,17 +150,32 @@
     // Direct bypass of JE.saveUserSettings (which swallows errors) so callers can react to failure.
     // Returns the JSON snapshot that was sent so the caller can compare it to current state and decide
     // whether the success acknowledgement still represents the latest local intent.
+    // Saves in flight (a read of the rules after another tab's save waits for them: see hasPendingSave).
+    let saving = 0;
+
     async function directSaveHiddenContent() {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) throw new Error('no current user');
         const snapshot = JSON.stringify(getHiddenData());
-        await ApiClient.ajax({
-            type: 'POST',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
-            data: snapshot,
-            contentType: 'application/json'
-        });
+        saving++;
+        try {
+            await ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json`),
+                data: snapshot,
+                contentType: 'application/json'
+            });
+        } finally {
+            saving--;
+            // A newer revision of the rules waited for this save: read them now that nothing of this tab is pending.
+            if (!hasPendingSave() && internal.hasRevisionPending?.()) setTimeout(() => internal.revalidate?.(), 0);
+        }
         return snapshot;
+    }
+
+    /** @returns {boolean} A change of this tab is waiting to be saved, being saved, or retried. */
+    function hasPendingSave() {
+        return !!saveTimeout || pendingRetryHandle != null || saving > 0;
     }
 
     // After a successful save, decide whether the server is caught up.
@@ -264,6 +279,7 @@
     });
 
     Object.assign(internal, {
+        hasPendingSave,
         debouncedSave,
         flushPendingSave,
         fetchHiddenContentUsers,

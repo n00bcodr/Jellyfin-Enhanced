@@ -29,6 +29,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         private static readonly FactVersions _settingsVersions = new FactVersions();
         private static readonly FactVersion _allSettingsVersion = new FactVersion();
         private static readonly FactVersion _otherFiles = new FactVersion();
+        // The version of each person's document (normalized id + "|" + file name), and of all of a person's at once
+        // (normalized id + "|*": their folder removed): see DocumentRevision.
+        private static readonly FactVersions _documentVersions = new FactVersions();
+        // This process's own part of a document revision: versions start again at a restart, a revision never repeats.
+        private static readonly string _documentEpoch = Guid.NewGuid().ToString("N").Substring(0, 8);
 
         public UserConfigurationManager(IApplicationPaths appPaths, Logger logger)
         {
@@ -86,6 +91,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public static FactVersion AllSettingsVersion => _allSettingsVersion;
 
         private static string Normalized(string? userId) => (userId ?? string.Empty).Replace("-", "").ToLowerInvariant();
+
+        /// <summary>
+        /// The revision of one person's per-user document (hidden-content.json, spoilerblur.json, …): it moves with every
+        /// write of that file through this manager (before the new file can be seen, and again after), with the removal of
+        /// the person's folder, with every person's files at once (a restore, a quarantine, the start-up migration) and with
+        /// a restart; a client that read the document under one revision and later sees another reads it again (another
+        /// tab or device saved it). Memory only, never waits. Text: no meaning beyond equality.
+        /// </summary>
+        /// <param name="userId">The person (any id format).</param>
+        /// <param name="fileName">The document's file name.</param>
+        /// <returns>The revision.</returns>
+        public static string DocumentRevision(string userId, string fileName)
+        {
+            var user = Normalized(userId);
+            return string.Join(".", _documentEpoch,
+                _documentVersions.Sample(user + "|" + fileName.ToLowerInvariant()).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                _documentVersions.Sample(user + "|*").ToString(System.Globalization.CultureInfo.InvariantCulture),
+                _allSettingsVersion.Sample().ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // The version a person's document revision moves with, after each write of it (see DocumentRevision).
+        private static FactVersion DocumentBracket(string userId, string fileName) => _documentVersions.For(Normalized(userId) + "|" + fileName.ToLowerInvariant());
 
         // The bracket a per-user file is put in place inside: the person's settings version for settings.json.
         private static FactVersion VersionOf(string userId, string fileName)
@@ -634,6 +661,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     File.Move(tempPath, configPath, overwrite: true);
                     Moved?.Invoke(Normalized(userId), fileName);
                 });
+                // The document's revision moves once the new file is in place: a revision taken before this point reads
+                // again at the next sample (a read under the old revision may already be the new file: one extra read, never
+                // a missed one).
+                DocumentBracket(userId, fileName).Mutate(() => { });
                 if (string.Equals(fileName, Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerBlurImageFilter.SpoilerBlurFileName, StringComparison.OrdinalIgnoreCase))
                 {
                     Jellyfin.Plugin.JellyfinEnhanced.Services.SpoilerUserResolver.InvalidateUser(userId);
@@ -924,6 +955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 if (!Directory.Exists(userDir)) return false;
                 _settingsVersions.For(userId.ToString("N")).Mutate(() => Directory.Delete(userDir, recursive: true));
+                _documentVersions.For(userId.ToString("N") + "|*").Mutate(() => { });
                 return true;
             }
             catch (Exception ex)

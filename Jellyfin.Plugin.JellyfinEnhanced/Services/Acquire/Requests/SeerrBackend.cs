@@ -86,8 +86,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly Action<Guid>? _linked;
         private readonly Func<TitleKey, CancellationToken, Task<int?>>? _findTmdb;
         // The person's prepared Seerr facts and their Seerr account id, on the ticket protocol (Helpers.WrittenStateCache):
-        // a read that began before the mapping was found to belong to someone else (Unlinked) is never kept, so it can't
-        // put the old account back. Their own lifetimes (PreparedFor, IdsFor) are checked on the stored time as well.
+        // a read that began before the mapping was found to belong to someone else (a preparation or a send that finds the
+        // account reassigned) is never kept, so it can't put the old account back. Every entry lives from the START of
+        // its earliest input's read, never longer than any input: a prepared entry ends with the account mapping it used
+        // (Until) and its Seerr settings with their own read (SettingsUntil); the same deadlines are checked on the
+        // stored times as well.
         private readonly Helpers.WrittenStateCache<Guid, Prepared> _prepared = new(PreparedFor, 10000);
         private readonly Helpers.WrittenStateCache<string, (int? Id, DateTimeOffset At)> _ids = new(IdsFor, 10000, StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, ServerList> _serverLists = new(StringComparer.Ordinal);
@@ -150,10 +153,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             _findTmdb = findTmdb;
         }
 
+        // At: when the read of Seerr's settings began.
         private sealed record SettingsRead(string Source, SeerrRequestSettings Settings, DateTimeOffset At);
 
+        // Until: the earliest deadline of the identity facts (the account mapping and the reads made here); SettingsUntil:
+        // Seerr's settings end with their own read (they are the settings this preparation was given, possibly read before it).
         private sealed record Prepared(string Source, int? SeerrUser, long Permissions, SeerrRequestSettings? Settings,
-            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset At, bool LinkPending = false);
+            QuotaProjection? Movie, int MovieDays, QuotaProjection? Tv, int TvDays, DateTimeOffset Until, DateTimeOffset SettingsUntil, bool LinkPending = false);
 
         private enum Delivery
         {
@@ -182,8 +188,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         private async Task PrepareCoreAsync(Guid user, MutationInput input, CancellationToken ct, bool notifyLinked)
         {
-            // Taken before anything is read: an unlink while this runs ends what it read.
+            // Taken before anything is read: an unlink while this runs ends what it read; its facts live from here.
             var ticket = _prepared.Begin();
+            var start = _now();
+            var ticketAt = start;
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             if (config == null || source == null)
@@ -198,18 +206,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 if (await ServerListAsync(config, source, kind, fresh: false, ct).ConfigureAwait(false) is { } list && list.Servers.Any(s => s.Id == server))
                     await ServerDetailsAsync(config, source, kind, server, fresh: false, ct).ConfigureAwait(false);
             }
-            var settings = await SettingsAsync(config, source, fresh: false, ct).ConfigureAwait(false);
+            var (settings, settingsAt) = await SettingsReadAsync(config, source, fresh: false, ct).ConfigureAwait(false);
+            // The identity facts end with the earliest input: this preparation's own reads, or the account mapping it used.
+            var until = start + PreparedFor;
             int? id = null;
             long permissions = 0;
             QuotaProjection? movie = null, tv = null;
             int movieDays = 7, tvDays = 7;
             if (!JellyseerrUserImportHelper.GetBlockedUserIds(config.JellyseerrImportBlockedUsers).Contains(user.ToString("N")))
             {
-                var (found, known) = await UserIdAsync(config, source, user, ct).ConfigureAwait(false);
+                var (found, known, mappedAt) = await UserIdReadAsync(config, source, user, ct).ConfigureAwait(false);
                 // Seerr didn't answer: keep what was known for policy decisions (an unknown identity never grants
                 // anything). Sending never relies on it: the account is confirmed again right before every POST.
                 if (!known) return;
                 id = found;
+                // No account: that answer is the mapping's own (it ends with it). An account is confirmed below by a read
+                // of it made now.
+                if (found == null && mappedAt + MissingIdFor < until) until = mappedAt + MissingIdFor;
             }
             if (id is int seerrId)
             {
@@ -231,14 +244,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
                 else
                 {
-                    // The account now belongs to someone else: forget the mapping.
-                    _ids.Invalidate(source + "|" + user.ToString("N"));
+                    // The account now belongs to someone else: forget the mapping AND end every preparation running now
+                    // (one that read the account while it was still this person's must not put it back). What this one
+                    // found (no account) is kept under a ticket taken after that end, as short as a missing mapping.
+                    Reassigned(user, source);
+                    ticket = _prepared.Begin();
+                    ticketAt = _now();
                     id = null;
+                    if (start + MissingIdFor < until) until = start + MissingIdFor;
                 }
             }
             var before = _prepared.TryGet(user, out var held) && held.Source == source ? held : null;
             var linkPending = id != null && (before?.SeerrUser != id || before?.LinkPending == true);
-            _prepared.Set(user, ticket, new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, _now(), !notifyLinked && linkPending));
+            var settingsUntil = settingsAt + SettingsFor < until ? settingsAt + SettingsFor : until;
+            _prepared.Set(user, ticket, new Prepared(source, id, permissions, settings, movie, movieDays, tv, tvDays, until, settingsUntil, !notifyLinked && linkPending), Life(ticketAt, until));
             // Seerr links an account to the person now (it didn't, or nothing was known since a start): requests that
             // were waiting for one are checked at once.
             if (notifyLinked && linkPending) _linked?.Invoke(user);
@@ -250,7 +269,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var config = _config();
             var source = config == null ? null : _model.SourceOf(config);
             var (options, optionsStamp) = source != null && input.HasSeerrOptions ? HeldOptions(source, input) : (null, null);
-            if (source == null || !_prepared.TryGet(user, out var p) || p.Source != source || _now() - p.At > PreparedFor) return new RequestBackendBinding(Source: source, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
+            if (source == null || !_prepared.TryGet(user, out var p) || p.Source != source || _now() >= p.Until) return new RequestBackendBinding(Source: source, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
+            // Seerr's settings end with their own read: past it they aren't known (as when Seerr didn't answer).
+            var known = _now() < p.SettingsUntil ? p.Settings : null;
             var movie = TitleKey.Parse(input.Key)?.IsMovie ?? true;
             bool Has(JellyseerrPermission bit) => (p.Permissions & (long)bit) == (long)bit;
             var admin = Has(JellyseerrPermission.ADMIN);
@@ -258,9 +279,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             // Seerr's own 4K permission decides (a Jellyfin administrator gets no bypass).
             var can4k = p.SeerrUser != null && (admin || Has(JellyseerrPermission.REQUEST_4K) || Has(movie ? JellyseerrPermission.REQUEST_4K_MOVIE : JellyseerrPermission.REQUEST_4K_TV));
             var canManage = p.SeerrUser != null && (admin || Has(JellyseerrPermission.MANAGE_REQUESTS));
-            var fourKEnabled = p.Settings != null && (movie ? p.Settings.Movie4k : p.Settings.Series4k);
+            var fourKEnabled = known != null && (movie ? known.Movie4k : known.Series4k);
             // Partial requests off, or not a real on/off: only a request for the whole series is sent (see SendAsync).
-            var wholeSeries = p.Settings is { Partial: not true };
+            var wholeSeries = known is { Partial: not true };
             // Prepared facts say who the person is: no account means Seerr answered that none is linked to them.
             return new RequestBackendBinding(source, p.SeerrUser, p.SeerrUser == null ? 0 : p.Permissions, fourKEnabled, can4k, canManage,
                 movie ? p.Movie : p.Tv, movie ? p.MovieDays : p.TvDays, canRequest, wholeSeries, SeerrUnlinked: p.SeerrUser == null, SeerrOptions: options, SeerrOptionsStamp: optionsStamp);
@@ -345,6 +366,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var cacheKey = source + "|" + kind;
             if (!fresh && _serverLists.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            // Counted from the start of the read.
+            var at = _now();
             if (await GetAsync(config, "/api/v1/service/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } json) return null;
             if (await GetAsync(config, "/api/v1/settings/" + kind, ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Array } settings) return null;
             var connections = new Dictionary<int, string>();
@@ -367,7 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     row.TryGetProperty("isDefault", out var d) && d.ValueKind == JsonValueKind.True, Int(row, "activeProfileId") is int profile && profile > 0 ? profile : null,
                     Str(row, "activeDirectory") is { Length: > 0 and <= 1024 } directory ? directory : null, connection));
             }
-            var list = new ServerList(servers, _now());
+            var list = new ServerList(servers, at);
             if (_serverLists.Count >= MaxCachedServerReads) _serverLists.Clear();
             _serverLists[cacheKey] = list;
             return list;
@@ -394,6 +417,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         {
             var cacheKey = source + "|" + kind + "|" + server.ToString(CultureInfo.InvariantCulture);
             if (!fresh && _serverDetails.TryGetValue(cacheKey, out var held) && _now() - held.At < ServersFor) return held;
+            // Counted from the start of the read.
+            var at = _now();
             if (await GetAsync(config, "/api/v1/service/" + kind + "/" + server.ToString(CultureInfo.InvariantCulture), ct, only).ConfigureAwait(false) is not { ValueKind: JsonValueKind.Object } json) return null;
             var profiles = new List<SeerrProfileOption>();
             if (json.TryGetProperty("profiles", out var p) && p.ValueKind == JsonValueKind.Array)
@@ -415,7 +440,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                         roots.Add(path);
                 }
             }
-            var details = new ServerDetails(profiles, roots, _now());
+            var details = new ServerDetails(profiles, roots, at);
             if (_serverDetails.Count >= MaxCachedServerReads) _serverDetails.Clear();
             _serverDetails[cacheKey] = details;
             return details;
@@ -466,33 +491,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         // Known is false when Seerr's user list couldn't be read completely (nothing is concluded then).
         private async Task<(int? Id, bool Known)> UserIdAsync(PluginConfiguration config, string source, Guid user, CancellationToken ct)
         {
+            var (id, known, _) = await UserIdReadAsync(config, source, user, ct).ConfigureAwait(false);
+            return (id, known);
+        }
+
+        // The same, with when the mapping's read began (a held one's own read; it ends IdsFor, or MissingIdFor for no
+        // account, after that).
+        private async Task<(int? Id, bool Known, DateTimeOffset At)> UserIdReadAsync(PluginConfiguration config, string source, Guid user, CancellationToken ct)
+        {
             var cacheKey = source + "|" + user.ToString("N");
-            // Taken before Seerr's user list is read.
+            // Taken before Seerr's user list is read, and the read's instant with it.
             var ticket = _ids.Begin();
-            if (_ids.TryGet(cacheKey, out var cached) && _now() - cached.At < (cached.Id == null ? MissingIdFor : IdsFor)) return (cached.Id, true);
+            var at = _now();
+            if (_ids.TryGet(cacheKey, out var cached) && _now() - cached.At < (cached.Id == null ? MissingIdFor : IdsFor)) return (cached.Id, true, cached.At);
             const int take = 100;
             for (var page = 0; page < MaxUserPages; page++)
             {
                 var list = await GetAsync(config, $"/api/v1/user?take={take}&skip={(page * take).ToString(CultureInfo.InvariantCulture)}&sort=created", ct).ConfigureAwait(false);
-                if (list is not { } json || !json.TryGetProperty("results", out var rows) || rows.ValueKind != JsonValueKind.Array) return (null, false);
+                if (list is not { } json || !json.TryGetProperty("results", out var rows) || rows.ValueKind != JsonValueKind.Array) return (null, false, at);
                 var count = 0;
                 foreach (var row in rows.EnumerateArray())
                 {
                     count++;
                     if (string.Equals(Str(row, "jellyfinUserId"), user.ToString("N"), StringComparison.OrdinalIgnoreCase) && Int(row, "id") is int id && id > 0)
                     {
-                        _ids.Set(cacheKey, ticket, (id, _now()));
-                        return (id, true);
+                        _ids.Set(cacheKey, ticket, (id, at), IdsFor);
+                        // What Seerr links now: a lookup of the Seerr proxy that names another account ends.
+                        Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, id);
+                        return (id, true, at);
                     }
                 }
                 var total = json.TryGetProperty("pageInfo", out var info) && info.ValueKind == JsonValueKind.Object ? Int(info, "results") : null;
                 if (count < take || total is int t && (page + 1) * take >= t)
                 {
-                    _ids.Set(cacheKey, ticket, (null, _now()));
-                    return (null, true);
+                    _ids.Set(cacheKey, ticket, (null, at), MissingIdFor);
+                    Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, null);
+                    return (null, true, at);
                 }
             }
-            return (null, false);
+            return (null, false, at);
         }
 
         /// <summary>How long Seerr's last-read 4K server settings count as known (see <see cref="FourKServer"/>).</summary>
@@ -510,15 +547,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         }
 
         private async Task<SeerrRequestSettings?> SettingsAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
+            => (await SettingsReadAsync(config, source, fresh, ct).ConfigureAwait(false)).Settings;
+
+        // Seerr's request settings and when their read began (a held read's own instant; they count SettingsFor from it).
+        private async Task<(SeerrRequestSettings? Settings, DateTimeOffset At)> SettingsReadAsync(PluginConfiguration config, string source, bool fresh, CancellationToken ct)
         {
             var held = Volatile.Read(ref _settings);
-            if (!fresh && held != null && held.Source == source && _now() - held.At < SettingsFor) return held.Settings;
-            if (await GetAsync(config, "/api/v1/settings/public", ct).ConfigureAwait(false) is not { } json) return null;
+            if (!fresh && held != null && held.Source == source && _now() - held.At < SettingsFor) return (held.Settings, held.At);
+            var at = _now();
+            if (await GetAsync(config, "/api/v1/settings/public", ct).ConfigureAwait(false) is not { } json) return (null, at);
             static bool? Tri(JsonElement e, string name) => e.TryGetProperty(name, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
             var settings = new SeerrRequestSettings(Tri(json, "partialRequestsEnabled"), Tri(json, "enableSpecialEpisodes") == true, Tri(json, "movie4kEnabled") == true, Tri(json, "series4kEnabled") == true);
-            Volatile.Write(ref _settings, new SettingsRead(source, settings, _now()));
-            return settings;
+            Volatile.Write(ref _settings, new SettingsRead(source, settings, at));
+            return (settings, at);
         }
+
+        // How long an entry whose inputs end at until may be kept, from start (never negative).
+        private static TimeSpan Life(DateTimeOffset start, DateTimeOffset until) => until > start ? until - start : TimeSpan.Zero;
 
         // ---------------- send ----------------
 
@@ -946,18 +991,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // The account prepared for a person (fresh, same Seerr), or null.
         private int? PreparedAccount(Guid user, string source)
-            => _prepared.TryGet(user, out var p) && p.Source == source && _now() - p.At <= PreparedFor ? p.SeerrUser : null;
+            => _prepared.TryGet(user, out var p) && p.Source == source && _now() < p.Until ? p.SeerrUser : null;
 
         // Fresh prepared facts (same Seerr) say Seerr links no account to the person.
         private bool PreparedUnlinked(Guid user, string source)
-            => _prepared.TryGet(user, out var p) && p.Source == source && _now() - p.At <= PreparedFor && p.SeerrUser == null;
+            => _prepared.TryGet(user, out var p) && p.Source == source && _now() < p.Until && p.SeerrUser == null;
 
         // The account isn't (or is no longer) the person's: forget the mapping and hold the request for a person.
         private RequestBackendResult Unlinked(Guid user, string source, string message)
         {
+            Reassigned(user, source);
+            return BackendResults.Hold("identity_changed", message);
+        }
+
+        // The account Seerr linked to the person is no longer theirs: every cache that depends on that link ends, and every
+        // read of it running now can't put it back: the mapping, the prepared facts, and the Seerr proxy's own account
+        // lookups (which would otherwise keep acting as the old account for their lifetime).
+        private void Reassigned(Guid user, string source)
+        {
             _ids.Invalidate(source + "|" + user.ToString("N"));
             _prepared.Invalidate(user);
-            return BackendResults.Hold("identity_changed", message);
+            Controllers.JellyfinEnhancedController.ForgetSeerrAccountOtherThan(user, null);
         }
 
         // ---------------- transport ----------------

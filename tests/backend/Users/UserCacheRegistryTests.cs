@@ -92,6 +92,19 @@ public class UserCacheRegistryTests
             else problems.AddRange(UserCacheScan.CheckWrite(plugin, drops, write));
         }
 
+        // Round 5: a fence is sampled before the inputs it covers are read, and a kept answer lives from when its read began.
+        foreach (var row in registry.Where(r => rows.ContainsKey(r.Member) && found.Any(c => c.Member == r.Member)))
+        {
+            foreach (var write in row.Rule("write").Where(w => w.StartsWith("fenced=", StringComparison.Ordinal) && w.Length > "fenced=".Length))
+                problems.AddRange(UserCacheScan.LateFences(plugin, row.Member, write["fenced=".Length..]));
+        }
+
+        foreach (var late in UserCacheScan.LateStamps(plugin, found))
+        {
+            if (rows.TryGetValue(late.Cache, out var row) && row.Rule("deadline").Any(d => d.Length > 0)) continue;
+            problems.Add(late.ToString());
+        }
+
         // Round 4: a decision and its key come from one snapshot.
         var keyed = registry.Where(r => r.Class == "keyed" && (r.Build == "both" || r.Build == Build) && rows.ContainsKey(r.Member)).Select(r => new UserCacheScan.Keyed(r.Member,
             new[] { r.Member[..r.Member.LastIndexOf('.')] }.Concat(r.Reason.Split(',').Select(v => v.Split('~')[0]).Where(m => m.Contains('.')).Select(m => m[..m.LastIndexOf('.')])).Distinct(StringComparer.Ordinal).ToList(),

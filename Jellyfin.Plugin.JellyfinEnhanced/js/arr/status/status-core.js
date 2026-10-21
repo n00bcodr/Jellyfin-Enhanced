@@ -165,6 +165,8 @@
             headers: { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' },
             signal: options?.signal
         });
+        // The answer carries the person's revisions (core/access-revision.js).
+        JE.core?.revision?.noteResponse(response);
         if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
         return await response.json();
     }

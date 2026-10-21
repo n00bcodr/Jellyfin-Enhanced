@@ -41,7 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly object _userIdCacheLock = new();
         private readonly Dictionary<string, (string Content, DateTime CachedAt)> _seriesDetailsCache = new();
         private readonly object _seriesDetailsCacheLock = new();
-        private readonly ConcurrentDictionary<string, Task<string?>> _seriesDetailsInFlight = new();
+        // A read in flight and when it began (what it answers lives from then, also for the requests that joined it).
+        private readonly ConcurrentDictionary<string, (Task<string?> Task, DateTime StartedAt)> _seriesDetailsInFlight = new();
 
         public AutoSeasonRequestService(
             IHttpClientFactory httpClientFactory,
@@ -165,21 +166,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             string? content;
             if (cacheEnabled)
             {
-                var task = _seriesDetailsInFlight.GetOrAdd(cacheKey, _ => FetchAsync());
+                var flight = _seriesDetailsInFlight.GetOrAdd(cacheKey, _ =>
+                {
+                    var startedAt = DateTime.UtcNow;
+                    return (FetchAsync(), startedAt);
+                });
                 try
                 {
-                    content = await task;
+                    content = await flight.Task;
                 }
                 finally
                 {
-                    _seriesDetailsInFlight.TryRemove(cacheKey, out _);
+                    _seriesDetailsInFlight.TryRemove(new KeyValuePair<string, (Task<string?>, DateTime)>(cacheKey, flight));
                 }
 
                 if (!string.IsNullOrEmpty(content))
                 {
                     lock (_seriesDetailsCacheLock)
                     {
-                        _seriesDetailsCache[cacheKey] = (content, DateTime.UtcNow);
+                        _seriesDetailsCache[cacheKey] = (content, flight.StartedAt);
                     }
                 }
             }
@@ -850,6 +855,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var urls = GetConfiguredUrls(config.JellyseerrUrls);
             var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+            // The id lives from when its read began.
+            var readAt = DateTime.UtcNow;
 
             foreach (var url in urls)
             {
@@ -883,7 +890,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                             var jellyseerrUserId = id.GetInt32().ToString();
                                             lock (_userIdCacheLock)
                                             {
-                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, DateTime.UtcNow);
+                                                _jellyseerrUserIdCache[normalizedJellyfinUserId] = (jellyseerrUserId, readAt);
                                             }
                                             return jellyseerrUserId;
                                         }

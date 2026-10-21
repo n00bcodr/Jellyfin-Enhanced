@@ -25,6 +25,8 @@ public class ApiSeerrTests
         public JellyseerrPermission Permissions { get; set; } = JellyseerrPermission.REQUEST;
         public ConcurrentQueue<(string Path, string Method, string? User, string? Body)> Calls { get; } = new();
         public Func<HttpRequestMessage, HttpResponseMessage> Reply { get; set; } = _ => IntegrationTransport.Response("{\"id\":99}");
+        /// <summary>Runs as Seerr's user list is asked for (the proxy's account lookup), before it answers.</summary>
+        public Action? BeforeUserLookup { get; set; }
         public IntegrationTransport Transport { get; }
         public JellyfinEnhancedController Controller { get; }
         public SeerrFixture(ILibraryManager? library = null, IUserManager? jellyfinUsers = null)
@@ -42,6 +44,7 @@ public class ApiSeerrTests
                 var user = request.Headers.TryGetValues("X-Api-User", out var values) ? values.Single() : null;
                 Calls.Enqueue((path, request.Method.Method, user, body));
                 Assert.Equal("test-secret", Assert.Single(request.Headers.GetValues("X-Api-Key")));
+                if (path.StartsWith("/api/v1/user?")) BeforeUserLookup?.Invoke();
                 if (Importable && path.StartsWith("/api/v1/user?")) return IntegrationTransport.Response("{\"results\":[]}");
                 if (Importable && path == "/api/v1/user/import-from-jellyfin") return IntegrationTransport.Response(JsonSerializer.Serialize(new[] { new { id = 27, jellyfinUserId = UserId.ToString("N"), permissions = (int)Permissions } }));
                 if (path.StartsWith("/api/v1/user?")) return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] {
@@ -199,6 +202,29 @@ public class ApiSeerrTests
         }
         Assert.Equal(4, f.Calls.Count(c => c.Method == "POST"));
         Assert.DoesNotContain(f.Calls, c => c.Path == "/api/v1/settings/main");
+    }
+
+    [Fact]
+    public async Task ASeerrSettingsSaveDuringTheAccountLookupNeverKeepsTheOldSourcesAnswer()
+    {
+        using var f = new SeerrFixture();
+        f.Reply = request => IntegrationTransport.Response(JsonSerializer.Serialize(new { id = 603, title = request.RequestUri!.Host == "new-seerr.invalid" ? "New source" : "Old source" }));
+        // The request has read the old configuration; while it looks up the person's Seerr account, the administrator
+        // points JE at another Seerr and the save clears every Seerr answer.
+        f.BeforeUserLookup = () =>
+        {
+            f.BeforeUserLookup = null;
+            f.Plugin.Plugin.UpdateConfiguration(new Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration
+            {
+                JellyseerrEnabled = true, JellyseerrAutoImportUsers = false, JellyseerrUrls = "http://new-seerr.invalid", JellyseerrApiKey = "test-secret", SpoilerAutoEnableOnSeerrRequest = false,
+            });
+            JellyfinEnhancedController.ClearAllSeerrCachesOnConfigChange();
+        };
+        // That request answers from the old Seerr (it was asked before the save) ...
+        Assert.Contains("Old source", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content);
+        Assert.Equal("http://new-seerr.invalid", f.Plugin.Plugin.Configuration.JellyseerrUrls);
+        // ... but it never keeps that answer past the save: the next read reaches the new Seerr.
+        Assert.Contains("New source", Assert.IsType<ContentResult>(await f.Controller.GetMovie(603)).Content);
     }
 
     [Fact]

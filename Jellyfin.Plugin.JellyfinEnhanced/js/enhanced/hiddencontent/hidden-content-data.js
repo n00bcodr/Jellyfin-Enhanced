@@ -24,6 +24,13 @@
     const hiddenIdSet = new Set();
     const hiddenTmdbIdSet = new Set();
     let hiddenData = null;
+    // The document revision (core/access-revision.js) the rules were read under, taken BEFORE the read; null: unknown.
+    // Another tab or device saving the rules moves it: the rules are read again, in place.
+    let loadedRevision = null;
+    // A newer revision was seen while the rules couldn't be read again (a save of this tab pending, a read running).
+    let revisionPending = false;
+    /** @type {Promise<boolean>|null} */
+    let revalidating = null;
 
     // ============================================================
     // Internal helpers
@@ -483,8 +490,77 @@
      */
     function resetFromUserConfig() {
         hiddenData = JE.userConfig?.hiddenContent || { items: {}, settings: {} };
+        // The page-load documents were read under the bootstrap's revision (the core holds it from then).
+        loadedRevision = JE.core?.revision?.document?.('hidden-content') ?? null;
+        revisionPending = false;
         rebuildSets();
     }
+
+    /**
+     * The rules' document moved on the server (another tab or device saved them): read them again and bring this tab
+     * in line in place: only what changed is hidden or shown again, nothing is cleared first. Not while a save of this
+     * tab is pending (its own change is not overwritten; the next revision after it reads again), and a change made here
+     * while the read runs keeps the read from being taken (read again later).
+     * @returns {Promise<boolean>} True when the rules are the server's as of a known revision.
+     */
+    function revalidate() {
+        if (revalidating) { revisionPending = true; return revalidating; }
+        if (internal.hasPendingSave?.()) { revisionPending = true; return Promise.resolve(false); }
+        revisionPending = false;
+        const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        // Taken before the read: the rules as read are at least this new.
+        const revision = JE.core?.revision?.document?.('hidden-content') ?? null;
+        const before = getHiddenData();
+        revalidating = (async () => {
+            try {
+                const userId = ApiClient.getCurrentUserId();
+                if (!userId) return false;
+                const fresh = await ApiClient.ajax({
+                    type: 'GET',
+                    url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/hidden-content.json?_=${Date.now()}`),
+                    dataType: 'json'
+                });
+                if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+                // Changed here meanwhile, or a save started: this tab's change wins; read again after it.
+                if (hiddenData !== before || internal.hasPendingSave?.()) { revisionPending = true; return false; }
+                const next = (typeof JE.toCamelCase === 'function' ? JE.toCamelCase(fresh) : fresh) || { items: {}, settings: {} };
+                const after = JE.core?.revision?.document?.('hidden-content') ?? null;
+                loadedRevision = after === revision ? revision : null;
+                if (after !== revision) revisionPending = true;
+                if (JSON.stringify(next) === JSON.stringify(before)) return true;
+                const shownBefore = new Set(hiddenIdSet);
+                JE.userConfig = JE.userConfig || {};
+                JE.userConfig.hiddenContent = next;
+                hiddenData = next;
+                rebuildSets();
+                emitChange();
+                const shownAgain = new Set([...shownBefore].filter(id => !hiddenIdSet.has(id)));
+                if (shownAgain.size) restoreNativeCardsForIds(shownAgain);
+                refreshNativeCardVisibility();
+                return true;
+            } catch (e) {
+                console.warn('🪼 Jellyfin Enhanced: Failed to read hidden-content again after a revision', e);
+                revisionPending = true;
+                return false;
+            } finally {
+                revalidating = null;
+                if (revisionPending && (JE.core?.revision?.document?.('hidden-content') ?? null) !== loadedRevision) {
+                    revisionPending = false;
+                    // A newer revision came while this ran: once more (each run is caused by a real move).
+                    setTimeout(() => { if (!JE.session || JE.session.isCurrent(requestEpoch)) revalidate(); }, 0);
+                }
+            }
+        })();
+        return revalidating;
+    }
+
+    document.addEventListener('je-document-revision', (e) => {
+        const detail = /** @type {CustomEvent} */ (e).detail || {};
+        if (detail.document !== 'hidden-content' || detail.revision === loadedRevision) return;
+        // Nothing read yet: the first read takes the current rules anyway.
+        if (!hiddenData) return;
+        revalidate();
+    });
 
     // Hidden-content data is per-user. Clear the local mirror the moment the
     // identity changes (don't read JE.userConfig here — reset handlers run in
@@ -492,6 +568,8 @@
     // from the incoming user's config once the re-bootstrap has loaded it.
     JE.session?.onUserChange('hidden-content-data', () => {
         hiddenData = null;
+        loadedRevision = null;
+        revisionPending = false;
         hiddenIdSet.clear();
         hiddenTmdbIdSet.clear();
     });
@@ -525,6 +603,9 @@
         filterRequestItems,
         unhideAll,
         resetFromUserConfig,
+        revalidate,
+        /** @returns {boolean} A newer revision of the rules is waiting to be read (after this tab's pending save). */
+        hasRevisionPending: () => revisionPending,
     });
 
 })(window.JellyfinEnhanced);

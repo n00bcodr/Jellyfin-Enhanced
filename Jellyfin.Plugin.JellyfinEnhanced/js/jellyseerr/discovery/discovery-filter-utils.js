@@ -335,6 +335,32 @@
         return header;
     }
 
+    // Discover pages this tab read (a load's prefetched pages, a page shown again after a sort or filter change), kept
+    // under the person's access revision (core/access-revision.js) they were asked under: used only while that revision
+    // is still the one known and the user the same, and dropped when it moves, so a prefetched page is never drawn for
+    // an access the person no longer has, and an unchanged access never asks twice for the same page.
+    /** @type {Map<string, {data: any, revision: string|null, epoch: number, at: number}>} */
+    const keptPages = new Map();
+    const KEPT_PAGE_TTL_MS = 2 * 60 * 1000;
+    const KEPT_PAGES_MAX = 200;
+    const accessRevision = () => JE.core?.revision?.access?.() ?? null;
+    document.addEventListener('je-access-revision', () => keptPages.clear());
+    JE.session?.onUserChange?.('discovery-kept-pages', () => keptPages.clear());
+
+    /**
+     * A kept page, when it may still be used (same user, same access revision, not too old).
+     * @param {string} cacheKey
+     * @param {number} epoch
+     * @returns {any|null}
+     */
+    function keptPage(cacheKey, epoch) {
+        const kept = keptPages.get(cacheKey);
+        if (!kept) return null;
+        if (kept.epoch === epoch && kept.revision === accessRevision() && Date.now() - kept.at < KEPT_PAGE_TTL_MS) return kept.data;
+        keptPages.delete(cacheKey);
+        return null;
+    }
+
     /**
      * Managed fetch helper using request manager when available
      * @param {string} path - API path
@@ -349,9 +375,11 @@
         if (JE.requestManager) {
             const cacheKey = `${cachePrefix}:${path}`;
             // Every row is filtered for the viewer's current policy (the native feeds and Seerr's rows
-            // alike: library access, parental limits, their Seerr account): never kept by the tab, so a
-            // changed policy shows on the next read; identical reads in flight share one request. The
-            // server keeps the upstream answers, so reading them again is cheap.
+            // alike: library access, parental limits, their Seerr account). A page of Seerr's rows is kept
+            // under the access revision it was asked under (keptPages) and used again only while that
+            // revision holds; the server's native feeds are never kept. Identical reads in flight share
+            // one request.
+            const keep = !path.startsWith('/JellyfinEnhanced/native-details/');
 
             // Identity epoch at request start. Cache keys carry no user id and the
             // cache is flushed on a user switch, so a response that lands after the
@@ -359,8 +387,13 @@
             // the previous user's permissions (and their parental filter).
             const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
             const stillCurrent = () => !JE.session || JE.session.isCurrent(requestEpoch);
+            const hit = keep ? keptPage(cacheKey, requestEpoch) : null;
+            if (hit) return hit;
 
             const fetchFn = async () => {
+                // Taken before the read: the page is kept under it only if it still holds when the page is in.
+                const revision = accessRevision();
+                const startedAt = Date.now();
                 const response = await JE.requestManager.fetchWithRetry(url, {
                     method: 'GET',
                     headers: {
@@ -377,16 +410,22 @@
                 if (!stillCurrent()) {
                     throw new DOMException('User changed during request', 'AbortError');
                 }
+                if (keep && accessRevision() === revision) {
+                    if (keptPages.size >= KEPT_PAGES_MAX) keptPages.delete(keptPages.keys().next().value);
+                    keptPages.set(cacheKey, { data, revision, epoch: requestEpoch, at: startedAt });
+                }
                 return data;
             };
 
-            // Dedup outside the pool (only the unique fetch holds a slot).
+            // Dedup outside the pool (only the unique fetch holds a slot), and look at the kept
+            // pages again once a slot is taken: a prefetch that finished while this queued is used.
             return JE.requestManager.deduplicatedFetch(cacheKey, () =>
                 JE.requestManager.withConcurrencyLimit(() => {
                     if (!stillCurrent()) {
                         return Promise.reject(new DOMException('User changed during request', 'AbortError'));
                     }
-                    return fetchFn();
+                    const late = keep ? keptPage(cacheKey, requestEpoch) : null;
+                    return late ? Promise.resolve(late) : fetchFn();
                 }),
                 signal
             );
@@ -713,6 +752,8 @@
 
         // Add media type for fast CSS-based filtering
         card.setAttribute('data-media-type', item.mediaType);
+        // The title the card draws (a list read again after an access change takes away the cards it no longer has).
+        card.setAttribute('data-je-title-key', `${item.mediaType}-${item.id}`);
 
         const jellyfinMediaId = JE.seerrStatus.libraryCopyId(item.mediaInfo);
         if (jellyfinMediaId) {

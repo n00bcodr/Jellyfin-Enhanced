@@ -91,11 +91,18 @@ test('collection membership is per call: a later search asks the server again', 
   assert.equal(calls, 2);
 });
 
-test('the tag pipeline announces a moved access revision from the server\'s answers', async t => {
+test('a moved filter revision in a tag answer asks for the person\'s revisions at once (the core announces the move)', async t => {
   let revision = 'r1';
+  let access = 'a1';
+  const probes = [];
   const h = createHarness({
     globals: { requestIdleCallback: () => {} },
     apiClient: { ajax: async () => ({ items: { aabb: { Type: 'Movie' } }, count: 1, version: 1, timestamp: 1, filterRevision: revision }) },
+    fetch: async url => {
+      probes.push(String(url));
+      const value = `a=${access};hc=h1;sg=s1`;
+      return new Response(JSON.stringify({ revision: value }), { headers: { 'Content-Type': 'application/json', 'X-JE-Revision': value } });
+    },
     JE: { pluginConfig: { TagCacheServerMode: true }, currentSettings: { qualityTagsEnabled: true },
       helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
       core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
@@ -104,16 +111,22 @@ test('the tag pipeline announces a moved access revision from the server\'s answ
   t.after(() => h.close());
   const seen = [];
   h.document.addEventListener('je-access-revision', e => seen.push(e.detail));
+  h.load('core/access-revision.js');
+  await h.JE.core.revision.probe('start', true);
   h.load('tags/tag-pipeline.js');
   h.JE.tagPipeline.initialize();
   await h.JE.tagPipeline.invalidateServerCache();
-  assert.deepEqual(seen, []);
-  // The same revision again: nothing to drop.
+  // The same revision again: nothing asked, nothing to drop.
   await h.JE.tagPipeline.invalidateServerCache();
+  assert.equal(probes.length, 1);
   assert.deepEqual(seen, []);
   revision = 'r2';
+  access = 'a2';
   await h.JE.tagPipeline.invalidateServerCache();
-  assert.deepEqual(seen.map(s => ({ ...s })), [{ revision: 'r2', before: 'r1' }]);
+  await nextTurn();
+  await nextTurn();
+  assert.equal(probes.length, 2, 'the move is checked at once');
+  assert.deepEqual(seen.map(s => ({ ...s })), [{ revision: 'a2', before: 'a1' }]);
 });
 
 test('status cards drop every kept status when the access revision moves, and read the cards again', async t => {

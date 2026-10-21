@@ -799,6 +799,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
             // The slot is released by its handle, only when its wait succeeded (also when the continuation then stops).
             using var concurrencyTurn = await ListContinuation.AwaitLock(_concurrency, cancellationToken).ConfigureAwait(false);
+            // The poster lives from when its read began.
+            var readAt = DateTime.UtcNow;
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -820,7 +822,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     _tmdbPosters.Clear();
                 }
 
-                _tmdbPosters[key] = (poster, DateTime.UtcNow);
+                _tmdbPosters[key] = (poster, readAt);
                 return (poster, true, false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

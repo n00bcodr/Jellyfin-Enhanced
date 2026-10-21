@@ -345,8 +345,9 @@
 
     /**
      * The server's filter revision for the signed-in person (their access and Spoiler Guard) as an answer just carried
-     * it. When it moves, every browser cache of an answer the server projected for them (arr status cards, badges) was
-     * worked out for an access they no longer have: 'je-access-revision' tells them to drop it.
+     * it. When it moves, the person's revisions are asked for at once (core/access-revision.js owns them and announces
+     * 'je-access-revision' to every browser cache of an answer the server projected for them): a tag answer is one more
+     * early sign of a change, never the only channel.
      * @param {string} revision - The revision the answer carried.
      */
     function noteFilterRevision(revision) {
@@ -355,9 +356,9 @@
         announcedFilterRevision = revision;
         if (before === null) return;
         try {
-            document.dispatchEvent(new CustomEvent('je-access-revision', { detail: { revision, before } }));
+            JE.core?.revision?.probe?.('tag-revision', true);
         } catch (err) {
-            console.warn(`${logPrefix} access revision listeners failed:`, err);
+            console.warn(`${logPrefix} access revision probe failed:`, err);
         }
     }
 

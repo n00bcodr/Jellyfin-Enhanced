@@ -230,6 +230,8 @@
 
             try {
                 const response = await fetch(url, options);
+                // An answer of JE's API carries the person's revisions (core/access-revision.js), refusals included.
+                JE.core?.revision?.noteResponse(response);
 
                 if (response.ok) {
                     if (metrics.enabled) {

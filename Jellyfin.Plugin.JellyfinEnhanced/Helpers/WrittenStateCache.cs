@@ -95,10 +95,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <param name="key">The key.</param>
         /// <param name="ticket">The ticket taken before the read.</param>
         /// <param name="value">The state as read.</param>
-        public void Set(TKey key, in Ticket ticket, TValue value)
+        public void Set(TKey key, in Ticket ticket, TValue value) => Set(key, ticket, value, _ttl);
+
+        /// <summary>Keeps <paramref name="value"/> like <see cref="Set(TKey, in Ticket, TValue)"/>, for at most
+        /// <paramref name="life"/> from the ticket (never past the cache's own lifetime): a value worked out from inputs
+        /// that end sooner (a source read earlier, a shorter-lived fact) ends with the earliest of them.</summary>
+        /// <param name="key">The key.</param>
+        /// <param name="ticket">The ticket taken before the read.</param>
+        /// <param name="value">The state as read.</param>
+        /// <param name="life">How long it may be served, from the ticket.</param>
+        public void Set(TKey key, in Ticket ticket, TValue value, TimeSpan life)
         {
             var now = _ticks();
-            var entry = new Entry(value, ticket.Ticks + _ttl.Ticks, ticket.Clock);
+            var entry = new Entry(value, ticket.Ticks + Math.Max(0, Math.Min(_ttl.Ticks, life.Ticks)), ticket.Clock);
             if (!Serves(key, entry, now)) return;
             _step?.Invoke("store");
             if (_entries.Count >= _maxEntries)

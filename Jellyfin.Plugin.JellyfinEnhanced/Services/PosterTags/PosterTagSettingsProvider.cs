@@ -55,9 +55,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The user's effective settings for the current plugin configuration.</summary>
         public PosterTagSettings Get(Guid userId)
         {
+            // Taken before anything is read (a drop after it is seen by the store below).
+            var generation = Interlocked.Read(ref _generation);
             var config = JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration();
             var now = DateTime.UtcNow;
-            var generation = Interlocked.Read(ref _generation);
             var audioPreference = _users.Get(userId)?.AudioLanguagePreference;
             if (_cache.TryGetValue(userId, out var hit)
                 && hit.Generation == generation
