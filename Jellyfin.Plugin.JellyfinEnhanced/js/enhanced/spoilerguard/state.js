@@ -20,7 +20,6 @@
     // previous person's saves unsent. Its revision moves on with every save queued or answered (and the switch), so a state
     // read that began before one doesn't take its Prefs.
     let pendingPrefs = [];
-    const prefsQueue = JE.core.mutationQueue('spoiler-prefs');
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
@@ -363,8 +362,5 @@
         // The outgoing viewer's native toggles show their state; the next page view draws the incoming one.
         document.querySelectorAll('.je-spoiler-blur-btn').forEach(button => button.remove());
         refreshControls();
-        // The previous person's saves are not this person's: the queue cancels those not sent yet (its own reset), their
-        // answers are dropped (epoch), and nothing waits on them.
-        pendingPrefs = [];
     });
 })(window.JellyfinEnhanced);
