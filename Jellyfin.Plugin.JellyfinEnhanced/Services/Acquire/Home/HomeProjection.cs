@@ -244,7 +244,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Home
                 MutationInput.Hash(string.Join(",", follows.Select(f => f.Key + ":" + f.Kind).OrderBy(k => k, StringComparer.Ordinal))),
                 MutationInput.Hash(string.Join(",", meta.OrderBy(m => m.Key, StringComparer.Ordinal).Select(m => m.Key + "=" + m.Value.Title + "/" + m.Value.Year + "/" + m.Value.Poster + "/" + m.Value.ItemId))),
                 MutationInput.Hash(string.Join(",", dates.OrderBy(d => d.Key, StringComparer.Ordinal).Select(d => d.Key + "=" + d.Value))));
-            return await _hub.ForHomeAsync(viewer, what, followKeys, (entries, composed) => JsonSerializer.SerializeToUtf8Bytes(Build(viewer, choice, hss, entries, composed, follows, meta, dates), Json), cancellationToken, respond => gate.Project(policy, _ => respond())).ConfigureAwait(false);
+            return await _hub.ForHomeAsync(viewer, what, followKeys, (entries, composed) => JsonSerializer.SerializeToUtf8Bytes(Build(viewer, choice, hss, entries, composed, follows, meta, dates), Json), cancellationToken, respond => gate.Publish(policy, _ => respond())).ConfigureAwait(false);
         }
 
         /// <summary>The rows (typed) from a body this projection made.</summary>

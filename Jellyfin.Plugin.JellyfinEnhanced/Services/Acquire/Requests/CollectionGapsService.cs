@@ -216,7 +216,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 catch (AcquireResponseGate.Changed) { ct.ThrowIfCancellationRequested(); }
             }
             if (gate.Read() is not { } finalPolicy) return (null, "not_found");
-            return gate.Project(finalPolicy, current => ((T?)null, _boxSet(current, itemId) == null ? "not_found" : "authorization_changed"));
+            return gate.Publish(finalPolicy, current => ((T?)null, _boxSet(current, itemId) == null ? "not_found" : "authorization_changed"));
         }
 
         private async Task<(T? Gaps, string? Refusal)> PrepareAsync<T>(StatusViewer viewer, Guid itemId, string? language, AcquireResponseGate gate, AcquireResponseGate.Policy policy, Func<CollectionGaps, T> project, CancellationToken ct) where T : class
@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (set.TmdbCollectionId is not int collectionId || collectionId <= 0) return (null, "collection_unknown");
             var json = await _tmdbCollection(collectionId, language != null && Language.IsMatch(language) ? language : null, ct).ConfigureAwait(false);
             var parts = ParseCollection(json, DateOnly.FromDateTime(_now().UtcDateTime));
-            if (parts == null) return gate.Project(policy, current =>
+            if (parts == null) return gate.Publish(policy, current =>
                 ((T?)null, _boxSet(current, itemId) is { } finalSet && finalSet.TmdbCollectionId == collectionId
                     ? "collection_unknown" : "not_found"));
             var covering = _coverage != null && _phase4() ? CoveredAsync(set.ItemId, viewer, ct) : null;
@@ -251,7 +251,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var target = wants ? _currentTarget?.Invoke(viewer.UserId) : null;
             var askable = absent.Where(p => permitted.Contains(p.Key) && p.Released && (!wants || RequestState(p.Key, viewer.UserId, target) == null)).Select(p => p.Key).ToList();
             var paused = _pauses != null && askable.Count > 0 ? await _pauses(viewer.UserId, askable, ct).ConfigureAwait(false) : new Dictionary<string, RequestBlock>();
-            return gate.Project(policy, current =>
+            return gate.Publish(policy, current =>
             {
                 // Everything below, including the caller's serialiser, runs without another await.
                 if (_boxSet(current, itemId) is not { } finalSet || finalSet.TmdbCollectionId != collectionId) return ((T?)null, "not_found");

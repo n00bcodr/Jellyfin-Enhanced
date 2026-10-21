@@ -293,7 +293,7 @@ public class ListsImportIdentityR3Tests
         var raw = new ImportCandidateDto { MediaType = "movie", TmdbId = SteelTmdb, Title = "Man of Steel", Overview = "Clark Kent finds out." };
         var viewer = new ImportViewer(new HashSet<string>(), _ => false);
 
-        viewer.Project(raw);
+        viewer.Apply(raw);
 
         Assert.True(raw.SpoilerGuarded);
         Assert.Null(raw.Overview);

@@ -28,11 +28,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// with reason <c>hidden</c>), a guarded one loses its overview and episode titles. Nothing else changes.
         /// </summary>
         /// <param name="result">A resolved entry (changed in place).</param>
-        public void Project(ResolvedEntryDto result)
+        public void Apply(ResolvedEntryDto result)
         {
             foreach (var candidate in result.Candidates.Append(result.Match).OfType<ImportCandidateDto>().Distinct())
             {
-                Project(candidate);
+                Apply(candidate);
             }
 
             if (result.Match?.Hidden == true && !result.Reasons.Contains("hidden"))
@@ -49,7 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// shows "Season N") and its episodes' titles. Its title, year, dates, poster and numbers stay.
         /// </summary>
         /// <param name="candidate">Candidate.</param>
-        public void Project(ImportCandidateDto candidate)
+        public void Apply(ImportCandidateDto candidate)
         {
             if (HiddenKeys.Contains(candidate.MediaType + ":tmdb:" + candidate.TmdbId.ToString(CultureInfo.InvariantCulture)))
             {
@@ -81,11 +81,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
         /// </summary>
         /// <param name="entry">The entry.</param>
         /// <param name="identity">The completed identity of its title.</param>
-        public void Project(ImportEntryDto entry, CompletedIdentity? identity)
+        public void Apply(ImportEntryDto entry, CompletedIdentity? identity)
         {
             if (entry.Prepared != null)
             {
-                Project(entry.Prepared);
+                Apply(entry.Prepared);
             }
 
             if (identity != null && !SpoilerGuarded(identity))

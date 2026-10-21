@@ -1851,7 +1851,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
                     outcome = lost.Outcome;
                 }
 
-                return state.Project(continuation, outcome);
+                return state.Answer(continuation, outcome);
             }
             finally
             {
@@ -1861,7 +1861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
 
         /// <summary>
         /// What a create knows about its operation and list, read again by every check of its continuation, and the one
-        /// place its answer is made (<see cref="Project"/>).
+        /// place its answer is made (<see cref="Answer"/>).
         /// </summary>
         private sealed class CreateState
         {
@@ -1962,7 +1962,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists
             /// <param name="continuation">The create's continuation.</param>
             /// <param name="outcome">What the create came to.</param>
             /// <returns>The answer.</returns>
-            internal ListOutcome Project(ListContinuation continuation, ListOutcome outcome)
+            internal ListOutcome Answer(ListContinuation continuation, ListOutcome outcome)
             {
                 lock (ListContinuation.Lifecycle)
                 {

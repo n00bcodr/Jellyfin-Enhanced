@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (gate.Read() is not { } policy) return Forbid();
             try
             {
-                return gate.Project<IActionResult>(policy, current =>
+                return gate.Publish<IActionResult>(policy, current =>
                 {
                     if (!current.IsAdmin) return Forbid();
                     if (!HomeFlags.OpsStrip(JellyfinEnhanced.Instance?.Configuration) || !_home.Choice(current.UserId).Ops || !_admin.Enabled)

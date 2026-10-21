@@ -210,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Import
             var viewer = _viewer?.For(options.Caller) ?? ImportViewer.None;
             foreach (var result in response.Results)
             {
-                viewer.Project(result);
+                viewer.Apply(result);
             }
 
             var (total, peak, perSecond) = _limiter.Stats();

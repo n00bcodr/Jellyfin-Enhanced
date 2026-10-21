@@ -5,7 +5,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
 {
     /// <summary>
     /// The final boundary for home and collection answers. Preparation may await; returning cached bytes or projecting
-    /// and serialising an answer must run synchronously inside Project. A changed policy invalidates all prepared
+    /// and serialising an answer must run synchronously inside Publish. A changed policy invalidates all prepared
     /// parental evidence. Callers retry preparation at most three times, then fail closed.
     /// </summary>
     internal sealed class AcquireResponseGate
@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             return viewer == null ? null : new Policy(viewer, viewer.PolicyRevision + "|" + _revision(viewer));
         }
 
-        internal T Project<T>(Policy prepared, Func<StatusViewer, T> project)
+        internal T Publish<T>(Policy prepared, Func<StatusViewer, T> project)
         {
             var current = Read();
             if (current == null || current.Revision != prepared.Revision) throw new Changed();

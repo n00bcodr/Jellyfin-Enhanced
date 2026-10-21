@@ -154,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
                 response.Entries = items.Select((item, i) =>
                 {
                     var entry = ToEntry(item, i);
-                    viewer.Project(entry, identities.GetValueOrDefault(item));
+                    viewer.Apply(entry, identities.GetValueOrDefault(item));
                     return entry;
                 }).ToList();
             }
@@ -372,7 +372,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Lists.Sources
             }).ToList();
             for (var i = 0; i < groups.Count; i++)
             {
-                viewer.Project(response.Entries[i], identities[groups[i].First]); // the entry's note and its prepared match
+                viewer.Apply(response.Entries[i], identities[groups[i].First]); // the entry's note and its prepared match
             }
 
             response.SnapshotKeys = groups.SelectMany(g => g.Keys).ToList();
