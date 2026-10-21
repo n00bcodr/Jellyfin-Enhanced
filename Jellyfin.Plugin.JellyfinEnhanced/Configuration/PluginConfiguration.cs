@@ -1102,6 +1102,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Ready playlist: days an entry stays unless watched first (1–90, default 30).</summary>
         public int ArrReadyRetentionDays { get; set; } = 30;
+        // ---- Phase 4c2: list import and sources (reviewed previews; nothing here changes a list by itself) ----
+
+        /// <summary>
+        /// Lists: import entries from pasted text, a file (CSV, IMDb or Letterboxd export) or a list URL, with a review of
+        /// every match first. Needs <see cref="ArrPhase4ListAuthoringEnabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListImportEnabled { get; set; }
+
+        /// <summary>Lists: "From URL" (list sites). Needs <see cref="ArrPhase4ListImportEnabled"/>; each site below has its own switch. Off by default.</summary>
+        public bool ArrPhase4ListSourcesEnabled { get; set; }
+
+        /// <summary>From URL: MDBList public lists (no key; also the mirror for Letterboxd, IMDb and Trakt lists). Off by default.</summary>
+        public bool ArrPhase4ListMdblistEnabled { get; set; }
+
+        /// <summary>
+        /// From URL: administrators may deliberately read an MDBList list through the MDBList API with the server's MDBList
+        /// key (private lists; counts against the key's daily quota, which ratings share). Never used as a fallback. Needs
+        /// <see cref="ArrPhase4ListMdblistEnabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListMdblistApiEnabled { get; set; }
+
+        /// <summary>From URL: TMDB lists, collections and charts (the TMDB key; collections and trending also through Seerr, labelled). Off by default.</summary>
+        public bool ArrPhase4ListTmdbEnabled { get; set; }
+
+        /// <summary>From URL: chronolists.com watch orders (exact TMDB ids, no key). Off by default.</summary>
+        public bool ArrPhase4ListChronolistsEnabled { get; set; }
+
+        /// <summary>From URL: Trakt lists, watchlists and charts (needs <see cref="ArrListTraktApiKey"/>). Off by default.</summary>
+        public bool ArrPhase4ListTraktEnabled { get; set; }
+
+        /// <summary>
+        /// From URL: IMDb lists, watchlists and charts through IMDb's unofficial API. An explicit opt-in: it may stop working
+        /// without notice. IMDb CSV exports work without it. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListImdbEnabled { get; set; }
+
+        /// <summary>
+        /// Lists: when Seerr isn't set up, read title details for list entries and import matches from TMDB with the
+        /// server's TMDB key (release dates, posters, seasons and episodes). Needs <see cref="ArrPhase4ListPlaceholdersEnabled"/>. Off by default.
+        /// </summary>
+        public bool ArrPhase4ListJeMetadataEnabled { get; set; }
+
+        /// <summary>The Trakt app's client id (sent as Trakt's <c>trakt-api-key</c>); kept in the secrets store, never sent to browsers.</summary>
+        public string ArrListTraktApiKey { get; set; } = string.Empty;
+
+        // ---- end Phase 4c2 ----
 
         // ---- Requests & downloads, phase 1: status on pages and live updates ----
 
