@@ -851,10 +851,11 @@ public class UserChangeSpoilerBoundaryTests
                 var http = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("Jellyfin-UserId", viewer.ToString())], "Test")) };
                 var descriptor = new ActionDescriptor { RouteValues = new Dictionary<string, string?> { ["controller"] = "Items", ["action"] = "GetItems" } };
                 var context = new ActionContext(http, new RouteData(), descriptor, new Microsoft.AspNetCore.Mvc.ModelBinding.ModelStateDictionary());
-                var result = new ObjectResult(dto);
+                var executed = new Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext(context, [], this) { Result = new ObjectResult(dto) };
                 await filter.OnActionExecutionAsync(new Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext(context, [], new Dictionary<string, object?>(), this),
-                    () => Task.FromResult(new Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext(context, [], this) { Result = result }));
-                return dto.Name!;
+                    () => Task.FromResult(executed));
+                // What is delivered: Spoiler Guard's value walk builds a new item in the answer (the host's DTO is left as it was).
+                return Assert.IsType<MediaBrowser.Model.Dto.BaseItemDto>(Assert.IsAssignableFrom<ObjectResult>(executed.Result).Value).Name!;
             }
 
             Assert.Equal("Secret S2E1", await Title());
