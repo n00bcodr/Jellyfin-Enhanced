@@ -127,7 +127,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         private bool Switch(string backend, string? addresses = null)
         {
-            lock (JellyfinEnhanced.AnalyticsCredentialLock)
+            lock (JellyfinEnhanced.ConfigurationLock)
             {
                 var live = _config();
                 if (addresses != null && SeerrMigrationReader.AddressFingerprint(live) != addresses) return false;

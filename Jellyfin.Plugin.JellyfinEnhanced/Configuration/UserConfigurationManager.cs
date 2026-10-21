@@ -605,10 +605,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Strict read for RMW: existing empty/null/garbage is corruption; backs up to .corrupt-{ts} and throws.
         // quarantineCorrupt: false = throw without moving the file aside (read-only callers such as dry runs).
+        // A corrupt file is moved aside only under its document lock (the lock every writer of it holds, a restore included),
+        // and only while it is still the file that was read: a reader that found it corrupt without the lock (a GET) reads it
+        // again under the lock first, and a document a writer put in place meanwhile is answered, never quarantined.
         public T GetUserConfigurationStrict<T>(string userId, string fileName, bool quarantineCorrupt = true) where T : new()
         {
             var configPath = ResolveUserFile(userId, fileName);
-            if (!File.Exists(configPath)) return new T();
+            var read = ReadStrict<T>(userId, fileName, configPath);
+            if (read.Failure == null) return read.Value;
+            if (!quarantineCorrupt) read.Failure.Throw();
+            lock (FileLock(userId, fileName))
+            {
+                var again = ReadStrict<T>(userId, fileName, configPath, report: false);
+                if (again.Failure == null) return again.Value;
+                // Read under the lock: no writer can replace it before it is moved aside.
+                BackupCorruptFile(configPath);
+                again.Failure.Throw();
+                throw new InvalidOperationException("unreachable");
+            }
+        }
+
+        // One strict read: the document, or why it can't be used (nothing is moved aside here). report: log why (the read again
+        // under the lock doesn't log the same corruption twice).
+        private (T Value, System.Runtime.ExceptionServices.ExceptionDispatchInfo? Failure) ReadStrict<T>(string userId, string fileName, string configPath, bool report = true) where T : new()
+        {
+            if (!File.Exists(configPath)) return (new T(), null);
 
             string json;
             try
@@ -617,17 +638,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw;
+                if (report) _logger.Error($"Failed to read '{fileName}' for user '{userId}': {ex.Message}");
+                return (default!, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex));
             }
 
             if (string.IsNullOrWhiteSpace(json)
                 || string.Equals(json.Trim(), "null", StringComparison.Ordinal))
             {
-                _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.");
+                if (report) _logger.Error($"'{fileName}' for user '{userId}' exists but is empty or literal-null; refusing to overwrite.");
+                return (default!, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(new InvalidDataException($"'{fileName}' is empty or literal null; refusing to overwrite.")));
             }
 
             try
@@ -645,21 +664,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 });
                 if (parsed == null)
                 {
-                    _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
-                    if (quarantineCorrupt) BackupCorruptFile(configPath);
-                    throw new InvalidDataException($"'{fileName}' deserialized to null.");
+                    if (report) _logger.Error($"'{fileName}' for user '{userId}' deserialized to null; refusing to overwrite.");
+                    return (default!, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(new InvalidDataException($"'{fileName}' deserialized to null.")));
                 }
-                return parsed;
-            }
-            catch (InvalidDataException)
-            {
-                throw;
+                return (parsed, null);
             }
             catch (Exception ex)
             {
-                _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
-                if (quarantineCorrupt) BackupCorruptFile(configPath);
-                throw;
+                if (report) _logger.Error($"Failed to parse '{fileName}' for user '{userId}': {ex.Message}");
+                return (default!, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex));
             }
         }
 
@@ -692,7 +705,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // starts and each time documents are put in place past their writers (a JE backup restore, the start-up folder
         // migration, a person's folder removed), and every incarnation sorts after the one before it, so a revision handed
         // out earlier never comes back and revisions order by (incarnation, writes).
+        // With each count, the file as it was left by the write counted last (whether it is there, its length, its write
+        // time): a file found otherwise when a revision is taken was changed past JE's writers (removed with its folder, put
+        // back by hand), and counts as one more write, so a revision handed out before is spent then too.
+        // Single process: the counts live in this server process. Jellyfin runs one server process per configuration
+        // directory, so JE's writers of a person's documents are this process's (another process writing the same directory
+        // is outside the supported setup; its writes are seen only through the file check above, which can't tell a change
+        // that keeps the length and the write time).
         private static readonly ConcurrentDictionary<string, long> _writes = new(StringComparer.Ordinal);
+        private static readonly ConcurrentDictionary<string, (bool Exists, long Length, long Written)> _left = new(StringComparer.Ordinal);
         private static readonly object _incarnationLock = new();
         private static long _incarnationTicks;
         private static string _incarnation = NextIncarnation();
@@ -714,7 +735,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         internal static void NewIncarnation() => Volatile.Write(ref _incarnation, NextIncarnation());
 
         /// <summary>The write count of one per-user file moves on (call after the file changed, before its lock is released).</summary>
-        private static void Advance(string path) => _writes.AddOrUpdate(Path.GetFullPath(path), 1, (_, n) => n + 1);
+        private static void Advance(string path)
+        {
+            var full = Path.GetFullPath(path);
+            _writes.AddOrUpdate(full, 1, (_, n) => n + 1);
+            _left[full] = FileState(full);
+        }
+
+        /// <summary>Whether a file is there, its length and its last write time (what a write leaves behind).</summary>
+        private static (bool Exists, long Length, long Written) FileState(string fullPath)
+        {
+            try
+            {
+                var info = new FileInfo(fullPath);
+                return info.Exists ? (true, info.Length, info.LastWriteTimeUtc.Ticks) : (false, 0, 0);
+            }
+            catch (Exception)
+            {
+                return (false, -1, 0);
+            }
+        }
 
         /// <summary>
         /// The revision of a per-user document as stored now. A reader takes it before it reads the document: a write that
@@ -725,6 +765,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             var incarnation = Volatile.Read(ref _incarnation);
             var path = Path.GetFullPath(ResolveUserFile(userId, fileName));
+            // A file that isn't as the last counted write left it was changed past JE's writers: that counts as a write.
+            var now = FileState(path);
+            if (!_left.TryGetValue(path, out var left)) _left.TryAdd(path, now);
+            else if (left != now) Advance(path);
             return incarnation + "." + (_writes.TryGetValue(path, out var n) ? n : 0).ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
@@ -1052,30 +1096,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
                         try
                         {
-                            if (!File.Exists(dstFile))
+                            // Under the document's lock, like every writer of it: a save already reading or writing it
+                            // finishes first (and is compared by time below), and none starts from a document about to be
+                            // replaced. The revision moves on with the file.
+                            lock (FileLock(stripped, fileName))
                             {
-                                File.Copy(srcFile, dstFile);
-                                continue;
-                            }
-
-                            var srcMtime = File.GetLastWriteTimeUtc(srcFile);
-                            var dstMtime = File.GetLastWriteTimeUtc(dstFile);
-                            if (srcMtime > dstMtime)
-                            {
-                                // ms-resolution + GUID suffix prevents collisions
-                                // when two case-variants of the same canonical GUID
-                                // both have a newer file in the same millisecond.
-                                var backup = dstFile + ".pre-case-merge-" + MigrationSuffix();
-                                File.Copy(dstFile, backup);
-                                File.Copy(srcFile, dstFile, overwrite: true);
-                                _logger.Info($"Merged '{fileName}' from '{srcName}' (newer) into '{stripped}'");
-                            }
-                            else
-                            {
-                                // Source data is dropped from the canonical dir but
-                                // preserved under '{srcName}.migrated-{ts}'. Warning
-                                // severity so the admin can spot it in logs.
-                                _logger.Warning($"Kept '{fileName}' from canonical '{stripped}' (newer than '{srcName}'); source-side copy preserved in '.migrated-' sibling");
+                                MergeVariantFile(srcFile, dstFile, fileName, srcName, stripped);
                             }
                         }
                         catch (Exception fileEx)
@@ -1096,7 +1122,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     _logger.Error($"Failed to migrate user dir '{srcName}': {ex}");
                 }
             }
-
             foreach (var dir in placed)
             {
                 GateSettingsFile(Path.Combine(dir, SettingsFileName));
@@ -1114,6 +1139,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 {
                     _logger.Info($"User-dir case migration done: {renamed} renamed, {migrated} merged.");
                 }
+            }
+        }
+
+        // One file of a case-variant folder merged into the canonical folder (the caller holds the document's lock).
+        private void MergeVariantFile(string srcFile, string dstFile, string fileName, string srcName, string stripped)
+        {
+            if (!File.Exists(dstFile))
+            {
+                File.Copy(srcFile, dstFile);
+                Advance(dstFile);
+                return;
+            }
+
+            var srcMtime = File.GetLastWriteTimeUtc(srcFile);
+            var dstMtime = File.GetLastWriteTimeUtc(dstFile);
+            if (srcMtime > dstMtime)
+            {
+                // ms-resolution + GUID suffix prevents collisions
+                // when two case-variants of the same canonical GUID
+                // both have a newer file in the same millisecond.
+                var backup = dstFile + ".pre-case-merge-" + MigrationSuffix();
+                File.Copy(dstFile, backup);
+                File.Copy(srcFile, dstFile, overwrite: true);
+                Advance(dstFile);
+                _logger.Info($"Merged '{fileName}' from '{srcName}' (newer) into '{stripped}'");
+            }
+            else
+            {
+                // Source data is dropped from the canonical dir but
+                // preserved under '{srcName}.migrated-{ts}'. Warning
+                // severity so the admin can spot it in logs.
+                _logger.Warning($"Kept '{fileName}' from canonical '{stripped}' (newer than '{srcName}'); source-side copy preserved in '.migrated-' sibling");
             }
         }
 

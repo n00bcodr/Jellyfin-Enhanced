@@ -45,10 +45,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                 return Task.CompletedTask;
             }
 
-            config.ClearTranslationCacheTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            JellyfinEnhanced.Instance!.SaveConfiguration();
+            // One read-modify-write of the live configuration under its lock (a configuration page save can't put the old
+            // timestamp back).
+            var at = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            JellyfinEnhanced.Instance!.MutateConfiguration(live =>
+            {
+                live.ClearTranslationCacheTimestamp = at;
+                return true;
+            });
 
-            _logger.Info($"[Clear Translation Cache] Translation cache clear signal set at {new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(config.ClearTranslationCacheTimestamp).DateTime, TimeSpan.Zero):O}. All clients will clear their translation cache on next page load.");
+            _logger.Info($"[Clear Translation Cache] Translation cache clear signal set at {new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(at).DateTime, TimeSpan.Zero):O}. All clients will clear their translation cache on next page load.");
 
             progress?.Report(100);
             return Task.CompletedTask;

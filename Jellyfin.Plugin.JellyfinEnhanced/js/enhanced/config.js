@@ -301,6 +301,9 @@
      * @param {boolean} [outside=true] Whether it came from outside this document's queue (false: an operation's answer).
      */
     const takeDocument = (state, document, readOk = true, serverRevision = undefined, outside = true) => {
+        // A document taken is what the store holds from now on: it isn't built from acknowledged changes (see
+        // acknowledgeUserDocumentChange) any more unless that sets it again.
+        state.derived = undefined;
         state.persisted = document;
         state.readOk = readOk;
         state.serverRevision = serverRevision;
@@ -332,9 +335,12 @@
                 state.bootRevision = state.revision;
             }
             // The new object's views are its boot documents already: re-derived only when the store holds something else
-            // (its own document, or operations still out on top of the boot one).
-            if (take && !state.pending.length) state.shown = copyDocument(state.persisted);
-            else publishDocument(state, previousPersisted, 'settled');
+            // (its own document, or operations still out on top of the boot one). A boot document that brings a change
+            // from elsewhere (another tab or device) is published as a read: its effects run (the display language is
+            // mirrored, the cards follow).
+            const changed = take && !sameValue(previousPersisted, state.persisted);
+            if (take && !state.pending.length && !changed) state.shown = copyDocument(state.persisted);
+            else publishDocument(state, previousPersisted, changed ? 'read' : 'settled');
         }
     }
 
@@ -354,7 +360,7 @@
             const { persisted, readOk, serverRevision } = bootDocument(fileName);
             state = { fileName, identity, userConfig: JE.userConfig, persisted, shown: copyDocument(persisted), pending: [], readOk,
                 serverRevision, outsideTakes: 0, recovery: undefined, revision: 0, bootRevision: 0, readRevision: 0, observers: new Map(),
-                effectWarnings: new Set(), mirroredLanguage: undefined };
+                effectWarnings: new Set(), mirroredLanguage: undefined, derived: undefined, routeWrites: 0 };
             const created = state;
             state.queue = JE.core.mutationQueue(`settings:${fileName}`, { isCurrent: () => isActiveDocument(created) });
             documents.set(fileName, state);
@@ -366,7 +372,7 @@
     const isActiveDocument = state => currentIdentity() === state.identity && documents.get(state.fileName) === state;
 
     /** True while any session document has unsent work, an in-flight transport or an unpublished result. */
-    const hasPendingSettings = () => [...documents.values()].some(state => state.pending.length > 0);
+    const hasPendingSettings = () => [...documents.values()].some(state => state.pending.length > 0 || state.routeWrites > 0);
 
     /** Re-check identity and all queues at the instant a destructive page effect would run. */
     const runScheduledReload = request => {
@@ -669,6 +675,9 @@
     /**
      * A change another route of the server applied and answered (Hidden Content's home-row removal) is part of the
      * persisted document from then on: its answer is the acknowledgement. Ignored for a document this session hasn't read.
+     * The route's write goes out on the document's queue (sendUserDocumentWrite), so no other write of this page to the
+     * document is out while it is answered; should one be (another caller), its older answer is put under the
+     * acknowledged change when it arrives (settleAnswer, `derived`).
      * @param {string} fileName Per-user document.
      * @param {object} operation The change, as an operation of the file's kind (see applyOperation).
      * @param {string} [serverRevision] The document's revision the route answered (its write's).
@@ -679,8 +688,16 @@
         // Older than the document the store holds (an answer of a later write was taken first): that document has it already.
         if (newerRevision(serverRevision, state.serverRevision) === false) return;
         const previousPersisted = state.persisted;
+        // The document is the one held before plus the acknowledged changes, in the server's order: kept with it, so an
+        // answer of a write that was out meanwhile (older than the acknowledgement) can be put under them (settleAnswer).
+        const known = typeof serverRevision === 'string';
+        const derived = known ? state.derived || { base: previousPersisted, baseRevision: state.serverRevision, acks: [] } : undefined;
         // A change source like a save's answer: the revision moves on, so a read that began before it is not taken.
-        takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, typeof serverRevision === 'string' ? serverRevision : undefined);
+        takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, known ? serverRevision : undefined);
+        if (derived) {
+            derived.acks.push({ operation: copyDocument(operation), revision: serverRevision });
+            state.derived = derived;
+        }
         publishDocument(state, previousPersisted, 'saved');
     };
 
@@ -717,20 +734,42 @@
     /**
      * The persisted document after a successful operation, in the server's order. The answer's document holds every
      * writer's changes up to this write, and is taken whole when nothing reached the store from outside since the write
-     * was sent, or when its revision is newer than the document held. Otherwise (an acknowledged write or a read was taken
-     * meanwhile, and the answer is older or its order unknown) the store's document is the newer one: this operation is
-     * applied to it instead, so neither change is lost.
+     * was sent, or when its revision is newer than the document held. An answer the server's revisions show is not newer
+     * than a document the server handed out whole since (a read or a boot read that came after this write) changes
+     * nothing: that document already holds this operation's result, and whatever came after it, so neither the operation
+     * nor the answer's fields are applied again; it stays the baseline (a later save of the value this operation set is a
+     * change again). When the newer document is acknowledged changes of another route on top of an older one, the answer
+     * (the server's document up to this write) goes under them. Without revisions on both sides (a server that names none)
+     * the order is unknown: the operation is kept on top of the store's document, so it isn't lost.
      */
     const settleAnswer = (state, entry, previous) => {
         const response = entry.response;
         const revision = answerRevision(response);
         const answered = !entry.consentKey && (response?.document ?? response?.Document);
         const order = newerRevision(revision, state.serverRevision);
+        if (order === false) {
+            const derived = state.derived;
+            if (derived && answered && typeof answered === 'object' && newerRevision(revision, derived.baseRevision) !== false) {
+                // The newer document is only acknowledged changes on top of an older one (another route's writes, answered
+                // while this one was out): the answer is the server's document up to this write, and the acknowledged
+                // changes after it go on top of it again, in the server's order.
+                const acks = derived.acks.filter(ack => newerRevision(ack.revision, revision) === true);
+                const base = withAnswerFields(state, holdDocument(state.fileName, answered), response);
+                const held = state.serverRevision;
+                takeDocument(state, acks.reduce((doc, ack) => applyOperation(state.fileName, doc, ack.operation), base), true, held, false);
+                if (acks.length) state.derived = { base, baseRevision: revision, acks };
+                return;
+            }
+            // Older than a document the server handed out whole (a read, a boot read, another answer): that document holds
+            // this write and whatever came after it. It stays as held (its revision too); only the store's revision moves on.
+            takeDocument(state, previous, true, state.serverRevision, false);
+            return;
+        }
         const whole = answered && typeof answered === 'object' && (state.outsideTakes === entry.outsideAt || order === true);
         const next = whole ? holdDocument(state.fileName, answered) : applyOperation(state.fileName, previous, entry);
-        // The server's revision of what the store now holds: the answer's when taken whole, the one held when the answer is
-        // known to be older, else unknown.
-        const held = whole ? revision : order === false ? state.serverRevision : undefined;
+        // The server's revision of what the store now holds: the answer's when it is taken whole or known to be newer, else
+        // unknown.
+        const held = whole || order === true ? revision : undefined;
         takeDocument(state, withAnswerFields(state, next, response), true, held, false);
     };
 
@@ -761,30 +800,32 @@
     const queueOperation = async (fileName, operation, options = {}) => {
         try {
             if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) throw new Error('ApiClient not available');
+            // The session the person made this change in, taken before any wait: the write is sent only while it is still
+            // the signed-in one (JE.core.userWrite.send checks it right before the request is built).
+            const binding = JE.core.userWrite.bind();
             const userId = ApiClient.getCurrentUserId();
             if (!userId) throw new Error('User ID not available');
             const state = settingsDocument(fileName);
             if (!options.consentKey && !state.readOk) {
                 await recoverRead(state);
-                if (!isActiveDocument(state)) throw new Error('Settings session changed');
+                if (!isActiveDocument(state)) throw Object.assign(new Error('Settings session changed'), { sessionChanged: true });
                 if (!state.readOk) throw refuseUnreadSave(state);
             }
             const entry = { ...operation, consentKey: options.consentKey };
             if (!entry.consentKey && isEmptyOperation(entry)) return;
-            const client = ApiClient;
-            const url = client.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${entry.consentKey ? 'consent' : fileName}`);
+            const url = ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId}/${entry.consentKey ? 'consent' : fileName}`);
             const data = entry.consentKey ? { Field: pascal(entry.consentKey), Value: entry.value } : wireOf(fileName, entry);
             let succeeded = false;
             try {
                 state.revision++;
                 state.pending.push(entry);
-                // The document's one queue: the session (and this document's) is checked right before it is sent, never
-                // only after; an account switch cancels it unsent.
-                const save = state.queue.send(async () => {
+                // The document's one queue (an account switch cancels it unsent); at its turn it goes out through
+                // JE.core.userWrite with the session it was made in, checked right before the request is built.
+                const save = state.queue.send(async bound => {
                     entry.outsideAt = state.outsideTakes;
-                    entry.response = await client.ajax({ type: 'PATCH', url, dataType: 'json',
+                    entry.response = await JE.core.userWrite.ajax(bound, { type: 'PATCH', url, dataType: 'json',
                         data: JSON.stringify(data), contentType: 'application/json' });
-                });
+                }, binding);
                 publishDocument(state, state.persisted, 'queued');
                 await save; succeeded = true;
             }
@@ -801,10 +842,49 @@
                 publishDocument(state, previousPersisted, succeeded ? 'saved' : 'failed', entry);
             }
         } catch (error) {
+            // A change the page showed is shown as not saved, never only logged: an account change says so once for all of
+            // them (JE.core.userWrite.notSent), a document that couldn't be read said so already, and any other refusal says
+            // so here (unless the caller shows its own message).
+            if (!error?.sessionChanged && !error?.settingsNotRead && options?.reportsFailure !== true) reportNotSaved();
+            if (error?.sessionChanged) JE.core.userWrite.notSent();
             if (options?.throwOnError === true) throw error;
-            if (error?.settingsNotRead) console.warn(`🪼 Jellyfin Enhanced: ${error.message}`);
+            if (error?.settingsNotRead || error?.sessionChanged) console.warn(`🪼 Jellyfin Enhanced: ${error.message}`);
             else console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, error);
         }
+    };
+
+    // When the last "not saved" notice was shown (several refusals in a row show one).
+    let notSavedShownAt = 0;
+    /** Tells the person that a change they made wasn't saved (the control shows the stored value again). */
+    const reportNotSaved = () => {
+        const now = Date.now();
+        if (now - notSavedShownAt < 2000) return;
+        notSavedShownAt = now;
+        try {
+            const text = JE.t?.('settings_not_saved');
+            JE.toast?.(text && text !== 'settings_not_saved' ? text : 'Your change wasn\'t saved. Try again in a moment.', 5000);
+        } catch { /* Best effort. */ }
+    };
+
+    /**
+     * Sends a write of another route that changes a per-user document (Hidden Content's home-row removal) on that
+     * document's queue: after every change of it queued before (answered first, so the server applies them before it),
+     * cancelled by an account switch, and sent through JE.core.userWrite with the session the person made it in. Its
+     * answer is acknowledged by the caller (acknowledgeUserDocumentChange).
+     * @param {string} fileName Per-user document the route changes.
+     * @param {(binding: any) => Promise<any>} transmit Sends the request with JE.core.userWrite and the binding it is handed.
+     * @param {any} binding JE.core.userWrite.bind() when the person acted.
+     * @returns {Promise<any>} The route's answer.
+     */
+    JE.internals.sendUserDocumentWrite = (fileName, transmit, binding) => {
+        const state = settingsDocument(fileName);
+        state.revision++;
+        // Out until answered: a page reload waits for it like for the document's own saves.
+        state.routeWrites++;
+        const settle = () => { state.routeWrites--; resumeScheduledReload(); };
+        const sent = state.queue.send(transmit, binding);
+        sent.then(settle, settle);
+        return sent;
     };
 
     /** Save the given settings fields (and only those). */

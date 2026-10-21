@@ -95,9 +95,12 @@
                 const key = changed.dataset.pref;
                 await internal.setUserPrefs({ [key]: key === 'SkipDisableConfirm' ? !!changed.checked : (changed.checked ? null : false) });
             } catch (e) {
-                console.error(`${logPrefix} preference save failed:`, e);
                 changed.checked = previousChecked;
-                JE.toast?.(JE.t('spoiler_blur_error_toast'));
+                // An account change already told the person the change wasn't saved (once for all of them).
+                if (!e?.sessionChanged) {
+                    console.error(`${logPrefix} preference save failed:`, e);
+                    JE.toast?.(JE.t('spoiler_blur_error_toast'));
+                }
             } finally {
                 setDisabled(false);
             }

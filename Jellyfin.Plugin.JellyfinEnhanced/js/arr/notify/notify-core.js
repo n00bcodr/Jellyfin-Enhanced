@@ -344,8 +344,10 @@
      */
     async function prefsCall(path, method, body) {
         const identity = state.identity;
+        // The session this change is made in: sent only while it is the signed-in one (JE.core.userWrite).
+        const binding = JE.core.userWrite.bind();
         try {
-            const res = await prefsQueue.send(() => api(path, { method, body }));
+            const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);
             if (identity !== state.identity) return { ok: false, code: 'user_changed' };
             if (res && res.prefs) applyPrefs(res);
             return { ok: true, body: res };

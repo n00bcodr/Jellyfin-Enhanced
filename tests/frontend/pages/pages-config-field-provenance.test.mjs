@@ -177,7 +177,10 @@ test('Q-REBUILD1FIX5-1 control: a read that fails after one succeeded leaves the
   const read = p.hold('pluginConfig');
   await p.pageshow();
   await read.reject();
-  assert.equal(p.$('#je-config-read-warning').style.display, 'none');
+  // Round 11: the page says it may be out of date (the form may be older than the saved settings), with Retry.
+  assert.notEqual(p.$('#je-config-read-warning').style.display, 'none');
+  assert.match(p.$('#je-config-read-warning-msg').textContent, /may show values older/);
+  assert.ok(p.$('.je-save-dock').classList.contains('je-stale'));
   const saved = await p.save();
   assert.equal(saved.DefaultLanguage, 'de');
 });

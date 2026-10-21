@@ -9,7 +9,7 @@ import { setImmediate as nextTurn } from 'node:timers/promises';
 import { createHarness, jsRoot, jsonResponse } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
-const MODULES = ['arr/status/status-core.js', 'arr/ask/ask-core.js', 'arr/ask/ask-search.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js', 'arr/ask/ask-collection.js', 'arr/ask/ask-seerr.js'];
+const MODULES = ['arr/status/status-core.js', 'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-search.js', 'arr/ask/ask-sheet-styles.js', 'arr/ask/ask-sheet.js', 'arr/ask/ask-collection.js', 'arr/ask/ask-seerr.js'];
 
 function translate(key, params) {
   const text = en[key];

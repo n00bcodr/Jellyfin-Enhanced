@@ -1249,6 +1249,25 @@
 .je-save-dock.je-dirty .je-unsaved-badge {
     display: inline-flex;
 }
+/* Shown once .je-save-dock gains .je-stale: a read again failed, so the form may be older than the saved settings. */
+.je-stale-badge {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding-right: 10px;
+    margin-right: 2px;
+    border-right: 1px solid var(--je-border);
+    color: #ff9800;
+    font-size: 0.85em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.je-stale-badge .material-icons {
+    font-size: 14px !important;
+}
+.je-save-dock.je-stale .je-stale-badge {
+    display: inline-flex;
+}
 /* Draw the eye to the button itself too, not just the badge text. */
 .je-save-dock.je-dirty .je-save-dock-btn {
     box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.35);

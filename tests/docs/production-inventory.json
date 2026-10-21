@@ -10865,6 +10865,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/hiddencontent/hidden-content-save.js"
     },
     {
+      "literal": "hidden-content.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/homeremoval/features-remove-home.js"
+    },
+    {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/itemdetails/features-details-media-info.js"
     },
@@ -11092,7 +11096,7 @@
     "files": 634,
     "routes": 300,
     "configuration_properties": 647,
-    "storage_references": 99,
+    "storage_references": 100,
     "scheduled_tasks": 15,
     "locales": 33
   }

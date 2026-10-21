@@ -10,7 +10,7 @@ import { createHarness, jsRoot, jsonResponse } from '../helpers/harness.mjs';
 
 const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = ['arr/status/status-core.js', 'arr/status/status-episodes.js', 'arr/status/status-details.js', 'arr/status/status-styles.js',
-  'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-styles.js'];
+  'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-episodes.js', 'arr/ask/ask-styles.js'];
 
 function translate(key, params) {
   const text = en[key];

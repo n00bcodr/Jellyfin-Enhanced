@@ -21,11 +21,14 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
 function panel(tt, { config = {}, settings = {}, translate = tr, policy = 'served' } = {}) {
-  const writes = [], toasts = [], panelCleanups = [];
+  // Claims of a saved change go to `toasts`; the notices that a change wasn't saved (round 11: a refused or cancelled change
+  // is shown as not saved) go to `notSaved`.
+  const writes = [], toasts = [], notSaved = [], panelCleanups = [];
+  const notices = [translate('settings_not_saved'), translate('settings_not_saved_account_changed')];
   const h = createHarness({
     JE: {
       pluginConfig: { Shortcuts: [], ...config }, userConfig: { settings: { ...settings }, shortcuts: { Shortcuts: [] }, bookmark: { bookmarks: {} } }, currentSettings: {},
-      t: translate, toast: message => toasts.push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      t: translate, toast: message => (notices.includes(message) ? notSaved : toasts).push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
       icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none'
@@ -45,7 +48,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr, policy = 'serve
   h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
   const resets = [];
   h.JE.internals.arrStatusCards = { reset: () => resets.push(h.JE.currentSettings.acquisitionBadges) };
-  return { ...h, writes, toasts, resets, panelCleanups,
+  return { ...h, writes, toasts, notSaved, resets, panelCleanups,
     wire() { h.JE.internals.enhancedUi.wireSettingsListeners({ panelCleanups, createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} }); },
     async choose(id, value) {
       const select = h.document.getElementById(id);
@@ -142,6 +145,7 @@ for (const outcome of ['saved', 'failed', 'hidden', 'switched']) test(`show badg
   await new Promise(done => setImmediate(done));
   assert.deepEqual(h.resets, outcome === 'saved' ? [null] : outcome === 'hidden' || outcome === 'failed' ? [false] : []);
   if (outcome === 'failed') assert.deepEqual(h.toasts, [], 'failed persistence never claims success');
+  if (outcome === 'failed') assert.deepEqual(h.notSaved, [tr('settings_not_saved')], 'and is shown as not saved');
 });
 
 test('rewiring the panel while Show is pending still refreshes cards after the document saves', async t => {
@@ -226,6 +230,7 @@ for (const sameUser of [false, true]) test(`session change cancels unsent saves 
   assert.equal(h.JE.currentSettings.nativeAcquisitionStamps, null);
   assert.equal(h.resets.length, resetCount, 'old completions cannot repaint the new session');
   assert.equal(h.toasts.length, toastCount);
+  assert.deepEqual(h.notSaved, [tr('settings_not_saved_account_changed')], 'the cancelled change is shown as not saved, once');
 });
 
 for (const scenario of ['pending save', 'save completed', 'session switch', 'fresh read']) {
@@ -686,6 +691,7 @@ for (const [id, key, initial, target, toast] of [
     h.allowConsoleError('Failed to save settings.json');
     held[0].reject(new Error('original fails')); await tick();
     assert.equal(h.toasts.length, 0, 'failed original never claims saved');
+    assert.deepEqual(h.notSaved, [tr('settings_not_saved')], 'it is shown as not saved');
     if (laterSaved) held[1].resolve(); else held[1].reject(new Error('later fails'));
     await later;
     assert.deepEqual(sent(h.writes[1]), { showFileSizes: true });

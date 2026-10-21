@@ -253,6 +253,8 @@
     // device changed meanwhile stays, and a preference changed back while its save is out is sent too.
     internal.setUserPrefs = function(next) {
         const requestEpoch = JE.session ? JE.session.getEpoch() : 0;
+        // The session this change is made in: the save goes out only while it is the signed-in one (JE.core.userWrite).
+        const binding = JE.core.userWrite.bind();
         const expected = expectedPrefs();
         const set = {};
         for (const [key, value] of Object.entries(next || {})) {
@@ -263,7 +265,7 @@
         const queue = pendingPrefs;
         const settled = () => { const i = queue.indexOf(set); if (i !== -1) queue.splice(i, 1); };
         // Sent at once when no other save is out, else after the last one is answered; never once the person changed.
-        const save = prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }));
+        const save = prefsQueue.send(bound => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, session: bound }), binding);
         return save
             .then(function acknowledged(response) {
                 settled();
@@ -274,9 +276,9 @@
             })
             .catch(function(err) {
                 settled();
-                // A save the previous person queued, cancelled by the account switch, is not a failure to report.
-                if (err?.sessionChanged) console.warn(`${logPrefix} a preference save of the previous account was not sent.`);
-                else console.error(`${logPrefix} setUserPrefs failed:`, err);
+                // A save the previous person queued, cancelled by the account switch: the page already said it wasn't saved
+                // (JE.core.userWrite.notSent).
+                if (!err?.sessionChanged) console.error(`${logPrefix} setUserPrefs failed:`, err);
                 throw err;
             });
     };

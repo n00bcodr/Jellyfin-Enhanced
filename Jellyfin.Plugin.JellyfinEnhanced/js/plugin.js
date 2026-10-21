@@ -2,6 +2,12 @@
 (function() {
     'use strict';
 
+    // The build of the code running in this page: the server writes its build in here as it serves this script (a copy the
+    // browser kept from an earlier build names that build, whatever a later bootstrap says). Read from anywhere else (the
+    // placeholder is left), the page's script tag names it.
+    const EMBEDDED_BUILD = '__JE_PAGE_BUILD__';
+    const embeddedBuild = () => (EMBEDDED_BUILD === '__JE_PAGE' + '_BUILD__' ? '' : EMBEDDED_BUILD);
+
     // Create the global namespace immediately with placeholders
     window.JellyfinEnhanced = {
         // Shared core layer, populated by js/core/*.js (navigation, lifecycle,
@@ -11,6 +17,8 @@
         userConfig: markUnreadDocuments({ settings: {}, shortcuts: { Shortcuts: [] }, bookmarks: { Bookmarks: {} }, elsewhere: {}, hiddenContent: { items: {}, settings: {} } }),
         translations: {},
         pluginVersion: 'unknown',
+        // The build of the code this page runs (see EMBEDDED_BUILD): an answer naming another asks for a reload.
+        pageBuild: embeddedBuild() || document.querySelector('script[plugin="Jellyfin Enhanced"]')?.getAttribute('version') || '',
         // Local CDN helper. Every third-party static asset (icons, fonts, flags, theme
         // sheets, remote locales) is served from the plugin's own route
         // (/JellyfinEnhanced/cdn/{source}/{path}) — backed by an on-disk cache refreshed
@@ -232,9 +240,9 @@
         const scriptEl = document.querySelector('script[plugin="Jellyfin Enhanced"]');
         if (scriptEl?.getAttribute('dev') === 'true') return Date.now();
         // Always prefer the script tag's version attribute, it holds the full
-        // cacheKey (version + DLL timestamp) baked in at server startup.
+        // cacheKey (version + build identity) baked in at server startup.
         // JE.pluginVersion is just the bare version number from the API and
-        // does not include the timestamp component.
+        // does not include the build component.
         return scriptEl?.getAttribute('version') || JE.pluginVersion || Date.now();
     }
 
@@ -252,8 +260,8 @@
     /**
      * Seeds JE.pluginVersion from the injected script tag before anything is
      * fetched. The tag's version attribute is the server's cache key,
-     * `{version}-{dllTimestamp}` (or the bare version when the timestamp is
-     * unavailable), and the version part is exactly what /version returns —
+     * `{version}-{build identity}` (or the bare version from an older server),
+     * and the version part is exactly what /version returns —
      * so translations.js can key its cache without its own /version request.
      * The bootstrap response re-applies the authoritative value afterwards.
      */
@@ -349,8 +357,9 @@
         if (!payload || typeof payload !== 'object' || !payload.PublicConfig || typeof payload.PublicConfig !== 'object') {
             throw new Error('Unexpected bootstrap response');
         }
-        // The server's JE build: the first one is the build this page boots against; a later bootstrap naming another (JE
-        // was updated meanwhile) asks for a reload (js/core/api-client.js, JE.core.build).
+        // The server's JE build: compared with the build of the code this page runs (JE.pageBuild); another one (JE was
+        // updated, or the browser ran a copy of an earlier build's scripts) asks for a reload (js/core/api-client.js,
+        // JE.core.build, which also checks it when it loads after this).
         if (typeof payload.Build === 'string' && payload.Build) {
             if (JE.core?.build) JE.core.build.check(payload.Build);
             else if (!JE.serverBuild) JE.serverBuild = payload.Build;

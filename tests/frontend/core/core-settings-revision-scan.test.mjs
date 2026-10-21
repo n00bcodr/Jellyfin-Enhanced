@@ -96,9 +96,10 @@ function storeViolations(source) {
     if (!/\.(persisted|readOk)$/.test(a.target) || a.name === 'takeDocument') continue;
     found.push(`${a.target} assigned in ${a.name} without takeDocument (the revision stays)`);
   }
-  // A queued operation is the other revision step (its answer is taken through takeDocument).
+  // A queued operation is the other revision step (its answer is taken through takeDocument), and so is another route's
+  // write queued on the document (round 11: sendUserDocumentWrite).
   for (const a of assignments) {
-    if (a.target === 'state.revision' && !['takeDocument', 'queueOperation'].includes(a.name)) found.push(`state.revision moved in ${a.name}`);
+    if (a.target === 'state.revision' && !['takeDocument', 'queueOperation', 'sendUserDocumentWrite'].includes(a.name)) found.push(`state.revision moved in ${a.name}`);
   }
   // What each caller hands takeDocument: a read only behind the revision check it took before the request (and, round 10,
   // never older than the document held, in the server's order).
@@ -127,6 +128,11 @@ function storeViolations(source) {
   const settle = functions.get('settleAnswer');
   if (!settle || !/state\.outsideTakes === entry\.outsideAt/.test(text(source, settle.body)) || !/newerRevision\(/.test(text(source, settle.body))) {
     found.push('an answer taken whole whatever reached the store since it was sent');
+  }
+  // Round 11: an answer older than the document held never puts its operation or its fields back over it (the document
+  // stays; acknowledged changes on top of an older one are put back over the answer instead).
+  if (!settle || !/if \(order === false\) \{[\s\S]*?takeDocument\(state, previous, true, state\.serverRevision, false\);\s*return;/.test(text(source, settle.body))) {
+    found.push('an older answer puts its operation back over a newer document');
   }
   // Every revision step a module of the store's documents makes outside it: the home-row hide's answer is acknowledged.
   return found;
@@ -221,7 +227,7 @@ const replace = (source, anchor, line) => {
 };
 const CHANGE_PLANTS = [
   ['store: an acknowledged write taken without the revision (the R9-3 shape)', 'enhanced/config.js',
-    "takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, typeof serverRevision === 'string' ? serverRevision : undefined);",
+    'takeDocument(state, applyOperation(fileName, previousPersisted, copyDocument(operation)), true, known ? serverRevision : undefined);',
     'state.persisted = applyOperation(fileName, previousPersisted, copyDocument(operation));'],
   ['store: the helper no longer moves the revision on', 'enhanced/config.js', '        state.revision++;\n        if (outside) state.outsideTakes++;', '        if (outside) state.outsideTakes++;'],
   ['store: a read taken whatever changed meanwhile', 'enhanced/config.js',
@@ -235,13 +241,15 @@ const CHANGE_PLANTS = [
     'set: value => { recordRead(value); userConfig = value; adoptBootDocuments(); }', 'set: value => { recordRead(value); userConfig = value; }'],
   ['store: a late answer taken whole over an acknowledged write (the R10-5 shape)', 'enhanced/config.js',
     '(state.outsideTakes === entry.outsideAt || order === true)', 'true'],
+  ['store: an older answer applied over a newer document (the R11-3 shape)', 'enhanced/config.js',
+    '            takeDocument(state, previous, true, state.serverRevision, false);\n            return;\n        }', '        }'],
   ['Spoiler Guard: the state read takes Prefs whatever changed meanwhile', 'enhanced/spoilerguard/state.js',
     'if (readRevision === prefsQueue.revision && !prefsQueue.pending && !pendingPrefs.length) userPrefs = value.Prefs || {};', 'userPrefs = value.Prefs || {};'],
   ['Spoiler Guard: a save sent outside the session queue (the R10-1 shape)', 'enhanced/spoilerguard/state.js',
-    "const save = prefsQueue.send(() => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true }));",
+    "const save = prefsQueue.send(bound => request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true, session: bound }), binding);",
     "const save = request('/spoiler-blur/user-prefs', { method: 'PATCH', body: { Set: set }, skipRetry: true });"],
   ['notifications: a change sent outside the session queue (the R10-8 shape)', 'arr/notify/notify-core.js',
-    'const res = await prefsQueue.send(() => api(path, { method, body }));', 'const res = await api(path, { method, body });'],
+    'const res = await prefsQueue.send(bound => api(path, { method, body, session: bound }), binding);', 'const res = await api(path, { method, body });'],
   ['notifications: a read taken whatever changed meanwhile', 'arr/notify/notify-core.js',
     'if (revision === prefsQueue.revision && !prefsQueue.pending) applyPrefs(body);', 'applyPrefs(body);'],
   ['page: a value the server holds taken without moving the revision on', 'configPage.html',

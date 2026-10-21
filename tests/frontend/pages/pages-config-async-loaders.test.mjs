@@ -182,7 +182,7 @@ const USER_PAGE_MANIFEST = [
   ['arr/adminusers/admin-users.js', 'ApiClient.getUser(ApiClient.getCurrentUserId())', 'administrator check before anything is shown'],
   ['arr/adminusers/admin-users.js', 'api.summary(request.signal)', 'per-user summary on the user cards (display)'],
   ['arr/adminusers/admin-users.js', 'api.read(id, request.signal)', 'the form is drawn only from this read; a save sends only changed fields with their revision'],
-  ['arr/adminusers/admin-users-api.js', "const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/' + path), {", 'the transport behind read / summary / patch'],
+  ['arr/adminusers/admin-users-api.js', "const transmit = () => fetch(ApiClient.getUrl('/JellyfinEnhanced/' + path), {", 'the transport behind read / summary / patch'],
   ['enhanced/settingspanel/ui-panel.js', "if (!await JE.readUserSettings('settings.json')) return;", 'the settings document read when the panel opens'],
   ['enhanced/settingspanel/ui-panel-language.js', "ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/locales'), dataType: 'json' }),", 'language list: shown; saved only on the person\'s change (one field)'],
   ['enhanced/settingspanel/ui-panel-language.js', "ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/Localization/Cultures'), dataType: 'json' })", 'language names for that list'],

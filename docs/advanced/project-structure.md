@@ -36,7 +36,7 @@ Components consume a value once, shortly after bootstrap, through `JE.takePrefet
 
 ### Bundle and development mode
 
-`Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus DLL timestamp). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
+`Services/ClientScriptBundle.cs` builds the bundle on first use and caches it by the plugin's script cache key (version plus the running assembly's module version id). It wraps each manifest file in a function and publishes `window.__JE_BUNDLE_MODULES`.
 
 The index source map at `/JellyfinEnhanced/bundle.js.map` uses `sections` to preserve original filenames and line numbers in DevTools and stack traces. Bundle and map routes are anonymous; production responses use `public, max-age=31536000, immutable`.
 

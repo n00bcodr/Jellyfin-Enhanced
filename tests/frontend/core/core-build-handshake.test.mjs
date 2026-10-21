@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, jsonResponse } from '../helpers/harness.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createHarness, jsonResponse, jsRoot } from '../helpers/harness.mjs';
 import { tab, settingsServer, en } from '../helpers/settings-tabs.mjs';
 
 // Stage 1 fix round 10: the page learns when the server runs another JE build than the one it booted against (the server
@@ -22,7 +24,7 @@ function page(t, serverBuild) {
   });
   h.allowConsoleError(/./);
   t.after(() => h.close());
-  for (const path of ['core/navigation.js', 'core/session.js', 'core/api-client.js']) h.load(path);
+  for (const path of ['core/navigation.js', 'core/session.js', 'core/mutation-queue.js', 'core/api-client.js']) h.load(path);
   return h;
 }
 
@@ -53,4 +55,31 @@ test('R10-10: after a bootstrap named one build, an answer naming another shows 
   assert.equal(notice(h).length, 0);
   await h.JE.core.api.plugin('/version', { skipCache: true });
   assert.equal(notice(h).length, 1);
+});
+
+// Stage 1 fix round 11: the page's build is the build of the code it runs (written into plugin.js as the server serves it;
+// the page's script tag names it otherwise), never the one a fresh bootstrap names (RBS1-R11-10: a cached bundle of an
+// earlier build booted against a newer server took the bootstrap's build as its own and never asked for a reload).
+test('R11-10: a cached earlier bundle booted against a newer bootstrap asks for a reload', async t => {
+  const docs = { Settings: {}, Shortcuts: { Shortcuts: [] }, Bookmark: { Bookmarks: {} }, Elsewhere: {}, HiddenContent: { Items: {}, Settings: {} } };
+  // The page's script tag (and so its cached scripts) is build 1.2.3; the server answers 1.2.4.
+  const h = await tab(t, settingsServer(docs), { build: '1.2.4', extra: ['core/api-client.js'] });
+  assert.equal(h.document.querySelector('script[plugin]').getAttribute('version'), '1.2.3');
+  assert.equal(h.JE.pageBuild, '1.2.3');
+  assert.equal(h.JE.serverBuild, '1.2.4');
+  assert.equal(notice(h).length, 1, 'the running code is 1.2.3, whatever the bootstrap says');
+});
+
+test('R11-10: the build written into the entry script is the page\'s, even when its tag names another', async t => {
+  const h = createHarness({
+    html: '<script plugin="Jellyfin Enhanced" version="1.2.4-new"></script>',
+    JE: {}, apiClient: { ajax: async () => { throw new Error('offline'); } }
+  });
+  h.allowConsoleError(/./);
+  t.after(() => h.close());
+  // As the server serves plugin.js: its build written in (an earlier build's copy, served from the browser's cache).
+  const source = readFileSync(resolve(jsRoot, 'plugin.js'), 'utf8').replace("const EMBEDDED_BUILD = '__JE_PAGE_BUILD__';", "const EMBEDDED_BUILD = '1.2.3-old';");
+  assert.notEqual(source, readFileSync(resolve(jsRoot, 'plugin.js'), 'utf8'));
+  h.window.eval(`[function () {\n${source}\n}][0]();`);
+  assert.equal(h.window.JellyfinEnhanced.pageBuild, '1.2.3-old');
 });

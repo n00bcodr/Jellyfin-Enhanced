@@ -11,7 +11,7 @@ const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
 const MODULES = [
   'arr/status/status-core.js',
   'arr/hub/hub-styles.js', 'arr/hub/hub-render.js', 'arr/hub/hub-discover.js', 'arr/hub/hub-page.js',
-  'arr/ask/ask-core.js', 'arr/ask/ask-search.js'
+  'core/mutation-queue.js', 'arr/ask/ask-core.js', 'arr/ask/ask-search.js'
 ];
 const USER = '0123456789abcdef0123456789abcdef';
 const MEMBER = { role: 'member', canRequest: true, canApprove: false, asksFirst: false, backend: 'je', contact: 'Dad' };

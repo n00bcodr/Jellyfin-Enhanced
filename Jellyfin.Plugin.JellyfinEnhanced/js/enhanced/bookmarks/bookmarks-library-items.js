@@ -344,6 +344,8 @@
    * Play item at specific time
    */
   async function playItemAtTime(itemId, startTime) {
+    // The session the person asked in: the play command goes out only while it is still the signed-in one.
+    const binding = JE.core.userWrite.bind();
     try {
       console.log(`${logPrefix} Attempting playback: itemId=${itemId}, startTime=${startTime}`);
 
@@ -387,10 +389,10 @@
 
       console.log(`${logPrefix} Sending playback request:`, url);
 
-      await apiClient.ajax({
+      await JE.core.userWrite.send(binding, () => apiClient.ajax({
         type: 'POST',
         url: apiClient.getUrl(url)
-      });
+      }), url);
 
       console.log(`${logPrefix} Playback started successfully`);
       JE.toast(JE.t('toast_playing'), 2000);

@@ -425,12 +425,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             try
             {
-                var plugin = JellyfinEnhanced.Instance;
-                var cfg = plugin?.Configuration;
-                if (plugin == null || cfg == null || !cfg.MaintenanceModeEnabled) return;
-                cfg.MaintenanceModeEnabled = false;
-                plugin.SaveConfiguration();
-                _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
+                // One read-modify-write under the configuration lock: a configuration page save that copied the configuration
+                // before this can't be applied after it and turn the setting back on.
+                var cleared = JellyfinEnhanced.Instance?.MutateConfiguration(cfg =>
+                {
+                    if (!cfg.MaintenanceModeEnabled) return false;
+                    cfg.MaintenanceModeEnabled = false;
+                    return true;
+                }) == true;
+                if (cleared) _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
             }
             catch (Exception ex)
             {

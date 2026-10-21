@@ -381,23 +381,23 @@
             return false;
         }
 
-        // Hidden Content changes this page queued are answered first, so the server applies them before this hide.
+        // The session the person acted in: the hide is sent only while it is still the signed-in one (JE.core.userWrite).
+        const binding = JE.core.userWrite.bind();
+        const request = {
+            type: 'POST',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
+            data: '{}',
+            contentType: 'application/json',
+            dataType: 'json',
+            headers: { 'Content-Type': 'application/json' }
+        };
         try {
-            await JE.hiddenContent?.flushPendingSave?.();
-        } catch (e) {
-            showNotification(JE.t('remove_continue_watching_error_api', { error: e?.statusText || JE.t('unknown_error') }), "error");
-            return false;
-        }
-
-        try {
-            const answer = await ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/${config.path}/hide/${itemId}`),
-                data: '{}',
-                contentType: 'application/json',
-                dataType: 'json',
-                headers: { 'Content-Type': 'application/json' }
-            });
+            // The route writes the person's Hidden Content document: it goes out on that document's queue, after the Hidden
+            // Content changes this page queued before (answered first, so the server applies them before this hide), and an
+            // account switch cancels it unsent.
+            const answer = JE.internals.sendUserDocumentWrite
+                ? await JE.internals.sendUserDocumentWrite('hidden-content.json', bound => JE.core.userWrite.ajax(bound, request), binding)
+                : await JE.core.userWrite.ajax(binding, request);
 
             optimisticHideRemovedCard(itemId, surface, card);
 
@@ -409,6 +409,8 @@
             }
             return true;
         } catch (error) {
+            // Cancelled by an account switch: the page already said a change wasn't saved (JE.core.userWrite.notSent).
+            if (error?.sessionChanged) return false;
             const errorMessage = error.responseJSON?.message
                 || error.responseJSON?.Message
                 || error.statusText

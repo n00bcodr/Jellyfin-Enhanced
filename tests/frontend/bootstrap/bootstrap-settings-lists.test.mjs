@@ -15,11 +15,13 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 /** The real panel template (and, when wired, the real settings listeners) with the panel's helpers stubbed. */
 function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
-  const writes = [], toasts = [];
+  // Claims of a saved change go to `toasts`; the notices that a change wasn't saved (round 11) go to `notSaved`.
+  const writes = [], toasts = [], notSaved = [];
+  const notices = [translate('settings_not_saved'), translate('settings_not_saved_account_changed')];
   const h = createHarness({
     JE: {
       pluginConfig: { Shortcuts: [], ...config }, userConfig: { settings: { ...settings }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
-      t: translate, toast: message => toasts.push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
+      t: translate, toast: message => (notices.includes(message) ? notSaved : toasts).push(message), escapeHtml, icon: () => '', IconName: new Proxy({}, { get: (_, k) => String(k) }),
       icons: { wrapEmoji: s => s }, state: { activeShortcuts: {} }, pluginVersion: '0.0.0',
       fontSizePresets: [preset, preset, preset, preset], fontFamilyPresets: [preset], subtitlePresets: [preset], subtitleTextEffectPresets: [preset],
       decodeSubtitleColor: () => ({ swatch: '#FFFFFF', alpha: 255, alphaValue: 255 }), getSubtitleTextShadow: () => 'none'
@@ -33,7 +35,7 @@ function panel(tt, { config = {}, settings = {}, translate = tr } = {}) {
   h.load('enhanced/settingspanel/ui-panel-template.js');
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.document.body.innerHTML = h.JE.internals.enhancedUi.buildPanelHtml({ presetBoxBackground: '#111', detailsBackground: '#222', toggleAccentColor: '#333' });
-  return { ...h, writes, toasts,
+  return { ...h, writes, toasts, notSaved,
     wire() { h.JE.internals.enhancedUi.wireSettingsListeners({ createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {} }); },
     async choose(id, value) {
       const select = h.document.getElementById(id);
@@ -178,6 +180,7 @@ test('a failed explicit consent rolls back and never announces success', async t
   h.wire();await h.choose('listSwapInSelect', 'on');
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.deepEqual(h.toasts, []);
+  assert.deepEqual(h.notSaved, [tr('settings_not_saved')], 'shown as not saved');
 });
 
 test('session change cancels a consent queued behind an in-flight display save', async t => {
@@ -194,4 +197,5 @@ test('session change cancels a consent queued behind an in-flight display save',
   assert.equal(h.writes.length, 1);
   assert.equal(h.JE.currentSettings.listSwapIn, false);
   assert.deepEqual(h.toasts, []);
+  assert.deepEqual(h.notSaved, [tr('settings_not_saved_account_changed')], 'the cancelled consent is shown as not saved');
 });

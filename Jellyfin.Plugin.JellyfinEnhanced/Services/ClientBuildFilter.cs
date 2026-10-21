@@ -3,7 +3,8 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
-    /// Names the server's JE build (the client script's cache key, which changes with every build) on every answer of JE's own
+    /// Names the server's JE build (the client script's cache key: the version and the running assembly's module version id,
+    /// which changes with every build and stays for the same DLL copied again) on every answer of JE's own
     /// routes (header <see cref="HeaderName"/>; the bootstrap also carries it in its body). A page compares it with the build
     /// it loaded and, when they differ, asks the person to reload before a save can be lost to a contract the page doesn't
     /// know (js/core/api-client.js).

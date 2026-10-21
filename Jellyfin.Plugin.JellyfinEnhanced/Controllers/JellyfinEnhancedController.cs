@@ -5205,13 +5205,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return new FileStreamResult(stream, "application/json");
         }
 
+        /// <summary>The placeholder in js/plugin.js the server replaces with its build (<see cref="JellyfinEnhanced.ScriptCacheKey"/>).</summary>
+        internal const string EntryScriptBuildPlaceholder = "__JE_PAGE_BUILD__";
+        private static (string Build, byte[] Script)? _entryScript;
+
+        /// <summary>js/plugin.js with the build it is served by written in (kept per build: the resource never changes in a run).</summary>
+        internal static MemoryStream? EntryScript()
+        {
+            var build = JellyfinEnhanced.Instance?.ScriptCacheKey ?? string.Empty;
+            var cached = _entryScript;
+            if (cached is not { } held || held.Build != build)
+            {
+                using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.js.plugin.js");
+                if (resource == null) return null;
+                using var reader = new StreamReader(resource, Encoding.UTF8);
+                var text = reader.ReadToEnd().Replace(EntryScriptBuildPlaceholder, build, StringComparison.Ordinal);
+                held = (build, Encoding.UTF8.GetBytes(text));
+                _entryScript = held;
+            }
+
+            return new MemoryStream(held.Script, writable: false);
+        }
+
         private ActionResult GetScriptResource(string resourcePath)
         {
             // The translations script carries the display-language policy, written in as it is served (from the locale files
             // this build embeds): see LanguageTags.TranslationsScript.
+            // The entry script carries the build it belongs to, written in as it is served: a page knows the build of the code
+            // it runs (a copy the browser kept from an earlier build names that one), whatever a later bootstrap says.
             var stream = string.Equals(resourcePath, "js/enhanced/translations.js", StringComparison.Ordinal)
                 ? new MemoryStream(Encoding.UTF8.GetBytes(LanguageTags.TranslationsScript()))
-                : Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
+                : string.Equals(resourcePath, "js/plugin.js", StringComparison.Ordinal)
+                    ? EntryScript()
+                    : Assembly.GetExecutingAssembly().GetManifestResourceStream($"Jellyfin.Plugin.JellyfinEnhanced.{resourcePath.Replace('/', '.')}");
             if (stream == null) return NotFound();
 
             // Pick a content type that matches the requested file. Defaults to JS for the
@@ -5227,7 +5253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // DevMode: no-cache so the browser always re-fetches after a server restart,
             // useful when iterating on JS without bumping the version number.
-            // Production: the script URL includes ?v={version}-{dllTimestamp}, so the URL
+            // Production: the script URL includes ?v={version}-{build identity}, so the URL
             // changes on every build and immutable caching is safe.
             var devMode = JellyfinEnhanced.Instance?.Configuration?.DevMode == true;
             Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";

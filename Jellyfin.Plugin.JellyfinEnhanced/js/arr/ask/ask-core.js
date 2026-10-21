@@ -63,15 +63,20 @@
      */
     async function call(path, options) {
         const method = options?.method || 'GET';
-        const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
-        if (options?.body) headers['Content-Type'] = 'application/json';
-        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
-            method,
-            headers,
-            body: options?.body ? JSON.stringify(options.body) : undefined,
-            signal: options?.signal,
-            cache: 'no-store'
-        });
+        // A write goes out through JE.core.userWrite with the session it was asked in (never another person's).
+        const binding = method === 'GET' ? null : options?.session || JE.core.userWrite.bind();
+        const transmit = () => {
+            const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
+            if (options?.body) headers['Content-Type'] = 'application/json';
+            return fetch(ApiClient.getUrl(`/JellyfinEnhanced${path}`), {
+                method,
+                headers,
+                body: options?.body ? JSON.stringify(options.body) : undefined,
+                signal: options?.signal,
+                cache: 'no-store'
+            });
+        };
+        const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
         let body = null;
         try {
             const text = await response.text();

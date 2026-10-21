@@ -90,16 +90,21 @@
     async function call(path, options) {
         const rule = options?.ticket || ticket(null);
         const method = options?.method || 'GET';
-        const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
-        if (options?.body) headers['Content-Type'] = 'application/json';
-        if (options?.etag) headers['If-None-Match'] = options.etag;
-        const response = await fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists${path}`), {
-            method,
-            headers,
-            body: options?.body ? JSON.stringify(options.body) : undefined,
-            signal: options?.signal,
-            cache: 'no-store'
-        });
+        // A write goes out through JE.core.userWrite with the session it was made in (never another person's).
+        const binding = method === 'GET' ? null : options?.session || JE.core.userWrite.bind();
+        const transmit = () => {
+            const headers = { 'Authorization': `MediaBrowser Token="${ApiClient.accessToken()}"`, 'Accept': 'application/json' };
+            if (options?.body) headers['Content-Type'] = 'application/json';
+            if (options?.etag) headers['If-None-Match'] = options.etag;
+            return fetch(ApiClient.getUrl(`/JellyfinEnhanced/acquire/lists${path}`), {
+                method,
+                headers,
+                body: options?.body ? JSON.stringify(options.body) : undefined,
+                signal: options?.signal,
+                cache: 'no-store'
+            });
+        };
+        const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
         if (!rule.current()) throw STALE;
 
         let body = null;

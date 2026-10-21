@@ -25,8 +25,9 @@
      */
     function persist(operation) {
         const generation = saveGeneration;
-        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true }).then(() => true, error => {
-            if (generation !== saveGeneration) return false;
+        // reportsFailure: a refusal is said here (an account change is said once by the page for all cancelled changes).
+        return JE.patchUserSettings('hidden-content.json', operation, { throwOnError: true, reportsFailure: true }).then(() => true, error => {
+            if (generation !== saveGeneration || error?.sessionChanged) return false;
             // A change refused because the document couldn't be read was already reported by the store.
             if (!error?.settingsNotRead) {
                 console.warn('🪼 Jellyfin Enhanced: hidden-content change not saved', error);
@@ -107,7 +108,7 @@
     async function adminUnhideForUser(targetUserId, keys) {
         if (!targetUserId || !Array.isArray(keys) || keys.length === 0) return false;
         try {
-            await ApiClient.ajax({
+            await JE.core.userWrite.ajax(JE.core.userWrite.bind(), {
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/unhide`),
                 data: JSON.stringify(keys),
@@ -130,7 +131,7 @@
     async function adminHideForUser(targetUserId, items) {
         if (!targetUserId || !Array.isArray(items) || items.length === 0) return false;
         try {
-            const res = await ApiClient.ajax({
+            const res = await JE.core.userWrite.ajax(JE.core.userWrite.bind(), {
                 type: 'POST',
                 url: ApiClient.getUrl(`/JellyfinEnhanced/admin/hidden-content/${targetUserId}/hide`),
                 data: JSON.stringify(items),

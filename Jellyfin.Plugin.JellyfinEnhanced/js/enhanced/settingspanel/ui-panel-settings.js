@@ -26,6 +26,20 @@
     };
 
     /**
+     * Saves settings fields and confirms the change once the server stored it: a control says "saved" or "updated" only
+     * after the answer. A change the server refused, or one an account change cancelled before it was sent, is shown as not
+     * saved instead (by the settings store) and the control shows the stored value again.
+     * @param {object} scope The panel's settings scope (its session decides whether the confirmation is still for this person).
+     * @param {object} patch Settings fields.
+     * @param {string} [message] The confirmation.
+     * @returns {Promise<boolean>} Whether it was stored.
+     */
+    const saveThenConfirm = (scope, patch, message) => JE.updateSettings(patch, { throwOnError: true }).then(() => {
+        if (message && scope.session.isCurrent()) JE.toast(message);
+        return true;
+    }, () => false);
+
+    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -108,7 +122,6 @@
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).dataset.jeSetting = settingKey;
             listen(document.getElementById(id), 'change', (e) => {
-                JE.updateSettings({ [settingKey]: e.target.checked });
                 let toastMessage = createToast(featureKey, e.target.checked);
 
                 if (['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle',
@@ -117,7 +130,7 @@
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
                 }
-                JE.toast(toastMessage);
+                saveThenConfirm(scope, { [settingKey]: e.target.checked }, toastMessage);
                 resetAutoCloseTimer();
             });
         };
@@ -588,8 +601,8 @@
         const { listen } = scope;
         const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
 
-        listen(document.getElementById('randomIncludeMovies'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeMovies: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
-        listen(document.getElementById('randomIncludeShows'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.updateSettings({ randomIncludeShows: e.target.checked }); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        listen(document.getElementById('randomIncludeMovies'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } saveThenConfirm(scope, { randomIncludeMovies: e.target.checked }, JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
+        listen(document.getElementById('randomIncludeShows'), 'change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } saveThenConfirm(scope, { randomIncludeShows: e.target.checked }, JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
 
         // Random source picker: lists the user's playlists and collections; '' = whole library.
         const sourceSelect = document.getElementById('randomSourceSelect');
@@ -623,8 +636,7 @@
                 })
                 .catch(err => console.warn('🪼 Jellyfin Enhanced: Could not list playlists for the random source picker', err));
             listen(sourceSelect, 'change', (e) => {
-                JE.updateSettings({ randomSourceId: e.target.value });
-                JE.toast(JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
+                saveThenConfirm(scope, { randomSourceId: e.target.value }, JE.t('toast_random_source_set', { name: JE.escapeHtml(e.target.selectedOptions[0]?.textContent || '') }));
                 resetAutoCloseTimer();
             });
         }
@@ -658,10 +670,8 @@
                 if (!cell) return;
 
                 const newPos = cell.dataset.pos;
-                JE.updateSettings({ [settingKey]: newPos });
+                saveThenConfirm(scope, { [settingKey]: newPos }, JE.t('toast_position_updated'));
                 updateHighlight();
-
-                JE.toast(`Position updated!`);
                 resetAutoCloseTimer();
             });
         });
@@ -679,18 +689,15 @@
 
                 if (selectedPreset) {
                     if (type === 'style') {
-                        JE.updateSettings({ selectedStylePresetIndex: presetIndex, usingCustomColors: false,
-                            customSubtitleTextColor: selectedPreset.textColor, customSubtitleBgColor: selectedPreset.bgColor });
-                        JE.toast(JE.t('toast_subtitle_style', { style: selectedPreset.name }));
+                        saveThenConfirm(scope, { selectedStylePresetIndex: presetIndex, usingCustomColors: false,
+                            customSubtitleTextColor: selectedPreset.textColor, customSubtitleBgColor: selectedPreset.bgColor },
+                        JE.t('toast_subtitle_style', { style: selectedPreset.name }));
                     } else if (type === 'font-size') {
-                        JE.updateSettings({ selectedFontSizePresetIndex: presetIndex });
-                        JE.toast(JE.t('toast_subtitle_size', { size: selectedPreset.name }));
+                        saveThenConfirm(scope, { selectedFontSizePresetIndex: presetIndex }, JE.t('toast_subtitle_size', { size: selectedPreset.name }));
                     } else if (type === 'font-family') {
-                        JE.updateSettings({ selectedFontFamilyPresetIndex: presetIndex });
-                        JE.toast(JE.t('toast_subtitle_font', { font: selectedPreset.name }));
+                        saveThenConfirm(scope, { selectedFontFamilyPresetIndex: presetIndex }, JE.t('toast_subtitle_font', { font: selectedPreset.name }));
                     } else if (type === 'text-effect') {
-                        JE.updateSettings({ selectedTextEffectPresetIndex: presetIndex });
-                        JE.toast(JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
+                        saveThenConfirm(scope, { selectedTextEffectPresetIndex: presetIndex }, JE.t('toast_subtitle_text_effect', { effect: selectedPreset.name }));
                     }
 
                     resetAutoCloseTimer();

@@ -194,14 +194,23 @@
      * @param {string} url
      * @param {RequestInit} [options]
      * @param {typeof CONFIG.retry} [retryConfig]
+     * @param {*} [binding] - A write's session (JE.core.userWrite.bind()): a retry goes out only while it is current.
      * @returns {Promise<Response>}
      */
-    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry) {
+    async function fetchWithRetry(url, options = {}, retryConfig = CONFIG.retry, binding = null) {
         const startTime = performance.now();
         let lastError;
         let lastStatus;
 
         for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
+            // A write's retry is sent again only while its session is still the signed-in one (the first attempt was
+            // checked by JE.core.userWrite.send).
+            if (binding && attempt > 1 && !JE.core.userWrite.isBound(binding)) {
+                const error = /** @type {any} */ (new Error(`${url}: the session changed; this write was not sent again`));
+                error.sessionChanged = true;
+                JE.core.userWrite.notSent(error);
+                throw error;
+            }
             // Check time budget
             if (performance.now() - startTime > retryConfig.timeoutBudgetMs) {
                 throw new Error(`Time budget exceeded (${retryConfig.timeoutBudgetMs}ms)`);
@@ -782,6 +791,8 @@
      * @property {'low'} [priority] - Decorative lookup (badges, icons, per-card tags): runs in
      *   a capped lane that yields to every waiting normal request, and is sent with
      *   fetch priority 'low'. A normal caller sharing the same in-flight request promotes it.
+     * @property {*} [session] - A write's session (JE.core.userWrite.bind(), or the binding a mutation queue handed it);
+     *   default for a write: the session at the call.
      */
 
     /**
@@ -807,6 +818,9 @@
         } = options;
 
         const isGet = method.toUpperCase() === 'GET';
+        // A write belongs to the session it was made in: it is sent through JE.core.userWrite.send once the limiter grants
+        // its slot (the check runs right before its headers are built), and never as anyone else.
+        const binding = !isGet && auth && JE.core.userWrite ? (options.session || JE.core.userWrite.bind()) : null;
 
         // One object per request: the limiter reads it while queued, and the
         // dedup entry keeps it so a normal joiner can promote a queued low request.
@@ -819,7 +833,7 @@
             if (cached) return cached;
         }
 
-        const fetchFn = async () => {
+        const sendRequest = async () => {
             /** @type {Record<string, string>} */
             const requestHeaders = {
                 ...(auth ? authHeaders() : { 'Accept': 'application/json' }),
@@ -876,7 +890,8 @@
                 const response = await fetchWithRetry(
                     url,
                     init,
-                    skipRetry ? { ...CONFIG.retry, maxAttempts: 1 } : undefined
+                    skipRetry ? { ...CONFIG.retry, maxAttempts: 1 } : undefined,
+                    binding
                 );
                 // Tolerant JSON parse: some endpoints reply with empty bodies.
                 const text = await response.text();
@@ -891,6 +906,9 @@
                 if (unchain) unchain();
             }
         };
+        // Runs once the limiter granted the slot: a write's session is checked right then, before sendRequest builds its
+        // headers (synchronously, up to the network call).
+        const fetchFn = () => (binding ? JE.core.userWrite.send(binding, sendRequest, url) : sendRequest());
 
         // In-flight dedup OUTSIDE the concurrency limit so only the one unique
         // fetch takes a pool slot (waiters share its promise without holding
@@ -937,10 +955,12 @@
     }
 
     // ---- The server's JE build (the version handshake) ----
-    // The server names its JE build (the client script's cache key, new with every build) in the bootstrap and on every
-    // answer of its routes (X-JE-Build). The first one this page sees is the build it booted against (JE.serverBuild, set
-    // from the bootstrap); an answer naming another means JE was updated on the server while this page kept its scripts:
-    // the page asks the person to reload (once), before a save can be lost to a contract this page doesn't know.
+    // The server names its JE build (the client script's cache key: the version and the running assembly's identity, new
+    // with every build) in the bootstrap and on every answer of its routes (X-JE-Build). The page knows the build of the code
+    // it runs (JE.pageBuild: written into plugin.js as the server serves it, so a copy the browser kept from an earlier build
+    // names that one); an answer naming another means the server runs another build than this page's scripts: the page asks
+    // the person to reload (once), before a save can be lost to a contract this page doesn't know. Without a page build (a
+    // host that set none), the first build the server named stands in for it (JE.serverBuild).
     let reloadNotice = null;
 
     /** Shows the reload notice (once per page). */
@@ -977,8 +997,9 @@
          */
         check(serverBuild) {
             if (typeof serverBuild !== 'string' || !serverBuild) return false;
-            if (!JE.serverBuild) { JE.serverBuild = serverBuild; return false; }
-            if (serverBuild === JE.serverBuild) return false;
+            if (!JE.serverBuild) JE.serverBuild = serverBuild;
+            const own = typeof JE.pageBuild === 'string' && JE.pageBuild ? JE.pageBuild : JE.serverBuild;
+            if (serverBuild === own) return false;
             showReloadNotice();
             return true;
         },
@@ -994,6 +1015,8 @@
         }
     };
     JE.core.build = build;
+    // A bootstrap answered before this module loaded named the server's build already.
+    if (typeof JE.serverBuild === 'string' && JE.serverBuild) build.check(JE.serverBuild);
 
     JE.core.api = {
         fetch: coreFetch,

@@ -36,7 +36,8 @@
    * @param {object} changes
    * @returns {Promise<void>}
    */
-  const saveBookmarkChanges = changes => JE.patchUserSettings('bookmark.json', changes, { throwOnError: true });
+  // reportsFailure: the bookmark dialogs say themselves that a change wasn't saved (and cleanup reports its errors).
+  const saveBookmarkChanges = changes => JE.patchUserSettings('bookmark.json', changes, { throwOnError: true, reportsFailure: true });
 
   /**
    * Runs a bookmark mutation once every earlier mutation for the same owner has settled.

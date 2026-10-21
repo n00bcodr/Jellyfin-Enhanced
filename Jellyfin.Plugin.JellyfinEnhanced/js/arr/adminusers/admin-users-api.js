@@ -4,11 +4,14 @@
     /** Call the administrator API without retaining private responses. */
     async function call(path, method, body, signal) {
         const epoch = JE.session?.getEpoch?.();
-        const response = await fetch(ApiClient.getUrl('/JellyfinEnhanced/' + path), {
+        // A write goes out through JE.core.userWrite with the session it was made in (never another person's).
+        const binding = method === 'GET' ? null : JE.core.userWrite.bind();
+        const transmit = () => fetch(ApiClient.getUrl('/JellyfinEnhanced/' + path), {
             method, cache: 'no-store', signal,
             headers: { Authorization: `MediaBrowser Token="${ApiClient.accessToken()}"`, Accept: 'application/json', 'Content-Type': 'application/json' },
             body: body === undefined ? undefined : JSON.stringify(body)
         });
+        const response = await (binding ? JE.core.userWrite.send(binding, transmit, path) : transmit());
         const value = await response.json();
         if (epoch !== JE.session?.getEpoch?.()) throw { stale: true };
         if (!response.ok) throw { status: response.status, reason: value.reason || value.code };

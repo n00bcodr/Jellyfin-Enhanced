@@ -932,6 +932,8 @@
      * @returns {Promise<boolean>}
      */
     async function cycleTrackViaApi(kind, press) {
+        // The session of the keypress: the command goes out only while it is still the signed-in one.
+        const binding = JE.core.userWrite.bind();
         const ac = window.ApiClient;
         if (!ac) return false;
         const onVideoPage = () => (typeof JE.isVideoPage !== 'function' || JE.isVideoPage());
@@ -991,12 +993,12 @@
         const itemNow = currentItemHint();
         if (itemNow && itemNow !== pressItemId) return true;
         try {
-            await ac.ajax({
+            await JE.core.userWrite.send(binding, () => ac.ajax({
                 type: 'POST',
                 url: ac.getUrl(`/Sessions/${encodeURIComponent(sessionId)}/Command`),
                 contentType: 'application/json',
                 data: JSON.stringify({ Name: commandName, Arguments: { Index: String(next) } })
-            });
+            }), 'session command');
         } catch (err) {
             // The menu fallback after a FAILED command requires positively
             // proven, unmoved ownership — a rejected command cannot explain a

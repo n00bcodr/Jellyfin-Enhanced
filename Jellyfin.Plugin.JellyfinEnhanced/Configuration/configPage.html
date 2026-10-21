@@ -114,7 +114,7 @@
             <div id="je-config-read-warning" class="je-note-banner" style="display: none;" role="alert">
                 <i class="material-icons je-note-icon">warning_amber</i>
                 <div>
-                    <strong>Settings not loaded</strong>
+                    <strong id="je-config-read-warning-title">Settings not loaded</strong>
                     <span id="je-config-read-warning-msg"></span>
                     <div style="margin-top:8px;">
                         <button id="je-config-read-retry-btn" type="button" class="emby-button raised raised-mini">Retry</button>
@@ -3734,6 +3734,10 @@
                     <span class="je-unsaved-badge" role="status" aria-live="polite">
                         <i class="material-icons" aria-hidden="true">fiber_manual_record</i>
                         Unsaved changes
+                    </span>
+                    <span class="je-stale-badge" role="status" aria-live="polite">
+                        <i class="material-icons" aria-hidden="true">sync_problem</i>
+                        May be out of date
                     </span>
                     <button class="emby-button raised button-submit je-save-dock-btn" type="submit">
                         <i class="material-icons je-save-dock-icon" aria-hidden="true">save</i>
@@ -9106,12 +9110,15 @@
                 if (kept) kept.restore();
                 _jeConfigReadOk = true;
                 jeConfigReadNotice(false);
+                jeConfigStale(false);
                 jeUpdateDirtyIndicator();
             }).catch((err) => {
                 Dashboard.hideLoadingMsg();
                 console.warn('[JE] Could not read the plugin configuration:', err);
-                // A later read failing after one succeeded leaves the form as that read filled it.
+                // A later read failing after one succeeded leaves the form as that read filled it, which may be older than what
+                // the server holds now: the page says so (with Retry), and the save marker isn't shown as clean meanwhile.
                 if (!_jeConfigReadOk) jeConfigReadNotice(true);
+                else jeConfigStale(true);
             });
         }
 
@@ -9121,6 +9128,26 @@
         // save (or "Apply to all users", or "Import Users Now") refuses and says why.
         var _jeConfigReadOk = false;
         var JE_CONFIG_READ_REASON = 'Jellyfin Enhanced could not read its saved settings, so this page shows defaults. Saving is turned off so those defaults cannot replace your settings. Retry, or reload the page.';
+        var JE_CONFIG_STALE_REASON = 'Jellyfin Enhanced could not read its settings again, so this page may show values older than the saved ones. Saving still sends only what you change. Retry to see the saved settings.';
+        // A read after the first one failed: the form may show older values than the server holds (jeConfigStale).
+        var _jeConfigStale = false;
+
+        /**
+         * Shows or hides the notice that the page may show older values than the server holds (a read again failed), and
+         * marks the save dock as not clean meanwhile.
+         * @param {boolean} stale
+         */
+        function jeConfigStale(stale) {
+            _jeConfigStale = !!stale;
+            var banner = document.getElementById('je-config-read-warning');
+            if (banner) {
+                document.getElementById('je-config-read-warning-title').textContent = stale ? 'Settings may be out of date' : 'Settings not loaded';
+                document.getElementById('je-config-read-warning-msg').textContent = stale ? JE_CONFIG_STALE_REASON : '';
+                banner.style.display = stale ? '' : 'none';
+            }
+            var dock = document.querySelector('.je-save-dock');
+            if (dock) dock.classList.toggle('je-stale', _jeConfigStale);
+        }
 
         /**
          * Shows or hides the banner that says the settings could not be read.
@@ -9129,6 +9156,7 @@
         function jeConfigReadNotice(show) {
             var banner = document.getElementById('je-config-read-warning');
             if (!banner) return;
+            document.getElementById('je-config-read-warning-title').textContent = 'Settings not loaded';
             document.getElementById('je-config-read-warning-msg').textContent = show ? JE_CONFIG_READ_REASON : '';
             banner.style.display = show ? '' : 'none';
         }
@@ -9785,8 +9813,11 @@
         /**
          * For a refresh of a form the administrator changed: the configuration to draw (the read, with the form's values for
          * every field they changed and haven't saved, unless the server now holds that same value) and `restore()`, run once
-         * the read was recorded (jeConfigRead), which keeps those fields' baselines so they stay unsaved and go with the next
-         * save, and keeps their asynchronously filled fields changed.
+         * the read was recorded (jeConfigRead). Those fields are compared with what the server holds now from then on: their
+         * baseline is the fresh read's value (so they stay unsaved, and choosing the value they had before the refresh is a
+         * change from what the server holds now, sent with the next save), and their asynchronously filled fields stay
+         * changed. An *arr instance list keeps its earlier baseline: its changes are operations by instance id (added,
+         * removed, fields changed), which the server applies to the list it holds then.
          * @param {Object} read - The configuration read
          * @returns {{config: Object, restore: Function}|null} null when nothing is unsaved
          */
@@ -9798,7 +9829,11 @@
                 .concat(Object.keys(patch.Instances));
             if (!fields.length) return null;
             var base = {}, sent = {};
-            fields.forEach(function(field) { base[field] = _jeBase[field]; sent[field] = _jeSent[field]; });
+            fields.forEach(function(field) {
+                var list = JE_ARR_INSTANCE_LISTS.indexOf(field) !== -1;
+                base[field] = list ? _jeBase[field] : read[field];
+                sent[field] = list ? _jeSent[field] : JSON.parse(JSON.stringify(read[field] === undefined ? null : read[field]));
+            });
             var async = jeAsyncFields().filter(function(field) { return field.changed && fields.indexOf(field.key) !== -1; });
             var config = JSON.parse(JSON.stringify(read));
             fields.forEach(function(field) { config[field] = form[field]; });

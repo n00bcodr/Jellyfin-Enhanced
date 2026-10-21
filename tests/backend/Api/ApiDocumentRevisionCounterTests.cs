@@ -222,7 +222,7 @@ public class ApiDocumentRevisionCounterTests
         var device = "device-" + Guid.NewGuid().ToString("N");
         var sessions = new Mock<ISessionManager>();
         var sent = new List<(string Session, MessageCommand Command)>();
-        var session = new SessionInfo(sessions.Object, NullLogger.Instance) { Id = "session-1", DeviceId = device, UserId = person, Client = "Jellyfin Web" };
+        var session = ApiHostConfigurationRouteTests.Connect(new SessionInfo(sessions.Object, NullLogger.Instance) { Id = "session-1", DeviceId = device, UserId = person, Client = "Jellyfin Web" });
         sessions.SetupGet(s => s.Sessions).Returns(new[] { session });
         sessions.Setup(s => s.SendMessageCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<MessageCommand>(), It.IsAny<CancellationToken>()))
             .Callback<string, string, MessageCommand, CancellationToken>((_, target, command, _) => sent.Add((target, command)))
