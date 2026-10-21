@@ -115,6 +115,26 @@
     }
 
     /**
+     * The binding a request write takes (D46S2-R10-1): an owner token's (JE.captureSubmitted(owner).bound()), from a
+     * title action's operation or the viewer's own gesture. Without one nothing is read or sent: refused (it throws in
+     * tests) and the call rejects as never sent.
+     */
+    function requireBinding(bound, site) {
+        if (bound && JE.isOwnerToken?.(bound.token)) return;
+        const message = `Jellyfin Enhanced: ${site} was called without its owner's binding`;
+        if (JE.strictOwners === true) throw new Error(message);
+        if (JE.strictOwners === 'record') (JE.refusals = JE.refusals || []).push(message); else console.error(message);
+        const error = new DOMException('Cancelled', 'AbortError');
+        error.jeOutcome = 'unsent';
+        throw error;
+    }
+
+    /** A request answer that arrived after its owner ended (accepted) still refreshes the title's caches. */
+    function reconcileAccepted(error, tmdbId, mediaType) {
+        if (JE.core.api.writeOutcome?.(error).outcome === 'accepted') invalidateRequestCaches(tmdbId, mediaType);
+    }
+
+    /**
      * Invalidate Seerr/TMDB caches impacted by a successful request.
      * Keeps UI surfaces in sync without waiting for a hard refresh.
      * @param {number|string} tmdbId
@@ -666,15 +686,17 @@
      * @param {object} [mediaData=null] - Optional media data for override rule evaluation.
      * @param {number|null} [tvdbId=null] - Manually matched TVDB id for TV shows TMDB has none for (#653).
      * @param {{bound?: Object}} [options] - bound: the core transport binding of the operation that requests
-     *   (JE.captureSubmitted(origin).bound(); none natively). Every caller passes it (D46S2-R5, enforced by a source
-     *   scan); it is checked after the override-rule read and by the transport right before the POST.
+     *   (JE.captureSubmitted(owner).bound(): a title action's operation or the viewer's own gesture). Required
+     *   (D46S2-R10-1): without it nothing is read or sent. Checked after the override-rule read and by the transport
+     *   right before the POST.
      * @returns {Promise<any>}
      */
     api.requestMedia = async function(tmdbId, mediaType, advancedSettings = {}, is4k = false, mediaData = null, tvdbId = null, options = {}) {
-        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
-        const action = JE.createSessionAction();
+        // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
-        const current = () => action.current() && (!bound || bound.current() !== false);
+        requireBinding(bound, 'a Seerr request');
+        const action = JE.createSessionAction();
+        const current = () => action.current() && bound.current() !== false;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, mediaType, is4k);
@@ -694,7 +716,8 @@
             ...(is4k ? { is4k: true } : {})
         };
 
-        const result = await post('/request', body, bound);
+        let result;
+        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, mediaType); throw error; }
 
         // Add to watchlist after successful request
         if (result) {
@@ -725,10 +748,11 @@
      * @returns {Promise<any>}
      */
     api.requestTvSeasons = async function(tmdbId, seasonNumbers, advancedSettings = {}, mediaData = null, is4k = false, tvdbId = null, options = {}) {
-        // The person who asked, and the operation the caller passed (if any): rechecked before the POST.
-        const action = JE.createSessionAction();
+        // The owner's binding (required, D46S2-R10-1), rechecked after every await and right before the POST.
         const bound = options?.bound;
-        const current = () => action.current() && (!bound || bound.current() !== false);
+        requireBinding(bound, 'a Seerr request');
+        const action = JE.createSessionAction();
+        const current = () => action.current() && bound.current() !== false;
         // Apply override rules if no advanced settings are provided and media data is available
         if (Object.keys(advancedSettings).length === 0 && mediaData) {
             const overrideSettings = await api.evaluateOverrideRules(mediaData, 'tv', is4k);
@@ -747,7 +771,8 @@
             ...(tvdbId ? { tvdbId } : {}),
             ...(is4k ? { is4k: true } : {})
         };
-        const result = await post('/request', body, bound);
+        let result;
+        try { result = await post('/request', body, bound); } catch (error) { reconcileAccepted(error, tmdbId, 'tv'); throw error; }
 
         // Add to watchlist after successful request
         if (result) {
@@ -968,7 +993,7 @@
 
     /**
      * The authorized Seerr record needed for reporting; absent files may still have a request record. A read: `owner`
-     * (an operation or JE.NATIVE), when given, cancels it once it ends.
+     * (an owner token), when given, cancels it once it ends.
      */
     api.reportContext = async function(mediaId, mediaType, owner) {
         if (!['movie', 'tv'].includes(mediaType) || !Number.isInteger(Number(mediaId)) || Number(mediaId) <= 0 || Number(mediaId) > 2147483647) throw new TypeError('Invalid provider title');
@@ -990,8 +1015,9 @@
 
             // Fetch the correct internal media id from Seerr
 
-            const context = await api.reportContext(mediaId, mediaType, submitted);
-            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
+            // The report is the viewer's write: its read goes on while its owner may write (D46S2 audit S3).
+            const context = await api.reportContext(mediaId, mediaType, { current: submitted.writable });
+            if (!action.current() || !submitted.writable()) throw new DOMException('Cancelled', 'AbortError');
             const internalId = context.mediaId;
             if (!internalId) {
                 throw new Error(`Could not find Jellyseerr media id (mediaInfo.id) for TMDB id ${mediaId} (${mediaType})`);
@@ -1007,7 +1033,7 @@
             };
 
             console.debug(`${logPrefix} Sending issue report with body:`, body);
-            if (!action.current() || !submitted.current()) throw new DOMException('Cancelled', 'AbortError');
+            if (!action.current() || !submitted.writable()) throw new DOMException('Cancelled', 'AbortError');
             const result = await post('/issue', body, submitted.bound());
             if (!action.current()) throw new DOMException('Cancelled', 'AbortError');
             JE.requestManager?.clearCacheMatching?.('jellyseerr:/issue');

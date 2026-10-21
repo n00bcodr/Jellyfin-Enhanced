@@ -99,9 +99,10 @@
         }
         internal.bindStateView?.(ctx.help, sync);
 
-        async function save(changed, previousChecked) {
-            // The settings tab's own control (native), named at the change: the write follows awaits (D46S2-R9-4).
-            const native = JE.NATIVE;
+        async function save(changed, previousChecked, event) {
+            // The settings tab's own control: the change's owner (the viewer's own gesture), taken at the change, as the
+            // write follows awaits (D46S2-R10-1).
+            const native = event ? JE.ownerOf(event) : null;
             if (!action.current()) {
                 changed.checked = previousChecked;
                 setDisabled(true);
@@ -131,8 +132,8 @@
         }
 
         boxes.forEach(function(box) {
-            box.addEventListener('change', function() {
-                void save(box, !box.checked);
+            box.addEventListener('change', function(event) {
+                void save(box, !box.checked, event);
                 ctx.resetAutoCloseTimer();
             });
         });

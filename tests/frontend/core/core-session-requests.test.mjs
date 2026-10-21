@@ -11,7 +11,7 @@ function setup(t, fetch) {
  setAuthenticationInfo(nextToken,nextUser){token=nextToken;user=nextUser;}}});
  t.after(()=>h.close());
  for(const m of ['navigation','session','api-client'])h.load('core/'+m+'.js');
- return {...h,switchUser(mode='both'){
+ return {...h,get NATIVE(){return h.NATIVE;},switchUser(mode='both'){
   if(mode==='server'){server='two';return;}
   if(mode==='token'){token='replacement-token';return;}
   if(mode==='epoch'){server='two';h.JE.session.checkNow('test');return;}

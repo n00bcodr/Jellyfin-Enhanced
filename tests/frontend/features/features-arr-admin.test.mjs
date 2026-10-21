@@ -67,7 +67,7 @@ function setup(t, { hash = '#/requests?tab=overview', responses = () => null, hu
     h.close();
   });
   for (const m of MODULES) h.load(m);
-  return { ...h, calls };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls };
 }
 
 const hubAnswer = (hub) => ({

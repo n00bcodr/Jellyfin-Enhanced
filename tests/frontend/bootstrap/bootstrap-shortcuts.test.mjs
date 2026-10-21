@@ -16,7 +16,7 @@ function setup(t, disabled = false) {
   h.JE.internals.enhancedUi.wireShortcutEditor({ help: h.document.getElementById('help'), pluginShortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }], primaryAccentColor: 'blue', kbdBackground: 'black' });
   const key = h.document.querySelector('kbd');
   const press = (target, name, modifiers = {}) => { const event = new h.window.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...modifiers }); target.dispatchEvent(event); return event; };
-  return { ...h, actions, saves, key, press };
+  return { ...h, get NATIVE() { return h.NATIVE; }, actions, saves, key, press };
 }
 
 for (const [key, modifiers] of [['k', {}], ['ArrowLeft', {}], [' ', {}], ['Enter', {}], ['n', { shiftKey: true }]]) {

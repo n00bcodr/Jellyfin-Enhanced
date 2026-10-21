@@ -474,7 +474,7 @@
                 const more = el('button', 'je-ops-link', tr('arr_ops_keeps_partial'));
                 more.type = 'button';
                 more.dataset.jeFocus = `delete:${item.id}`;
-                more.addEventListener('click', () => ctx.act('remove_with_data', item, more));
+                more.addEventListener('click', (e) => ctx.act('remove_with_data', item, more, JE.ownerOf(e)));
                 body.appendChild(more);
             }
             if (ctx.results[item.id]) body.appendChild(el('div', `je-ops-item-sub${ctx.results[item.id].failed ? ' je-ops-bad' : ' je-ops-ok'}`, ctx.results[item.id].message));
@@ -515,7 +515,7 @@
             b.appendChild(icon('hourglass_empty'));
             b.appendChild(document.createTextNode(tr('arr_ops_working')));
         }
-        b.addEventListener('click', () => ctx.act(fix, item, b));
+        b.addEventListener('click', (e) => ctx.act(fix, item, b, JE.ownerOf(e)));
         return b;
     }
 
@@ -661,7 +661,7 @@
                 if (!(g.actions || []).includes(action)) return;
                 const b = button(label, name, cls, `dl:${dk}:${action}`);
                 if (busy) b.setAttribute('aria-disabled', 'true');
-                b.addEventListener('click', () => ctx.queue(action, g, b));
+                b.addEventListener('click', (e) => ctx.queue(action, g, b, JE.ownerOf(e)));
                 actions.appendChild(b);
             };
             add('remove', tr('arr_ops_action_remove'), 'remove_circle_outline');

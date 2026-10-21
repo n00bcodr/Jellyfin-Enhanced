@@ -7,7 +7,7 @@ function setup(t,{items={},settings={},html='',ajax=async()=>({Items:[]})}={}){
  t.after(()=>h.close());
  h.load('enhanced/hiddencontent/hidden-content-data.js');h.load('enhanced/hiddencontent/hidden-content-filter.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();
- return {...h,api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
+ return {...h,get NATIVE(){return h.NATIVE;},api,flush(){while(frames.length)frames.shift()();},switchUser(){epoch++;h.JE.userConfig={hiddenContent:{items:{},settings:{}}};for(const fn of handlers.values())fn({userId:'next'});}};
 }
 for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','preference','timer','switch'])
  test(`native ${type} provider hide respects ${mode} before persistence`,async t=>{
@@ -21,7 +21,7 @@ for (const type of ['Movie','Series']) for (const mode of ['confirm','cancel','p
   if(mode==='timer') h.window.localStorage.setItem('je_hide_confirm_suppressed_until:anonymous',new Date(Date.now()+60000).toISOString());
   h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
   const card=h.document.querySelector('.card');const button=card.querySelector('.je-hide-btn');assert.ok(button);
-  await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+  await h.viewerPress(button);
   const dialog=h.document.querySelector('.je-hide-confirm-overlay');
   if(mode==='confirm'||mode==='cancel'||mode==='switch'){
    assert.ok(dialog,'confirmation opens');assert.equal(writes.length,0,'no persistence before confirmation');
@@ -40,7 +40,7 @@ for (const type of ['Movie','Series']) test(`ID-only native ${type} retains its 
  h.JE.t=k=>k;h.window.ApiClient.getItem=async()=>({Type:type,ProviderIds:{Tmdb:'42'}});
  h.load('enhanced/hiddencontent/hidden-content-dialogs.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');
  h.api.addLibraryHideButtons();const card=h.document.querySelector('.card');
- await card.querySelector('.je-hide-btn').onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ await h.viewerPress(card.querySelector('.je-hide-btn'));
  h.api.refreshNativeCardVisibility();h.flush();
  assert.equal(card.classList.contains('je-hidden'),true,'a later filter paint must know the deliberately resolved provider');
  assert.equal(card.dataset.tmdbId,'42');
@@ -112,12 +112,12 @@ test('absent title cards save only typed provider identity and report failed sav
  t.after(()=>h.close());h.load('enhanced/hiddencontent/hidden-content-data.js');
  const api=h.JE.internals.hiddenContent;api.resetFromUserConfig();Object.assign(api,{refreshNativeCardVisibility:()=>{},showUndoToast:()=>{}});
  const btn=api.buildTitleControl({itemId:SYN,name:'Absent'});h.document.body.appendChild(btn);
- await btn.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ await h.viewerPress(btn);
  assert.deepEqual(Object.keys(api.getHiddenData().items),['movie:tmdb:42']);
  assert.equal(JSON.parse(writes[0].data).itemId,'');assert.equal(JSON.stringify(writes).includes(SYN),false);
  assert.equal(btn.getAttribute('aria-label'),'hidden_content_unhide');
  await api.unhideItem('movie:tmdb:42');assert.deepEqual(Object.keys(api.getHiddenData().items),[]);
- fail=true;await btn.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});
+ fail=true;await h.viewerPress(btn);
  assert.deepEqual(Object.keys(api.getHiddenData().items),[]);assert.equal(btn.textContent,'hidden_content_save_failed_persistent');
 });
 test('the hidden content page takes over when Jellyfin answers its own #/hidden-content route with another page',t=>{
@@ -161,11 +161,11 @@ test('a shared card control evaluates its mounted surface and preserves that fil
  h.JE.t=k=>k;Object.assign(h.api,{showUndoToast:()=>{}});
  const root=h.document.querySelector('.jellyseerr-card');
  const button=h.api.buildTitleControl({mediaType:'movie',tmdbId:42,name:'Film'},{surface:()=> 'discovery'});root.appendChild(button);
- await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),true);
  await h.api.unhideItem('movie:tmdb:42');h.flush();
  h.api.getHiddenData().settings.filterDiscovery=false;
- await button.onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(button);h.flush();
  assert.equal(root.classList.contains('je-hidden'),false);
 });
 
@@ -184,7 +184,7 @@ for (const library of [true,false]) test(`native recommendation cards use their 
  assert.equal(card.classList.contains('je-hidden'),!library,'scheduled detail rescans use each card surface');
  h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
  Object.assign(h.api,{showUndoToast:()=>{}});await h.api.unhideItem('movie:tmdb:42');h.flush();
- await card.querySelector('.je-hide-btn').onclick({type:'click',target:h.document.body,preventDefault(){},stopPropagation(){}});h.flush();
+ await h.viewerPress(card.querySelector('.je-hide-btn'));h.flush();
  assert.equal(card.classList.contains('je-hidden'),!library);
 });
 test('failed provider Undo keeps translated failure and retry control until confirmed',async t=>{

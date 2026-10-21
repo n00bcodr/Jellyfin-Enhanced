@@ -368,7 +368,7 @@
             e.preventDefault();
             e.stopPropagation();
             if (busy.has(doneKey)) return;
-            onClick(b);
+            onClick(b, JE.ownerOf(e));
         });
         return b;
     }
@@ -445,9 +445,10 @@
      * @param {string} key Title key in scope.
      * @param {string|null} instanceId Instance (JE.arrAsk.searchInstance), or null for a family Search.
      * @param {Function} [fallback] Asks for it instead (family Search that doesn't apply).
+     * @param {Object} [owner] The press's owner (JE.ownerOf(event)): the search carries its binding.
      * @returns {Promise<void>}
      */
-    async function runSearch(button, doneKey, key, instanceId, fallback) {
+    async function runSearch(button, doneKey, key, instanceId, fallback, owner) {
         busy.add(doneKey);
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
@@ -456,7 +457,9 @@
         if (text) text.textContent = tr('arr_ask_searching');
         let result;
         try {
-            result = instanceId ? await JE.arrAsk.adminSearch(key, instanceId) : await JE.arrAsk.familySearch(key);
+            // The press's owner's write (D46S2-R10-1): its binding goes with the search.
+            const bound = JE.captureSubmitted(owner).bound();
+            result = instanceId ? await JE.arrAsk.adminSearch(key, instanceId, { bound }) : await JE.arrAsk.familySearch(key, { bound });
         } catch {
             result = { ok: false, state: 'failed', chip: '', text: tr('arr_manage_search_failed', { message: '' }), tone: 'attention' };
         } finally {
@@ -515,7 +518,7 @@
             const text = JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
             // Seerr mode: a Search that turns out not to apply never asks for the season behind a "Search" label.
             const fallback = (b) => (roundedUp ? async () => JE.arrAsk.toast(tr('arr_ask_toast_seerr_season')) : () => ask(b, doneKey));
-            box.appendChild(action(doneKey, 'search', text, (b) => runSearch(b, doneKey, status.key, instanceId, fallback(b)), false, instanceId ? 'search' : 'ask'));
+            box.appendChild(action(doneKey, 'search', text, (b, owner) => runSearch(b, doneKey, status.key, instanceId, fallback(b), owner), false, instanceId ? 'search' : 'ask'));
         } else if (roundedUp) {
             const doneKey = JE.arrAsk.wholeSeriesOnly(caps) ? `${key}|series` : `${key}|season:${season}`;
             box.appendChild(action(doneKey, 'download', JE.arrAsk.roundedLabel(caps, [season], caps.asksFirst), (b) => ask(b, doneKey)));
@@ -589,14 +592,14 @@
                 const doneKey = `${key}|search`;
                 const label = !searchFrom && JE.arrAsk.searchAsksFirst(caps, status) ? tr('arr_actions_ask_search', { contact }) : tr('arr_ask_search');
                 const askSeasons = (b) => run(b, doneKey, async () => JE.arrAsk.seasonsInput(key, wanted), 'tv');
-                box.appendChild(action(doneKey, 'search', label, (b) => runSearch(b, doneKey, key, searchFrom, () => askSeasons(b)),
+                box.appendChild(action(doneKey, 'search', label, (b, owner) => runSearch(b, doneKey, key, searchFrom, () => askSeasons(b), owner),
                     plan.nextSeason != null || plan.missing > 0, searchFrom ? 'search' : 'ask'));
             }
         }
         // A series that isn't in the library (native details): the sheet is its Request (it says why when the
         // title can't be asked for now, so it stays when the box is paused).
         const absent = isAbsent(status);
-        const more = action(`${key}|more`, absent ? 'add' : 'more_horiz', tr(absent ? 'arr_actions_request' : 'arr_actions_more'), (b) => openSheet(b, status, plan), !absent || plan.nextSeason != null, 'more');
+        const more = action(`${key}|more`, absent ? 'add' : 'more_horiz', tr(absent ? 'arr_actions_request' : 'arr_actions_more'), (b, owner) => openSheet(b, status, plan, owner), !absent || plan.nextSeason != null, 'more');
         more.setAttribute('aria-label', tr('arr_actions_more_label', { name: page.querySelector('.itemName, h1, h3.itemName')?.textContent?.trim() || '' }).trim());
         box.appendChild(more);
         if (firstCost) {
@@ -692,9 +695,10 @@
      * @param {HTMLButtonElement} button The More… button.
      * @param {Object} status Series status.
      * @param {Object} plan Series plan.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): the sheet is its surface.
      * @returns {Promise<void>}
      */
-    async function openSheet(button, status, plan) {
+    async function openSheet(button, status, plan, owner) {
         if (!JE.arrAskSheet) return;
         const item = await loadItem(status.itemId);
         let seasons = plan.seasons;
@@ -716,7 +720,7 @@
             latestSeason: latest,
             nextSeason: upcoming,
             askedSeasons: plan.askedSeasons
-        }, { opener: button, operation: button });
+        }, { opener: button, operation: owner });
         if (result) quotas.clear();
     }
 

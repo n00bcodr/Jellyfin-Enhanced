@@ -117,14 +117,12 @@ function buildTvActions(data, show4kOption = false) {
             }
 
             menu.appendChild(option);
-            document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the press's operation (a title action's,
-            // else the window's), so it closes, and its option sends nothing, once that operation ends (D46S2-R5-3, R7-1).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, JE.ownerOf(e));
-            const rect = arrowButton.getBoundingClientRect();
-            menu.style.position = 'fixed';
-            menu.style.left = `${rect.left}px`;
-            menu.style.top = `${rect.bottom + 6}px`;
+            // Portaled to the body, outside the window: a popup of the press's owner (a title action's operation, else the
+            // window's), so it closes, and its option sends nothing, once that owner ends (D46S2-R5-3, R7-1); placed in the
+            // viewport, following the page, and closed by Escape / Back with focus back on the arrow (D46S2 audit S6).
+            menu._jeReleaseScope = JE.openPopup(menu, { anchor: arrowButton, owner: JE.ownerOf(e), opener: arrowButton, keyboard: e.detail === 0,
+                gap: 6, matchWidth: false, close: () => { if (open4k === menu) close4k(); } });
+            if (!menu._jeReleaseScope) return;
             requestAnimationFrame(() => menu.classList.add('show'));
             open4k = menu;
             document.addEventListener('click', handleDocClick, true);
@@ -246,14 +244,12 @@ function buildTvRequestMoreButton(data, show4kOption = false, canRequest4k = fal
             }
 
             menu.appendChild(option);
-            document.body.appendChild(menu);
-            // Portaled to the body, outside the window: registered in the scope of the press's operation (a title action's,
-            // else the window's), so it closes, and its option sends nothing, once that operation ends (D46S2-R5-3, R7-1).
-            menu._jeReleaseScope = JE.openSurface(menu, () => { if (open4k === menu) close4k(); }, JE.ownerOf(e));
-            const rect = arrowButton.getBoundingClientRect();
-            menu.style.position = 'fixed';
-            menu.style.left = `${rect.left}px`;
-            menu.style.top = `${rect.bottom + 6}px`;
+            // Portaled to the body, outside the window: a popup of the press's owner (a title action's operation, else the
+            // window's), so it closes, and its option sends nothing, once that owner ends (D46S2-R5-3, R7-1); placed in the
+            // viewport, following the page, and closed by Escape / Back with focus back on the arrow (D46S2 audit S6).
+            menu._jeReleaseScope = JE.openPopup(menu, { anchor: arrowButton, owner: JE.ownerOf(e), opener: arrowButton, keyboard: e.detail === 0,
+                gap: 6, matchWidth: false, close: () => { if (open4k === menu) close4k(); } });
+            if (!menu._jeReleaseScope) return;
             requestAnimationFrame(() => menu.classList.add('show'));
             open4k = menu;
             document.addEventListener('click', handleDocClick, true);

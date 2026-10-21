@@ -59,7 +59,7 @@ function setup(t, { routes = {}, jeMode = true, window: withWindow = false, conf
   h.load('jellyseerr/api.js');
   h.load('jellyseerr/moreinfo/more-info-modal-data.js');
   if (withWindow) h.load('jellyseerr/moreinfo/more-info-modal-init.js');
-  return { ...h, api: h.JE.jellyseerrAPI, internal, reads, toasts };
+  return { ...h, get NATIVE() { return h.NATIVE; }, api: h.JE.jellyseerrAPI, internal, reads, toasts };
 }
 
 for (const [label, status] of [['without a linked Seerr account', UNLINKED], ['Seerr is turned off for', BLOCKED]]) {

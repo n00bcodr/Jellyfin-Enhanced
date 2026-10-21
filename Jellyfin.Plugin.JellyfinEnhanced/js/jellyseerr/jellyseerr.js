@@ -509,7 +509,9 @@
             JE.later(publication, () => {
                 const input = document.querySelector('#searchPage:not(.hide) #searchTextInput');
                 if (run !== searchRuns || lastProcessedQuery !== query || (input && input.value !== query)) return;
-                fetchAndRenderResults(query, { skipCache: true });
+                // The refresh carries the publication to its render (D46S2-R10-7): its GET's answer is drawn only while
+                // the publication (its owner's session, document and route) is still current then.
+                fetchAndRenderResults(query, { skipCache: true, owner: publication });
             }, 1000);
         }
 
@@ -525,9 +527,12 @@
                 clearInjectedSearchResults?.();
                 return;
             }
-            const { skipCache = false } = options;
+            const { skipCache = false, owner = null } = options;
+            // Each search is a generation (the run) and, for a refresh, its owner: both are checked again right before
+            // anything is drawn (D46S2-R10 shape 3).
+            const drawable = () => run === searchRuns && lastProcessedQuery === query && (!owner || !!JE.effectOwner(owner, 'the search refresh'));
             lastProcessedQuery = query;
-            searchRuns++;
+            const run = ++searchRuns;
             fetchingQuery = query;
             dropPendingRender();
             forgetCollections();
@@ -550,11 +555,11 @@
                 // The hold below is registered synchronously, so nothing can slip in between.
                 if (fetchingQuery === query) fetchingQuery = null;
             }
-            if (lastProcessedQuery !== query) return; // superseded by a newer search while this was in flight
+            if (!drawable()) return; // superseded by a newer search (or its owner ended) while this was in flight
 
             // A prefix the viewer types past is never rendered, nor are its
             // next pages or collections fetched: the results wait for a pause.
-            renderWhenQuiet(query, () => renderFirstPage(query, data, yearFilter));
+            renderWhenQuiet(query, () => { if (drawable()) renderFirstPage(query, data, yearFilter); });
         }
 
         /**
@@ -1089,8 +1094,7 @@
         // Close 4K popup when clicking outside
         document.body.addEventListener('click', (e) => {
             if (!e.target.closest('.jellyseerr-button-group') && !e.target.closest('.jellyseerr-4k-popup')) {
-                const popup = document.querySelector('.jellyseerr-4k-popup');
-                if (popup) popup.remove();
+                JE.internals?.jellyseerrUi?.hide4KPopup?.();
             }
         });
 
@@ -1108,13 +1112,14 @@
 
                 if (action === 'request4k' && tmdbId) {
                     const popup = item.closest('.jellyseerr-4k-popup');
+                    const hidePopup = () => { if (popup && JE.internals?.jellyseerrUi?.fourKPopupSource?.(popup)) JE.internals.jellyseerrUi.hide4KPopup(); else popup?.remove(); };
                     // The popup is portaled to <body>: its origin is the card it was opened from, recorded as the popup
                     // opened (fourKPopupSource; a phone's tap closes the card's overview first), resolved before the
                     // popup goes (D46S2-R9-2). With no known origin nothing opens or is sent.
                     const source = JE.internals?.jellyseerrUi?.fourKPopupSource?.(popup) || null;
                     const card = source?.card || source?.buttonGroup?.closest?.('.jellyseerr-card') || item.closest('.jellyseerr-card');
                     const origin = JE.requireOrigin(card || source?.buttonGroup || null, 'the 4K popup');
-                    if (!origin) { if (popup) popup.remove(); return; }
+                    if (!origin) { hidePopup(); return; }
                     item.disabled = true;
                     item.innerHTML = `<span>Requesting...</span><span class="jellyseerr-button-spinner"></span>`;
 
@@ -1129,13 +1134,13 @@
                         || (mediaType === 'tv' ? 'this show' : 'this movie');
 
                     if (mediaType === 'tv') {
-                        if (popup) popup.remove();
+                        hidePopup();
                         showSeasonSelectionModal(tmdbId, 'tv', titleText, searchResultItem, true, owner, origin);
                         return;
                     }
                     if (JE.jellyseerrAPI.shouldShowAdvanced()) {
                         // Close popup and show advanced modal: the form publishes into the card it came from.
-                        if (popup) popup.remove();
+                        hidePopup();
                         showMovieRequestModal(tmdbId, titleText, searchResultItem, true, owner, origin);
                         return;
                     }
@@ -1152,7 +1157,7 @@
                                 searchResultItem.mediaInfo.status4k = 3;
                             }
                             JE.toast('4K request submitted successfully!', 3000);
-                            if (popup) popup.remove();
+                            hidePopup();
                             // Refresh the results to update the UI: later, only while this answer and its search still stand.
                             refreshAfterRequest(publication);
                         });

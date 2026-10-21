@@ -39,7 +39,7 @@ function page(t, { active = true, html = ROW } = {}) {
   h.load('core/ui-kit.js');
   h.load('jellyseerr/issue-reporter.js');
   const row = () => [...h.document.querySelector('.mainDetailButtons').children].map(n => n.className.split(' ').find(c => /^(btn|je-|jellyseerr-)/.test(c)));
-  return { ...h, reporter: h.JE.jellyseerrIssueReporter, reads, row, seerr };
+  return { ...h, get NATIVE() { return h.NATIVE; }, reporter: h.JE.jellyseerrIssueReporter, reads, row, seerr };
 }
 
 const movie = id => ({ Id: id, Type: 'Movie', Name: `Movie ${id}`, ProviderIds: { Tmdb: id === 'a' ? '603' : '604' } });
@@ -263,7 +263,7 @@ function libraryPage(t) {
     await reporter.tryAddButton();
     await new Promise(resolve => setImmediate(resolve));
   };
-  return { ...h, look, row, hidden, guarded, opened };
+  return { ...h, get NATIVE() { return h.NATIVE; }, look, row, hidden, guarded, opened };
 }
 
 test('a library row replaced by a copy of itself gets working Hide, Report issue and Spoiler Guard back, in their places', async t => {
@@ -405,7 +405,7 @@ function sessionPage(t) {
   h.load('jellyseerr/api.js');
   h.JE.jellyseerrAPI.surfaceUserStatusBanner = () => {};
   h.load('jellyseerr/issue-reporter.js');
-  return { ...h, reporter: h.JE.jellyseerrIssueReporter, sent, status,
+  return { ...h, get NATIVE() { return h.NATIVE; }, reporter: h.JE.jellyseerrIssueReporter, sent, status,
     switchUser() { user = 'user-b'; epoch++; switches.forEach(fn => fn()); } };
 }
 

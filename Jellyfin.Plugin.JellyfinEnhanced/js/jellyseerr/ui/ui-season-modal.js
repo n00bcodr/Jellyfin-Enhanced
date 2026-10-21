@@ -21,8 +21,8 @@
      * @param {string} showTitle - Display title of the show.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k] - The 4K request.
-     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
-     *   node or press it is opened from.
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, a viewer's native
+     *   owner, or the node or press it is opened from.
      * @param {HTMLElement|null} [origin] - Where it was opened (a window, a card): its answer publishes there and to the
      *   cards that follow the title (D46S2-R8-2); without one, only the form says what happened.
      */
@@ -51,6 +51,8 @@
             partialRequestsEnabled = false;
             enableSpecialEpisodes = false;
         }
+        // Each await carries the opening's owner (its session, document and route) and its intent (D46S2-R10 shape 3).
+        if (!newest()) return;
 
         const tvDetails = await fetchTvShowDetails(tmdbId);
         if (!newest()) return;
@@ -141,6 +143,8 @@
                 // What the answer changes outside the form goes through the publication of where it was opened, for this
                 // series, edition and season set only (D46S2-R8-2, R9-3), taken right before its request is sent.
                 let publication = null;
+                let requested = null;
+                let remaining = [];
                 const publicationFor = seasons => (publication = JE.publication({ owner: submitted, surface: origin, identity: { tmdbId, mediaType: 'tv', is4k, variant: seasons.join(',') } }));
                 requestBtn.disabled = true;
                 requestBtn.innerHTML = `${JE.t('jellyseerr_modal_requesting')}<span class="jellyseerr-button-spinner"></span>`;
@@ -185,6 +189,9 @@
                             requestBtn.textContent = is4k ? (JE.t('jellyseerr_btn_request_4k') || 'Request in 4K') : JE.t('jellyseerr_modal_request_selected');
                             return;
                         }
+                        // The seasons still requestable after this one (what the form showed): the answer keeps its scope.
+                        remaining = Array.from(modalEl.querySelectorAll('.jellyseerr-season-item .jellyseerr-season-checkbox:not(:checked):not(:disabled)')).map(cb => parseInt(cb.dataset.seasonNumber)).filter(Number.isFinite);
+                        requested = selectedSeasons;
                         publicationFor(selectedSeasons);
                         await requestTvSeasons(tmdbId, selectedSeasons, settings, searchResultItem, is4k, manualTvdbId, { bound: submitted.bound() });
                         if (!submitted.current()) return;
@@ -206,7 +213,7 @@
                         JE.toast(JE.t('jellyseerr_modal_toast_request_success', { count: 'all', title: resolvedShowTitle }), 4000);
                     }
                     // Where it was opened (the window re-reads its seasons) and the cards that follow the series.
-                    publication?.publish();
+                    publication?.publish({ seasons: requested, remaining });
 
                     closeFn();
                 } catch (error) {

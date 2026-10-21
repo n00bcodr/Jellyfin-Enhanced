@@ -6,7 +6,8 @@ import { createHarness } from '../helpers/harness.mjs';
 function gesture(h, fn) {
   let result;
   const button = h.document.createElement('button');
-  button.addEventListener('click', () => { result = fn(); });
+  // The viewer's click: what opens is its owner's (JE.ownerOf(event)), passed explicitly.
+  button.addEventListener('click', e => { result = fn(h.JE.ownerOf(e)); });
   h.document.body.append(button); button.click(); button.remove();
   return result;
 }
@@ -69,7 +70,7 @@ function setup(t, { cap = { Enabled: true, ContractVersion: 1 }, url = 'http://j
   t.after(() => h.close());
   h.load('core/ui-kit.js');
   h.load('jellyseerr/nativedetails/native-details.js');
-  return { ...h, td: h.JE.titleDetails, shown, modal, mounts, fetched, back, resolved, toggles, collections, userChanges };
+  return { ...h, get NATIVE() { return h.NATIVE; }, td: h.JE.titleDetails, shown, modal, mounts, fetched, back, resolved, toggles, collections, userChanges };
 }
 
 test('synthetic ids match the server codec, parse back and stay on their server', t => {
@@ -94,7 +95,7 @@ for (const [name, cap] of [['missing', null], ['off', { Enabled: false, Contract
   test(`capability ${name}: open() leaves the caller its own destination`, t => {
     const h = setup(t, { cap });
     assert.equal(h.td.available(), false);
-    assert.equal(h.td.open(693134, 'movie'), false);
+    assert.equal(h.td.open(693134, 'movie', undefined, h.NATIVE), false);
     assert.deepEqual(h.shown, []);
   });
 }
@@ -102,9 +103,9 @@ for (const [name, cap] of [['missing', null], ['off', { Enabled: false, Contract
 test('open() goes to the native details route on this server', t => {
   const h = setup(t);
   assert.equal(h.td.available(), true);
-  assert.equal(h.td.open(693134, 'movie'), true);
-  assert.equal(h.td.open('83867', 'tv'), true);
-  assert.equal(h.td.open(5, 'collection'), false);
+  assert.equal(h.td.open(693134, 'movie', undefined, h.NATIVE), true);
+  assert.equal(h.td.open('83867', 'tv', undefined, h.NATIVE), true);
+  assert.equal(h.td.open(5, 'collection', undefined, h.NATIVE), false);
   assert.deepEqual(h.shown, [`/details?id=${MOVIE}&serverId=${SERVER}`, `/details?id=${h.td.syntheticId('series', 83867)}&serverId=${SERVER}`]);
 });
 
@@ -904,9 +905,9 @@ for (const ask of [false, true]) {
 
 test('the navigator: native page, scoped pages, the modal as fallback, provider keys through the server', async t => {
   const h = setup(t, { resolve: path => (path.includes('movie%3Atmdb%3A45745') ? { itemId: '0123456789abcdef0123456789abcdef' } : path.includes('tv%3Atvdb%3A393189') ? { id: '4a45ad130001479b0001000092805890' } : null) });
-  assert.equal(gesture(h, () => h.td.show(83867, 'tv', { season: 1, episode: 3 })), true);
+  assert.equal(gesture(h, owner => h.td.show(83867, 'tv', { season: 1, episode: 3 }, owner)), true);
   assert.equal(h.shown[0], `/details?id=${h.td.syntheticId('episode', 83867, 1, 3)}&serverId=${SERVER}`);
-  assert.equal(h.td.open(83867, 'tv', { season: 2 }), true);
+  assert.equal(h.td.open(83867, 'tv', { season: 2 }, h.NATIVE), true);
   assert.equal(h.shown[1], `/details?id=${h.td.syntheticId('season', 83867, 2)}&serverId=${SERVER}`);
   assert.equal(await h.td.openKey('movie:tmdb:45745', { owner: h.NATIVE }), true);
   assert.equal(h.shown[2], `/details?id=0123456789abcdef0123456789abcdef&serverId=${SERVER}`);
@@ -915,11 +916,11 @@ test('the navigator: native page, scoped pages, the modal as fallback, provider 
   // A forged answer is never followed; the modal opens once instead when the TMDB id is known.
   assert.equal(await h.td.openKey('movie:tmdb:438631', { owner: h.NATIVE }), true);
   assert.deepEqual(h.modal, [[438631, 'movie']]);
-  assert.equal(await h.td.openKey('tv:tvdb:5', { modal: false }), false);
+  assert.equal(await h.td.openKey('tv:tvdb:5', { modal: false, owner: h.NATIVE }), false);
   assert.equal(h.shown.length, 4);
   // Capability off: show() is the modal, open() leaves the caller its way.
   const off = setup(t, { cap: null });
-  assert.equal(gesture(off, () => off.td.show(693134, 'movie')), true);
+  assert.equal(gesture(off, owner => off.td.show(693134, 'movie', undefined, owner)), true);
   assert.deepEqual(off.modal, [[693134, 'movie']]);
   assert.equal(await off.td.openKey('tv:tvdb:393189', { owner: off.NATIVE }), false);
   assert.deepEqual(off.resolved, []);
@@ -1106,14 +1107,14 @@ function cards(t, { cap, useModal = true, item, resolve } = {}) {
   for (const file of ['seerr-status', 'ui/ui-icons', 'ui/ui-popover', 'ui/ui-badges', 'ui/ui-cards', 'nativedetails/native-details']) h.load(`jellyseerr/${file}.js`);
   const card = h.JE.jellyseerrUI.createJellyseerrCard(item || { id: 693134, mediaType: 'movie', title: 'Dune: Part Two', posterPath: '/p.jpg', releaseDate: '2024-02-27', voteAverage: 8.1 }, true, true);
   h.document.getElementById('results').appendChild(card);
-  return { ...h, card, shown, modal, resolved };
+  return { ...h, get NATIVE() { return h.NATIVE; }, card, shown, modal, resolved };
 }
 
 test('Seerr cards open the native page when it is offered', t => {
   const h = cards(t, { cap: { Enabled: true, ContractVersion: 1 } });
   const link = h.card.querySelector('a[data-tmdb-id]');
   const e = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
-  link.dispatchEvent(e);
+  h.trusted(link, e);
   assert.equal(e.defaultPrevented, true);
   assert.deepEqual(h.shown, [`/details?id=${MOVIE}&serverId=${SERVER}`]);
   assert.deepEqual(h.modal, []);
@@ -1121,7 +1122,7 @@ test('Seerr cards open the native page when it is offered', t => {
 
 test('Seerr cards keep the modal when native details are off', t => {
   const h = cards(t, { cap: { Enabled: false, ContractVersion: 1 } });
-  h.card.querySelector('a[data-tmdb-id]').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  h.trusted(h.card.querySelector('a[data-tmdb-id]'), new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
   assert.deepEqual(h.shown, []);
   assert.deepEqual(h.modal, [[693134, 'movie']]);
 });
@@ -1129,7 +1130,7 @@ test('Seerr cards keep the modal when native details are off', t => {
 test('the native page also wins over a Seerr link when the modal setting is off', t => {
   const h = cards(t, { cap: { Enabled: true, ContractVersion: 1 }, useModal: false });
   const e = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
-  h.card.querySelector('a[data-tmdb-id]').dispatchEvent(e);
+  h.trusted(h.card.querySelector('a[data-tmdb-id]'), e);
   assert.equal(e.defaultPrevented, true);
   assert.equal(h.shown.length, 1);
 });
@@ -1137,7 +1138,7 @@ test('the native page also wins over a Seerr link when the modal setting is off'
 test('Enter on a focused Seerr poster opens the native page (Space keeps showing the overview with Request)', t => {
   const h = cards(t, { cap: { Enabled: true, ContractVersion: 1 } });
   const poster = h.card.querySelector('.jellyseerr-poster-image');
-  const press = key => poster.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  const press = key => h.trusted(poster, new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   press('Enter');
   assert.deepEqual(h.shown, [`/details?id=${MOVIE}&serverId=${SERVER}`]);
 });
@@ -1152,7 +1153,7 @@ test('a card Seerr says is in the library is checked for this viewer before it o
   const link = h.card.querySelector('.cardText-first a');
   link.setAttribute('href', '#!/details?id=deadbeefdeadbeefdeadbeefdeadbeef');
   const e = new h.window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
-  link.dispatchEvent(e);
+  h.trusted(link, e);
   assert.equal(e.defaultPrevented, true);
   await wait(10);
   assert.deepEqual(h.resolved, ['/native-details/resolve?key=movie%3Atmdb%3A693134']);
@@ -1340,16 +1341,16 @@ test('Seerr mode: a viewer Seerr won\'t answer for goes to the window\'s message
   let jeMode = false;
   h.JE.jellyseerrAPI = { knownAccountRefusal: () => refusal };
   h.JE.internals.arrAskSeerr = { jeMode: () => jeMode };
-  assert.equal(h.td.open(693134, 'movie'), false);
-  assert.equal(gesture(h, () => h.td.show(693134, 'movie')), true);
+  assert.equal(h.td.open(693134, 'movie', undefined, h.NATIVE), false);
+  assert.equal(gesture(h, owner => h.td.show(693134, 'movie', undefined, owner)), true);
   assert.deepEqual([h.shown, h.modal], [[], [[693134, 'movie']]]);
   // JE mode: native pages open without a Seerr account.
   jeMode = true;
-  assert.equal(h.td.open(693134, 'movie'), true);
+  assert.equal(h.td.open(693134, 'movie', undefined, h.NATIVE), true);
   // A linked viewer (or a status not loaded yet): the native page, as before.
   jeMode = false;
   refusal = null;
-  assert.equal(h.td.open(83867, 'tv'), true);
+  assert.equal(h.td.open(83867, 'tv', undefined, h.NATIVE), true);
   assert.equal(h.shown.length, 2);
 });
 

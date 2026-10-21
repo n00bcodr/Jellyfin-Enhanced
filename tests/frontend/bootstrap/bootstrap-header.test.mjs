@@ -26,7 +26,7 @@ function header(t, width = 170) {
     const button = h.document.createElement('button'); button.id = id; button.className = 'headerButton'; button.title = `<${id}>`;
     button.innerHTML = `<span id="${id}-icon" class="material-icons">event</span>`; tray.appendChild(button);
   }
-  return { ...h, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, tray, resize(next) { width = next; h.window.dispatchEvent(new h.window.Event('resize')); }, logout() { signedIn = false; reset(); }, login() { signedIn = true; } };
 }
 
 test('narrow header preserves foreign plugin buttons and forwards overflow actions to mounted originals', async t => {

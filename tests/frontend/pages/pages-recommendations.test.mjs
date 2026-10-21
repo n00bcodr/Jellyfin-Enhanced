@@ -4,7 +4,7 @@ import {createHarness, deferred, plain} from '../helpers/harness.mjs';
 function setup(t, fetch, genre = async()=>[]) {
   const h=createHarness({JE:{discoveryFilter:{fetchWithManagedRequest:fetch},jellyseerrAPI:{fetchGenreSlider:genre}}});
   t.after(()=>h.close()); h.load('jellyseerr/recommendations/recommendations-data.js');
-  return {...h,P:h.JE.internals.recommendationsPage};
+  return {...h,get NATIVE(){return h.NATIVE;},P:h.JE.internals.recommendationsPage};
 }
 test('recommendations preserve successful categories when neighboring categories fail or are empty',async t=>{
   const calls=[]; const h=setup(t,async(path,scope,opts)=>{calls.push({path,scope,opts}); if(path.startsWith('/bad')) throw Error('offline'); return path.startsWith('/good')?{results:[{id:1}]}:{};});

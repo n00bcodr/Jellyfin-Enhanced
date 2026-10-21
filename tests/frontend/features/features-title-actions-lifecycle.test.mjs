@@ -297,12 +297,18 @@ test('controls: a card\'s Report on the same route posts once; after away and ba
   assert.equal(h.sent('POST', '/jellyseerr/issue').length, 2);
 });
 
-test('controls: the native Report form (no operation) still posts after away and back', async t => {
+test('controls: the native Report form (no operation) closes away and back; one opened after it posts once', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t);
   h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.NATIVE); await settle();
+  const form = h.document.querySelector('.jellyseerr-season-modal');
   await awayAndBack(h);
+  assert.equal(form.classList.contains('show'), false, 'closed with its route');
+  form.remove();
+  h.JE.jellyseerrIssueReporter.showReportModal('603', 'The Matrix', 'movie', null, null, h.NATIVE); await settle();
   await submitReport(h);
-  assert.equal(h.sent('POST', '/jellyseerr/issue').length, 1, 'exactly as before');
+  assert.equal(h.sent('POST', '/jellyseerr/issue').length, 1);
 });
 
 // ---------------------------------------------------------------- A rejected interaction is fully cancelled
@@ -335,10 +341,12 @@ test('controls: a current drawer\'s arr link and a native drawer\'s link keep th
   assert.equal(fire(h, link, 'click').escaped, true, 'a current drawer passes the click on');
   h.JE.arrManage.close(); await settle();
   await h.JE.arrManage.open({ key: 'movie:tmdb:603' }, { operation: h.NATIVE }); await settle();
-  h.navigate(); await settle();
   link = drawer(h).querySelector('a.je-manage-btn[target="_blank"]');
   const result = fire(h, link, 'auxclick', { button: 1 });
-  assert.deepEqual(result, { prevented: false, escaped: true }, 'natively exactly as before');
+  assert.deepEqual(result, { prevented: false, escaped: true }, 'a native drawer on its route passes it on');
+  // D46S2-R10 / audit S1: the viewer's drawer goes with the route it was opened on (once the host's hashchange is in).
+  h.navigate(); await new Promise(resolve => setTimeout(resolve, 5)); await settle();
+  assert.equal(drawer(h), null);
 });
 
 /** A Seerr modal shell for an operation with a link, a native form and a checkbox in its body. */
@@ -369,7 +377,6 @@ test('controls: a native Seerr modal (no operation) keeps every default', async 
   const body = '<input type="checkbox" class="je-test-check"><a class="je-test-link" href="#/x">x</a>';
   const modal = h.JE.jellyseerrModal.create({ title: 'x', subtitle: 'y', bodyHtml: body, onSave: () => {} , operation: h.NATIVE });
   modal.show(); await settle();
-  await awayAndBack(h);
   const check = modal.modalElement.querySelector('.je-test-check');
   assert.equal(fire(h, check, 'click').prevented, false);
   assert.equal(check.checked, true);
@@ -428,7 +435,6 @@ test('More Info window opened for an operation that ended: a link → default ca
 test('controls: a native More Info window (no operation) keeps its links', async t => {
   const h = setup(t, { asks: false, seerrMoreInfo: true });
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await settle();
-  await awayAndBack(h);
   const link = moreInfo(h).querySelector('.je-test-link');
   link.addEventListener('click', e => e.preventDefault(), { once: true });
   assert.equal(fire(h, link, 'click').escaped, true);

@@ -9,7 +9,7 @@ function setup(t,{details=async id=>({id}),ratings=async()=>({}),withSession=fal
   h.window.setTimeout=(fn,ms)=>{timers.push({fn,ms});return timers.length;};
   if(withSession){h.JE.core={navigation:{onNavigate:()=>{}}};h.load('core/session.js');}
   h.load('jellyseerr/moreinfo/more-info-modal-init.js');
-  return {...h,state,actions,errors,internal,P:h.JE.jellyseerrMoreInfo,runClosing:()=>{for(const timer of timers.splice(0))timer.fn();}};
+  return {...h,get NATIVE(){return h.NATIVE;},state,actions,errors,internal,P:h.JE.jellyseerrMoreInfo,runClosing:()=>{for(const timer of timers.splice(0))timer.fn();}};
 }
 test('more-info replacing a modal cannot let old close timeout remove its successor',async t=>{
   const h=setup(t);await h.P.open(1,'movie',undefined,h.NATIVE);await h.P.open(2,'movie',undefined,h.NATIVE);h.runClosing();

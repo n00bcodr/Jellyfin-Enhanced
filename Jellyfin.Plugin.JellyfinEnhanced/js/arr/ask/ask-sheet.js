@@ -55,7 +55,8 @@
     const opening = JE.latestIntent();
     /**
      * One-tap movie asks in flight, by key. Each entry belongs to its owner (the operation a title action submitted, or
-     * JE.NATIVE) and the session it started in; only live work of the same owner is joined (D46S2-R5-2).
+     * a viewer's native owner) and the session it started in; only live work of the same owner (or, for the viewer's own taps, of
+     * a native owner) is joined (D46S2-R5-2).
      * @type {Map<string, Set<{owner: Object|null, epoch: number, live: function(): boolean, promise: Promise<Object|null>}>>}
      */
     const inflight = new Map();
@@ -352,7 +353,7 @@
      * has them read first.
      * @param {Object} title Title (see the file comment).
      * @param {{opener?: HTMLElement, variant?: string, caps?: Object, quota?: Object|null, operation: Object|Node|Event}} options Options;
-     *     operation (required, D46S2-R6): the owner (the operation a title action submitted, JE.NATIVE, or the node or press
+     *     operation (required, D46S2-R6): the owner (the operation a title action submitted, a viewer's native owner, or the node or press
      *     it comes from). The sheet opens and asks only while it is current.
      * @returns {Promise<Object|null>} The ask result, or null when closed without one.
      */
@@ -974,19 +975,24 @@
         const epoch = JE.session?.getEpoch ? JE.session.getEpoch() : 0;
         const submitted = JE.captureSubmitted(options?.operation);
         const sameSession = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch && submitted.current();
+        // The ask itself is the viewer's write: it goes out while its owner may write (a viewer's own tap: its session),
+        // while the sheet it may open instead is a page effect (its owner current, D46S2 audit S3).
+        const mayAsk = () => (JE.session?.getEpoch ? JE.session.getEpoch() : 0) === epoch && submitted.writable();
         // A second tap while the first is out joins it, but only live work of the same owner: never an ended
         // operation's (a fresh press after away and back), another operation's or a native tap's.
         const entries = inflight.get(title.key) || new Set();
-        for (const entry of entries) if (entry.owner === submitted.owner && entry.epoch === epoch && entry.live()) return entry.promise;
+        // A viewer's own taps are one owner (each gesture mints its own native token, D46S2-R10): native joins native.
+        const same = owner => owner === submitted.owner || (!!owner?.native && !!submitted.owner?.native);
+        for (const entry of entries) if (same(entry.owner) && entry.epoch === epoch && entry.live()) return entry.promise;
         const run = (async () => {
             const caps = await JE.arrAsk.me();
-            if (!sameSession()) return null;
+            if (!mayAsk()) return null;
             if (!JE.arrAsk.canAsk(caps, 'movie')) {
                 JE.arrAsk.toast(JE.arrAsk.describe({ state: 'denied' }, caps).text);
                 return null;
             }
             const quota = await JE.arrAsk.quota('movie');
-            if (!sameSession()) return null;
+            if (!mayAsk()) return null;
             if (needsSheet(caps, quota, 'movie')) return { sheet: true, caps, quota };
             const result = await JE.arrAsk.ask(JE.arrAsk.movieInput(title.key), { bound: submitted.bound() });
             if (result.stale) return null;
@@ -995,7 +1001,7 @@
             return result;
         })();
         const tracked = run.then((outcome) => (outcome?.sheet ? (sameSession() ? open(title, { ...options, operation: submitted.owner, caps: outcome.caps, quota: outcome.quota }) : null) : outcome));
-        const entry = { owner: submitted.owner, epoch, live: sameSession, promise: tracked };
+        const entry = { owner: submitted.owner, epoch, live: mayAsk, promise: tracked };
         entries.add(entry);
         inflight.set(title.key, entries);
         // Cleanup by identity: this entry only, never a later owner's.

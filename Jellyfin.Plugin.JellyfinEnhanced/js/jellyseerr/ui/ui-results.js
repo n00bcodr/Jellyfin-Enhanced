@@ -21,13 +21,23 @@
     let pendingRepositionTimeout = null;
 
     /**
-     * Shows a card's control as requested: its standard Request (and the card's badge), or its 4K arrow.
-     * @param {HTMLElement} node A card's request button or 4K arrow.
+     * Shows a card's control as its answer left it (D46S2 audit S5: the scope the request was for is kept): its standard
+     * Request (and the card's badge), or its 4K arrow. A series request for some seasons, while others are still
+     * requestable (`answer.remaining`), keeps Request offered as "Request More".
+     * @param {{node: HTMLElement, answer: Object}} handle The publication's scoped handle for a card's request button or 4K arrow.
      */
-    function markCardRequested(node) {
+    function markCardRequested({ node, answer }) {
+        const partial = answer?.mediaType === 'tv' && Array.isArray(answer.remaining) && answer.remaining.length > 0;
         if (JE.identityOf(node)?.edition === '4k') {
+            if (partial) return;
             node.classList.add('jellyseerr-4k-pending');
             node.disabled = true;
+            return;
+        }
+        if (partial) {
+            const more = JE?.t ? JE.t('jellyseerr_btn_request_more') : 'Request More';
+            node.innerHTML = `${icons.request}<span>${more}</span>`;
+            node.disabled = false;
             return;
         }
         const requestedLabel = JE?.t ? JE.t('jellyseerr_btn_requested') : 'Requested';
@@ -48,11 +58,10 @@
     }
 
     // Cards follow a request made anywhere (a card, a form, the More Info window) through the one publication path
-    // (D46S2-R8-2, R9-5): core marks only the controls a publication reaches now (its title, media type and edition,
-    // while it is current where it was made). A window draws its own controls from its own publications.
-    JE.followPublications(
-        () => [...document.querySelectorAll('.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]')].filter(node => !node.closest('.je-more-info-modal')),
-        markCardRequested);
+    // (D46S2-R8-2, R9-5, R10-6): core selects the controls (declaratively, none inside a window, which draws its own) and
+    // marks only those a publication reaches now (its title, media type and edition, while it is current where it was made).
+    JE.followPublications({ selector: '.jellyseerr-request-button[data-tmdb-id], .jellyseerr-split-arrow[data-tmdb-id]', exclude: '.je-more-info-modal' },
+        handle => handle.mutate(() => markCardRequested(handle)));
 
     // ================================
     // UI MANAGEMENT FUNCTIONS

@@ -106,20 +106,35 @@
         }, RECOVERY_DELAYS_MS[recoveryAttempt]);
     }
 
+    /** What a write that was never sent resolves with (its owner ended first): it changed nothing, so nothing follows. */
+    const UNSENT = internal.UNSENT = Object.freeze({ unsent: true });
+
     /**
      * All controls share one ordered write, authoritative read and policy notification path. `owner` (required,
-     * D46S2-R6): the operation a title action pressed the control for (it must still be current right before the
-     * write), JE.NATIVE, or the node or press it comes from. What follows an accepted write stays bound to the session only.
+     * D46S2-R6): the owner token the control was pressed for (a title action's operation, or the viewer's own gesture;
+     * it must still be current right before the write), or the node or press it comes from. Three outcomes (D46S2 audit
+     * S3): never sent (its owner ended first) resolves UNSENT and changes nothing; sent and answered, also after its
+     * owner ended (accepted), reconciles this session's state from the server (a reread and the policy event) and
+     * resolves with the answer; a failure rejects. Page effects are the caller's, only while its owner is current.
      */
     function mutateState(path, options, project, owner) {
         const action = JE.createSessionAction();
         const submitted = JE.createSessionAction({ owner });
         const task = mutationQueue.catch(() => {}).then(async () => {
-            if (!action.current() || !submitted.current()) return;
-            // The transport checks the operation (if any) again right before the bytes go out (after the core queue).
+            // Sent only while its owner may write (an operation: while current; the viewer's own gesture: its session).
+            const bound = submitted.bound();
+            if (!action.current() || bound.current() !== true) return UNSENT;
+            // The transport checks the owner again right before the bytes go out (after the core queue).
             let response;
-            try { response = await request(path, { ...options, bound: submitted.operationBound() }); }
-            catch (err) { if (err?.name === 'AbortError' && !submitted.current()) return; throw err; }
+            try { response = await request(path, { ...options, bound }); }
+            catch (err) {
+                const { outcome, answer, sessionChanged } = JE.core.api.writeOutcome?.(err) || { outcome: 'failed' };
+                if (outcome === 'unsent') return UNSENT;
+                if (outcome !== 'accepted') throw err;
+                // Accepted after its owner ended: still this session's change, reconciled below (another session's is not ours).
+                if (sessionChanged) return answer;
+                response = answer;
+            }
             if (!action.current()) return response;
             generation++;
             JE.core.api.manager?.invalidatePresentation?.();

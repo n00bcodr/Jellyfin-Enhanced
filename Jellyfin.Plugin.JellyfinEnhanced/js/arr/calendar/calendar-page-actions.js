@@ -25,7 +25,12 @@
   /**
    * Load all data
    */
+  let loads = 0;
   async function loadAllData() {
+    // Each load is the newest view intent (D46S2 audit S4): a load the viewer moved past (another period, view or
+    // today) touches neither the data, its error, the loading state nor the page.
+    const mine = ++loads;
+    const current = () => mine === loads;
     state.isLoading = true;
     renderPage();
 
@@ -34,13 +39,16 @@
     state.rangeEnd = end;
 
     // First fetch calendar events
-    await fetchCalendarEvents(start, end);
+    await fetchCalendarEvents(start, end, current);
+    if (!current()) return;
 
     // Then fetch user data for those specific events
-    await fetchUserData();
+    await fetchUserData(current);
+    if (!current()) return;
 
     if (state.activeFilters.has("Requests") || state.settings.forceOnlyRequested) {
       await ensureRequestData();
+      if (!current()) return;
     }
 
     state.isLoading = false;
@@ -197,9 +205,12 @@
    * it isn't in the library).
    */
   async function navigateToJellyfinItem(event, options = {}) {
-    // The Calendar page is a page of its own: no title action presses it. Named at the click (D46S2-R9-4), before the
-    // provider lookup below.
-    const owner = JE.NATIVE;
+    // The click's owner (D46S2-R10-8), taken at the click: the viewer's own gesture, with the session, document and
+    // route it happened on. Every navigation below is its effect, checked as it happens, so a lookup that answers after
+    // the viewer moved on (another title, page or account) navigates nowhere.
+    const owner = options.owner;
+    if (!JE.effectOwner(owner, "the Calendar's navigation")) return;
+    const go = hash => { if (JE.effectOwner(owner, "the Calendar's navigation")) window.location.hash = hash; };
     const preferSeries = !!options.preferSeries;
     const isMovie = event.type === "Movie";
 
@@ -214,19 +225,20 @@
 
     // No need to search if itemId is already provided
     if (itemId) {
-      window.location.hash = `#/details?id=${itemId}`;
+      go(`#/details?id=${itemId}`);
       return;
     }
 
     if (event.itemEpisodeId && !preferSeries) {
-      window.location.hash = `#/details?id=${event.itemEpisodeId}`;
+      go(`#/details?id=${event.itemEpisodeId}`);
       return;
     }
 
     try {
       const providerItemId = await searchFromProviders(event, { preferSeries });
+      if (!JE.effectOwner(owner, "the Calendar's navigation")) return;
       if (providerItemId) {
-        window.location.hash = `#/details?id=${providerItemId}`;
+        go(`#/details?id=${providerItemId}`);
         return;
       }
       await openAbsent(event, preferSeries, owner);
@@ -289,7 +301,7 @@
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      navigateToJellyfinItem(playEvent, { preferSeries: false });
+      navigateToJellyfinItem(playEvent, { preferSeries: false, owner: JE.ownerOf(e) });
       return;
     }
 
@@ -302,7 +314,7 @@
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        navigateToJellyfinItem(timeEvent, { preferSeries: false });
+        navigateToJellyfinItem(timeEvent, { preferSeries: false, owner: JE.ownerOf(e) });
         return;
       }
     }
@@ -318,7 +330,7 @@
 
     e.preventDefault();
     e.stopPropagation();
-    navigateToJellyfinItem(event, { preferSeries: true });
+    navigateToJellyfinItem(event, { preferSeries: true, owner: JE.ownerOf(e) });
   }
 
   P.loadAllData = loadAllData;

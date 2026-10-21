@@ -38,7 +38,7 @@
                 const confirmed = ok && action.current();
                 if (confirmed && checkbox.checked) internal.setDisableSnooze();
                 release();
-                releaseScope();
+                releaseScope?.();
                 dialog.close?.();
                 dialog.remove();
                 resolve(confirmed);
@@ -59,7 +59,7 @@
 
     /**
      * Asks before Spoiler Guard is turned off. `owner` (required, D46S2-R6): the operation the Guard press was made for
-     * (the dialog is in its scope and declines once it ends), JE.NATIVE, or the node or press it comes from.
+     * (the dialog is in its scope and declines once it ends), a viewer's native owner, or the node or press it comes from.
      */
     internal.confirmDisableSpoiler = function(owner) {
         const action = JE.createSessionAction({ owner });

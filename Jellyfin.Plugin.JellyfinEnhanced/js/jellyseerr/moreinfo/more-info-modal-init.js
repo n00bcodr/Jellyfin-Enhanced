@@ -18,8 +18,9 @@
  * @param {number} tmdbId - The TMDB ID
  * @param {string} mediaType - 'movie' or 'tv'
  * @param {{season?: number, episode?: number}|undefined} scope - The season/episode a title action opened it for
- * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, JE.NATIVE,
- *   or the node or press it is opened from. The window opens only while it is current and belongs to its scope.
+ * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, a viewer's
+ *   native owner, or the node or press it is opened from. The window opens only while it is current (and is still the
+ *   newest opening) and belongs to its scope.
  */
 moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
     const generation = ++openGeneration;
@@ -34,9 +35,10 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
             return;
         }
 
-        // Render modal immediately: the window opens only as its owner's effect, checked now (D46S2-R9-1).
-        if (!JE.effectOwner(submitted.owner, 'the More Info window')) return;
-        showModal(data, mediaType, scope, submitted);
+        // Render modal immediately: the window opens only as its owner's effect, admitted now, before anything else is
+        // touched (D46S2-R9-1, audit S2).
+        if (!JE.admitSurface(submitted.owner, 'the More Info window', () => generation === openGeneration)) return;
+        if (!showModal(data, mediaType, scope, submitted)) return;
         const openedModal = state.currentModal;
 
         // For TV shows, backfill missing season metadata (poster, overview, airDate) from TMDB/episodes
@@ -78,7 +80,8 @@ moreInfoModal.open = async function(tmdbId, mediaType, scope, owner) {
  */
 async function refreshModalData(data, mediaType, modal, refreshBtn) {
     const newest = JE.surfaceIntent(modal, JE.ownerOf(modal));
-    const shown = () => state.currentModal === modal && !modal._isClosing && newest();
+    const read = startRead(modal);
+    const shown = () => state.currentModal === modal && !modal._isClosing && newest() && read.newest();
     refreshBtn._jeRefreshing = (refreshBtn._jeRefreshing || 0) + 1;
     try {
         // Show loading state on button
@@ -94,6 +97,7 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
         }
 
         // Update data object with fresh info
+        read.drawn();
         Object.assign(data, freshData);
 
         // Re-render the action buttons/chips to show updated status (chip, downloads, request button)
@@ -111,6 +115,16 @@ async function refreshModalData(data, mediaType, modal, refreshBtn) {
             refreshBtn.disabled = false;
         }
     }
+}
+
+/**
+ * The window's reads of its title's state, in the order they started (D46S2-R10-9): an answer is drawn only while no read
+ * that started later has been drawn, so an older answer never replaces a newer one (the standard and 4K rereads of two
+ * completions keep the newer state).
+ */
+function startRead(modal) {
+    const mine = modal._jeReads = (modal._jeReads || 0) + 1;
+    return { newest: () => (modal._jeDrawn || 0) <= mine, drawn: () => { modal._jeDrawn = Math.max(modal._jeDrawn || 0, mine); } };
 }
 
 /**
@@ -138,6 +152,7 @@ function showModal(data, mediaType, scope, submitted) {
     // Opened for a title action: the window is in that operation's scope, with everything opened from it (its 4K popup,
     // the Collection and request modals); once the operation ends, it takes no more input and closes.
     modal._releaseScope = JE.openSurface(modal, () => { if (state.currentModal === modal) moreInfoModal.close(); }, submitted.owner);
+    if (!modal._releaseScope) return false;
     // The window's reads (Refresh, a TV request's refresh) and the writes answering into it render only for its newest
     // intent while their owner is current (JE.surfaceIntent, JE.publication).
 
@@ -187,9 +202,10 @@ function showModal(data, mediaType, scope, submitted) {
     document.body.appendChild(modal);
     state.currentModal = modal;
 
-    // Add Escape key handler
+    // Add Escape key handler: only while the window is the topmost surface (a form or popup opened over it takes its
+    // own Escape; D46S2 audit S2).
     const handleEscape = (e) => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && JE.isTopmostSurface(modal)) {
             moreInfoModal.close();
         }
     };
@@ -202,23 +218,25 @@ function showModal(data, mediaType, scope, submitted) {
         internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
     }
 
-    // Completions published into this window (D46S2-R8-2, R9-5): its own requests and the forms opened from it publish
-    // here; core calls this only for a publication that reaches the window now (its owner, the window and its intent
-    // current), so there is nothing to test here. A movie's answer is drawn as it is (only the edition it was for); a
-    // series re-reads its seasons' state from Seerr, as a newest intent of that publication's identity.
-    const handleRequested = async (_node, answer, publication) => {
-        const { is4k, response } = answer;
+    // Completions published into this window (D46S2-R8-2, R9-5, R10-6): its own requests and the forms opened from it
+    // publish here; core selects the window and calls this only for a publication that reaches it now (its owner, the
+    // window and its intent current), with a scoped handle. A movie's answer is drawn as it is (only the edition it was
+    // for); a series re-reads its seasons' state from Seerr (a read that starts after the write, never one that was
+    // already in flight: D46S2-R10-9), as a newest intent of that publication's identity.
+    const handleRequested = async handle => {
+        const { is4k, response } = handle.answer;
         if (mediaType === 'movie') {
-            internal.applyRequested(data, is4k, response);
-            internal.renderActions(data, mediaType);
+            handle.mutate(() => { internal.applyRequested(data, is4k, response); internal.renderActions(data, mediaType); });
             return;
         }
-        const newest = JE.surfaceIntent(modal, publication.owner, publication.key);
-        const shown = () => state.currentModal === modal && !modal._isClosing && newest();
+        const newest = handle.intent(modal);
+        const read = startRead(modal);
+        const shown = () => state.currentModal === modal && !modal._isClosing && newest() && read.newest();
         try {
             // Refresh details to pull latest status/progress
             const fresh = await internal.fetchMediaDetails(data.id, 'tv');
             if (!shown()) return;
+            read.drawn();
             if (fresh?.mediaInfo) {
                 data.mediaInfo = fresh.mediaInfo;
             } else {
@@ -234,13 +252,14 @@ function showModal(data, mediaType, scope, submitted) {
         internal.renderActions(data, mediaType);
         internal.enrichSeasonCardsWithJellyfinLinks(data, modal);
     };
-    modal._cleanupRequestListener = JE.followPublications(() => [modal], handleRequested);
+    modal._cleanupRequestListener = JE.followPublications({ selector: '.je-more-info-modal', within: modal }, handleRequested);
 
     // Let other surfaces add to the modal (Requests & downloads: the status pill).
     document.dispatchEvent(new CustomEvent('jellyseerr-more-info-opened', { detail: { modal, data, mediaType, scope } }));
 
     // Trigger animation
     setTimeout(() => modal.classList.add('active'), 10);
+    return true;
 }
 
 /**

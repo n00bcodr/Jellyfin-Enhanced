@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHarness} from '../helpers/harness.mjs';
 function setup(t,html='<video></video>'){
- const toasts=[];const h=createHarness({html,JE:{currentSettings:{},t:(key,args)=>args?`${key}:${JSON.stringify(args)}`:key,toast:text=>toasts.push(text)}});t.after(()=>h.close());h.load('enhanced/player/playback.js');return {...h,toasts,video:h.document.querySelector('video')};
+ const toasts=[];const h=createHarness({html,JE:{currentSettings:{},t:(key,args)=>args?`${key}:${JSON.stringify(args)}`:key,toast:text=>toasts.push(text)}});t.after(()=>h.close());h.load('enhanced/player/playback.js');return {...h,get NATIVE(){return h.NATIVE;},toasts,video:h.document.querySelector('video')};
 }
 test('playback speed steps, clamps at supported limits and resets',t=>{
  const h=setup(t);h.JE.adjustPlaybackSpeed('increase');assert.equal(h.video.playbackRate,1.25);h.JE.adjustPlaybackSpeed('decrease');assert.equal(h.video.playbackRate,1);h.video.playbackRate=2;h.JE.adjustPlaybackSpeed('increase');assert.equal(h.video.playbackRate,2);h.video.playbackRate=0.25;h.JE.adjustPlaybackSpeed('decrease');assert.equal(h.video.playbackRate,0.25);h.JE.resetPlaybackSpeed();assert.equal(h.video.playbackRate,1);

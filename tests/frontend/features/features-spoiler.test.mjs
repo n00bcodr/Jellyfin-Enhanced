@@ -14,7 +14,7 @@ function setup(t, plugin = async () => ({})) {
   t.after(() => h.close());
   h.load('enhanced/spoilerguard/ids.js');
   h.load('enhanced/spoilerguard/state.js');
-  return { ...h, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, state: h.JE.internals.spoilerGuard, switchUser(userId = 'new-user') { epoch++; for (const fn of listeners.values()) fn({userId}); } };
 }
 
 for (const [input, expected] of [['AA-BB','aabb'], [null,''], [{},''], [42,'42']]) {

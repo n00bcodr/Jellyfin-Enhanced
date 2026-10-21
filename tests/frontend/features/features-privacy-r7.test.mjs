@@ -18,7 +18,7 @@ function setup(t) {
  t.after(()=>h.close());for(const m of ['navigation','session','api-client'])h.load('core/'+m+'.js');
  for(const m of ['ids','state','detail-button','seerr-toggle'])h.load('enhanced/spoilerguard/'+m+'.js');
  let reloads=0;const api=h.JE.internals.spoilerGuard;Object.assign(api,{confirmDisableSpoiler:async()=>true,refreshSpoilerableImages(){},scheduleFullReload(){reloads++;},getUserPrefs:()=>({})});
- return {...h,api,calls,reloads:()=>reloads,setState(v){state=v;},slow(){slow=deferred();return slow;}};
+ return {...h,get NATIVE(){return h.NATIVE;},api,calls,reloads:()=>reloads,setState(v){state=v;},slow(){slow=deferred();return slow;}};
 }
 for(const kind of ['Movie','Series','Collection'])test(`native ${kind} invalidates old provider reply and refreshes page`,async t=>{
  const h=setup(t);await h.api.loadState();const old=h.slow();

@@ -20,7 +20,7 @@
      * @param {string} title - Display title of the movie.
      * @param {Object|null} searchResultItem - Original search result data.
      * @param {boolean} [is4k] - The 4K request.
-     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, JE.NATIVE, or the
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation it is opened for, a viewer's native owner, or the
      *   node or press it is opened from. The modal is in its scope.
      * @param {HTMLElement|null} [origin] - Where it was opened (a window, a card): its answer publishes there and to the
      *   cards that follow the title (D46S2-R8-2); without one, only the form says what happened.
@@ -96,7 +96,7 @@
      * @param {string} collectionName - The name of the collection.
      * @param {object} searchResultItem - Optional search result item data.
      * @param {{operation: Object|Node|Event, origin?: HTMLElement}} options - The owner (required, D46S2-R6): the operation
-     *   the modal is opened for, JE.NATIVE, or the node or press it is opened from. Taken here, before the details are
+     *   the modal is opened for, a viewer's native owner, or the node or press it is opened from. Taken here, before the details are
      *   read, and the modal opens in its scope only while it is current (D46S2-R5-4), and only for the newest opening
      *   (D46S2-R6). `origin`: where it was opened; each movie's answer publishes there and to the cards that follow it.
      */

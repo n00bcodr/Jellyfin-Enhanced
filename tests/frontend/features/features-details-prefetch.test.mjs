@@ -31,7 +31,7 @@ function setup(t,{id='movie',settings={showWatchProgress:true,showFileSizes:true
  t.after(()=>h.close());
  for(const file of ['features-details-media-info.js','features-release-dates.js','features-details-page.js'])h.load(`enhanced/itemdetails/${file}`);
  const page=h.document.getElementById('itemDetailPage'),row=page.querySelector('.itemMiscInfo-primary');
- return {...h,page,row,plugin,tmdb,
+ return {...h,get NATIVE(){return h.NATIVE;},page,row,plugin,tmdb,
   itemRequests:()=>[...items.keys()],lookups:()=>lookups,
   bumpEpoch(){epoch++;},epoch:()=>epoch,
   giveItem(itemId=id){if(!items.has(itemId))items.set(itemId,deferred());items.get(itemId).resolve(ITEMS[itemId]);},

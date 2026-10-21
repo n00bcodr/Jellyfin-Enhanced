@@ -129,7 +129,7 @@
             play.dataset.jeFocus = `play:${entry.key || ''}`;
             play.appendChild(JE.arrStatus.icon('play_arrow'));
             play.appendChild(document.createTextNode(tr('arr_hub_play')));
-            play.addEventListener('click', (e) => { e.stopPropagation(); actions.play(entry); });
+            play.addEventListener('click', (e) => { e.stopPropagation(); actions.play(entry, JE.ownerOf(e)); });
             buttons.appendChild(play);
         }
         if (ctx.admin && typeof actions.manage === 'function') {
@@ -138,7 +138,7 @@
             manage.dataset.jeFocus = `manage:${entry.key || ''}`;
             manage.appendChild(JE.arrStatus.icon('tune'));
             manage.appendChild(document.createTextNode(tr('arr_manage_button')));
-            manage.addEventListener('click', (e) => { e.stopPropagation(); actions.manage(entry); });
+            manage.addEventListener('click', (e) => { e.stopPropagation(); actions.manage(entry, JE.ownerOf(e)); });
             buttons.appendChild(manage);
         }
         // Phase 2: Following / Notify me (own requests are followed unless muted).
@@ -149,12 +149,13 @@
         if (hide) buttons.appendChild(hide);
         row.classList.add('je-hub-entry');
         if (buttons.childNodes.length) row.appendChild(buttons);
-        const open = () => actions.open(entry);
+        // The press's owner (D46S2-R10-1): the viewer's own click or key, taken at the gesture.
+        const open = (e) => actions.open(entry, JE.ownerOf(e));
         row.addEventListener('click', open);
         row.addEventListener('keydown', (e) => {
             if (e.target === row && (e.key === 'Enter' || e.key === ' ')) {
                 e.preventDefault();
-                open();
+                open(e);
             }
         });
         return row;

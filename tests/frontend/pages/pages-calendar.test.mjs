@@ -15,7 +15,7 @@ function setup(t, extra = {}) {
   }});
   t.after(() => h.close());
   h.load('arr/calendar/calendar-page-data.js');
-  return {...h, P: h.JE.internals.calendarPage, requests, notices, switchUser: () => {epoch++; change();}};
+  return { ...h, get NATIVE() { return h.NATIVE; }, P: h.JE.internals.calendarPage, requests, notices, switchUser: () => {epoch++; change();}};
 }
 
 test('calendar migrates legacy preference once and isolates subsequent users', t => {
@@ -175,7 +175,7 @@ test('calendar Shoko cards escape metadata, map public URLs, and use Jellyfin po
 function actions(t){
   const h=rendering(t);const saved=[];h.JE.saveUserSettings=(file,settings)=>saved.push({file,settings:{...settings}});
   h.P.renderPage=()=>{};h.P.syncPageModeClasses=()=>{};h.P.updateDisplayModeButtons=()=>{};h.P.toggleSidebarCollapsed=()=>{};
-  h.load('arr/calendar/calendar-page-actions.js');return {...h,saved};
+  h.load('arr/calendar/calendar-page-actions.js');return {...h,get NATIVE(){return h.NATIVE;},saved};
 }
 test('calendar view and display controls persist user preferences without redundant saves',async t=>{
   const h=actions(t);h.P.setDisplayMode('grid');h.P.setDisplayMode('grid');assert.equal(h.saved.length,1);assert.equal(h.saved[0].settings.calendarDisplayMode,'grid');
@@ -265,7 +265,7 @@ function page(t, api) {
   h.load('arr/calendar/calendar-page-actions.js');
   const box=h.document.createElement('div');h.document.body.appendChild(box);
   h.P.renderPage(box);
-  return {...h,box,alert:()=>box.querySelector('[role="alert"]')};
+  return {...h,get NATIVE(){return h.NATIVE;},box,alert:()=>box.querySelector('[role="alert"]')};
 }
 for (const view of ['month','week','agenda','day']) {
   test(`calendar ${view} view shows the load error with a retry, never "No upcoming releases"`, async t=>{

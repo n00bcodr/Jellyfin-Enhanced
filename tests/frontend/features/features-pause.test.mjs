@@ -4,7 +4,7 @@ import {createHarness,deferred} from '../helpers/harness.mjs';
 function setup(t,enabled=true){
  let subscriptions=0,releases=0;const handlers=[];const h=createHarness({JE:{session:{onUserChange:(key,fn)=>handlers.push(fn)},currentSettings:{pauseScreenEnabled:enabled},t:key=>key,helpers:{onBodyMutation:()=>{subscriptions++;return {unsubscribe:()=>releases++};}}}});
  h.window.localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{Id:'wrong',UserId:'other',AccessToken:'wrong'},{Id:'server-a',UserId:'user-a',AccessToken:'test'}]}));
- h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
+ h.load('enhanced/player/pausescreen.js');t.after(()=>h.close());return {...h,get NATIVE(){return h.NATIVE;},switchUser:()=>handlers.forEach(fn=>fn()),counts:()=>({subscriptions,releases})};
 }
 test('disabled pause screen creates no DOM or observers',t=>{const h=setup(t,false);h.JE.initializePauseScreen();assert.equal(h.JE.pauseScreenInstance,undefined);assert.deepEqual(h.counts(),{subscriptions:0,releases:0});});
 test('pause screen uses active server credentials and has one instance after repeated initialization',t=>{

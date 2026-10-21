@@ -18,7 +18,7 @@ function setup(t, extra = {}) {
   t.after(() => { h.JE.titleActions?.dispose?.(); h.close(); });
   h.load('arr/actions/title-actions.js');
   h.load('arr/actions/title-actions-sheet.js');
-  return { ...h, calls, actions: h.JE.titleActions, switchUser: () => { user = 'user-b'; } };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, actions: h.JE.titleActions, switchUser: () => { user = 'user-b'; } };
 }
 
 test('typed provider identity preserves movie, series and exact child scopes; rejects invented IDs', t => {
@@ -250,9 +250,9 @@ test('provider controls and registered extension entries are rejected after dela
 
 test('follow settlement cannot start a reread under a replacement identity', async t => {
   const gate = deferred(); const paths = [];
-  const { JE, load, switchUser } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
+  const { JE, load, switchUser, NATIVE } = setup(t, { core: { api: { plugin: (path, options) => { paths.push([path, options]); return gate.promise; } } } });
   load('arr/notify/notify-core.js');
-  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, JE.nativeRoot ? JE.nativeRoot('a test') : JE.NATIVE);
+  const pending = JE.arrNotify.setFollow('movie:tmdb:603', true, NATIVE);
   switchUser(); gate.resolve({});
   assert.equal((await pending).ok, false);
   assert.equal(paths.length, 1);
@@ -286,6 +286,8 @@ test('report modal rejects delayed submit after a live user switch', async t => 
     jellyseerrAPI: { fetchIssuesForMedia: async () => ({ results: [] }), reportIssue: async () => { sends++; return {}; } },
     jellyseerrModal: { create: opts => {
       options = opts; modal = h.document.createElement('div'); modal.innerHTML = opts.bodyHtml;
+      // The shell registers its element for its owner, as the real one does (a press inside it is that owner's).
+      h.JE.openSurface(modal, () => {}, opts.operation);
       return { modalElement: modal, show() { h.document.body.append(modal); }, close() { modal.remove(); } };
     } },
   });

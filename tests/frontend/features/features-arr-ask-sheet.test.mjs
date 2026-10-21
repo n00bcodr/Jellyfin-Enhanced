@@ -109,7 +109,7 @@ function setup(t, { me = MEMBER, quota = { used: 2, limit: 7, remaining: 5, next
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, posts, searches, gets, toasts, statusCalls, state, Sheet: h.JE.arrAskSheet };
+  return { ...h, get NATIVE() { return h.NATIVE; }, posts, searches, gets, toasts, statusCalls, state, Sheet: h.JE.arrAskSheet };
 }
 
 async function settle(n = 12) {
@@ -120,7 +120,8 @@ const sheetEl = h => h.document.querySelector('.je-sheet');
 const primary = h => h.document.querySelector('.je-sheet-primary');
 const card = (h, id) => h.document.querySelector(`.je-sheet-card[data-choice="${id}"]`);
 const costText = (h, id) => card(h, id).querySelector('.je-sheet-card-cost').textContent;
-const click = (h, node) => node.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+// The viewer's click: a trusted event, as the browser dispatches it (native owners are minted only from those).
+const click = (h, node) => h.trusted(node, new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 const key = (h, k, shift = false) => (h.document.activeElement || h.document.body).dispatchEvent(new h.window.KeyboardEvent('keydown', { key: k, shiftKey: shift, bubbles: true, cancelable: true }));
 
 const SERIES = {

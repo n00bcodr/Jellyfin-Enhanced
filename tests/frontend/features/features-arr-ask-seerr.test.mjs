@@ -79,14 +79,15 @@ function setup(t, { jeMode = true, me = MEMBER, check = null } = {}) {
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, posts, toasts, seerr, checks };
+  return { ...h, get NATIVE() { return h.NATIVE; }, posts, toasts, seerr, checks };
 }
 
 async function settle(n = 20) {
   for (let i = 0; i < n; i++) await nextTurn();
 }
 
-const click = (h, node) => node.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+// The viewer's click: a trusted event, as the browser dispatches it (native owners are minted only from those).
+const click = (h, node) => h.trusted(node, new h.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
 /** A Seerr card with its request button (and the button's own Seerr handler, which must not run in JE mode). */
 function seerrCard(h, item, onSeerr) {
@@ -394,7 +395,7 @@ test('JE mode: the 4K menu (Seerr puts it under <body>, outside its card) opens 
   group.className = 'jellyseerr-button-group';
   main.replaceWith(group);
   group.appendChild(main);
-  h.JE.internals.jellyseerrUi.show4KPopup(group, { id: 604, mediaType: 'movie', title: 'The Matrix Reloaded', mediaInfo: { status4k: 1 } });
+  h.JE.internals.jellyseerrUi.show4KPopup(group, { id: 604, mediaType: 'movie', title: 'The Matrix Reloaded', mediaInfo: { status4k: 1 } }, h.NATIVE);
   const item = h.document.querySelector('body > .jellyseerr-4k-popup .jellyseerr-4k-popup-item[data-action="request4k"]');
   assert.ok(item, 'the menu is a child of <body>');
   let bodyRan = 0;

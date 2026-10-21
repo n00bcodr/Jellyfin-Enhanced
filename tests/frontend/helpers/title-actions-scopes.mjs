@@ -103,6 +103,8 @@ export function setup(t, { asks = true, seerr4k = true, card = false, advanced =
   const row = () => h.document.querySelector('.mainDetailButtons');
   return {
     ...h, a, page, row, requests, toasts, manager,
+    /** A viewer's native owner minted now (the harness getter, kept live through the spread). */
+    get NATIVE() { return h.NATIVE; },
     /** The change feed reports a change for every followed key (the drawer's and status pill's subscriptions). */
     feed() { for (const callback of [...feeds]) callback(); },
     hold(method, prefix) { const d = deferred(); gates.push({ method, prefix, d }); return d; },

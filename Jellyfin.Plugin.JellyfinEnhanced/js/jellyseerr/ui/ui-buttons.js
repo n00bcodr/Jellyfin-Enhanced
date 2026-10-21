@@ -136,14 +136,7 @@
             buttonGroup.appendChild(arrowButton);
             button.replaceWith(buttonGroup);
 
-            arrowButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (state.active4KPopup && state.active4KPopup.parentElement === buttonGroup) {
-                    internal.hide4KPopup();
-                } else {
-                    internal.show4KPopup(buttonGroup, item);
-                }
-            });
+            arrowButton.addEventListener('click', (e) => internal.toggle4KPopup(e, buttonGroup, item));
         }
     }
 
@@ -268,14 +261,7 @@
                 mainButton.addEventListener('click', requestHandler);
             }
 
-            arrowButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (state.active4KPopup && state.active4KPopup.parentElement === buttonGroup) {
-                    internal.hide4KPopup();
-                } else {
-                    internal.show4KPopup(buttonGroup, item);
-                }
-            });
+            arrowButton.addEventListener('click', (e) => internal.toggle4KPopup(e, buttonGroup, item));
             return;
         }
 

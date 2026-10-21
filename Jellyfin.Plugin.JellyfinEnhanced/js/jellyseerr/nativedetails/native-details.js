@@ -246,12 +246,15 @@
      * @param {number|string} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
      * @param {{season?: number, episode?: number}} [scope] Season/episode of a series.
+     * @param {Object} owner Whoever opens it (required, D46S2-R10-5): the press's owner (JE.ownerOf(event)) or an
+     *     operation. Navigating is its effect, checked as it happens: an owner that is not current navigates nowhere.
      * @returns {boolean} True when it navigated; false means the caller keeps its own destination.
      */
-    function open(tmdbId, mediaType, scope) {
+    function open(tmdbId, mediaType, scope, owner) {
         if (!available() || seerrRefusesViewer()) return false;
         const id = idOf(tmdbId, mediaType, scope);
         if (!id) return false;
+        if (!JE.effectOwner(owner, 'a title page')) return true;
         go(id);
         return true;
     }
@@ -277,15 +280,13 @@
      * @param {number|string} tmdbId TMDB id.
      * @param {string} mediaType "movie" or "tv".
      * @param {{season?: number, episode?: number}} [scope] Season/episode of a series.
+     * @param {Object} owner Whoever opens it (required, D46S2-R10-2): the press's owner (JE.ownerOf(event)), taken at
+     *     the gesture; nothing is inferred from whatever event is being dispatched.
      * @returns {boolean} True when something opened.
      */
-    function show(tmdbId, mediaType, scope) {
-        // A page the person opened, not part of any title action (native, D46S2-R6): named here, at the gesture, so a
-        // caller holding an operation (its press, its runner) or a raw continuation is refused before anything opens
-        // or navigates (D46S2-R9-4).
-        const owner = JE.NATIVE;
-        if (!owner) return false;
-        if (open(tmdbId, mediaType, scope)) return true;
+    function show(tmdbId, mediaType, scope, owner) {
+        if (!JE.effectOwner(owner, 'a title')) return false;
+        if (open(tmdbId, mediaType, scope, owner)) return true;
         return openModal(tmdbId, mediaType, scope, owner);
     }
 
@@ -323,13 +324,14 @@
      * viewer can open first (the season or episode when named), else the native page, else the modal.
      * @param {string} key Title key such as movie:tmdb:603 or tv:tvdb:81189 (season/episode suffixes allowed).
      * @param {{season?: number, episode?: number, tmdbId?: number, mediaType?: string, modal?: boolean, owner?: Object}} [options]
-     *   Scope and fallback identity (modal: false, no modal fallback). `owner` (required unless modal is false,
-     *   D46S2-R8-1): whoever opens the title (a shared link's operation, a press); every step stops once it ends, and
-     *   the fallback window is its own, so it opens only while the owner is current after its details are read too.
+     *   Scope and fallback identity (modal: false, no modal fallback). `owner` (required, D46S2-R8-1, R10-1): whoever
+     *   opens the title (a shared link's operation, a press's owner); every step stops once it ends, and the fallback
+     *   window is its own, so it opens only while the owner is current after its details are read too.
      * @returns {Promise<boolean>} True when something opened.
      */
     async function openKey(key, options = {}) {
-        const action = options.modal === false ? JE.createSessionAction() : JE.createSessionAction({ owner: options.owner });
+        // Its owner is required (D46S2-R10-1), with or without the window fallback: navigating is its effect too.
+        const action = JE.createSessionAction({ owner: options.owner });
         const child = /:s(\d+)(?::e(\d+))?$/.exec(String(key || ''));
         options = { ...options, ...(child ? { season: Number(child[1]), ...(child[2] != null ? { episode: Number(child[2]) } : {}) } : {}) };
         const mediaType = options.mediaType || (String(key || '').startsWith('movie:') ? 'movie' : 'tv');
@@ -929,13 +931,18 @@
         cancelPendingModal();
         const user = window.ApiClient?.getCurrentUserId?.() || null;
         const pending = { cancel: () => {}, user, from: window.location.hash, landing: null };
-        pending.cancel = JE.later(owner, () => {
+        // Back ends the failed page's own owner (its route goes); the window opens for the page Back landed on, as that
+        // route's own owner, handed out only for the landing recorded by the first navigation after Back (D46S2-R10-2)
+        // and only for the viewer of the failed page.
+        const timer = setTimeout(() => {
             if (pendingModal !== pending) return;
             pendingModal = null;
             if (pending.landing !== null && window.location.hash !== pending.landing) return;
-            if ((window.ApiClient?.getCurrentUserId?.() || null) !== user) return;
-            openModal(tmdbId, mediaType, undefined, owner);
+            if ((window.ApiClient?.getCurrentUserId?.() || null) !== user || !owner?.sessionCurrent?.()) return;
+            const landed = JE.routeOwner(JE.routeKey(pending.landing ?? pending.from), 'the window an absent title page falls back to');
+            if (landed) openModal(tmdbId, mediaType, undefined, landed);
         }, 300);
+        pending.cancel = () => clearTimeout(timer);
         pendingModal = pending;
         history.back();
     }
@@ -1301,7 +1308,7 @@
             id, parts, page, item: null, key: null, mediaType: parts.kind === 'movie' ? 'movie' : 'tv',
             controls: null, container: null, primary: null, spoiler: null, ratings: null, observer: null, rowObserver: null, extras: null,
             onKey: null, keyed: false, leadFocused: false, aborted: false, generation: 0, status: undefined, drawn: false,
-            token: String(++tokens)
+            token: String(++tokens), route: JE.routeKey()
         };
         if (!same) {
             dispose();
@@ -1368,9 +1375,10 @@
             }
             fellBackFrom = id;
             setTimeout(() => { if (fellBackFrom === id) fellBackFrom = null; }, FALLBACK_WINDOW_MS);
-            // The page is a native root of its own (the viewer opened it; no title action owns it): its fallback window
-            // is native, unless an operation is acting now (refused at run time, D46S2-R9-4).
-            const native = JE.nativeRoot('an absent title page falls back to its window');
+            // The page acts for the route it shows (the viewer opened it; no title action owns it): its fallback window
+            // is the route's own native owner, handed out only for this page's route (D46S2-R10-2).
+            const native = JE.routeOwner(state.route, 'an absent title page falls back to its window');
+            if (!native) return;
             if (cameFromApp()) {
                 backThenModal(parts.tmdbId, state.mediaType, native);
             } else {

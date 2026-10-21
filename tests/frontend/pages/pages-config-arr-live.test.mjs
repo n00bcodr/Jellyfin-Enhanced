@@ -43,7 +43,7 @@ function setup(t, { confirm = true, respond } = {}) {
   h.window.crypto.getRandomValues = arr => arr;
   t.after(() => h.close());
   h.window.eval(`${createEl}\nfunction jeNewGuid() { return 'guid-1'; }\n${helpers}\nwindow.__je = { jeArrLiveConnectionText, jeArrLiveWebhookText, jeArrLiveStatus, jeArrLiveWebhookAction, jeArrLiveManual };`);
-  return { ...h, je: h.window.__je, requests, out: () => h.document.getElementById('arrLiveResult') };
+  return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests, out: () => h.document.getElementById('arrLiveResult') };
 }
 
 test('live status lists each instance with its connection, webhook and actions (text only)', async t => {

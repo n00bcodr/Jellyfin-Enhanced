@@ -16,7 +16,7 @@ function setup(t, items = {}) {
   Object.assign(api,{refreshNativeCardVisibility(){},restoreNativeCardsForIds(){},debouncedSave(){writes.push({bulk:true});}});
   api.resetFromUserConfig();
   h.load('enhanced/hiddencontent/hidden-content-dialogs.js');
-  return {...h,api,writes,setIdentityWithoutEvent(){user='viewer-b';},switchUser(mode='both'){
+  return {...h,get NATIVE(){return h.NATIVE;},api,writes,setIdentityWithoutEvent(){user='viewer-b';},switchUser(mode='both'){
     if(mode!=='epoch') user='viewer-b';
     if(mode!=='identity') epoch++;
     h.JE.userConfig={hiddenContent:{items:{},settings:{}}};
@@ -29,7 +29,7 @@ test(`${host} confirmation is dismissed and cannot write after ${mode} changes`,
   const h=setup(t);
   const button=h.api.buildTitleControl({type:'Movie',tmdbId:42,name:'Private title'},{detail:host==='absent page'});
   h.document.body.appendChild(button);
-  await button.onclick({...click,type:'click',target:button});
+  await h.viewerPress(button);
   const dialog=h.document.querySelector('.je-hide-confirm-overlay');
   assert.ok(dialog);const confirm=dialog.querySelector('.je-hide-confirm-hide');
   h.switchUser(mode);confirm.click();await tick();
@@ -85,7 +85,7 @@ for(const kind of ['Movie','Series']) test(`real ${kind} detail page opens as Un
   debounced[100]();await tick();
   const button=h.document.querySelector('.je-detail-hide-btn');assert.ok(button);
   assert.equal(button.classList.contains('je-already-hidden'),true);
-  await button.onclick({...click,type:'click',target:button});
+  await h.viewerPress(button);
   assert.equal(h.api.isHiddenByTmdbId(42,kind),false);assert.equal(button.classList.contains('je-already-hidden'),false);
 });
 
@@ -133,7 +133,7 @@ test('native card metadata that resolves after a switch cannot open another view
   Object.assign(h.api.getHiddenData().settings,{showButtonLibrary:true});
   h.document.body.innerHTML='<div class="card" data-id="old" data-type="Movie"><div class="cardBox"></div></div>';
   h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
-  const save=h.document.querySelector('.je-hide-btn').onclick({...click,type:'click',target:h.document.body});
+  const save=h.viewerPress(h.document.querySelector('.je-hide-btn'));
   h.switchUser('identity');pending.resolve({Type:'Movie',ProviderIds:{Tmdb:'42'}});await save;
   assert.equal(h.document.querySelector('.je-hide-confirm-overlay'),null);assert.equal(h.writes.length,0);
 });
@@ -151,7 +151,7 @@ for(const kind of ['Movie','Series']) test(`ID-only ${kind} cards recognize prov
   assert.equal(reads.length,1,'duplicates are batched, never fetched once per card');
   for(const button of h.document.querySelectorAll('.je-hide-btn'))assert.equal(button.classList.contains('je-already-hidden'),true);
   assert.equal(h.api.isHidden('copy'),true,'known identity also covers ID-only public lookups');
-  await h.document.querySelector('.je-hide-btn').onclick({...click,type:'click',target:h.document.body});await tick();
+  await h.viewerPress(h.document.querySelector('.je-hide-btn'));await tick();
   assert.equal(h.api.isHiddenByTmdbId(42,kind),false);
   assert.equal(h.document.querySelector('.je-hide-confirm-overlay'),null,'unhide does not prompt to hide again');
   h.api.addLibraryHideButtons();await tick();assert.equal(reads.length,1,'repaints settle');
@@ -197,7 +197,7 @@ test('a retained native card repaints its action after being unhidden while deta
   h.load('enhanced/hiddencontent/hidden-content-filter.js');h.load('enhanced/hiddencontent/hidden-content-buttons.js');h.api.addLibraryHideButtons();
   const card=h.document.querySelector('.card');card.remove();await h.api.unhideItem('tv:tmdb:42');h.document.body.append(card);h.api.addLibraryHideButtons();
   const button=card.querySelector('.je-hide-btn');assert.equal(button.classList.contains('je-already-hidden'),false);
-  await button.onclick({...click,type:'click',target:button});assert.ok(h.writes.some(w=>w.type==='PUT'));
+  await h.viewerPress(button);assert.ok(h.writes.some(w=>w.type==='PUT'));
 });
 
 test('a user switch removes outgoing native-card controls before incoming preferences load',t=>{

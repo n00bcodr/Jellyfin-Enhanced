@@ -90,10 +90,11 @@
      * Opens one sheet, with visible focus and keyboard/remote Back and directional navigation. The sheet
      * is the OFFER: a press counts only while it is open, its session and route are current and its
      * owning host (a row or card: `owner`, required, D46S2-R6) is still current. The press starts an OPERATION
-     * owned by the session, the route and that host, so it outlives the sheet (D53).
+     * owned by the session, the route and that host, so it outlives the sheet (D53). The opening is admitted first
+     * (D46S2 audit S2): an owner that is not current opens nothing and leaves the current sheet alone (false).
      */
     function show(c, entries, opener, owner) {
-        const host = JE.requireOwner(owner, 'the title actions sheet');
+        const host = JE.admitSurface(owner, 'the title actions sheet');
         if (!host) return false;
         close(false); styles();
         opener = opener || document.activeElement;
@@ -147,9 +148,13 @@
         backdrop.onclick = e => { if (e.target === backdrop) close(); };
         // The offer's scope: once it has ended (its page, row, card, user or document went) it takes no more presses
         // and closes. Once closed it is detached, and a press inside it is a submitted operation's own (its owned control).
-        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action);
+        current.releaseScope = JE.openSurface(backdrop, () => closeLease(lease, false), action, { opener });
+        if (!current.releaseScope) { close(false); return false; }
         sheet.addEventListener('keydown', e => {
-            if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) { e.preventDefault(); e.stopImmediatePropagation(); close(); return; }
+            if (['Escape', 'BrowserBack', 'GoBack'].includes(e.key) || e.keyCode === 461 || e.keyCode === 10009) {
+                if (!JE.isTopmostSurface(backdrop)) return;
+                e.preventDefault(); e.stopImmediatePropagation(); close(); return;
+            }
             if (!['Tab', 'ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
             const buttons = [...sheet.querySelectorAll('button:not(:disabled)')].filter(n => !n.closest('.je-actions-control'));
             const index = buttons.indexOf(document.activeElement);

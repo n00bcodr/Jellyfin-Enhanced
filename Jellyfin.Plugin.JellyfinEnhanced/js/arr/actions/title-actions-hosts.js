@@ -224,12 +224,11 @@
         const row = state.row;
         if (!row.isConnected) { rows.delete(row); return; }
         reconcileRequest(state);
-        // A host copy of an adapter node has neither listener nor owner: it gives way to the live node.
-        const copies = [...row.querySelectorAll('.je-actions-adapted')].filter(n => !state.owned.has(n));
-        if (copies.length) {
-            copies.forEach(n => n.remove());
-            state.owned.forEach(n => { if (!row.contains(n)) row.append(n); });
-        }
+        // Reconciled from state, not from what the host left (D46S2 audit S5): a host copy of an adapter node (no listener,
+        // no owner) gives way, and every adapted control the row's capabilities hold is put back after any redraw (a
+        // window that redraws its row after a request drops them without leaving copies).
+        row.querySelectorAll('.je-actions-adapted').forEach(n => { if (!state.owned.has(n)) n.remove(); });
+        state.owned.forEach(n => { if (!row.contains(n)) row.append(n); });
         if (state.more) {
             row.querySelectorAll('.je-actions-wide-more').forEach(n => { if (n !== state.more) n.remove(); });
             if (state.more.parentElement !== row) row.append(state.more);

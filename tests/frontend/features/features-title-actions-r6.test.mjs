@@ -82,8 +82,8 @@ test('control: a native window\'s policy refresh reopens it natively and its Req
   const h = setup(t, { asks: false });
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   policyChanged(h); await delivered();
-  assert.equal(h.JE.ownerOf(moreInfo(h)), h.NATIVE);
-  await h.leave(); // natively nothing ends with the page
+  assert.equal(h.JE.ownerOf(moreInfo(h)).native, true, 'reopened natively');
+  await h.leave(); // the viewer's window ends with its route (D46S2-R10)
   moreInfo(h)?.querySelector('.jellyseerr-request-button')?.click(); await delivered();
   assert.ok(h.sent('POST', '/jellyseerr/request').length <= 1);
 });
@@ -328,7 +328,8 @@ test('a press carries its owner explicitly: JE.press tags the click, a direct pr
   const op = h.a.generation(); const seen = [];
   button.addEventListener('click', e => seen.push(h.JE.ownerOf(e)));
   h.JE.press(button, op); button.click();
-  assert.deepEqual(seen, [op, h.NATIVE]);
+  assert.equal(seen[0], op);
+  assert.equal(seen[1]?.native, true, 'the viewer\'s own click is native');
   // A detached node outside any registered surface names no owner (it is not on the page, nor in UI an operation opened).
   assert.equal(h.JE.ownerOf(h.document.createElement('div')), null);
 });

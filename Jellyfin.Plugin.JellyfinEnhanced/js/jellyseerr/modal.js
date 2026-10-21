@@ -47,8 +47,8 @@
      * @param {function} [options.onClose] - Optional cleanup callback invoked before the modal is removed.
      * @param {string} [options.buttonText] - Optional custom text for the primary button (defaults to localized 'Request').
      * @param {object} options.operation - The owner (required, D46S2-R6): the operation a title action submitted,
-     *   JE.NATIVE, or a node inside UI it opened. The modal is in its scope, so it closes when the operation ends, and
-     *   onSave runs only while it is current. Natively the modal behaves as before.
+     *   a viewer's native owner (JE.ownerOf(event)), or a node inside UI it opened. The modal is in its scope, so it
+     *   closes when that owner ends (its session, document or route), and onSave runs only while it is current.
      * @returns {object} - An object with methods to show and close the modal.
      */
     modal.create = function({ title, subtitle, bodyHtml, backdropPath, backdropUrl, onSave, onClose, buttonText, operation }) {
@@ -118,13 +118,21 @@
 
         modalElement.appendChild(contentEl);
 
+        // One terminal lifecycle (D46S2 audit S2): the form is admitted for its owner before anything is shown; once it
+        // closes it never opens again and takes no input at once (inert, Save disabled, focus back to its opener), also
+        // during its exit animation. Escape, Cancel and Back dismiss it only while it is the topmost surface.
+        let closed = false;
+        let pushed = false;
+        let releaseScope = null;
+
         // Handle keyboard navigation
         const handleKeydown = (e) => {
+            if (closed || !JE.isTopmostSurface(modalElement)) return;
             // Close on Escape
             if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
-                history.back();
+                dismiss();
                 return;
             }
 
@@ -156,16 +164,28 @@
             }
         };
 
+        // Its own history entry, marked, so a popstate that did not leave it (one queued by a navigation just before the
+        // form opened) closes nothing.
+        const entryMark = `je-modal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        /** Back (the history entry the form added): only the topmost surface closes, and only once its entry was left. */
+        const onBack = () => {
+            if (closed || history.state?.jeModal === entryMark || !JE.isTopmostSurface(modalElement)) return;
+            pushed = false; close();
+        };
+
+        /** Shows the form, once, only while it is admitted (its owner current now); false when it opened nothing. */
         const show = () => {
+            if (closed || !releaseScope || !submitted.current()) { close(); return false; }
             document.body.appendChild(modalElement);
             document.body.classList.add('jellyseerr-modal-is-open');
             // Add a state to history to handle back button for closing
-            history.pushState(null, '', location.href);
-            window.addEventListener('popstate', close);
+            history.pushState({ jeModal: entryMark }, '', location.href);
+            pushed = true;
+            window.addEventListener('popstate', onBack);
             document.addEventListener('keydown', handleKeydown);
             setTimeout(() => {
                 // Closed before it finished opening (its operation ended at once): it stays closed.
-                if (isClosing || !modalElement.isConnected) return;
+                if (closed || !modalElement.isConnected) return;
                 modalElement.classList.add('show');
                 // Focus the first interactive element in the modal
                 const firstFocusable = modalElement.querySelector('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]');
@@ -175,15 +195,16 @@
                     modalElement.focus();
                 }
             }, 10);
+            return true;
         };
 
-        let isClosing = false;
-        let releaseScope = () => {};
-
         const close = () => {
-            if (isClosing) return;
-            isClosing = true;
-            releaseScope();
+            if (closed) return;
+            closed = true;
+            modalElement._isClosing = true;
+            primaryBtn.disabled = true;
+            modalElement.setAttribute('inert', '');
+            if (releaseScope) releaseScope();
 
             if (typeof onClose === 'function') {
                 try {
@@ -193,7 +214,7 @@
                 }
             }
 
-            window.removeEventListener('popstate', close);
+            window.removeEventListener('popstate', onBack);
             document.removeEventListener('keydown', handleKeydown);
             modalElement.classList.remove('show');
             document.body.classList.remove('jellyseerr-modal-is-open');
@@ -201,22 +222,29 @@
                 if (document.body.contains(modalElement)) {
                     document.body.removeChild(modalElement);
                 }
-                isClosing = false;
             }, 300);
         };
+        /** The viewer dismisses the form (Escape, Cancel, the backdrop): it closes now, and its history entry goes. */
+        const dismiss = () => {
+            if (closed) return;
+            const entry = pushed;
+            close();
+            if (entry) { pushed = false; history.back(); }
+        };
 
-        // Opened for an operation: the modal is in its scope, so once the operation ends (another page, mount, user or
-        // the document leaving) it takes no more input and closes.
+        // Opened for an owner: the modal is in its scope, so once the owner ends (another page, mount, user or the
+        // document leaving) it takes no more input and closes. Not admitted (an owner that is not current): terminal.
         releaseScope = JE.openSurface(modalElement, close, submitted.owner);
+        if (!releaseScope) closed = true;
 
         // Event listeners for closing the modal
-        cancelBtn.addEventListener('click', () => history.back());
-        modalElement.addEventListener('click', (e) => { if (e.target === modalElement) history.back(); });
+        cancelBtn.addEventListener('click', () => dismiss());
+        modalElement.addEventListener('click', (e) => { if (e.target === modalElement) dismiss(); });
 
         // Event listener for the primary action button. onSave gets the press (D46S2-R7-1): what it sends and opens is the
         // press's owner's (JE.captureSubmitted(press)), which is the modal's operation, or the operation a title action
-        // pressed it for.
-        primaryBtn.addEventListener('click', (e) => submitted.current() ? onSave(modalElement, primaryBtn, close, e) : close());
+        // pressed it for. A closed form submits nothing.
+        primaryBtn.addEventListener('click', (e) => { if (closed) return; if (submitted.current()) onSave(modalElement, primaryBtn, close, e); else close(); });
 
         return { modalElement, show, close };
     };

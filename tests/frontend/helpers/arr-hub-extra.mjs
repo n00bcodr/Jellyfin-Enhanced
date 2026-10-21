@@ -86,6 +86,8 @@ export function setupHub(t, { hash = '#/requests', html = '', me = { role: 'mana
   for (const m of HUB_MODULES) h.load(m);
   return {
     ...h, fetches, subscriptions, navigation, toasts,
+    /** A viewer's native owner minted now (the harness getter, kept live through the spread). */
+    get NATIVE() { return h.NATIVE; },
     live: () => subscriptions.filter(s => s.active),
     /** Fires the feed for a key on every live subscription that follows it. */
     bump(key) { for (const s of subscriptions.filter(x => x.active && x.keys.includes(key))) s.cb([key]); },

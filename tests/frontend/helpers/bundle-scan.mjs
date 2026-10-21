@@ -367,7 +367,7 @@ function reference(node, parent) {
 
 const WRITE = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 const API_TRANSPORT = { plugin: 1, pluginResponse: 1, fetch: 1, jf: 1, ajax: 0 };
-const API_OTHER = new Set(['session', 'authHeaders', 'isPresentationAbort', 'manager']);
+const API_OTHER = new Set(['session', 'authHeaders', 'isPresentationAbort', 'writeOutcome', 'manager']);
 // subscribe: jellyfin-web's websocket message listener (no request).
 const CLIENT_ACCESSORS = new Set(['subscribe', 'getUrl', 'getCurrentUserId', 'serverId', 'accessToken', 'serverAddress', 'getImageUrl', 'getScaledImageUrl', 'deviceId', 'deviceName', 'appName', 'appVersion', 'serverInfo', 'isLoggedIn', 'getApiClient']);
 
@@ -677,12 +677,14 @@ function ownerParam(value, frame, depth = 0) {
   return null;
 }
 
-/** True when an owner value is JE.NATIVE (directly or through a const). */
+/**
+ * True when an owner value is a native root taken without a gesture (directly or through a const): the route's own
+ * owner (JE.routeOwner, D46S2-R10-2), or the retired JE.NATIVE / JE.nativeRoot (gone at run time: a planted one fails).
+ */
 function nativeValue(value, frame, depth = 0) {
   if (!value || depth > 4) return false;
   if (normal(pathOf(value)) === 'JE.NATIVE') return true;
-  // A native root without a gesture (D46S2-R9-4) is a pin like JE.NATIVE.
-  if (CALL.has(value.type) && normal(pathOf(value.callee)) === 'JE.nativeRoot') return true;
+  if (CALL.has(value.type) && /^JE\.(nativeRoot|routeOwner)$/.test(normal(pathOf(value.callee)) || '')) return true;
   if (publicationOwner(value)) return nativeValue(publicationOwner(value), frame, depth + 1);
   if (value.type === 'Identifier') { const b = lookup(frame, value.name); return b?.kind === 'const' && nativeValue(b.init, b.frame, depth + 1); }
   return false;

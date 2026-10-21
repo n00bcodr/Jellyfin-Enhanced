@@ -635,20 +635,22 @@
      * Opens a request: its Jellyfin page when the viewer can open one, else the title's native
      * details page (when offered) or Seerr's more-info modal.
      * @param {Object} entry Hub entry.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)): what opens is its effect.
      * @returns {void}
      */
-    function openEntry(entry) {
+    function openEntry(entry, owner) {
+        if (!JE.effectOwner(owner, 'a Requests entry')) return;
         if (entry.itemId) {
             showItem(entry.itemId);
             return;
         }
         const mediaType = entry.kind === 'tv' ? 'tv' : 'movie';
         if (JE.titleDetails?.show) {
-            if (entry.tmdbId) JE.titleDetails.show(entry.tmdbId, mediaType);
-            else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType, owner: JE.NATIVE });
+            if (entry.tmdbId) JE.titleDetails.show(entry.tmdbId, mediaType, undefined, owner);
+            else if (entry.key) JE.titleDetails.openKey(entry.key, { mediaType, owner });
             return;
         }
-        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType, undefined, JE.NATIVE);
+        if (entry.tmdbId && JE.jellyseerrMoreInfo?.open) JE.jellyseerrMoreInfo.open(entry.tmdbId, mediaType, undefined, owner);
     }
 
     /**
@@ -663,10 +665,11 @@
     /**
      * Opens the Manage drawer for a request (administrators).
      * @param {Object} entry Hub entry.
+     * @param {Object} owner The press's owner (JE.ownerOf(event)).
      * @returns {void}
      */
-    function manageEntry(entry) {
-        JE.arrManage?.open(entry.itemId ? { itemId: entry.itemId } : { key: entry.key }, { operation: JE.NATIVE });
+    function manageEntry(entry, owner) {
+        JE.arrManage?.open(entry.itemId ? { itemId: entry.itemId } : { key: entry.key }, { operation: owner });
     }
 
     /**

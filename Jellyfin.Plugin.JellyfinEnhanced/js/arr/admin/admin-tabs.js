@@ -638,7 +638,7 @@
      * @param {HTMLElement} [opener] The control clicked (focus returns to it).
      * @returns {void}
      */
-    function act(fix, item, opener) {
+    function act(fix, item, opener, owner) {
         if (state.busy.has(item.id) && fix !== 'open_system') return;
         switch (fix) {
             case 'open_system':
@@ -657,13 +657,13 @@
             case 'remove_search': {
                 // The row says how many episodes the download covers (the Activity answer too, when read).
                 const group = (state.data.activity?.queue || []).find(g => g.instanceId === item.instanceId && g.downloadId === item.downloadId);
-                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance, canDeleteData: canDeleteData(item) }, item.id, opener, true, undefined, JE.NATIVE);
+                removeDialog({ instanceId: item.instanceId, downloadId: item.downloadId, title: [item.title, item.scope].filter(Boolean).join(' '), scope: item.scope, episodes: item.episodes || group?.episodes || 0, instance: item.instance, canDeleteData: canDeleteData(item) }, item.id, opener, true, undefined, owner);
                 return;
             }
             case 'remove_with_data':
                 // "delete it too?" under Remove & search again: that fix's choices (the Remove
                 // dialog's defaults for it), shown in the confirmation.
-                confirmDataDialog({ instanceId: item.instanceId, downloadId: item.downloadId, instance: item.instance }, item.id, opener, { blocklist: true, searchAgain: true });
+                confirmDataDialog({ instanceId: item.instanceId, downloadId: item.downloadId, instance: item.instance }, item.id, opener, { blocklist: true, searchAgain: true }, owner);
                 return;
         }
     }
@@ -674,13 +674,14 @@
      *   Remove dialog).
      * @param {Object} g Download.
      * @param {HTMLElement} [opener] The control clicked.
+     * @param {Object} [owner] The press's owner (JE.ownerOf(event)): the Remove dialog opens for it.
      * @returns {void}
      */
-    function queueAction(action, g, opener) {
+    function queueAction(action, g, opener, owner) {
         const busyId = A.downloadKey(g);
         if (state.busy.has(busyId)) return;
         const target = { instanceId: g.instanceId, downloadId: g.downloadId, title: [g.title, g.scope].filter(Boolean).join(' '), scope: g.scope, episodes: g.episodes, instance: g.instance, canDeleteData: (g.actions || []).includes('remove_with_data') };
-        if (action === 'remove') removeDialog(target, busyId, opener, false, undefined, JE.NATIVE);
+        if (action === 'remove') removeDialog(target, busyId, opener, false, undefined, owner);
         else runQueue({ instanceId: g.instanceId, downloadId: g.downloadId, action }, busyId, opener);
     }
 
@@ -802,12 +803,12 @@
      * @param {HTMLElement} opener The control that opened it.
      * @param {string} [owner] Who opened it ('tabs' by default, 'drawer' for the Manage drawer):
      *   leaving the admin tabs closes only theirs, closing the drawer only its own.
-     * @param {Object} scope The owner it opens for (required, D46S2-R6): the drawer's operation (or JE.NATIVE); once
-     *   that operation ends the dialog takes no more input and closes.
+     * @param {Object} scope The owner it opens for (required, D46S2-R6): the drawer's operation, or the press's owner from
+     *   the tabs; once it ends the dialog takes no more input and closes.
      * @returns {{box: HTMLElement, buttons: HTMLElement}|null} Parts to fill (null: no owner, nothing opened).
      */
     function openDialog(title, opener, owner, scope) {
-        if (!JE.requireOwner(scope, 'the arr dialog')) return null;
+        if (!JE.admitSurface(scope, 'the arr dialog')) return null;
         closeDialog();
         A.injectStyles?.();
         const overlay = el('div', 'je-ops-dialog-overlay');
@@ -881,7 +882,7 @@
      * @param {boolean} searchByDefault Pre-tick "search again" (the Remove & search again fix).
      * @param {(body: Object) => void} [run] Runs the removal instead of the tab (the Manage drawer;
      *   it offers only the non-destructive removal, so there is no "delete the data too").
-     * @param {Object} owner The owner it opens for (required): the drawer's operation, or JE.NATIVE from the tabs.
+     * @param {Object} owner The owner it opens for (required): the drawer's operation, or the press's owner from the tabs.
      * @returns {void}
      */
     function removeDialog(target, busyId, opener, searchByDefault, run, owner) {
@@ -913,7 +914,7 @@
             if (run) run(body);
             else runQueue(body, busyId, opener);
         });
-        data.addEventListener('click', () => confirmDataDialog(target, busyId, opener, { blocklist: block.checked, searchAgain: search.checked }));
+        data.addEventListener('click', (e) => confirmDataDialog(target, busyId, opener, { blocklist: block.checked, searchAgain: search.checked }, JE.ownerOf(e)));
         cancel.addEventListener('click', () => closeDialog());
         buttons.appendChild(cancel);
         if (!run && target.canDeleteData) buttons.appendChild(data);
@@ -930,11 +931,13 @@
      * @param {HTMLElement} opener The control clicked.
      * @param {{blocklist: boolean, searchAgain: boolean}} choices The blocklist / search again choices
      *   (shown in the dialog and sent with the removal).
+     * @param {Object} owner The press's owner (JE.ownerOf(event)).
      * @returns {Promise<void>}
      */
-    async function confirmDataDialog(target, busyId, opener, choices) {
-        // The Activity tab's own control (native), named at the press: the dialog opens after the read below (D46S2-R9-4).
-        const native = JE.NATIVE;
+    async function confirmDataDialog(target, busyId, opener, choices, owner) {
+        // The press's owner (the Activity tab's own control: the viewer's gesture), taken at the press: the dialog opens
+        // after the read below, only while it is current (D46S2-R10-1).
+        const native = JE.effectOwner(owner, 'the delete-data dialog');
         if (!native) return;
         // The answer may come after the admin left the tab or someone else signed in: then nothing
         // opens. The row is busy meanwhile.

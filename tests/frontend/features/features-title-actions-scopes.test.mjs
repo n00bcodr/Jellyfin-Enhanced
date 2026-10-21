@@ -72,14 +72,18 @@ test('the More Info window\'s own More sheet (JE requests off) offers no second 
   assert.ok(moreInfo(h).querySelector('.je-actions-row .je-actions-primary, .jellyseerr-request-button'), 'the window\'s own Request stays');
 });
 
-test('control: the native More Info window (no operation) keeps its popup and request after navigating, as before', async t => {
+test('control: the native More Info window (no operation) keeps its popup and request on its route; after navigating both are gone', async t => {
+  // D46S2-R10 / audit S1: a viewer's own native owner carries the route it was minted on; its page effects (a window,
+  // sheet, form, drawer or popup) end with that route, while a write the viewer already submitted still goes out.
   const h = setup(t, { asks: false });
   await h.JE.jellyseerrMoreInfo.open(603, 'movie', undefined, h.NATIVE); await delivered();
   moreInfo(h).querySelector('.jellyseerr-split-arrow').click(); await settle();
-  await h.leave();
-  assert.ok(popup(h), 'natively the popup is the host page\'s own');
+  assert.ok(popup(h), 'natively the popup is the window\'s own');
   popup(h).querySelector('.je-4k-popup-item').click(); await delivered();
   assert.equal(h.sent('POST', '/jellyseerr/request').length, 1);
+  moreInfo(h).querySelector('.jellyseerr-split-arrow')?.click(); await settle();
+  await h.leave();
+  assert.equal(popup(h), null);
 });
 
 // ---------------------------------------------------------------- D46S2-R5-4: the Collection modal (a nested owner)

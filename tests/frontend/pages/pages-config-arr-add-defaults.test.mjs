@@ -38,7 +38,7 @@ function setup(t, respond) {
   });
   t.after(() => h.close());
   h.window.eval(`${createEl}\n${helpers}\nwindow.__je = { jeBuildInstanceAddDefaults, jeReadInstanceAddDefaults };`);
-  return { ...h, je: h.window.__je, requests };
+  return { ...h, get NATIVE() { return h.NATIVE; }, je: h.window.__je, requests };
 }
 
 /** A card like createInstanceCard's (a <details> holding the block), opened or not. */

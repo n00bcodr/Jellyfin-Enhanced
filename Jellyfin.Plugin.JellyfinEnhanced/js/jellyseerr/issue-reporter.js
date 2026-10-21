@@ -109,7 +109,7 @@
      * @param {string} mediaType - 'movie' or 'tv'
      * @param {string} backdropUrl - Optional backdrop image URL (full URL from Jellyfin or TMDB)
      * @param {Object|null} item - The Jellyfin item (absent titles report catalogue issues only)
-     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, JE.NATIVE,
+     * @param {Object|Node|Event} owner - The owner (required, D46S2-R6): the operation a title action submitted, a viewer's native owner,
      *   or the node or press it comes from. It lasts through the form and into reportIssue's POST.
      */
     issueReporter.showReportModal = function (tmdbId, itemName, mediaType, backdropUrl = null, item = null, owner) {

@@ -232,7 +232,7 @@ test('R8-4: a host dialog that attaches after its owner ended (pagehide) is dism
   const h = setup(t, { asks: false });
   h.a.initialize(); mount(h); await settle();
   const owner = h.a.generation();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'quota', message: 'old title' }), owner);
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ title: 'quota', message: mark('old title') }), owner);
   assert.equal(h.document.querySelector('.dialogContainer'), null, 'the host adds its dialog a moment later');
   h.pagehide();
   assert.equal(owner.current(), false);
@@ -244,7 +244,7 @@ test('control: a host dialog that attaches while its owner lives stays; a native
   const h = setup(t, { asks: false });
   h.a.initialize(); mount(h); await settle();
   const owner = h.a.generation();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'a', message: 'a' }), owner);
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ title: 'a', message: mark('a') }), owner);
   await delivered();
   assert.equal(h.document.querySelectorAll('.dialogContainer').length, 1);
   h.JE.openHostDialog(() => h.window.Dashboard.alert({ title: 'b', message: 'b' }), h.NATIVE);

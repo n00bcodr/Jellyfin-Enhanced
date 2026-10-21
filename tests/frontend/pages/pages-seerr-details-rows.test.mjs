@@ -70,7 +70,7 @@ function setup(t,{html=page(),config={},status={active:true},card,item=()=>MOVIE
  ui.releasePosters=root=>{counts.released++;releases.push(root);releasePosters(root);};
  h.load('jellyseerr/item-details.js');
  const view=h.document.querySelector('.libraryPage');
- return {...h,counts,network,timers,ends,view,made,releases,titles,hidden,inputs,
+ return {...h,get NATIVE(){return h.NATIVE;},counts,network,timers,ends,view,made,releases,titles,hidden,inputs,
   anchor:(v=view)=>v.querySelector('#similarCollapsible'),
   marker:()=>h.document.querySelector(`.${MARKER}`),
   /** Element siblings after More Like This: the marker, the rows by title, anything else by id. */

@@ -47,7 +47,7 @@ function setup(t, responses) {
   t.after(() => { h.JE.arrManage?.close(); h.close(); });
   for (const m of MODULES) h.load(m);
   h.JE.initializeArrStatus?.();
-  return { ...h, calls };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls };
 }
 
 async function until(check, ms = 4000) {

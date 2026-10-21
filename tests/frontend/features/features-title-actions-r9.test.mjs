@@ -44,17 +44,18 @@ async function searchPage(t, { advanced = false, query = null, search = null, pl
   h.load('jellyseerr/jellyseerr.js');
   h.JE.initializeJellyseerrScript();
   await delivered();
-  return { ...h, searches, renders };
+  return { ...h, get NATIVE() { return h.NATIVE; }, searches, renders };
 }
 
 /** A search-result card (standard Request + 4K arrow) and its 4K popup, as ui-buttons and ui-popover draw them. */
-function cardWithPopup(h, id = 603, type = 'movie') {
+function cardWithPopup(h, id = 603, type = 'movie', owner = h.NATIVE) {
   const card = h.document.createElement('div');
   card.className = 'jellyseerr-card';
   card.innerHTML = CARD(id, type);
   h.document.body.append(card);
   const item = { id, mediaType: type, title: 'Title ' + id, name: 'Title ' + id, mediaInfo: { status: 1, status4k: 1 } };
-  h.JE.internals.jellyseerrUi.show4KPopup(card.firstChild, item);
+  // The popup is its opener's surface (D46S2-R10, audit S1): here the viewer's own press, unless a test names another.
+  h.JE.internals.jellyseerrUi.show4KPopup(card.firstChild, item, owner);
   return { card, item, main: card.querySelector('.jellyseerr-split-main'), arrow: card.querySelector('.jellyseerr-split-arrow'),
     popupItem: h.document.querySelector('.jellyseerr-4k-popup-item') };
 }
@@ -254,7 +255,8 @@ test('R9-4 (plant executed): an operation\'s handler hands a native opener to a 
   held.resolve(); await delivered();
   assert.equal(moreInfo(h), null, 'no window');
   assert.equal(h.sent('GET', '/jellyseerr/movie/603').length, 0, 'not even its details were read');
-  assert.ok(refusals().some(m => /JE\.NATIVE was named inside an operation/.test(m)), JSON.stringify(refusals()));
+  // JE.NATIVE is gone (D46S2-R10): the plant names no owner, and is refused as such.
+  assert.ok(refusals().some(m => /without an owner|inside an operation/.test(m)), JSON.stringify(refusals()));
 });
 
 test('R9-4 (plant executed): a shared link whose promise continuation drops its operation for a native opener → no window after leaving', async t => {
@@ -267,16 +269,16 @@ test('R9-4 (plant executed): a shared link whose promise continuation drops its 
   const receive = h.JE.titleActions.receive('movie:tmdb:603'); await settle();
   await h.leave(); release(); await receive; await delivered();
   assert.equal(moreInfo(h), null, 'no window on the new route');
-  assert.ok(refusals().some(m => /outside a native context/.test(m)), JSON.stringify(refusals()));
+  assert.ok(refusals().some(m => /without an owner/.test(m)), JSON.stringify(refusals()));
 });
 
 test('control: a viewer\'s own click on a native opener (no operation acting) → the window opens, natively', async t => {
   const h = setup(t, { asks: false });
   h.load('jellyseerr/nativedetails/native-details.js');
-  const node = plantHandler(h, 'native-show', 'JE.titleDetails.show(603, \'movie\');');
+  const node = plantHandler(h, 'native-show', 'JE.titleDetails.show(603, \'movie\', undefined, JE.ownerOf(e));');
   node.click(); await delivered();
   assert.equal(moreInfo(h)?.dataset.tmdbId, '603');
-  assert.equal(h.JE.ownerOf(moreInfo(h)), h.NATIVE);
+  assert.equal(h.JE.ownerOf(moreInfo(h)).native, true);
 });
 
 test('R8-1 (plant executed): a card holding its press hands its title to the native show() → refused inside the operation', async t => {
@@ -287,7 +289,7 @@ test('R8-1 (plant executed): a card holding its press hands its title to the nat
   const node = plantHandler(h, 'card-title', 'const owner = JE.ownerOf(e); JE.titleDetails.show(603, \'movie\');');
   h.JE.press(node, h.a.generation()); await delivered();
   assert.equal(moreInfo(h), null);
-  assert.ok(refusals().some(m => /inside an operation/.test(m)));
+  assert.ok(refusals().some(m => /without an owner|inside an operation/.test(m)));
 });
 
 test('R8-1 (plant executed): a captured operation reaching a native window in a raw timer → refused, no window', async t => {
@@ -297,7 +299,7 @@ test('R8-1 (plant executed): a captured operation reaching a native window in a 
   const node = plantHandler(h, 'hub-entry', 'const op = JE.titleActions.generation(); setTimeout(() => { if (op.current()) JE.jellyseerrMoreInfo.open(603, \'movie\', undefined, JE.NATIVE); });');
   node.click(); await wait(20); await delivered();
   assert.equal(moreInfo(h), null);
-  assert.ok(refusals().some(m => /outside a native context/.test(m)));
+  assert.ok(refusals().some(m => /without an owner/.test(m)));
 });
 
 test('R8-1 (plant executed): the shared link dropping its owner at the hand-over → refused (no owner), no window', async t => {
@@ -316,7 +318,7 @@ test('R7-1 (plant executed): the window\'s Request handler names itself native; 
   const modal = await nativeWindow(h);
   modal.querySelector('.je-actions-primary').click(); await delivered();
   assert.equal(posts(h).length, 0, 'no request sent for a dropped owner');
-  assert.ok(refusals().some(m => /inside an operation/.test(m)), JSON.stringify(refusals()));
+  assert.ok(refusals().some(m => /without an owner|inside an operation/.test(m)), JSON.stringify(refusals()));
 });
 
 test('R7-1 (plant executed): the window\'s Request handler takes its owner from its button; the bar presses it → refused, nothing sent', async t => {
@@ -398,7 +400,7 @@ test('R9-5: a publication\'s handle changes nothing once it is no longer current
   if (!h.JE.followPublications) assert.fail('no publication handle (followers)');
   const button = h.document.createElement('button'); button.dataset.tmdbId = '603'; button.dataset.mediaType = 'movie'; h.document.body.append(button);
   const seen = [];
-  h.JE.followPublications(() => [button], (node, answer) => seen.push(answer.is4k));
+  h.JE.followPublications({ selector: '[data-tmdb-id="603"]' }, handle => seen.push(handle.answer.is4k));
   const older = h.JE.publication({ owner: h.NATIVE, surface: button, identity: { tmdbId: 603, mediaType: 'movie' } });
   const newer = h.JE.publication({ owner: h.NATIVE, surface: button, identity: { tmdbId: 603, mediaType: 'movie' } });
   assert.equal(older.run(() => seen.push('run')), false);
@@ -414,8 +416,8 @@ test('R9-5: a publication\'s handle changes nothing once it is no longer current
 test('R9-6: two quota dialogs for one operation, then pagehide → none is left', async t => {
   const h = setup(t, { asks: false }); h.a.initialize(); mount(h); await settle();
   const owner = h.a.generation();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'first' }), owner);
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'second' }), owner);
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ message: mark('first') }), owner);
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ message: mark('second') }), owner);
   await delivered();
   assert.equal(h.document.querySelectorAll('.dialogContainer').length, 2);
   h.pagehide(); await delivered();
@@ -430,11 +432,11 @@ test('R9-6: an owned dialog arriving late and a native one arriving first; the o
     container.innerHTML = '<div class="text"></div><button class="btnOption">OK</button>';
     container.querySelector('.text').textContent = options.message;
     container.querySelector('button').onclick = () => container.remove();
-    h.window.setTimeout(() => h.document.body.append(container), options.message === 'owned' ? 30 : 0);
+    h.window.setTimeout(() => h.document.body.append(container), options.message.startsWith('owned') ? 30 : 0);
   };
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'owned' }), owner, 'owned');
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ message: mark('owned') }), owner);
   h.pagehide();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'native' }), h.NATIVE, 'native');
+  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'native' }), h.NATIVE);
   await wait(60); await delivered();
   assert.deepEqual([...h.document.querySelectorAll('.dialogContainer')].map(n => n.textContent.replace('OK', '')), ['native']);
 });
@@ -442,7 +444,7 @@ test('R9-6: an owned dialog arriving late and a native one arriving first; the o
 test('control: one owned dialog while its owner lives stays; a native one stays after a pagehide', async t => {
   const h = setup(t, { asks: false }); h.a.initialize(); mount(h); await settle();
   const owner = h.a.generation();
-  h.JE.openHostDialog(() => h.window.Dashboard.alert({ message: 'a' }), owner);
+  h.JE.openHostDialog(mark => h.window.Dashboard.alert({ message: mark('a') }), owner);
   await delivered();
   assert.equal(h.document.querySelectorAll('.dialogContainer').length, 1);
   h.pagehide(); await delivered();

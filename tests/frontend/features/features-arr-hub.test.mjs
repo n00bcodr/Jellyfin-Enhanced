@@ -61,7 +61,7 @@ function setup(t, { html = '', hash = '#/home', config = {}, responses = () => n
   });
   t.after(() => h.close());
   for (const m of MODULES) h.load(m);
-  return { ...h, calls, subscriptions, navigation, live: () => subscriptions.filter(s => s.active) };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, subscriptions, navigation, live: () => subscriptions.filter(s => s.active) };
 }
 
 /** Waits (up to 5 s) until `check` is true: the drawer's re-reads are timer-driven and slow under coverage. */

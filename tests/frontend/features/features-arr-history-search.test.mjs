@@ -111,7 +111,7 @@ function setup(t, { reply } = {}) {
     epoch++;
     for (const fn of userChange.values()) fn();
   };
-  return { ...h, calls, A, page, input, type, switchUser };
+  return { ...h, get NATIVE() { return h.NATIVE; }, calls, A, page, input, type, switchUser };
 }
 
 async function until(check, ms = 3000) {

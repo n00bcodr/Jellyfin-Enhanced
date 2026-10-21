@@ -350,15 +350,25 @@
     // A request for a card's title made anywhere (its own Request, its 4K popup, a form opened from it, the window)
     // reaches the card through its publication (D46S2-R9-2): the card's own data follows, so the Request its overview
     // redraws (rebuilt on every tap; gone while a form is open) shows the request instead of offering it again.
-    JE.followPublications(() => document.querySelectorAll('.jellyseerr-card .jellyseerr-more-info-link[data-tmdb-id]'), (link, answer) => {
-        const item = cardStates.get(link.closest('.jellyseerr-card'))?.item;
+    // The answer keeps its scope (D46S2 audit S5): a series request for some seasons marks those seasons, and the title
+    // only once no season is left to request.
+    JE.followPublications({ selector: '.jellyseerr-card .jellyseerr-more-info-link[data-tmdb-id]' }, ({ node, answer, mutate }) => mutate(() => {
+        const item = cardStates.get(node.closest('.jellyseerr-card'))?.item;
         if (!item) return;
         const info = item.mediaInfo || (item.mediaInfo = {});
         const media = answer.response?.media;
         const PENDING = JE.seerrStatus.MEDIA.PENDING;
-        if (answer.is4k) info.status4k = media?.status4k > PENDING ? media.status4k : Math.max(Number(info.status4k) || 0, PENDING);
-        else info.status = media?.status > PENDING ? media.status : Math.max(Number(info.status) || 0, PENDING);
-    });
+        const field = answer.is4k ? 'status4k' : 'status';
+        if (Array.isArray(answer.seasons) && answer.seasons.length) {
+            // Only the seasons the card already knows (a card that knows none keeps its title's state: the rest is
+            // still requestable, and its overview says so).
+            for (const season of info.seasons || []) {
+                if (answer.seasons.includes(season.seasonNumber)) season[field] = Math.max(Number(season[field]) || 0, PENDING);
+            }
+            if (Array.isArray(answer.remaining) && answer.remaining.length) return;
+        }
+        info[field] = media?.[field] > PENDING ? media[field] : Math.max(Number(info[field]) || 0, PENDING);
+    }));
     // Containers that already have the delegated card listeners.
     const boundContainers = new WeakSet();
 
@@ -796,8 +806,9 @@
      * @returns {void}
      */
     function openAbsentTitle(tmdbId, mediaType, press) {
-        if (JE.titleDetails?.open?.(tmdbId, mediaType)) return;
-        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType, undefined, JE.ownerOf(press));
+        const owner = JE.ownerOf(press);
+        if (JE.titleDetails?.open?.(tmdbId, mediaType, undefined, owner)) return;
+        JE.jellyseerrMoreInfo?.open?.(tmdbId, mediaType, undefined, owner);
     }
 
     /**

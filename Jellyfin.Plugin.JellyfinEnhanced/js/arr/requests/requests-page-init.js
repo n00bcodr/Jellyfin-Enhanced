@@ -367,7 +367,7 @@
           if (mediaId && window.Emby?.Page?.showItem) {
             window.Emby.Page.showItem(mediaId);
           } else if (tmdbId > 0) {
-            window.JellyfinEnhanced?.titleDetails?.open?.(tmdbId, titleLink.getAttribute("data-media-type") === "tv" ? "tv" : "movie");
+            window.JellyfinEnhanced?.titleDetails?.open?.(tmdbId, titleLink.getAttribute("data-media-type") === "tv" ? "tv" : "movie", undefined, window.JellyfinEnhanced.ownerOf(e));
           }
           return;
         }

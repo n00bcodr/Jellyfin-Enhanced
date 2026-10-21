@@ -239,14 +239,14 @@
         text.appendChild(N.buildText(item));
         body.appendChild(text);
         body.appendChild(el('div', 'je-notify-time', JE.arrNotify.ago(item.createdAt)));
-        body.addEventListener('click', () => { close(); JE.arrNotify.open(item); });
+        body.addEventListener('click', (e) => { const owner = JE.ownerOf(e); close(); JE.arrNotify.open(item, owner); });
         row.appendChild(body);
         if (item.itemId && (item.kind === 'ready' || item.kind === 'episodes')) {
             const play = el('button', 'je-notify-play');
             play.type = 'button';
             play.appendChild(icon('play_arrow'));
             play.appendChild(document.createTextNode(JE.arrNotify.tr('arr_notify_play')));
-            play.addEventListener('click', () => { close(); JE.arrNotify.open(item); });
+            play.addEventListener('click', (e) => { const owner = JE.ownerOf(e); close(); JE.arrNotify.open(item, owner); });
             row.appendChild(play);
         }
         return row;

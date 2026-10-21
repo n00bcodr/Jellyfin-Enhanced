@@ -133,6 +133,12 @@ export const OPENERS = [
   { name: 'showSeasonSelectionModal', arg: 5, callee: /(^|\.)showSeasonSelectionModal$/, label: 'season modal' },
   { name: 'showReportModal', arg: 5, callee: /(^|\.)showReportModal$/, label: 'Report form' },
   { name: 'openSurface', arg: 2, callee: /(^|\.)openSurface$/, label: 'surface registration (4K popups and every opener)' },
+  // r10 (D46S2-R10, audit S1/S6): popups, the search card's 4K popup, a title's page and the Calendar's navigation take their owner too.
+  { name: 'openPopup', arg: 1, prop: 'owner', callee: /(^|\.)openPopup$/, label: 'popup (its lifecycle)' },
+  { name: 'show4KPopup', arg: 2, callee: /(^|\.)show4KPopup$/, label: 'search card 4K popup' },
+  { name: 'open', arg: 3, callee: /(^|\.)titleDetails\??\.open\??$/, label: 'title page (navigation)' },
+  { name: 'show', arg: 3, callee: /(^|\.)titleDetails\??\.show\??$/, label: 'title page or its window' },
+  { name: 'navigateToJellyfinItem', arg: 1, prop: 'owner', callee: /^navigateToJellyfinItem$/, file: 'arr/calendar/calendar-page-actions.js', label: 'Calendar navigation' },
   { name: 'captureSubmitted', arg: 0, callee: /(^|\.)captureSubmitted$/, label: 'owner capture' },
   { name: 'createSessionAction', arg: 0, prop: 'owner', optional: true, forbid: ['submitted'], callee: /(^|\.)createSessionAction$/, label: 'owned session action' },
   { name: 'removeDialog', arg: 5, callee: /(^|\.)removeDialog$/, label: 'Remove dialog' },
@@ -157,26 +163,14 @@ export const OPENERS = [
 ];
 
 /**
- * Genuine native roots (D46S2-R7-1): the only places an owner is JE.NATIVE. Each is an entry point no title action
- * presses (a page of its own, a navigation, settings); everything reachable from the bar takes its press's owner.
+ * Genuine native roots without a gesture (D46S2-R7-1, R10-2): the only places an owner is the route's own native owner
+ * (JE.routeOwner, handed out only for the route the caller recorded). Every other native owner is a gesture's
+ * (JE.ownerOf(event) on a trusted event); JE.NATIVE and JE.nativeRoot are gone.
  */
 export const NATIVE_ROOTS = {
-  'arr/admin/admin-tabs.js': {
-    act: 'the Requests hub Activity tab\'s Remove (its own page)',
-    queueAction: 'the Requests hub Activity tab\'s queue Remove (its own page)',
-    confirmDataDialog: 'the Requests hub Activity tab\'s Remove-with-data confirmation (its own page)',
-  },
-  'arr/calendar/calendar-page-actions.js': { navigateToJellyfinItem: 'the Calendar page opening a title that is not in the library (its own page; no title action presses it), named at the click before its provider lookup' },
-  'arr/hub/hub-discover.js': { open: 'the Requests hub\'s Discover card opening Seerr\'s window (its own page)' },
-  'arr/hub/hub-page.js': { openEntry: 'a Requests hub entry opening Seerr\'s window (its own page)', manageEntry: 'a Requests hub entry opening the Manage drawer (its own page)' },
-  'arr/requests/requests-page-render.js': { renderPage: 'the Requests page\'s Report (its own page)' },
-  'enhanced/hiddencontent/hidden-content-page-cards.js': { openJellyseerr: 'the Hidden Content page\'s card opening Seerr\'s window (its own page)' },
-  'enhanced/hiddencontent/hidden-content-panel.js': { openAbsent: 'the Hidden Content panel opening an absent title\'s window (settings)' },
-  'enhanced/spoilerguard/settings-tab.js': { save: 'the Spoiler Guard settings tab\'s own save (settings)' },
   'jellyseerr/nativedetails/native-details.js': {
-    show: 'the absent page falling back to Seerr\'s window as it renders (a navigation, no press)',
-    backThenModal: 'Back from an absent page reopening Seerr\'s window (a navigation, no press)',
-    onView: 'an absent page view opening Seerr\'s window (a navigation, no press)',
+    onView: 'an absent page that cannot load falls back to Seerr\'s window for the route it shows (a navigation, no press)',
+    backThenModal: 'Back from an absent page reopening Seerr\'s window on the route Back landed on (a navigation, no press)',
   },
 };
 
@@ -200,22 +194,26 @@ export const HOST_DIALOG_MODULES = {
 /** Owner sites per file: a scan that sees fewer or more has stopped seeing them. */
 export const OWNER_SITES = {
   'arr/actions/title-actions-hosts.js': 2, 'arr/actions/title-actions-sheet.js': 2,
-  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 2,
-  'arr/calendar/calendar-page-actions.js': 3, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 3, 'arr/hub/hub-page.js': 3,
+  'arr/actions/title-actions.js': 10, 'arr/admin/admin-tabs.js': 5, 'arr/ask/ask-actions.js': 5,
+  'arr/calendar/calendar-page-actions.js': 6, 'arr/ask/ask-seerr.js': 11, 'arr/ask/ask-sheet.js': 9, 'arr/hub/hub-discover.js': 4, 'arr/hub/hub-page.js': 4,
   'arr/manage/manage-drawer.js': 4, 'arr/notify/notify-core.js': 2, 'arr/notify/notify-follow.js': 3,
   'arr/requests/requests-page-render.js': 1, 'arr/status/status-modal.js': 1,
   'enhanced/hiddencontent/hidden-content-buttons.js': 5, 'enhanced/hiddencontent/hidden-content-data.js': 8,
-  'enhanced/hiddencontent/hidden-content-dialogs.js': 3, 'enhanced/hiddencontent/hidden-content-page-cards.js': 1,
-  'enhanced/hiddencontent/hidden-content-panel.js': 1, 'enhanced/itemdetails/features-details-page.js': 4,
-  'enhanced/spoilerguard/detail-button.js': 11, 'enhanced/spoilerguard/dialog.js': 3,
+  'enhanced/hiddencontent/hidden-content-dialogs.js': 3, 'enhanced/hiddencontent/hidden-content-page-cards.js': 2,
+  'enhanced/hiddencontent/hidden-content-panel.js': 2, 'enhanced/itemdetails/features-details-page.js': 4,
+  'enhanced/spoilerguard/detail-button.js': 12, 'enhanced/spoilerguard/dialog.js': 3,
   'enhanced/spoilerguard/seerr-toggle.js': 4, 'enhanced/spoilerguard/settings-tab.js': 1,
-  'enhanced/spoilerguard/state.js': 10, 'jellyseerr/api.js': 1, 'jellyseerr/hss-discovery-handler.js': 1,
+  'enhanced/spoilerguard/state.js': 10, 'jellyseerr/api.js': 1, 'jellyseerr/hss-discovery-handler.js': 2,
   'jellyseerr/issue-reporter.js': 6, 'jellyseerr/item-details.js': 1, 'jellyseerr/jellyseerr.js': 11,
   'jellyseerr/modal.js': 2, 'jellyseerr/moreinfo/more-info-modal-actions-tv.js': 9,
   'jellyseerr/moreinfo/more-info-modal-actions.js': 16, 'jellyseerr/moreinfo/more-info-modal-init.js': 5,
-  'jellyseerr/nativedetails/native-details.js': 10, 'jellyseerr/seerr-detail-link.js': 1,
-  'jellyseerr/ui/ui-buttons.js': 8, 'jellyseerr/ui/ui-cards.js': 22, 'jellyseerr/ui/ui-request-modals.js': 9,
+  'jellyseerr/nativedetails/native-details.js': 9, 'jellyseerr/seerr-detail-link.js': 1,
+  'jellyseerr/ui/ui-buttons.js': 10, 'jellyseerr/ui/ui-cards.js': 23, 'jellyseerr/ui/ui-request-modals.js': 9,
   'jellyseerr/ui/ui-season-modal.js': 5, 'jellyseerr/ui/ui-quota.js': 4,
+  'core/session-action.js': 1,
+  'jellyseerr/ui/ui-popover.js': 2,
+  'arr/admin/admin-render.js': 2,
+  'arr/requests/requests-page-init.js': 1,
 };
 
 /**

@@ -7,7 +7,7 @@ function setup(t,{config={},api=async()=>({items:[]})}={}){
   const h=createHarness({html:'<main></main>',JE:{pluginConfig:{ActivityFeedEnabled:true,ActivityFeedShowWatched:true,ActivityFeedShowReviewed:true,...config},t:()=>'',core:{api:{plugin:async path=>{calls.push(path);return api(path);}}}},apiClient:{getImageUrl:(id,options)=>`http://jellyfin.test/Images/${id}/${options.type}`}});
   h.window.setInterval=fn=>{timers.set(++timerId,fn);return timerId;};h.window.clearInterval=id=>timers.delete(id);
   t.after(()=>h.close());h.load('extras/activity-page.js');
-  return {...h,calls,timers,host:h.document.querySelector('main'),P:h.JE.activityPage};
+  return {...h,get NATIVE(){return h.NATIVE;},calls,timers,host:h.document.querySelector('main'),P:h.JE.activityPage};
 }
 const entry=(type,name,timestamp=0)=>({ActivityType:type,UserId:'u',UserName:'<img src=x>',Timestamp:timestamp,Item:{Id:name,Name:name},Content:'<script>unsafe</script>',Rating:3.5});
 
